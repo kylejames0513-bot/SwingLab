@@ -31,6 +31,7 @@ DEFAULTS: dict[str, Any] = {
         "audio_height": 0.30,
         "audio_prominence": 0.25,
         "min_gap_s": 4.0,
+        "relative_height": 0.5,
     },
     "coaching": {
         "sway_warn_sw": 0.35,

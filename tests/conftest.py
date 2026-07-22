@@ -24,15 +24,20 @@ def cfg() -> Config:
 
 
 def write_click_wav(
-    path: Path, click_times: list[float], duration_s: float = 20.0, sr: int = 16000
+    path: Path,
+    click_times: list[float],
+    duration_s: float = 20.0,
+    sr: int = 16000,
+    amplitudes: list[float] | None = None,
 ) -> Path:
     """Silence with sharp synthetic clicks (decaying noise burst) at known times."""
     rng = np.random.default_rng(42)
     samples = np.zeros(int(duration_s * sr), dtype=np.float32)
-    for t in click_times:
+    amplitudes = amplitudes or [1.0] * len(click_times)
+    for t, amp in zip(click_times, amplitudes):
         start = int(t * sr)
         length = int(0.01 * sr)  # 10 ms transient
-        burst = rng.uniform(-1, 1, length) * np.exp(-np.linspace(0, 6, length))
+        burst = amp * rng.uniform(-1, 1, length) * np.exp(-np.linspace(0, 6, length))
         samples[start : start + length] += burst.astype(np.float32)
     samples = np.clip(samples, -1, 1)
     wavfile.write(str(path), sr, (samples * 32767).astype(np.int16))

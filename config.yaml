@@ -15,6 +15,9 @@ detection:
   audio_height: 0.30         # normalized envelope height for a strike peak
   audio_prominence: 0.25     # peak prominence
   min_gap_s: 4.0             # minimum seconds between detected swings
+  relative_height: 0.5       # a peak must be at least this fraction as loud as
+                             # the loudest strike; filters out practice-swing
+                             # thumps and handling noise. 0 disables.
 
 coaching:
   sway_warn_sw: 0.35         # flag head sway (address->top) beyond this, in shoulder widths

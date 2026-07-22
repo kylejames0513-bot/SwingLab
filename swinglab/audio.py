@@ -57,10 +57,19 @@ def detect_strikes(wav_path: str | Path, cfg: Config) -> list[float]:
 
     hop = sr // ENV_RATE
     env = a[: len(a) // hop * hop].reshape(-1, hop).max(axis=1)
-    peaks, _ = find_peaks(
+    peaks, props = find_peaks(
         env,
         height=det["audio_height"],
         distance=int(det["min_gap_s"] * ENV_RATE),
         prominence=det["audio_prominence"],
     )
-    return (peaks / ENV_RATE).tolist()
+    if len(peaks) == 0:
+        return []
+
+    # Ball strikes in one session are consistently the loudest transients;
+    # practice swings brushing the ground, teeing up, or handling the phone
+    # produce quieter thuds that can still clear the absolute threshold. Keep
+    # only peaks within relative_height of the loudest strike.
+    heights = props["peak_heights"]
+    keep = heights >= det["relative_height"] * heights.max()
+    return (peaks[keep] / ENV_RATE).tolist()
