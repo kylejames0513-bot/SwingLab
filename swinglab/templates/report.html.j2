@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ brand.name }} — Swing Report</title>
+<style>
+  :root {
+    --primary: {{ brand.primary_color }};
+    --accent: {{ brand.accent_color }};
+  }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         margin: 0; color: #1c1c1c; background: #fafafa; }
+  header { background: var(--primary); color: white; padding: 20px 32px;
+           display: flex; align-items: center; gap: 16px; }
+  header img.logo { height: 44px; }
+  header h1 { margin: 0; font-size: 1.5rem; }
+  main { max-width: 1100px; margin: 0 auto; padding: 24px 32px 48px; }
+  h2 { color: var(--primary); border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
+  table { border-collapse: collapse; width: 100%; background: white; }
+  th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: right; }
+  th { background: var(--primary); color: white; text-align: center; }
+  tr.mean-row td { font-weight: bold; background: #f0f0f0; }
+  .meta { color: #555; font-size: 0.9rem; }
+  .meta td, .meta th { text-align: left; border: none; padding: 2px 12px 2px 0; background: none; color: inherit; }
+  .swing { background: white; border: 1px solid #e0e0e0; border-radius: 8px;
+           padding: 16px 20px; margin: 20px 0; }
+  .swing img, .swing video { max-width: 100%; border-radius: 4px; margin-top: 10px; }
+  .notes li { margin: 6px 0; }
+  .flag { color: var(--accent); font-weight: 600; }
+  .tips { background: #eef6f0; border-left: 4px solid var(--primary);
+          padding: 12px 16px; border-radius: 4px; }
+  .disclaimer { color: #666; font-style: italic; margin-top: 32px;
+                border-top: 1px solid #ddd; padding-top: 12px; }
+  footer { text-align: center; color: #777; font-size: 0.85rem; padding: 16px; }
+</style>
+</head>
+<body>
+<header>
+  {% if brand.logo_path %}<img class="logo" src="{{ brand.logo_path }}" alt="logo">{% endif %}
+  <h1>{{ brand.name }} — Swing Report</h1>
+</header>
+<main>
+
+<h2>Session</h2>
+<table class="meta">
+  <tr><th>Video</th><td>{{ video.path }}</td></tr>
+  <tr><th>Duration</th><td>{{ "%.1f"|format(video.duration_s) }} s</td></tr>
+  <tr><th>Resolution</th><td>{{ video.display_width }}×{{ video.display_height }}
+      {% if video.rotation %}(rotation metadata: {{ video.rotation }}°){% endif %}</td></tr>
+  <tr><th>Frame rate</th><td>{{ "%.2f"|format(video.fps) }} fps</td></tr>
+  {% if video.creation_time %}<tr><th>Recorded</th><td>{{ video.creation_time }}</td></tr>{% endif %}
+  <tr><th>Swings detected</th><td>{{ swings|length }}</td></tr>
+  <tr><th>Handedness</th><td>{{ hand }}</td></tr>
+</table>
+
+<h2>Metrics</h2>
+<table>
+  <tr>
+    <th>Swing</th><th>Strike (s)</th><th>Backswing (s)</th><th>Downswing (s)</th>
+    <th>Tempo (target {{ "%.1f"|format(coaching.tempo_target) }})</th>
+    <th>Head sway A→T (SW)</th><th>Head sway T→I (SW)</th>
+    <th>Hip slide A→T (SW)</th><th>Hip slide T→I (SW)</th>
+  </tr>
+  {% for s in swings %}
+  <tr>
+    <td>{{ s.metrics.swing }}</td>
+    <td>{{ "%.2f"|format(s.metrics.strike_s) }}</td>
+    <td>{{ "%.2f"|format(s.metrics.backswing_s) }}</td>
+    <td>{{ "%.2f"|format(s.metrics.downswing_s) }}</td>
+    <td{% if s.metrics.tempo_ratio < coaching.tempo_warn_below %} class="flag"{% endif %}>{{ "%.2f"|format(s.metrics.tempo_ratio) }}</td>
+    <td{% if s.metrics.head_sway_backswing_sw > coaching.sway_warn_sw %} class="flag"{% endif %}>{{ "%.2f"|format(s.metrics.head_sway_backswing_sw) }}</td>
+    <td>{{ "%.2f"|format(s.metrics.head_sway_downswing_sw) }}</td>
+    <td>{{ "%.2f"|format(s.metrics.hip_slide_backswing_sw) }}</td>
+    <td>{{ "%.2f"|format(s.metrics.hip_slide_downswing_sw) }}</td>
+  </tr>
+  {% endfor %}
+  {% if stats %}
+  <tr class="mean-row">
+    <td>mean ± std</td><td>—</td>
+    <td>{{ "%.2f"|format(stats.backswing_s.mean) }} ± {{ "%.2f"|format(stats.backswing_s.std) }}</td>
+    <td>{{ "%.2f"|format(stats.downswing_s.mean) }} ± {{ "%.2f"|format(stats.downswing_s.std) }}</td>
+    <td>{{ "%.2f"|format(stats.tempo_ratio.mean) }} ± {{ "%.2f"|format(stats.tempo_ratio.std) }}</td>
+    <td>{{ "%.2f"|format(stats.head_sway_backswing_sw.mean) }} ± {{ "%.2f"|format(stats.head_sway_backswing_sw.std) }}</td>
+    <td>{{ "%.2f"|format(stats.head_sway_downswing_sw.mean) }} ± {{ "%.2f"|format(stats.head_sway_downswing_sw.std) }}</td>
+    <td>{{ "%.2f"|format(stats.hip_slide_backswing_sw.mean) }} ± {{ "%.2f"|format(stats.hip_slide_backswing_sw.std) }}</td>
+    <td>{{ "%.2f"|format(stats.hip_slide_downswing_sw.mean) }} ± {{ "%.2f"|format(stats.hip_slide_downswing_sw.std) }}</td>
+  </tr>
+  {% endif %}
+</table>
+<p class="meta">SW = shoulder widths at address. A→T = address to top, T→I = top to impact.
+Positive lateral values are movement away from the target.</p>
+
+{% if session_notes %}
+<h2>Session notes</h2>
+<ul class="notes">
+  {% for note in session_notes %}<li>{{ note }}</li>{% endfor %}
+</ul>
+{% endif %}
+
+{% for s in swings %}
+<div class="swing">
+  <h2>Swing {{ s.metrics.swing }}</h2>
+  <ul class="notes">
+    {% for note in s.notes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
+  <h3>Key positions</h3>
+  <img src="{{ s.strip }}" alt="Key positions, swing {{ s.metrics.swing }}">
+  <h3>Centerline overlay</h3>
+  <img src="{{ s.overlay }}" alt="Centerline overlay, swing {{ s.metrics.swing }}">
+  <h3>Slow motion ({{ slowmo_factor }}× slower)</h3>
+  <video controls muted playsinline src="{{ s.slowmo }}"></video>
+</div>
+{% endfor %}
+
+<div class="tips">
+  <strong>Filming tips for best results</strong>
+  <ul>
+    <li>Phone at hip height.</li>
+    <li>Film one clip face-on and one down the line.</li>
+    <li>Ball on a tee.</li>
+  </ul>
+</div>
+
+<p class="disclaimer">{{ brand.disclaimer }}</p>
+</main>
+<footer>{{ brand.footer_text }}</footer>
+</body>
+</html>

@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.venv/
+venv/
+
+# downloaded pose model (fetched and cached on first run)
+swinglab/models/
+
+# analysis output
+results/
