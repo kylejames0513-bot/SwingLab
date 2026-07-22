@@ -66,6 +66,31 @@ results/<video-name>/
     └── ... one set per swing
 ```
 
+## Web app
+
+```bash
+pip install -e ".[web]"
+swinglab serve --host 127.0.0.1 --port 8000
+```
+
+Open http://127.0.0.1:8000 for a branded upload page: pick a clip, choose
+handedness, optionally enter manual strike times, and watch a live status page
+while the analysis runs in the background (the exact same `pipeline` module the
+CLI uses — nothing is duplicated in the web layer). Finished sessions land in
+`sessions/<id>/` and survive server restarts.
+
+The JSON API under `/api` is the surface a future mobile app talks to:
+
+- `POST /upload` — multipart upload (`video`, `hand`, optional `strikes`);
+  redirects to the session page, whose id is the job id
+- `GET /api/session/{id}` — job status, progress log, and (when done)
+  `report_url` + `metrics_url`
+- `GET /session/{id}/files/...` — report, media, and metrics.json
+
+Single machine, no auth yet: `ensure_user_can_analyze()` in
+`swinglab/web/app.py` is the clearly marked stub where payment or account
+gating plugs in later.
+
 ## How it works
 
 1. **Probe** — `ffprobe` reads duration, resolution, fps, and rotation.
@@ -121,10 +146,12 @@ it is not installed.
 
 ## Roadmap
 
-- **Milestone 1 (this)** — CLI: video in → results folder out.
-- **Milestone 2** — FastAPI web app wrapping the same pipeline module
-  (upload, status, results page).
+- **Milestone 1 (done)** — CLI: video in → results folder out.
+- **Milestone 2 (done)** — FastAPI web app wrapping the same pipeline module
+  (upload, status, results page, JSON API).
 - **Milestone 3** — white-label polish: PDF export, richer batch mode.
+- A native mobile app can sit on top of the existing JSON API (`/upload`,
+  `/api/session/{id}`) without server changes.
 
 ## License notes
 
