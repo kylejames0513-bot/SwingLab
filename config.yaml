@@ -1,0 +1,47 @@
+# SwingLab configuration. Every value here can be changed without touching code.
+
+brand:
+  name: SwingLab
+  logo_path: null            # path to a logo image shown in the report header, or null
+  primary_color: "#1a5c38"   # headers, table accents, skeleton "corrected" tint in legends
+  accent_color: "#e8720c"    # highlights, warnings, "captured" tint in legends
+  footer_text: "SwingLab — swing analysis from a single phone video."
+  watermark: false           # stamp brand name onto generated images
+  disclaimer: >-
+    Automated estimates from a single camera. Not a substitute for instruction
+    from a teaching professional.
+
+detection:
+  audio_height: 0.30         # normalized envelope height for a strike peak
+  audio_prominence: 0.25     # peak prominence
+  min_gap_s: 4.0             # minimum seconds between detected swings
+
+coaching:
+  sway_warn_sw: 0.35         # flag head sway (address->top) beyond this, in shoulder widths
+  tempo_target: 3.0          # tour-average backswing:downswing ratio shown as benchmark
+  tempo_warn_below: 2.4      # flag tempo ratios under this
+  tempo_std_praise: 0.3      # praise consistency when tempo std dev across swings is under this
+
+analysis:
+  window_pre_s: 1.8          # analysis window starts this long before the strike
+  window_post_s: 0.8         # ...and ends this long after
+  fps: 30                    # analysis frame rate
+  analysis_width: 480        # working frame width (scale=480:-2)
+  fullres_height: 1000       # height of frames used in deliverables
+  takeaway_threshold_sw: 0.25
+  finish_offset_s: 0.55
+  impact_behind_sw: 0.10     # ideal head position at impact: this far behind address, in shoulder widths
+
+slowmo:
+  factor: 4                  # 4 => quarter speed
+  pre_s: 1.4                 # clip starts this long before the strike
+  duration_s: 2.4
+  height: 1280
+  crf: 20
+
+overlay:
+  captured_color: "#ff8c1a"  # orange: the body as captured
+  corrected_color: "#2ecc40" # green: where it should be
+  arrow_min_px: 12           # draw the head-gap arrow only beyond this many pixels
+
+output_dir: results
