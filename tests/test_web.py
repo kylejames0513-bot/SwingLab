@@ -21,8 +21,11 @@ from swinglab.web.app import create_app
 
 
 def fake_analyze_ok(video_path, out_dir=None, hand="right", manual_strikes=None,
-                    cfg=None, keep_work=False, log=print):
+                    cfg=None, keep_work=False, log=print, progress=None):
     log("Detected 1 strike(s): 3.00s")
+    if progress:
+        progress(0, 1)
+        progress(1, 1)
     session_dir = Path(out_dir) / Path(video_path).stem
     media = session_dir / "media"
     media.mkdir(parents=True)
@@ -85,6 +88,7 @@ def test_full_flow_upload_status_report(client):
     assert data["status"] == "done"
     assert data["report_url"].endswith("report.html")
     assert "metrics_url" in data
+    assert (data["swings_done"], data["swings_total"]) == (1, 1)
 
     status_html = client.get(f"/session/{job_id}").text
     assert "Results ready" in status_html

@@ -52,7 +52,7 @@ DEFAULTS: dict[str, Any] = {
         "factor": 4,
         "pre_s": 1.4,
         "duration_s": 2.4,
-        "height": 1280,
+        "height": 720,
         "crf": 20,
     },
     "overlay": {

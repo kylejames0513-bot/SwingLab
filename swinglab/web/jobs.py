@@ -34,6 +34,8 @@ class Job:
     log: list[str] = field(default_factory=list)
     error: str | None = None
     report_rel: str | None = None  # path of report.html relative to session_dir
+    swings_done: int = 0
+    swings_total: int = 0  # 0 until strike detection has counted the swings
 
     def as_dict(self) -> dict:
         return {
@@ -42,6 +44,8 @@ class Job:
             "log": self.log,
             "error": self.error,
             "report": self.report_rel,
+            "swings_done": self.swings_done,
+            "swings_total": self.swings_total,
         }
 
 
@@ -75,6 +79,8 @@ class JobManager:
             log=data.get("log", []),
             error=data.get("error"),
             report_rel=data.get("report"),
+            swings_done=data.get("swings_done", 0),
+            swings_total=data.get("swings_total", 0),
         )
         if job.status in (QUEUED, PROCESSING):
             # the process that owned this job is gone
@@ -126,6 +132,11 @@ class JobManager:
             job.log.append(message)
             self._persist(job)
 
+        def progress(done: int, total: int) -> None:
+            job.swings_done = done
+            job.swings_total = total
+            self._persist(job)
+
         job.status = PROCESSING
         self._persist(job)
         try:
@@ -136,6 +147,7 @@ class JobManager:
                 manual_strikes=manual_strikes,
                 cfg=self.cfg,
                 log=log,
+                progress=progress,
             )
             job.report_rel = str(result.report_path.relative_to(job.session_dir))
             job.status = DONE

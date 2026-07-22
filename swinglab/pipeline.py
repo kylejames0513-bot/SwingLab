@@ -68,7 +68,13 @@ def analyze_video(
     cfg: Config | None = None,
     keep_work: bool = False,
     log: Callable[[str], None] = print,
+    progress: Callable[[int, int], None] | None = None,
 ) -> SessionResult:
+    """Run the full pipeline for one video.
+
+    ``progress`` (optional) is called with (swings_finished, swings_total) —
+    once as soon as the swing count is known, then after each swing.
+    """
     cfg = cfg or Config.load()
     require_binaries()
     video_path = Path(video_path)
@@ -110,6 +116,8 @@ def analyze_video(
             + ", ".join(f"{t:.2f}s" for t in strikes))
 
     # --- per swing -------------------------------------------------------
+    if progress:
+        progress(0, len(strikes))
     tracker = pose.PoseTracker()
     swings: list[dict] = []
     all_metrics: list[metrics.SwingMetrics] = []
@@ -121,13 +129,14 @@ def analyze_video(
                     video_path, strike_s, swing_no, tracker, work_dir, media_dir,
                     session_dir, hand, cfg, log,
                 )
+                swings.append(swing)
+                all_metrics.append(swing["metrics"])
             except EventError as exc:
                 msg = f"Swing {swing_no} at {strike_s:.2f}s skipped: {exc}"
                 log(f"WARNING: {msg}")
                 skipped.append(msg)
-                continue
-            swings.append(swing)
-            all_metrics.append(swing["metrics"])
+            if progress:
+                progress(swing_no, len(strikes))
     finally:
         tracker.close()
 
@@ -218,6 +227,7 @@ def _analyze_swing(
         cfg,
     )
 
+    log(f"Swing {swing_no}: rendering slow motion (the long step)...")
     slowmo_path = slowmo.make_slowmo(
         video_path, strike_s, media_dir / f"slowmo_s{swing_no}.mp4", cfg
     )

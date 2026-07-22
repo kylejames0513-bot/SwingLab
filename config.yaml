@@ -36,7 +36,9 @@ slowmo:
   factor: 4                  # 4 => quarter speed
   pre_s: 1.4                 # clip starts this long before the strike
   duration_s: 2.4
-  height: 1280
+  height: 720                # render height; motion interpolation cost and RAM
+                             # scale with this — 720 fits small (1GB) servers,
+                             # raise to 1280 on beefier machines
   crf: 20
 
 overlay:
