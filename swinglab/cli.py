@@ -45,6 +45,15 @@ def build_parser() -> argparse.ArgumentParser:
     ana.add_argument(
         "--keep-work", action="store_true", help="Keep intermediate frames/audio"
     )
+
+    srv = sub.add_parser("serve", help="Run the web app (upload page + results).")
+    srv.add_argument("--host", default="127.0.0.1")
+    srv.add_argument("--port", type=int, default=8000)
+    srv.add_argument(
+        "--sessions-dir", type=Path, default=Path("sessions"),
+        help="Where uploads and results are stored",
+    )
+    srv.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
     return parser
 
 
@@ -100,6 +109,23 @@ def _analyze_one(path: Path, args: argparse.Namespace, cfg: Config) -> SessionRe
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     cfg = Config.load(args.config)
+
+    if args.command == "serve":
+        try:
+            import uvicorn
+
+            from .web.app import create_app
+        except ImportError as exc:
+            print(
+                f"Web dependencies missing ({exc.name}). Install them with: "
+                'pip install "swinglab[web]"',
+                file=sys.stderr,
+            )
+            return 2
+        app = create_app(cfg, sessions_dir=args.sessions_dir)
+        print(f"{cfg.brand['name']} web app on http://{args.host}:{args.port}")
+        uvicorn.run(app, host=args.host, port=args.port)
+        return 0
 
     try:
         if args.batch:
