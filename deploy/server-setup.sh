@@ -62,7 +62,9 @@ systemctl enable --now swinglab
 sleep 2
 systemctl --no-pager --lines=0 status swinglab || true
 
-PUBLIC_IP=$(curl -fsS --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')
+# -4 forces IPv4: an IPv6 address here would print an unusable URL (needs
+# brackets in browsers, and many home networks can't reach IPv6 at all)
+PUBLIC_IP=$(curl -4 -fsS --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')
 echo
 echo "============================================================"
 echo " SwingLab is running."
