@@ -1,0 +1,9 @@
+.git
+.gitignore
+tests
+deploy
+results
+sessions
+**/__pycache__
+*.egg-info
+swinglab/models/*.task

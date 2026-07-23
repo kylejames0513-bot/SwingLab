@@ -45,6 +45,12 @@ def build_parser() -> argparse.ArgumentParser:
     ana.add_argument(
         "--keep-work", action="store_true", help="Keep intermediate frames/audio"
     )
+    ana.add_argument(
+        "--fast",
+        action="store_true",
+        help="Skip motion-interpolated slow motion (the long step) — much "
+        "quicker, slightly less smooth clips",
+    )
 
     srv = sub.add_parser("serve", help="Run the web app (upload page + results).")
     srv.add_argument("--host", default="127.0.0.1")
@@ -101,6 +107,7 @@ def _analyze_one(path: Path, args: argparse.Namespace, cfg: Config) -> SessionRe
         manual_strikes=_parse_strikes(args.strikes),
         cfg=cfg,
         keep_work=args.keep_work,
+        fast=args.fast,
     )
     print_summary(result)
     return result

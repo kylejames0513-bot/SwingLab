@@ -67,6 +67,7 @@ def analyze_video(
     manual_strikes: list[float] | None = None,
     cfg: Config | None = None,
     keep_work: bool = False,
+    fast: bool = False,
     log: Callable[[str], None] = print,
     progress: Callable[[int, int], None] | None = None,
 ) -> SessionResult:
@@ -74,6 +75,8 @@ def analyze_video(
 
     ``progress`` (optional) is called with (swings_finished, swings_total) —
     once as soon as the swing count is known, then after each swing.
+    ``fast`` skips motion-interpolated slow motion (the long step) for much
+    quicker results.
     """
     cfg = cfg or Config.load()
     require_binaries()
@@ -127,7 +130,7 @@ def analyze_video(
             try:
                 swing = _analyze_swing(
                     video_path, strike_s, swing_no, tracker, work_dir, media_dir,
-                    session_dir, hand, cfg, log,
+                    session_dir, hand, cfg, fast, log,
                 )
                 swings.append(swing)
                 all_metrics.append(swing["metrics"])
@@ -181,6 +184,7 @@ def _analyze_swing(
     session_dir: Path,
     hand: str,
     cfg: Config,
+    fast: bool,
     log: Callable[[str], None],
 ) -> dict:
     log(f"Swing {swing_no}: analyzing strike at {strike_s:.2f}s...")
@@ -227,9 +231,12 @@ def _analyze_swing(
         cfg,
     )
 
-    log(f"Swing {swing_no}: rendering slow motion (the long step)...")
+    log(
+        f"Swing {swing_no}: rendering slow motion"
+        + (" (fast mode)..." if fast else " (the long step)...")
+    )
     slowmo_path = slowmo.make_slowmo(
-        video_path, strike_s, media_dir / f"slowmo_s{swing_no}.mp4", cfg
+        video_path, strike_s, media_dir / f"slowmo_s{swing_no}.mp4", cfg, fast=fast
     )
 
     return {

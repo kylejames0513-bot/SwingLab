@@ -1,18 +1,6 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-{% if not done and not failed %}<meta http-equiv="refresh" content="2">{% endif %}
-<title>{{ brand.name }} — {{ "Results ready" if done else ("Analysis failed" if failed else "Analyzing…") }}</title>
-<style>
-  :root { --primary: {{ brand.primary_color }}; --accent: {{ brand.accent_color }}; }
-  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-         margin: 0; background: #fafafa; color: #1c1c1c; }
-  header { background: var(--primary); color: white; padding: 20px 32px; }
-  header h1 { margin: 0; font-size: 1.5rem; }
-  main { max-width: 640px; margin: 40px auto; padding: 0 24px; }
-  .card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; }
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — {{ "Results ready" if done else ("Analysis failed" if failed else "Analyzing…") }}{% endblock %}
+{% block style %}
   .spinner { width: 28px; height: 28px; border: 4px solid #ddd;
              border-top-color: var(--accent); border-radius: 50%;
              animation: spin 0.9s linear infinite; display: inline-block;
@@ -21,24 +9,15 @@
   .log { background: #f4f4f4; border-radius: 6px; padding: 12px 16px;
          font-family: ui-monospace, monospace; font-size: 0.85rem;
          white-space: pre-wrap; margin-top: 16px; max-height: 240px; overflow-y: auto; }
-  .bar { background: #e6e6e6; border-radius: 6px; height: 14px; margin: 14px 0 6px; }
-  .bar > div { background: var(--accent); border-radius: 6px; height: 100%;
-               transition: width 0.4s; }
-  .bar-label { color: #555; font-size: 0.9rem; }
-  .error { color: #b3261e; white-space: pre-wrap; }
-  a.button { display: inline-block; margin-top: 16px; background: var(--accent);
-             color: white; padding: 12px 28px; border-radius: 6px; text-decoration: none; }
-  footer { text-align: center; color: #777; font-size: 0.85rem; padding: 24px; }
-</style>
-</head>
-<body>
-<header><h1>{{ brand.name }}</h1></header>
-<main>
+{% endblock %}
+{% block main %}
   <div class="card">
     {% if done %}
       <h2>Results ready</h2>
-      <p>Your swing analysis is finished.</p>
+      <p>Your swing analysis is finished{% if job.swings_total %} —
+        {{ job.swings_total }} swing{{ "s" if job.swings_total != 1 }} analyzed{% endif %}.</p>
       <a class="button" href="/session/{{ job.id }}/report">View report</a>
+      <a class="button secondary" href="/">Analyze another clip</a>
     {% elif failed %}
       <h2>Analysis failed</h2>
       <p class="error">{{ job.error }}</p>
@@ -46,19 +25,74 @@
          strike times filled in.</p>
       <a class="button" href="/">Try again</a>
     {% else %}
-      <h2><span class="spinner"></span>Analyzing your swing…</h2>
-      {% if job.swings_total %}
-        <div class="bar"><div style="width: {{ (100 * job.swings_done / job.swings_total) | round(0, 'floor') | int }}%"></div></div>
-        <p class="bar-label">Swing {{ [job.swings_done + 1, job.swings_total] | min }} of {{ job.swings_total }}
-           — each swing takes roughly a minute; slow motion rendering is the long step.</p>
-      {% else %}
-        <p class="bar-label">Reading the video and listening for ball strikes…</p>
-      {% endif %}
-      <p>This page refreshes automatically — no need to reload.</p>
+      <h2 id="live-title"><span class="spinner"></span>{% if queue_position %}Waiting in line…{% else %}Analyzing your swing…{% endif %}</h2>
+      <div class="bar" id="live-bar-wrap" {% if not job.swings_total %}style="display:none"{% endif %}>
+        <div id="live-bar" style="width: {{ (100 * job.swings_done / job.swings_total) | round(0, 'floor') | int if job.swings_total else 0 }}%"></div>
+      </div>
+      <p class="bar-label" id="live-label">
+        {%- if queue_position -%}
+          You are #{{ queue_position }} in line — the analysis starts automatically.
+        {%- elif job.swings_total -%}
+          Swing {{ [job.swings_done + 1, job.swings_total] | min }} of {{ job.swings_total }}
+          {{- " — fast mode." if job.fast else " — slow motion rendering is the long step." }}
+        {%- else -%}
+          Reading the video and listening for ball strikes…
+        {%- endif -%}
+      </p>
+      <p class="hint">This page updates live — no need to reload. You can also
+        come back later; the link keeps working.</p>
     {% endif %}
-    {% if job.log %}<div class="log">{{ job.log | join("\n") }}</div>{% endif %}
+    {% if job.log %}<div class="log" id="live-log">{{ job.log | join("\n") }}</div>
+    {% else %}<div class="log" id="live-log" style="display:none"></div>{% endif %}
   </div>
-</main>
-<footer>{{ brand.footer_text }}</footer>
-</body>
-</html>
+{% endblock %}
+{% block script %}
+{% if not done and not failed %}
+<script>
+(function () {
+  var title = document.getElementById("live-title");
+  var barWrap = document.getElementById("live-bar-wrap");
+  var bar = document.getElementById("live-bar");
+  var label = document.getElementById("live-label");
+  var logEl = document.getElementById("live-log");
+
+  function apply(data) {
+    if (data.status === "done" || data.status === "failed") {
+      window.location.reload();  // server renders the final page
+      return;
+    }
+    if (data.status === "queued" && data.queue_position) {
+      title.innerHTML = '<span class="spinner"></span>Waiting in line…';
+      label.textContent = "You are #" + data.queue_position
+        + " in line — the analysis starts automatically.";
+    } else {
+      title.innerHTML = '<span class="spinner"></span>Analyzing your swing…';
+      if (data.swings_total) {
+        barWrap.style.display = "";
+        bar.style.width = Math.floor(100 * data.swings_done / data.swings_total) + "%";
+        var current = Math.min(data.swings_done + 1, data.swings_total);
+        label.textContent = "Swing " + current + " of " + data.swings_total
+          + (data.fast ? " — fast mode." : " — slow motion rendering is the long step.");
+      } else {
+        label.textContent = "Reading the video and listening for ball strikes…";
+      }
+    }
+    if (data.log && data.log.length) {
+      logEl.style.display = "";
+      logEl.textContent = data.log.join("\n");
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+  }
+
+  function poll() {
+    fetch("/api/session/{{ job.id }}", { headers: { "Accept": "application/json" } })
+      .then(function (resp) { return resp.json(); })
+      .then(apply)
+      .catch(function () { /* transient network/restart hiccup — keep polling */ });
+  }
+  poll();
+  setInterval(poll, 1500);
+})();
+</script>
+{% endif %}
+{% endblock %}
