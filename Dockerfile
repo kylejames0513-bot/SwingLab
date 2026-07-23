@@ -22,12 +22,14 @@ RUN pip install --no-cache-dir ".[web]"
 # downloading ~6 MB on the first analysis.
 RUN python -c "from swinglab.pose import ensure_model; ensure_model()"
 
-# Session data (uploads, deliverables, job database) lives outside the image.
-VOLUME /data
+# Session data (uploads, deliverables, job database) lives under /data —
+# mount a volume there so it outlives the container. docker-compose.yml does;
+# on Railway/Render/Fly attach the platform's volume at /data. (No VOLUME
+# instruction here: Railway rejects Dockerfiles that declare one.)
 EXPOSE 8000
 
+# Cloud hosts inject PORT for their routing; default to 8000 elsewhere.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=4)"
+    CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/healthz', timeout=4)"
 
-CMD ["swinglab", "serve", "--host", "0.0.0.0", "--port", "8000", \
-     "--sessions-dir", "/data/sessions"]
+CMD swinglab serve --host 0.0.0.0 --port ${PORT:-8000} --sessions-dir /data/sessions
