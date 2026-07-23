@@ -50,22 +50,45 @@ uptime monitors.
 ## Accounts and payments
 
 Accounts are on by default (`web.require_account` in config.yaml): visitors
-sign up free, get a monthly allowance, and upgrade to Pro via Stripe. To go
-live with payments:
+sign up free, get a monthly allowance, and upgrade to Pro. Pro can be sold
+through the Shopify store (preferred — one checkout for gear and
+memberships) or as a Stripe subscription; until either is configured the app
+runs happily with payments off (free tier only). Whichever path you take,
+first set `SWINGLAB_SECRET` (any long random string) in the host's
+environment so logins survive restarts/redeploys.
 
-1. Set `SWINGLAB_SECRET` (any long random string) in the host's environment
-   variables so logins survive restarts/redeploys.
-2. Create a [Stripe](https://stripe.com) account, add a **Product** with a
+**Selling Pro on Shopify:**
+
+1. In the Shopify admin, create a product for Pro access (digital — untick
+   "This is a physical product"). Give each variant a SKU from
+   `billing.shopify_skus` in config.yaml — the shipped mapping is
+   `SL-PRO-1MO` (31 days) and `SL-PRO-12MO` (365 days); prices are set on
+   the product. Make sure the product's URL handle matches
+   `billing.shopify_pro_handle` (default `swinglab-pro`).
+2. In Shopify → Settings → Notifications → Webhooks, add two webhooks —
+   **Order payment** (`orders/paid`) and **Order cancellation**
+   (`orders/cancelled`) — both pointing at
+   `https://<your-app>/webhooks/shopify`, and copy the signing secret shown
+   at the bottom of that page.
+3. Set `SHOPIFY_STORE_DOMAIN` and `SHOPIFY_WEBHOOK_SECRET` in the host's
+   environment and redeploy.
+
+Buyers check out on the Shopify storefront; a paid order unlocks Pro on the
+SwingLab account with the same email (or waits for that email to sign up).
+For auto-renewing memberships, add Shopify's free Subscriptions app to the
+product — each billing cycle's order re-extends access automatically.
+
+**Selling Pro as a Stripe subscription:**
+
+1. Create a [Stripe](https://stripe.com) account, add a **Product** with a
    **recurring price** (this is where the monthly price is set), and copy the
    `price_...` id.
-3. In Stripe → Developers → Webhooks, add an endpoint for
+2. In Stripe → Developers → Webhooks, add an endpoint for
    `https://<your-app>/webhooks/stripe` subscribed to `checkout.session.completed`,
    `customer.subscription.updated`, and `customer.subscription.deleted`; copy
    its `whsec_...` secret.
-4. Set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, and
+3. Set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, and
    `PUBLIC_BASE_URL` in the host's environment and redeploy.
-
-Until step 4, the app runs happily with payments off (free tier only).
 
 ## Gear shop (Shopify)
 

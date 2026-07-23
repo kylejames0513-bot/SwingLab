@@ -30,13 +30,17 @@
         <li>Everything in Free</li>
         <li>Cancel anytime</li>
       </ul>
-      {% if user and billing_enabled and not user.is_pro %}
+      {% if user and user.is_pro %}
+      <p class="hint">You're on Pro — thanks for the support!</p>
+      {% elif user and pro_store_url %}
+      <a class="button" href="{{ pro_store_url }}">Get Pro on the {{ brand.name }} store</a>
+      <p class="hint">Check out with <strong>{{ user.email }}</strong> —
+        Pro unlocks on this account automatically.</p>
+      {% elif user and billing_enabled %}
       <form action="/billing/checkout" method="post">
         <button type="submit">Upgrade to Pro</button>
       </form>
-      {% elif user and user.is_pro %}
-      <p class="hint">You're on Pro — thanks for the support!</p>
-      {% elif not billing_enabled %}
+      {% elif not billing_enabled and not pro_store_url %}
       <p class="hint">Coming soon.</p>
       {% else %}
       <a class="button" href="/login">Log in to upgrade</a>

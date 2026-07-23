@@ -65,6 +65,8 @@ DEFAULTS: dict[str, Any] = {
     "billing": {
         "free_per_month": 3,
         "pro_per_month": 0,
+        "shopify_pro_handle": "swinglab-pro",
+        "shopify_skus": {"SL-PRO-1MO": 31, "SL-PRO-12MO": 365},
     },
     "shop": {
         "enabled": True,
