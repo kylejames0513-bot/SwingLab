@@ -64,4 +64,17 @@ billing:
                              # STRIPE_WEBHOOK_SECRET in the environment to enable
                              # payments; until then upgrading is shown as coming soon.
 
+shop:
+  enabled: true              # gear shop pages + per-analysis recommendations.
+                             # Also needs SHOPIFY_STORE_DOMAIN and
+                             # SHOPIFY_STOREFRONT_TOKEN in the environment —
+                             # inert until both are set. Products and prices
+                             # live in Shopify, never here.
+  cache_minutes: 10          # in-memory product list cache (per-process)
+  tag_prefix: "swinglab:"    # products tagged swinglab:tempo / swinglab:sway /
+                             # swinglab:hip-slide / swinglab:consistency are
+                             # recommended when an analysis flags that issue;
+                             # swinglab:general pads out the list
+  max_recommendations: 3     # gear items shown on a finished analysis page
+
 output_dir: results

@@ -7,6 +7,14 @@ import math
 from .config import Config
 from .metrics import SwingMetrics
 
+# Machine-readable flag keys, mirrored by product tags in the gear shop
+# (a Shopify product tagged "swinglab:tempo" is recommended when an
+# analysis raises FLAG_TEMPO — see swinglab.web.shop).
+FLAG_SWAY = "sway"
+FLAG_TEMPO = "tempo"
+FLAG_HIP_SLIDE = "hip-slide"
+FLAG_CONSISTENCY = "consistency"
+
 
 def swing_notes(m: SwingMetrics, cfg: Config) -> list[str]:
     coach = cfg.coaching
@@ -41,6 +49,47 @@ def swing_notes(m: SwingMetrics, cfg: Config) -> list[str]:
             "configured thresholds."
         )
     return notes
+
+
+def flag_keys(payload: dict, cfg: Config) -> list[str]:
+    """The session's issues as flag keys, from a parsed metrics.json payload.
+
+    Applies the same coaching thresholds as the prose notes above, but in a
+    machine-readable form. Tolerates partial/legacy payloads (missing keys,
+    NaN written as null) by skipping what it can't read.
+    """
+    coach = cfg.coaching
+    swings = payload.get("swings") or []
+
+    def metric(swing: dict, key: str) -> float | None:
+        value = (swing.get("metrics") or {}).get(key)
+        return float(value) if isinstance(value, (int, float)) else None
+
+    def any_over(key: str, threshold: float) -> bool:
+        return any(
+            (v := metric(s, key)) is not None and v > threshold for s in swings
+        )
+
+    flags: list[str] = []
+    if any_over("head_sway_backswing_sw", coach["sway_warn_sw"]):
+        flags.append(FLAG_SWAY)
+    if any(
+        (v := metric(s, "tempo_ratio")) is not None and v < coach["tempo_warn_below"]
+        for s in swings
+    ):
+        flags.append(FLAG_TEMPO)
+    if any_over("hip_slide_backswing_sw", coach["sway_warn_sw"]):
+        flags.append(FLAG_HIP_SLIDE)
+    tempo_std = ((payload.get("session_stats") or {}).get("tempo_ratio") or {}).get(
+        "std"
+    )
+    if (
+        len(swings) >= 2
+        and isinstance(tempo_std, (int, float))
+        and tempo_std >= coach["tempo_std_praise"]
+    ):
+        flags.append(FLAG_CONSISTENCY)
+    return flags
 
 
 def session_notes(

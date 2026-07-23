@@ -131,6 +131,36 @@ The price itself lives in Stripe — change it in their dashboard, never in
 code. Checkout and subscription management happen on Stripe's hosted pages;
 plan state only ever changes via the signed webhook.
 
+### Gear shop (Shopify)
+
+Connect a Shopify store and the app grows a **Gear** page (`/shop`) listing
+the store's products, and — the interesting part — a **"Train what the report
+flagged"** strip on every finished analysis: a quick tempo recommends the
+tempo trainer, head sway recommends the anti-sway drills, and so on. Tag
+products in Shopify to wire them up:
+
+| Shopify product tag | Recommended when the analysis shows |
+| --- | --- |
+| `swinglab:tempo` | tempo ratio under `coaching.tempo_warn_below` |
+| `swinglab:sway` | head sway beyond `coaching.sway_warn_sw` |
+| `swinglab:hip-slide` | hip slide beyond `coaching.sway_warn_sw` |
+| `swinglab:consistency` | tempo varying noticeably across swings |
+| `swinglab:general` | anything (pads the list; what a clean swing sees) |
+
+Like payments, the shop is **inert until configured** — no link, no page —
+via two environment variables:
+
+| Variable | What it is |
+| --- | --- |
+| `SHOPIFY_STORE_DOMAIN` | `yourstore.myshopify.com` (or the custom domain) |
+| `SHOPIFY_STOREFRONT_TOKEN` | Storefront API access token (Shopify admin → Settings → Apps and sales channels → Develop apps → create an app with the Storefront API scope) |
+
+Products, prices, and images live in Shopify — manage them in the Shopify
+admin, never in code. The product list is cached in memory
+(`shop.cache_minutes`), and a Shopify outage degrades to the last cached
+list instead of an error. "Buy" links go to the Shopify storefront; SwingLab
+never touches checkout.
+
 For deployment — a one-command `docker compose up -d`, or a fresh-VM script —
 see [deploy/README.md](deploy/README.md).
 
@@ -174,6 +204,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account` |
 | `billing` | free/Pro analyses per month (price lives in Stripe, not here) |
+| `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count |
 
 ## Tests
 
@@ -201,6 +232,9 @@ it is not installed.
 - **Milestone 4 (done)** — accounts (email + password), monthly free tier,
   Stripe Pro subscriptions with hosted checkout/portal and webhook-driven
   plan state, per-user private history, landing/pricing/account pages.
+- **Shopify gear shop (done)** — `/shop` page backed by a Shopify store's
+  Storefront API plus flag-matched training-aid recommendations on finished
+  analyses; inert until the `SHOPIFY_*` environment variables are set.
 - **Milestone 5** — white-label polish: PDF export, richer batch mode,
   password reset via email, API tokens for the mobile app.
 - A native mobile app can sit on top of the existing JSON API (`/upload`,

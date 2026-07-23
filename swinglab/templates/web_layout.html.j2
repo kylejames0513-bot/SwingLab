@@ -41,11 +41,11 @@
   <h1><a href="/">{{ brand.name }}</a></h1>
   <nav>
     {%- if user -%}
-      <a href="/">New analysis</a><a href="/sessions">History</a><a href="/account">Account</a>
+      <a href="/">New analysis</a><a href="/sessions">History</a>{% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}<a href="/account">Account</a>
     {%- elif require_account -%}
-      <a href="/pricing">Pricing</a><a href="/login">Log in</a>
+      {% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}<a href="/pricing">Pricing</a><a href="/login">Log in</a>
     {%- else -%}
-      <a href="/">New analysis</a><a href="/sessions">History</a>
+      <a href="/">New analysis</a><a href="/sessions">History</a>{% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}
     {%- endif -%}
   </nav>
 </header>

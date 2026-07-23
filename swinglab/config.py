@@ -66,6 +66,12 @@ DEFAULTS: dict[str, Any] = {
         "free_per_month": 3,
         "pro_per_month": 0,
     },
+    "shop": {
+        "enabled": True,
+        "cache_minutes": 10,
+        "tag_prefix": "swinglab:",
+        "max_recommendations": 3,
+    },
     "overlay": {
         "captured_color": "#ff8c1a",
         "corrected_color": "#2ecc40",
@@ -143,6 +149,10 @@ class Config:
     @property
     def billing(self) -> dict[str, Any]:
         return self.data["billing"]
+
+    @property
+    def shop(self) -> dict[str, Any]:
+        return self.data["shop"]
 
     @property
     def output_dir(self) -> str:
