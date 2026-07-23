@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}{{ brand.name }}{% endblock %}</title>
+<style>
+  :root { --primary: {{ brand.primary_color }}; --accent: {{ brand.accent_color }}; }
+  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+         margin: 0; background: #fafafa; color: #1c1c1c; }
+  header { background: var(--primary); color: white; padding: 16px 32px;
+           display: flex; align-items: center; justify-content: space-between;
+           flex-wrap: wrap; gap: 8px; }
+  header h1 { margin: 0; font-size: 1.5rem; }
+  header h1 a { color: inherit; text-decoration: none; }
+  nav a { color: rgba(255,255,255,0.9); text-decoration: none; margin-left: 20px;
+          font-size: 0.95rem; }
+  nav a:hover { text-decoration: underline; }
+  main { max-width: 640px; margin: 40px auto; padding: 0 24px; }
+  .card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; }
+  button, a.button { display: inline-block; margin-top: 20px; background: var(--accent);
+           color: white; border: none; padding: 12px 28px; font-size: 1rem;
+           border-radius: 6px; cursor: pointer; text-decoration: none; }
+  button:hover, a.button:hover { filter: brightness(1.08); }
+  button:disabled { background: #bbb; cursor: default; filter: none; }
+  a.button.secondary { background: white; color: var(--primary);
+                       border: 1px solid var(--primary); }
+  .hint { color: #666; font-size: 0.85rem; margin-top: 4px; }
+  .bar { background: #e6e6e6; border-radius: 6px; height: 14px; margin: 14px 0 6px; }
+  .bar > div { background: var(--accent); border-radius: 6px; height: 100%;
+               transition: width 0.4s; min-width: 6px; }
+  .bar-label { color: #555; font-size: 0.9rem; }
+  .error { color: #b3261e; white-space: pre-wrap; }
+  .disclaimer { color: #666; font-style: italic; font-size: 0.85rem; margin-top: 24px; }
+  footer { text-align: center; color: #777; font-size: 0.85rem; padding: 24px; }
+  {% block style %}{% endblock %}
+</style>
+</head>
+<body>
+<header>
+  <h1><a href="/">{{ brand.name }}</a></h1>
+  <nav><a href="/">New analysis</a><a href="/sessions">History</a></nav>
+</header>
+<main>
+{% block main %}{% endblock %}
+</main>
+<footer>{{ brand.footer_text }}</footer>
+{% block script %}{% endblock %}
+</body>
+</html>

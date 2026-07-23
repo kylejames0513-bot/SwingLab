@@ -11,3 +11,6 @@ swinglab/models/
 
 # analysis output
 results/
+
+# web app sessions (uploads, deliverables, job database)
+sessions/

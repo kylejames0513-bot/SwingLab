@@ -49,6 +49,8 @@ Useful flags:
   detection when it misses (or when the clip has no audio track)
 - `--hand right|left` — golfer handedness (default right); also overrides the
   target-direction inference
+- `--fast` — skip motion-interpolated slow motion (by far the longest step);
+  results in a fraction of the time, slightly less smooth clips
 - `--config path/to/config.yaml` — alternate branding/threshold config
 - `--keep-work` — keep intermediate frames and audio for debugging
 
@@ -73,23 +75,42 @@ pip install -e ".[web]"
 swinglab serve --host 127.0.0.1 --port 8000
 ```
 
-Open http://127.0.0.1:8000 for a branded upload page: pick a clip, choose
-handedness, optionally enter manual strike times, and watch a live status page
-while the analysis runs in the background (the exact same `pipeline` module the
-CLI uses — nothing is duplicated in the web layer). Finished sessions land in
-`sessions/<id>/` and survive server restarts.
+Open http://127.0.0.1:8000 for a branded upload page: drag a clip in (upload
+progress shown), choose handedness and optionally **Fast mode**, and watch a
+live status page — queue position while waiting, then per-swing progress —
+while the analysis runs in the background (the exact same `pipeline` module
+the CLI uses — nothing is duplicated in the web layer). `/sessions` lists
+every past analysis.
+
+Built to take real traffic on one machine:
+
+- **Bounded worker pool** — `web.workers` analyses run at once; further
+  uploads queue (FIFO) with their position shown, instead of a burst of
+  uploads swamping the machine.
+- **Durable jobs** — job state lives in SQLite next to the session folders.
+  Anything queued or mid-analysis when the process dies is **re-queued
+  automatically on restart** (the upload is still on disk), and finished
+  results keep serving. Sessions from pre-database versions are imported on
+  first start.
+- **Guardrails** — upload size cap, per-IP active-job limit, and optional
+  auto-deletion of old sessions (`web.retention_days`), all in `config.yaml`.
+- **`/healthz`** — queue depth for load balancers and uptime monitors.
 
 The JSON API under `/api` is the surface a future mobile app talks to:
 
-- `POST /upload` — multipart upload (`video`, `hand`, optional `strikes`);
-  redirects to the session page, whose id is the job id
-- `GET /api/session/{id}` — job status, progress log, and (when done)
-  `report_url` + `metrics_url`
+- `POST /upload` — multipart upload (`video`, `hand`, optional `strikes`,
+  optional `fast`); redirects to the session page, or returns
+  `{"id", "url"}` when called with `Accept: application/json`
+- `GET /api/session/{id}` — status, queue position, progress log, and (when
+  done) `report_url` + `metrics_url`
+- `GET /api/sessions` — recent sessions
 - `GET /session/{id}/files/...` — report, media, and metrics.json
 
-Single machine, no auth yet: `ensure_user_can_analyze()` in
-`swinglab/web/app.py` is the clearly marked stub where payment or account
-gating plugs in later.
+No auth yet: `ensure_user_can_analyze()` in `swinglab/web/app.py` is the
+clearly marked stub where payment or account gating plugs in later.
+
+For deployment — a one-command `docker compose up -d`, or a fresh-VM script —
+see [deploy/README.md](deploy/README.md).
 
 ## How it works
 
@@ -129,6 +150,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `analysis` | window size, working/full resolutions, takeaway threshold |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
+| `web` | worker pool size, upload size cap, per-IP job limit, session retention |
 
 ## Tests
 
@@ -149,7 +171,13 @@ it is not installed.
 - **Milestone 1 (done)** — CLI: video in → results folder out.
 - **Milestone 2 (done)** — FastAPI web app wrapping the same pipeline module
   (upload, status, results page, JSON API).
-- **Milestone 3** — white-label polish: PDF export, richer batch mode.
+- **Milestone 3 (done)** — production-ready web: durable SQLite-backed job
+  queue with bounded workers and restart recovery, drag-and-drop upload with
+  progress, live status with queue position, session history, fast mode,
+  abuse guardrails, health endpoint, Docker deployment.
+- **Milestone 4** — accounts and payment gating (the
+  `ensure_user_can_analyze` hook), white-label polish: PDF export, richer
+  batch mode.
 - A native mobile app can sit on top of the existing JSON API (`/upload`,
   `/api/session/{id}`) without server changes.
 

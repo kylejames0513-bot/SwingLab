@@ -46,4 +46,12 @@ overlay:
   corrected_color: "#2ecc40" # green: where it should be
   arrow_min_px: 12           # draw the head-gap arrow only beyond this many pixels
 
+web:
+  workers: 2                 # analyses running at once; the rest wait in the queue.
+                             # Each worker keeps roughly one CPU core busy (ffmpeg
+                             # + pose tracking) — match this to the machine.
+  max_upload_mb: 500         # reject uploads larger than this (0 = unlimited)
+  max_active_jobs_per_ip: 3  # queued+running jobs one visitor may have (0 = unlimited)
+  retention_days: 0          # delete finished sessions older than this (0 = keep forever)
+
 output_dir: results

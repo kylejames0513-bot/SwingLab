@@ -1,10 +1,19 @@
-# Deploying SwingLab to a cloud VM
+# Deploying SwingLab
 
-This gets SwingLab a real URL you can open from any device — phone, iPad,
-anything with a browser. Total cost is roughly $6/month for the smallest VM at
-most providers, and every step below works from a browser (no computer needed).
+Two paths to a real URL you can open from any device:
 
-## Steps
+- **Docker (recommended once you're growing):** on any machine with Docker,
+  `docker compose up -d` in the repo root builds the image and runs the app on
+  port 8000 with sessions in a persistent volume. Upgrades are
+  `git pull && docker compose up -d --build` — interrupted analyses re-queue
+  automatically on start. The same image runs unchanged on any container
+  host (Fly.io, Cloud Run, ECS, a VPS), which is the scaling story: one image,
+  bigger machines or more of them as demand grows.
+- **Bare VM (simplest first deploy):** the script below sets up a fresh
+  Ubuntu 24.04 VM end to end. Roughly $6/month at most providers, and every
+  step works from a browser (no computer needed).
+
+## VM steps
 
 1. **Create a VM** at any provider (DigitalOcean, Hetzner, AWS Lightsail, ...):
    - Image: **Ubuntu 24.04** (SwingLab needs Python 3.11+)
@@ -30,12 +39,23 @@ systemctl restart swinglab       # restart the app
 cd /opt/swinglab && git pull && systemctl restart swinglab   # update
 ```
 
+## Tuning for real traffic
+
+The `web` section of `config.yaml` is the knob panel: `workers` (analyses
+running at once — match it to CPU cores), `max_upload_mb`,
+`max_active_jobs_per_ip`, and `retention_days` (auto-delete old sessions so
+the disk never fills). `/healthz` reports queue depth for load balancers and
+uptime monitors.
+
 ## Cautions
 
 - **No login yet.** Anyone who knows the URL can upload videos and see
-  results. Fine for personal testing; don't share the URL widely until
-  account/payment gating (Milestone 3) is in.
+  results. The per-IP and upload-size limits blunt casual abuse, but don't
+  share the URL widely until account/payment gating is in
+  (`ensure_user_can_analyze` in `swinglab/web/app.py` is the plug-in point).
 - Traffic is plain HTTP. For HTTPS put the app behind Caddy or nginx with
   Let's Encrypt — a natural follow-up once there's a domain name.
 - Analysis is CPU-heavy (slow-motion interpolation most of all). On a $6 VM
   a clip with a few swings takes a couple of minutes — that's expected.
+  Uploaders can tick **Fast mode** to skip interpolation and get results in a
+  fraction of the time.

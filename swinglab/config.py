@@ -55,6 +55,12 @@ DEFAULTS: dict[str, Any] = {
         "height": 720,
         "crf": 20,
     },
+    "web": {
+        "workers": 2,
+        "max_upload_mb": 500,
+        "max_active_jobs_per_ip": 3,
+        "retention_days": 0,
+    },
     "overlay": {
         "captured_color": "#ff8c1a",
         "corrected_color": "#2ecc40",
@@ -124,6 +130,10 @@ class Config:
     @property
     def overlay(self) -> dict[str, Any]:
         return self.data["overlay"]
+
+    @property
+    def web(self) -> dict[str, Any]:
+        return self.data["web"]
 
     @property
     def output_dir(self) -> str:

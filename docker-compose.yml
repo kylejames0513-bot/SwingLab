@@ -1,0 +1,21 @@
+# One-command local or single-server deployment:  docker compose up -d
+#
+# Sessions (uploads, results, the job database) persist in the named volume,
+# so `docker compose up -d --build` after a git pull upgrades in place —
+# interrupted analyses are re-queued automatically on start.
+#
+# To rebrand or retune, edit config.yaml and restart; it is mounted read-only
+# so the image never needs rebuilding for config changes.
+
+services:
+  swinglab:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - swinglab-sessions:/data
+      - ./config.yaml:/app/config.yaml:ro
+    restart: unless-stopped
+
+volumes:
+  swinglab-sessions:
