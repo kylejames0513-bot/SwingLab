@@ -1,0 +1,65 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — {{ "Swing analysis from your phone" if landing else "Log in" }}{% endblock %}
+{% block style %}
+  .hero { text-align: center; margin-bottom: 32px; }
+  .hero h2 { font-size: 1.9rem; margin-bottom: 8px; }
+  .hero p { color: #555; font-size: 1.05rem; margin: 0 auto; max-width: 480px; }
+  .steps { display: flex; gap: 12px; margin: 24px 0 0; flex-wrap: wrap; }
+  .steps div { flex: 1 1 140px; background: white; border: 1px solid #e0e0e0;
+               border-radius: 8px; padding: 14px; font-size: 0.9rem; color: #444; }
+  .steps strong { display: block; color: var(--primary); margin-bottom: 4px; }
+  .auth { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 28px; }
+  .auth .card { flex: 1 1 240px; }
+  label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 0.9rem; }
+  input[type=email], input[type=password] {
+    width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
+    box-sizing: border-box; }
+  .card button { width: 100%; }
+  .free-note { color: #666; font-size: 0.85rem; margin-top: 10px; text-align: center; }
+{% endblock %}
+{% block main %}
+  {% if landing %}
+  <div class="hero">
+    <h2>Know your swing in minutes</h2>
+    <p>Film a few swings on your phone, upload the clip, and get tempo,
+       sway and slide numbers, key-position frames, slow motion, and
+       plain-English coaching notes.</p>
+    <div class="steps">
+      <div><strong>1. Film</strong> Phone at hip height, face-on or down the line.</div>
+      <div><strong>2. Upload</strong> Straight from your camera roll — no editing.</div>
+      <div><strong>3. Improve</strong> A full visual report for every swing in the clip.</div>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <div class="auth">
+    <div class="card">
+      <h2>Create account</h2>
+      <form action="/signup" method="post">
+        <label for="su-email">Email</label>
+        <input id="su-email" name="email" type="email" required autocomplete="email">
+        <label for="su-password">Password</label>
+        <input id="su-password" name="password" type="password" required
+               minlength="8" autocomplete="new-password">
+        <button type="submit">Sign up free</button>
+      </form>
+      <p class="free-note">{{ free_per_month }} free analyses every month.
+        No card required.</p>
+    </div>
+    <div class="card">
+      <h2>Log in</h2>
+      <form action="/login" method="post">
+        <label for="li-email">Email</label>
+        <input id="li-email" name="email" type="email" required autocomplete="email">
+        <label for="li-password">Password</label>
+        <input id="li-password" name="password" type="password" required
+               autocomplete="current-password">
+        <button type="submit">Log in</button>
+      </form>
+    </div>
+  </div>
+
+  <p class="disclaimer">{{ brand.disclaimer }}</p>
+{% endblock %}

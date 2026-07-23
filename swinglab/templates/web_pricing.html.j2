@@ -1,0 +1,47 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Pricing{% endblock %}
+{% block style %}
+  .plans { display: flex; gap: 20px; flex-wrap: wrap; }
+  .plans .card { flex: 1 1 240px; display: flex; flex-direction: column; }
+  .plans h2 { margin-top: 0; }
+  .price { font-size: 1.6rem; font-weight: 700; color: var(--primary); }
+  ul { padding-left: 20px; color: #444; flex: 1; }
+  li { margin: 8px 0; }
+  .card form, .card a.button { margin-top: auto; }
+  .card button { width: 100%; }
+{% endblock %}
+{% block main %}
+  <div class="plans">
+    <div class="card">
+      <h2>Free</h2>
+      <p class="price">$0</p>
+      <ul>
+        <li>{{ free_per_month }} swing analyses every month</li>
+        <li>Full report: metrics, key positions, slow motion, overlays</li>
+        <li>Coaching notes for every swing</li>
+      </ul>
+      {% if not user %}<a class="button" href="/">Sign up free</a>{% endif %}
+    </div>
+    <div class="card">
+      <h2>Pro</h2>
+      <p class="price">Unlimited</p>
+      <ul>
+        <li>Unlimited swing analyses</li>
+        <li>Everything in Free</li>
+        <li>Cancel anytime</li>
+      </ul>
+      {% if user and billing_enabled and not user.is_pro %}
+      <form action="/billing/checkout" method="post">
+        <button type="submit">Upgrade to Pro</button>
+      </form>
+      {% elif user and user.is_pro %}
+      <p class="hint">You're on Pro — thanks for the support!</p>
+      {% elif not billing_enabled %}
+      <p class="hint">Coming soon.</p>
+      {% else %}
+      <a class="button" href="/login">Log in to upgrade</a>
+      {% endif %}
+    </div>
+  </div>
+  <p class="disclaimer">{{ brand.disclaimer }}</p>
+{% endblock %}

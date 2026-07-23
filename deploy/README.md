@@ -47,14 +47,31 @@ running at once — match it to CPU cores), `max_upload_mb`,
 the disk never fills). `/healthz` reports queue depth for load balancers and
 uptime monitors.
 
+## Accounts and payments
+
+Accounts are on by default (`web.require_account` in config.yaml): visitors
+sign up free, get a monthly allowance, and upgrade to Pro via Stripe. To go
+live with payments:
+
+1. Set `SWINGLAB_SECRET` (any long random string) in the host's environment
+   variables so logins survive restarts/redeploys.
+2. Create a [Stripe](https://stripe.com) account, add a **Product** with a
+   **recurring price** (this is where the monthly price is set), and copy the
+   `price_...` id.
+3. In Stripe → Developers → Webhooks, add an endpoint for
+   `https://<your-app>/webhooks/stripe` subscribed to `checkout.session.completed`,
+   `customer.subscription.updated`, and `customer.subscription.deleted`; copy
+   its `whsec_...` secret.
+4. Set `STRIPE_SECRET_KEY`, `STRIPE_PRICE_ID`, `STRIPE_WEBHOOK_SECRET`, and
+   `PUBLIC_BASE_URL` in the host's environment and redeploy.
+
+Until step 4, the app runs happily with payments off (free tier only).
+
 ## Cautions
 
-- **No login yet.** Anyone who knows the URL can upload videos and see
-  results. The per-IP and upload-size limits blunt casual abuse, but don't
-  share the URL widely until account/payment gating is in
-  (`ensure_user_can_analyze` in `swinglab/web/app.py` is the plug-in point).
-- Traffic is plain HTTP. For HTTPS put the app behind Caddy or nginx with
-  Let's Encrypt — a natural follow-up once there's a domain name.
+- On a VM behind plain HTTP, add HTTPS before taking signups or payments —
+  put the app behind Caddy or nginx with Let's Encrypt. (Railway/Render/Fly
+  domains come with HTTPS already.)
 - Analysis is CPU-heavy (slow-motion interpolation most of all). On a $6 VM
   a clip with a few swings takes a couple of minutes — that's expected.
   Uploaders can tick **Fast mode** to skip interpolation and get results in a

@@ -23,6 +23,18 @@
 {% block main %}
   <div class="card">
     <h2>Analyze your swing</h2>
+    {% if quota_left is defined and quota_left is not none %}
+      {% if quota_left > 0 %}
+      <p class="hint">{{ quota_left }} analys{{ "es" if quota_left != 1 else "is" }} left
+        this month{% if user and not user.is_pro and billing_enabled %} —
+        <a href="/pricing">go unlimited with Pro</a>{% endif %}.</p>
+      {% else %}
+      <p class="error">You've used this month's analyses.
+        {% if user and not user.is_pro and billing_enabled %}
+        <a href="/pricing">Upgrade to Pro</a> for unlimited swings, or come back
+        on the 1st.{% else %}They reset on the 1st.{% endif %}</p>
+      {% endif %}
+    {% endif %}
     <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
       <label for="video">Swing video</label>
       <div class="drop" id="drop" tabindex="0" role="button"

@@ -53,5 +53,15 @@ web:
   max_upload_mb: 500         # reject uploads larger than this (0 = unlimited)
   max_active_jobs_per_ip: 3  # queued+running jobs one visitor may have (0 = unlimited)
   retention_days: 0          # delete finished sessions older than this (0 = keep forever)
+  require_account: true      # visitors must sign up before analyzing; false = open access
+                             # (set SWINGLAB_SECRET in the environment so logins
+                             # survive restarts)
+
+billing:
+  free_per_month: 3          # analyses per calendar month on the free plan
+  pro_per_month: 0           # ...on Pro (0 = unlimited). Price is set in Stripe, not
+                             # here: configure STRIPE_SECRET_KEY, STRIPE_PRICE_ID and
+                             # STRIPE_WEBHOOK_SECRET in the environment to enable
+                             # payments; until then upgrading is shown as coming soon.
 
 output_dir: results

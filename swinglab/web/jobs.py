@@ -47,6 +47,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     strikes      TEXT,
     fast         INTEGER NOT NULL DEFAULT 0,
     client_ip    TEXT,
+    user_id      TEXT,
     error        TEXT,
     report_rel   TEXT,
     swings_done  INTEGER NOT NULL DEFAULT 0,
@@ -68,6 +69,7 @@ class Job:
     strikes: list[float] | None = None
     fast: bool = False
     client_ip: str | None = None
+    user_id: str | None = None
     log: list[str] = field(default_factory=list)
     error: str | None = None
     report_rel: str | None = None  # path of report.html relative to session_dir
@@ -105,6 +107,13 @@ class JobManager:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(_SCHEMA)
+            # migrate pre-accounts databases in place
+            columns = {
+                row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")
+            }
+            if "user_id" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN user_id TEXT")
+                self._conn.commit()
         workers = max(1, int(cfg.web.get("workers", 2)))
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="swinglab-worker"
@@ -121,12 +130,33 @@ class JobManager:
             ).fetchone()
         return self._from_row(row) if row else None
 
-    def list_recent(self, limit: int = 50) -> list[Job]:
+    def list_recent(self, limit: int = 50, user_id: str | None = None) -> list[Job]:
+        """Most recent jobs; pass user_id to see only one account's sessions."""
         with self._lock:
-            rows = self._conn.execute(
-                "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
-            ).fetchall()
+            if user_id is None:
+                rows = self._conn.execute(
+                    "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+                ).fetchall()
+            else:
+                rows = self._conn.execute(
+                    "SELECT * FROM jobs WHERE user_id = ?"
+                    " ORDER BY created_at DESC LIMIT ?",
+                    (user_id, limit),
+                ).fetchall()
         return [self._from_row(r) for r in rows]
+
+    def usage_this_month(self, user_id: str) -> int:
+        """Analyses this calendar month (UTC). Failed runs don't count."""
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        ).timestamp()
+        with self._lock:
+            return self._conn.execute(
+                "SELECT COUNT(*) FROM jobs WHERE user_id = ? AND created_at >= ?"
+                " AND status != ?",
+                (user_id, month_start, FAILED),
+            ).fetchone()[0]
 
     def queue_position(self, job: Job) -> int | None:
         """1-based place in line while queued, else None."""
@@ -165,6 +195,7 @@ class JobManager:
         strikes: list[float] | None = None,
         fast: bool = False,
         client_ip: str | None = None,
+        user_id: str | None = None,
     ) -> Job:
         job_id = uuid.uuid4().hex[:12]
         job = Job(
@@ -176,6 +207,7 @@ class JobManager:
             strikes=strikes,
             fast=fast,
             client_ip=client_ip,
+            user_id=user_id,
         )
         job.session_dir.mkdir(parents=True)
         self._save(job)
@@ -233,8 +265,9 @@ class JobManager:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, status, created_at, updated_at, source_name,"
-                " hand, strikes, fast, client_ip, error, report_rel, swings_done,"
-                " swings_total, log) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " hand, strikes, fast, client_ip, user_id, error, report_rel,"
+                " swings_done, swings_total, log)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET status = excluded.status,"
                 " updated_at = excluded.updated_at, error = excluded.error,"
                 " report_rel = excluded.report_rel, swings_done = excluded.swings_done,"
@@ -249,6 +282,7 @@ class JobManager:
                     json.dumps(job.strikes) if job.strikes else None,
                     int(job.fast),
                     job.client_ip,
+                    job.user_id,
                     job.error,
                     job.report_rel,
                     job.swings_done,
@@ -269,6 +303,7 @@ class JobManager:
             strikes=json.loads(row["strikes"]) if row["strikes"] else None,
             fast=bool(row["fast"]),
             client_ip=row["client_ip"],
+            user_id=row["user_id"],
             log=json.loads(row["log"]),
             error=row["error"],
             report_rel=row["report_rel"],
