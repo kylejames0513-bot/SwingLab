@@ -39,7 +39,15 @@
 <body>
 <header>
   <h1><a href="/">{{ brand.name }}</a></h1>
-  <nav><a href="/">New analysis</a><a href="/sessions">History</a></nav>
+  <nav>
+    {%- if user -%}
+      <a href="/">New analysis</a><a href="/sessions">History</a><a href="/account">Account</a>
+    {%- elif require_account -%}
+      <a href="/pricing">Pricing</a><a href="/login">Log in</a>
+    {%- else -%}
+      <a href="/">New analysis</a><a href="/sessions">History</a>
+    {%- endif -%}
+  </nav>
 </header>
 <main>
 {% block main %}{% endblock %}

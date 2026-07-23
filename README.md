@@ -106,8 +106,30 @@ The JSON API under `/api` is the surface a future mobile app talks to:
 - `GET /api/sessions` — recent sessions
 - `GET /session/{id}/files/...` — report, media, and metrics.json
 
-No auth yet: `ensure_user_can_analyze()` in `swinglab/web/app.py` is the
-clearly marked stub where payment or account gating plugs in later.
+### Accounts and Pro memberships
+
+With `web.require_account: true` (the shipped default), visitors sign up with
+email + password (hashed locally with scrypt — no external auth service),
+get `billing.free_per_month` analyses per calendar month, and can upgrade to
+a **Pro subscription** for `billing.pro_per_month` (0 = unlimited). Each
+account sees only its own history, and results are private to their owner
+(sessions from before accounts stay reachable by link). Set
+`require_account: false` for an open, no-login instance.
+
+Payments run on Stripe and are **inert until configured** — the pricing page
+shows Pro as "coming soon" until these environment variables are set:
+
+| Variable | What it is |
+| --- | --- |
+| `SWINGLAB_SECRET` | long random string signing login cookies (always set this) |
+| `STRIPE_SECRET_KEY` | from Stripe → Developers → API keys |
+| `STRIPE_PRICE_ID` | the `price_...` id of your recurring Pro price |
+| `STRIPE_WEBHOOK_SECRET` | from the webhook endpoint you point at `/webhooks/stripe` |
+| `PUBLIC_BASE_URL` | e.g. `https://yourapp.up.railway.app` (checkout redirects) |
+
+The price itself lives in Stripe — change it in their dashboard, never in
+code. Checkout and subscription management happen on Stripe's hosted pages;
+plan state only ever changes via the signed webhook.
 
 For deployment — a one-command `docker compose up -d`, or a fresh-VM script —
 see [deploy/README.md](deploy/README.md).
@@ -150,7 +172,8 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `analysis` | window size, working/full resolutions, takeaway threshold |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
-| `web` | worker pool size, upload size cap, per-IP job limit, session retention |
+| `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account` |
+| `billing` | free/Pro analyses per month (price lives in Stripe, not here) |
 
 ## Tests
 
@@ -175,9 +198,11 @@ it is not installed.
   queue with bounded workers and restart recovery, drag-and-drop upload with
   progress, live status with queue position, session history, fast mode,
   abuse guardrails, health endpoint, Docker deployment.
-- **Milestone 4** — accounts and payment gating (the
-  `ensure_user_can_analyze` hook), white-label polish: PDF export, richer
-  batch mode.
+- **Milestone 4 (done)** — accounts (email + password), monthly free tier,
+  Stripe Pro subscriptions with hosted checkout/portal and webhook-driven
+  plan state, per-user private history, landing/pricing/account pages.
+- **Milestone 5** — white-label polish: PDF export, richer batch mode,
+  password reset via email, API tokens for the mobile app.
 - A native mobile app can sit on top of the existing JSON API (`/upload`,
   `/api/session/{id}`) without server changes.
 

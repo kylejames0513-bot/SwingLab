@@ -1,0 +1,49 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Account{% endblock %}
+{% block style %}
+  .row { display: flex; justify-content: space-between; align-items: baseline;
+         padding: 12px 0; border-bottom: 1px solid #eee; }
+  .row:last-of-type { border-bottom: none; }
+  .row .k { color: #555; font-size: 0.9rem; }
+  .plan { display: inline-block; padding: 2px 12px; border-radius: 999px;
+          font-weight: 700; font-size: 0.85rem; }
+  .plan.pro { background: var(--primary); color: white; }
+  .plan.free { background: #eee; color: #444; }
+  .good { background: #e5f3ea; border-left: 4px solid var(--primary);
+          padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; }
+  form { display: inline; }
+  .logout button { background: white; color: #b3261e; border: 1px solid #ddd; }
+{% endblock %}
+{% block main %}
+  {% if upgraded %}
+  <div class="good">Thanks — your payment went through! Your plan updates to
+    <strong>Pro</strong> the moment Stripe confirms it (usually seconds).
+    Refresh if you don't see it yet.</div>
+  {% endif %}
+  <div class="card">
+    <h2>Your account</h2>
+    <div class="row"><span class="k">Email</span><span>{{ user.email }}</span></div>
+    <div class="row"><span class="k">Plan</span>
+      <span class="plan {{ 'pro' if user.is_pro else 'free' }}">
+        {{ "Pro" if user.is_pro else "Free" }}</span></div>
+    <div class="row"><span class="k">Analyses this month</span>
+      <span>{{ usage }}{% if quota_left is not none %} — {{ quota_left }} left{% endif %}</span></div>
+
+    {% if user.is_pro %}
+      {% if billing_enabled and user.stripe_customer_id %}
+      <form action="/billing/portal" method="post">
+        <button type="submit">Manage subscription</button>
+      </form>
+      {% endif %}
+    {% elif billing_enabled %}
+      <form action="/billing/checkout" method="post">
+        <button type="submit">Upgrade to Pro — unlimited swings</button>
+      </form>
+    {% else %}
+      <p class="hint">Pro memberships are coming soon.</p>
+    {% endif %}
+    <form class="logout" action="/logout" method="post">
+      <button type="submit">Log out</button>
+    </form>
+  </div>
+{% endblock %}

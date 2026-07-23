@@ -60,6 +60,11 @@ DEFAULTS: dict[str, Any] = {
         "max_upload_mb": 500,
         "max_active_jobs_per_ip": 3,
         "retention_days": 0,
+        "require_account": False,
+    },
+    "billing": {
+        "free_per_month": 3,
+        "pro_per_month": 0,
     },
     "overlay": {
         "captured_color": "#ff8c1a",
@@ -134,6 +139,10 @@ class Config:
     @property
     def web(self) -> dict[str, Any]:
         return self.data["web"]
+
+    @property
+    def billing(self) -> dict[str, Any]:
+        return self.data["billing"]
 
     @property
     def output_dir(self) -> str:
