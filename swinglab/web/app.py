@@ -11,10 +11,15 @@ analyses a month, and upgrade to Pro through Stripe for
 ``billing.pro_per_month`` (0 = unlimited). Payments are inert until the
 STRIPE_* environment variables are set — see billing.py. Set SWINGLAB_SECRET
 so logins survive restarts.
+
+The optional gear shop (a /shop page plus flag-matched training-aid
+recommendations on finished analyses) is likewise inert until the SHOPIFY_*
+environment variables are set — see shop.py.
 """
 
 from __future__ import annotations
 
+import json
 import os
 import secrets
 from pathlib import Path
@@ -24,8 +29,9 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.middleware.sessions import SessionMiddleware
 
+from ..coaching import flag_keys
 from ..config import Config
-from . import billing
+from . import billing, shop
 from .jobs import DONE, FAILED, Job, JobManager
 from .users import User, UserStore
 
@@ -100,6 +106,9 @@ def create_app(
         user_id = request.session.get("user_id")
         return users.get(user_id) if user_id else None
 
+    def shop_active() -> bool:
+        return bool(cfg.shop.get("enabled")) and shop.enabled()
+
     def render(template: str, request: Request, **context) -> HTMLResponse:
         return HTMLResponse(
             env.get_template(template).render(
@@ -108,6 +117,7 @@ def create_app(
                 require_account=bool(cfg.web.get("require_account")),
                 billing_enabled=billing.enabled(),
                 free_per_month=int(cfg.billing["free_per_month"]),
+                shop_enabled=shop_active(),
                 **context,
             )
         )
@@ -212,6 +222,15 @@ def create_app(
     @app.get("/pricing", response_class=HTMLResponse)
     def pricing(request: Request):
         return render("web_pricing.html.j2", request)
+
+    # -- gear shop --------------------------------------------------------
+    @app.get("/shop", response_class=HTMLResponse)
+    def shop_page(request: Request):
+        if not shop_active():
+            raise HTTPException(404, "The gear shop isn't set up.")
+        return render(
+            "web_shop.html.j2", request, products=shop.fetch_products(cfg)
+        )
 
     # -- billing ----------------------------------------------------------
     @app.post("/billing/checkout")
@@ -322,6 +341,20 @@ def create_app(
             return JSONResponse({"id": job.id, "url": f"/session/{job.id}"})
         return RedirectResponse(f"/session/{job.id}", status_code=303)
 
+    def gear_for(job: Job) -> list[dict]:
+        """Training gear matched to a finished analysis's flags. Empty when
+        the shop is off, the metrics are unreadable, or nothing matches —
+        the results page simply omits the section."""
+        if job.status != DONE or not job.report_rel or not shop_active():
+            return []
+        metrics = job.session_dir / Path(job.report_rel).parent / "metrics.json"
+        try:
+            payload = json.loads(metrics.read_text(encoding="utf-8"))
+            flags = flag_keys(payload, cfg) if isinstance(payload, dict) else []
+        except (OSError, ValueError):
+            flags = []
+        return shop.recommend(shop.fetch_products(cfg), flags, cfg)
+
     @app.get("/session/{job_id}", response_class=HTMLResponse)
     def status_page(job_id: str, request: Request):
         job = get_job_or_404(job_id, request)
@@ -332,6 +365,7 @@ def create_app(
             done=job.status == DONE,
             failed=job.status == FAILED,
             queue_position=manager.queue_position(job),
+            gear=gear_for(job),
         )
 
     @app.get("/sessions", response_class=HTMLResponse)
