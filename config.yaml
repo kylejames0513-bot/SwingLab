@@ -59,10 +59,18 @@ web:
 
 billing:
   free_per_month: 3          # analyses per calendar month on the free plan
-  pro_per_month: 0           # ...on Pro (0 = unlimited). Price is set in Stripe, not
-                             # here: configure STRIPE_SECRET_KEY, STRIPE_PRICE_ID and
-                             # STRIPE_WEBHOOK_SECRET in the environment to enable
-                             # payments; until then upgrading is shown as coming soon.
+  pro_per_month: 0           # ...on Pro (0 = unlimited). Prices are set in Shopify or
+                             # Stripe, never here. Two ways to sell Pro:
+                             #   Shopify (preferred): set SHOPIFY_STORE_DOMAIN and
+                             #     SHOPIFY_WEBHOOK_SECRET — see shopify_billing.py.
+                             #   Stripe subscription: set STRIPE_SECRET_KEY,
+                             #     STRIPE_PRICE_ID and STRIPE_WEBHOOK_SECRET.
+                             # With neither, upgrading shows as coming soon.
+  shopify_pro_handle: swinglab-pro   # the Pro product's handle on the Shopify store
+                                     # (the /products/<handle> part of its URL)
+  shopify_skus:              # Shopify variant SKU -> days of Pro one unit grants;
+    SL-PRO-1MO: 31           # quantities multiply, so 2x the 1-month SKU = 62 days.
+    SL-PRO-12MO: 365         # Add a SKU here and in Shopify to add a plan length.
 
 shop:
   enabled: true              # gear shop pages + per-analysis recommendations.

@@ -7,10 +7,11 @@ moves files, tracks job state, and renders pages. The JSON endpoints under
 
 Product model (config.yaml): with ``web.require_account`` on, visitors sign
 up (email + password, hashed locally), get ``billing.free_per_month``
-analyses a month, and upgrade to Pro through Stripe for
-``billing.pro_per_month`` (0 = unlimited). Payments are inert until the
-STRIPE_* environment variables are set — see billing.py. Set SWINGLAB_SECRET
-so logins survive restarts.
+analyses a month, and upgrade to Pro for ``billing.pro_per_month``
+(0 = unlimited). Pro is sold two ways, both inert until configured and both
+webhook-driven: through the Shopify store (shopify_billing.py — preferred
+when configured, one checkout for gear and memberships) or through a Stripe
+subscription (billing.py). Set SWINGLAB_SECRET so logins survive restarts.
 
 The optional gear shop (a /shop page plus flag-matched training-aid
 recommendations on finished analyses) is likewise inert until the SHOPIFY_*
@@ -22,6 +23,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import time
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -31,7 +33,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from ..coaching import flag_keys
 from ..config import Config
-from . import billing, shop
+from . import billing, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
 from .users import User, UserStore
 
@@ -109,6 +111,13 @@ def create_app(
     def shop_active() -> bool:
         return bool(cfg.shop.get("enabled")) and shop.enabled()
 
+    def claim_pending_pro(user: User) -> None:
+        """Attach any Shopify Pro purchase made with this email before the
+        account existed (or while logged out). Runs at signup and login."""
+        days = users.pop_pending_grant(user.email)
+        if days:
+            users.grant_pro_days(user.id, days)
+
     def render(template: str, request: Request, **context) -> HTMLResponse:
         return HTMLResponse(
             env.get_template(template).render(
@@ -116,6 +125,11 @@ def create_app(
                 user=current_user(request),
                 require_account=bool(cfg.web.get("require_account")),
                 billing_enabled=billing.enabled(),
+                pro_store_url=(
+                    shopify_billing.buy_url(cfg)
+                    if shopify_billing.enabled()
+                    else None
+                ),
                 free_per_month=int(cfg.billing["free_per_month"]),
                 shop_enabled=shop_active(),
                 **context,
@@ -187,6 +201,7 @@ def create_app(
                 "web_login.html.j2", request, landing=False,
                 error="Wrong email or password.",
             )
+        claim_pending_pro(user)
         request.session["user_id"] = user.id
         return RedirectResponse("/", status_code=303)
 
@@ -198,6 +213,7 @@ def create_app(
             return render(
                 "web_login.html.j2", request, landing=False, error=str(exc)
             )
+        claim_pending_pro(user)
         request.session["user_id"] = user.id
         return RedirectResponse("/", status_code=303)
 
@@ -217,6 +233,11 @@ def create_app(
             usage=manager.usage_this_month(user.id),
             quota_left=quota_left(user),
             upgraded="upgraded" in request.query_params,
+            pro_until_date=(
+                time.strftime("%B %d, %Y", time.localtime(user.pro_until))
+                if user.pro_until > time.time()
+                else None
+            ),
         )
 
     @app.get("/pricing", response_class=HTMLResponse)
@@ -263,6 +284,23 @@ def create_app(
         try:
             billing.handle_webhook(
                 payload, request.headers.get("stripe-signature", ""), users
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc))
+        return JSONResponse({"received": True})
+
+    @app.post("/webhooks/shopify")
+    async def shopify_webhook(request: Request):
+        if not shopify_billing.enabled():
+            raise HTTPException(503, "Shopify billing isn't set up.")
+        payload = await request.body()
+        try:
+            shopify_billing.handle_webhook(
+                payload,
+                request.headers.get("x-shopify-hmac-sha256", ""),
+                request.headers.get("x-shopify-topic", ""),
+                users,
+                cfg,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc))

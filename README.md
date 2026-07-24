@@ -111,25 +111,45 @@ The JSON API under `/api` is the surface a future mobile app talks to:
 With `web.require_account: true` (the shipped default), visitors sign up with
 email + password (hashed locally with scrypt — no external auth service),
 get `billing.free_per_month` analyses per calendar month, and can upgrade to
-a **Pro subscription** for `billing.pro_per_month` (0 = unlimited). Each
+**Pro** for `billing.pro_per_month` (0 = unlimited). Each
 account sees only its own history, and results are private to their owner
 (sessions from before accounts stay reachable by link). Set
 `require_account: false` for an open, no-login instance.
 
-Payments run on Stripe and are **inert until configured** — the pricing page
-shows Pro as "coming soon" until these environment variables are set:
+Pro can be sold two ways, both **inert until configured** — the pricing page
+shows Pro as "coming soon" until one is set up. When both are configured,
+buyers are sent to the Shopify store.
+
+**Selling Pro on the Shopify store** (one checkout for gear and
+memberships): create a product whose variant SKUs map to days of access in
+`billing.shopify_skus` (shipped mapping: `SL-PRO-1MO` → 31 days,
+`SL-PRO-12MO` → 365), point `orders/paid` + `orders/cancelled` webhooks at
+`/webhooks/shopify`, and set:
 
 | Variable | What it is |
 | --- | --- |
 | `SWINGLAB_SECRET` | long random string signing login cookies (always set this) |
+| `SHOPIFY_STORE_DOMAIN` | `yourstore.myshopify.com` (shared with the gear shop) |
+| `SHOPIFY_WEBHOOK_SECRET` | signing secret from Settings → Notifications → Webhooks |
+
+A paid order extends Pro on the account matching the checkout email; a
+purchase made before signup is claimed automatically when that email creates
+an account or logs in. Replayed webhooks never double-grant, cancelled
+orders take their days back, and Shopify's Subscriptions app works
+unchanged (each billing cycle's order re-extends access).
+
+**Selling Pro as a Stripe subscription:**
+
+| Variable | What it is |
+| --- | --- |
 | `STRIPE_SECRET_KEY` | from Stripe → Developers → API keys |
 | `STRIPE_PRICE_ID` | the `price_...` id of your recurring Pro price |
 | `STRIPE_WEBHOOK_SECRET` | from the webhook endpoint you point at `/webhooks/stripe` |
 | `PUBLIC_BASE_URL` | e.g. `https://yourapp.up.railway.app` (checkout redirects) |
 
-The price itself lives in Stripe — change it in their dashboard, never in
-code. Checkout and subscription management happen on Stripe's hosted pages;
-plan state only ever changes via the signed webhook.
+Either way, prices live in Shopify/Stripe — change them in their dashboards,
+never in code. Checkout happens on their hosted pages, and plan state only
+ever changes via the signed webhooks.
 
 ### Gear shop (Shopify)
 
