@@ -1,0 +1,104 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Progress{% endblock %}
+{% block style %}
+  .lead { text-align: center; margin-bottom: 20px; }
+  .lead h2 { font-size: 1.7rem; margin: 0 0 6px; }
+  .lead .hint { max-width: 480px; margin: 0 auto; }
+  .sentence { text-align: center; color: #333; font-size: 0.95rem;
+              margin: 10px auto 0; max-width: 480px; }
+  .metric-card { background: white; border: 1px solid #e0e0e0;
+                 border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
+  .metric-head { display: flex; justify-content: space-between;
+                 align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .metric-head h3 { margin: 0; font-size: 1.05rem; }
+  .bench { color: #666; font-size: 0.78rem; }
+  .trend-svg { width: 100%; height: auto; display: block; margin: 10px 0 8px; }
+  .stats { display: flex; gap: 26px; flex-wrap: wrap; }
+  .stat .k { display: block; color: #777; font-size: 0.7rem;
+             text-transform: uppercase; letter-spacing: 0.06em; }
+  .stat .v { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas,
+             monospace; font-size: 1rem; font-weight: 600; }
+  .stat .v.good { color: var(--primary); }
+  .stat .v.bad { color: var(--accent); }
+  @media (max-width: 480px) {
+    .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+             gap: 12px 16px; }
+  }
+  .flags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+  .flag-chip { background: #f1f1f1; border-radius: 999px; padding: 4px 12px;
+               font-size: 0.82rem; color: #444; }
+  .flag-chip b { color: var(--primary); }
+  .cta { text-align: center; margin-top: 22px; }
+{% endblock %}
+{% block main %}
+  <div class="lead">
+    <h2>Progress</h2>
+    {% if session_count >= 2 %}
+    <p class="hint">{{ session_count }} measured sessions{% if span %} ·
+      {{ span }}{% endif %}. Each dot is one session's mean, oldest to newest;
+      the dashed line is the flag threshold, and the tinted side of it is the
+      flag zone.</p>
+    {% if sentence %}<p class="sentence">{{ sentence }}.</p>{% endif %}
+    {% endif %}
+  </div>
+
+  {% if session_count == 0 %}
+  <div class="card">
+    <h2>Nothing to chart yet</h2>
+    <p>Progress starts with a baseline. Film a few swings, upload the clip,
+      and every session after that lands here as a dot on the line — tempo,
+      sway, and the rest, tracked honestly across weeks. No numbers get
+      invented in the meantime.</p>
+    <a class="button" href="/">Film your baseline</a>
+  </div>
+  {% elif session_count == 1 %}
+  <div class="card">
+    <h2>Baseline on the books</h2>
+    <p>One measured session so far — its numbers are on
+      <a href="/session/{{ latest_job_id }}/report">its report</a>. A trend
+      needs a second point: re-film this week (same club, same camera height,
+      same angle) and the lines start here.</p>
+    <a class="button" href="/">Re-film this week</a>
+  </div>
+  {% else %}
+    {% for c in cards %}
+    <div class="metric-card">
+      <div class="metric-head">
+        <h3>{{ c.label }}</h3>
+        {% if c.benchmark_text %}<span class="bench">{{ c.benchmark_text }}</span>{% endif %}
+      </div>
+      {{ c.chart | safe }}
+      <div class="stats">
+        <div class="stat"><span class="k">Latest</span><span class="v">{{ c.latest }}</span></div>
+        <div class="stat"><span class="k">Best</span><span class="v">{{ c.best }}</span></div>
+        <div class="stat"><span class="k">Vs first</span><span class="v {{ c.delta_class }}">{{ c.delta }}</span></div>
+        <div class="stat"><span class="k">Sessions</span><span class="v">{{ c.sessions }}</span></div>
+      </div>
+    </div>
+    {% endfor %}
+
+    <div class="card">
+      <h3 style="margin-top: 0">What keeps getting flagged</h3>
+      {% if flags_strip %}
+      <div class="flags">
+        {% for f in flags_strip %}
+        <span class="flag-chip">{{ f.label }} <b>&times;{{ f.count }}</b> of {{ session_count }}</span>
+        {% endfor %}
+      </div>
+      <p class="hint">Counted once per session it fired in. The practice plan
+        on each report targets these, with a re-film number that says when
+        it's fixed.</p>
+      {% else %}
+      <p class="hint">No flags across these sessions — keep the baseline
+        current so drift shows up early.</p>
+      {% endif %}
+      <div class="cta">
+        <a class="button" href="/">Re-film this week</a>
+        <p class="hint">The chart only moves when you film — same club, same
+          camera height, same angle.</p>
+      </div>
+    </div>
+  {% endif %}
+
+  <p class="disclaimer">{{ brand.disclaimer }}</p>
+{% endblock %}

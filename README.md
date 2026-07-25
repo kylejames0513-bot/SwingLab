@@ -233,6 +233,42 @@ Either way, prices live in Shopify/Stripe — change them in their dashboards,
 never in code. Checkout happens on their hosted pages, and plan state only
 ever changes via the signed webhooks.
 
+### Progress and weekly practice plans
+
+Two retention surfaces, both built from numbers the pipeline already wrote —
+nothing is ever estimated after the fact:
+
+**Progress dashboard (`/progress`)** — every logged-in account gets one card
+per metric with data: an inline-SVG trend chart of the session means (dots on
+sessions, dashed line + shaded band at the flag threshold), latest / best /
+change-vs-first stats, and a strip showing which flags keep firing across
+sessions. Legacy sessions that predate the newer metrics simply contribute
+the fields they have; sessions with no readable numbers are skipped. With
+fewer than two measured sessions the page says so honestly instead of
+charting a single dot. Requires `web.require_account: true` (there is no
+per-user history to chart in open mode — the route 404s).
+
+**Weekly practice-plan email** — the "one drill a week" promise, made real,
+and strictly opt-in. It only ever sends when ALL of these hold:
+
+- SMTP is configured (`SWINGLAB_SMTP_URL` + `SWINGLAB_MAIL_FROM`, the same
+  variables as verification/reset email) — with SMTP unset the feature has
+  zero behavior;
+- `web.digest_enabled: true` in config.yaml (the shipped default);
+- the user asked for it — an **unchecked** "Email me one drill a week" box at
+  signup, a toggle on the account page, and a signed one-click unsubscribe
+  link in every email (works logged out).
+
+Each email is self-contained HTML (inline styles, brand colors, no images or
+external assets): the drills for the latest finished session's flags — name,
+dosage, and the same pass-mark numbers the report prints — plus one honest
+progress line once two sessions exist, and links to the latest report and
+`/progress`. An hourly scheduler thread sends at most one email per user per
+~week (6.5 days), only to accounts with at least one finished session, and
+stamps the send time *before* attempting delivery so a crash can never
+double-send within a week. Set `PUBLIC_BASE_URL` so the email's links are
+absolute.
+
 ### Account sync with Shopify
 
 Accounts start on the store: a customer created in Shopify automatically
@@ -374,7 +410,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
-| `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account` |
+| `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account`, weekly digest on/off (`digest_enabled`) |
 | `billing` | free/Pro analyses per month (price lives in Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 

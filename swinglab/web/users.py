@@ -63,7 +63,9 @@ CREATE TABLE IF NOT EXISTS users (
     subscription_status TEXT NOT NULL DEFAULT 'none',
     pro_until           REAL NOT NULL DEFAULT 0,
     shopify_customer_id TEXT,
-    source              TEXT
+    source              TEXT,
+    digest_opt_in       INTEGER NOT NULL DEFAULT 0,
+    digest_last_sent_at REAL
 );
 CREATE TABLE IF NOT EXISTS pro_grants (
     email TEXT PRIMARY KEY,
@@ -122,6 +124,8 @@ class User:
     shopify_customer_id: str | None = None
     source: str | None = None  # 'shopify' for accounts born from a customer webhook
     has_password: bool = True  # False = unclaimed store stub (cannot log in)
+    digest_opt_in: bool = False  # weekly practice-plan email consent (off by default)
+    digest_last_sent_at: float | None = None  # last digest send (claimed pre-send)
 
     @property
     def is_pro(self) -> bool:
@@ -148,6 +152,9 @@ class UserStore:
                 ("pro_until", "pro_until REAL NOT NULL DEFAULT 0"),
                 ("shopify_customer_id", "shopify_customer_id TEXT"),
                 ("source", "source TEXT"),
+                # pre-digest files lack the weekly-email consent columns
+                ("digest_opt_in", "digest_opt_in INTEGER NOT NULL DEFAULT 0"),
+                ("digest_last_sent_at", "digest_last_sent_at REAL"),
             ):
                 if name not in columns:
                     self._conn.execute(f"ALTER TABLE users ADD COLUMN {ddl}")
@@ -444,6 +451,40 @@ class UserStore:
             self._conn.commit()
         return (row["email"], row["days"])
 
+    # -- weekly digest consent (see swinglab.web.digest) ------------------
+    def set_digest_opt_in(self, user_id: str, opt_in: bool) -> None:
+        """Flip the weekly practice-plan email consent (signup checkbox,
+        account toggle, and the one-click unsubscribe link)."""
+        with self._lock:
+            self._conn.execute(
+                "UPDATE users SET digest_opt_in = ? WHERE id = ?",
+                (1 if opt_in else 0, user_id),
+            )
+            self._conn.commit()
+
+    def digest_optins(self) -> list[User]:
+        """Everyone who asked for the weekly email, oldest account first."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM users WHERE digest_opt_in = 1 ORDER BY created_at"
+            ).fetchall()
+        return [self._from_row(row) for row in rows]
+
+    def claim_digest_send(self, user_id: str, now: float, interval_s: float) -> bool:
+        """Atomically claim this week's digest send by stamping
+        digest_last_sent_at BEFORE any email goes out. True = this caller
+        owns the send. The stamp-first order means a crash between claim
+        and send skips a week rather than ever double-sending within one."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE users SET digest_last_sent_at = ?"
+                " WHERE id = ? AND digest_opt_in = 1"
+                " AND (digest_last_sent_at IS NULL OR digest_last_sent_at <= ?)",
+                (now, user_id, now - interval_s),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
     # -- one-time email codes (claim verification, password reset) --------
     @staticmethod
     def _hash_code(email: str, purpose: str, code: str) -> str:
@@ -524,4 +565,6 @@ class UserStore:
             shopify_customer_id=row["shopify_customer_id"],
             source=row["source"],
             has_password=bool(row["password_hash"]),
+            digest_opt_in=bool(row["digest_opt_in"]),
+            digest_last_sent_at=row["digest_last_sent_at"],
         )

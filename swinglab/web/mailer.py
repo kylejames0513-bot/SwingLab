@@ -59,10 +59,11 @@ def _parse_url(url: str) -> tuple[str, str, int, str | None, str | None]:
     return scheme, host, port, username, password
 
 
-def send(to: str, subject: str, body: str) -> None:
-    """Send one plain-text message. Raises RuntimeError when email isn't
-    configured — callers must check ``enabled()`` and keep their no-email
-    behavior instead of calling blind."""
+def send(to: str, subject: str, body: str, html: bool = False) -> None:
+    """Send one message — plain text by default, a self-contained HTML body
+    with ``html=True`` (the weekly digest). Raises RuntimeError when email
+    isn't configured — callers must check ``enabled()`` and keep their
+    no-email behavior instead of calling blind."""
     if not enabled():
         raise RuntimeError(
             "Email isn't configured — set SWINGLAB_SMTP_URL and"
@@ -75,7 +76,10 @@ def send(to: str, subject: str, body: str) -> None:
     message["From"] = os.environ["SWINGLAB_MAIL_FROM"]
     message["To"] = to
     message["Subject"] = subject
-    message.set_content(body)
+    if html:
+        message.set_content(body, subtype="html")
+    else:
+        message.set_content(body)
 
     client_cls = smtplib.SMTP_SSL if scheme == "smtps" else smtplib.SMTP
     with client_cls(host, port, timeout=30) as server:

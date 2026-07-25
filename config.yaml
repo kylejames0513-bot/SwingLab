@@ -86,6 +86,14 @@ web:
   require_account: true      # visitors must sign up before analyzing; false = open access
                              # (set SWINGLAB_SECRET in the environment so logins
                              # survive restarts)
+  digest_enabled: true       # weekly practice-plan email ("one drill a week").
+                             # Even when true it only ever sends when SMTP is
+                             # configured (SWINGLAB_SMTP_URL + SWINGLAB_MAIL_FROM)
+                             # AND the account ticked the opt-in — unchecked by
+                             # default at signup, toggleable on /account, one-click
+                             # unsubscribe link in every email. false switches the
+                             # scheduler off entirely. Set PUBLIC_BASE_URL so the
+                             # email's report/progress/unsubscribe links are absolute.
 
 billing:
   free_per_month: 3          # analyses per calendar month on the free plan
