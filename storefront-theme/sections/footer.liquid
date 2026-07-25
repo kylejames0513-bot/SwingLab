@@ -1,0 +1,305 @@
+{%- liquid
+  assign menu = section.settings.menu
+  assign app_url = section.settings.app_url
+
+  comment
+    A menu whose top-level links have children replaces the built-in
+    Shop / Learn / Support columns. A flat menu keeps the built-in
+    columns and renders as a compact link row above the fine print.
+  endcomment
+  assign menu_is_nested = false
+  if menu != blank
+    for link in menu.links
+      if link.links.size > 0
+        assign menu_is_nested = true
+      endif
+    endfor
+  endif
+-%}
+<footer class="sl-footer">
+  <div class="sl-wrap">
+    <div class="sl-footer__grid">
+      <div class="sl-footer__brand">
+        <p class="sl-footer__wordmark">{{ section.settings.logo_text | default: 'SWINGLAB' }}</p>
+        {%- if section.settings.tagline != blank -%}
+          <p class="sl-footer__tagline">{{ section.settings.tagline }}</p>
+        {%- endif -%}
+        {%- if app_url != blank -%}
+          <a class="sl-footer__applink" href="{{ app_url }}" target="_blank" rel="noopener">Open the app</a>
+        {%- endif -%}
+      </div>
+
+      {%- if menu_is_nested -%}
+        {%- for link in menu.links -%}
+          {%- if link.links.size > 0 -%}
+            <nav class="sl-footer__col" aria-label="{{ link.title | escape }}">
+              <p class="sl-footer__head">{{ link.title }}</p>
+              {%- for child in link.links -%}
+                <a class="sl-footer__link" href="{{ child.url }}">{{ child.title }}</a>
+              {%- endfor -%}
+            </nav>
+          {%- endif -%}
+        {%- endfor -%}
+      {%- else -%}
+        <nav class="sl-footer__col" aria-label="Shop">
+          <p class="sl-footer__head">Shop</p>
+          <a class="sl-footer__link" href="/collections/swinglab-gear">Training gear</a>
+          <a class="sl-footer__link" href="/products/swinglab-pro">Pro Membership</a>
+          <a class="sl-footer__link" href="/products/swinglab-performance-cap">Performance Cap</a>
+        </nav>
+        <nav class="sl-footer__col" aria-label="Learn">
+          <p class="sl-footer__head">Learn</p>
+          <a class="sl-footer__link" href="/pages/the-swinglab-method">The Method</a>
+          <a class="sl-footer__link" href="/pages/how-swinglab-works">How SwingLab Works</a>
+          <a class="sl-footer__link" href="/pages/faq">FAQ</a>
+        </nav>
+        <nav class="sl-footer__col" aria-label="Support">
+          <p class="sl-footer__head">Support</p>
+          <a class="sl-footer__link" href="/pages/shipping-returns">Shipping &amp; Returns</a>
+          <a class="sl-footer__link" href="/pages/about">About</a>
+        </nav>
+      {%- endif -%}
+    </div>
+
+    <div class="sl-footer__newsletter">
+      <div class="sl-footer__news-copy">
+        <p class="sl-footer__head">{{ section.settings.newsletter_heading | default: 'The practice letter' }}</p>
+        <p class="sl-footer__news-sub">{{ section.settings.newsletter_text | default: 'One drill a week. No noise.' }}</p>
+      </div>
+      {% form 'customer', class: 'sl-footer__form' %}
+        <input type="hidden" name="contact[tags]" value="newsletter">
+        {%- if form.posted_successfully? -%}
+          <p class="sl-footer__form-ok">Signed up. The first drill lands in your inbox this week.</p>
+        {%- else -%}
+          <label class="visually-hidden" for="sl-footer-email">Email address</label>
+          <input
+            id="sl-footer-email"
+            class="sl-footer__input"
+            type="email"
+            name="contact[email]"
+            placeholder="you@example.com"
+            autocomplete="email"
+            autocorrect="off"
+            autocapitalize="off"
+            required
+          >
+          <button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Sign up</button>
+          {%- if form.errors -%}
+            <p class="sl-footer__form-err">Please enter a valid email address.</p>
+          {%- endif -%}
+        {%- endif -%}
+      {% endform %}
+    </div>
+
+    {%- if menu != blank and menu_is_nested == false and menu.links.size > 0 -%}
+      <nav class="sl-footer__quick" aria-label="Footer links">
+        {%- for link in menu.links -%}
+          <a class="sl-footer__link" href="{{ link.url }}">{{ link.title }}</a>
+        {%- endfor -%}
+      </nav>
+    {%- endif -%}
+
+    <div class="sl-footer__fine">
+      {%- if section.settings.disclaimer != blank -%}
+        <p class="sl-footer__disclaimer">{{ section.settings.disclaimer }}</p>
+      {%- endif -%}
+      <p class="sl-footer__copyright">&copy; {{ 'now' | date: '%Y' }} {{ shop.name }}</p>
+    </div>
+  </div>
+</footer>
+
+{% stylesheet %}
+.sl-footer {
+  background: var(--sl-footer);
+  color: var(--sl-footer-ink);
+  padding-top: clamp(48px, 7vw, 80px);
+  padding-bottom: clamp(28px, 4vw, 40px);
+  font-size: 14.5px;
+}
+.sl-footer__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 36px;
+  padding-bottom: clamp(32px, 5vw, 56px);
+}
+@media (min-width: 640px) {
+  .sl-footer__grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 980px) {
+  .sl-footer__grid { grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 32px; }
+}
+.sl-footer__brand { max-width: 340px; }
+.sl-footer__wordmark {
+  margin: 0 0 12px;
+  font-weight: 900;
+  font-size: 19px;
+  letter-spacing: 0.08em;
+  color: var(--sl-green-ink);
+}
+.sl-footer__tagline {
+  margin: 0 0 16px;
+  line-height: 1.6;
+  color: var(--sl-footer-ink);
+}
+.sl-footer__applink {
+  display: inline-block;
+  color: var(--sl-green-ink);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 14px;
+  border-bottom: 1px solid var(--sl-orange);
+  padding-bottom: 2px;
+}
+.sl-footer__applink:hover { color: #ffffff; }
+.sl-footer__col {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-start;
+}
+.sl-footer__head {
+  margin: 0 0 4px;
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #6d7d72;
+}
+.sl-footer__link {
+  color: var(--sl-footer-ink);
+  text-decoration: none;
+  font-size: 14.5px;
+}
+.sl-footer__link:hover { color: var(--sl-green-ink); }
+.sl-footer__newsletter {
+  border-top: 1px solid rgba(159, 176, 164, 0.18);
+  padding: 26px 0 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 18px 40px;
+  align-items: center;
+  justify-content: space-between;
+}
+.sl-footer__news-copy .sl-footer__head { margin: 0 0 6px; }
+.sl-footer__news-sub {
+  margin: 0;
+  color: var(--sl-green-ink);
+  font-size: 16px;
+  font-weight: 600;
+}
+.sl-footer__form {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  flex: 0 1 420px;
+  min-width: min(100%, 300px);
+}
+.sl-footer__input {
+  flex: 1 1 200px;
+  min-width: 0;
+  font: inherit;
+  font-size: 14.5px;
+  color: var(--sl-green-ink);
+  background: rgba(233, 242, 236, 0.06);
+  border: 1px solid rgba(159, 176, 164, 0.35);
+  border-radius: 999px;
+  padding: 11px 18px;
+}
+.sl-footer__input::placeholder { color: rgba(159, 176, 164, 0.75); }
+.sl-footer__input:focus {
+  outline: 2px solid var(--sl-orange);
+  outline-offset: 2px;
+  border-color: transparent;
+}
+.sl-footer__form-ok { margin: 0; color: var(--sl-green-ink); }
+.sl-footer__form-err {
+  margin: 4px 0 0;
+  width: 100%;
+  font-size: 13px;
+  color: #e8a06a;
+}
+.sl-footer__quick {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 22px;
+  border-top: 1px solid rgba(159, 176, 164, 0.18);
+  padding: 20px 0 24px;
+}
+.sl-footer__fine {
+  border-top: 1px solid rgba(159, 176, 164, 0.18);
+  padding-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 32px;
+  justify-content: space-between;
+  align-items: baseline;
+}
+.sl-footer__disclaimer {
+  margin: 0;
+  font-size: 12.5px;
+  font-style: italic;
+  color: #6d7d72;
+  max-width: 640px;
+}
+.sl-footer__copyright {
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  color: #6d7d72;
+  white-space: nowrap;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Footer",
+  "settings": [
+    {
+      "type": "text",
+      "id": "logo_text",
+      "label": "Wordmark",
+      "default": "SWINGLAB"
+    },
+    {
+      "type": "text",
+      "id": "tagline",
+      "label": "Positioning line",
+      "default": "One phone video in. Tour-grade swing data out."
+    },
+    {
+      "type": "text",
+      "id": "app_url",
+      "label": "App URL",
+      "default": "https://swinglab-production.up.railway.app",
+      "info": "The \"Open the app\" link points here. Leave empty to hide it."
+    },
+    {
+      "type": "link_list",
+      "id": "menu",
+      "label": "Footer menu (optional)",
+      "info": "A menu with nested links replaces the built-in Shop / Learn / Support columns. A flat menu renders as a compact link row above the fine print."
+    },
+    {
+      "type": "text",
+      "id": "newsletter_heading",
+      "label": "Newsletter heading",
+      "default": "The practice letter"
+    },
+    {
+      "type": "text",
+      "id": "newsletter_text",
+      "label": "Newsletter supporting line",
+      "default": "One drill a week. No noise."
+    },
+    {
+      "type": "textarea",
+      "id": "disclaimer",
+      "label": "Disclaimer",
+      "default": "Automated estimates from a single camera. Not a substitute for instruction from a teaching professional."
+    }
+  ]
+}
+{% endschema %}

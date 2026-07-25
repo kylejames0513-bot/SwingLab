@@ -1,0 +1,26 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-product",
+      "settings": {
+        "flags_label": "Recommended when your report flags",
+        "trust_1": "Ships in 1-2 business days, tracked",
+        "trust_2": "30-day returns on unused gear",
+        "trust_3": "Tag-matched to your swing report"
+      }
+    },
+    "related": {
+      "type": "related-products",
+      "settings": {
+        "heading": "Pairs with your practice plan",
+        "collection": "swinglab-gear",
+        "max_products": 4,
+        "hide_for_membership": true
+      }
+    }
+  },
+  "order": [
+    "main",
+    "related"
+  ]
+}

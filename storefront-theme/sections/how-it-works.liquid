@@ -1,0 +1,173 @@
+<section id="{{ section.settings.anchor | default: 'how' }}" class="sl-how">
+  <div class="sl-wrap sl-reveal">
+    <h2 class="sl-how__title">{{ section.settings.heading | default: 'Film. Upload. Improve.' }}</h2>
+    <div class="sl-how__grid">
+      {%- for block in section.blocks -%}
+        <div class="sl-step"{{ block.shopify_attributes }}>
+          {%- assign step_num = block.settings.number | default: forloop.index -%}
+          <p class="sl-step__num">{{ step_num }}</p>
+          <h3 class="sl-step__title">{{ block.settings.title }}</h3>
+          <p class="sl-step__body">{{ block.settings.body }}</p>
+          {%- if block.settings.caption != blank -%}
+            <p class="sl-step__caption">{{ block.settings.caption }}</p>
+          {%- endif -%}
+        </div>
+      {%- endfor -%}
+    </div>
+    {%- if section.settings.footer_note != blank or section.settings.cta_label != blank -%}
+      <div class="sl-how__foot">
+        {%- if section.settings.footer_note != blank -%}
+          <p class="sl-how__foot-note">{{ section.settings.footer_note }}</p>
+        {%- endif -%}
+        {%- if section.settings.cta_label != blank -%}
+          <a href="{{ section.settings.cta_url | default: '#' }}" class="sl-btn sl-how__btn">{{ section.settings.cta_label }}</a>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-how {
+  background: var(--sl-green);
+  color: var(--sl-green-ink);
+  padding: clamp(48px, 7vw, 88px) var(--sl-pad-x);
+}
+.sl-how__title {
+  margin: 0;
+  font-size: clamp(26px, 3vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.sl-how__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+  margin-top: 32px;
+}
+.sl-step {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(233, 242, 236, 0.22);
+  border-radius: var(--sl-radius);
+  padding: 24px;
+}
+.sl-step__num {
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-orange);
+}
+.sl-step__title {
+  margin: 12px 0 8px;
+  font-size: 19px;
+  font-weight: 700;
+}
+.sl-step__body {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.55;
+  color: rgba(233, 242, 236, 0.75);
+}
+.sl-step__caption {
+  margin: 0;
+  margin-top: auto;
+  padding-top: 14px;
+  border-top: 1px solid rgba(233, 242, 236, 0.16);
+  font-family: var(--sl-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(233, 242, 236, 0.55);
+}
+.sl-step__body { margin-bottom: 14px; }
+.sl-how__foot {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid rgba(233, 242, 236, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  flex-wrap: wrap;
+}
+.sl-how__foot-note {
+  margin: 0;
+  font-size: 15px;
+  color: rgba(233, 242, 236, 0.8);
+}
+.sl-how__btn {
+  background: transparent;
+  color: var(--sl-green-ink);
+  border-color: rgba(233, 242, 236, 0.55);
+}
+.sl-how__btn:hover {
+  background: var(--sl-bg);
+  color: var(--sl-green);
+  border-color: var(--sl-bg);
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "How it works",
+  "settings": [
+    { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "how" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Film. Upload. Improve." },
+    { "type": "text", "id": "footer_note", "label": "Footer note", "default": "Average time from upload to report: a few minutes." },
+    { "type": "text", "id": "cta_label", "label": "Footer button label", "default": "Try it on a clip" },
+    { "type": "url", "id": "cta_url", "label": "Footer button link" }
+  ],
+  "blocks": [
+    {
+      "type": "step",
+      "name": "Step",
+      "settings": [
+        { "type": "text", "id": "number", "label": "Step number", "default": "01" },
+        { "type": "text", "id": "title", "label": "Title", "default": "Film a few swings" },
+        { "type": "textarea", "id": "body", "label": "Body", "default": "Phone at hip height, face-on or down the line. Ball on a tee. That's it." },
+        { "type": "text", "id": "caption", "label": "Caption (small mono line)", "info": "Optional specimen-style label under the body." }
+      ]
+    }
+  ],
+  "max_blocks": 6,
+  "presets": [
+    {
+      "name": "How it works",
+      "blocks": [
+        {
+          "type": "step",
+          "settings": {
+            "number": "01",
+            "title": "Film a few swings",
+            "body": "Phone at hip height, face-on or down the line. Ball on a tee. That's it.",
+            "caption": "HIP HEIGHT · FACE-ON OR DTL"
+          }
+        },
+        {
+          "type": "step",
+          "settings": {
+            "number": "02",
+            "title": "Upload the clip",
+            "body": "Straight from your camera roll — no trimming or editing. Every swing in the clip is found automatically.",
+            "caption": "STRIKES FOUND BY AUDIO"
+          }
+        },
+        {
+          "type": "step",
+          "settings": {
+            "number": "03",
+            "title": "Read your report",
+            "body": "Tempo, head sway and hip slide per swing, key-position frames, quarter-speed slow motion, and coaching notes in plain English.",
+            "caption": "TEMPO · SWAY · SLIDE"
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

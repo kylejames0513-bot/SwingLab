@@ -1,0 +1,260 @@
+{%- liquid
+  assign cart_count = cart.item_count | default: 0
+  assign menu = section.settings.menu
+  assign app_url = section.settings.app_url
+-%}
+<header class="sl-header" data-sl-header>
+  <a href="{{ routes.root_url }}" class="sl-header__logo">
+    {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
+    {%- if logo -%}
+      {{ logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
+    {%- else -%}
+      {{ section.settings.logo_text | default: shop.name }}
+    {%- endif -%}
+  </a>
+
+  <nav class="sl-header__nav" id="sl-nav" aria-label="Main navigation">
+    {%- if menu != blank and menu.links.size > 0 -%}
+      {%- for link in menu.links -%}
+        <a href="{{ link.url }}" class="sl-header__link{% if link.current %} is-current{% endif %}"{% if link.current %} aria-current="page"{% endif %}>{{ link.title }}</a>
+      {%- endfor -%}
+    {%- else -%}
+      <a href="/collections/swinglab-gear" class="sl-header__link">Gear</a>
+      <a href="/pages/the-swinglab-method" class="sl-header__link">The Method</a>
+      <a href="/products/swinglab-pro" class="sl-header__link">Pro Membership</a>
+      <a href="/pages/faq" class="sl-header__link">FAQ</a>
+    {%- endif -%}
+    {%- if app_url != blank -%}
+      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--outline sl-header__app sl-header__app--nav" target="_blank" rel="noopener">Open the app</a>
+    {%- endif -%}
+  </nav>
+
+  <div class="sl-header__actions">
+    {%- if app_url != blank -%}
+      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--outline sl-header__app sl-header__app--bar" target="_blank" rel="noopener">Open the app</a>
+    {%- endif -%}
+    <a href="{{ routes.cart_url }}" class="sl-header__cart" aria-label="Cart, {{ cart_count }} {% if cart_count == 1 %}item{% else %}items{% endif %}">
+      Cart
+      <span class="sl-header__cart-count" data-cart-count aria-hidden="true">{{ cart_count }}</span>
+    </a>
+    <button class="sl-header__toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sl-nav" data-nav-toggle>
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+</header>
+
+{% stylesheet %}
+.sl-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 3vw, 32px);
+  height: 72px;
+  padding: 0 var(--sl-pad-x);
+  background: rgba(247, 245, 240, 0.82);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--sl-border);
+}
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .sl-header { background: var(--sl-bg); }
+}
+.sl-header__logo {
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+  color: var(--sl-green);
+  text-decoration: none;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+.sl-header__logo-img { height: 34px; width: auto; display: block; }
+.sl-header__nav {
+  display: flex;
+  gap: clamp(18px, 2.4vw, 30px);
+  align-items: center;
+  margin-left: auto;
+}
+.sl-header__link {
+  color: var(--sl-ink);
+  text-decoration: none;
+  font-size: 15px;
+  font-weight: 500;
+  padding: 4px 0;
+}
+.sl-header__link:hover { color: var(--sl-green-btn); }
+.sl-header__link.is-current {
+  color: var(--sl-green);
+  font-weight: 700;
+  box-shadow: inset 0 -2px 0 var(--sl-orange);
+}
+.sl-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-shrink: 0;
+}
+.sl-header__app { white-space: nowrap; }
+.sl-header__app--nav { display: none; }
+.sl-header__cart {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--sl-ink);
+  text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1.5px solid var(--sl-ink);
+  border-radius: 999px;
+  padding: 6px 8px 6px 15px;
+  white-space: nowrap;
+  transition: border-color .15s ease, color .15s ease;
+}
+.sl-header__cart:hover { border-color: var(--sl-green-btn); color: var(--sl-green-btn); }
+.sl-header__cart-count {
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  min-width: 22px;
+  text-align: center;
+  background: var(--sl-green);
+  color: var(--sl-green-ink);
+  border-radius: 999px;
+  padding: 5px 6px;
+}
+.sl-header__toggle {
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  width: 42px;
+  height: 42px;
+  background: none;
+  border: 0;
+  cursor: pointer;
+  padding: 9px;
+}
+.sl-header__toggle span {
+  display: block;
+  height: 2px;
+  width: 100%;
+  background: var(--sl-ink);
+  border-radius: 2px;
+  transition: transform .2s ease, opacity .2s ease;
+}
+.sl-header__toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+.sl-header__toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+.sl-header__toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+@media (prefers-reduced-motion: reduce) {
+  .sl-header__toggle span { transition: none; }
+}
+
+@media (max-width: 849px) {
+  .sl-header__app--bar { display: none; }
+  .sl-header__toggle { display: flex; }
+  .sl-header__nav {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    display: none;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    margin: 0;
+    padding: 8px var(--sl-pad-x) 24px;
+    background: var(--sl-bg);
+    border-bottom: 1px solid var(--sl-border);
+    box-shadow: 0 18px 30px -18px rgba(15, 42, 27, 0.25);
+  }
+  .sl-header__nav.is-open { display: flex; }
+  .sl-header__link { font-size: 17px; padding: 12px 0; width: 100%; }
+  .sl-header__link.is-current { box-shadow: none; color: var(--sl-orange); }
+  .sl-header__app--nav { display: inline-block; margin-top: 14px; }
+}
+{% endstylesheet %}
+
+<script>
+  (function () {
+    var header = document.querySelector('[data-sl-header]');
+    if (!header) return;
+    var btn = header.querySelector('[data-nav-toggle]');
+    var nav = header.querySelector('#sl-nav');
+
+    function setOpen(open) {
+      nav.classList.toggle('is-open', open);
+      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+
+    if (btn && nav) {
+      btn.addEventListener('click', function () {
+        setOpen(!nav.classList.contains('is-open'));
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' && nav.classList.contains('is-open')) {
+          setOpen(false);
+          btn.focus();
+        }
+      });
+      document.addEventListener('click', function (e) {
+        if (nav.classList.contains('is-open') && !header.contains(e.target)) setOpen(false);
+      });
+    }
+
+    /* live cart count: refreshed on back/forward-cache restores, and on a
+       "cart:change" event any section may dispatch after a fetch add-to-cart
+       (detail.item_count optional — omitted means re-fetch) */
+    var count = header.querySelector('[data-cart-count]');
+    function refreshCount() {
+      fetch('{{ routes.cart_url }}.js', { headers: { 'Accept': 'application/json' } })
+        .then(function (r) { return r.ok ? r.json() : null; })
+        .then(function (c) { if (c && count) count.textContent = c.item_count; })
+        .catch(function () {});
+    }
+    window.addEventListener('pageshow', function (e) { if (e.persisted) refreshCount(); });
+    document.addEventListener('cart:change', function (e) {
+      if (e.detail && typeof e.detail.item_count !== 'undefined' && count) {
+        count.textContent = e.detail.item_count;
+      } else {
+        refreshCount();
+      }
+    });
+  })();
+</script>
+
+{% schema %}
+{
+  "name": "Header",
+  "settings": [
+    {
+      "type": "image_picker",
+      "id": "logo",
+      "label": "Logo image",
+      "info": "Defaults to the swinglab-logo.png file already in Content → Files."
+    },
+    {
+      "type": "text",
+      "id": "logo_text",
+      "label": "Logo wordmark (fallback)",
+      "default": "SWINGLAB"
+    },
+    {
+      "type": "link_list",
+      "id": "menu",
+      "label": "Navigation menu",
+      "info": "Leave empty to use the default Gear / The Method / Pro Membership / FAQ links."
+    },
+    {
+      "type": "text",
+      "id": "app_url",
+      "label": "App URL",
+      "default": "https://swinglab-production.up.railway.app",
+      "info": "The \"Open the app\" button links here. Leave empty to hide the button."
+    }
+  ]
+}
+{% endschema %}

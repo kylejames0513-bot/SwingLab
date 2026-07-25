@@ -1,0 +1,129 @@
+<section class="sl-report sl-wrap">
+  <div class="sl-report__copy sl-reveal">
+    <h2 class="sl-h2">{{ section.settings.heading | default: 'Numbers you can act on' }}</h2>
+    {%- if section.settings.body != blank -%}
+      <p class="sl-report__body">{{ section.settings.body }}</p>
+    {%- endif -%}
+    {%- if section.blocks.size > 0 -%}
+      <ul class="sl-check-list sl-report__list">
+        {%- for block in section.blocks -%}
+          <li{{ block.shopify_attributes }}>{{ block.settings.text }}</li>
+        {%- endfor -%}
+      </ul>
+    {%- endif -%}
+  </div>
+
+  <div class="sl-report__media-wrap sl-reveal sl-reveal--d1">
+    <div class="sl-media sl-report__media">
+      {% render 'media-placeholder',
+        image: section.settings.image,
+        ratio_w: 560, ratio_h: 360,
+        label: 'swing report screenshot',
+        sublabel: '(metrics table + key-position strip)',
+        alt: section.settings.heading %}
+    </div>
+    {%- if section.settings.detail_image != blank -%}
+      <div class="sl-report__detail">
+        <img
+          src="{{ section.settings.detail_image | image_url: width: 600 }}"
+          srcset="{{ section.settings.detail_image | image_url: width: 400 }} 400w, {{ section.settings.detail_image | image_url: width: 600 }} 600w, {{ section.settings.detail_image | image_url: width: 900 }} 900w"
+          sizes="(max-width: 749px) 52vw, 260px"
+          width="{{ section.settings.detail_image.width }}"
+          height="{{ section.settings.detail_image.height }}"
+          alt="{{ section.settings.detail_image.alt | default: 'Report detail' | escape }}"
+          loading="lazy">
+      </div>
+    {%- endif -%}
+    {%- if section.settings.caption != blank -%}
+      <p class="sl-report__caption sl-mono-label">{{ section.settings.caption }}</p>
+    {%- endif -%}
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-report {
+  padding-top: clamp(48px, 7vw, 88px);
+  padding-bottom: clamp(48px, 7vw, 88px);
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: clamp(24px, 4vw, 56px);
+  align-items: center;
+}
+.sl-report__copy { min-width: 0; }
+.sl-report__body {
+  margin: 16px 0 0;
+  font-size: 16.5px;
+  line-height: 1.6;
+  color: var(--sl-ink-soft);
+  text-wrap: pretty;
+}
+.sl-report__list { margin-top: 20px; }
+.sl-report__media-wrap { position: relative; }
+.sl-report__media {
+  position: relative;
+  z-index: 1;
+  border-radius: 16px;
+  border: 1px solid var(--sl-border);
+}
+/* second image slot: an offset, overlapping specimen card */
+.sl-report__detail {
+  position: absolute;
+  z-index: 2;
+  left: -18px;
+  bottom: 42px;
+  width: 44%;
+  border-radius: 14px;
+  border: 1px solid var(--sl-border);
+  background: var(--sl-bg-card);
+  box-shadow: var(--sl-shadow-card-hover);
+  overflow: hidden;
+}
+.sl-report__detail img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.sl-report__caption {
+  display: block;
+  margin: 14px 0 0;
+}
+
+@media (max-width: 749px) {
+  .sl-report { grid-template-columns: 1fr; }
+  .sl-report__detail { left: -6px; bottom: 30px; width: 52%; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Report feature",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Numbers you can act on" },
+    { "type": "textarea", "id": "body", "label": "Body", "default": "Every report benchmarks your tempo against the tour-average 3.0 ratio and measures head sway and hip slide in shoulder widths — comparable across sessions, no matter where you set the camera." },
+    { "type": "image_picker", "id": "image", "label": "Report screenshot", "info": "Leave blank to show the striped placeholder." },
+    { "type": "image_picker", "id": "detail_image", "label": "Detail image (overlapping card)", "info": "Optional close-up shown as an offset card over the main image." },
+    { "type": "text", "id": "caption", "label": "Mono caption under media", "default": "FIG. 01 — REPORT.HTML · KEY-POSITION STRIP + OVERLAY" }
+  ],
+  "blocks": [
+    {
+      "type": "point",
+      "name": "Bullet point",
+      "settings": [
+        { "type": "text", "id": "text", "label": "Text", "default": "Labeled key-position strip: address, top, impact, finish" }
+      ]
+    }
+  ],
+  "max_blocks": 6,
+  "presets": [
+    {
+      "name": "Report feature",
+      "blocks": [
+        { "type": "point", "settings": { "text": "Labeled key-position strip: address, top, impact, finish" } },
+        { "type": "point", "settings": { "text": "Centerline overlay: your body vs. the corrected line" } },
+        { "type": "point", "settings": { "text": "Smooth quarter-speed slow motion of every swing" } },
+        { "type": "point", "settings": { "text": "Coaching notes and a practice plan built from what the session flagged" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

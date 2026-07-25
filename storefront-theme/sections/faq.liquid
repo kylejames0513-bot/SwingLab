@@ -1,0 +1,180 @@
+<section id="{{ section.settings.anchor | default: 'faq' }}" class="sl-faq">
+  <div class="sl-wrap sl-reveal">
+    <h2 class="sl-h2">{{ section.settings.heading | default: 'Questions, answered' }}</h2>
+    <div class="sl-faq__list">
+      {%- for block in section.blocks -%}
+        <details class="sl-faq__item"{{ block.shopify_attributes }}>
+          <summary class="sl-faq__q">
+            <span class="sl-faq__num" aria-hidden="true">{%- if forloop.index < 10 -%}0{%- endif -%}{{ forloop.index }}</span>
+            <span class="sl-faq__q-text">{{ block.settings.question }}</span>
+            <span class="sl-faq__icon" aria-hidden="true"></span>
+          </summary>
+          <div class="sl-faq__a">
+            <p>{{ block.settings.answer }}</p>
+          </div>
+        </details>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-faq {
+  padding-top: clamp(48px, 7vw, 88px);
+  padding-bottom: clamp(48px, 7vw, 88px);
+}
+.sl-faq__list {
+  margin-top: 28px;
+  border-top: 1px solid var(--sl-border);
+  max-width: 860px;
+}
+.sl-faq__item { border-bottom: 1px solid var(--sl-border); }
+.sl-faq__q {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  padding: 18px 4px;
+  font-size: 17px;
+  font-weight: 600;
+  color: var(--sl-green);
+  cursor: pointer;
+  list-style: none;
+}
+.sl-faq__q::-webkit-details-marker { display: none; }
+.sl-faq__q:hover .sl-faq__q-text { color: var(--sl-green-btn); }
+.sl-faq__num {
+  flex: none;
+  font-family: var(--sl-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--sl-orange);
+  transform: translateY(-2px);
+}
+.sl-faq__q-text { flex: 1; }
+.sl-faq__icon {
+  position: relative;
+  flex: none;
+  align-self: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 8px;
+}
+.sl-faq__icon::before,
+.sl-faq__icon::after {
+  content: "";
+  position: absolute;
+  background: var(--sl-green);
+  border-radius: 1px;
+  transition: transform .2s ease;
+}
+.sl-faq__icon::before {
+  left: 0;
+  top: 6px;
+  width: 14px;
+  height: 2px;
+}
+.sl-faq__icon::after {
+  left: 6px;
+  top: 0;
+  width: 2px;
+  height: 14px;
+}
+.sl-faq__item[open] .sl-faq__icon::after { transform: scaleY(0); }
+.sl-faq__a {
+  padding: 0 40px 20px 36px;
+  font-size: 15.5px;
+  line-height: 1.62;
+  color: var(--sl-ink-soft);
+  max-width: 70ch;
+}
+.sl-faq__a p { margin: 0 0 10px; }
+.sl-faq__a p:last-child { margin-bottom: 0; }
+@media (max-width: 600px) {
+  .sl-faq__a { padding-left: 0; padding-right: 8px; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "FAQ",
+  "settings": [
+    { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "faq" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Questions, answered" }
+  ],
+  "blocks": [
+    {
+      "type": "qa",
+      "name": "Question",
+      "settings": [
+        { "type": "text", "id": "question", "label": "Question", "default": "How should I film my swing?" },
+        { "type": "textarea", "id": "answer", "label": "Answer", "default": "Phone at hip height, face-on or down the line, ball on a tee. That's the whole setup — portrait clips straight off a phone work fine." }
+      ]
+    }
+  ],
+  "max_blocks": 12,
+  "presets": [
+    {
+      "name": "FAQ",
+      "blocks": [
+        {
+          "type": "qa",
+          "settings": {
+            "question": "How should I film my swing?",
+            "answer": "Phone at hip height, face-on or down the line, ball on a tee. That's the whole setup — portrait clips straight off a phone work fine."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "Do I need to trim the clip first?",
+            "answer": "No. Upload the whole clip — SwingLab finds every swing automatically from the sound of the strike and analyzes each one."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "What does the free plan include?",
+            "answer": "Three swing analyses per calendar month, free forever. Every analysis produces the full report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "How does Pro unlock after I buy it here?",
+            "answer": "A paid order automatically extends Pro on the SwingLab account that matches your checkout email. If you buy before creating an account, the purchase is claimed the moment that email signs up or logs in."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "Does it work for left-handed golfers?",
+            "answer": "Yes. Choose your handedness when you upload, and every measurement, overlay, and coaching note is computed for a left-handed swing."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "How long does gear take to arrive?",
+            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and US delivery typically takes 6–12 business days, with tracking emailed at dispatch."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "What if a training aid isn't right for me?",
+            "answer": "Unused gear can be returned within 30 days, no questions asked. See the Shipping & Returns page for the details."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "Can I get a refund on Pro?",
+            "answer": "SwingLab Pro and other digital services are refundable within 14 days of purchase if unused."
+          }
+        }
+      ]
+    }
+  ]
+}
+{% endschema %}

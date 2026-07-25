@@ -1,0 +1,102 @@
+<section class="sl-email">
+  <div class="sl-wrap">
+    <div class="sl-email__card sl-reveal">
+      <h2 class="sl-h2">{{ section.settings.heading | default: 'One drill a week' }}</h2>
+      {%- if section.settings.sub != blank -%}
+        <p class="sl-email__sub">{{ section.settings.sub }}</p>
+      {%- endif -%}
+
+      {%- form 'customer', class: 'sl-email__form', id: 'sl-email-form' -%}
+        {%- if form.posted_successfully? -%}
+          <p class="sl-email__success" role="status">
+            {{ section.settings.success_text | default: "You're on the list. The first drill arrives with the next send." }}
+          </p>
+        {%- else -%}
+          {%- if form.errors -%}
+            <p class="sl-email__error" role="alert">
+              {{ form.errors.translated_fields.email | capitalize }} {{ form.errors.messages.email }}
+            </p>
+          {%- endif -%}
+          <input type="hidden" name="contact[tags]" value="newsletter">
+          <div class="sl-email__row">
+            <label class="visually-hidden" for="sl-email-input-{{ section.id }}">Email address</label>
+            <input
+              id="sl-email-input-{{ section.id }}"
+              class="sl-input sl-email__input"
+              type="email"
+              name="contact[email]"
+              value="{{ form.email }}"
+              placeholder="{{ section.settings.placeholder | default: 'you@example.com' }}"
+              autocomplete="email"
+              autocorrect="off"
+              autocapitalize="off"
+              required>
+            <button type="submit" class="sl-btn sl-btn--primary sl-email__submit">{{ section.settings.button_label | default: 'Sign up' }}</button>
+          </div>
+        {%- endif -%}
+      {%- endform -%}
+    </div>
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-email {
+  padding-top: clamp(48px, 7vw, 88px);
+  padding-bottom: clamp(48px, 7vw, 88px);
+}
+.sl-email__card {
+  max-width: 760px;
+  margin: 0 auto;
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-card);
+  padding: clamp(28px, 5vw, 48px);
+  text-align: center;
+}
+.sl-email__sub {
+  margin: 12px auto 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+.sl-email__row {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 480px;
+  margin: 26px auto 0;
+}
+.sl-email__input { flex: 1 1 220px; min-width: 0; }
+.sl-email__submit { flex: none; padding-top: 14px; padding-bottom: 14px; }
+.sl-email__success {
+  margin: 26px auto 0;
+  max-width: 46ch;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sl-green);
+}
+.sl-email__error {
+  margin: 22px auto 0;
+  max-width: 46ch;
+  font-size: 14.5px;
+  color: #9c3518;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Email capture",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "One drill a week" },
+    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "A short, measurable practice plan in your inbox. Unsubscribe anytime." },
+    { "type": "text", "id": "placeholder", "label": "Input placeholder", "default": "you@example.com" },
+    { "type": "text", "id": "button_label", "label": "Button label", "default": "Sign up" },
+    { "type": "text", "id": "success_text", "label": "Success message", "default": "You're on the list. The first drill arrives with the next send." }
+  ],
+  "presets": [{ "name": "Email capture" }]
+}
+{% endschema %}

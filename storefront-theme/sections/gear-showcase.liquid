@@ -1,0 +1,197 @@
+{%- liquid
+  assign gear_collection = section.settings.collection
+  if gear_collection == blank
+    assign gear_collection = collections['swinglab-gear']
+  endif
+  assign max_products = section.settings.max_products | default: 6
+-%}
+<section id="{{ section.settings.anchor | default: 'gear' }}" class="sl-gear">
+  <div class="sl-wrap sl-reveal">
+    <div class="sl-gear__head">
+      <div class="sl-gear__head-copy">
+        <h2 class="sl-h2">{{ section.settings.heading | default: 'Train what the report flagged' }}</h2>
+        {%- if section.settings.sub != blank -%}
+          <p class="sl-gear__sub">{{ section.settings.sub }}</p>
+        {%- endif -%}
+      </div>
+      {%- if section.settings.link_label != blank and gear_collection != blank -%}
+        <a href="{{ gear_collection.url }}" class="sl-btn sl-btn--outline sl-btn--sm sl-gear__all">{{ section.settings.link_label }}</a>
+      {%- endif -%}
+    </div>
+
+    <ul class="sl-gear__grid">
+      {%- for product in gear_collection.products limit: max_products -%}
+        <li class="sl-gear__cell">
+          <a href="{{ product.url }}" class="sl-gear__card">
+            <div class="sl-gear__media">
+              {%- if product.featured_image -%}
+                <img
+                  src="{{ product.featured_image | image_url: width: 640 }}"
+                  srcset="{{ product.featured_image | image_url: width: 420 }} 420w, {{ product.featured_image | image_url: width: 640 }} 640w, {{ product.featured_image | image_url: width: 960 }} 960w"
+                  sizes="(max-width: 699px) 100vw, (max-width: 1019px) 50vw, 33vw"
+                  width="{{ product.featured_image.width }}"
+                  height="{{ product.featured_image.height }}"
+                  alt="{{ product.featured_image.alt | default: product.title | escape }}"
+                  loading="lazy">
+              {%- else -%}
+                <div class="sl-gear__media-empty" aria-hidden="true"></div>
+              {%- endif -%}
+            </div>
+            <div class="sl-gear__body">
+              {%- capture flag_chips -%}
+                {%- for tag in product.tags -%}
+                  {%- assign tag_prefix = tag | slice: 0, 9 -%}
+                  {%- if tag_prefix == 'swinglab:' -%}
+                    {%- assign flag_label = tag | remove_first: 'swinglab:' | upcase -%}
+                    {%- if flag_label == 'GENERAL' -%}{%- assign flag_label = 'ALL SWINGS' -%}{%- endif -%}
+                    <span class="sl-chip">{{ flag_label }}</span>
+                  {%- endif -%}
+                {%- endfor -%}
+              {%- endcapture -%}
+              {%- if flag_chips contains 'sl-chip' -%}
+                <div class="sl-gear__chips">{{ flag_chips }}</div>
+              {%- endif -%}
+              <h3 class="sl-gear__title">{{ product.title }}</h3>
+              <p class="sl-gear__price">
+                {{ product.price | money }}
+                {%- if product.compare_at_price_max > product.price %}
+                  <s class="sl-price-compare">{{ product.compare_at_price_max | money }}</s>
+                {%- endif -%}
+              </p>
+            </div>
+          </a>
+        </li>
+      {%- else -%}
+        <li class="sl-gear__cell sl-gear__cell--empty">
+          <p class="sl-empty">Add products tagged <code>swinglab:tempo</code>, <code>swinglab:sway</code>, <code>swinglab:hip-slide</code>, <code>swinglab:consistency</code> or <code>swinglab:general</code> to the gear collection to fill this grid.</p>
+        </li>
+      {%- endfor -%}
+    </ul>
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-gear {
+  padding-top: clamp(48px, 7vw, 88px);
+  padding-bottom: clamp(48px, 7vw, 88px);
+}
+.sl-gear__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.sl-gear__head-copy { min-width: 0; }
+.sl-gear__sub {
+  margin: 10px 0 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+  max-width: 56ch;
+  text-wrap: pretty;
+}
+.sl-gear__all { flex-shrink: 0; }
+.sl-gear__grid {
+  margin: 30px 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+.sl-gear__cell { min-width: 0; }
+.sl-gear__card {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  text-decoration: none;
+  color: inherit;
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  overflow: hidden;
+  box-shadow: var(--sl-shadow-card);
+}
+.sl-gear__media { line-height: 0; }
+.sl-gear__media img {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  display: block;
+}
+.sl-gear__media-empty {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: repeating-linear-gradient(45deg, #e7ede6, #e7ede6 14px, #dde5db 14px, #dde5db 28px);
+}
+.sl-gear__body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px 20px 22px;
+  flex: 1;
+}
+.sl-gear__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sl-gear__chips .sl-chip {
+  font-size: 10.5px;
+  padding: 4px 10px;
+}
+.sl-gear__title {
+  margin: 2px 0 0;
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  color: var(--sl-green);
+}
+.sl-gear__price {
+  margin: auto 0 0;
+  padding-top: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-ink);
+}
+.sl-gear__cell--empty { grid-column: 1 / -1; }
+.sl-gear__cell--empty code {
+  font-family: var(--sl-font-mono);
+  font-size: 0.88em;
+  background: #efece4;
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+
+@media (min-width: 700px) {
+  .sl-gear__grid { grid-template-columns: repeat(2, 1fr); }
+}
+@media (min-width: 1020px) {
+  .sl-gear__grid { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sl-gear__card { transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease; }
+  .sl-gear__card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--sl-shadow-card-hover);
+    border-color: rgba(20, 71, 44, 0.35);
+  }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Gear showcase",
+  "settings": [
+    { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "gear" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Train what the report flagged" },
+    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Every flag in your report maps to a drill — and a tool. Tag-matched gear shows up on your results page automatically." },
+    { "type": "collection", "id": "collection", "label": "Collection", "info": "Defaults to the swinglab-gear collection when left blank." },
+    { "type": "range", "id": "max_products", "label": "Maximum products", "min": 3, "max": 12, "step": 1, "default": 6 },
+    { "type": "text", "id": "link_label", "label": "Link label", "default": "Shop all gear" }
+  ],
+  "presets": [{ "name": "Gear showcase" }]
+}
+{% endschema %}

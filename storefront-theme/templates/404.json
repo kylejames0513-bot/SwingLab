@@ -1,0 +1,14 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-404",
+      "settings": {
+        "heading": "Out of bounds.",
+        "body": "This page isn't here. Take a drop and play on."
+      }
+    }
+  },
+  "order": [
+    "main"
+  ]
+}
