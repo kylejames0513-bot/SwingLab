@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from . import frames
 from .config import Config
 from .ffmpeg import run
 
@@ -67,3 +68,41 @@ def make_slowmo(
         ]
     )
     return out_path
+
+
+def extract_replay_frames(
+    video: str | Path, strike_s: float, workdir: str | Path, cfg: Config
+) -> frames.FrameSet:
+    """Discrete frames for the annotated replay (annotate.make_replay).
+
+    Same window as the slow-mo clip ([strike - slowmo.pre_s, + duration_s]),
+    at analysis.fps, scaled to -2:slowmo.height (even dimensions for x264).
+    The -ss/-t trim stays on the INPUT side (see the module docstring and
+    frames.py). Writes r%04d.png into ``workdir``; returns a FrameSet with
+    start_s = max(0, strike_s - pre_s) and fps = analysis.fps.
+    """
+    sm = cfg.slowmo
+    start = max(0.0, strike_s - sm["pre_s"])
+    workdir = Path(workdir)
+    workdir.mkdir(parents=True, exist_ok=True)
+    pattern = workdir / "r%04d.png"
+    run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-y",
+            # input-side trim: keep -ss/-t before -i (see module docstring)
+            "-ss",
+            f"{start:.3f}",
+            "-t",
+            f"{sm['duration_s']:.3f}",
+            "-i",
+            str(video),
+            "-vf",
+            f"fps={cfg.analysis['fps']},scale=-2:{sm['height']}",
+            str(pattern),
+        ]
+    )
+    paths = sorted(workdir.glob("r*.png"))
+    return frames.FrameSet(paths=paths, start_s=start, fps=float(cfg.analysis["fps"]))

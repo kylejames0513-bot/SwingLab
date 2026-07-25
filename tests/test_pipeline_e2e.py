@@ -75,6 +75,7 @@ def test_three_swings_full_run(tmp_path, fast_cfg):
     assert len(result.swings) == 3
     assert sorted(p.name for p in (result.session_dir / "media").iterdir()) == [
         "overlay_s1.png", "overlay_s2.png", "overlay_s3.png",
+        "replay_s1.mp4", "replay_s2.mp4", "replay_s3.mp4",
         "slowmo_s1.mp4", "slowmo_s2.mp4", "slowmo_s3.mp4",
         "strip_s1.png", "strip_s2.png", "strip_s3.png",
     ]
@@ -85,8 +86,24 @@ def test_three_swings_full_run(tmp_path, fast_cfg):
     assert len(data["swings"]) == 3
     strikes = [s["metrics"]["strike_s"] for s in data["swings"]]
     assert strikes == pytest.approx(CLICKS, abs=0.05)
+    assert all("replay" in s["deliverables"] for s in data["swings"])
     html = result.report_path.read_text()
     assert html.count("media/strip_s") == 3
+    assert html.count("media/replay_s") == 3
+
+
+def test_annotated_false_disables_replay(tmp_path, fast_cfg):
+    fast_cfg.slowmo["annotated"] = False
+    video = generate_test_video(tmp_path / "oneswing.mov", [9.5])
+    result = analyze_video(video, out_dir=tmp_path / "results", cfg=fast_cfg)
+
+    media = sorted(p.name for p in (result.session_dir / "media").iterdir())
+    assert media == ["overlay_s1.png", "slowmo_s1.mp4", "strip_s1.png"]
+    data = json.loads(result.metrics_path.read_text())
+    assert all("replay" not in s["deliverables"] for s in data["swings"])
+    html = result.report_path.read_text()
+    assert "media/replay_s" not in html
+    assert "Coach replay" not in html  # section absent, template still renders
 
 
 def test_manual_strikes_override(tmp_path, fast_cfg):

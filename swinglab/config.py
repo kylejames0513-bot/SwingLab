@@ -37,6 +37,19 @@ DEFAULTS: dict[str, Any] = {
         "tempo_target": 3.0,
         "tempo_warn_below": 2.4,
         "tempo_std_praise": 0.3,
+        # Head drop address->impact beyond this flags "head-dip" (in shoulder
+        # widths; ~9-10 cm on an adult — a genuine dip, not noise).
+        "head_dip_warn_sw": 0.25,
+        # Lead arm bent below this at impact flags "arm-extension"
+        # (shoulder-elbow-wrist angle as seen from the camera; 180 = straight).
+        "lead_arm_warn_deg": 150,
+        # Impact shoulder tilt below this (positive = trail shoulder lower,
+        # measured face-on) — or tilt decreasing from address — flags
+        # "shoulder-tilt".
+        "shoulder_tilt_impact_min_deg": 5.0,
+        # Mean ankle-midpoint drift over the finish hold beyond this flags
+        # "balance" (in shoulder widths; a step, well above pose jitter).
+        "finish_balance_warn_sw": 0.15,
     },
     "analysis": {
         "window_pre_s": 1.8,
@@ -47,6 +60,9 @@ DEFAULTS: dict[str, Any] = {
         "takeaway_threshold_sw": 0.25,
         "finish_offset_s": 0.55,
         "impact_behind_sw": 0.10,
+        # Frames after the finish event used for the balance metric; must fit
+        # inside window_post_s or the metric reads NaN (never crashes).
+        "finish_hold_frames": 6,
     },
     "slowmo": {
         "factor": 4,
@@ -54,6 +70,11 @@ DEFAULTS: dict[str, Any] = {
         "duration_s": 2.4,
         "height": 720,
         "crf": 20,
+        # Also render replay_sN.mp4 (skeleton + fading hand-path trace +
+        # metric chips burned in); never motion-interpolated.
+        "annotated": True,
+        # The hand-path trace fades out over this many source-time seconds.
+        "trail_fade_s": 0.9,
     },
     "web": {
         "workers": 2,

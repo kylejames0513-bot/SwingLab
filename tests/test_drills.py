@@ -27,7 +27,8 @@ from swinglab.ffmpeg import VideoInfo
 from swinglab.metrics import SwingMetrics, session_stats
 from swinglab.report import write_report_html
 
-ALL_KEYS = (FLAG_TEMPO, FLAG_SWAY, FLAG_HIP_SLIDE, FLAG_CONSISTENCY, CLEAN)
+ALL_KEYS = (FLAG_TEMPO, FLAG_SWAY, FLAG_HIP_SLIDE, "head-dip",
+            "arm-extension", "balance", FLAG_CONSISTENCY, CLEAN)
 
 
 def fake_video() -> VideoInfo:

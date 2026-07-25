@@ -21,7 +21,16 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable
 
-from .coaching import FLAG_CONSISTENCY, FLAG_HIP_SLIDE, FLAG_SWAY, FLAG_TEMPO
+from .coaching import (
+    FLAG_ARM_EXTENSION,
+    FLAG_BALANCE,
+    FLAG_CONSISTENCY,
+    FLAG_HEAD_DIP,
+    FLAG_HIP_SLIDE,
+    FLAG_SHOULDER_TILT,
+    FLAG_SWAY,
+    FLAG_TEMPO,
+)
 from .config import DEFAULTS, Config
 
 # Drill-set key for a session that raised no flags.
@@ -35,6 +44,9 @@ PLAN_TITLES = {
     FLAG_TEMPO: "Tempo",
     FLAG_SWAY: "Head sway",
     FLAG_HIP_SLIDE: "Hip slide",
+    FLAG_HEAD_DIP: "Head dip",
+    FLAG_ARM_EXTENSION: "Impact extension",
+    FLAG_BALANCE: "Finish balance",
     FLAG_CONSISTENCY: "Swing-to-swing consistency",
     CLEAN: "Maintenance — nothing flagged, keep it that way",
 }
@@ -59,6 +71,10 @@ def build_drills(coach: dict) -> dict[str, list[Drill]]:
     tempo_warn = f"{float(coach['tempo_warn_below']):.1f}"
     tempo_target = f"{float(coach['tempo_target']):.1f}"
     tempo_std = f"{float(coach['tempo_std_praise']):.2f}"
+    dip = f"{float(coach['head_dip_warn_sw']):.2f}"
+    arm = f"{float(coach['lead_arm_warn_deg']):.0f}"
+    tilt = f"{float(coach['shoulder_tilt_impact_min_deg']):.0f}"
+    bal = f"{float(coach['finish_balance_warn_sw']):.2f}"
 
     return {
         FLAG_TEMPO: [
@@ -206,6 +222,158 @@ def build_drills(coach: dict) -> dict[str, list[Drill]]:
                 gear_tag="swinglab:hip-slide",
             ),
         ],
+        FLAG_HEAD_DIP: [
+            Drill(
+                id="dip-chair-drill",
+                name="Chair drill",
+                aim="Hold address height through the swing instead of dropping into impact.",
+                protocol=(
+                    "Set a chair or bench so its back lightly touches your "
+                    "glutes at address.",
+                    "Swing to the top keeping that light contact — losing it "
+                    "means the body is dropping or thrusting.",
+                    "Swing down to a held impact position, still tall, contact "
+                    "still light.",
+                    "Hit balls at 80% with the chair a hand's width behind as "
+                    "a reminder.",
+                ),
+                dosage="3 x 8 swings, 3x/week",
+                success_metric=(
+                    f"Re-film: head dip address-to-impact at or below {dip} "
+                    f"shoulder widths on every swing."
+                ),
+                gear_tag="swinglab:head-dip",
+                gear_note=(
+                    "Any chair, bench or range basket at hip height works."
+                ),
+            ),
+            Drill(
+                id="dip-head-window",
+                name="Head-window drill",
+                aim="Give the head a fixed ceiling so a dip is felt the moment it starts.",
+                protocol=(
+                    "Address a teed ball with a doorframe edge, branch, or "
+                    "partner-held alignment stick a finger's width above your "
+                    "head.",
+                    "Rehearse slow swings to impact speed — the head may "
+                    "rotate and drift a touch, it never ducks away from the "
+                    "reference.",
+                    "If the legs collapse, restart from address and keep the "
+                    "chest tall.",
+                    "Check the gap every third swing and build toward full "
+                    "speed.",
+                ),
+                dosage="2 x 10 rehearsals, daily",
+                success_metric=(
+                    f"Re-film: every swing's head dip at or below {dip} "
+                    f"shoulder widths, with the session mean clearly inside it."
+                ),
+                gear_tag="swinglab:head-dip",
+                gear_note=(
+                    "A partner-held alignment stick makes the ceiling "
+                    "objective; a doorframe works at home."
+                ),
+            ),
+        ],
+        FLAG_ARM_EXTENSION: [
+            Drill(
+                id="arm-towel-under-lead",
+                name="Towel under the lead arm",
+                aim=(
+                    "Keep the lead arm connected and long through the strike "
+                    "instead of folding into a chicken wing."
+                ),
+                protocol=(
+                    "Trap a folded towel between your lead upper arm and your "
+                    "chest at address.",
+                    "Hit half swings keeping light pressure on the towel "
+                    "through impact.",
+                    "If the towel drops before the follow-through, the lead "
+                    "arm broke away from the body.",
+                    "Build to three-quarter swings only while the towel stays "
+                    "put.",
+                ),
+                dosage="3 x 10 half swings, 3x/week",
+                success_metric=(
+                    f"Re-film five swings: lead-arm angle at impact at or "
+                    f"above {arm}\N{DEGREE SIGN} on at least four of them."
+                ),
+                gear_tag="swinglab:arm-extension",
+                gear_note=(
+                    "Any golf towel works; a headcover does the same job."
+                ),
+            ),
+            Drill(
+                id="arm-impact-freeze",
+                name="Impact freeze",
+                aim=(
+                    "Own the impact shape — long lead arm, trail shoulder "
+                    "down — as a position, not an accident."
+                ),
+                protocol=(
+                    "Swing at half speed and freeze at the impact position "
+                    "for a full three seconds.",
+                    "Check in a mirror or on camera: lead arm long, trail "
+                    "shoulder clearly lower than the lead.",
+                    "Rehearse five freezes, then hit one ball trying to swing "
+                    "through that exact shape.",
+                ),
+                dosage="2 x 8 freezes, 3x/week",
+                success_metric=(
+                    f"Re-film: lead-arm angle at or above {arm}\N{DEGREE SIGN} "
+                    f"and shoulder tilt at impact at or above "
+                    f"{tilt}\N{DEGREE SIGN} on every swing."
+                ),
+                gear_tag="swinglab:arm-extension",
+                gear_note=(
+                    "Built around a full-length swing mirror; a phone on a "
+                    "tripod works too."
+                ),
+            ),
+        ],
+        FLAG_BALANCE: [
+            Drill(
+                id="balance-feet-together",
+                name="Feet-together swings",
+                aim=(
+                    "Shrink the base so balance faults show up instantly and "
+                    "the body learns to stay centered."
+                ),
+                protocol=(
+                    "Set up with your feet touching and the ball on a tee.",
+                    "Make smooth three-quarter swings — any lunge or slide "
+                    "shows up as a stumble immediately.",
+                    "Hold each finish for a full three count.",
+                    "Widen the stance back to normal over the session, "
+                    "keeping the same quiet finish.",
+                ),
+                dosage="3 x 8 swings, 2x/week",
+                success_metric=(
+                    f"Re-film: finish drift at or below {bal} shoulder widths "
+                    f"on every swing."
+                ),
+                gear_tag="swinglab:balance",
+            ),
+            Drill(
+                id="balance-hold-the-finish",
+                name="Hold the finish",
+                aim="Make the held finish the non-negotiable end of every swing.",
+                protocol=(
+                    "Swing at normal speed and hold the finish for a slow "
+                    "three count.",
+                    "Weight fully on the lead foot, trail toe down as a "
+                    "kickstand only.",
+                    "If you step or hop, the swing was out of balance before "
+                    "the finish — take the next one at 80%.",
+                ),
+                dosage="Every ball for one range session, 2x/week",
+                success_metric=(
+                    f"Re-film: finish drift at or below {bal} shoulder widths "
+                    f"— session mean and every individual swing."
+                ),
+                gear_tag="swinglab:balance",
+            ),
+        ],
         FLAG_CONSISTENCY: [
             Drill(
                 id="consistency-one-count",
@@ -291,18 +459,36 @@ def build_drills(coach: dict) -> dict[str, list[Drill]]:
 # practice_plan(), which rebuilds the text from the live thresholds.
 DRILLS: dict[str, list[Drill]] = build_drills(DEFAULTS["coaching"])
 
+# Flags that borrow another family's drills (shoulder-tilt shares the
+# impact-extension work; both are flip-at-impact faults).
+ISSUE_FAMILY = {FLAG_SHOULDER_TILT: FLAG_ARM_EXTENSION}
+
+
+def family_for(flag: str) -> str | None:
+    """DRILLS key for a flag: itself, a mapped family, or None (unknown)."""
+    if flag in DRILLS:
+        return flag
+    return ISSUE_FAMILY.get(flag)
+
 
 def practice_plan(
     flags: Iterable[str], cfg: Config | None = None
 ) -> list[dict]:
     """Ordered practice-plan blocks for the report.
 
-    One block per fired flag (unknown flags are skipped), or the ``clean``
-    maintenance block when nothing fired. Each block is
-    ``{"flag", "title", "drills"}``.
+    One block per fired flag's drill family (unknown flags are skipped;
+    flags sharing a family — arm-extension and shoulder-tilt — render one
+    block, first-seen order preserved), or the ``clean`` maintenance block
+    when nothing fired. Each block is ``{"flag", "title", "drills"}``.
     """
     library = build_drills(cfg.coaching) if cfg is not None else DRILLS
-    keys = [f for f in flags if f in library] or [CLEAN]
+    keys: list[str] = []
+    for flag in flags:
+        family = family_for(flag)
+        if family is not None and family in library and family not in keys:
+            keys.append(family)
+    if not keys:
+        keys = [CLEAN]
     return [
         {"flag": key, "title": PLAN_TITLES[key], "drills": library[key]}
         for key in keys

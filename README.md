@@ -6,10 +6,13 @@ deliverables:
 
 - a labeled **key-position strip** (address / top / impact / finish),
 - a smooth **quarter-speed slow-motion** clip per swing,
+- an **annotated coach replay** per swing — your own footage with the tracked
+  body, hand path, and the key numbers burned in as they happen,
 - a **centerline overlay** comparing the captured body (orange) against a
   corrected one (green) via an ankle-pinned shear,
-- **report.html** with a metrics table, plain-English coaching notes, and every
-  deliverable embedded, plus machine-readable **metrics.json**.
+- **report.html** with metrics tables, plain-English coaching notes, issue
+  cards for everything the session flagged, an illustrated practice plan, and
+  every deliverable embedded, plus machine-readable **metrics.json**.
 
 The whole product is white-label: brand name, logo, colors, footer, watermark,
 disclaimer, and every detection/coaching threshold live in `config.yaml` — no
@@ -65,19 +68,82 @@ results/<video-name>/
     ├── strip_s1.png      # key positions
     ├── overlay_s1.png    # centerline overlay
     ├── slowmo_s1.mp4     # quarter-speed clip
+    ├── replay_s1.mp4     # annotated coach replay
     └── ... one set per swing
 ```
+
+### What the report measures — honestly
+
+Everything comes from one hip-height phone camera and 2D pose landmarks
+projected into the image plane. SwingLab tracks the golfer's **body** — it
+does not track the club, does not reconstruct 3D, and makes no ball-flight
+claims. Angle metrics are the angles **as seen from the camera** (face-on),
+and lateral metrics are normalized by shoulder width at address (SW) so
+numbers are comparable across camera distances.
+
+Per swing:
+
+- **Backswing / downswing duration and tempo ratio** — time from takeaway to
+  the top vs top to impact (benchmark 3:1).
+- **Head sway and hip slide** (address→top and top→impact, in SW) — signed
+  lateral drift; positive = away from the target.
+- **Head dip** (address→impact, in SW) — how far the head drops on the way
+  to the ball, from the ear/nose centroid with single-frame jitter smoothed
+  out. A small squat is normal; a large dip moves the swing's low point.
+- **Lead-arm angle at impact** (degrees; 180 = straight) — the
+  shoulder–elbow–wrist angle of the lead arm at the strike, as projected in
+  the camera's view.
+- **Shoulder tilt at impact, and its change from address** (degrees, measured
+  face-on) — positive means the trail shoulder is lower. At impact the trail
+  shoulder should be clearly lower; level or reversed shoulders are the
+  classic hang-back pattern.
+- **Finish balance** (in SW) — mean drift of the ankle midpoint during the
+  frames after the finish. A held, quiet finish reads near zero; a step or
+  stumble reads tenths of a shoulder width.
+
+Session-level mean and standard deviation cover all of the above, and every
+threshold that turns a number into a flag lives in `config.yaml`.
+
+### Issue cards — "What to work on"
+
+Each flag the session fires becomes a card in the report: the session value
+against its benchmark, a per-swing sparkline (flagged swings marked in the
+accent color), two honest sentences on why it matters, a one-line fix, and
+links straight to the matching drills in the practice plan. Cards are sorted
+by severity — "major" when the session mean breaches the threshold or every
+measured swing is flagged.
+
+### Coach replay (`replay_sN.mp4`)
+
+The annotated replay is exactly what it sounds like: the engine annotating
+the golfer's **own footage**. The same slow-motion window is re-rendered with
+the tracked skeleton, a fading trace of the **hand path** (wrist centroid —
+the body point we actually track; SwingLab never claims club tracking), a
+dashed centerline from the setup position, and metric chips that appear at
+each swing event (top, impact, finish) and persist. The replay is never
+motion-interpolated — that keeps the burned-in text crisp and the render
+fast — so `--fast` does not change it. Set `slowmo.annotated: false` in
+`config.yaml` to skip it entirely.
 
 ### Practice plans in the report
 
 Every report ends with a practice plan built from what the session flagged.
-Each coaching flag (`tempo`, `sway`, `hip-slide`, `consistency`) maps to 2–3
+Each coaching flag (`tempo`, `sway`, `hip-slide`, `head-dip`,
+`arm-extension`, `balance`, `consistency` — `shoulder-tilt` shares the
+impact-extension drills, since both are flip-at-impact faults) maps to 2–3
 curated drills in `swinglab/drills.py` — an aim, a step-by-step protocol, a
 dosage, and a measurable re-film target expressed in the same numbers the
 report prints, so "fixed" means the next report says so. A session with no
 flags gets a maintenance set instead. The threshold numbers inside the drill
 text come from the `coaching` section of `config.yaml`, so retuning the
 thresholds retunes the targets with no code edits.
+
+Every drill also ships with a **follow-along setup diagram and a looping
+animation** of its key positions — hand-built inline SVG with CSS-only
+crossfades, drawn in the configured brand colors. No JavaScript, no external
+assets: the report stays a single self-contained HTML file that renders
+offline. The animation sits behind a "Show the motion" toggle and freezes on
+the setup pose for viewers who ask their device for reduced motion.
 
 Set `shop.store_url` in `config.yaml` (the shipped config points at the
 SwingLab store; empty = no link) and the plan ends with a quiet "Matched
@@ -242,6 +308,9 @@ products in Shopify to wire them up:
 | `swinglab:tempo` | tempo ratio under `coaching.tempo_warn_below` |
 | `swinglab:sway` | head sway beyond `coaching.sway_warn_sw` |
 | `swinglab:hip-slide` | hip slide beyond `coaching.sway_warn_sw` |
+| `swinglab:head-dip` | head dropping beyond `coaching.head_dip_warn_sw` on the way to impact |
+| `swinglab:arm-extension` | lead arm bent under `coaching.lead_arm_warn_deg` at impact (the shoulder-tilt flag matches this tag too) |
+| `swinglab:balance` | feet drifting beyond `coaching.finish_balance_warn_sw` during the finish hold |
 | `swinglab:consistency` | tempo varying noticeably across swings |
 | `swinglab:general` | anything (pads the list; what a clean swing sees) |
 
@@ -283,10 +352,15 @@ see [deploy/README.md](deploy/README.md).
    across camera distances.
 6. **Metrics** — backswing/downswing durations, tempo ratio (benchmark 3.0),
    signed head sway and hip slide in shoulder widths (positive = away from
-   the target), plus per-session mean and standard deviation.
+   the target), head dip into impact, lead-arm angle and shoulder tilt at
+   impact (image-plane angles, as seen from the camera), finish balance,
+   plus per-session mean and standard deviation.
 7. **Deliverables and report** — Pillow-rendered strip and overlay, ffmpeg
    `minterpolate` slow motion (interpolate to a high frame rate first, THEN
-   stretch), Jinja2 report.
+   stretch), the annotated replay (discrete frames with Pillow-burned
+   skeleton/hand-path/chips, encoded without interpolation so the text stays
+   crisp), Jinja2 report with inline-SVG issue-card sparklines and drill
+   diagrams/animations.
 
 ## Configuration
 
@@ -296,9 +370,9 @@ See `config.yaml` — everything is documented inline. Highlights:
 | --- | --- |
 | `brand` | name, logo, colors, footer, watermark on/off, disclaimer |
 | `detection` | audio peak height / prominence / minimum gap between swings |
-| `coaching` | sway warning, tempo target/warning, consistency praise thresholds |
-| `analysis` | window size, working/full resolutions, takeaway threshold |
-| `slowmo` | slow-motion factor, clip bounds, output height, crf |
+| `coaching` | flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
+| `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`) |
+| `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account` |
 | `billing` | free/Pro analyses per month (price lives in Stripe, not here) |
@@ -314,9 +388,9 @@ The suite covers the acceptance checks: strike detection within 50 ms on a
 synthetic wav, graceful zero-strike behavior, portrait-rotation handling on a
 display-matrix `.mov`, white-label config changes reaching the report and
 overlays, and an end-to-end three-swing run (three metric rows, three strips,
-three slow-motion clips, three overlays, one report) with a replayed pose
-sequence so no human footage is required. Tests needing ffmpeg auto-skip when
-it is not installed.
+three slow-motion clips, three annotated replays, three overlays, one report)
+with a replayed pose sequence so no human footage is required. Tests needing
+ffmpeg auto-skip when it is not installed.
 
 ## Roadmap
 
@@ -337,6 +411,10 @@ it is not installed.
   accounts in the app, signup claims them with purchases intact, and
   optional SMTP adds code-verified claims plus password reset via email
   (the Milestone-5 reset item, shipped early).
+- **Program depth (done)** — four new 2D-honest metrics (head dip, lead-arm
+  extension, shoulder tilt, finish balance), issue cards with per-swing
+  sparklines, illustrated drills (inline-SVG diagrams + CSS-only
+  animations), and the annotated coach replay (`replay_sN.mp4`).
 - **Milestone 5** — white-label polish: PDF export, richer batch mode,
   API tokens for the mobile app. (Password reset via email shipped with
   the Shopify account sync above.)
