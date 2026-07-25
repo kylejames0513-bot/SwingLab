@@ -459,18 +459,21 @@ img { max-width: 100%; display: block; }
   background: var(--sl-orange);
 }
 
-/* scroll reveal — layout/theme.liquid adds .is-in via IntersectionObserver */
-.sl-reveal {
+/* scroll reveal — layout/theme.liquid adds .is-in via IntersectionObserver.
+   The hidden state is gated on html.sl-js (set by that same script), so if
+   the script never runs — no JS, theme-editor section re-render, anything —
+   every section stays fully visible instead of leaving blank bands. */
+.sl-js .sl-reveal {
   opacity: 0;
   transform: translateY(18px);
   transition: opacity .6s ease, transform .6s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.sl-reveal.is-in { opacity: 1; transform: none; }
+.sl-js .sl-reveal.is-in { opacity: 1; transform: none; }
 .sl-reveal--d1 { transition-delay: .08s; }
 .sl-reveal--d2 { transition-delay: .16s; }
 .sl-reveal--d3 { transition-delay: .24s; }
 @media (prefers-reduced-motion: reduce) {
-  .sl-reveal { opacity: 1; transform: none; transition: none; }
+  .sl-js .sl-reveal { opacity: 1; transform: none; transition: none; }
 }
 
 /* ============================================================

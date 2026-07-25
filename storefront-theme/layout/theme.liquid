@@ -55,15 +55,13 @@
 
   <script>
     /* scroll reveal: adds .is-in to .sl-reveal elements as they enter the
-       viewport; everything is shown immediately under reduced motion */
+       viewport. Elements are only ever hidden AFTER html gets .sl-js here,
+       so a script that doesn't run can never leave blank sections; the
+       shopify:section:load listener re-observes content the theme editor
+       re-renders. Reduced motion and missing IO keep everything visible. */
     (function () {
-      var els = document.querySelectorAll('.sl-reveal');
-      if (!els.length) return;
-      function showAll() {
-        for (var i = 0; i < els.length; i++) els[i].classList.add('is-in');
-      }
       var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-      if (reduce || !('IntersectionObserver' in window)) { showAll(); return; }
+      if (reduce || !('IntersectionObserver' in window)) return;
       var io = new IntersectionObserver(function (entries) {
         for (var i = 0; i < entries.length; i++) {
           if (entries[i].isIntersecting) {
@@ -72,7 +70,13 @@
           }
         }
       }, { rootMargin: '0px 0px -10% 0px', threshold: 0.08 });
-      for (var i = 0; i < els.length; i++) io.observe(els[i]);
+      function scan(root) {
+        var els = (root || document).querySelectorAll('.sl-reveal:not(.is-in)');
+        for (var i = 0; i < els.length; i++) io.observe(els[i]);
+      }
+      document.documentElement.classList.add('sl-js');
+      scan(document);
+      document.addEventListener('shopify:section:load', function (e) { scan(e.target); });
     })();
   </script>
 </body>
