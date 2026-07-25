@@ -13,6 +13,13 @@ webhook-driven: through the Shopify store (shopify_billing.py — preferred
 when configured, one checkout for gear and memberships) or through a Stripe
 subscription (billing.py). Set SWINGLAB_SECRET so logins survive restarts.
 
+Accounts can also start on the store: Shopify customer webhooks provision
+passwordless "store accounts" that signing up with the same email claims in
+place — purchases and the Shopify link carry over (shopify_billing.py).
+With SMTP configured (mailer.py, inert otherwise), claims of pre-existing
+value are verified with an emailed one-time code, and password reset works
+the same way.
+
 The optional gear shop (a /shop page plus flag-matched training-aid
 recommendations on finished analyses) is likewise inert until the SHOPIFY_*
 environment variables are set — see shop.py.
@@ -33,7 +40,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from ..coaching import flag_keys
 from ..config import Config
-from . import billing, shop, shopify_billing
+from . import billing, mailer, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
 from .users import User, UserStore
 
@@ -132,6 +139,7 @@ def create_app(
                 ),
                 free_per_month=int(cfg.billing["free_per_month"]),
                 shop_enabled=shop_active(),
+                mail_enabled=mailer.enabled(),
                 **context,
             )
         )
@@ -187,16 +195,46 @@ def create_app(
         )
 
     # -- accounts ---------------------------------------------------------
+    def send_code_email(email: str, purpose: str) -> None:
+        """Issue + email a one-time code; a rate-limited (None) issue means
+        a still-valid code is already in the inbox, so send nothing."""
+        code = users.issue_email_code(email, purpose)
+        if code is None:
+            return
+        action = (
+            "finish setting up your account"
+            if purpose == "claim"
+            else "reset your password"
+        )
+        mailer.send(
+            email,
+            f"{cfg.brand['name']} verification code: {code}",
+            f"Your {cfg.brand['name']} verification code is {code}.\n\n"
+            f"Enter it to {action}. The code expires in 10 minutes.\n"
+            "If you didn't request this, you can ignore this email.",
+        )
+
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request):
         if current_user(request) is not None:
             return RedirectResponse("/", status_code=303)
-        return render("web_login.html.j2", request, error=None, landing=False)
+        return render(
+            "web_login.html.j2", request, error=None, landing=False,
+            prefill_email=request.query_params.get("email", ""),
+        )
 
     @app.post("/login")
     def login(request: Request, email: str = Form(""), password: str = Form("")):
         user = users.authenticate(email, password)
         if user is None:
+            # An unclaimed store account has no password to be wrong about —
+            # point the customer at signup (prefilled) instead.
+            pending = users.get_by_email(email)
+            if pending is not None and not pending.has_password:
+                return render(
+                    "web_login.html.j2", request, landing=False, error=None,
+                    stub_notice=True, prefill_email=pending.email,
+                )
             return render(
                 "web_login.html.j2", request, landing=False,
                 error="Wrong email or password.",
@@ -206,13 +244,96 @@ def create_app(
         return RedirectResponse("/", status_code=303)
 
     @app.post("/signup")
-    def signup(request: Request, email: str = Form(""), password: str = Form("")):
+    def signup(
+        request: Request,
+        email: str = Form(""),
+        password: str = Form(""),
+        code: str = Form(""),
+    ):
         try:
-            user = users.create(email, password)
+            normalized = users.validate_signup(email, password)
         except ValueError as exc:
             return render(
                 "web_login.html.j2", request, landing=False, error=str(exc)
             )
+        # When email is configured, claiming an address that already has
+        # value attached (an unclaimed store account, or a Pro purchase
+        # made before signup) must prove control of the inbox first. When
+        # it isn't, signup proceeds exactly as before — see the README's
+        # security note.
+        if mailer.enabled() and users.has_unclaimed_value(normalized):
+            if not code.strip():
+                send_code_email(normalized, "claim")
+                return render(
+                    "web_login.html.j2", request, landing=False, error=None,
+                    verify_email=normalized, verify_password=password,
+                )
+            if not users.check_email_code(normalized, "claim", code):
+                return render(
+                    "web_login.html.j2", request, landing=False,
+                    verify_email=normalized, verify_password=password,
+                    error="That code didn't match (or expired) — check the "
+                          "email, or resubmit without a code for a new one.",
+                )
+        try:
+            user = users.create(normalized, password)
+        except ValueError as exc:
+            return render(
+                "web_login.html.j2", request, landing=False, error=str(exc)
+            )
+        claim_pending_pro(user)
+        request.session["user_id"] = user.id
+        return RedirectResponse("/", status_code=303)
+
+    # -- password reset (available once SWINGLAB_SMTP_* is configured) ----
+    @app.get("/reset", response_class=HTMLResponse)
+    def reset_page(request: Request):
+        if not mailer.enabled():
+            raise HTTPException(503, "Password reset requires email to be set up.")
+        return render(
+            "web_login.html.j2", request, error=None, landing=False,
+            reset_stage="request",
+        )
+
+    @app.post("/reset/request")
+    def reset_request(request: Request, email: str = Form("")):
+        if not mailer.enabled():
+            raise HTTPException(503, "Password reset requires email to be set up.")
+        normalized = email.strip().lower()
+        user = users.get_by_email(normalized)
+        if user is not None and user.has_password:
+            send_code_email(normalized, "reset")
+        # Same response either way — don't reveal which emails have accounts.
+        return render(
+            "web_login.html.j2", request, error=None, landing=False,
+            reset_stage="confirm", reset_email=normalized,
+        )
+
+    @app.post("/reset/confirm")
+    def reset_confirm(
+        request: Request,
+        email: str = Form(""),
+        code: str = Form(""),
+        password: str = Form(""),
+    ):
+        if not mailer.enabled():
+            raise HTTPException(503, "Password reset requires email to be set up.")
+        normalized = email.strip().lower()
+        if len(password) < 8:
+            # Reject before checking (and consuming) the single-use code.
+            return render(
+                "web_login.html.j2", request, landing=False,
+                reset_stage="confirm", reset_email=normalized,
+                error="Password must be at least 8 characters.",
+            )
+        user = users.get_by_email(normalized)
+        if user is None or not users.check_email_code(normalized, "reset", code):
+            return render(
+                "web_login.html.j2", request, landing=False,
+                reset_stage="confirm", reset_email=normalized,
+                error="That code didn't match (or expired) — request a new one.",
+            )
+        users.set_password(user.id, password)
         claim_pending_pro(user)
         request.session["user_id"] = user.id
         return RedirectResponse("/", status_code=303)

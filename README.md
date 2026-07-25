@@ -167,6 +167,68 @@ Either way, prices live in Shopify/Stripe — change them in their dashboards,
 never in code. Checkout happens on their hosted pages, and plan state only
 ever changes via the signed webhooks.
 
+### Account sync with Shopify
+
+Accounts start on the store: a customer created in Shopify automatically
+exists in the web app, and everything they bought is waiting when they
+finish setup there. In the Shopify admin, under **Settings → Notifications
+→ Webhooks**, add three more webhooks — `customers/create`,
+`customers/update`, and `customers/delete` — pointing at the **same**
+`https://<your-app>/webhooks/shopify` endpoint the order webhooks use.
+One endpoint, one signing secret (`SHOPIFY_WEBHOOK_SECRET`), nothing else
+to configure.
+
+What each event does:
+
+- **customers/create, customers/update** — creates a passwordless "store
+  account" for the customer's (normalized) email, tagged with the Shopify
+  customer id — or, if an account already exists, just links/refreshes
+  that id. An existing password or email is **never** overwritten, and
+  replayed webhooks land on the same row (no duplicates).
+- Signing up in the app with a store account's email **claims the same
+  account**: the password is set on that row, so the Shopify link and any
+  Pro purchase already granted by the order webhooks carry over — one
+  user, everything kept. Until then, a login attempt with that email gets
+  a "create your password to finish setup" pointer instead of a
+  misleading "wrong password".
+- **customers/delete** — deletes the app user only when it is an
+  unclaimed stub (no password, no analyses); any Pro days it still
+  carried are parked and reclaimed if that email signs up later. A
+  claimed account merely loses its store link — store-side deletion never
+  destroys app data.
+- **customers/redact** (GDPR) — same as delete, and additionally erases
+  the Shopify-sourced profile fields on claimed accounts and any parked
+  purchase for a deleted stub's email. `customers/data_request` and
+  `shop/redact` are acknowledged (200) and logged.
+
+**Limitations, honestly:** Shopify does not expose customer credentials,
+so store passwords cannot sync — the store account carries over and the
+user sets their app password once, at claim time. Store customers created
+without an email address are skipped (there is nothing to match on).
+
+**Optional email verification (SMTP)** — inert until configured, like
+every other integration:
+
+| Variable | What it is |
+| --- | --- |
+| `SWINGLAB_SMTP_URL` | e.g. `smtp+starttls://user:pass@smtp.example.com:587` — also `smtp://` (plain, local relays) and `smtps://` (implicit TLS, port 465); credentials URL-encoded |
+| `SWINGLAB_MAIL_FROM` | the From address, e.g. `SwingLab <no-reply@yourdomain.com>` |
+
+With both set, claiming an email that already has anything attached (a
+store account, or a Pro purchase made before signup) requires a 6-digit
+code emailed to that address — 10-minute expiry, single-use, stored
+hashed, rate-limited per email — and **password reset** appears on the
+login page using the same codes. Standard library SMTP only; no new
+dependencies.
+
+> **Security note:** without SMTP configured, behavior is unchanged from
+> previous versions: signing up with an email claims whatever that email
+> already has (store account, pre-signup purchase) with no inbox proof —
+> the same trade-off the buy-before-signup claim has always had, kept
+> deliberately so the app works with zero email infrastructure.
+> Configuring SMTP closes it by verifying control of the inbox before a
+> claim.
+
 ### Gear shop (Shopify)
 
 Connect a Shopify store and the app grows a **Gear** page (`/shop`) listing
@@ -271,8 +333,13 @@ it is not installed.
 - **Shopify gear shop (done)** — `/shop` page backed by a Shopify store's
   Storefront API plus flag-matched training-aid recommendations on finished
   analyses; inert until the `SHOPIFY_*` environment variables are set.
+- **Shopify account sync (done)** — customer webhooks provision store
+  accounts in the app, signup claims them with purchases intact, and
+  optional SMTP adds code-verified claims plus password reset via email
+  (the Milestone-5 reset item, shipped early).
 - **Milestone 5** — white-label polish: PDF export, richer batch mode,
-  password reset via email, API tokens for the mobile app.
+  API tokens for the mobile app. (Password reset via email shipped with
+  the Shopify account sync above.)
 - A native mobile app can sit on top of the existing JSON API (`/upload`,
   `/api/session/{id}`) without server changes.
 

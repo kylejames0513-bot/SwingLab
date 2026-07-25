@@ -9,6 +9,20 @@ one makes ``is_pro`` true. Shopify purchases made before the buyer has an
 account wait in ``pro_grants`` until that email signs up or logs in, and
 processed orders are remembered in ``shopify_orders`` so replayed webhooks
 can't double-grant (and cancellations know how much to take back).
+
+Accounts can also *start on the Shopify store*: customer webhooks
+(shopify_billing.py) upsert a passwordless "store account" — a stub row with
+``shopify_customer_id`` set, ``source='shopify'``, and an empty password
+hash. A stub can never log in (an empty hash verifies nothing), and signing
+up with its email claims the SAME row via :meth:`create` — the password is
+set in place, so the Shopify link and any Pro time granted by order
+webhooks carry over with no duplicate user. Emails are normalized
+(trimmed + lowercased) everywhere so store and app spellings always match.
+
+``email_codes`` backs the optional SMTP verification (mailer.py): 6-digit
+one-time codes, stored hashed, 10-minute expiry, single-use, rate-limited
+per email — used to verify claims and to reset passwords when email is
+configured.
 """
 
 from __future__ import annotations
@@ -33,6 +47,11 @@ _PRO_OK_STATUSES = ("active", "trialing", "past_due")
 
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 16384, 8, 1
 
+# One-time email codes (claim verification, password reset).
+CODE_TTL_S = 600  # codes live 10 minutes
+CODE_RESEND_S = 60  # at most one new code per email/purpose per minute
+CODE_MAX_ATTEMPTS = 5  # then the code is burned and must be re-requested
+
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS users (
     id                  TEXT PRIMARY KEY,
@@ -42,7 +61,9 @@ CREATE TABLE IF NOT EXISTS users (
     stripe_customer_id  TEXT,
     plan                TEXT NOT NULL DEFAULT 'free',
     subscription_status TEXT NOT NULL DEFAULT 'none',
-    pro_until           REAL NOT NULL DEFAULT 0
+    pro_until           REAL NOT NULL DEFAULT 0,
+    shopify_customer_id TEXT,
+    source              TEXT
 );
 CREATE TABLE IF NOT EXISTS pro_grants (
     email TEXT PRIMARY KEY,
@@ -53,6 +74,15 @@ CREATE TABLE IF NOT EXISTS shopify_orders (
     email      TEXT NOT NULL,
     days       REAL NOT NULL,
     applied_at REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS email_codes (
+    email      TEXT NOT NULL,
+    purpose    TEXT NOT NULL,
+    code_hash  TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    expires_at REAL NOT NULL,
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (email, purpose)
 );
 """
 
@@ -89,6 +119,9 @@ class User:
     plan: str = FREE
     subscription_status: str = "none"
     pro_until: float = 0.0
+    shopify_customer_id: str | None = None
+    source: str | None = None  # 'shopify' for accounts born from a customer webhook
+    has_password: bool = True  # False = unclaimed store stub (cannot log in)
 
     @property
     def is_pro(self) -> bool:
@@ -104,27 +137,61 @@ class UserStore:
         self._conn.row_factory = sqlite3.Row
         with self._lock:
             self._conn.executescript(_SCHEMA)
-            # Databases created before Shopify billing lack pro_until.
+            # Upgrade older databases in place (idempotent — each column is
+            # added once): pre-Shopify-billing files lack pro_until, and
+            # pre-account-sync files lack the store-account columns.
             columns = {
                 row["name"]
                 for row in self._conn.execute("PRAGMA table_info(users)")
             }
-            if "pro_until" not in columns:
-                self._conn.execute(
-                    "ALTER TABLE users ADD COLUMN pro_until REAL NOT NULL DEFAULT 0"
-                )
-                self._conn.commit()
+            for name, ddl in (
+                ("pro_until", "pro_until REAL NOT NULL DEFAULT 0"),
+                ("shopify_customer_id", "shopify_customer_id TEXT"),
+                ("source", "source TEXT"),
+            ):
+                if name not in columns:
+                    self._conn.execute(f"ALTER TABLE users ADD COLUMN {ddl}")
+                    self._conn.commit()
 
     # -- signup / login ---------------------------------------------------
-    def create(self, email: str, password: str) -> User:
+    @staticmethod
+    def validate_signup(email: str, password: str) -> str:
+        """Check signup input, returning the normalized email."""
         email = email.strip().lower()
         if "@" not in email or "." not in email.split("@")[-1]:
             raise ValueError("That doesn't look like an email address.")
         if len(password) < 8:
             raise ValueError("Password must be at least 8 characters.")
-        user = User(id=uuid.uuid4().hex[:12], email=email, created_at=time.time())
+        return email
+
+    def create(self, email: str, password: str) -> User:
+        """Create an account — or, when the email belongs to an unclaimed
+        store stub (see upsert_store_customer), claim it: the password is
+        set on the SAME row, so its Shopify link and any Pro time already
+        granted by order webhooks stay with the user. No duplicates."""
+        email = self.validate_signup(email, password)
         try:
             with self._lock:
+                row = self._conn.execute(
+                    "SELECT * FROM users WHERE email = ?", (email,)
+                ).fetchone()
+                if row is not None:
+                    if row["password_hash"]:
+                        raise ValueError(
+                            "An account with that email already exists — log in."
+                        )
+                    self._conn.execute(
+                        "UPDATE users SET password_hash = ? WHERE id = ?",
+                        (hash_password(password), row["id"]),
+                    )
+                    self._conn.commit()
+                    row = self._conn.execute(
+                        "SELECT * FROM users WHERE id = ?", (row["id"],)
+                    ).fetchone()
+                    return self._from_row(row)
+                user = User(
+                    id=uuid.uuid4().hex[:12], email=email, created_at=time.time()
+                )
                 self._conn.execute(
                     "INSERT INTO users (id, email, password_hash, created_at)"
                     " VALUES (?, ?, ?, ?)",
@@ -134,6 +201,17 @@ class UserStore:
         except sqlite3.IntegrityError:
             raise ValueError("An account with that email already exists — log in.")
         return user
+
+    def set_password(self, user_id: str, password: str) -> None:
+        """Reset/replace a password (used by the emailed-code reset flow)."""
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        with self._lock:
+            self._conn.execute(
+                "UPDATE users SET password_hash = ? WHERE id = ?",
+                (hash_password(password), user_id),
+            )
+            self._conn.commit()
 
     def authenticate(self, email: str, password: str) -> User | None:
         with self._lock:
@@ -162,6 +240,97 @@ class UserStore:
                 f"SELECT * FROM users WHERE {column} = ?", (value,)
             ).fetchone()
         return self._from_row(row) if row else None
+
+    # -- store accounts (called by the Shopify customer webhooks) ---------
+    def get_by_shopify(self, customer_id: str) -> User | None:
+        return self._one("shopify_customer_id", customer_id)
+
+    def upsert_store_customer(self, email: str, customer_id: str | None) -> User:
+        """Mirror a Shopify customer into the app (customers/create|update).
+
+        No account for the email -> create a passwordless stub with
+        source='shopify'. Account exists -> link/refresh its
+        shopify_customer_id and touch NOTHING else — an existing password
+        or email is never overwritten. Replays are naturally idempotent:
+        re-applying the same customer lands on the same row.
+        """
+        email = email.strip().lower()
+        with self._lock:
+            if customer_id:
+                # The store link is one-to-one and follows the store
+                # customer — if their email changed store-side, detach the
+                # id from whichever row held it before.
+                self._conn.execute(
+                    "UPDATE users SET shopify_customer_id = NULL"
+                    " WHERE shopify_customer_id = ? AND email != ?",
+                    (customer_id, email),
+                )
+            row = self._conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
+            if row is None:
+                self._conn.execute(
+                    "INSERT INTO users (id, email, password_hash, created_at,"
+                    " shopify_customer_id, source)"
+                    " VALUES (?, ?, '', ?, ?, 'shopify')",
+                    (uuid.uuid4().hex[:12], email, time.time(), customer_id),
+                )
+            elif customer_id and row["shopify_customer_id"] != customer_id:
+                self._conn.execute(
+                    "UPDATE users SET shopify_customer_id = ? WHERE id = ?",
+                    (customer_id, row["id"]),
+                )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
+        return self._from_row(row)
+
+    def unlink_shopify(self, user_id: str, clear_source: bool = False) -> None:
+        """Drop the store link (customers/delete on a claimed account);
+        clear_source additionally erases the shopify-sourced profile field
+        for customers/redact."""
+        sets = "shopify_customer_id = NULL"
+        if clear_source:
+            sets += ", source = NULL"
+        with self._lock:
+            self._conn.execute(
+                f"UPDATE users SET {sets} WHERE id = ?", (user_id,)
+            )
+            self._conn.commit()
+
+    def delete_user(self, user_id: str) -> None:
+        """Remove a user row outright. Callers must only do this for
+        unclaimed stubs — see shopify_billing for the guard rails."""
+        with self._lock:
+            self._conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
+            self._conn.commit()
+
+    def has_activity(self, user_id: str) -> bool:
+        """Any analyses on this account? The jobs table lives in the same
+        SQLite file when running under the web app; a standalone user DB
+        (no jobs table) trivially has none."""
+        with self._lock:
+            table = self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'jobs'"
+            ).fetchone()
+            if table is None:
+                return False
+            row = self._conn.execute(
+                "SELECT 1 FROM jobs WHERE user_id = ? LIMIT 1", (user_id,)
+            ).fetchone()
+        return row is not None
+
+    def has_unclaimed_value(self, email: str) -> bool:
+        """Is there anything attached to this email worth verifying before
+        a signup claims it — an unclaimed store stub, or a Pro purchase
+        parked before signup? (A claimed account returns False: signup
+        against it fails outright, no code needed.)"""
+        email = email.strip().lower()
+        user = self.get_by_email(email)
+        if user is not None:
+            return not user.has_password
+        return self.pending_grant_days(email) > 0
 
     # -- plan updates (called by the Stripe webhook) ----------------------
     def set_customer(self, user_id: str, customer_id: str) -> None:
@@ -216,6 +385,15 @@ class UserStore:
             )
             self._conn.commit()
 
+    def pending_grant_days(self, email: str) -> float:
+        """Peek at parked days without claiming them."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT days FROM pro_grants WHERE email = ?",
+                (email.strip().lower(),),
+            ).fetchone()
+        return row["days"] if row else 0.0
+
     def pop_pending_grant(self, email: str) -> float:
         """Claim (and clear) any parked days for this email."""
         email = email.strip().lower()
@@ -266,6 +444,74 @@ class UserStore:
             self._conn.commit()
         return (row["email"], row["days"])
 
+    # -- one-time email codes (claim verification, password reset) --------
+    @staticmethod
+    def _hash_code(email: str, purpose: str, code: str) -> str:
+        # Tied to email+purpose so a code only works where it was issued.
+        return hashlib.sha256(f"{email}|{purpose}|{code}".encode()).hexdigest()
+
+    def issue_email_code(self, email: str, purpose: str) -> str | None:
+        """Mint a fresh 6-digit code (the caller emails it). Returns None —
+        and keeps the outstanding code valid — when one was already issued
+        in the last CODE_RESEND_S seconds, so an email can't be flooded."""
+        email = email.strip().lower()
+        now = time.time()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT created_at, expires_at FROM email_codes"
+                " WHERE email = ? AND purpose = ?",
+                (email, purpose),
+            ).fetchone()
+            if (
+                row is not None
+                and now - row["created_at"] < CODE_RESEND_S
+                and row["expires_at"] > now
+            ):
+                return None
+            code = f"{secrets.randbelow(1_000_000):06d}"
+            self._conn.execute(
+                "INSERT OR REPLACE INTO email_codes"
+                " (email, purpose, code_hash, created_at, expires_at, attempts)"
+                " VALUES (?, ?, ?, ?, ?, 0)",
+                (email, purpose, self._hash_code(email, purpose, code),
+                 now, now + CODE_TTL_S),
+            )
+            self._conn.commit()
+        return code
+
+    def check_email_code(self, email: str, purpose: str, code: str) -> bool:
+        """Verify and consume a code: single-use (deleted on success),
+        expired codes never match, and CODE_MAX_ATTEMPTS wrong guesses
+        burn the code so it can't be brute-forced."""
+        email = email.strip().lower()
+        now = time.time()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT code_hash, expires_at, attempts FROM email_codes"
+                " WHERE email = ? AND purpose = ?",
+                (email, purpose),
+            ).fetchone()
+            if row is None:
+                return False
+            expected = self._hash_code(email, purpose, code.strip())
+            ok = (
+                row["expires_at"] > now
+                and hmac.compare_digest(expected, row["code_hash"])
+            )
+            if ok or row["expires_at"] <= now or row["attempts"] + 1 >= CODE_MAX_ATTEMPTS:
+                self._conn.execute(
+                    "DELETE FROM email_codes WHERE email = ? AND purpose = ?",
+                    (email, purpose),
+                )
+            else:
+                self._conn.execute(
+                    "UPDATE email_codes SET attempts = attempts + 1"
+                    " WHERE email = ? AND purpose = ?",
+                    (email, purpose),
+                )
+            self._conn.commit()
+        return ok
+
     def _from_row(self, row: sqlite3.Row) -> User:
         return User(
             id=row["id"],
@@ -275,4 +521,7 @@ class UserStore:
             plan=row["plan"],
             subscription_status=row["subscription_status"],
             pro_until=row["pro_until"] or 0.0,
+            shopify_customer_id=row["shopify_customer_id"],
+            source=row["source"],
+            has_password=bool(row["password_hash"]),
         )
