@@ -92,6 +92,43 @@ def flag_keys(payload: dict, cfg: Config) -> list[str]:
     return flags
 
 
+def session_flags(
+    all_metrics: list[SwingMetrics], stats: dict[str, dict[str, float]], cfg: Config
+) -> list[str]:
+    """The session's issues as flag keys, from in-memory SwingMetrics.
+
+    Same thresholds and keys as :func:`flag_keys` (which reads a parsed
+    metrics.json payload); this variant is what the report renderer uses to
+    pick practice-plan drills (see swinglab.drills). NaN metrics never flag.
+    """
+    coach = cfg.coaching
+
+    def any_over(attr: str, threshold: float) -> bool:
+        return any(
+            not math.isnan(v := getattr(m, attr)) and v > threshold
+            for m in all_metrics
+        )
+
+    flags: list[str] = []
+    if any_over("head_sway_backswing_sw", coach["sway_warn_sw"]):
+        flags.append(FLAG_SWAY)
+    if any(
+        not math.isnan(m.tempo_ratio) and m.tempo_ratio < coach["tempo_warn_below"]
+        for m in all_metrics
+    ):
+        flags.append(FLAG_TEMPO)
+    if any_over("hip_slide_backswing_sw", coach["sway_warn_sw"]):
+        flags.append(FLAG_HIP_SLIDE)
+    tempo_stats = stats.get("tempo_ratio")
+    if (
+        len(all_metrics) >= 2
+        and tempo_stats is not None
+        and tempo_stats["std"] >= coach["tempo_std_praise"]
+    ):
+        flags.append(FLAG_CONSISTENCY)
+    return flags
+
+
 def session_notes(
     all_metrics: list[SwingMetrics], stats: dict[str, dict[str, float]], cfg: Config
 ) -> list[str]:

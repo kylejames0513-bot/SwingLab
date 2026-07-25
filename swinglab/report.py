@@ -10,7 +10,9 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import __version__
+from .coaching import session_flags
 from .config import Config
+from .drills import gear_shop_url, practice_plan
 from .ffmpeg import VideoInfo
 
 
@@ -77,6 +79,7 @@ def write_report_html(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=select_autoescape(["html"]),
     )
+    flags = session_flags([s["metrics"] for s in swings], stats, cfg)
     html = env.get_template("report.html.j2").render(
         brand=cfg.brand,
         coaching=cfg.coaching,
@@ -86,6 +89,9 @@ def write_report_html(
         session_notes=session_notes,
         hand=hand,
         slowmo_factor=cfg.slowmo["factor"],
+        flags=flags,
+        practice_plan=practice_plan(flags, cfg),
+        gear_url=gear_shop_url(cfg),
     )
     out_path.write_text(html, encoding="utf-8")
     return out_path

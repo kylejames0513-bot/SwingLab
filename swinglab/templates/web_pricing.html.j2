@@ -1,6 +1,18 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Pricing{% endblock %}
 {% block style %}
+  .lead { text-align: center; margin-bottom: 24px; }
+  .lead h2 { font-size: 1.8rem; margin: 0 0 8px; }
+  .lead p { color: #555; font-size: 1.02rem; max-width: 520px; margin: 0 auto; }
+  table.compare { width: 100%; border-collapse: collapse; background: white;
+                  border: 1px solid #e0e0e0; border-radius: 8px;
+                  margin: 24px 0 28px; overflow: hidden; }
+  .compare th, .compare td { padding: 10px 14px; border-bottom: 1px solid #eee;
+                             text-align: center; font-size: 0.95rem; }
+  .compare th { background: var(--primary); color: white; }
+  .compare td:first-child { text-align: left; color: #444; }
+  .compare tr:last-child td { border-bottom: none; }
+  .compare .yes { color: var(--primary); font-weight: 600; }
   .plans { display: flex; gap: 20px; flex-wrap: wrap; }
   .plans .card { flex: 1 1 240px; display: flex; flex-direction: column; }
   .plans h2 { margin-top: 0; }
@@ -9,16 +21,51 @@
   li { margin: 8px 0; }
   .card form, .card a.button { margin-top: auto; }
   .card button { width: 100%; }
+  .fineprint { color: #666; font-size: 0.85rem; margin-top: 20px; text-align: center; }
 {% endblock %}
 {% block main %}
+  <div class="lead">
+    <h2>Every analysis is the full analysis</h2>
+    <p>Free and Pro get the same report — the metrics table, key-position
+      frames, slow motion, centerline overlays, coaching notes, and a
+      practice plan with re-film targets. The only difference is how often
+      you can film.</p>
+  </div>
+
+  <table class="compare">
+    <tr><th></th><th>Free</th><th>Pro</th></tr>
+    <tr>
+      <td>Swing analyses per month</td>
+      <td>{{ free_per_month }}</td>
+      <td class="yes">Unlimited</td>
+    </tr>
+    <tr>
+      <td>Tempo, head-sway and hip-slide metrics, benchmarked</td>
+      <td class="yes">Included</td><td class="yes">Included</td>
+    </tr>
+    <tr>
+      <td>Key-position frames, slow motion, centerline overlays</td>
+      <td class="yes">Included</td><td class="yes">Included</td>
+    </tr>
+    <tr>
+      <td>Coaching notes and a practice plan per session</td>
+      <td class="yes">Included</td><td class="yes">Included</td>
+    </tr>
+    <tr>
+      <td>Private session history</td>
+      <td class="yes">Included</td><td class="yes">Included</td>
+    </tr>
+  </table>
+
   <div class="plans">
     <div class="card">
       <h2>Free</h2>
       <p class="price">$0</p>
       <ul>
-        <li>{{ free_per_month }} swing analyses every month</li>
+        <li>{{ free_per_month }} swing analyses every month, forever</li>
         <li>Full report: metrics, key positions, slow motion, overlays</li>
-        <li>Coaching notes for every swing</li>
+        <li>Coaching notes and a practice plan for every session</li>
+        <li>No card required</li>
       </ul>
       {% if not user %}<a class="button" href="/">Sign up free</a>{% endif %}
     </div>
@@ -47,5 +94,13 @@
       {% endif %}
     </div>
   </div>
+
+  {% if pro_store_url %}
+  <p class="fineprint">Going all in? The 12-month plan on the store works out
+    cheaper than paying month to month.</p>
+  {% endif %}
+  <p class="fineprint">Cancel anytime — Pro keeps running to the end of what
+    you've paid for. Unused Pro purchases are refundable within 14 days.</p>
+
   <p class="disclaimer">{{ brand.disclaimer }}</p>
 {% endblock %}

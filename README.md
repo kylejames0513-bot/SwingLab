@@ -68,6 +68,22 @@ results/<video-name>/
     └── ... one set per swing
 ```
 
+### Practice plans in the report
+
+Every report ends with a practice plan built from what the session flagged.
+Each coaching flag (`tempo`, `sway`, `hip-slide`, `consistency`) maps to 2–3
+curated drills in `swinglab/drills.py` — an aim, a step-by-step protocol, a
+dosage, and a measurable re-film target expressed in the same numbers the
+report prints, so "fixed" means the next report says so. A session with no
+flags gets a maintenance set instead. The threshold numbers inside the drill
+text come from the `coaching` section of `config.yaml`, so retuning the
+thresholds retunes the targets with no code edits.
+
+Set `shop.store_url` in `config.yaml` (the shipped config points at the
+SwingLab store; empty = no link) and the plan ends with a quiet "Matched
+training aids" link to that store's `/collections/swinglab-gear` collection —
+the same tag-matched gear the web app recommends on finished analyses.
+
 ## Web app
 
 ```bash
@@ -224,7 +240,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account` |
 | `billing` | free/Pro analyses per month (price lives in Stripe, not here) |
-| `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count |
+| `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
 ## Tests
 

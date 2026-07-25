@@ -73,6 +73,10 @@ DEFAULTS: dict[str, Any] = {
         "cache_minutes": 10,
         "tag_prefix": "swinglab:",
         "max_recommendations": 3,
+        # Public storefront URL for the report's "Matched training aids"
+        # link; empty = the report renders no link. The shipped config.yaml
+        # points at the SwingLab store.
+        "store_url": "",
     },
     "overlay": {
         "captured_color": "#ff8c1a",

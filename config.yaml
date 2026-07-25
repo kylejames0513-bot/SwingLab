@@ -84,5 +84,11 @@ shop:
                              # recommended when an analysis flags that issue;
                              # swinglab:general pads out the list
   max_recommendations: 3     # gear items shown on a finished analysis page
+  store_url: "https://e0hbgh-ip.myshopify.com"
+                             # public storefront for the quiet "Matched
+                             # training aids" link at the end of the report's
+                             # practice plan — the link points at
+                             # <store_url>/collections/swinglab-gear.
+                             # Empty ("") = the report renders no link.
 
 output_dir: results
