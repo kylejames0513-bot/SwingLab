@@ -82,6 +82,10 @@ DEFAULTS: dict[str, Any] = {
         "max_active_jobs_per_ip": 3,
         "retention_days": 0,
         "require_account": False,
+        # Weekly practice-plan email scheduler. Even when true, nothing
+        # sends unless SMTP is configured (SWINGLAB_SMTP_URL +
+        # SWINGLAB_MAIL_FROM) AND the user opted in.
+        "digest_enabled": True,
     },
     "billing": {
         "free_per_month": 3,

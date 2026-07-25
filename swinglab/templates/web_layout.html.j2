@@ -14,7 +14,7 @@
   header h1 { margin: 0; font-size: 1.5rem; }
   header h1 a { color: inherit; text-decoration: none; }
   nav a { color: rgba(255,255,255,0.9); text-decoration: none; margin-left: 20px;
-          font-size: 0.95rem; }
+          font-size: 0.95rem; white-space: nowrap; }
   nav a:hover { text-decoration: underline; }
   main { max-width: 640px; margin: 40px auto; padding: 0 24px; }
   .card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; }
@@ -41,7 +41,7 @@
   <h1><a href="/">{{ brand.name }}</a></h1>
   <nav>
     {%- if user -%}
-      <a href="/">New analysis</a><a href="/sessions">History</a>{% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}<a href="/account">Account</a>
+      <a href="/">New analysis</a><a href="/sessions">History</a>{% if require_account %}<a href="/progress">Progress</a>{% endif %}{% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}<a href="/account">Account</a>
     {%- elif require_account -%}
       {% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}<a href="/pricing">Pricing</a><a href="/login">Log in</a>
     {%- else -%}

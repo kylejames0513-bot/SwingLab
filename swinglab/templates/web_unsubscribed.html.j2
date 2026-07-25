@@ -1,0 +1,11 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Unsubscribed{% endblock %}
+{% block main %}
+  <div class="card">
+    <h2>You're unsubscribed</h2>
+    <p>The weekly practice-plan email is off — no more sends to this address.
+      Your reports and <a href="/progress">progress page</a> stay exactly
+      where they are, and you can turn the email back on any time from your
+      <a href="/account">account page</a>.</p>
+  </div>
+{% endblock %}

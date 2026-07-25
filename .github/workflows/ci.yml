@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ffmpeg for the video pipeline tests; OpenGL ES libs for mediapipe's
+      # native library in CPU mode; DejaVu for image labels (see README).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg libgles2 libegl1 libgl1 fonts-dejavu-core
+
+      - name: Install package
+        run: pip install -e ".[dev,web]"
+
+      - name: Run tests
+        run: python -m pytest -q

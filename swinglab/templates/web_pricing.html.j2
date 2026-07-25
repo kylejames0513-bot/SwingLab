@@ -22,6 +22,8 @@
   .card form, .card a.button { margin-top: auto; }
   .card button { width: 100%; }
   .fineprint { color: #666; font-size: 0.85rem; margin-top: 20px; text-align: center; }
+  .personal { text-align: center; color: #555; font-size: 0.92rem;
+              margin: -6px 0 20px; }
 {% endblock %}
 {% block main %}
   <div class="lead">
@@ -56,6 +58,11 @@
       <td class="yes">Included</td><td class="yes">Included</td>
     </tr>
   </table>
+
+  {% if trend_line %}
+  {# Their own numbers, shown only when two sessions of real data exist. #}
+  <p class="personal">{{ trend_line }}.</p>
+  {% endif %}
 
   <div class="plans">
     <div class="card">

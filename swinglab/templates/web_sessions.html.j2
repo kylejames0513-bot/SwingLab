@@ -33,5 +33,9 @@
     {% else %}
       <p>No sessions yet — <a href="/">analyze your first clip</a>.</p>
     {% endif %}
+    {% if user and require_account %}
+    <p style="margin-bottom: 0"><a href="/progress">See your progress across
+      sessions &rarr;</a></p>
+    {% endif %}
   </div>
 {% endblock %}

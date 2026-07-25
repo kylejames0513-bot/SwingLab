@@ -23,6 +23,12 @@ the same way.
 The optional gear shop (a /shop page plus flag-matched training-aid
 recommendations on finished analyses) is likewise inert until the SHOPIFY_*
 environment variables are set — see shop.py.
+
+Retention surfaces: /progress charts each account's metrics across finished
+sessions (swinglab.trends + diagrams.trend_chart), and an opt-in weekly
+practice-plan email (digest.py) runs on an hourly scheduler thread — only
+when SMTP is configured and web.digest_enabled is on, and only to users who
+asked for it.
 """
 
 from __future__ import annotations
@@ -40,7 +46,9 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from ..coaching import flag_keys
 from ..config import Config
-from . import billing, mailer, shop, shopify_billing
+from ..diagrams import trend_chart
+from ..trends import FLAG_LABELS, build_trends, format_delta, format_value, trend_sentence
+from . import billing, digest, mailer, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
 from .users import User, UserStore
 
@@ -182,16 +190,39 @@ def create_app(
             return None
         return max(0, limit - manager.usage_this_month(user.id))
 
+    def personal_trend(user: User | None) -> str | None:
+        """The user's own trend sentence, or None — never a made-up number
+        (trend_sentence needs two sessions of real data), and never an
+        error on a page that only wanted a nice-to-have line."""
+        if user is None:
+            return None
+        try:
+            return trend_sentence(
+                build_trends(manager.list_recent(user_id=user.id), cfg)
+            )
+        except Exception:
+            return None
+
     # -- pages ------------------------------------------------------------
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
-        if cfg.web.get("require_account") and current_user(request) is None:
+        user = current_user(request)
+        if cfg.web.get("require_account") and user is None:
             return render("web_login.html.j2", request, error=None, landing=True)
+        left = quota_left(user)
+        # The conversion moment: a free user out of analyses sees their own
+        # trend next to the upgrade path — only when it truly exists.
+        trend_line = (
+            personal_trend(user)
+            if left == 0 and user is not None and not user.is_pro
+            else None
+        )
         return render(
             "web_upload.html.j2",
             request,
             max_upload_mb=float(cfg.web.get("max_upload_mb") or 0),
-            quota_left=quota_left(current_user(request)),
+            quota_left=left,
+            trend_line=trend_line,
         )
 
     # -- accounts ---------------------------------------------------------
@@ -249,7 +280,9 @@ def create_app(
         email: str = Form(""),
         password: str = Form(""),
         code: str = Form(""),
+        digest_opt: str = Form("", alias="digest"),
     ):
+        wants_digest = digest_opt.lower() in ("on", "true", "1", "yes")
         try:
             normalized = users.validate_signup(email, password)
         except ValueError as exc:
@@ -267,11 +300,13 @@ def create_app(
                 return render(
                     "web_login.html.j2", request, landing=False, error=None,
                     verify_email=normalized, verify_password=password,
+                    verify_digest="on" if wants_digest else "",
                 )
             if not users.check_email_code(normalized, "claim", code):
                 return render(
                     "web_login.html.j2", request, landing=False,
                     verify_email=normalized, verify_password=password,
+                    verify_digest="on" if wants_digest else "",
                     error="That code didn't match (or expired) — check the "
                           "email, or resubmit without a code for a new one.",
                 )
@@ -281,6 +316,8 @@ def create_app(
             return render(
                 "web_login.html.j2", request, landing=False, error=str(exc)
             )
+        if wants_digest:  # the signup checkbox is UNCHECKED by default
+            users.set_digest_opt_in(user.id, True)
         claim_pending_pro(user)
         request.session["user_id"] = user.id
         return RedirectResponse("/", status_code=303)
@@ -361,9 +398,101 @@ def create_app(
             ),
         )
 
+    @app.post("/account/digest")
+    def account_digest(request: Request, enabled: str = Form("")):
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        users.set_digest_opt_in(
+            user.id, enabled.lower() in ("on", "true", "1", "yes")
+        )
+        return RedirectResponse("/account", status_code=303)
+
+    @app.get("/email/unsubscribe", response_class=HTMLResponse)
+    def email_unsubscribe(request: Request, token: str = ""):
+        """One-click opt-out from the weekly digest. Works logged out: the
+        HMAC token (signed with SWINGLAB_SECRET) proves the link came from
+        an email we sent. Idempotent — a second click is still a 200."""
+        user_id = digest.verify_unsubscribe_token(token, secret)
+        if user_id is None or users.get(user_id) is None:
+            raise HTTPException(404, "That unsubscribe link isn't valid.")
+        users.set_digest_opt_in(user_id, False)
+        return render("web_unsubscribed.html.j2", request)
+
+    # -- progress dashboard ------------------------------------------------
+    @app.get("/progress", response_class=HTMLResponse)
+    def progress_page(request: Request):
+        if not cfg.web.get("require_account"):
+            # No accounts, no per-user history to chart — same rule as the
+            # other account-shaped surfaces.
+            raise HTTPException(404, "Progress tracking needs accounts enabled.")
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        trends = build_trends(manager.list_recent(user_id=user.id), cfg)
+        cards = []
+        if trends.session_count >= 2:
+            for name, mt in trends.metrics.items():
+                values = [v for _, v in mt.points]
+                improved = None
+                if mt.delta is not None and mt.worse is not None and mt.delta != 0:
+                    moved_worse = (
+                        mt.delta > 0 if mt.worse == "higher" else mt.delta < 0
+                    )
+                    improved = not moved_worse
+                cards.append({
+                    "label": mt.label,
+                    "sessions": len(values),
+                    "chart": trend_chart(
+                        values, mt.benchmark, cfg.brand,
+                        worse=mt.worse or "higher",
+                    ),
+                    "latest": format_value(name, mt.latest),
+                    "best": (
+                        format_value(name, mt.best)
+                        if mt.best is not None else "\N{EM DASH}"
+                    ),
+                    "delta": (
+                        format_delta(name, mt.delta)
+                        if mt.delta is not None else "\N{EM DASH}"
+                    ),
+                    "delta_class": (
+                        "" if improved is None else "good" if improved else "bad"
+                    ),
+                    "benchmark_text": mt.benchmark_text,
+                })
+        span = None
+        if trends.session_count >= 2:
+            span = " \N{EN DASH} ".join(
+                time.strftime("%b %d", time.localtime(ts))
+                for ts in (
+                    trends.samples[0].finished_at, trends.samples[-1].finished_at
+                )
+            )
+        return render(
+            "web_progress.html.j2",
+            request,
+            cards=cards,
+            flags_strip=[
+                {"label": FLAG_LABELS.get(flag, flag), "count": count}
+                for flag, count in trends.flag_counts.items()
+            ],
+            session_count=trends.session_count,
+            span=span,
+            sentence=trend_sentence(trends),
+            latest_job_id=(
+                trends.samples[-1].job_id if trends.samples else None
+            ),
+        )
+
     @app.get("/pricing", response_class=HTMLResponse)
     def pricing(request: Request):
-        return render("web_pricing.html.j2", request)
+        # The quiet personal line: only for logged-in users with >= 2
+        # sessions of real data (trend_sentence is None otherwise).
+        return render(
+            "web_pricing.html.j2", request,
+            trend_line=personal_trend(current_user(request)),
+        )
 
     # -- gear shop --------------------------------------------------------
     @app.get("/shop", response_class=HTMLResponse)
@@ -589,5 +718,10 @@ def create_app(
     @app.get("/healthz")
     def healthz():
         return JSONResponse({"status": "ok", **manager.counts()})
+
+    # Weekly practice-plan digest: hourly daemon thread, started ONLY when
+    # SMTP is configured AND web.digest_enabled is on — otherwise None and
+    # zero behavior (see digest.py for the consent + claim-before-send rules).
+    app.state.digest_thread = digest.start_scheduler(manager, users, cfg, secret)
 
     return app

@@ -1,4 +1,5 @@
-"""Inline-SVG drill diagrams, animations, and issue-card sparklines.
+"""Inline-SVG drill diagrams, animations, issue-card sparklines, and the
+progress dashboard's trend charts.
 
 Every function returns a complete ``<svg …>…</svg>`` string (never a full
 HTML document), hand-built with no dependencies. Brand colors come in as
@@ -558,6 +559,84 @@ def sparkline(
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 28" '
         'width="120" height="28" role="img" aria-label="per-swing values">'
+        + "".join(parts)
+        + "</svg>"
+    )
+
+
+def trend_chart(
+    points: Sequence[float | None],
+    benchmark: float | None,
+    brand: dict,
+    worse: str = "higher",      # which side of the benchmark is bad
+) -> str:
+    """Session-over-session line chart for the progress dashboard.
+
+    Same hand-built contract as everything else here: a complete
+    ``<svg>…</svg>`` string, brand colors only, no <defs>, no url(...), no
+    external anything. Sessions are spaced evenly (the story is session to
+    session, not calendar-accurate gaps); the benchmark renders as a dashed
+    line with a faint accent band over its bad side; dots sit on every
+    session, accent-filled when that session is on the bad side. Returns ""
+    when there is nothing to plot.
+    """
+    vals = [float(v) for v in points if v is not None]
+    if not vals:
+        return ""
+    primary, accent = _colors(brand)
+    x0, x1 = 12.0, 308.0
+    y0, y1 = 14.0, 102.0
+    domain = vals + ([float(benchmark)] if benchmark is not None else [])
+    lo, hi = min(domain), max(domain)
+    if hi - lo == 0:
+        lo, hi = lo - 1.0, hi + 1.0
+    pad = 0.10 * (hi - lo)
+    lo -= pad
+    hi += pad
+    n = len(vals)
+
+    def x_of(i: int) -> float:
+        return (x0 + x1) / 2 if n == 1 else x0 + i * (x1 - x0) / (n - 1)
+
+    def y_of(v: float) -> float:
+        return y1 - (v - lo) / (hi - lo) * (y1 - y0)
+
+    parts: list[str] = []
+    if benchmark is not None:
+        by = y_of(float(benchmark))
+        band_top, band_bottom = (y0 - 4.0, by) if worse == "higher" else (by, y1 + 4.0)
+        if band_bottom > band_top:
+            parts.append(
+                f'<rect x="{_n(x0 - 6)}" y="{_n(band_top)}" '
+                f'width="{_n(x1 - x0 + 12)}" height="{_n(band_bottom - band_top)}" '
+                f'fill="{accent}" opacity="0.08"/>'
+            )
+        parts.append(
+            f'<line x1="{_n(x0 - 6)}" y1="{_n(by)}" x2="{_n(x1 + 6)}" '
+            f'y2="{_n(by)}" stroke="{GRAY}" stroke-width="1" '
+            'stroke-dasharray="4 3"/>'
+        )
+    parts.append(  # baseline under the plot, echoing the drill-scene ground
+        f'<line x1="{_n(x0 - 6)}" y1="{_n(y1 + 8)}" x2="{_n(x1 + 6)}" '
+        f'y2="{_n(y1 + 8)}" stroke="{GRAY}" stroke-width="1" opacity="0.6"/>'
+    )
+    if n >= 2:
+        pts = " ".join(f"{_n(x_of(i))},{_n(y_of(v))}" for i, v in enumerate(vals))
+        parts.append(
+            f'<polyline points="{pts}" stroke="{primary}" stroke-width="2" '
+            'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
+        )
+    for i, v in enumerate(vals):
+        bad = benchmark is not None and (
+            v > benchmark if worse == "higher" else v < benchmark
+        )
+        parts.append(
+            f'<circle cx="{_n(x_of(i))}" cy="{_n(y_of(v))}" r="3.2" '
+            f'fill="{accent if bad else primary}"/>'
+        )
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120" '
+        'role="img" aria-label="session-to-session trend" class="trend-svg">'
         + "".join(parts)
         + "</svg>"
     )
