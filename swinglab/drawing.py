@@ -148,6 +148,45 @@ def apply_watermark(img: Image.Image, text: str) -> Image.Image:
     return Image.alpha_composite(img.convert("RGBA"), overlay).convert("RGB")
 
 
+def hex_to_rgba(color: str, alpha: int = 255) -> tuple[int, int, int, int]:
+    """'#rrggbb' -> (r, g, b, alpha); needed because brand colors are hex
+    strings and Pillow RGBA layers want tuples."""
+    c = color.lstrip("#")
+    if len(c) != 6:
+        raise ValueError(f"expected '#rrggbb' color, got {color!r}")
+    return (int(c[0:2], 16), int(c[2:4], 16), int(c[4:6], 16), alpha)
+
+
+def draw_chip(
+    layer: Image.Image,
+    xy: tuple[int, int],
+    text: str,
+    bg_rgba: tuple[int, int, int, int],
+    font: ImageFont.ImageFont,
+    radius: int = 6,
+    pad: tuple[int, int] = (10, 6),
+) -> tuple[int, int]:
+    """Rounded-rect text chip on an RGBA layer (the report-card look).
+
+    Returns the rendered (width, height) so the caller can stack the next
+    chip below this one.
+    """
+    draw = ImageDraw.Draw(layer)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    w = (bbox[2] - bbox[0]) + 2 * pad[0]
+    h = (bbox[3] - bbox[1]) + 2 * pad[1]
+    x, y = xy
+    draw.rounded_rectangle([x, y, x + w, y + h], radius=radius, fill=bg_rgba)
+    # subtract the bbox origin so ascender/leading offsets don't skew centering
+    draw.text(
+        (x + pad[0] - bbox[0], y + pad[1] - bbox[1]),
+        text,
+        font=font,
+        fill=(255, 255, 255, 255),
+    )
+    return w, h
+
+
 def save_branded(img: Image.Image, out_path: str | Path, cfg) -> Path:
     if cfg.brand["watermark"]:
         img = apply_watermark(img, cfg.brand["name"])

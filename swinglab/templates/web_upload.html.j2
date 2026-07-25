@@ -1,6 +1,16 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Analyze your swing{% endblock %}
 {% block style %}
+  .hero { text-align: center; margin: 0 0 18px; }
+  .hero h2 { font-size: 1.7rem; margin: 0 0 6px; }
+  .hero p { color: #555; margin: 0 auto; max-width: 470px; }
+  .steps { display: flex; gap: 10px; margin: 18px 0 8px; flex-wrap: wrap; }
+  .steps div { flex: 1 1 130px; background: white; border: 1px solid #e0e0e0;
+               border-radius: 8px; padding: 10px 12px; font-size: 0.85rem;
+               color: #444; text-align: left; }
+  .steps strong { display: block; color: var(--primary); margin-bottom: 2px; }
+  .free-note { text-align: center; color: #666; font-size: 0.85rem;
+               margin: 0 0 20px; }
   label { display: block; margin: 16px 0 6px; font-weight: 600; }
   input[type=text], select {
     width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
@@ -21,6 +31,22 @@
   #upload-progress { display: none; }
 {% endblock %}
 {% block main %}
+  <div class="hero">
+    <h2>The range tells you nothing. The film knows.</h2>
+    <p>One phone clip becomes tempo, sway and slide numbers, key-position
+      frames, slow motion — and a practice plan with a re-film target for
+      every flag.</p>
+    <div class="steps">
+      <div><strong>1. Film</strong> Phone at hip height, face-on or down the line.</div>
+      <div><strong>2. Upload</strong> Straight off the camera roll — every swing in the clip gets measured.</div>
+      <div><strong>3. Retrain</strong> Each flag comes with drills and a number that says when it's fixed.</div>
+    </div>
+  </div>
+  {% if require_account and (not user or not user.is_pro) %}
+  <p class="free-note">The free plan stays free — {{ free_per_month }} full
+    analyses every month, no card required.</p>
+  {% endif %}
+
   <div class="card">
     <h2>Analyze your swing</h2>
     {% if quota_left is defined and quota_left is not none %}

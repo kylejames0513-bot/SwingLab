@@ -34,6 +34,32 @@ days it granted.
 This also works unchanged with Shopify's Subscriptions app: each billing
 cycle creates a new paid order with the same SKU, so Pro keeps extending
 itself for as long as the subscription runs.
+
+Account sync (customer webhooks, same endpoint and secret)
+----------------------------------------------------------
+
+Add ``customers/create``, ``customers/update``, and ``customers/delete``
+webhooks pointing at the same ``/webhooks/shopify`` URL and a customer
+created on the store automatically exists in the app:
+
+- ``customers/create`` / ``customers/update`` upsert a "store account":
+  no user for the (normalized) email -> a passwordless stub is created
+  with ``shopify_customer_id`` and ``source='shopify'``; a user exists ->
+  only the ``shopify_customer_id`` link is set/refreshed. An existing
+  password or email is NEVER overwritten (Shopify does not expose customer
+  credentials, so passwords cannot sync — the user sets their app password
+  once, by signing up with the store email, which claims the same row).
+  Replays are idempotent: the upsert lands on the same row every time.
+- ``customers/delete`` deletes the user ONLY when it is an unclaimed stub
+  (no password, no analyses); any Pro days it still carried are parked in
+  ``pro_grants`` so a later signup keeps what was bought. A claimed
+  account merely loses its ``shopify_customer_id`` link — store-side
+  deletion never destroys app data.
+- ``customers/redact`` (GDPR) follows the delete semantics and further
+  erases the shopify-sourced profile fields (link + source) on claimed
+  accounts, and drops any parked purchase for a deleted stub's email.
+- ``customers/data_request`` and ``shop/redact`` (GDPR) are acknowledged
+  with a 200 and logged; there is nothing to change app-side.
 """
 
 from __future__ import annotations
@@ -43,12 +69,23 @@ import hashlib
 import hmac
 import json
 import os
+import time
 
 from ..config import Config
 from .users import UserStore
 
 PAID_TOPICS = ("orders/paid", "ORDERS_PAID")
 CANCELLED_TOPICS = ("orders/cancelled", "ORDERS_CANCELLED")
+CUSTOMER_UPSERT_TOPICS = (
+    "customers/create", "customers/update",
+    "CUSTOMERS_CREATE", "CUSTOMERS_UPDATE",
+)
+CUSTOMER_DELETE_TOPICS = ("customers/delete", "CUSTOMERS_DELETE")
+CUSTOMER_REDACT_TOPICS = ("customers/redact", "CUSTOMERS_REDACT")
+ACK_TOPICS = (
+    "customers/data_request", "CUSTOMERS_DATA_REQUEST",
+    "shop/redact", "SHOP_REDACT",
+)
 
 
 def enabled() -> bool:
@@ -77,16 +114,29 @@ def handle_webhook(
     """Verify the payload came from Shopify, then apply it. Raises
     ValueError on a bad signature (the route turns that into a 400)."""
     secret = os.environ["SHOPIFY_WEBHOOK_SECRET"].encode()
-    expected = base64.b64encode(
-        hmac.new(secret, payload, hashlib.sha256).digest()
-    ).decode()
-    if not hmac.compare_digest(expected, signature or ""):
+    expected = base64.b64encode(hmac.new(secret, payload, hashlib.sha256).digest())
+    # Compare on bytes: the header is decoded latin-1 upstream, so a
+    # malformed (non-ASCII) signature would make the str form of
+    # compare_digest raise TypeError — a 500 instead of a clean reject.
+    supplied = (signature or "").encode("latin-1", "replace")
+    if not hmac.compare_digest(expected, supplied):
         raise ValueError("Invalid Shopify webhook signature")
     try:
-        order = json.loads(payload)
+        data = json.loads(payload)
     except ValueError:
         raise ValueError("Invalid Shopify webhook payload")
-    apply_order(topic, order, users, cfg)
+    apply_webhook(topic, data, users, cfg)
+
+
+def apply_webhook(topic: str, data: dict, users: UserStore, cfg: Config) -> None:
+    """Route a (verified) Shopify webhook by topic: orders change Pro
+    access, customer events sync store accounts, GDPR events are
+    acknowledged. Unknown topics are no-ops (still a 200 — Shopify retries
+    anything else)."""
+    if topic in PAID_TOPICS or topic in CANCELLED_TOPICS:
+        apply_order(topic, data, users, cfg)
+    else:
+        apply_customer(topic, data, users)
 
 
 def apply_order(topic: str, order: dict, users: UserStore, cfg: Config) -> None:
@@ -98,6 +148,49 @@ def apply_order(topic: str, order: dict, users: UserStore, cfg: Config) -> None:
         _apply_paid(order, users, cfg)
     elif topic in CANCELLED_TOPICS:
         _apply_cancelled(order, users)
+
+
+def apply_customer(topic: str, data: dict, users: UserStore) -> None:
+    """Sync a (verified) Shopify customer webhook into the users table.
+    See the module docstring for the exact semantics per topic."""
+    if topic in CUSTOMER_UPSERT_TOPICS:
+        email = (data.get("email") or "").strip().lower()
+        if not email:
+            return  # a customer with no email has nothing to sync to
+        users.upsert_store_customer(email, str(data.get("id") or "") or None)
+    elif topic in CUSTOMER_DELETE_TOPICS:
+        _detach_customer(data, users, redact=False)
+    elif topic in CUSTOMER_REDACT_TOPICS:
+        _detach_customer(data.get("customer") or {}, users, redact=True)
+    elif topic in ACK_TOPICS:
+        print(
+            f"Shopify {topic} webhook acknowledged — no app-side data changes."
+        )
+
+
+def _detach_customer(customer: dict, users: UserStore, redact: bool) -> None:
+    """customers/delete and customers/redact. An unclaimed stub (no
+    password, no analyses) is deleted outright — on plain deletion any Pro
+    days it still carried are parked so a later signup keeps what was
+    bought; on redaction the parked purchase is erased too. A claimed
+    account only loses its store link (never its app data), and redaction
+    additionally clears the shopify-sourced ``source`` field."""
+    user = users.get_by_shopify(str(customer.get("id") or ""))
+    if user is None:
+        email = (customer.get("email") or "").strip().lower()
+        user = users.get_by_email(email) if email else None
+    if user is None:
+        return  # unknown customer, or the webhook replayed after removal
+    if not user.has_password and not users.has_activity(user.id):
+        users.delete_user(user.id)
+        if redact:
+            users.pop_pending_grant(user.email)
+        else:
+            remaining = (user.pro_until - time.time()) / 86400
+            if remaining > 0:
+                users.add_pending_grant(user.email, remaining)
+    else:
+        users.unlink_shopify(user.id, clear_source=redact)
 
 
 def _order_days(order: dict, cfg: Config) -> float:

@@ -1,0 +1,122 @@
+{%- assign per_page = section.settings.per_page | default: 12 -%}
+{%- assign banner_alt = collection.image.alt | default: collection.title -%}
+{% paginate collection.products by per_page %}
+
+{%- if collection.image -%}
+  <div class="sl-main-collection__banner">
+    {{ collection.image | image_url: width: 2600 | image_tag: class: 'sl-main-collection__banner-img', alt: banner_alt, loading: 'eager' }}
+    <div class="sl-main-collection__banner-inner">
+      <div class="sl-wrap">
+        <p class="sl-mono-label sl-main-collection__kicker">Collection</p>
+        <h1 class="sl-main-collection__title">{{ collection.title }}</h1>
+      </div>
+    </div>
+  </div>
+{%- endif -%}
+
+<div class="sl-wrap sl-collection{% if collection.image %} sl-main-collection--bannered{% endif %}">
+  {%- unless collection.image -%}
+    <header class="sl-collection-head">
+      <h1 class="sl-h2">{{ collection.title }}</h1>
+    </header>
+  {%- endunless -%}
+
+  {%- if collection.description != blank -%}
+    <div class="sl-collection-desc sl-rte">{{ collection.description }}</div>
+  {%- endif -%}
+
+  <p class="sl-mono-label sl-main-collection__count">
+    {{ collection.products_count }} instrument{% unless collection.products_count == 1 %}s{% endunless %}
+  </p>
+
+  {%- if collection.products.size > 0 -%}
+    <div class="sl-grid">
+      {%- for product in collection.products -%}
+        {% render 'product-card', product: product %}
+      {%- endfor -%}
+    </div>
+  {%- else -%}
+    <p class="sl-empty">Nothing here yet — check back soon.</p>
+  {%- endif -%}
+
+  {%- if paginate.pages > 1 -%}
+    <nav class="sl-pagination" aria-label="Pagination">{{ paginate | default_pagination }}</nav>
+  {%- endif -%}
+</div>
+{% endpaginate %}
+
+{% stylesheet %}
+.sl-main-collection__banner {
+  position: relative;
+  overflow: hidden;
+}
+
+.sl-main-collection__banner-img {
+  width: 100%;
+  height: clamp(240px, 34vw, 400px);
+  object-fit: cover;
+  display: block;
+}
+
+/* green scrim, heaviest where the title sits */
+.sl-main-collection__banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(to top, rgba(15, 42, 27, 0.82), rgba(15, 42, 27, 0.32) 55%, rgba(15, 42, 27, 0.08));
+}
+
+.sl-main-collection__banner-inner {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 2;
+  padding-bottom: clamp(22px, 4vw, 42px);
+}
+
+.sl-main-collection__kicker {
+  color: rgba(233, 242, 236, 0.78);
+  margin: 0 0 8px;
+}
+
+.sl-main-collection__title {
+  margin: 0;
+  font-size: var(--sl-text-4xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: #fdfcf9;
+  text-wrap: balance;
+}
+
+.sl-main-collection--bannered {
+  padding-top: 34px;
+}
+
+/* bannerless heading wrapper (header element carries no default margin) */
+.sl-collection-head { margin: 0; }
+
+.sl-main-collection__count {
+  display: block;
+  margin: 20px 0 0;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Collection page",
+  "settings": [
+    {
+      "type": "range",
+      "id": "per_page",
+      "label": "Products per page",
+      "min": 8,
+      "max": 24,
+      "step": 4,
+      "default": 12
+    }
+  ]
+}
+{% endschema %}

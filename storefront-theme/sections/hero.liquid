@@ -1,0 +1,163 @@
+<section class="sl-hero sl-wrap">
+  <div class="sl-hero__copy sl-reveal">
+    {%- if section.settings.eyebrow != blank -%}
+      <p class="sl-hero__eyebrow">{{ section.settings.eyebrow }}</p>
+    {%- endif -%}
+    <h1 class="sl-hero__title">{{ section.settings.heading | default: 'Know your swing in minutes.' }}</h1>
+    {%- if section.settings.body != blank -%}
+      <p class="sl-hero__body">{{ section.settings.body }}</p>
+    {%- endif -%}
+    <div class="sl-hero__actions">
+      {%- if section.settings.primary_label != blank -%}
+        <a href="{{ section.settings.primary_url | default: '#' }}" class="sl-btn sl-btn--primary">{{ section.settings.primary_label }}</a>
+      {%- endif -%}
+      {%- if section.settings.secondary_label != blank -%}
+        <a href="{{ section.settings.secondary_url | default: '#how' }}" class="sl-btn sl-btn--outline">{{ section.settings.secondary_label }}</a>
+      {%- endif -%}
+    </div>
+    {%- if section.settings.chip1 != blank or section.settings.chip2 != blank or section.settings.chip3 != blank -%}
+      <div class="sl-hero__chips">
+        {%- if section.settings.chip1 != blank -%}
+          <span class="sl-hero__chip sl-mono-label">{{ section.settings.chip1 }}</span>
+        {%- endif -%}
+        {%- if section.settings.chip2 != blank -%}
+          <span class="sl-hero__chip sl-mono-label">{{ section.settings.chip2 }}</span>
+        {%- endif -%}
+        {%- if section.settings.chip3 != blank -%}
+          <span class="sl-hero__chip sl-mono-label">{{ section.settings.chip3 }}</span>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
+    {%- if section.settings.fine_print != blank -%}
+      <p class="sl-hero__fine">{{ section.settings.fine_print }}</p>
+    {%- endif -%}
+  </div>
+
+  <div class="sl-hero__media-wrap sl-reveal sl-reveal--d1">
+    <span class="sl-hero__arc" aria-hidden="true"></span>
+    <div class="sl-media sl-hero__media">
+      {% render 'media-placeholder',
+        image: section.settings.image,
+        ratio_w: 520, ratio_h: 620,
+        label: 'golfer filming swing on phone',
+        sublabel: '(drop real photography here)',
+        alt: section.settings.heading %}
+    </div>
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-hero {
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: clamp(24px, 4vw, 56px);
+  align-items: center;
+  padding-top: clamp(28px, 4.5vw, 56px);
+  padding-bottom: clamp(28px, 4.5vw, 56px);
+  overflow: clip;
+}
+.sl-hero__copy {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.sl-hero__eyebrow {
+  margin: 0 0 16px;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-orange);
+}
+.sl-hero__title {
+  margin: 0;
+  font-size: clamp(40px, 5.5vw, 68px);
+  line-height: 1.02;
+  font-weight: 900;
+  letter-spacing: -0.03em;
+  color: var(--sl-green);
+  text-wrap: balance;
+}
+.sl-hero__body {
+  margin: 20px 0 0;
+  font-size: var(--sl-text-lg);
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+  max-width: 46ch;
+  text-wrap: pretty;
+}
+.sl-hero__actions {
+  display: flex;
+  gap: 14px;
+  margin-top: 32px;
+  flex-wrap: wrap;
+}
+.sl-hero__chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  margin-top: 26px;
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+.sl-hero__chip {
+  display: block;
+  padding: 11px 18px;
+  color: var(--sl-ink-soft);
+  white-space: nowrap;
+}
+.sl-hero__chip + .sl-hero__chip { border-left: 1px solid var(--sl-border); }
+.sl-hero__fine {
+  margin: 14px 0 0;
+  font-size: 13px;
+  color: var(--sl-ink-muted);
+}
+.sl-hero__media-wrap { position: relative; }
+.sl-hero__media {
+  position: relative;
+  z-index: 1;
+  border-radius: 16px;
+}
+/* the movement's sacred mark: one faint quarter-sweep behind the media */
+.sl-hero__arc {
+  position: absolute;
+  z-index: 0;
+  top: -9%;
+  left: -14%;
+  width: 78%;
+  aspect-ratio: 1;
+  border: 1.5px solid transparent;
+  border-top-color: rgba(20, 71, 44, 0.16);
+  border-radius: 50%;
+  transform: rotate(-16deg);
+  pointer-events: none;
+}
+
+@media (max-width: 749px) {
+  .sl-hero { grid-template-columns: 1fr; }
+  .sl-hero__arc { display: none; }
+  .sl-hero__chip { padding: 10px 14px; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Hero",
+  "settings": [
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "SWING ANALYSIS FROM ONE PHONE VIDEO" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Know your swing in minutes." },
+    { "type": "textarea", "id": "body", "label": "Body", "default": "Film a few swings at the range, upload the clip, and get tempo, sway and slide numbers, key-position frames, slow motion, and plain-English coaching notes." },
+    { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Analyze a swing free" },
+    { "type": "url", "id": "primary_url", "label": "Primary button link" },
+    { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "See how it works" },
+    { "type": "url", "id": "secondary_url", "label": "Secondary button link" },
+    { "type": "text", "id": "chip1", "label": "Metric chip 1", "default": "TEMPO 3.0:1" },
+    { "type": "text", "id": "chip2", "label": "Metric chip 2", "default": "SWAY +0.4 SW" },
+    { "type": "text", "id": "chip3", "label": "Metric chip 3", "default": "4 KEY FRAMES" },
+    { "type": "text", "id": "fine_print", "label": "Fine print", "default": "Try it free — 3 analyses a month, forever." },
+    { "type": "image_picker", "id": "image", "label": "Hero image", "info": "Leave blank to show the striped placeholder." }
+  ],
+  "presets": [{ "name": "Hero" }]
+}
+{% endschema %}

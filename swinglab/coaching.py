@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from .config import Config
 from .metrics import SwingMetrics
@@ -13,6 +14,10 @@ from .metrics import SwingMetrics
 FLAG_SWAY = "sway"
 FLAG_TEMPO = "tempo"
 FLAG_HIP_SLIDE = "hip-slide"
+FLAG_HEAD_DIP = "head-dip"
+FLAG_ARM_EXTENSION = "arm-extension"
+FLAG_SHOULDER_TILT = "shoulder-tilt"
+FLAG_BALANCE = "balance"
 FLAG_CONSISTENCY = "consistency"
 
 
@@ -43,6 +48,47 @@ def swing_notes(m: SwingMetrics, cfg: Config) -> list[str]:
             "backswing. Turn into the trail hip rather than sliding across it."
         )
 
+    dip = m.head_dip_sw
+    if not math.isnan(dip) and dip > coach["head_dip_warn_sw"]:
+        notes.append(
+            f"Head drops {dip:.2f} shoulder widths between address and impact "
+            f"(flagged beyond {coach['head_dip_warn_sw']:.2f}). A small squat is "
+            "normal — this much dip moves the swing's low point; feel the chest "
+            "stay tall through the ball."
+        )
+
+    arm = m.lead_arm_angle_deg
+    if not math.isnan(arm) and arm < coach["lead_arm_warn_deg"]:
+        notes.append(
+            f"Lead arm is bent to {arm:.0f}\N{DEGREE SIGN} at impact (flagged under "
+            f"{coach['lead_arm_warn_deg']:.0f}\N{DEGREE SIGN}; 180\N{DEGREE SIGN} is straight as seen "
+            "from the camera). Keep the lead arm long through the strike — width "
+            "at impact is where contact lives."
+        )
+
+    tilt_i, tilt_d = m.shoulder_tilt_impact_deg, m.shoulder_tilt_delta_deg
+    if not math.isnan(tilt_i) and tilt_i < coach["shoulder_tilt_impact_min_deg"]:
+        notes.append(
+            f"Shoulders are nearly level at impact ({tilt_i:.0f}\N{DEGREE SIGN}, measured "
+            f"face-on, vs the {coach['shoulder_tilt_impact_min_deg']:.0f}\N{DEGREE SIGN} minimum). "
+            "The trail shoulder should be clearly lower at the strike — keep the "
+            "tilt rather than standing up out of it."
+        )
+    elif not math.isnan(tilt_d) and tilt_d < 0:
+        notes.append(
+            f"Shoulder tilt fell from {m.shoulder_tilt_address_deg:.0f}\N{DEGREE SIGN} at address "
+            f"to {tilt_i:.0f}\N{DEGREE SIGN} at impact. The trail shoulder should work down "
+            "through the ball, not level out."
+        )
+
+    bal = m.finish_balance_sw
+    if not math.isnan(bal) and bal > coach["finish_balance_warn_sw"]:
+        notes.append(
+            f"Feet drift {bal:.2f} shoulder widths during the finish hold (flagged "
+            f"beyond {coach['finish_balance_warn_sw']:.2f}). A held, quiet finish is "
+            "the cheapest proof of a swing in balance — hold it until the ball lands."
+        )
+
     if not notes:
         notes.append(
             "No flags on this swing — tempo and lateral movement are inside the "
@@ -70,16 +116,28 @@ def flag_keys(payload: dict, cfg: Config) -> list[str]:
             (v := metric(s, key)) is not None and v > threshold for s in swings
         )
 
+    def any_under(key: str, threshold: float) -> bool:
+        return any(
+            (v := metric(s, key)) is not None and v < threshold for s in swings
+        )
+
     flags: list[str] = []
     if any_over("head_sway_backswing_sw", coach["sway_warn_sw"]):
         flags.append(FLAG_SWAY)
-    if any(
-        (v := metric(s, "tempo_ratio")) is not None and v < coach["tempo_warn_below"]
-        for s in swings
-    ):
+    if any_under("tempo_ratio", coach["tempo_warn_below"]):
         flags.append(FLAG_TEMPO)
     if any_over("hip_slide_backswing_sw", coach["sway_warn_sw"]):
         flags.append(FLAG_HIP_SLIDE)
+    if any_over("head_dip_sw", coach["head_dip_warn_sw"]):
+        flags.append(FLAG_HEAD_DIP)
+    if any_under("lead_arm_angle_deg", coach["lead_arm_warn_deg"]):
+        flags.append(FLAG_ARM_EXTENSION)
+    if any_under(
+        "shoulder_tilt_impact_deg", coach["shoulder_tilt_impact_min_deg"]
+    ) or any_under("shoulder_tilt_delta_deg", 0.0):
+        flags.append(FLAG_SHOULDER_TILT)
+    if any_over("finish_balance_sw", coach["finish_balance_warn_sw"]):
+        flags.append(FLAG_BALANCE)
     tempo_std = ((payload.get("session_stats") or {}).get("tempo_ratio") or {}).get(
         "std"
     )
@@ -90,6 +148,313 @@ def flag_keys(payload: dict, cfg: Config) -> list[str]:
     ):
         flags.append(FLAG_CONSISTENCY)
     return flags
+
+
+def session_flags(
+    all_metrics: list[SwingMetrics], stats: dict[str, dict[str, float]], cfg: Config
+) -> list[str]:
+    """The session's issues as flag keys, from in-memory SwingMetrics.
+
+    Same thresholds and keys as :func:`flag_keys` (which reads a parsed
+    metrics.json payload); this variant is what the report renderer uses to
+    pick practice-plan drills (see swinglab.drills). NaN metrics never flag.
+    """
+    coach = cfg.coaching
+
+    def any_over(attr: str, threshold: float) -> bool:
+        return any(
+            not math.isnan(v := getattr(m, attr)) and v > threshold
+            for m in all_metrics
+        )
+
+    def any_under(attr: str, threshold: float) -> bool:
+        return any(
+            not math.isnan(v := getattr(m, attr)) and v < threshold
+            for m in all_metrics
+        )
+
+    flags: list[str] = []
+    if any_over("head_sway_backswing_sw", coach["sway_warn_sw"]):
+        flags.append(FLAG_SWAY)
+    if any_under("tempo_ratio", coach["tempo_warn_below"]):
+        flags.append(FLAG_TEMPO)
+    if any_over("hip_slide_backswing_sw", coach["sway_warn_sw"]):
+        flags.append(FLAG_HIP_SLIDE)
+    if any_over("head_dip_sw", coach["head_dip_warn_sw"]):
+        flags.append(FLAG_HEAD_DIP)
+    if any_under("lead_arm_angle_deg", coach["lead_arm_warn_deg"]):
+        flags.append(FLAG_ARM_EXTENSION)
+    if any_under(
+        "shoulder_tilt_impact_deg", coach["shoulder_tilt_impact_min_deg"]
+    ) or any_under("shoulder_tilt_delta_deg", 0.0):
+        flags.append(FLAG_SHOULDER_TILT)
+    if any_over("finish_balance_sw", coach["finish_balance_warn_sw"]):
+        flags.append(FLAG_BALANCE)
+    tempo_stats = stats.get("tempo_ratio")
+    if (
+        len(all_metrics) >= 2
+        and tempo_stats is not None
+        and tempo_stats["std"] >= coach["tempo_std_praise"]
+    ):
+        flags.append(FLAG_CONSISTENCY)
+    return flags
+
+
+# Why-it-matters / fix copy for the issue cards: exactly 2 sentences + 1
+# sentence per flag, honest about what a single face-on camera can measure.
+WHY_TEXT = {
+    FLAG_SWAY: (
+        "Lateral head drift going back moves the swing's centre, and the "
+        "downswing has a quarter of a second to find its way home. Keeping the "
+        "head inside the trail foot makes the turn repeatable instead of a "
+        "recovery."
+    ),
+    FLAG_TEMPO: (
+        "A backswing that never finishes forces the downswing to start from a "
+        "moving platform, and everything after that is timing. The 3:1 ratio is "
+        "not magic — it is simply the range where the swing has time to change "
+        "direction."
+    ),
+    FLAG_HIP_SLIDE: (
+        "Sliding the hips away from the target instead of turning them loads "
+        "the trail side somewhere it cannot unload from. A turn stays over the "
+        "trail hip; a slide has to be un-slid before impact."
+    ),
+    FLAG_HEAD_DIP: (
+        "The head dropping between address and impact lowers the whole swing's "
+        "centre, and the arc's low point drops with it. A small squat is "
+        "normal; a dip this size means the strike depends on a late rescue."
+    ),
+    FLAG_ARM_EXTENSION: (
+        "A lead arm this bent at impact shortens the swing's radius at the "
+        "exact moment that decides contact. Width through the ball is what "
+        "makes the strike repeatable; folding the arm trades it for a "
+        "last-instant flip."
+    ),
+    FLAG_SHOULDER_TILT: (
+        "At impact the trail shoulder should be clearly lower than the lead; "
+        "shoulders that are level or reversed usually mean the body stopped and "
+        "the hands are scooping. Measured face-on, that shows up as a flat "
+        "shoulder line at the strike."
+    ),
+    FLAG_BALANCE: (
+        "Feet moving during the finish hold mean the swing ended somewhere the "
+        "body could not support. Balance at the finish is the cheapest summary "
+        "of everything that happened before it."
+    ),
+    FLAG_CONSISTENCY: (
+        "The swings in this session ran on noticeably different tempos, which "
+        "makes every other number harder to repeat. The variance itself is the "
+        "finding: same body, different clock."
+    ),
+}
+
+FIX_TEXT = {
+    FLAG_SWAY: (
+        "Turn into the trail hip rather than drifting across it — the stick "
+        "and mirror drills give the body a hard reference."
+    ),
+    FLAG_TEMPO: "Rehearse one count until it is boring — metronome or out loud.",
+    FLAG_HIP_SLIDE: (
+        "Give the hips something to turn against — the band and wall drills."
+    ),
+    FLAG_HEAD_DIP: (
+        "Keep address height through the ball — the chair and head-window "
+        "drills give an external reference."
+    ),
+    FLAG_ARM_EXTENSION: (
+        "Reconnect the lead arm to the chest — the towel drill, then impact "
+        "freezes."
+    ),
+    FLAG_SHOULDER_TILT: (
+        "Rehearse the impact shape — the freeze drill with the trail shoulder "
+        "working down and under."
+    ),
+    FLAG_BALANCE: (
+        "Shrink the base and hold every finish for a three count — "
+        "feet-together swings, then normal stance."
+    ),
+    FLAG_CONSISTENCY: (
+        "Pick one count and make it the only one — rehearsal-and-ball pairs."
+    ),
+}
+
+
+@dataclass(frozen=True)
+class IssueCard:
+    flag: str                     # flag id, e.g. "head-dip"
+    metric: str                   # SwingMetrics field the card plots
+    display_name: str
+    unit: str                     # "SW" | "\N{DEGREE SIGN}" | ":1"
+    per_swing: tuple[float | None, ...]   # one entry per swing, NaN -> None
+    session_value: float | None
+    session_label: str            # "session mean" | "std dev across swings"
+    session_text: str             # preformatted, e.g. "0.41 SW" / "148\N{DEGREE SIGN}"
+    benchmark_value: float | None  # threshold for the sparkline line (None = no line)
+    benchmark_text: str
+    worse_direction: str          # "higher" | "lower" (which side of the
+                                  # benchmark is bad; drives sparkline accents)
+    severity: str                 # "warn" | "major"
+    why: str                      # exactly 2 sentences, honest
+    fix: str                      # 1 sentence
+    drill_ids: tuple[str, ...]
+    drill_names: tuple[str, ...]
+
+
+def issue_cards(
+    all_metrics: list[SwingMetrics],
+    stats: dict[str, dict[str, float]],
+    cfg: Config,
+) -> list[IssueCard]:
+    """One card per fired session flag (old and new alike), sorted 'major'
+    first (stable within severity, preserving session_flags order)."""
+    # Function-local import: drills.py imports the FLAG_* constants from this
+    # module, so a module-level import here would be circular.
+    from . import drills
+
+    coach = cfg.coaching
+    deg = "\N{DEGREE SIGN}"
+    library = drills.build_drills(cfg.coaching)
+
+    def over(attr: str, thr: float):
+        def rule(m: SwingMetrics) -> bool:
+            v = getattr(m, attr)
+            return not math.isnan(v) and v > thr
+
+        return rule
+
+    def under(attr: str, thr: float):
+        def rule(m: SwingMetrics) -> bool:
+            v = getattr(m, attr)
+            return not math.isnan(v) and v < thr
+
+        return rule
+
+    def tilt_rule(m: SwingMetrics) -> bool:
+        return under("shoulder_tilt_impact_deg", coach["shoulder_tilt_impact_min_deg"])(
+            m
+        ) or under("shoulder_tilt_delta_deg", 0.0)(m)
+
+    # flag -> (metric, display_name, unit, session_text fmt, benchmark_value,
+    #          benchmark_text, worse_direction, per-swing firing rule)
+    sway_thr = float(coach["sway_warn_sw"])
+    tempo_thr = float(coach["tempo_warn_below"])
+    dip_thr = float(coach["head_dip_warn_sw"])
+    arm_thr = float(coach["lead_arm_warn_deg"])
+    tilt_thr = float(coach["shoulder_tilt_impact_min_deg"])
+    bal_thr = float(coach["finish_balance_warn_sw"])
+    specs = {
+        FLAG_SWAY: (
+            "head_sway_backswing_sw", "Head sway (backswing)", "SW",
+            lambda v: f"{v:.2f} SW", sway_thr,
+            f"flagged above {sway_thr:.2f} SW", "higher",
+            over("head_sway_backswing_sw", sway_thr),
+        ),
+        FLAG_TEMPO: (
+            "tempo_ratio", "Tempo", ":1",
+            lambda v: f"{v:.2f}:1", tempo_thr,
+            f"target {float(coach['tempo_target']):.1f}:1 · "
+            f"flagged below {tempo_thr:.1f}:1", "lower",
+            under("tempo_ratio", tempo_thr),
+        ),
+        FLAG_HIP_SLIDE: (
+            "hip_slide_backswing_sw", "Hip slide (backswing)", "SW",
+            lambda v: f"{v:.2f} SW", sway_thr,
+            f"flagged above {sway_thr:.2f} SW", "higher",
+            over("hip_slide_backswing_sw", sway_thr),
+        ),
+        FLAG_HEAD_DIP: (
+            "head_dip_sw", "Head dip", "SW",
+            lambda v: f"{v:.2f} SW", dip_thr,
+            f"flagged above {dip_thr:.2f} SW", "higher",
+            over("head_dip_sw", dip_thr),
+        ),
+        FLAG_ARM_EXTENSION: (
+            "lead_arm_angle_deg", "Lead-arm extension", deg,
+            lambda v: f"{v:.0f}{deg}", arm_thr,
+            f"180{deg} is straight · flagged below {arm_thr:.0f}{deg}", "lower",
+            under("lead_arm_angle_deg", arm_thr),
+        ),
+        FLAG_SHOULDER_TILT: (
+            "shoulder_tilt_impact_deg", "Shoulder tilt at impact", deg,
+            lambda v: f"{v:.0f}{deg}", tilt_thr,
+            f"flagged below {tilt_thr:.0f}{deg} or decreasing from address",
+            "lower", tilt_rule,
+        ),
+        FLAG_BALANCE: (
+            "finish_balance_sw", "Finish balance", "SW",
+            lambda v: f"{v:.2f} SW", bal_thr,
+            f"flagged above {bal_thr:.2f} SW", "higher",
+            over("finish_balance_sw", bal_thr),
+        ),
+        FLAG_CONSISTENCY: (
+            "tempo_ratio", "Tempo consistency", ":1",
+            lambda v: f"\N{PLUS-MINUS SIGN}{v:.2f}", None,
+            f"std dev flagged at or above {float(coach['tempo_std_praise']):.2f}",
+            "higher", None,
+        ),
+    }
+
+    cards: list[IssueCard] = []
+    for flag in session_flags(all_metrics, stats, cfg):
+        metric, name, unit, fmt, benchmark, bench_text, worse, rule = specs[flag]
+
+        per_swing = tuple(
+            None if math.isnan(v := getattr(m, metric)) else float(v)
+            for m in all_metrics
+        )
+
+        if flag == FLAG_CONSISTENCY:
+            session_label = "std dev across swings"
+            session_value = stats.get("tempo_ratio", {}).get("std")
+            severity = (
+                "major"
+                if session_value is not None
+                and session_value >= 2 * coach["tempo_std_praise"]
+                else "warn"
+            )
+        else:
+            session_label = "session mean"
+            session_value = stats.get(metric, {}).get("mean")
+            measured = sum(1 for v in per_swing if v is not None)
+            flagged = sum(1 for m in all_metrics if rule(m))
+            breaches = session_value is not None and (
+                session_value > benchmark
+                if worse == "higher"
+                else session_value < benchmark
+            )
+            severity = (
+                "major" if breaches or (measured >= 2 and flagged == measured)
+                else "warn"
+            )
+        session_text = fmt(session_value) if session_value is not None else "—"
+
+        family_key = drills.family_for(flag)
+        ds = library.get(family_key, []) if family_key else []
+
+        cards.append(
+            IssueCard(
+                flag=flag,
+                metric=metric,
+                display_name=name,
+                unit=unit,
+                per_swing=per_swing,
+                session_value=session_value,
+                session_label=session_label,
+                session_text=session_text,
+                benchmark_value=benchmark,
+                benchmark_text=bench_text,
+                worse_direction=worse,
+                severity=severity,
+                why=WHY_TEXT[flag],
+                fix=FIX_TEXT[flag],
+                drill_ids=tuple(d.id for d in ds),
+                drill_names=tuple(d.name for d in ds),
+            )
+        )
+
+    cards.sort(key=lambda c: 0 if c.severity == "major" else 1)  # stable
+    return cards
 
 
 def session_notes(

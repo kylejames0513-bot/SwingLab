@@ -1,0 +1,24 @@
+{
+  "type": "header",
+  "name": "Header group",
+  "sections": {
+    "announcement": {
+      "type": "announcement-bar",
+      "settings": {
+        "show_announcement": true,
+        "text": "Launch: 15% off training aids with code RANGE15",
+        "link": "shopify://collections/swinglab-gear",
+        "secondary_text": "Free plan: 3 swing analyses a month — no card required"
+      }
+    },
+    "header": {
+      "type": "header",
+      "settings": {
+        "logo_text": "SWINGLAB",
+        "menu": "swinglab-main",
+        "app_url": "https://swinglab-production.up.railway.app"
+      }
+    }
+  },
+  "order": ["announcement", "header"]
+}

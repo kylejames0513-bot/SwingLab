@@ -21,6 +21,23 @@ coaching:
   tempo_target: 3.0          # tour-average backswing:downswing ratio shown as benchmark
   tempo_warn_below: 2.4      # flag tempo ratios under this
   tempo_std_praise: 0.3      # praise consistency when tempo std dev across swings is under this
+  head_dip_warn_sw: 0.25     # flag when the head drops more than this between
+                             # address and impact, in shoulder widths. A small
+                             # squat is normal; 0.25 SW is roughly 9-10 cm on
+                             # an adult - a genuine dip, not noise.
+  lead_arm_warn_deg: 150     # flag a lead arm bent below this at impact
+                             # (shoulder-elbow-wrist angle as seen from the
+                             # camera; 180 = straight)
+  shoulder_tilt_impact_min_deg: 5.0
+                             # flag impact shoulder tilt below this (positive =
+                             # trail shoulder lower, measured face-on). Any
+                             # swing whose tilt decreases from address to
+                             # impact also fires the shoulder-tilt flag.
+  finish_balance_warn_sw: 0.15
+                             # flag when the ankle midpoint drifts more than
+                             # this (mean over the finish hold, in shoulder
+                             # widths) - a step or stumble, well above pose
+                             # jitter (~0.02 SW)
 
 analysis:
   window_pre_s: 1.8          # analysis window starts this long before the strike
@@ -31,6 +48,12 @@ analysis:
   takeaway_threshold_sw: 0.25
   finish_offset_s: 0.55
   impact_behind_sw: 0.10     # ideal head position at impact: this far behind address, in shoulder widths
+  finish_hold_frames: 6      # frames after the finish event used for the
+                             # balance metric. Must fit the window:
+                             # finish_offset_s + finish_hold_frames/fps has to
+                             # stay inside window_post_s (0.55 + 6/30 = 0.75
+                             # <= 0.8 with defaults); if it doesn't, the
+                             # metric reads NaN rather than failing.
 
 slowmo:
   factor: 4                  # 4 => quarter speed
@@ -40,6 +63,13 @@ slowmo:
                              # scale with this — 720 fits small (1GB) servers,
                              # raise to 1280 on beefier machines
   crf: 20
+  annotated: true            # also render replay_sN.mp4 next to slowmo_sN.mp4:
+                             # the same slow-mo window with the skeleton, the
+                             # fading hand-path trace and metric chips burned
+                             # in. Never motion-interpolated (keeps text
+                             # crisp), so it stays fast even without --fast.
+  trail_fade_s: 0.9          # the hand-path trace fades out over this many
+                             # source-time seconds
 
 overlay:
   captured_color: "#ff8c1a"  # orange: the body as captured
@@ -80,9 +110,18 @@ shop:
                              # live in Shopify, never here.
   cache_minutes: 10          # in-memory product list cache (per-process)
   tag_prefix: "swinglab:"    # products tagged swinglab:tempo / swinglab:sway /
-                             # swinglab:hip-slide / swinglab:consistency are
-                             # recommended when an analysis flags that issue;
+                             # swinglab:hip-slide / swinglab:consistency /
+                             # swinglab:head-dip / swinglab:arm-extension /
+                             # swinglab:balance are recommended when an
+                             # analysis flags that issue (shoulder-tilt shares
+                             # the arm-extension drill family and gear tag);
                              # swinglab:general pads out the list
   max_recommendations: 3     # gear items shown on a finished analysis page
+  store_url: "https://e0hbgh-ip.myshopify.com"
+                             # public storefront for the quiet "Matched
+                             # training aids" link at the end of the report's
+                             # practice plan — the link points at
+                             # <store_url>/collections/swinglab-gear.
+                             # Empty ("") = the report renders no link.
 
 output_dir: results

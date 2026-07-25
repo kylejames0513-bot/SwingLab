@@ -13,7 +13,7 @@ from typing import Callable
 
 from PIL import Image
 
-from . import audio, events, frames, metrics, overlay, pose, report, slowmo, strip
+from . import annotate, audio, events, frames, metrics, overlay, pose, report, slowmo, strip
 from .coaching import session_notes as make_session_notes
 from .coaching import swing_notes
 from .config import Config
@@ -192,7 +192,7 @@ def _analyze_swing(
     tracked = [tracker.detect(p) for p in frameset.paths]
     ev = events.detect_events(tracked, frameset, strike_s, cfg)
     finish_idx = frameset.index_near(ev.finish_s)
-    m = metrics.compute_metrics(swing_no, tracked, ev, finish_idx, hand)
+    m = metrics.compute_metrics(swing_no, tracked, ev, finish_idx, hand, cfg=cfg)
 
     # full-res key frames (deliverables only)
     key_times = {
@@ -239,6 +239,21 @@ def _analyze_swing(
         video_path, strike_s, media_dir / f"slowmo_s{swing_no}.mp4", cfg, fast=fast
     )
 
+    # Annotated replay: the golfer's own footage with the tracked skeleton,
+    # fading hand-path trace, and event chips burned in. Never motion-
+    # interpolated (see annotate.py), so it is identical in --fast mode;
+    # slowmo.annotated is the only switch.
+    replay_path = None
+    if cfg.slowmo["annotated"]:
+        log(f"Swing {swing_no}: rendering annotated replay...")
+        replay_frames = slowmo.extract_replay_frames(
+            video_path, strike_s, work_dir / f"replay_s{swing_no}", cfg
+        )
+        replay_path = annotate.make_replay(
+            replay_frames, frameset, tracked, ev, m,
+            media_dir / f"replay_s{swing_no}.mp4", cfg,
+        )
+
     return {
         "metrics": m,
         "notes": swing_notes(m, cfg),
@@ -246,4 +261,5 @@ def _analyze_swing(
         "strip": str(strip_path.relative_to(session_dir)),
         "overlay": str(overlay_path.relative_to(session_dir)),
         "slowmo": str(slowmo_path.relative_to(session_dir)),
+        "replay": str(replay_path.relative_to(session_dir)) if replay_path else None,
     }

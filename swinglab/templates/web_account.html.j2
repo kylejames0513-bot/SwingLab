@@ -32,6 +32,10 @@
     <div class="row"><span class="k">Pro access until</span>
       <span>{{ pro_until_date }}</span></div>
     {% endif %}
+    {% if user.shopify_customer_id %}
+    <div class="row"><span class="k">Store</span>
+      <span>Connected to the {{ brand.name }} store</span></div>
+    {% endif %}
 
     {% if user.is_pro %}
       {% if billing_enabled and user.stripe_customer_id %}

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import math
 from pathlib import Path
@@ -9,8 +10,11 @@ from typing import Any
 
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
-from . import __version__
+from . import __version__, diagrams
+from .coaching import issue_cards as make_issue_cards
+from .coaching import session_flags
 from .config import Config
+from .drills import gear_shop_url, practice_plan
 from .ffmpeg import VideoInfo
 
 
@@ -52,6 +56,8 @@ def write_metrics_json(
                     "strip": s["strip"],
                     "overlay": s["overlay"],
                     "slowmo": s["slowmo"],
+                    # only when present — older consumers see no null churn
+                    **({"replay": s["replay"]} if s.get("replay") else {}),
                 },
             }
             for s in swings
@@ -77,6 +83,25 @@ def write_report_html(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=select_autoescape(["html"]),
     )
+    flags = session_flags([s["metrics"] for s in swings], stats, cfg)
+    # Issue cards: one per fired flag, each with an inline-SVG sparkline of
+    # the per-swing values against the flag's benchmark (self-contained HTML,
+    # no external assets).
+    cards = make_issue_cards([s["metrics"] for s in swings], stats, cfg)
+    issue_ctx = [
+        {**dataclasses.asdict(c),
+         "sparkline": diagrams.sparkline(
+             c.per_swing, c.benchmark_value, cfg.brand, c.worse_direction)}
+        for c in cards
+    ]
+    plan = practice_plan(flags, cfg)
+    # Inline SVG diagram + CSS-only animation per drill in the plan (keyed by
+    # drill id; brand colors flow in from config for white-labeling).
+    drill_media = {
+        d.id: {"diagram": diagrams.drill_diagram(d.id, cfg.brand),
+               "animation": diagrams.drill_animation(d.id, cfg.brand)}
+        for block in plan for d in block["drills"]
+    }
     html = env.get_template("report.html.j2").render(
         brand=cfg.brand,
         coaching=cfg.coaching,
@@ -86,6 +111,11 @@ def write_report_html(
         session_notes=session_notes,
         hand=hand,
         slowmo_factor=cfg.slowmo["factor"],
+        flags=flags,
+        issue_cards=issue_ctx,
+        practice_plan=plan,
+        drill_media=drill_media,
+        gear_url=gear_shop_url(cfg),
     )
     out_path.write_text(html, encoding="utf-8")
     return out_path

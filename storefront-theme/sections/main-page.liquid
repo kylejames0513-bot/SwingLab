@@ -1,0 +1,36 @@
+<div class="sl-wrap sl-page">
+  {%- if section.settings.show_title -%}
+    <header class="sl-main-page__head">
+      <h1 class="sl-main-page__title">{{ page.title }}</h1>
+    </header>
+  {%- endif -%}
+  <div class="sl-page-content sl-rte">{{ page.content }}</div>
+</div>
+
+{% stylesheet %}
+.sl-main-page__head { margin: 0; }
+.sl-main-page__title {
+  margin: 0;
+  font-size: var(--sl-text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--sl-green);
+  text-wrap: balance;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Page",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_title",
+      "label": "Show page title",
+      "default": true,
+      "info": "Turn off when the page body opens with its own heading."
+    }
+  ]
+}
+{% endschema %}

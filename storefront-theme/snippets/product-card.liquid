@@ -1,0 +1,59 @@
+{%- comment -%}
+  Product card for collection, search, and related-product grids.
+  Accepts: product
+
+  Renders (base.css classes): image with hover lift, save-percent badge
+  when a single-price product has a compare-at price, sold-out badge,
+  title, price with compare-at strike, and up to two small flag chips
+  parsed from "swinglab:<flag>" tags.
+{%- endcomment -%}
+{%- liquid
+  assign card_alt = product.featured_media.alt | default: product.title
+
+  assign on_sale = false
+  assign save_pct = 0
+  if product.price_varies == false and product.compare_at_price > product.price
+    assign on_sale = true
+    assign save_pct = product.compare_at_price | minus: product.price | times: 100 | divided_by: product.compare_at_price
+  endif
+
+  assign flag_str = ''
+  for tag in product.tags
+    assign t = tag | downcase
+    assign t_prefix = t | slice: 0, 9
+    if t_prefix == 'swinglab:'
+      assign flag = t | remove_first: 'swinglab:' | replace: '-', ' ' | strip
+      if flag != blank
+        assign flag_str = flag_str | append: flag | append: ','
+      endif
+    endif
+  endfor
+  assign card_flags = flag_str | split: ','
+-%}
+<a href="{{ product.url }}" class="sl-pcard">
+  <div class="sl-pcard-media">
+    {%- if product.featured_media -%}
+      {{ product.featured_media | image_url: width: 720 | image_tag: loading: 'lazy', alt: card_alt, class: 'sl-pcard-img' }}
+    {%- else -%}
+      <div class="sl-placeholder sl-pcard-img" aria-hidden="true"></div>
+    {%- endif -%}
+    {%- if on_sale and product.available -%}
+      <span class="sl-badge-save">Save {{ save_pct }}%</span>
+    {%- endif -%}
+    {%- unless product.available -%}
+      <span class="sl-pcard-badge">Sold out</span>
+    {%- endunless -%}
+  </div>
+  <h3 class="sl-pcard-title">{{ product.title }}</h3>
+  <p class="sl-pcard-price">
+    {%- if product.price_varies %}From {% endif -%}{{ product.price | money }}
+    {%- if on_sale %} <s class="sl-price-compare">{{ product.compare_at_price | money }}</s>{% endif -%}
+  </p>
+  {%- if card_flags.size > 0 -%}
+    <p class="sl-pcard-flags">
+      {%- for flag in card_flags limit: 2 -%}
+        <span class="sl-chip">{{ flag }}</span>
+      {%- endfor -%}
+    </p>
+  {%- endif -%}
+</a>

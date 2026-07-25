@@ -1,3 +1,7 @@
+{% macro num(v, fmt="%.2f", flagged=false) -%}
+  {%- if v != v %}<td>—</td>
+  {%- else %}<td{% if flagged %} class="flag"{% endif %}>{{ fmt|format(v) }}</td>{% endif -%}
+{%- endmacro -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -18,21 +22,64 @@
   main { max-width: 1100px; margin: 0 auto; padding: 24px 32px 48px; }
   h2 { color: var(--primary); border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
   table { border-collapse: collapse; width: 100%; background: white; }
+  /* Wide metric tables scroll inside their own box on narrow screens so the
+     page body itself never scrolls sideways. */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: right; }
   th { background: var(--primary); color: white; text-align: center; }
   tr.mean-row td { font-weight: bold; background: #f0f0f0; }
+  tr.bench-row td { color: #555; font-size: 0.85rem; background: #fafafa; }
   .meta { color: #555; font-size: 0.9rem; }
   .meta td, .meta th { text-align: left; border: none; padding: 2px 12px 2px 0; background: none; color: inherit; }
+  .meta td { overflow-wrap: anywhere; } /* long video paths must not widen the page */
   .swing { background: white; border: 1px solid #e0e0e0; border-radius: 8px;
            padding: 16px 20px; margin: 20px 0; }
   .swing img, .swing video { max-width: 100%; border-radius: 4px; margin-top: 10px; }
   .notes li { margin: 6px 0; }
   .flag { color: var(--accent); font-weight: 600; }
+  .video-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
+  .video-row figure { margin: 0; flex: 1 1 320px; min-width: 0; }
+  .video-row video { width: 100%; }
   .tips { background: #eef6f0; border-left: 4px solid var(--primary);
           padding: 12px 16px; border-radius: 4px; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+  .card { background: white; border: 1px solid #e0e0e0; border-left: 4px solid var(--primary);
+          border-radius: 8px; padding: 14px 16px; }
+  .card.sev-major { border-left-color: var(--accent); }
+  .card-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .card-head h3 { margin: 0; color: var(--primary); font-size: 1.05rem; }
+  .card .sev { font-size: 0.75rem; text-transform: uppercase; color: #777; }
+  .card.sev-major .sev { color: var(--accent); font-weight: 700; }
+  .card .bench { color: #777; font-size: 0.85rem; }
+  .card .fixline .meta a { color: var(--primary); }
+  .plan { background: white; border: 1px solid #e0e0e0; border-radius: 8px;
+          padding: 16px 20px; margin: 20px 0; }
+  .plan > h3 { margin: 0 0 4px; color: var(--primary); }
+  .drill { border-top: 1px solid #eee; padding: 12px 0 4px; }
+  .drill h4 { margin: 0 0 2px; font-size: 1rem; }
+  .drill .aim { color: #555; margin: 0 0 6px; }
+  .drill ol { margin: 6px 0; padding-left: 22px; }
+  .drill ol li { margin: 3px 0; }
+  .drill .dose { margin: 6px 0 4px; font-size: 0.92rem; }
+  .drill .gear-note { color: #666; font-size: 0.85rem; margin: 4px 0; }
+  .drill-media { display: flex; gap: 16px; margin: 8px 0; flex-wrap: wrap; }
+  .drill-media figure { margin: 0; }
+  .drill-media .drill-svg { width: 200px; height: auto; background: #fff;
+                            border: 1px solid #eee; border-radius: 6px; }
+  .drill-svg text { fill: #5f6368; } /* darken prop/count labels for legibility */
+  .drill-media figcaption { text-align: center; color: #777; font-size: 0.8rem;
+                            max-width: 200px; }
+  .drill-media details summary { cursor: pointer; color: var(--primary);
+                                 font-size: 0.9rem; padding: 2px 0; }
+  .gear-link { color: #666; font-size: 0.9rem; }
+  .gear-link a { color: var(--primary); }
   .disclaimer { color: #666; font-style: italic; margin-top: 32px;
                 border-top: 1px solid #ddd; padding-top: 12px; }
   footer { text-align: center; color: #777; font-size: 0.85rem; padding: 16px; }
+  @media (max-width: 640px) {
+    header { padding: 16px 20px; }
+    main { padding: 16px 16px 40px; }
+  }
 </style>
 </head>
 <body>
@@ -55,6 +102,7 @@
 </table>
 
 <h2>Metrics</h2>
+<div class="table-scroll">
 <table>
   <tr>
     <th>Swing</th><th>Strike (s)</th><th>Backswing (s)</th><th>Downswing (s)</th>
@@ -88,8 +136,47 @@
   </tr>
   {% endif %}
 </table>
+</div>
 <p class="meta">SW = shoulder widths at address. A→T = address to top, T→I = top to impact.
 Positive lateral values are movement away from the target.</p>
+
+<h3>Impact &amp; finish</h3>
+<div class="table-scroll">
+<table>
+  <tr><th>Swing</th><th>Head dip A→I (SW)</th><th>Lead arm at impact (°)</th>
+      <th>Shoulder tilt at impact (°)</th><th>Tilt change A→I (°)</th>
+      <th>Finish balance (SW)</th></tr>
+  {% for s in swings %}{% set m = s.metrics %}
+  <tr><td>{{ m.swing }}</td>
+    {{ num(m.head_dip_sw, flagged=(m.head_dip_sw > coaching.head_dip_warn_sw)) }}
+    {{ num(m.lead_arm_angle_deg, "%.0f", m.lead_arm_angle_deg < coaching.lead_arm_warn_deg) }}
+    {{ num(m.shoulder_tilt_impact_deg, "%.0f", m.shoulder_tilt_impact_deg < coaching.shoulder_tilt_impact_min_deg) }}
+    {{ num(m.shoulder_tilt_delta_deg, "%.0f", m.shoulder_tilt_delta_deg < 0) }}
+    {{ num(m.finish_balance_sw, flagged=(m.finish_balance_sw > coaching.finish_balance_warn_sw)) }}
+  </tr>{% endfor %}
+  {% if stats %}
+  <tr class="mean-row"><td>mean ± std</td>
+    {% for key, fmt in [("head_dip_sw", "%.2f"), ("lead_arm_angle_deg", "%.0f"),
+                        ("shoulder_tilt_impact_deg", "%.0f"),
+                        ("shoulder_tilt_delta_deg", "%.0f"),
+                        ("finish_balance_sw", "%.2f")] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ fmt|format(st.mean) }} ± {{ fmt|format(st.std) }}{% else %}—{% endif %}</td>
+    {% endfor %}
+  </tr>
+  <tr class="bench-row"><td>benchmark</td>
+    <td>≤ {{ "%.2f"|format(coaching.head_dip_warn_sw) }}</td>
+    <td>≥ {{ "%.0f"|format(coaching.lead_arm_warn_deg) }}</td>
+    <td>≥ {{ "%.0f"|format(coaching.shoulder_tilt_impact_min_deg) }}</td>
+    <td>≥ 0</td>
+    <td>≤ {{ "%.2f"|format(coaching.finish_balance_warn_sw) }}</td>
+  </tr>
+  {% endif %}
+</table>
+</div>
+<p class="meta">Angles are measured in the camera's view (face-on). Head dip is
+address to impact; positive shoulder tilt = trail shoulder lower; finish
+balance is mean foot drift during the hold — lower is better.</p>
 
 {% if session_notes %}
 <h2>Session notes</h2>
@@ -108,10 +195,90 @@ Positive lateral values are movement away from the target.</p>
   <img src="{{ s.strip }}" alt="Key positions, swing {{ s.metrics.swing }}">
   <h3>Centerline overlay</h3>
   <img src="{{ s.overlay }}" alt="Centerline overlay, swing {{ s.metrics.swing }}">
-  <h3>Slow motion ({{ slowmo_factor }}× slower)</h3>
-  <video controls muted playsinline src="{{ s.slowmo }}"></video>
+  <div class="video-row">
+    <figure>
+      <h3>Slow motion ({{ slowmo_factor }}× slower)</h3>
+      <video controls muted playsinline src="{{ s.slowmo }}"></video>
+    </figure>
+    {% if s.replay %}
+    <figure>
+      <h3>Coach replay</h3>
+      <video controls muted playsinline src="{{ s.replay }}"></video>
+      <figcaption class="meta">Your own footage, annotated: the tracked body,
+      the hand path (wrist centroid), and the numbers appearing at each swing
+      event — same window as the slow motion.</figcaption>
+    </figure>
+    {% endif %}
+  </div>
 </div>
 {% endfor %}
+
+<h2>What to work on</h2>
+{% if issue_cards %}
+<div class="cards">
+  {% for c in issue_cards %}
+  <div class="card sev-{{ c.severity }}">
+    <div class="card-head"><h3>{{ c.display_name }}</h3>
+      <span class="sev">{{ c.severity }}</span></div>
+    <p class="card-val">{{ c.session_label }}:
+      <strong>{{ c.session_text }}</strong>
+      <span class="bench">({{ c.benchmark_text }})</span></p>
+    {{ c.sparkline|safe }}
+    <p class="why">{{ c.why }}</p>
+    <p class="fixline"><strong>Fix:</strong> {{ c.fix }}
+      {% if c.drill_ids %}<span class="meta">Drills:
+        {% for did in c.drill_ids %}<a href="#drill-{{ did }}">{{ c.drill_names[loop.index0] }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</p>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<p class="meta">Nothing flagged this session — see the maintenance plan below.</p>
+{% endif %}
+
+<h2>Practice plan</h2>
+{% if flags %}
+<p class="meta">Built from what this session flagged. Run the drills for two
+weeks, then re-film — the targets below are the pass marks, in the same
+numbers as the table above.</p>
+{% else %}
+<p class="meta">Nothing flagged this session. The plan below protects the
+baseline.</p>
+{% endif %}
+{% for block in practice_plan %}
+<div class="plan">
+  <h3>{{ block.title }}</h3>
+  {% for d in block.drills %}
+  <div class="drill" id="drill-{{ d.id }}">
+    <h4>{{ d.name }}</h4>
+    <p class="aim">{{ d.aim }}</p>
+    <ol>
+      {% for step in d.protocol %}<li>{{ step }}</li>{% endfor %}
+    </ol>
+    {% if d.id in drill_media %}
+    <div class="drill-media">
+      <figure>{{ drill_media[d.id].diagram|safe }}<figcaption>Setup</figcaption></figure>
+      <details>
+        <summary>Show the motion</summary>
+        <figure>{{ drill_media[d.id].animation|safe }}<figcaption>Loops
+        through the drill's key positions; holds the setup pose when your
+        device asks for reduced motion.</figcaption></figure>
+      </details>
+    </div>
+    {% endif %}
+    {# Success metrics are self-contained sentences that open with their own
+       "Re-film…:" lead-in, so the label must not repeat the word (avoids
+       "Re-film target: Re-film: …"). The sentence is kept verbatim. #}
+    <p class="dose"><strong>Dosage:</strong> {{ d.dosage }}<br>
+      <strong>Pass mark</strong> — {{ d.success_metric }}</p>
+    {% if d.gear_note %}<p class="gear-note">{{ d.gear_note }}</p>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endfor %}
+{% if gear_url %}
+<p class="gear-link"><a href="{{ gear_url }}">Matched training aids</a> —
+the gear these drills are built around.</p>
+{% endif %}
 
 <div class="tips">
   <strong>Filming tips for best results</strong>

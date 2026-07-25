@@ -1,0 +1,288 @@
+<section class="sl-report sl-wrap">
+  <div class="sl-report__copy sl-reveal">
+    <h2 class="sl-h2">{{ section.settings.heading | default: 'Numbers you can act on' }}</h2>
+    {%- if section.settings.body != blank -%}
+      <p class="sl-report__body">{{ section.settings.body }}</p>
+    {%- endif -%}
+    {%- if section.blocks.size > 0 -%}
+      <ul class="sl-check-list sl-report__list">
+        {%- for block in section.blocks -%}
+          <li{{ block.shopify_attributes }}>{{ block.settings.text }}</li>
+        {%- endfor -%}
+      </ul>
+    {%- endif -%}
+  </div>
+
+  <div class="sl-report__media-wrap sl-reveal sl-reveal--d1">
+    <div class="sl-report__card">
+      <div class="sl-report__head">
+        <span class="sl-report__file">SWINGLAB · REPORT.HTML</span>
+        <span class="sl-report__sample">SAMPLE SESSION</span>
+      </div>
+
+      <table class="sl-report__table">
+        <thead>
+          <tr>
+            <th scope="col">Metric</th>
+            <th scope="col">This session</th>
+            <th scope="col">Benchmark</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr class="sl-report__row--flag">
+            <th scope="row">Tempo ratio</th>
+            <td>2.6 : 1</td>
+            <td>3.0 : 1</td>
+          </tr>
+          <tr class="sl-report__row--flag">
+            <th scope="row">Head sway</th>
+            <td>0.42 SW</td>
+            <td>under 0.35 SW</td>
+          </tr>
+          <tr class="sl-report__row--ok">
+            <th scope="row">Hip slide</th>
+            <td>0.14 SW</td>
+            <td>under 0.35 SW</td>
+          </tr>
+          <tr class="sl-report__row--ok">
+            <th scope="row">Consistency</th>
+            <td>±0.21</td>
+            <td>under 0.30</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {%- assign strip = section.settings.image | default: images['report-keyframes.png'] -%}
+      {%- if strip -%}
+        <img
+          class="sl-report__strip"
+          src="{{ strip | image_url: width: 1200 }}"
+          srcset="{{ strip | image_url: width: 800 }} 800w, {{ strip | image_url: width: 1200 }} 1200w, {{ strip | image_url: width: 1600 }} 1600w"
+          sizes="(max-width: 749px) calc(100vw - 88px), 560px"
+          width="{{ strip.width }}"
+          height="{{ strip.height }}"
+          alt="Key-position strip: address, top, impact and finish frames from a sample session"
+          loading="lazy">
+      {%- endif -%}
+
+      <div class="sl-report__foot">
+        <p class="sl-report__note">Head drifts off the line in the backswing &mdash; see the anti-sway drills in your practice plan.</p>
+        <span class="sl-chip">PRACTICE PLAN INCLUDED</span>
+      </div>
+    </div>
+
+    {%- if section.settings.caption != blank -%}
+      <p class="sl-report__caption sl-mono-label">{{ section.settings.caption }}</p>
+    {%- endif -%}
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-report {
+  padding-top: clamp(32px, 4.5vw, 56px);
+  padding-bottom: clamp(32px, 4.5vw, 56px);
+  display: grid;
+  grid-template-columns: 0.9fr 1.1fr;
+  gap: clamp(24px, 4vw, 56px);
+  align-items: center;
+}
+.sl-report__copy { min-width: 0; }
+.sl-report__body {
+  margin: 16px 0 0;
+  font-size: 16.5px;
+  line-height: 1.6;
+  color: var(--sl-ink-soft);
+  text-wrap: pretty;
+}
+.sl-report__list { margin-top: 20px; }
+.sl-report__media-wrap { position: relative; min-width: 0; }
+
+/* the report card: one clean native rendering of a session report */
+.sl-report__card {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-card);
+  padding: clamp(18px, 2.4vw, 26px);
+}
+/* faint quarter-arc — the movement's mark, kept subordinate */
+.sl-report__card::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  top: -160px;
+  right: -160px;
+  width: 260px;
+  height: 260px;
+  border: 1.5px solid #e9e4d6;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.sl-report__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--sl-border);
+}
+.sl-report__file {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  color: var(--sl-green);
+  white-space: nowrap;
+}
+.sl-report__sample {
+  font-family: var(--sl-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  color: var(--sl-ink-muted);
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: 999px;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.sl-report__table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sl-report__table thead th {
+  font-family: var(--sl-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-ink-muted);
+  text-align: left;
+  padding: 12px 0 7px;
+  border-bottom: 1px solid var(--sl-border);
+}
+.sl-report__table thead th + th {
+  text-align: right;
+  padding-left: 16px;
+}
+.sl-report__table tbody tr { border-bottom: 1px solid var(--sl-border); }
+.sl-report__table tbody th {
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  color: var(--sl-ink);
+  text-align: left;
+  padding: 8px 0;
+  white-space: nowrap;
+}
+.sl-report__table td {
+  font-family: var(--sl-font-mono);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  padding: 8px 0 8px 16px;
+  white-space: nowrap;
+  color: var(--sl-ink);
+}
+.sl-report__table td:last-child { color: var(--sl-ink-muted); }
+/* row status marks: orange tick = outside benchmark, green dot = on target */
+.sl-report__table tbody th::before {
+  content: "";
+  display: inline-block;
+}
+.sl-report__row--flag th::before {
+  width: 3px;
+  height: 12px;
+  margin-right: 14px;
+  vertical-align: -1px;
+  background: var(--sl-orange);
+}
+.sl-report__row--ok th::before {
+  width: 7px;
+  height: 7px;
+  margin-right: 10px;
+  vertical-align: 1px;
+  border-radius: 50%;
+  background: var(--sl-green-btn);
+}
+.sl-report__row--flag td:first-of-type {
+  color: var(--sl-orange);
+  font-weight: 500;
+}
+
+.sl-report__strip {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: 10px;
+  margin-top: 16px;
+}
+
+.sl-report__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 14px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+.sl-report__note {
+  margin: 0;
+  font-style: italic;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--sl-ink-soft);
+  flex: 1 1 260px;
+  text-wrap: pretty;
+}
+.sl-report__foot .sl-chip { flex: 0 0 auto; }
+
+.sl-report__caption {
+  display: block;
+  margin: 14px 0 0;
+}
+
+@media (max-width: 749px) {
+  .sl-report { grid-template-columns: 1fr; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Report feature",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Numbers you can act on" },
+    { "type": "textarea", "id": "body", "label": "Body", "default": "Every report benchmarks your tempo against the tour-average 3.0 ratio and measures head sway and hip slide in shoulder widths — comparable across sessions, no matter where you set the camera." },
+    { "type": "image_picker", "id": "image", "label": "Key-position strip image", "info": "Shown inside the report card. Leave blank to use the bundled report-keyframes.png strip." },
+    { "type": "image_picker", "id": "detail_image", "label": "Detail image (unused)", "info": "No longer shown — kept so older templates stay valid." },
+    { "type": "text", "id": "caption", "label": "Mono caption under media", "default": "FIG. 01 — EXAMPLE REPORT · KEY-POSITION STRIP + SESSION METRICS" }
+  ],
+  "blocks": [
+    {
+      "type": "point",
+      "name": "Bullet point",
+      "settings": [
+        { "type": "text", "id": "text", "label": "Text", "default": "Labeled key-position strip: address, top, impact, finish" }
+      ]
+    }
+  ],
+  "max_blocks": 6,
+  "presets": [
+    {
+      "name": "Report feature",
+      "blocks": [
+        { "type": "point", "settings": { "text": "Labeled key-position strip: address, top, impact, finish" } },
+        { "type": "point", "settings": { "text": "Centerline overlay: your body vs. the corrected line" } },
+        { "type": "point", "settings": { "text": "Smooth quarter-speed slow motion of every swing" } },
+        { "type": "point", "settings": { "text": "Coaching notes and a practice plan built from what the session flagged" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

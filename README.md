@@ -6,10 +6,13 @@ deliverables:
 
 - a labeled **key-position strip** (address / top / impact / finish),
 - a smooth **quarter-speed slow-motion** clip per swing,
+- an **annotated coach replay** per swing — your own footage with the tracked
+  body, hand path, and the key numbers burned in as they happen,
 - a **centerline overlay** comparing the captured body (orange) against a
   corrected one (green) via an ankle-pinned shear,
-- **report.html** with a metrics table, plain-English coaching notes, and every
-  deliverable embedded, plus machine-readable **metrics.json**.
+- **report.html** with metrics tables, plain-English coaching notes, issue
+  cards for everything the session flagged, an illustrated practice plan, and
+  every deliverable embedded, plus machine-readable **metrics.json**.
 
 The whole product is white-label: brand name, logo, colors, footer, watermark,
 disclaimer, and every detection/coaching threshold live in `config.yaml` — no
@@ -65,8 +68,87 @@ results/<video-name>/
     ├── strip_s1.png      # key positions
     ├── overlay_s1.png    # centerline overlay
     ├── slowmo_s1.mp4     # quarter-speed clip
+    ├── replay_s1.mp4     # annotated coach replay
     └── ... one set per swing
 ```
+
+### What the report measures — honestly
+
+Everything comes from one hip-height phone camera and 2D pose landmarks
+projected into the image plane. SwingLab tracks the golfer's **body** — it
+does not track the club, does not reconstruct 3D, and makes no ball-flight
+claims. Angle metrics are the angles **as seen from the camera** (face-on),
+and lateral metrics are normalized by shoulder width at address (SW) so
+numbers are comparable across camera distances.
+
+Per swing:
+
+- **Backswing / downswing duration and tempo ratio** — time from takeaway to
+  the top vs top to impact (benchmark 3:1).
+- **Head sway and hip slide** (address→top and top→impact, in SW) — signed
+  lateral drift; positive = away from the target.
+- **Head dip** (address→impact, in SW) — how far the head drops on the way
+  to the ball, from the ear/nose centroid with single-frame jitter smoothed
+  out. A small squat is normal; a large dip moves the swing's low point.
+- **Lead-arm angle at impact** (degrees; 180 = straight) — the
+  shoulder–elbow–wrist angle of the lead arm at the strike, as projected in
+  the camera's view.
+- **Shoulder tilt at impact, and its change from address** (degrees, measured
+  face-on) — positive means the trail shoulder is lower. At impact the trail
+  shoulder should be clearly lower; level or reversed shoulders are the
+  classic hang-back pattern.
+- **Finish balance** (in SW) — mean drift of the ankle midpoint during the
+  frames after the finish. A held, quiet finish reads near zero; a step or
+  stumble reads tenths of a shoulder width.
+
+Session-level mean and standard deviation cover all of the above, and every
+threshold that turns a number into a flag lives in `config.yaml`.
+
+### Issue cards — "What to work on"
+
+Each flag the session fires becomes a card in the report: the session value
+against its benchmark, a per-swing sparkline (flagged swings marked in the
+accent color), two honest sentences on why it matters, a one-line fix, and
+links straight to the matching drills in the practice plan. Cards are sorted
+by severity — "major" when the session mean breaches the threshold or every
+measured swing is flagged.
+
+### Coach replay (`replay_sN.mp4`)
+
+The annotated replay is exactly what it sounds like: the engine annotating
+the golfer's **own footage**. The same slow-motion window is re-rendered with
+the tracked skeleton, a fading trace of the **hand path** (wrist centroid —
+the body point we actually track; SwingLab never claims club tracking), a
+dashed centerline from the setup position, and metric chips that appear at
+each swing event (top, impact, finish) and persist. The replay is never
+motion-interpolated — that keeps the burned-in text crisp and the render
+fast — so `--fast` does not change it. Set `slowmo.annotated: false` in
+`config.yaml` to skip it entirely.
+
+### Practice plans in the report
+
+Every report ends with a practice plan built from what the session flagged.
+Each coaching flag (`tempo`, `sway`, `hip-slide`, `head-dip`,
+`arm-extension`, `balance`, `consistency` — `shoulder-tilt` shares the
+impact-extension drills, since both are flip-at-impact faults) maps to 2–3
+curated drills in `swinglab/drills.py` — an aim, a step-by-step protocol, a
+dosage, and a measurable re-film target expressed in the same numbers the
+report prints, so "fixed" means the next report says so. A session with no
+flags gets a maintenance set instead. The threshold numbers inside the drill
+text come from the `coaching` section of `config.yaml`, so retuning the
+thresholds retunes the targets with no code edits.
+
+Every drill also ships with a **follow-along setup diagram and a looping
+animation** of its key positions — hand-built inline SVG with CSS-only
+crossfades, drawn in the configured brand colors. No JavaScript, no external
+assets: the report stays a single self-contained HTML file that renders
+offline. The animation sits behind a "Show the motion" toggle and freezes on
+the setup pose for viewers who ask their device for reduced motion.
+
+Set `shop.store_url` in `config.yaml` (the shipped config points at the
+SwingLab store; empty = no link) and the plan ends with a quiet "Matched
+training aids" link to that store's `/collections/swinglab-gear` collection —
+the same tag-matched gear the web app recommends on finished analyses.
 
 ## Web app
 
@@ -151,6 +233,68 @@ Either way, prices live in Shopify/Stripe — change them in their dashboards,
 never in code. Checkout happens on their hosted pages, and plan state only
 ever changes via the signed webhooks.
 
+### Account sync with Shopify
+
+Accounts start on the store: a customer created in Shopify automatically
+exists in the web app, and everything they bought is waiting when they
+finish setup there. In the Shopify admin, under **Settings → Notifications
+→ Webhooks**, add three more webhooks — `customers/create`,
+`customers/update`, and `customers/delete` — pointing at the **same**
+`https://<your-app>/webhooks/shopify` endpoint the order webhooks use.
+One endpoint, one signing secret (`SHOPIFY_WEBHOOK_SECRET`), nothing else
+to configure.
+
+What each event does:
+
+- **customers/create, customers/update** — creates a passwordless "store
+  account" for the customer's (normalized) email, tagged with the Shopify
+  customer id — or, if an account already exists, just links/refreshes
+  that id. An existing password or email is **never** overwritten, and
+  replayed webhooks land on the same row (no duplicates).
+- Signing up in the app with a store account's email **claims the same
+  account**: the password is set on that row, so the Shopify link and any
+  Pro purchase already granted by the order webhooks carry over — one
+  user, everything kept. Until then, a login attempt with that email gets
+  a "create your password to finish setup" pointer instead of a
+  misleading "wrong password".
+- **customers/delete** — deletes the app user only when it is an
+  unclaimed stub (no password, no analyses); any Pro days it still
+  carried are parked and reclaimed if that email signs up later. A
+  claimed account merely loses its store link — store-side deletion never
+  destroys app data.
+- **customers/redact** (GDPR) — same as delete, and additionally erases
+  the Shopify-sourced profile fields on claimed accounts and any parked
+  purchase for a deleted stub's email. `customers/data_request` and
+  `shop/redact` are acknowledged (200) and logged.
+
+**Limitations, honestly:** Shopify does not expose customer credentials,
+so store passwords cannot sync — the store account carries over and the
+user sets their app password once, at claim time. Store customers created
+without an email address are skipped (there is nothing to match on).
+
+**Optional email verification (SMTP)** — inert until configured, like
+every other integration:
+
+| Variable | What it is |
+| --- | --- |
+| `SWINGLAB_SMTP_URL` | e.g. `smtp+starttls://user:pass@smtp.example.com:587` — also `smtp://` (plain, local relays) and `smtps://` (implicit TLS, port 465); credentials URL-encoded |
+| `SWINGLAB_MAIL_FROM` | the From address, e.g. `SwingLab <no-reply@yourdomain.com>` |
+
+With both set, claiming an email that already has anything attached (a
+store account, or a Pro purchase made before signup) requires a 6-digit
+code emailed to that address — 10-minute expiry, single-use, stored
+hashed, rate-limited per email — and **password reset** appears on the
+login page using the same codes. Standard library SMTP only; no new
+dependencies.
+
+> **Security note:** without SMTP configured, behavior is unchanged from
+> previous versions: signing up with an email claims whatever that email
+> already has (store account, pre-signup purchase) with no inbox proof —
+> the same trade-off the buy-before-signup claim has always had, kept
+> deliberately so the app works with zero email infrastructure.
+> Configuring SMTP closes it by verifying control of the inbox before a
+> claim.
+
 ### Gear shop (Shopify)
 
 Connect a Shopify store and the app grows a **Gear** page (`/shop`) listing
@@ -164,6 +308,9 @@ products in Shopify to wire them up:
 | `swinglab:tempo` | tempo ratio under `coaching.tempo_warn_below` |
 | `swinglab:sway` | head sway beyond `coaching.sway_warn_sw` |
 | `swinglab:hip-slide` | hip slide beyond `coaching.sway_warn_sw` |
+| `swinglab:head-dip` | head dropping beyond `coaching.head_dip_warn_sw` on the way to impact |
+| `swinglab:arm-extension` | lead arm bent under `coaching.lead_arm_warn_deg` at impact (the shoulder-tilt flag matches this tag too) |
+| `swinglab:balance` | feet drifting beyond `coaching.finish_balance_warn_sw` during the finish hold |
 | `swinglab:consistency` | tempo varying noticeably across swings |
 | `swinglab:general` | anything (pads the list; what a clean swing sees) |
 
@@ -205,10 +352,15 @@ see [deploy/README.md](deploy/README.md).
    across camera distances.
 6. **Metrics** — backswing/downswing durations, tempo ratio (benchmark 3.0),
    signed head sway and hip slide in shoulder widths (positive = away from
-   the target), plus per-session mean and standard deviation.
+   the target), head dip into impact, lead-arm angle and shoulder tilt at
+   impact (image-plane angles, as seen from the camera), finish balance,
+   plus per-session mean and standard deviation.
 7. **Deliverables and report** — Pillow-rendered strip and overlay, ffmpeg
    `minterpolate` slow motion (interpolate to a high frame rate first, THEN
-   stretch), Jinja2 report.
+   stretch), the annotated replay (discrete frames with Pillow-burned
+   skeleton/hand-path/chips, encoded without interpolation so the text stays
+   crisp), Jinja2 report with inline-SVG issue-card sparklines and drill
+   diagrams/animations.
 
 ## Configuration
 
@@ -218,13 +370,13 @@ See `config.yaml` — everything is documented inline. Highlights:
 | --- | --- |
 | `brand` | name, logo, colors, footer, watermark on/off, disclaimer |
 | `detection` | audio peak height / prominence / minimum gap between swings |
-| `coaching` | sway warning, tempo target/warning, consistency praise thresholds |
-| `analysis` | window size, working/full resolutions, takeaway threshold |
-| `slowmo` | slow-motion factor, clip bounds, output height, crf |
+| `coaching` | flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
+| `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`) |
+| `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account` |
 | `billing` | free/Pro analyses per month (price lives in Stripe, not here) |
-| `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count |
+| `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
 ## Tests
 
@@ -236,9 +388,9 @@ The suite covers the acceptance checks: strike detection within 50 ms on a
 synthetic wav, graceful zero-strike behavior, portrait-rotation handling on a
 display-matrix `.mov`, white-label config changes reaching the report and
 overlays, and an end-to-end three-swing run (three metric rows, three strips,
-three slow-motion clips, three overlays, one report) with a replayed pose
-sequence so no human footage is required. Tests needing ffmpeg auto-skip when
-it is not installed.
+three slow-motion clips, three annotated replays, three overlays, one report)
+with a replayed pose sequence so no human footage is required. Tests needing
+ffmpeg auto-skip when it is not installed.
 
 ## Roadmap
 
@@ -255,8 +407,17 @@ it is not installed.
 - **Shopify gear shop (done)** — `/shop` page backed by a Shopify store's
   Storefront API plus flag-matched training-aid recommendations on finished
   analyses; inert until the `SHOPIFY_*` environment variables are set.
+- **Shopify account sync (done)** — customer webhooks provision store
+  accounts in the app, signup claims them with purchases intact, and
+  optional SMTP adds code-verified claims plus password reset via email
+  (the Milestone-5 reset item, shipped early).
+- **Program depth (done)** — four new 2D-honest metrics (head dip, lead-arm
+  extension, shoulder tilt, finish balance), issue cards with per-swing
+  sparklines, illustrated drills (inline-SVG diagrams + CSS-only
+  animations), and the annotated coach replay (`replay_sN.mp4`).
 - **Milestone 5** — white-label polish: PDF export, richer batch mode,
-  password reset via email, API tokens for the mobile app.
+  API tokens for the mobile app. (Password reset via email shipped with
+  the Shopify account sync above.)
 - A native mobile app can sit on top of the existing JSON API (`/upload`,
   `/api/session/{id}`) without server changes.
 

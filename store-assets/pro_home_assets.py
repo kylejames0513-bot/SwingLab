@@ -250,17 +250,33 @@ def hero_image():
               int(4 * s), dash=(1.8, 2.6))
     swing_arc(d, w * s * 0.72, h * s * 1.7, 1300 * s, 238, 302, "#1d5535",
               int(4 * s), dash=(1.8, 2.6))
+    # measurement centerline through the golfer, the report's reference
+    gx0, gy0, gw, gh = w * s * 0.50, 140 * s, 1040 * s, 1200 * s
+    cxm = gx0 + 0.47 * gw
+    a = 200 * s
+    while a < 1204 * s:
+        d.line([cxm, a, cxm, a + 26 * s], fill="#2a6343", width=int(5 * s))
+        a += 46 * s
     # big orange swing arc sweeping up behind the golfer
-    swing_arc(d, w * s * 0.58, h * s * 1.12, 900 * s, 205, 322, ORANGE, int(14 * s))
-    bx = w * s * 0.58 + (900 - 7) * s * math.cos(math.radians(322))
-    by = h * s * 1.12 + (900 - 7) * s * math.sin(math.radians(322))
-    d.ellipse([bx - 26 * s, by - 26 * s, bx + 26 * s, by + 26 * s], fill=MINT)
-    # golfer skeleton, finish pose, right side
-    skeleton(d, POSES["finish"], (w * s * 0.52, h * s * 0.16, 900 * s, 1050 * s),
-             s, limb=MINT, joint=ORANGE, lw=11)
-    # ground line under golfer
-    d.line([w * s * 0.50, h * s * 0.93, w * s * 0.94, h * s * 0.93],
+    swing_arc(d, w * s * 0.58, h * s * 1.12, 940 * s, 205, 322, ORANGE, int(16 * s))
+    bx = w * s * 0.58 + (940 - 8) * s * math.cos(math.radians(322))
+    by = h * s * 1.12 + (940 - 8) * s * math.sin(math.radians(322))
+    d.ellipse([bx - 28 * s, by - 28 * s, bx + 28 * s, by + 28 * s], fill=MINT)
+    # golfer skeleton, finish pose, right side — feet on the ground line
+    skeleton(d, POSES["finish"], (gx0, gy0, gw, gh), s,
+             limb=MINT, joint=ORANGE, lw=12)
+    d.line([w * s * 0.47, 1222 * s, w * s * 0.96, 1222 * s],
            fill="#1d5535", width=int(5 * s))
+    # metric chips under the ground line, the way the report captions a swing
+    chips = ("TEMPO 3.0", "SWAY 0.18 SW", "SLIDE 0.10 SW")
+    f = mono(int(26 * s))
+    chx = w * s * 0.505
+    for label in chips:
+        tw = sum(d.textlength(ch, font=f) for ch in label) + 3 * s * (len(label) - 1)
+        rrect(d, [chx, 1262 * s, chx + tw + 68 * s, 1338 * s], 38 * s,
+              outline="#2f6b4a", width=int(4 * s))
+        tracked(d, (chx + 34 * s, 1284 * s), label, f, MINT, tracking=int(3 * s))
+        chx += tw + 100 * s
     finish(img, "swinglab-hero.png", w, h)
 
 
@@ -272,31 +288,52 @@ def report_band():
     px, py, pw, ph = w * s * 0.52, 140 * s, 620 * s, 900 * s
     rrect(d, [px, py, px + pw, py + ph], 28 * s, fill=GREEN)
     ax, ay = px + pw * 0.5, py + ph - 110 * s
-    top_y = py + 90 * s
+    top_y = py + 110 * s
     d.line([ax, ay, ax, top_y], fill="#7fbf9a", width=int(8 * s))
     hx = ax - 120 * s
     d.line([ax, ay, hx, top_y + 20 * s], fill=ORANGE, width=int(8 * s))
     for cx_, cy_, col in ((ax, top_y - 4 * s, "#7fbf9a"), (hx, top_y + 16 * s, ORANGE)):
         r = 30 * s
         d.ellipse([cx_ - r, cy_ - r, cx_ + r, cy_ + r], outline=col, width=int(7 * s))
-    skeleton(d, POSES["impact"], (px + 70 * s, py + 100 * s, pw - 140 * s, ph - 240 * s),
+    skeleton(d, POSES["impact"], (px + 70 * s, py + 120 * s, pw - 140 * s, ph - 280 * s),
              s, limb="#2e5c42", joint="#3f7256", lw=8)
     d.ellipse([ax - 12 * s, ay - 12 * s, ax + 12 * s, ay + 12 * s], fill=MINT)
-    # two mini position frames stacked right of panel
+    # sway gap arrow between the two head circles
+    yline = top_y - 52 * s
+    d.line([hx, yline, ax, yline], fill=MINT, width=int(4 * s))
+    for tx_, sgn in ((hx, 1), (ax, -1)):
+        d.polygon([(tx_, yline), (tx_ + sgn * 20 * s, yline - 11 * s),
+                   (tx_ + sgn * 20 * s, yline + 11 * s)], fill=MINT)
+    tracked(d, ((hx + ax) / 2, yline - 40 * s), "0.42 SW", mono(int(20 * s)),
+            MINT, tracking=int(2 * s), anchor="m")
+    # captured / corrected legend at the panel foot
+    tracked(d, (px + 40 * s, py + ph - 58 * s), "CAPTURED", mono(int(18 * s)),
+            ORANGE, tracking=int(3 * s))
+    tracked(d, (px + 240 * s, py + ph - 58 * s), "CORRECTED", mono(int(18 * s)),
+            "#7fbf9a", tracking=int(3 * s))
+    # two mini position frames stacked right of panel, with position labels
     fx = px + pw + 50 * s
-    for i, key in enumerate(("top", "finish")):
+    for i, (key, lab) in enumerate((("top", "02 · TOP"), ("finish", "04 · FINISH"))):
         fy = py + i * (ph / 2 + 10 * s)
-        fh = ph / 2 - 30 * s
+        fh = ph / 2 - 60 * s
         rrect(d, [fx, fy, fx + 420 * s, fy + fh], 24 * s, fill="#123f27")
-        skeleton(d, POSES[key], (fx + 60 * s, fy + 30 * s, 300 * s, fh - 70 * s),
+        skeleton(d, POSES[key], (fx + 60 * s, fy + 26 * s, 300 * s, fh - 60 * s),
                  s, lw=7)
-    # metric chips along the bottom of the panel
-    for i, (k, v) in enumerate((("TEMPO", "2.6:1"), ("SWAY", "0.42"), ("SLIDE", "0.14"))):
-        cx0 = px + 40 * s + i * 190 * s
-        cy0 = py + ph - 80 * s
-        rrect(d, [cx0, cy0, cx0 + 170 * s, cy0 + 56 * s], 28 * s, fill="#123f27")
-        tracked(d, (cx0 + 24 * s, cy0 + 10 * s), f"{k} {v}", mono(int(17 * s)),
-                MINT, tracking=int(2 * s))
+        tracked(d, (fx + 8 * s, fy + fh + 14 * s), lab, mono(int(16 * s)),
+                INK_MUTED, tracking=int(2 * s))
+    # metric chips below the panel, card-style with accent bars
+    chips = (("TEMPO", "2.6 : 1", ORANGE), ("HEAD SWAY", "0.42 SW", ORANGE),
+             ("HIP SLIDE", "0.14 SW", GREEN_BTN))
+    for i, (k, v, accent) in enumerate(chips):
+        cx0 = px + i * 214 * s
+        cy0 = py + ph + 24 * s
+        rrect(d, [cx0, cy0, cx0 + 198 * s, cy0 + 96 * s], 16 * s,
+              fill=CARD, outline=BORDER, width=int(3 * s))
+        d.rectangle([cx0, cy0 + 20 * s, cx0 + 7 * s, cy0 + 76 * s], fill=accent)
+        tracked(d, (cx0 + 24 * s, cy0 + 16 * s), k, mono(int(15 * s)), INK_MUTED,
+                tracking=int(2 * s))
+        d.text((cx0 + 24 * s, cy0 + 40 * s), v, font=archivo(int(34 * s), 660, 104),
+               fill=INK)
     # faint arc into the left (text) half, staying subtle
     swing_arc(d, w * s * 0.1, h * s * 1.9, 1400 * s, 270, 320, ARC_FAINT,
               int(4 * s), dash=(2, 2.6))

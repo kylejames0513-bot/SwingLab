@@ -1,0 +1,99 @@
+{% paginate search.results by 12 %}
+<div class="sl-wrap sl-searchpage">
+  <header>
+    <p class="sl-eyebrow">Search</p>
+    <h1 class="sl-h2">{% if search.performed %}Search results{% else %}Search the store{% endif %}</h1>
+  </header>
+
+  <form action="{{ routes.search_url }}" method="get" role="search" class="sl-search-form">
+    <label class="visually-hidden" for="sl-search-input">Search</label>
+    <input id="sl-search-input" class="sl-input" type="search" name="q"
+           value="{{ search.terms | escape }}" placeholder="Try tempo, sway, or mirror">
+    <button class="sl-btn sl-btn--primary" type="submit">Search</button>
+  </form>
+
+  {%- if search.performed -%}
+    <p class="sl-search-count">
+      {{ search.results_count }}
+      {% if search.results_count == 1 %}result{% else %}results{% endif %}
+      for &ldquo;{{ search.terms | escape }}&rdquo;
+    </p>
+
+    {%- liquid
+      assign product_count = 0
+      assign other_count = 0
+      for item in search.results
+        if item.object_type == 'product'
+          assign product_count = product_count | plus: 1
+        else
+          assign other_count = other_count | plus: 1
+        endif
+      endfor
+    -%}
+
+    {%- if search.results_count == 0 -%}
+      <p class="sl-empty">Nothing matched. Try a shorter term, or browse the <a href="/collections/swinglab-gear">gear collection</a>.</p>
+    {%- endif -%}
+
+    {%- if product_count > 0 -%}
+      <div class="sl-grid">
+        {%- for item in search.results -%}
+          {%- if item.object_type == 'product' -%}
+            {% render 'product-card', product: item %}
+          {%- endif -%}
+        {%- endfor -%}
+      </div>
+    {%- endif -%}
+
+    {%- if other_count > 0 -%}
+      <div class="sl-main-search__other">
+        {%- for item in search.results -%}
+          {%- unless item.object_type == 'product' -%}
+            <a class="sl-result-card" href="{{ item.url }}">
+              <p class="sl-mono-label">{{ item.object_type }}</p>
+              <h3 class="sl-main-search__result-title">{{ item.title }}</h3>
+              {%- if item.content != blank -%}
+                <p class="sl-main-search__result-excerpt">{{ item.content | strip_html | truncatewords: 32 }}</p>
+              {%- endif -%}
+            </a>
+          {%- endunless -%}
+        {%- endfor -%}
+      </div>
+    {%- endif -%}
+
+    {%- if paginate.pages > 1 -%}
+      <nav class="sl-pagination" aria-label="Pagination">{{ paginate | default_pagination }}</nav>
+    {%- endif -%}
+  {%- endif -%}
+</div>
+{% endpaginate %}
+
+{% stylesheet %}
+.sl-main-search__other {
+  display: grid;
+  gap: 14px;
+  margin-top: 30px;
+  max-width: 720px;
+}
+
+.sl-main-search__result-title {
+  margin: 6px 0 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--sl-green);
+}
+
+.sl-main-search__result-excerpt {
+  margin: 6px 0 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Search page",
+  "settings": []
+}
+{% endschema %}

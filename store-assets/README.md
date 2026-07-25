@@ -11,18 +11,24 @@ pose-estimation skeletons, the product's own visual language.
 
 | File(s) in `out/` | Used as |
 | --- | --- |
-| `product-*.png` (6) | Featured images on the six gear products |
+| `product-*.png` (6) | Featured images on the six gear products — instrument-sheet style: dimension lines, cross-section insets, spec footers |
+| `drill-*.png` (5) | Second gallery image per training aid: the drill it trains, with setup measurements and protocol |
+| `detail-cap.png` | Second gallery image on the cap: flat-lay construction study |
 | `product-pro.png`, `pro-report-strip.png`, `pro-overlay-detail.png`, `pro-plans.png` | The SwingLab Pro product gallery |
 | `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon |
 | `collection-gear.png` | SwingLab Gear collection image |
 | `swinglab-hero.png` | Homepage hero background (Horizon theme) |
 | `swinglab-report-band.png` | Homepage "Numbers you can act on" band |
+| `banner-method.png` | "The SwingLab Method" page banner — four-position swing frieze |
+| `banner-about.png` | "About SwingLab" page banner — instrument-bench still life |
+| `og-swinglab.png` | Social share card (og:image), 1200×630 |
 
-All of these are already uploaded to the store's Shopify CDN and wired into
+The first batch is already uploaded to the store's Shopify CDN and wired into
 products, the SwingLab Gear collection, and the Horizon theme's settings
-(`config/settings_data.json`) and homepage (`templates/index.json`). The
-gear-product images are placeholders by design — dropshipped listings will
-carry supplier photos once a supplier app is connected.
+(`config/settings_data.json`) and homepage (`templates/index.json`); the
+drill/banner/og set is the second upload batch. The gear-product images are
+placeholders by design — dropshipped listings will carry supplier photos once
+a supplier app is connected.
 
 ## Regenerating
 
@@ -39,9 +45,12 @@ Then (needs Pillow, which the main package already depends on):
 
 ```bash
 python3 make_assets.py       # gear products, logo, favicon, collection banner
+python3 campaign_assets.py   # drill diagrams, cap study, page banners, og card
 python3 pro_home_assets.py   # Pro gallery + homepage hero and report band
 ```
 
 Everything renders supersampled and lands in `out/`. Palette, chrome, and
-shared drawing helpers live in `make_assets.py`; the pose-skeleton golfer
-(joint coordinates per swing position) lives in `pro_home_assets.py`.
+shared drawing/drafting helpers (dimension lines, callouts, insets, arrows)
+live in `make_assets.py`; the pose-skeleton golfer (joint coordinates per
+swing position) lives in `pro_home_assets.py`; `campaign_assets.py` imports
+from both.

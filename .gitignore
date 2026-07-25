@@ -14,3 +14,6 @@ results/
 
 # web app sessions (uploads, deliverables, job database)
 sessions/
+
+# store-asset fonts (fetched with the commands in store-assets/README.md)
+store-assets/*.ttf

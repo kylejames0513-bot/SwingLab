@@ -11,11 +11,15 @@
   .auth { display: flex; gap: 20px; flex-wrap: wrap; margin-top: 28px; }
   .auth .card { flex: 1 1 240px; }
   label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 0.9rem; }
-  input[type=email], input[type=password] {
+  input[type=email], input[type=password], input[type=text] {
     width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
     box-sizing: border-box; }
   .card button { width: 100%; }
   .free-note { color: #666; font-size: 0.85rem; margin-top: 10px; text-align: center; }
+  .notice { background: #e5f3ea; border-left: 4px solid var(--primary);
+            padding: 12px 16px; border-radius: 4px; margin-top: 20px; }
+  .aux-link { display: block; color: #666; font-size: 0.85rem;
+              margin-top: 12px; text-align: center; }
 {% endblock %}
 {% block main %}
   {% if landing %}
@@ -33,13 +37,69 @@
   {% endif %}
 
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% if stub_notice %}
+  <div class="notice">This email already has a {{ brand.name }} store account —
+    <a href="#create-account">create your password</a> to finish setup.
+    Everything you've bought is waiting on it.</div>
+  {% endif %}
 
+  {% if verify_email %}
+  <div class="card">
+    <h2>Check your email</h2>
+    <p>This email already has something waiting on it, so we sent a
+       6-digit code to <strong>{{ verify_email }}</strong> to confirm
+       it's yours. The code expires in 10 minutes.</p>
+    <form action="/signup" method="post">
+      <input type="hidden" name="email" value="{{ verify_email }}">
+      <input type="hidden" name="password" value="{{ verify_password }}">
+      <label for="su-code">Verification code</label>
+      <input id="su-code" name="code" type="text" inputmode="numeric"
+             pattern="[0-9]{6}" maxlength="6" required
+             autocomplete="one-time-code" autofocus>
+      <button type="submit">Verify and finish setup</button>
+    </form>
+    <p class="free-note">Nothing arriving? Check spam, or go
+      <a href="/login">back</a> and sign up again for a fresh code.</p>
+  </div>
+
+  {% elif reset_stage == "request" %}
+  <div class="card">
+    <h2>Reset your password</h2>
+    <form action="/reset/request" method="post">
+      <label for="rs-email">Email</label>
+      <input id="rs-email" name="email" type="email" required autocomplete="email">
+      <button type="submit">Email me a code</button>
+    </form>
+    <a class="aux-link" href="/login">Back to log in</a>
+  </div>
+
+  {% elif reset_stage == "confirm" %}
+  <div class="card">
+    <h2>Enter your code</h2>
+    <p>If an account exists for <strong>{{ reset_email }}</strong>, a 6-digit
+       code is on its way (it expires in 10 minutes).</p>
+    <form action="/reset/confirm" method="post">
+      <input type="hidden" name="email" value="{{ reset_email }}">
+      <label for="rc-code">Verification code</label>
+      <input id="rc-code" name="code" type="text" inputmode="numeric"
+             pattern="[0-9]{6}" maxlength="6" required
+             autocomplete="one-time-code" autofocus>
+      <label for="rc-password">New password</label>
+      <input id="rc-password" name="password" type="password" required
+             minlength="8" autocomplete="new-password">
+      <button type="submit">Set new password</button>
+    </form>
+    <a class="aux-link" href="/reset">Need another code?</a>
+  </div>
+
+  {% else %}
   <div class="auth">
-    <div class="card">
+    <div class="card" id="create-account">
       <h2>Create account</h2>
       <form action="/signup" method="post">
         <label for="su-email">Email</label>
-        <input id="su-email" name="email" type="email" required autocomplete="email">
+        <input id="su-email" name="email" type="email" required
+               autocomplete="email" value="{{ prefill_email or '' }}">
         <label for="su-password">Password</label>
         <input id="su-password" name="password" type="password" required
                minlength="8" autocomplete="new-password">
@@ -58,8 +118,12 @@
                autocomplete="current-password">
         <button type="submit">Log in</button>
       </form>
+      {% if mail_enabled %}
+      <a class="aux-link" href="/reset">Forgot your password?</a>
+      {% endif %}
     </div>
   </div>
+  {% endif %}
 
   <p class="disclaimer">{{ brand.disclaimer }}</p>
 {% endblock %}

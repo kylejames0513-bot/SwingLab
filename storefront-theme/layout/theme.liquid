@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="{{ request.locale.iso_code }}">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#14472c">
+  <link rel="canonical" href="{{ canonical_url }}">
+
+  <title>
+    {{ page_title }}{% if current_tags %} &ndash; tagged "{{ current_tags | join: ', ' }}"{% endif %}
+    {% if current_page != 1 %} &ndash; Page {{ current_page }}{% endif %}
+    {% unless page_title contains shop.name %} &ndash; {{ shop.name }}{% endunless %}
+  </title>
+
+  {% if page_description %}<meta name="description" content="{{ page_description | escape }}">{% endif %}
+
+  <meta property="og:site_name" content="{{ shop.name }}">
+  <meta property="og:type" content="{% if request.page_type == 'product' %}product{% else %}website{% endif %}">
+  <meta property="og:title" content="{{ page_title | default: shop.name | escape }}">
+  <meta property="og:url" content="{{ canonical_url }}">
+  {% if page_description %}<meta property="og:description" content="{{ page_description | escape }}">{% endif %}
+  {%- assign og_image = page_image | default: images['og-swinglab.png'] -%}
+  {%- if og_image -%}
+    <meta property="og:image" content="https:{{ og_image | image_url: width: 1200 }}">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="https:{{ og_image | image_url: width: 1200 }}">
+  {%- endif -%}
+
+  {%- assign favicon = images['swinglab-favicon.png'] -%}
+  {%- if favicon -%}
+    <link rel="icon" type="image/png" href="{{ favicon | image_url: width: 96 }}">
+    <link rel="apple-touch-icon" href="{{ favicon | image_url: width: 180 }}">
+  {%- endif -%}
+
+  {%- comment -%} Archivo carries the voice; DM Mono sets specimen labels and values {%- endcomment -%}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+  {{ 'base.css' | asset_url | stylesheet_tag }}
+  <noscript><style>.sl-reveal { opacity: 1; transform: none; }</style></noscript>
+
+  {{ content_for_header }}
+</head>
+<body class="template-{{ request.page_type | handle }}">
+  <a class="sl-skip" href="#MainContent">Skip to content</a>
+
+  {% sections 'header-group' %}
+
+  <main id="MainContent" role="main">
+    {{ content_for_layout }}
+  </main>
+
+  {% sections 'footer-group' %}
+
+  <script>
+    /* scroll reveal: adds .is-in to .sl-reveal elements as they enter the
+       viewport. Elements are only ever hidden AFTER html gets .sl-js here,
+       so a script that doesn't run can never leave blank sections; the
+       shopify:section:load listener re-observes content the theme editor
+       re-renders. Reduced motion and missing IO keep everything visible. */
+    (function () {
+      var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      if (reduce || !('IntersectionObserver' in window)) return;
+      var io = new IntersectionObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+          if (entries[i].isIntersecting) {
+            entries[i].target.classList.add('is-in');
+            io.unobserve(entries[i].target);
+          }
+        }
+      }, { rootMargin: '0px 0px -10% 0px', threshold: 0.08 });
+      function scan(root) {
+        var els = (root || document).querySelectorAll('.sl-reveal:not(.is-in)');
+        for (var i = 0; i < els.length; i++) io.observe(els[i]);
+      }
+      document.documentElement.classList.add('sl-js');
+      scan(document);
+      document.addEventListener('shopify:section:load', function (e) { scan(e.target); });
+    })();
+  </script>
+</body>
+</html>
