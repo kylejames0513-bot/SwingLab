@@ -17,7 +17,8 @@ import math
 from make_assets import (
     ARC_FAINT, BG, BORDER, CARD, GREEN, GREEN_BTN, GREEN_INK, INK, INK_MUTED,
     INK_SOFT, ORANGE, S, archivo, arrow_head, canvas, card_chrome, callout,
-    dashed_line, dim_line, finish, mono, rrect, swing_arc, tracked,
+    dashed_line, dim_line, finish, mark_protractor, mono, rrect, swing_arc,
+    tracked,
 )
 from pro_home_assets import POSES, skeleton
 
@@ -577,6 +578,48 @@ def banner_about():
     finish(img, "banner-about.png", w, h)
 
 
+# -------------------------------------------------------- homepage report ----
+
+def report_keyframes():
+    """Key-position strip for the homepage report card (1600×480): four
+    equal frames — ADDRESS / TOP / IMPACT / FINISH — on deep-green fields,
+    mono labels beneath. The one orange element is the club-path arc
+    segment falling into the ball on the IMPACT frame."""
+    w, h = 1600, 480
+    img, d = canvas(w, h, bg=CARD)
+    s = S
+    gap = 20 * s
+    fw = (w * s - 3 * gap) / 4
+    fy, fh = 0, 396 * s
+    keys = ("address", "top", "impact", "finish")
+    labels = ("01 · ADDRESS", "02 · TOP", "03 · IMPACT", "04 · FINISH")
+    for i, (key, label) in enumerate(zip(keys, labels)):
+        x = i * (fw + gap)
+        rrect(d, [x, fy, x + fw, fy + fh], 18 * s, fill=GREEN)
+        # ground line
+        gy = fy + fh - 42 * s
+        d.line([x + 40 * s, gy, x + fw - 40 * s, gy], fill=GREEN_BTN,
+               width=int(3 * s))
+        # ankles (y = 0.88 of the box) land on the ground line
+        box = (x + 62 * s, fy + 36 * s, fw - 124 * s, (gy - fy - 36 * s) / 0.88)
+        if key == "impact":
+            # the strip's one orange gesture: club path falling to the ball
+            cx_ = x + 350 * s
+            cy_ = fy + 40 * s
+            club = (box[0] + POSES["impact"]["club"][0] * box[2],
+                    box[1] + POSES["impact"]["club"][1] * box[3])
+            r = math.hypot(club[0] - cx_, club[1] - cy_)
+            a1 = math.degrees(math.atan2(club[1] - cy_, club[0] - cx_))
+            swing_arc(d, cx_, cy_, r, a1, 176, ORANGE, int(8 * s))
+            arrow_head(d, s, club, a1 - 90, size=20)
+            d.ellipse([club[0] + 12 * s, club[1] - 6 * s,
+                       club[0] + 26 * s, club[1] + 8 * s], fill=MINT)
+        skeleton(d, POSES[key], box, s, limb=MINT, joint="#7fbf9a", lw=7)
+        tracked(d, (x + fw / 2, fy + fh + 24 * s), label, mono(int(28 * s)),
+                INK_SOFT, tracking=int(4 * s), anchor="m")
+    finish(img, "report-keyframes.png", w, h)
+
+
 # ------------------------------------------------------------------- social ----
 
 def og_card():
@@ -597,14 +640,11 @@ def og_card():
             mono(int(21 * s)), "#7fbf9a", tracking=int(2 * s))
     tracked(d, (80 * s, 540 * s), "swinglab-production.up.railway.app",
             mono(int(21 * s)), MINT, tracking=int(2 * s))
-    # golfer at the top, arc waiting to fall
-    swing_arc(d, 960 * s, 760 * s, 430 * s, 200, 297, ORANGE, int(10 * s))
-    obx = 960 * s + 430 * s * math.cos(math.radians(297))
-    oby = 760 * s + 430 * s * math.sin(math.radians(297))
-    d.ellipse([obx - 15 * s, oby - 15 * s, obx + 15 * s, oby + 15 * s], fill=MINT)
-    skeleton(d, POSES["top"], (770 * s, 130 * s, 330 * s, 420 * s), s,
-             limb=MINT, joint=ORANGE, lw=8)
-    d.line([700 * s, 560 * s, 1140 * s, 560 * s], fill="#1d5535", width=int(5 * s))
+    # the gauge mark, large, its pivot resting on the floor band — the
+    # card's one orange gesture is the mark's sweep
+    mark_protractor(d, 764 * s, 486 * s, 330 * s, ink=MINT)
+    d.line([700 * s, 560 * s, 1140 * s, 560 * s], fill="#1d5535",
+           width=int(5 * s))
     finish(img, "og-swinglab.png", w, h)
 
 
@@ -617,4 +657,5 @@ if __name__ == "__main__":
     detail_cap()
     banner_method()
     banner_about()
+    report_keyframes()
     og_card()

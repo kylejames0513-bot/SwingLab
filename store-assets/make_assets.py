@@ -833,40 +833,87 @@ def pro_membership():
 
 # ---------------------------------------------------------------- brand ----
 
+def _pol(cx, cy, r, ang):
+    a = math.radians(ang)
+    return cx + r * math.cos(a), cy + r * math.sin(a)
+
+
+def mark_protractor(d, cx, cy, R, ink=GREEN, sweep=ORANGE, tick_step=5,
+                    bold=1.0):
+    """The SwingLab mark: a protractor gauge caught mid-swing. Calibration
+    tick fan in ink, the orange sweep inside it, the ball at the sweep's
+    terminus, a needle from the pivot aimed at the ball.
+
+    tick_step coarsens the fan and `bold` thickens strokes for tiny sizes
+    (favicon); every third tick is a major regardless of step.
+    """
+    for ang in range(262, 353, tick_step):
+        major = ((ang - 262) // tick_step) % 3 == 0
+        r0 = R - (0.17 * R if major else 0.095 * R)
+        w = max(int((0.028 if major else 0.019) * bold * R), 2)
+        d.line([*_pol(cx, cy, r0, ang), *_pol(cx, cy, R, ang)], fill=ink,
+               width=w)
+    aw = int(0.115 * bold * R)
+    swing_arc(d, cx, cy, 0.72 * R, 262, 333, sweep, aw)
+    rmid = 0.72 * R - aw / 2
+    bx, by = _pol(cx, cy, rmid, 348)
+    br = 0.135 * R
+    # needle: pivot aims at the ball, gauge-style. Kept sturdy — hairlines
+    # are what wash out at favicon scale.
+    d.line([*_pol(cx, cy, 0.10 * R, 348),
+            *_pol(cx, cy, rmid - br - 0.03 * R, 348)],
+           fill=ink, width=max(int(0.034 * bold * R), 2))
+    d.ellipse([bx - br, by - br, bx + br, by + br], fill=ink)
+    pr = 0.06 * R
+    d.ellipse([cx - pr, cy - pr, cx + pr, cy + pr], fill=ink)
+
+
+def _wordmark(d, x, y, px, ink=GREEN):
+    """Heavy Archivo 'SwingLab', tight tracking. Returns total width."""
+    f = archivo(int(px), 770, 102)
+    t = int(-0.014 * px)
+    w1 = tracked(d, (x, y), "Swing", f, ink, tracking=t)
+    w2 = tracked(d, (x + w1 + t, y), "Lab", f, ink, tracking=t)
+    return w1 + t + w2
+
+
 def logo(inverse=False):
-    w, h, sc = 1560, 400, 4
-    img = Image.new("RGBA", (w * sc, h * sc), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
+    """Lockup: gauge mark beside the heavy wordmark, transparent field.
+    The inverse is re-inked in mint for deep-green / near-black contexts —
+    the orange sweep is the one color both versions share."""
+    sc = 4
     ink = GREEN_INK if inverse else GREEN
-    # mark: swing arc into ball
-    mcx, mcy, mr = 150 * sc, 275 * sc, 195 * sc
-    swing_arc(d, mcx, mcy, mr, 262, 348, ORANGE, int(30 * sc))
-    bx = mcx + (mr - 15 * sc) * math.cos(math.radians(348))
-    by = mcy + (mr - 15 * sc) * math.sin(math.radians(348))
-    d.ellipse([bx - 34 * sc, by - 34 * sc, bx + 34 * sc, by + 34 * sc], fill=ink)
-    f = archivo(int(210 * sc), 680, 106)
-    d.text((470 * sc, 200 * sc), "SwingLab", font=f, fill=ink, anchor="lm")
-    tracked(d, (478 * sc, 310 * sc), "SWING ANALYSIS · GEAR", mono(int(40 * sc)),
-            ORANGE if inverse else INK_SOFT, tracking=int(14 * sc))
-    img = img.resize((w, h), Image.LANCZOS)
-    bbox = img.getbbox()
-    img = img.crop(bbox)
+    img = Image.new("RGBA", (1560 * sc, 340 * sc), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    R = 215 * sc
+    mark_protractor(d, 40 * sc, 272 * sc, R, ink=ink)
+    _wordmark(d, 40 * sc + R + 66 * sc, 66 * sc, 172 * sc, ink=ink)
+    img = img.crop(img.getbbox())
+    k = min(1400 / img.width, 276 / img.height)
+    img = img.resize((round(img.width * k), round(img.height * k)),
+                     Image.LANCZOS)
     name = "swinglab-logo-inverse.png" if inverse else "swinglab-logo.png"
     img.save(OUT / name)
     print("wrote", OUT / name)
 
 
 def favicon():
-    w = 512
-    sc = 4
+    """512 tile: deep-green rounded square, the gauge mark re-inked in mint.
+    Coarser, bolder tick fan so the gauge still reads at 32 px."""
+    w, sc = 512, 4
     img = Image.new("RGBA", (w * sc, w * sc), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     rrect(d, [0, 0, w * sc, w * sc], 110 * sc, fill=GREEN)
-    cx, cy, r = 205 * sc, 300 * sc, 190 * sc
-    swing_arc(d, cx, cy, r, 265, 355, ORANGE, int(34 * sc))
-    bx = cx + r * math.cos(math.radians(355))
-    by = cy + r * math.sin(math.radians(355))
-    d.ellipse([bx - 40 * sc, by - 40 * sc, bx + 40 * sc, by + 40 * sc], fill=GREEN_INK)
+    lay = Image.new("RGBA", (800 * sc, 800 * sc), (0, 0, 0, 0))
+    dl = ImageDraw.Draw(lay)
+    mark_protractor(dl, 110 * sc, 690 * sc, 560 * sc, ink=GREEN_INK,
+                    tick_step=8, bold=1.45)
+    lay = lay.crop(lay.getbbox())
+    box = (w - 2 * 66) * sc
+    k = min(box / lay.width, box / lay.height)
+    lay = lay.resize((round(lay.width * k), round(lay.height * k)),
+                     Image.LANCZOS)
+    img.paste(lay, ((w * sc - lay.width) // 2, (w * sc - lay.height) // 2), lay)
     img = img.resize((w, w), Image.LANCZOS)
     img.save(OUT / "swinglab-favicon.png")
     print("wrote", OUT / "swinglab-favicon.png")
