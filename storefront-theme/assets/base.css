@@ -591,6 +591,7 @@ img { max-width: 100%; display: block; }
 }
 .sl-product-img {
   width: 100%;
+  height: auto; /* img width/height attributes must not defeat the crop */
   aspect-ratio: 1;
   object-fit: cover;
   border-radius: 16px;
@@ -658,7 +659,7 @@ img { max-width: 100%; display: block; }
 .sl-pcard { text-decoration: none; color: var(--sl-ink); display: block; }
 .sl-pcard-media { position: relative; }
 .sl-pcard-img {
-  width: 100%; aspect-ratio: 1; object-fit: cover;
+  width: 100%; height: auto; aspect-ratio: 1; object-fit: cover;
   border-radius: 14px; border: 1px solid var(--sl-border); background: var(--sl-bg-card);
 }
 .sl-pcard-badge {
