@@ -68,11 +68,14 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import time
 
 from ..config import Config
 from .users import UserStore
+
+logger = logging.getLogger("swinglab.web.shopify")
 
 PAID_TOPICS = ("orders/paid", "ORDERS_PAID")
 CANCELLED_TOPICS = ("orders/cancelled", "ORDERS_CANCELLED")
@@ -163,8 +166,8 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
     elif topic in CUSTOMER_REDACT_TOPICS:
         _detach_customer(data.get("customer") or {}, users, redact=True)
     elif topic in ACK_TOPICS:
-        print(
-            f"Shopify {topic} webhook acknowledged — no app-side data changes."
+        logger.info(
+            "Shopify %s webhook acknowledged — no app-side data changes.", topic
         )
 
 

@@ -14,6 +14,7 @@ startup, so an upgrade in place keeps its history.
 from __future__ import annotations
 
 import json
+import logging
 import shutil
 import sqlite3
 import threading
@@ -28,7 +29,9 @@ from pathlib import Path
 from ..config import Config
 from ..events import EventError
 from ..ffmpeg import FFmpegError
-from ..pipeline import ZeroStrikesError, analyze_video
+from ..pipeline import VideoTooLongError, ZeroStrikesError, analyze_video
+
+logger = logging.getLogger("swinglab.web.jobs")
 
 QUEUED = "queued"
 PROCESSING = "processing"
@@ -200,6 +203,12 @@ class JobManager:
         counts.update({row[0]: row[1] for row in rows})
         return counts
 
+    def sessions_count(self) -> int:
+        """Total sessions on disk-and-db (any status) — a /healthz gauge for
+        watching growth against retention_days and the disk."""
+        with self._lock:
+            return self._conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
+
     # -- submission -------------------------------------------------------
     def create_session(
         self,
@@ -268,16 +277,59 @@ class JobManager:
             )
             job.report_rel = str(result.report_path.relative_to(job.session_dir))
             job.status = DONE
-        except (ZeroStrikesError, EventError, FFmpegError) as exc:
+            self._delete_source_if_configured(job)
+        except (ZeroStrikesError, VideoTooLongError, EventError, FFmpegError) as exc:
             job.status = FAILED
             job.error = str(exc)
+            self._delete_failed_source_if_configured(job)
         except Exception:
             job.status = FAILED
             job.error = "Unexpected error during analysis:\n" + traceback.format_exc(
                 limit=3
             )
+            # logger.exception carries the full traceback to the process log
+            # (and to Sentry when the operator configured it — see app.py).
+            logger.exception("Unexpected error during analysis of job %s", job.id)
+            self._delete_failed_source_if_configured(job)
         self._save(job)
         self._cleanup_expired()
+
+    def _delete_source_if_configured(self, job: Job) -> None:
+        """web.delete_source_after_done: drop the original upload once the
+        job is DONE and its report exists — deliverables (report, media,
+        metrics) stay. Never deletes when the report is missing, so a
+        half-finished session keeps its source for the restart re-queue."""
+        if not self.cfg.web.get("delete_source_after_done"):
+            return
+        if job.status != DONE or not job.report_rel:
+            return
+        if not (job.session_dir / job.report_rel).is_file():
+            return
+        source = self._source_path(job)
+        if source is not None:
+            source.unlink(missing_ok=True)
+            job.log.append(
+                "Original upload deleted after analysis (configured data "
+                "minimization) — re-analyzing this clip needs a fresh upload."
+            )
+
+    def _delete_failed_source_if_configured(self, job: Job) -> None:
+        """Same switch, failure path: a FAILED job's upload is never analyzed
+        again (retries need a fresh upload anyway), and failed uploads do not
+        count against quota — so keeping their sources would let one account
+        fill the disk with refused clips (e.g. over-length videos) for free.
+        Only fires for terminal FAILED state, never for restart-requeued work."""
+        if not self.cfg.web.get("delete_source_after_done"):
+            return
+        if job.status != FAILED:
+            return
+        source = self._source_path(job)
+        if source is not None:
+            source.unlink(missing_ok=True)
+            job.log.append(
+                "Original upload deleted after the failed analysis (configured "
+                "data minimization) — fix the clip and upload again to retry."
+            )
 
     # -- persistence ------------------------------------------------------
     def _save(self, job: Job) -> None:

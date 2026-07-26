@@ -276,8 +276,18 @@ def compute_metrics(
     hand: str,
     cfg: Config | None = None,
     angle: str = ANGLE_FACE_ON,
+    fps: float | None = None,
 ) -> SwingMetrics:
+    """``fps`` is the frame rate ``tracked`` was actually sampled at (the
+    FrameSet's rate). analysis.finish_hold_frames is defined against
+    analysis.fps, so when auto-fps extracted at a higher rate the hold is
+    rescaled to cover the same physical duration. Omitted = analysis.fps
+    (every pre-auto-fps call site unchanged)."""
     cfg = cfg or Config()  # pure defaults; keeps every existing call site valid
+    base_fps = float(cfg.analysis["fps"])
+    hold_frames = int(cfg.analysis["finish_hold_frames"])
+    if fps and base_fps > 0 and float(fps) != base_fps:
+        hold_frames = max(1, round(hold_frames * float(fps) / base_fps))
     target, target_confident = _infer_target_direction(
         tracked, events, finish_idx, hand
     )
@@ -326,9 +336,7 @@ def compute_metrics(
         shoulder_tilt_address_deg=tilt_address,
         shoulder_tilt_impact_deg=tilt_impact,
         shoulder_tilt_delta_deg=tilt_delta,
-        finish_balance_sw=_finish_balance_sw(
-            tracked, finish_idx, sw, int(cfg.analysis["finish_hold_frames"])
-        ),
+        finish_balance_sw=_finish_balance_sw(tracked, finish_idx, sw, hold_frames),
     )
     if angle == ANGLE_DTL:
         # Every one of these is defined face-on. Down the line they would be

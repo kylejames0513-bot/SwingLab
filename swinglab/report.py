@@ -89,7 +89,11 @@ def write_report_html(
     angle: str = ANGLE_FACE_ON,
     club: str | None = None,
     sample_banner: dict | None = None,
+    analysis_fps: float | None = None,
 ) -> Path:
+    """``analysis_fps`` is the rate the analysis windows were extracted at
+    (auto-fps may lift it above analysis.fps for high-fps sources); shown in
+    the session table when provided so readers know the timing resolution."""
     env = Environment(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=select_autoescape(["html"]),
@@ -137,6 +141,7 @@ def write_report_html(
         drill_media=drill_media,
         gear_url=gear_shop_url(cfg),
         sample_banner=sample_banner,
+        analysis_fps=analysis_fps,
     )
     out_path.write_text(html, encoding="utf-8")
     return out_path

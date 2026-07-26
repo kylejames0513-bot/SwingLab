@@ -213,9 +213,37 @@ Built to take real traffic on one machine:
   automatically on restart** (the upload is still on disk), and finished
   results keep serving. Sessions from pre-database versions are imported on
   first start.
-- **Guardrails** — upload size cap, per-IP active-job limit, and optional
-  auto-deletion of old sessions (`web.retention_days`), all in `config.yaml`.
-- **`/healthz`** — queue depth for load balancers and uptime monitors.
+- **Guardrails** — upload size cap, per-IP active-job limit, per-clip
+  length cap (`analysis.max_video_s`, shipped 300 s) and strike cap
+  (`detection.max_strikes`, shipped 8 — the first N are analyzed and the
+  report says so), login/signup throttling
+  (`web.login_attempts_per_15min`, `web.signups_per_hour_per_ip`), and
+  auto-deletion of old sessions (`web.retention_days`), all in
+  `config.yaml`. A client that disconnects mid-upload leaves nothing
+  behind — no queued ghost job, no quota charge, no held per-IP slot.
+- **Proxy-aware client IPs** — behind Railway (or any reverse proxy) every
+  request arrives from the proxy's address, which would make the per-IP
+  limit cap the whole site. `web.trusted_proxies` (shipped `"*"` for PaaS)
+  says whose `X-Forwarded-For` to believe; see config.yaml for the honest
+  spoofing trade-off and when to list explicit proxy IPs instead.
+- **Data retention, stated plainly** — sessions hold identifiable video of
+  people. The shipped config deletes finished sessions after 180 days and
+  deletes the raw upload as soon as the report exists
+  (`web.delete_source_after_done`; report/media/metrics are kept —
+  re-analyzing needs a re-upload). The same switch drops the upload when an
+  analysis FAILS: failed jobs are terminal, don't count against quota, and
+  keeping their sources would let refused clips (e.g. over-length videos)
+  fill the disk for free. The bare-code defaults keep everything
+  forever for white-label installs that manage retention themselves —
+  turning retention off is a choice you should be able to defend
+  (GDPR storage minimization).
+- **`/healthz`** — queue depth plus `disk_free_mb` and `sessions_count`
+  for load balancers and uptime monitors; alert on disk before it's full.
+- **Ops extras** — optional Sentry error monitoring: `pip install
+  "swinglab[ops]"` and set `SENTRY_DSN`; with either missing it is
+  completely inert. Backups of the SQLite database (which holds paid
+  entitlements): see the tested Litestream recipe in
+  [deploy/README.md](deploy/README.md).
 
 The JSON API under `/api` is the surface a future mobile app talks to:
 
@@ -425,11 +453,23 @@ see [deploy/README.md](deploy/README.md).
    16 kHz track is enveloped in 10 ms hops and peaks are found with
    configurable height / prominence / minimum-gap thresholds.
 3. **Frame extraction** — for each strike `t`, the window `t−1.8s … t+0.8s`
-   at 30 fps, 480 px wide. Input-side trimming (`-ss`/`-t` before `-i`) is
+   at 30 fps, 480 px wide. Sources filmed at 50 fps or better are analyzed
+   at `min(source_fps, 60)` instead (`analysis.auto_fps`, on by default):
+   the downswing is only 7–8 frames at 30 fps, so tempo carries a ~13%
+   quantization error that 60 fps halves. The rate actually used is
+   recorded in `metrics.json` (`meta.analysis_fps`) and shown in the
+   report's session table. Input-side trimming (`-ss`/`-t` before `-i`) is
    load-bearing: output-side `-t` silently truncates stretched clips.
 4. **Pose tracking** — mediapipe pose landmarker (tasks API; pip wheels
    0.10.30+ no longer ship `mp.solutions`). Frames failing an upright sanity
-   check (nose above shoulders above hips above ankles) are dropped.
+   check (nose above shoulders above hips above ankles) are dropped, and so
+   are frames whose core landmarks (shoulders/hips/ankles) score below a
+   visibility floor — an occluded body produces hallucinated coordinates.
+   Each swing also gets a tracking-quality check (fraction of dropped
+   frames + largest single-frame core-landmark jump vs shoulder width);
+   when it's poor — the signature of the detector locking onto another
+   person mid-swing — the swing's coaching notes carry an honest
+   low-confidence line instead of silently wrong numbers.
 5. **Swing events** — address baseline, takeaway, top of backswing, impact
    (audio time mapped to the nearest frame), finish. All lateral measurements
    are normalized by shoulder width at address so numbers are comparable
@@ -453,12 +493,12 @@ See `config.yaml` — everything is documented inline. Highlights:
 | Section | What it controls |
 | --- | --- |
 | `brand` | name, logo, colors, footer, watermark on/off, disclaimer, `support_text` (shown where users need the operator, e.g. password reset while SMTP is unconfigured) |
-| `detection` | audio peak height / prominence / minimum gap between swings |
+| `detection` | audio peak height / prominence / minimum gap between swings, per-clip strike cap (`max_strikes`, shipped 8 — first N analyzed, honestly noted) |
 | `coaching` | flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
-| `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`) |
+| `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
-| `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account`, weekly digest on/off (`digest_enabled`) |
+| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, weekly digest on/off (`digest_enabled`) |
 | `billing` | free/Pro analyses per month, plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 

@@ -78,6 +78,7 @@ def generate_test_video(
     duration_s: float = 20.0,
     portrait: bool = False,
     silent: bool = False,
+    fps: int = 30,
 ) -> Path:
     """A synthetic test video: moving test pattern plus click audio."""
     wav = path.with_suffix(".wav")
@@ -92,7 +93,8 @@ def generate_test_video(
     subprocess.run(
         [
             "ffmpeg", "-v", "error", "-y",
-            "-f", "lavfi", "-i", f"testsrc=size=854x480:rate=30:duration={duration_s}",
+            "-f", "lavfi",
+            "-i", f"testsrc=size=854x480:rate={fps}:duration={duration_s}",
             "-i", str(wav),
             "-c:v", "libx264", "-preset", "ultrafast", "-pix_fmt", "yuv420p",
             "-c:a", "aac", "-shortest", str(target),

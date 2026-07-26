@@ -35,6 +35,11 @@ DEFAULTS: dict[str, Any] = {
         "audio_height": 0.30,
         "audio_prominence": 0.25,
         "min_gap_s": 4.0,
+        # Analyze at most this many strikes per clip (the first N, in clip
+        # order); 0 = no limit. Every strike costs real CPU (pose tracking +
+        # renders), so an unbounded range session can occupy a worker for
+        # hours. When the cap trims a clip, the report says so honestly.
+        "max_strikes": 8,
     },
     "coaching": {
         "sway_warn_sw": 0.35,
@@ -59,6 +64,17 @@ DEFAULTS: dict[str, Any] = {
         "window_pre_s": 1.8,
         "window_post_s": 0.8,
         "fps": 30,
+        # Refuse clips longer than this many seconds (checked right after
+        # probe, before any work is done); 0 = no limit. A one-hour clip
+        # means hours of CPU and a multi-hundred-MB audio track — trimming
+        # to the swings is better for everyone.
+        "max_video_s": 300,
+        # When the source video was filmed at >= 50 fps, extract the
+        # analysis windows at min(source_fps, 60) instead of analysis.fps.
+        # The downswing is only 7-8 frames at 30 fps, so tempo carries a
+        # ~13% quantization error there; 60 fps halves it. analysis.fps
+        # stays the floor (and the value used for low-fps sources).
+        "auto_fps": True,
         "analysis_width": 480,
         "fullres_height": 1000,
         "takeaway_threshold_sw": 0.25,
@@ -84,7 +100,37 @@ DEFAULTS: dict[str, Any] = {
         "workers": 2,
         "max_upload_mb": 500,
         "max_active_jobs_per_ip": 3,
+        # Bare-code default keeps everything forever (safe for a white-label
+        # operator who hasn't thought about retention yet); the SHIPPED
+        # config.yaml sets 180 days — see the inline doc there for the
+        # GDPR/storage-minimization angle.
         "retention_days": 0,
+        # Delete the original upload once a job is DONE and its report
+        # exists (deliverables — report, media, metrics — are kept). Saves
+        # most of the disk per session and stops holding raw footage of
+        # people longer than needed; the trade-off is that re-analyzing an
+        # old session needs a re-upload. Bare-code default keeps the
+        # source; the shipped config.yaml turns this on.
+        "delete_source_after_done": False,
+        # Proxy/CDN hops whose X-Forwarded-For header is trusted for the
+        # real client IP: "*" (any — right for PaaS like Railway where the
+        # app only ever hears from the platform proxy), a list of proxy
+        # IPs, or ""/null to disable and use the socket peer address.
+        # Without this, every visitor behind the proxy shares one IP and
+        # max_active_jobs_per_ip silently caps the whole site. Honest
+        # caveat: with "*" a client that can reach the app DIRECTLY
+        # (bypassing the proxy) can spoof its IP via the header — on a
+        # PaaS the app port isn't publicly reachable so that's moot, but
+        # on a bare VM exposed to the internet list your proxy IPs instead.
+        "trusted_proxies": "*",
+        # Auth throttling (sliding windows, backed by the same SQLite
+        # file). 0 = off. Login is limited per client IP AND per email;
+        # signups per client IP. Uploads are governed separately (quota +
+        # max_active_jobs_per_ip).
+        "login_attempts_per_15min": 10,
+        "signups_per_hour_per_ip": 5,
+        # Bare-code default is an open, no-login instance; the shipped
+        # config.yaml turns accounts on.
         "require_account": False,
         # Weekly practice-plan email scheduler. Even when true, nothing
         # sends unless SMTP is configured (SWINGLAB_SMTP_URL +
