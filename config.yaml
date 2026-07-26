@@ -1,11 +1,11 @@
-# SwingLab configuration. Every value here can be changed without touching code.
+# CaddieInsight configuration. Every value here can be changed without touching code.
 
 brand:
-  name: SwingLab
+  name: CaddieInsight
   logo_path: null            # path to a logo image shown in the report header, or null
   primary_color: "#1a5c38"   # headers, table accents, skeleton "corrected" tint in legends
   accent_color: "#e8720c"    # highlights, warnings, "captured" tint in legends
-  footer_text: "SwingLab — swing analysis from a single phone video."
+  footer_text: "CaddieInsight — swing analysis from a single phone video."
   watermark: false           # stamp brand name onto generated images
   disclaimer: >-
     Automated estimates from a single camera. Not a substitute for instruction

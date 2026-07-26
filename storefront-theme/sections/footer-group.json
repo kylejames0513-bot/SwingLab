@@ -5,7 +5,7 @@
     "footer": {
       "type": "footer",
       "settings": {
-        "logo_text": "SWINGLAB",
+        "logo_text": "CADDIEINSIGHT",
         "tagline": "One phone video in. Tour-grade swing data out.",
         "app_url": "https://swinglab-production.up.railway.app",
         "menu": "swinglab-footer",

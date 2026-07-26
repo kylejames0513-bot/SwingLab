@@ -66,7 +66,7 @@ def test_report_html_reflects_branding_and_content(tmp_path):
         ["Tempo is impressively consistent across swings."], "right", cfg,
     )
     html = out.read_text()
-    assert "AceCoach" in html and "SwingLab" not in html
+    assert "AceCoach" in html and "CaddieInsight" not in html and "SwingLab" not in html
     assert "#123456" in html and "#abcdef" in html
     assert "AceCoach footer line" in html
     assert cfg.brand["disclaimer"][:40] in html

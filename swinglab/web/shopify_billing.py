@@ -1,4 +1,4 @@
-"""Selling SwingLab Pro through the Shopify store.
+"""Selling CaddieInsight Pro through the Shopify store.
 
 Entirely environment-driven and safely inert until configured:
 

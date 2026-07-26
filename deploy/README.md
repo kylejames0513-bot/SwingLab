@@ -1,4 +1,4 @@
-# Deploying SwingLab
+# Deploying CaddieInsight
 
 Two paths to a real URL you can open from any device:
 
@@ -16,7 +16,7 @@ Two paths to a real URL you can open from any device:
 ## VM steps
 
 1. **Create a VM** at any provider (DigitalOcean, Hetzner, AWS Lightsail, ...):
-   - Image: **Ubuntu 24.04** (SwingLab needs Python 3.11+)
+   - Image: **Ubuntu 24.04** (CaddieInsight needs Python 3.11+)
    - Size: the cheapest option works; 2 GB RAM is comfortable
    - Networking: allow inbound **HTTP (port 80)** — most providers' default
      firewall setting already does
@@ -38,6 +38,36 @@ journalctl -u swinglab -f        # live logs
 systemctl restart swinglab       # restart the app
 cd /opt/swinglab && git pull && systemctl restart swinglab   # update
 ```
+
+## Custom domain (caddieinsight.com)
+
+The owner holds `caddieinsight.com`. Until it is wired up, every link keeps
+using the live Railway URL (`https://swinglab-production.up.railway.app`) —
+nothing breaks by waiting. The one-time switch:
+
+1. **App:** in the Railway service settings, add `caddieinsight.com` as a
+   custom domain and create the CNAME record Railway shows. Once DNS is
+   live, set `PUBLIC_BASE_URL=https://caddieinsight.com` in the service's
+   environment so email links and Stripe checkout redirects use the new
+   domain.
+2. **Store (optional):** point `shop.caddieinsight.com` at Shopify (Shopify
+   admin → Settings → Domains) so the storefront leaves the
+   `.myshopify.com` address. `config.yaml`'s `shop.store_url` — the
+   report's "Matched training aids" link — then changes to the new store
+   domain.
+3. **Links that currently carry the Railway URL** (update each to
+   `https://caddieinsight.com` at switch time):
+   - the storefront theme's "Open the app" URLs — `app_url` in
+     `storefront-theme/sections/header-group.json` and
+     `footer-group.json`, the CTA/hero/comparison URLs in
+     `storefront-theme/templates/index.json`, the product page's
+     "open the app" link in `sections/main-product.liquid`, and the
+     theme's documentation/support URLs in `config/settings_schema.json`
+     (re-upsert the changed files to the Shopify theme);
+   - the "open the app" links inside the store's Pages and blog articles
+     (edited in the Shopify admin, or re-applied from the staged content
+     JSON);
+   - `PUBLIC_BASE_URL` in the Railway environment (step 1).
 
 ## Tuning for real traffic
 
@@ -161,7 +191,8 @@ environment so logins survive restarts/redeploys.
    environment and redeploy.
 
 Buyers check out on the Shopify storefront; a paid order unlocks Pro on the
-SwingLab account with the same email (or waits for that email to sign up).
+CaddieInsight account with the same email (or waits for that email to sign
+up).
 For auto-renewing memberships, add Shopify's free Subscriptions app to the
 product — each billing cycle's order re-extends access automatically.
 

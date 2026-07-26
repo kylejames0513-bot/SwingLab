@@ -38,7 +38,7 @@ def outbox(monkeypatch):
     """Turn mail 'on' (env set) but capture sends instead of doing SMTP."""
     sent: list[tuple[str, str, str]] = []
     monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp+starttls://u:p@mail.test:587")
-    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "SwingLab <no-reply@test.example>")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
     monkeypatch.setattr(
         mailer, "send", lambda to, subject, body: sent.append((to, subject, body))
     )
@@ -123,7 +123,7 @@ def test_send_drives_smtplib(monkeypatch):
     monkeypatch.setenv(
         "SWINGLAB_SMTP_URL", "smtp+starttls://user%40x.com:secret@mail.test:587"
     )
-    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "SwingLab <no-reply@test.example>")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
 
     class FakeSMTP:
         instances = []
@@ -157,7 +157,7 @@ def test_send_drives_smtplib(monkeypatch):
     kind, message = server.calls[2]
     assert kind == "send"
     assert message["To"] == "kyle@example.com"
-    assert message["From"] == "SwingLab <no-reply@test.example>"
+    assert message["From"] == "CaddieInsight <no-reply@test.example>"
     assert "123456" in message.get_content()
 
 

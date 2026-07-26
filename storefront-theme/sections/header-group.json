@@ -14,7 +14,7 @@
     "header": {
       "type": "header",
       "settings": {
-        "logo_text": "SWINGLAB",
+        "logo_text": "CADDIEINSIGHT",
         "menu": "swinglab-main",
         "app_url": "https://swinglab-production.up.railway.app"
       }

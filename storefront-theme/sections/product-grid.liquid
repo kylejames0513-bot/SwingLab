@@ -1,6 +1,6 @@
 <section id="{{ section.settings.anchor | default: 'shop' }}" class="sl-shop sl-wrap">
   <div class="sl-shop__head sl-reveal">
-    <h2 class="sl-h2">{{ section.settings.heading | default: 'Shop SwingLab' }}</h2>
+    <h2 class="sl-h2">{{ section.settings.heading | default: 'Shop CaddieInsight' }}</h2>
     {%- if section.settings.subheading != blank -%}
       <p class="sl-shop__sub">{{ section.settings.subheading }}</p>
     {%- endif -%}
@@ -159,8 +159,8 @@
   "name": "Product grid",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "shop" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Start with SwingLab" },
-    { "type": "text", "id": "subheading", "label": "Subheading", "default": "Buy Pro here, then sign in with the same email in the SwingLab app" }
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Start with CaddieInsight" },
+    { "type": "text", "id": "subheading", "label": "Subheading", "default": "Buy Pro here, then sign in with the same email in the CaddieInsight app" }
   ],
   "blocks": [
     {
@@ -168,7 +168,7 @@
       "name": "Product card",
       "settings": [
         { "type": "text", "id": "badge", "label": "Badge", "default": "MEMBERSHIP" },
-        { "type": "text", "id": "title", "label": "Title", "default": "SwingLab Pro" },
+        { "type": "text", "id": "title", "label": "Title", "default": "CaddieInsight Pro" },
         { "type": "textarea", "id": "description", "label": "Description", "default": "Unlimited swing analyses with every deliverable — strip, overlay, slow motion, notes." },
         { "type": "text", "id": "price_text", "label": "Price text", "info": "Leave blank when using the linked product's live price." },
         { "type": "text", "id": "price_note", "label": "Price note", "info": "Small line under the price, e.g. plan lengths." },
@@ -190,7 +190,7 @@
           "type": "product_card",
           "settings": {
             "badge": "MEMBERSHIP",
-            "title": "SwingLab Pro",
+            "title": "CaddieInsight Pro",
             "description": "Unlimited swing analyses with every deliverable — strip, overlay, slow motion, notes.",
             "use_product_price": true,
             "placeholder_label": "pro membership art",
@@ -201,7 +201,7 @@
           "type": "product_card",
           "settings": {
             "badge": "FREE PLAN",
-            "title": "Try SwingLab Free",
+            "title": "Try CaddieInsight Free",
             "description": "3 swing analyses every month, free forever — the full report on every one.",
             "price_text": "$0",
             "price_note": "No card required",

@@ -1,4 +1,4 @@
-# SwingLab web app.
+# CaddieInsight web app.
 #
 #   docker build -t swinglab .
 #   docker run -p 8000:8000 -v swinglab-sessions:/data swinglab

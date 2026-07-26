@@ -207,7 +207,7 @@ def test_signup_claims_stub_and_keeps_everything_bought(app):
     assert user.shopify_customer_id == "7001"
     assert count_users(client) == 1
 
-    assert "Connected to the SwingLab store" in client.get("/account").text
+    assert "Connected to the CaddieInsight store" in client.get("/account").text
 
 
 def test_claim_composes_with_parked_presignup_purchase(app):

@@ -1,4 +1,4 @@
-"""SwingLab Pro gallery + homepage art — Fairway Modernism, phase 2.
+"""CaddieInsight Pro gallery + homepage art — Fairway Modernism, phase 2.
 
 Pose-skeleton golfers (the product's own visual language: joint dots +
 limb segments, mediapipe style) rendered in the same palette and chrome

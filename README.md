@@ -1,8 +1,8 @@
-# SwingLab
+# CaddieInsight
 
-Golf swing analysis from a single phone video. Film yourself hitting balls,
-point SwingLab at the clip, and get back per-swing metrics plus visual
-deliverables:
+CaddieInsight (package name `swinglab`) is golf swing analysis from a single
+phone video. Film yourself hitting balls, point CaddieInsight at the clip,
+and get back per-swing metrics plus visual deliverables:
 
 - a labeled **key-position strip** (address / top / impact / finish),
 - a smooth **quarter-speed slow-motion** clip per swing,
@@ -78,7 +78,7 @@ results/<video-name>/
 ### What the report measures — honestly
 
 Everything comes from one hip-height phone camera and 2D pose landmarks
-projected into the image plane. SwingLab tracks the golfer's **body** — it
+projected into the image plane. CaddieInsight tracks the golfer's **body** — it
 does not track the club, does not reconstruct 3D, and makes no ball-flight
 claims. Angle metrics are the angles **as seen from the camera** (face-on),
 and lateral metrics are normalized by shoulder width at address (SW) so
@@ -137,7 +137,7 @@ measured swing is flagged.
 The annotated replay is exactly what it sounds like: the engine annotating
 the golfer's **own footage**. The same slow-motion window is re-rendered with
 the tracked skeleton, a fading trace of the **hand path** (wrist centroid —
-the body point we actually track; SwingLab never claims club tracking), a
+the body point we actually track; CaddieInsight never claims club tracking), a
 dashed centerline from the setup position, and metric chips that appear at
 each swing event (top, impact, finish) and persist. The replay is never
 motion-interpolated — that keeps the burned-in text crisp and the render
@@ -165,7 +165,7 @@ offline. The animation sits behind a "Show the motion" toggle and freezes on
 the setup pose for viewers who ask their device for reduced motion.
 
 Set `shop.store_url` in `config.yaml` (the shipped config points at the
-SwingLab store; empty = no link) and the plan ends with a quiet "Matched
+CaddieInsight store; empty = no link) and the plan ends with a quiet "Matched
 training aids" link to that store's `/collections/swinglab-gear` collection —
 the same tag-matched gear the web app recommends on finished analyses.
 
@@ -402,7 +402,7 @@ every other integration:
 | Variable | What it is |
 | --- | --- |
 | `SWINGLAB_SMTP_URL` | e.g. `smtp+starttls://user:pass@smtp.example.com:587` — also `smtp://` (plain, local relays) and `smtps://` (implicit TLS, port 465); credentials URL-encoded |
-| `SWINGLAB_MAIL_FROM` | the From address, e.g. `SwingLab <no-reply@yourdomain.com>` |
+| `SWINGLAB_MAIL_FROM` | the From address, e.g. `CaddieInsight <no-reply@yourdomain.com>` |
 
 With both set, claiming an email that already has anything attached (a
 store account, or a Pro purchase made before signup) requires a 6-digit
@@ -449,11 +449,19 @@ via two environment variables:
 Products, prices, and images live in Shopify — manage them in the Shopify
 admin, never in code. The product list is cached in memory
 (`shop.cache_minutes`), and a Shopify outage degrades to the last cached
-list instead of an error. "Buy" links go to the Shopify storefront; SwingLab
-never touches checkout.
+list instead of an error. "Buy" links go to the Shopify storefront;
+CaddieInsight never touches checkout.
 
 For deployment — a one-command `docker compose up -d`, or a fresh-VM script —
 see [deploy/README.md](deploy/README.md).
+
+**Custom domain:** the owner holds `caddieinsight.com`. Point it at the
+Railway service (add the domain to the Railway service, then set
+`PUBLIC_BASE_URL=https://caddieinsight.com` once DNS is live), and optionally
+point `shop.caddieinsight.com` at the Shopify store. Theme and app links
+currently use the Railway URL and keep working until the switch — the
+"Custom domain" section of [deploy/README.md](deploy/README.md) lists where
+each link lives for the one-time change.
 
 ## Measuring what matters
 
@@ -508,8 +516,8 @@ inert-until-configured rule as every other integration.
 
 1. **Probe** — `ffprobe` reads duration, resolution, fps, and rotation.
    Phone `.mov` files store rotation as metadata which ffmpeg applies
-   automatically during extraction; SwingLab never rotates manually (that
-   would double-rotate).
+   automatically during extraction; CaddieInsight never rotates manually
+   (that would double-rotate).
 2. **Strike detection** — ball strikes are sharp audio transients. The mono
    16 kHz track is enveloped in 10 ms hops and peaks are found with
    configurable height / prominence / minimum-gap thresholds.

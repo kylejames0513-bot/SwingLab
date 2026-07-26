@@ -1,4 +1,4 @@
-"""SwingLab brand assets — Fairway Modernism.
+"""CaddieInsight brand assets — Fairway Modernism.
 
 Flat catalog illustrations: warm off-white field, deep green ink, one orange
 kinetic gesture per piece, systematic corner labels. Everything is drawn at
@@ -213,9 +213,11 @@ def card_chrome(draw, s, category: str, title: str, sku: str, spec: str | None =
     # faint brand arc across the field
     swing_arc(draw, 1600 * s * 0.86, 1600 * s * 0.16, 1120 * s, 95, 175,
               ARC_FAINT, int(3 * s), dash=(2.2, 2.6))
-    # top-left wordmark
-    tracked(draw, (m, m - 8 * s), "SWINGLAB", archivo(int(30 * s), 640, 104),
-            GREEN, tracking=int(11 * s))
+    # top-left wordmark — 13 letters, so tighter tracking and a step down in
+    # size versus the old 8-letter mark; baseline stays optically level with
+    # the mono category label on the right
+    tracked(draw, (m, m - 6 * s), "CADDIEINSIGHT", archivo(int(28 * s), 640, 104),
+            GREEN, tracking=int(4 * s))
     # top-right category, mono
     tracked(draw, (1600 * s - m, m - 4 * s), category.upper(), mono(int(24 * s)),
             INK_MUTED, tracking=int(4 * s), anchor="r")
@@ -705,7 +707,7 @@ def swing_mirror():
 def performance_cap():
     img, d = canvas()
     s = S
-    card_chrome(d, s, "Apparel", "SwingLab Performance Cap", "SL-CAP",
+    card_chrome(d, s, "Apparel", "CaddieInsight Performance Cap", "SL-CAP",
                 spec="one size 58–62 cm · cotton twill")
     cx, cy = 830 * s, 780 * s
     # crown: half-ellipse
@@ -827,7 +829,7 @@ def pro_membership():
     rrect(d, [bx - 110 * s, by - 56 * s, bx + 110 * s, by + 56 * s], 56 * s, fill=ORANGE)
     f = archivo(int(64 * s), 740, 108)
     d.text(((bx - 110 * s + bx + 110 * s) / 2, by), "PRO", font=f, fill=CARD, anchor="mm")
-    card_chrome(d, s, "Membership · Digital", "SwingLab Pro", "SL-PRO")
+    card_chrome(d, s, "Membership · Digital", "CaddieInsight Pro", "SL-PRO")
     finish(img, "product-pro.png")
 
 
@@ -840,7 +842,7 @@ def _pol(cx, cy, r, ang):
 
 def mark_protractor(d, cx, cy, R, ink=GREEN, sweep=ORANGE, tick_step=5,
                     bold=1.0):
-    """The SwingLab mark: a protractor gauge caught mid-swing. Calibration
+    """The CaddieInsight mark: a protractor gauge caught mid-swing. Calibration
     tick fan in ink, the orange sweep inside it, the ball at the sweep's
     terminus, a needle from the pivot aimed at the ball.
 
@@ -869,21 +871,25 @@ def mark_protractor(d, cx, cy, R, ink=GREEN, sweep=ORANGE, tick_step=5,
 
 
 def _wordmark(d, x, y, px, ink=GREEN):
-    """Heavy Archivo 'SwingLab', tight tracking. Returns total width."""
+    """Heavy Archivo 'CaddieInsight', tight tracking, single ink. The orange
+    in the lockup stays reserved for the gauge's kinetic sweep — one orange
+    gesture per composition, per the house rules. Returns total width."""
     f = archivo(int(px), 770, 102)
     t = int(-0.014 * px)
-    w1 = tracked(d, (x, y), "Swing", f, ink, tracking=t)
-    w2 = tracked(d, (x + w1 + t, y), "Lab", f, ink, tracking=t)
+    w1 = tracked(d, (x, y), "Caddie", f, ink, tracking=t)
+    w2 = tracked(d, (x + w1 + t, y), "Insight", f, ink, tracking=t)
     return w1 + t + w2
 
 
 def logo(inverse=False):
     """Lockup: gauge mark beside the heavy wordmark, transparent field.
     The inverse is re-inked in mint for deep-green / near-black contexts —
-    the orange sweep is the one color both versions share."""
+    the orange sweep is the one color both versions share. Output filenames
+    keep the historical swinglab- names so every CDN and theme reference
+    keeps resolving."""
     sc = 4
     ink = GREEN_INK if inverse else GREEN
-    img = Image.new("RGBA", (1560 * sc, 340 * sc), (0, 0, 0, 0))
+    img = Image.new("RGBA", (1960 * sc, 340 * sc), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     R = 215 * sc
     mark_protractor(d, 40 * sc, 272 * sc, R, ink=ink)
@@ -929,8 +935,8 @@ def collection_banner():
     bx = 1980 * s + (620 - 6) * s * math.cos(math.radians(190))
     by = 60 * s + (620 - 6) * s * math.sin(math.radians(190))
     d.ellipse([bx - 24 * s, by - 24 * s, bx + 24 * s, by + 24 * s], fill=GREEN)
-    tracked(d, (110 * s, 330 * s), "SWINGLAB", archivo(int(34 * s), 640, 104), GREEN,
-            tracking=int(12 * s))
+    tracked(d, (110 * s, 330 * s), "CADDIEINSIGHT", archivo(int(30 * s), 640, 104),
+            GREEN, tracking=int(5 * s))
     d.text((104 * s, 400 * s), "Train what the\nreport flagged.",
            font=archivo(int(96 * s), 680, 104), fill=INK, spacing=int(18 * s))
     tracked(d, (110 * s, 700 * s), "TRAINING AIDS MATCHED TO YOUR SWING",
