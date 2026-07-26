@@ -26,6 +26,13 @@ web = [
     "itsdangerous>=2.1",   # signed login cookies (starlette SessionMiddleware)
     "stripe>=9.0",         # Pro subscriptions
 ]
+ops = [
+    # Optional error monitoring: the app initializes Sentry only when the
+    # SENTRY_DSN environment variable is set AND this package is installed
+    # (see swinglab.web.app.init_sentry). Never a base dependency — every
+    # error path works identically without it.
+    "sentry-sdk>=2.0",
+]
 dev = ["pytest>=8.0", "httpx>=0.27"]
 
 [project.scripts]

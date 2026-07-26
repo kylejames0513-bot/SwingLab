@@ -41,6 +41,13 @@ _BODY_TIPS = (
     "sun.",
 )
 
+_TOO_LONG_TIPS = (
+    "Trim the clip to just the swings you want analyzed and upload it "
+    "again — your phone's editor can do this in seconds.",
+    "A few swings per clip is the sweet spot; shorter clips also process "
+    "much faster.",
+)
+
 
 def friendly_error(raw: str | None) -> ErrorHelp:
     """Plain guidance for a failed job's error text. Known pipeline
@@ -49,6 +56,11 @@ def friendly_error(raw: str | None) -> ErrorHelp:
     raw = (raw or "").strip()
     low = raw.lower()
 
+    if "analysis limit" in low:
+        # VideoTooLongError — keep the honest headline (it carries the real
+        # numbers) but strip the config-key pointer meant for operators.
+        headline = raw.split(" (")[0].rstrip(".") + "."
+        return ErrorHelp(message=headline, tips=_TOO_LONG_TIPS)
     if "no audio track" in low:
         return ErrorHelp(
             message=(

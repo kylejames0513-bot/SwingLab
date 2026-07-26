@@ -156,6 +156,7 @@
   <tr><th>Resolution</th><td>{{ video.display_width }}×{{ video.display_height }}
       {% if video.rotation %}(rotation metadata: {{ video.rotation }}°){% endif %}</td></tr>
   <tr><th>Frame rate</th><td>{{ "%.2f"|format(video.fps) }} fps</td></tr>
+  {% if analysis_fps %}<tr><th>Analyzed at</th><td>{{ "%g"|format(analysis_fps) }} fps</td></tr>{% endif %}
   {% if video.creation_time %}<tr><th>Recorded</th><td>{{ video.creation_time }}</td></tr>{% endif %}
   <tr><th>Swings detected</th><td>{{ swings|length }}</td></tr>
   <tr><th>Handedness</th><td>{{ hand }}</td></tr>

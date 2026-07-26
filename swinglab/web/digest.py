@@ -31,6 +31,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import html
+import logging
 import os
 import threading
 import time
@@ -39,6 +40,8 @@ from ..config import Config
 from ..drills import CLEAN, practice_plan
 from ..trends import FLAG_LABELS, build_trends, trend_sentence
 from . import mailer
+
+logger = logging.getLogger("swinglab.web.digest")
 
 DIGEST_INTERVAL_S = 6.5 * 86400  # at most one email per user per ~week
 TICK_S = 3600  # scheduler wakes hourly
@@ -223,11 +226,11 @@ def run_once(users, manager, cfg: Config, secret: str, now: float | None = None)
         try:
             mailer.send(user.email, subject, body, html=True)
             sent += 1
-            print(f"digest: sent weekly practice plan to {user.email}")
+            logger.info("digest: sent weekly practice plan to %s", user.email)
         except Exception as exc:
             # The claim above stands: a failed send waits for next week
             # rather than risking a double-send on retry.
-            print(f"digest: send to {user.email} failed: {exc}")
+            logger.error("digest: send to %s failed: %s", user.email, exc)
     return sent
 
 
@@ -235,8 +238,8 @@ def _loop(manager, users, cfg: Config, secret: str) -> None:
     while True:
         try:
             run_once(users, manager, cfg, secret)
-        except Exception as exc:  # never let the thread die
-            print(f"digest: tick failed: {exc}")
+        except Exception:  # never let the thread die
+            logger.exception("digest: tick failed")
         time.sleep(TICK_S)
 
 

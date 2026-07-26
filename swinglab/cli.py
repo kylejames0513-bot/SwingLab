@@ -14,7 +14,7 @@ from .config import Config
 from .events import EventError
 from .ffmpeg import FFmpegError
 from .metrics import SwingMetrics
-from .pipeline import SessionResult, ZeroStrikesError, analyze_video
+from .pipeline import SessionResult, VideoTooLongError, ZeroStrikesError, analyze_video
 
 VIDEO_SUFFIXES = {".mov", ".mp4", ".m4v", ".avi", ".mkv"}
 
@@ -140,7 +140,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         app = create_app(cfg, sessions_dir=args.sessions_dir)
         print(f"{cfg.brand['name']} web app on http://{args.host}:{args.port}")
-        uvicorn.run(app, host=args.host, port=args.port)
+        # X-Forwarded-For handling lives INSIDE the app (create_app adds
+        # ProxyHeadersMiddleware per web.trusted_proxies — "*" as shipped
+        # for PaaS proxies, a list of IPs, or "" to disable). uvicorn's own
+        # proxy_headers layer is switched off so there is exactly one place
+        # that decides which proxies to trust.
+        uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
         return 0
 
     try:
@@ -160,7 +165,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n=== {video.name} ===")
                 try:
                     _analyze_one(video, args, cfg)
-                except (ZeroStrikesError, EventError, FFmpegError) as exc:
+                except (
+                    ZeroStrikesError, VideoTooLongError, EventError, FFmpegError
+                ) as exc:
                     print(f"SKIPPED {video.name}: {exc}", file=sys.stderr)
                     failures += 1
             return 1 if failures == len(videos) else 0
@@ -171,7 +178,7 @@ def main(argv: list[str] | None = None) -> int:
         _analyze_one(args.path, args, cfg)
         return 0
 
-    except ZeroStrikesError as exc:
+    except (ZeroStrikesError, VideoTooLongError) as exc:
         print(f"\n{exc}", file=sys.stderr)
         return 1
     except FFmpegError as exc:

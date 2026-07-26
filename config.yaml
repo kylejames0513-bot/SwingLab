@@ -19,6 +19,13 @@ detection:
   audio_height: 0.30         # normalized envelope height for a strike peak
   audio_prominence: 0.25     # peak prominence
   min_gap_s: 4.0             # minimum seconds between detected swings
+  max_strikes: 8             # analyze at most this many strikes per clip (the
+                             # first N, in clip order; 0 = no limit). Each
+                             # strike costs real CPU — pose tracking plus the
+                             # slow-mo/replay renders — so an unbounded range
+                             # session can hold a worker for hours. When the
+                             # cap trims a clip the report says so honestly:
+                             # "Clip had N strikes; analyzed the first M."
 
 coaching:
   sway_warn_sw: 0.35         # flag head sway (address->top) beyond this, in shoulder widths
@@ -46,7 +53,21 @@ coaching:
 analysis:
   window_pre_s: 1.8          # analysis window starts this long before the strike
   window_post_s: 0.8         # ...and ends this long after
-  fps: 30                    # analysis frame rate
+  fps: 30                    # analysis frame rate (the floor — see auto_fps)
+  max_video_s: 300           # refuse clips longer than this many seconds,
+                             # checked right after probe before any work is
+                             # done (0 = no limit). An hour-long clip means
+                             # hours of CPU and a multi-hundred-MB audio
+                             # track; five minutes fits a full range session
+                             # of swings with room to spare.
+  auto_fps: true             # when the source was filmed at >= 50 fps,
+                             # extract analysis windows at min(source_fps, 60)
+                             # instead of fps above. The downswing is only
+                             # 7-8 frames at 30 fps (~13% tempo quantization
+                             # error); 60 fps halves it. Sources below 50 fps
+                             # keep using analysis.fps. The rate actually used
+                             # is reported in metrics.json meta and the
+                             # report's session table.
   analysis_width: 480        # working frame width (scale=480:-2)
   fullres_height: 1000       # height of frames used in deliverables
   takeaway_threshold_sw: 0.25
@@ -86,7 +107,54 @@ web:
                              # + pose tracking) — match this to the machine.
   max_upload_mb: 500         # reject uploads larger than this (0 = unlimited)
   max_active_jobs_per_ip: 3  # queued+running jobs one visitor may have (0 = unlimited)
-  retention_days: 0          # delete finished sessions older than this (0 = keep forever)
+  trusted_proxies: "*"       # whose X-Forwarded-For header to believe for the
+                             # real client IP. "*" fits a PaaS (Railway,
+                             # Render, Fly): the app only ever hears from the
+                             # platform's proxy, and without this every
+                             # visitor shares the proxy's IP — so
+                             # max_active_jobs_per_ip silently caps the whole
+                             # site at 3 jobs. Honest trade-off: "*" trusts
+                             # ANY direct connection's header, so a client
+                             # that can bypass the proxy and reach the app
+                             # port directly could spoof its IP to dodge
+                             # per-IP limits (not an auth bypass — just the
+                             # limits). On a PaaS the app port isn't publicly
+                             # reachable, so that's moot; on a bare VM with
+                             # nginx/Caddy in front, list the proxy's IPs
+                             # instead (e.g. ["127.0.0.1"]); "" disables and
+                             # uses the socket peer address.
+  retention_days: 180        # delete finished sessions older than this
+                             # (0 = keep forever, which is the bare-code
+                             # default for white-label installs that manage
+                             # retention themselves). 180 is shipped because
+                             # sessions hold identifiable video of people:
+                             # storage-minimization (GDPR art. 5) says don't
+                             # keep it forever by accident — and full disks
+                             # are the most common first outage anyway.
+  delete_source_after_done: true
+                             # delete the original upload once an analysis is
+                             # DONE and its report exists. The deliverables —
+                             # report, media clips, metrics.json — are kept;
+                             # only the raw source video goes. Saves most of
+                             # each session's disk and stops holding raw
+                             # footage longer than needed. Trade-off (stated
+                             # honestly in the session log too): re-analyzing
+                             # an old session needs a fresh upload. Also fires
+                             # when an analysis FAILS — failed uploads don't
+                             # count against quota, so keeping them would let
+                             # refused clips fill the disk for free. The
+                             # bare-code default is false.
+  login_attempts_per_15min: 10
+                             # failed logins allowed per 15 minutes, counted
+                             # per client IP AND per email (0 = off). Over the
+                             # limit, login answers a generic "too many
+                             # attempts, wait" — the sliding window expires on
+                             # its own, so the legitimate owner is never
+                             # locked out beyond it.
+  signups_per_hour_per_ip: 5 # account creations per hour per client IP
+                             # (0 = off). Every signup costs a scrypt hash —
+                             # this keeps throwaway-email loops from burning
+                             # CPU for free.
   require_account: true      # visitors must sign up before analyzing; false = open access
                              # (set SWINGLAB_SECRET in the environment so logins
                              # survive restarts)

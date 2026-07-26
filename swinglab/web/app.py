@@ -33,9 +33,12 @@ asked for it.
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import secrets
+import shutil
 import time
 from pathlib import Path
 
@@ -43,6 +46,7 @@ from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.requests import ClientDisconnect
 
 from .. import sample
 from ..clubs import CLUB_LABELS
@@ -54,10 +58,46 @@ from ..metrics import ANGLES
 from ..trends import FLAG_LABELS, build_trends, format_delta, format_value, trend_sentence
 from . import billing, digest, humanize, mailer, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
+from .throttle import Throttle
 from .users import User, UserStore
+
+logger = logging.getLogger("swinglab.web")
 
 VIDEO_SUFFIXES = {".mov", ".mp4", ".m4v", ".avi", ".mkv"}
 UPLOAD_CHUNK = 1024 * 1024
+
+LOGIN_WINDOW_S = 15 * 60  # window for web.login_attempts_per_15min
+SIGNUP_WINDOW_S = 3600  # window for web.signups_per_hour_per_ip
+THROTTLED_MESSAGE = "Too many attempts — wait a few minutes and try again."
+
+
+def init_sentry() -> bool:
+    """Optional error monitoring, inert-until-configured like every other
+    integration: initializes Sentry only when SENTRY_DSN is set AND
+    sentry-sdk is importable (pip install "swinglab[ops]"). Every exception
+    path works identically without it."""
+    dsn = os.environ.get("SENTRY_DSN")
+    if not dsn:
+        return False
+    try:
+        import sentry_sdk
+    except ImportError:
+        logger.warning(
+            "SENTRY_DSN is set but sentry-sdk is not installed — error "
+            "monitoring stays off. Install it with: pip install \"swinglab[ops]\""
+        )
+        return False
+    sentry_sdk.init(dsn=dsn)
+    logger.info("Sentry error monitoring enabled.")
+    return True
+
+
+def client_ip(request: Request) -> str | None:
+    """The client IP every limit/throttle keys on. With web.trusted_proxies
+    configured, ProxyHeadersMiddleware has already rewritten request.client
+    from X-Forwarded-For — so behind Railway (or any proxy) this is the real
+    visitor, not the proxy. Every request-IP read goes through here."""
+    return request.client.host if request.client else None
 
 
 def ensure_user_can_analyze(
@@ -100,9 +140,11 @@ def create_app(
     cfg: Config | None = None, sessions_dir: str | Path = "sessions"
 ) -> FastAPI:
     cfg = cfg or Config.load()
+    init_sentry()
     sessions_dir = Path(sessions_dir)
     manager = JobManager(sessions_dir, cfg)
     users = UserStore(sessions_dir / "swinglab.db")
+    throttle = Throttle(sessions_dir / "swinglab.db")
     app = FastAPI(title=f"{cfg.brand['name']} — swing analysis")
     app.state.jobs = manager
     app.state.users = users
@@ -112,11 +154,26 @@ def create_app(
     if not secret:
         secret = secrets.token_hex(32)
         if cfg.web.get("require_account"):
-            print(
-                "WARNING: SWINGLAB_SECRET is not set — logins will not survive "
+            logger.warning(
+                "SWINGLAB_SECRET is not set — logins will not survive "
                 "a restart. Set it to a long random string in the environment."
             )
     app.add_middleware(SessionMiddleware, secret_key=secret, same_site="lax")
+
+    # Real client IPs behind a proxy: trust X-Forwarded-For from
+    # web.trusted_proxies ("*" = any hop, right for a PaaS whose proxy is
+    # the only thing that can reach the app; a list of IPs for a bare VM
+    # with its own nginx/Caddy; ""/null = off). Without this, everyone
+    # behind the proxy shares its IP and max_active_jobs_per_ip caps the
+    # whole site. See config.yaml for the honest spoofing caveats.
+    trusted_proxies = cfg.web.get("trusted_proxies")
+    if trusted_proxies:
+        from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+
+        app.add_middleware(ProxyHeadersMiddleware, trusted_hosts=trusted_proxies)
+
+    login_limit = int(cfg.web.get("login_attempts_per_15min") or 0)
+    signup_limit = int(cfg.web.get("signups_per_hour_per_ip") or 0)
 
     env = Environment(
         loader=FileSystemLoader(Path(__file__).parent.parent / "templates"),
@@ -283,8 +340,30 @@ def create_app(
 
     @app.post("/login")
     def login(request: Request, email: str = Form(""), password: str = Form("")):
+        # Throttle check FIRST — before the (deliberately expensive) scrypt
+        # verification, so a brute-forcer can't burn CPU either. Keyed per
+        # client IP AND per target email: a distributed guess at one account
+        # and a spray from one address both hit a wall. Only FAILED attempts
+        # are recorded, and the sliding window expires by itself — the
+        # legitimate owner is never locked out beyond it.
+        ip = client_ip(request)
+        normalized_email = email.strip().lower()
+        if not (
+            throttle.allow("login-ip", ip, login_limit, LOGIN_WINDOW_S)
+            and throttle.allow(
+                "login-email", normalized_email, login_limit, LOGIN_WINDOW_S
+            )
+        ):
+            page = render(
+                "web_login.html.j2", request, landing=False,
+                error=THROTTLED_MESSAGE,
+            )
+            page.status_code = 429
+            return page
         user = users.authenticate(email, password)
         if user is None:
+            throttle.record("login-ip", ip)
+            throttle.record("login-email", normalized_email)
             # An unclaimed store account has no password to be wrong about —
             # point the customer at signup (prefilled) instead.
             pending = users.get_by_email(email)
@@ -310,12 +389,26 @@ def create_app(
         digest_opt: str = Form("", alias="digest"),
     ):
         wants_digest = digest_opt.lower() in ("on", "true", "1", "yes")
+        # Signup throttle: per client IP, sliding hour window. Every signup
+        # costs a scrypt hash (and, with SMTP on, an email) — this stops
+        # throwaway-email loops from getting that CPU for free.
+        ip = client_ip(request)
+        if not throttle.allow("signup-ip", ip, signup_limit, SIGNUP_WINDOW_S):
+            page = render(
+                "web_login.html.j2", request, landing=False,
+                error=THROTTLED_MESSAGE,
+            )
+            page.status_code = 429
+            return page
         try:
             normalized = users.validate_signup(email, password)
         except ValueError as exc:
             return render(
                 "web_login.html.j2", request, landing=False, error=str(exc)
             )
+        # Record only attempts that clear validation — a typo'd password
+        # doesn't cost the visitor one of their slots.
+        throttle.record("signup-ip", ip)
         # When email is configured, claiming an address that already has
         # value attached (an unclaimed store account, or a Pro purchase
         # made before signup) must prove control of the inbox first. When
@@ -642,9 +735,9 @@ def create_app(
                 "club must be one of: " + ", ".join(sorted(CLUB_LABELS)),
             )
 
-        client_ip = request.client.host if request.client else None
+        ip = client_ip(request)
         per_ip = int(cfg.web.get("max_active_jobs_per_ip") or 0)
-        if client_ip and per_ip and manager.active_for_ip(client_ip) >= per_ip:
+        if ip and per_ip and manager.active_for_ip(ip) >= per_ip:
             raise HTTPException(
                 429,
                 f"You already have {per_ip} analyses queued or running — "
@@ -658,7 +751,7 @@ def create_app(
             club=club or None,
             strikes=manual_strikes,
             fast=fast.lower() in ("on", "true", "1", "yes"),
-            client_ip=client_ip,
+            client_ip=ip,
             user_id=user.id if user else None,
         )
         max_mb = float(cfg.web.get("max_upload_mb") or 0)
@@ -681,6 +774,26 @@ def create_app(
             raise HTTPException(
                 500, "Could not store the upload — the server may be out of disk."
             )
+        except ClientDisconnect:
+            # The uploader hung up mid-transfer. Without this cleanup the
+            # half-written job would sit QUEUED forever — eating one of the
+            # visitor's max_active_jobs_per_ip slots AND a monthly-quota
+            # analysis for a video that never arrived. discard() removes the
+            # partial file and the job row, so neither is counted.
+            manager.discard(job)
+            # Nobody is listening, but the middleware stack still wants a
+            # response object to unwind cleanly.
+            return JSONResponse(
+                {"detail": "Upload interrupted — the connection closed before "
+                           "the video finished uploading."},
+                status_code=400,
+            )
+        except asyncio.CancelledError:
+            # Server-side cancellation (shutdown, or an ASGI server that maps
+            # disconnects to task cancellation): same cleanup, but the
+            # cancellation itself must keep propagating.
+            manager.discard(job)
+            raise
         manager.submit(job, dest)
         if _wants_json(request):
             return JSONResponse({"id": job.id, "url": f"/session/{job.id}"})
@@ -778,7 +891,16 @@ def create_app(
 
     @app.get("/healthz")
     def healthz():
-        return JSONResponse({"status": "ok", **manager.counts()})
+        # disk_free_mb + sessions_count: disk-full is the most likely first
+        # outage — this makes it visible to uptime monitors before it lands.
+        return JSONResponse(
+            {
+                "status": "ok",
+                **manager.counts(),
+                "disk_free_mb": shutil.disk_usage(sessions_dir).free // (1024 * 1024),
+                "sessions_count": manager.sessions_count(),
+            }
+        )
 
     # Weekly practice-plan digest: hourly daemon thread, started ONLY when
     # SMTP is configured AND web.digest_enabled is on — otherwise None and

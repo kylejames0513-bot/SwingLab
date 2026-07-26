@@ -20,6 +20,15 @@ DTL_SESSION_NOTE = (
 
 _ANGLE_PHRASES = {ANGLE_FACE_ON: "face-on", ANGLE_DTL: "down the line"}
 
+# Appended to a swing's coaching notes when pose.tracking_quality judges the
+# track unreliable (heavy frame loss, or a core-landmark jump that means the
+# detector locked onto someone/something else mid-swing). Honest, not scary:
+# the numbers are still shown, flagged as possibly off.
+TRACKING_UNSTABLE_NOTE = (
+    "Tracking was unstable for this swing — numbers may be off; film with a "
+    "clear view of your full body, nobody else in frame."
+)
+
 
 def angle_mismatch_note(chosen: str, apparent: str) -> str:
     """The low-confidence warning when the footage looks like the OTHER

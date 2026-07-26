@@ -272,14 +272,17 @@ def test_queue_is_bounded_and_positions_reported(tmp_path, monkeypatch):
         assert "Waiting in line" in html
 
         health = client.get("/healthz").json()
-        assert health == {"status": "ok", "queued": 1, "processing": 1}
+        assert (health["status"], health["queued"], health["processing"]) == (
+            "ok", 1, 1,
+        )
+        assert health["disk_free_mb"] > 0  # ops signal: disk-full visibility
+        assert health["sessions_count"] == 2
     finally:
         release.set()
     assert wait_for(client, first)["status"] == "done"
     assert wait_for(client, second)["status"] == "done"
-    assert client.get("/healthz").json() == {
-        "status": "ok", "queued": 0, "processing": 0,
-    }
+    idle = client.get("/healthz").json()
+    assert (idle["status"], idle["queued"], idle["processing"]) == ("ok", 0, 0)
 
 
 def test_per_ip_active_job_limit(tmp_path, monkeypatch):

@@ -14,7 +14,7 @@ from typing import Callable
 from PIL import Image
 
 from . import annotate, audio, events, frames, metrics, overlay, pose, report, slowmo, strip
-from .coaching import DTL_SESSION_NOTE, angle_mismatch_note
+from .coaching import DTL_SESSION_NOTE, TRACKING_UNSTABLE_NOTE, angle_mismatch_note
 from .coaching import session_notes as make_session_notes
 from .coaching import swing_notes
 from .config import Config
@@ -25,6 +25,10 @@ from .metrics import ANGLE_DTL, ANGLE_FACE_ON, ANGLES
 
 class ZeroStrikesError(RuntimeError):
     """No ball strikes found in the audio track."""
+
+
+class VideoTooLongError(RuntimeError):
+    """The clip exceeds analysis.max_video_s — refused before any work."""
 
 
 @dataclass
@@ -100,6 +104,26 @@ def analyze_video(
         f"@ {info.fps:.2f} fps, {info.duration_s:.1f}s"
         + (f", rotation {info.rotation}°" if info.rotation else "")
     )
+    # Length cap first — before any extraction burns CPU or disk. A one-hour
+    # clip means hours of work; refusing it here with a clear message beats
+    # timing out (or OOMing) halfway through.
+    max_video_s = float(cfg.analysis.get("max_video_s") or 0)
+    if max_video_s and info.duration_s > max_video_s:
+        raise VideoTooLongError(
+            f"{video_path.name} is {info.duration_s:.0f} seconds long — over "
+            f"the {max_video_s:.0f}-second analysis limit. Trim the clip to "
+            "the swings you want analyzed and try again. (Operators: the "
+            "limit is analysis.max_video_s in config; 0 disables it.)"
+        )
+    # Analysis frame rate for this video: analysis.fps, or — with auto_fps on
+    # and a high-fps source — min(source_fps, 60). Everything downstream
+    # takes timing from the FrameSet, so the rate is decided exactly once.
+    analysis_fps = frames.pick_analysis_fps(cfg, info.fps)
+    if analysis_fps != float(cfg.analysis["fps"]):
+        log(
+            f"High-speed source: analyzing at {analysis_fps:.6g} fps "
+            f"(analysis.auto_fps) for finer timing."
+        )
 
     session_dir = _unique_dir(
         Path(out_dir or cfg.output_dir) / video_path.stem
@@ -131,6 +155,19 @@ def analyze_video(
         log(f"Detected {len(strikes)} strike(s): "
             + ", ".join(f"{t:.2f}s" for t in strikes))
 
+    # Strike cap: analyze the FIRST N strikes, in clip order, and say so
+    # honestly in the session notes — never silently drop swings.
+    max_strikes = int(cfg.detection.get("max_strikes") or 0)
+    strike_cap_note = None
+    if max_strikes and len(strikes) > max_strikes:
+        strike_cap_note = (
+            f"Clip had {len(strikes)} strikes; analyzed the first "
+            f"{max_strikes} (the configured per-clip limit). Split longer "
+            "sessions into shorter clips for full coverage."
+        )
+        log(strike_cap_note)
+        strikes = strikes[:max_strikes]
+
     # --- per swing -------------------------------------------------------
     if progress:
         progress(0, len(strikes))
@@ -144,6 +181,7 @@ def analyze_video(
                 swing = _analyze_swing(
                     video_path, strike_s, swing_no, tracker, work_dir, media_dir,
                     session_dir, hand, cfg, fast, log, angle,
+                    analysis_fps=analysis_fps,
                 )
                 swings.append(swing)
                 all_metrics.append(swing["metrics"])
@@ -166,6 +204,8 @@ def analyze_video(
     # --- session outputs -------------------------------------------------
     stats = metrics.session_stats(all_metrics)
     notes = make_session_notes(all_metrics, stats, cfg)
+    if strike_cap_note:
+        notes.append(strike_cap_note)
     # Camera-angle honesty. The DTL note leads (it reframes the whole
     # report); the mismatch warning fires only when every per-swing address
     # pose that had an opinion says the footage looks like the OTHER angle —
@@ -178,10 +218,18 @@ def analyze_video(
         log("WARNING: " + angle_mismatch_note(angle, guesses[0]))
     if angle == ANGLE_DTL:
         notes.insert(0, DTL_SESSION_NOTE)
-    meta = {"camera_angle": angle, "club": club, "hand": hand}
+    meta = {
+        "camera_angle": angle,
+        "club": club,
+        "hand": hand,
+        # The frame rate the analysis windows were actually extracted at
+        # (analysis.fps, or the auto-fps pick for high-fps sources) — the
+        # resolution every timing number in this file is quantized to.
+        "analysis_fps": analysis_fps,
+    }
     report_path = report.write_report_html(
         session_dir / "report.html", info, swings, stats, notes, hand, cfg,
-        angle=angle, club=club,
+        angle=angle, club=club, analysis_fps=analysis_fps,
     )
     metrics_path = report.write_metrics_json(
         session_dir / "metrics.json", info, swings, stats, notes, cfg,
@@ -215,15 +263,31 @@ def _analyze_swing(
     fast: bool,
     log: Callable[[str], None],
     angle: str = ANGLE_FACE_ON,
+    analysis_fps: float | None = None,
 ) -> dict:
     log(f"Swing {swing_no}: analyzing strike at {strike_s:.2f}s...")
-    frameset = frames.extract_window(video_path, strike_s, work_dir, swing_no, cfg)
+    frameset = frames.extract_window(
+        video_path, strike_s, work_dir, swing_no, cfg, fps=analysis_fps
+    )
     tracked = [tracker.detect(p) for p in frameset.paths]
     ev = events.detect_events(tracked, frameset, strike_s, cfg)
     finish_idx = frameset.index_near(ev.finish_s)
     m = metrics.compute_metrics(
-        swing_no, tracked, ev, finish_idx, hand, cfg=cfg, angle=angle
+        swing_no, tracked, ev, finish_idx, hand, cfg=cfg, angle=angle,
+        fps=frameset.fps,
     )
+    # Tracking confidence: when too many frames were dropped, or a core
+    # landmark teleported between adjacent frames (the lock-onto-someone-else
+    # signature), this swing's notes carry an honest low-confidence line.
+    quality = pose.tracking_quality(tracked, ev.shoulder_width_px)
+    notes = swing_notes(m, cfg)
+    if quality.poor:
+        log(
+            f"WARNING: Swing {swing_no}: tracking unstable "
+            f"({quality.dropped_fraction:.0%} of frames dropped, max core "
+            f"jump {quality.max_core_jump_sw:.2f} SW) — numbers may be off."
+        )
+        notes.append(TRACKING_UNSTABLE_NOTE)
 
     # full-res key frames (deliverables only)
     key_times = {
@@ -287,7 +351,7 @@ def _analyze_swing(
 
     return {
         "metrics": m,
-        "notes": swing_notes(m, cfg),
+        "notes": notes,
         # report-relative paths so the session folder is portable
         "strip": str(strip_path.relative_to(session_dir)),
         "overlay": str(overlay_path.relative_to(session_dir)),

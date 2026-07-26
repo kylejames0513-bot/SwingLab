@@ -43,9 +43,96 @@ cd /opt/swinglab && git pull && systemctl restart swinglab   # update
 
 The `web` section of `config.yaml` is the knob panel: `workers` (analyses
 running at once — match it to CPU cores), `max_upload_mb`,
-`max_active_jobs_per_ip`, and `retention_days` (auto-delete old sessions so
-the disk never fills). `/healthz` reports queue depth for load balancers and
-uptime monitors.
+`max_active_jobs_per_ip`, `trusted_proxies` (which proxy's
+`X-Forwarded-For` to believe — shipped `"*"` for PaaS; see the inline doc
+for the trust model), the auth throttles (`login_attempts_per_15min`,
+`signups_per_hour_per_ip`), `retention_days` (auto-delete old sessions so
+the disk never fills — shipped 180 days), and `delete_source_after_done`
+(drop the raw upload once the report exists; deliverables stay). `/healthz`
+reports queue depth plus `disk_free_mb` and `sessions_count` for load
+balancers and uptime monitors — alert on `disk_free_mb` before it reaches
+zero, because disk-full is the most likely first outage.
+
+## Error monitoring (optional Sentry)
+
+Inert until configured, like everything else: install the ops extra and set
+the DSN —
+
+```bash
+pip install "swinglab[ops]"     # adds sentry-sdk (never a base dependency)
+export SENTRY_DSN=https://...@o0.ingest.sentry.io/0
+```
+
+With both in place, unexpected analysis failures and web errors are
+reported to Sentry (the app logs through the standard `logging` module, so
+they land in `journalctl`/Railway logs either way). With either missing,
+nothing changes — every error path works identically without it.
+
+## Backups (Litestream) — the database holds paid entitlements
+
+`sessions/swinglab.db` is the source of truth for **accounts, Pro purchase
+state, and job history**. Losing it means losing who paid you. Session
+media is re-creatable (users can re-upload); the database is not — back it
+up continuously with [Litestream](https://litestream.io) (a single static
+binary that streams every SQLite WAL change to object storage; restores are
+to-the-second).
+
+`litestream.yml`:
+
+```yaml
+# /etc/litestream.yml
+dbs:
+  - path: /opt/swinglab/sessions/swinglab.db
+    replicas:
+      - type: s3
+        bucket: yourbucket
+        path: swinglab-db
+        endpoint: https://<region>.digitaloceanspaces.com   # any S3-compatible store
+        # AWS S3: drop `endpoint`, set region instead
+        retention: 720h          # keep 30 days of point-in-time history
+```
+
+Credentials go in the environment (`LITESTREAM_ACCESS_KEY_ID`,
+`LITESTREAM_SECRET_ACCESS_KEY`). On a VM, run it as a second systemd
+service:
+
+```bash
+litestream replicate -config /etc/litestream.yml
+```
+
+**Railway notes:** Railway containers have no sidecar processes, so wrap
+the start command — Litestream supervises the app and replicates while it
+runs:
+
+```
+litestream replicate -config /app/litestream.yml -exec "swinglab serve --host 0.0.0.0 --port $PORT"
+```
+
+Add the `litestream` binary in the Dockerfile
+(`COPY --from=litestream/litestream:0.3 /usr/local/bin/litestream /usr/local/bin/`),
+put `litestream.yml` in the image, and set the two credential variables in
+the Railway service settings. The sessions volume must be the Railway
+volume mount so the db path is stable across deploys.
+
+**Backup/restore drill** — run it BEFORE you need it, then quarterly:
+
+1. Confirm replication is current:
+   `litestream snapshots -config /etc/litestream.yml /opt/swinglab/sessions/swinglab.db`
+   (you should see a recent snapshot; generations advance as the app writes).
+2. Restore to a scratch path:
+   `litestream restore -config /etc/litestream.yml -o /tmp/restored.db /opt/swinglab/sessions/swinglab.db`
+3. Verify the restored file is a working database with your real data:
+   `sqlite3 /tmp/restored.db "PRAGMA integrity_check; SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM jobs;"`
+   — counts should match production (`sqlite3 sessions/swinglab.db ...`).
+4. Actual disaster recovery = stop the app, run the same restore with `-o`
+   pointing at `sessions/swinglab.db`, start the app. Interrupted jobs
+   re-queue themselves; sessions whose media is gone fail honestly with
+   "upload it again".
+
+What Litestream does NOT cover: the uploaded videos and generated media in
+the session folders. Those are large and re-creatable — if you want them
+too, add a nightly `rclone sync` of the sessions directory (excluding
+`swinglab.db*`, which Litestream owns) to the same bucket.
 
 ## Accounts and payments
 
@@ -110,6 +197,17 @@ degrades to the last cached product list, never an error page.
 - On a VM behind plain HTTP, add HTTPS before taking signups or payments —
   put the app behind Caddy or nginx with Let's Encrypt. (Railway/Render/Fly
   domains come with HTTPS already.)
+- When you do put nginx/Caddy in front on a VM, change
+  `web.trusted_proxies` from the shipped `"*"` to the proxy's actual
+  address (e.g. `["127.0.0.1"]`). `"*"` is right for a PaaS where only the
+  platform proxy can reach the app; on a VM whose app port is reachable
+  directly, `"*"` would let clients spoof their IP via `X-Forwarded-For`
+  and dodge the per-IP limits.
+- GDPR/data-minimization: sessions contain identifiable video of people.
+  The shipped config auto-deletes finished sessions after 180 days
+  (`web.retention_days`) and drops the raw upload as soon as the report
+  exists (`web.delete_source_after_done`) — turning either off means YOU
+  are choosing to hold footage longer; have an answer for why.
 - Analysis is CPU-heavy (slow-motion interpolation most of all). On a $6 VM
   a clip with a few swings takes a couple of minutes — that's expected.
   Uploaders can tick **Fast mode** to skip interpolation and get results in a
