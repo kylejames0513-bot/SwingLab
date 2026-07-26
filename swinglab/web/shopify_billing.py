@@ -35,6 +35,13 @@ This also works unchanged with Shopify's Subscriptions app: each billing
 cycle creates a new paid order with the same SKU, so Pro keeps extending
 itself for as long as the subscription runs.
 
+The same ``orders/paid`` webhook also feeds the gear ledger: every line
+item that is NOT a Pro SKU is recorded in ``gear_orders`` (order id, sku,
+title, quantity, normalized email) with the same per-order replay
+idempotence as the Pro ledger, and ``orders/cancelled`` marks those rows
+cancelled. That is what makes the gear-attach KPI (swinglab.kpis)
+measurable — Pro processing itself is unchanged by it.
+
 Account sync (customer webhooks, same endpoint and secret)
 ----------------------------------------------------------
 
@@ -210,6 +217,25 @@ def _order_days(order: dict, cfg: Config) -> float:
     return total
 
 
+def _gear_items(order: dict, cfg: Config) -> list[tuple[str, str, int]]:
+    """The order's non-Pro line items as (sku, title, quantity) — everything
+    the billing.shopify_skus map doesn't claim (the exact complement of
+    _order_days's Pro test, so no item is ever counted as both)."""
+    skus = {
+        str(sku): float(days)
+        for sku, days in (cfg.billing.get("shopify_skus") or {}).items()
+    }
+    items = []
+    for item in order.get("line_items") or []:
+        sku = str(item.get("sku") or "")
+        if skus.get(sku):
+            continue  # a Pro line item — the grant path handles it
+        items.append(
+            (sku, str(item.get("title") or ""), int(item.get("quantity") or 1))
+        )
+    return items
+
+
 def _order_email(order: dict) -> str:
     customer = order.get("customer") or {}
     email = order.get("email") or order.get("contact_email") or customer.get("email")
@@ -219,6 +245,13 @@ def _order_email(order: dict) -> str:
 def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
     order_id = str(order.get("id") or "")
     email = _order_email(order)
+    # Gear ledger first, independent of the Pro path: EVERY paid order's
+    # non-Pro line items are recorded (once — record_gear_order is
+    # replay-idempotent per order), so gear attach is measurable. Before
+    # this, gear-only orders were verified and then dropped on the floor.
+    gear = _gear_items(order, cfg)
+    if order_id and gear:
+        users.record_gear_order(order_id, email, gear)
     days = _order_days(order, cfg)
     if not order_id or not email or days <= 0:
         return  # gear-only order, or nothing to attach the grant to
@@ -232,7 +265,11 @@ def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
 
 
 def _apply_cancelled(order: dict, users: UserStore) -> None:
-    email, days = users.void_order(str(order.get("id") or ""))
+    order_id = str(order.get("id") or "")
+    # Cancellation reaches the gear ledger too (rows are marked, not
+    # deleted — the KPI skips them, the audit trail stays). Idempotent.
+    users.cancel_gear_order(order_id)
+    email, days = users.void_order(order_id)
     if days <= 0:
         return  # unknown order, or already voided
     user = users.get_by_email(email)

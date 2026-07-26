@@ -176,6 +176,20 @@ billing:
                              #   Stripe subscription: set STRIPE_SECRET_KEY,
                              #     STRIPE_PRICE_ID and STRIPE_WEBHOOK_SECRET.
                              # With neither, upgrading shows as coming soon.
+  replay_pro_only: true      # the annotated coach replay (replay_sN.mp4) is the
+                             # report's most shareable artifact and the one clean
+                             # quality line between free and Pro. true + accounts
+                             # on: the replay is rendered only when the job's
+                             # owner has Pro at analysis time; a free user's
+                             # report shows an honest locked note (with a
+                             # /pricing link) in the replay slot instead, and
+                             # the render is skipped entirely — the CPU is
+                             # saved too. Open instances (require_account:
+                             # false) and CLI runs are NEVER gated, and the
+                             # public sample report is unchanged. The bare-code
+                             # default is false (white-label installs stay
+                             # ungated until they opt in) — shipped on, the
+                             # same deliberate difference as retention_days.
   shopify_pro_handle: swinglab-pro   # the Pro product's handle on the Shopify store
                                      # (the /products/<handle> part of its URL)
   shopify_skus:              # Shopify variant SKU -> days of Pro one unit grants;

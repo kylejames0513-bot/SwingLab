@@ -90,10 +90,18 @@ def write_report_html(
     club: str | None = None,
     sample_banner: dict | None = None,
     analysis_fps: float | None = None,
+    replay_locked: bool = False,
 ) -> Path:
     """``analysis_fps`` is the rate the analysis windows were extracted at
     (auto-fps may lift it above analysis.fps for high-fps sources); shown in
-    the session table when provided so readers know the timing resolution."""
+    the session table when provided so readers know the timing resolution.
+
+    ``replay_locked`` means the annotated coach replay was deliberately not
+    rendered because the session's owner is on the free plan (the
+    billing.replay_pro_only gate): the replay slot beside each slow-mo shows
+    an honest locked note with a /pricing link instead of the video. False
+    (the default — CLI runs, open instances, Pro owners, gate off) renders
+    exactly what exists and never mentions the gate."""
     env = Environment(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=select_autoescape(["html"]),
@@ -142,6 +150,7 @@ def write_report_html(
         gear_url=gear_shop_url(cfg),
         sample_banner=sample_banner,
         analysis_fps=analysis_fps,
+        replay_locked=replay_locked,
     )
     out_path.write_text(html, encoding="utf-8")
     return out_path

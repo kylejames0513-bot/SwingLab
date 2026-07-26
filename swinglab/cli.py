@@ -68,6 +68,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where uploads and results are stored",
     )
     srv.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
+
+    kp = sub.add_parser(
+        "kpis",
+        help="Print the five business KPIs (activation, W1 re-film, "
+        "free\N{RIGHTWARDS ARROW}Pro, weekly filmers, gear attach) from the "
+        "web app's database.",
+    )
+    kp.add_argument(
+        "--since", type=float, default=90.0, metavar="DAYS",
+        help="Trailing window in days (default 90)",
+    )
+    kp.add_argument(
+        "--json", action="store_true", dest="as_json",
+        help="Machine-readable output (same payload as GET /admin/kpis)",
+    )
+    kp.add_argument(
+        "--sessions-dir", type=Path, default=Path("sessions"),
+        help="The web app's sessions directory (its swinglab.db is read)",
+    )
+    kp.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
     return parser
 
 
@@ -122,9 +142,54 @@ def _analyze_one(path: Path, args: argparse.Namespace, cfg: Config) -> SessionRe
     return result
 
 
+def print_kpis(results, since_days: float, db_path: Path) -> None:
+    """A clean table: value, numerator/denominator, and — for any metric
+    the data cannot support — the honest reason instead of a number."""
+    from .kpis import TARGETS, format_value
+
+    print(f"KPIs over the last {since_days:g} days ({db_path})\n")
+    header = f"{'KPI':<28} {'Value':>10}  {'n/d':>9}  Notes"
+    print(header)
+    print("-" * len(header))
+    for kpi in results:
+        if kpi.value is None:
+            nd = "\N{EM DASH}"
+            note = kpi.reason or ""
+        else:
+            den = kpi.denominator if kpi.denominator is not None else "\N{EM DASH}"
+            nd = f"{kpi.numerator}/{den}"
+            note = f"target {TARGETS[kpi.key]}" if kpi.key in TARGETS else ""
+        print(f"{kpi.key:<28} {format_value(kpi):>10}  {nd:>9}  {note}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     cfg = Config.load(args.config)
+
+    if args.command == "kpis":
+        import json
+        import math
+
+        from .kpis import compute_kpis
+
+        # nan slips past a plain <= 0 (all nan comparisons are False), so
+        # require a finite positive window explicitly.
+        if not math.isfinite(args.since) or args.since <= 0:
+            print("--since must be a positive number of days", file=sys.stderr)
+            return 2
+        db_path = args.sessions_dir / "swinglab.db"
+        results = compute_kpis(db_path, cfg, since_days=args.since)
+        if args.as_json:
+            print(json.dumps(
+                {
+                    "window_days": args.since,
+                    "kpis": {k.key: k.as_dict() for k in results},
+                },
+                indent=2, ensure_ascii=False,
+            ))
+        else:
+            print_kpis(results, args.since, db_path)
+        return 0
 
     if args.command == "serve":
         try:

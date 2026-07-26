@@ -269,6 +269,18 @@ Pro can be sold two ways, both **inert until configured** — the pricing page
 shows Pro as "coming soon" until one is set up. When both are configured,
 buyers are sent to the Shopify store.
 
+**The coach replay is the Pro quality line** (`billing.replay_pro_only`,
+shipped `true`): with accounts on, the annotated replay — the report's most
+shareable artifact — is rendered only for jobs whose owner has Pro *at
+analysis time*. A free user's report keeps everything else (metrics, slow
+motion, overlays, drills) and shows an honest locked note with a `/pricing`
+link in the replay slot; the render itself is skipped, so the gate saves
+the CPU too. Upgrading later never rewrites an old report — re-film to get
+the replay. Open instances (`require_account: false`), CLI runs, and the
+public sample report are **never** gated, and the bare-code default is
+`false` — the same deliberate DEFAULTS-vs-shipped difference as
+`retention_days`, pinned by tests.
+
 The pricing page shows the annual plan first (the anchor) with the monthly
 plan second, using the **display-only** strings
 `billing.pro_price_monthly_text` / `billing.pro_price_annual_text` from
@@ -443,6 +455,55 @@ never touches checkout.
 For deployment — a one-command `docker compose up -d`, or a fresh-VM script —
 see [deploy/README.md](deploy/README.md).
 
+## Measuring what matters
+
+Five KPIs, computed from the app's own SQLite state (`swinglab/kpis.py`) —
+no analytics service, no tracking pixels, nothing leaves the box. These are
+the numbers that decide whether the product is working, with the targets
+from the strategy analysis:
+
+| KPI | Definition | Target |
+| --- | --- | --- |
+| `activation_rate` | of accounts created in the window, the share whose **first DONE report** landed within 7 days of signup | **> 50%** |
+| `w1_refilm_rate` | of those accounts with ≥ 1 DONE analysis, the share whose **second** DONE analysis landed within 7 days of their first — the re-film habit is the core loop | **> 25%** |
+| `free_to_pro_rate` | of the window's *activated* accounts, the share that gained Pro within 30 days of signup (Shopify grants timed by the order ledger's `applied_at`; a live Stripe subscription counts — Stripe state carries no grant timestamp) | **2%+** |
+| `weekly_retained_filmers` | a count, not a rate: accounts with ≥ 1 DONE analysis in the trailing 7 days | grow it |
+| `gear_attach_per_100_reports` | non-cancelled **gear orders** in the window per 100 DONE reports in the window | — |
+
+The gear side is measurable because the `orders/paid` webhook now records
+every **non-Pro** line item into a `gear_orders` ledger (order id, SKU,
+title, quantity, normalized email) with the same replay idempotence as the
+Pro ledger — a re-delivered webhook never double-counts, and
+`orders/cancelled` marks the rows out of the KPI without losing the audit
+trail. Pro grant processing is unchanged.
+
+Honesty rule: any metric the data cannot support returns **None with a
+stated reason** (accounts disabled, no database yet, empty cohort, no gear
+ledger…) — a number is never fabricated. Cohorts count claimed accounts
+only; unclaimed store stubs can't log in, so they can't deflate the rates.
+
+Two surfaces, same numbers:
+
+```bash
+swinglab kpis                 # clean table, honest "—  (reason)" rows
+swinglab kpis --since 30      # trailing 30-day window (default 90)
+swinglab kpis --json          # machine-readable, same payload as the endpoint
+```
+
+`GET /admin/kpis` (optionally `?since=30`) returns the JSON payload for
+dashboards and cron. It is gated by an environment variable:
+
+```bash
+SWINGLAB_ADMIN_TOKEN="$(openssl rand -hex 32)"   # set on the server
+curl -H "Authorization: Bearer $SWINGLAB_ADMIN_TOKEN" https://your-app/admin/kpis
+```
+
+The token is compared in constant time, and the route answers **404** —
+not 401/403 — when the variable is unset *or* the token is wrong, so the
+endpoint's existence is invisible without the credential. With the
+variable unset the endpoint simply doesn't exist, the same
+inert-until-configured rule as every other integration.
+
 ## How it works
 
 1. **Probe** — `ffprobe` reads duration, resolution, fps, and rotation.
@@ -499,7 +560,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, weekly digest on/off (`digest_enabled`) |
-| `billing` | free/Pro analyses per month, plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
+| `billing` | free/Pro analyses per month, the coach-replay Pro gate (`replay_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
 ## Tests
