@@ -1,0 +1,35 @@
+{
+  "general": {
+    "accessibility": {
+      "skip_to_content": "Skip to content"
+    }
+  },
+  "layout": {
+    "cart": {
+      "title": "Cart"
+    },
+    "navigation": {
+      "menu": "Menu"
+    }
+  },
+  "products": {
+    "product": {
+      "add_to_cart": "Add to cart",
+      "benefit_report": "Tempo, sway, hip-slide, and consistency metrics",
+      "benefit_unlock": "Access unlocks from your Shopify checkout email",
+      "benefit_unlimited": "Unlimited swing analyses while Pro is active",
+      "benefit_video": "Key frames, centerline overlay, and slow-motion clips",
+      "includes": "CaddieInsight Pro includes",
+      "one_time_help": "Best for trying Pro or gifting a fixed access window.",
+      "one_time_purchase": "One-time purchase",
+      "open_app": "Open CaddieInsight app",
+      "plan": "Plan",
+      "pro_kicker": "For golfers who want every range session to produce measurable feedback, not just another bucket of balls.",
+      "purchase_options": "Purchase options",
+      "show_image": "Show image {{ number }}",
+      "sold_out": "Sold out",
+      "unlock_body": "After checkout, create or log in to CaddieInsight with the same email you used in Shopify. When the paid-order webhook arrives, Pro is added to that account.",
+      "unlock_heading": "How Pro unlocks"
+    }
+  }
+}
