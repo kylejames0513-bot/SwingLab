@@ -8,7 +8,7 @@ Entirely environment-driven, the same rule as Stripe and Shopify:
                         smtp+starttls (explicit TLS — what most providers
                         want on port 587), smtps (implicit TLS, port 465).
                         Username/password are optional and URL-encoded.
-    SWINGLAB_MAIL_FROM  the From address, e.g. "SwingLab <no-reply@x.com>"
+    SWINGLAB_MAIL_FROM  the From address, e.g. "CaddieInsight <no-reply@x.com>"
 
 With either unset, ``enabled()`` is False and every caller keeps its
 no-email behavior: account claims work without verification (exactly as

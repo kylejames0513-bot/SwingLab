@@ -1,4 +1,4 @@
-# SwingLab storefront theme
+# CaddieInsight storefront theme
 
 Source of the custom Shopify theme running on the store's draft theme slot
 (`swinglab-storefront-theme`, unpublished). This directory is the working

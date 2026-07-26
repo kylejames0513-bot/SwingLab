@@ -1,9 +1,9 @@
 [
   {
     "name": "theme_info",
-    "theme_name": "SwingLab Storefront",
+    "theme_name": "CaddieInsight Storefront",
     "theme_version": "1.1.0",
-    "theme_author": "SwingLab",
+    "theme_author": "CaddieInsight",
     "theme_documentation_url": "https://swinglab-production.up.railway.app",
     "theme_support_url": "https://swinglab-production.up.railway.app"
   },
@@ -13,7 +13,7 @@
       {
         "type": "header",
         "content": "Brand palette",
-        "info": "The theme ships with the SwingLab palette baked into base.css design tokens. These settings are provided for future extension."
+        "info": "The theme ships with the CaddieInsight palette baked into base.css design tokens. These settings are provided for future extension."
       },
       { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#f7f5f0" },
       { "type": "color", "id": "color_green", "label": "Deep green", "default": "#14472c" },

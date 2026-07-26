@@ -16,11 +16,11 @@ import yaml
 
 DEFAULTS: dict[str, Any] = {
     "brand": {
-        "name": "SwingLab",
+        "name": "CaddieInsight",
         "logo_path": None,
         "primary_color": "#1a5c38",
         "accent_color": "#e8720c",
-        "footer_text": "SwingLab — swing analysis from a single phone video.",
+        "footer_text": "CaddieInsight — swing analysis from a single phone video.",
         "watermark": False,
         "disclaimer": (
             "Automated estimates from a single camera. Not a substitute for "
@@ -164,7 +164,7 @@ DEFAULTS: dict[str, Any] = {
         "max_recommendations": 3,
         # Public storefront URL for the report's "Matched training aids"
         # link; empty = the report renders no link. The shipped config.yaml
-        # points at the SwingLab store.
+        # points at the CaddieInsight store.
         "store_url": "",
     },
     "overlay": {

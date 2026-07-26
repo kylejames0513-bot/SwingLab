@@ -1,4 +1,4 @@
-"""SwingLab campaign art — Fairway Modernism, phase 3.
+"""CaddieInsight campaign art — Fairway Modernism, phase 3.
 
 Instructional drill diagrams (each product's second gallery image), a cap
 detail study, two wide page banners, and the social share card. Reuses the
@@ -447,9 +447,9 @@ def banner_method():
     img, d = canvas(w, h)
     s = S
     m = 90 * s
-    tracked(d, (m, 52 * s), "SWINGLAB", archivo(int(26 * s), 640, 104), GREEN,
-            tracking=int(10 * s))
-    tracked(d, (w * s - m, 56 * s), "THE SWINGLAB METHOD · 4 POSITIONS",
+    tracked(d, (m, 54 * s), "CADDIEINSIGHT", archivo(int(24 * s), 640, 104), GREEN,
+            tracking=int(5 * s))
+    tracked(d, (w * s - m, 56 * s), "THE CADDIEINSIGHT METHOD · 4 POSITIONS",
             mono(int(20 * s)), INK_MUTED, tracking=int(3 * s), anchor="r")
     d.line([m, 120 * s, w * s - m, 120 * s], fill=BORDER, width=int(2 * s))
     # one continuous faint arc over the sequence
@@ -488,8 +488,8 @@ def banner_about():
     img, d = canvas(w, h)
     s = S
     m = 90 * s
-    tracked(d, (m, 52 * s), "SWINGLAB", archivo(int(26 * s), 640, 104), GREEN,
-            tracking=int(10 * s))
+    tracked(d, (m, 54 * s), "CADDIEINSIGHT", archivo(int(24 * s), 640, 104), GREEN,
+            tracking=int(5 * s))
     tracked(d, (w * s - m, 56 * s), "INSTRUMENT BENCH · 06 PIECES",
             mono(int(20 * s)), INK_MUTED, tracking=int(3 * s), anchor="r")
     d.line([m, 120 * s, w * s - m, 120 * s], fill=BORDER, width=int(2 * s))
@@ -632,8 +632,8 @@ def og_card():
         swing_arc(d, 1030 * s, 700 * s, r * s, 195, 320, "#1d5535", int(3 * s),
                   dash=(1.6, 2.2))
     # copy block
-    tracked(d, (80 * s, 74 * s), "SWINGLAB", archivo(int(30 * s), 660, 104),
-            MINT, tracking=int(12 * s))
+    tracked(d, (80 * s, 74 * s), "CADDIEINSIGHT", archivo(int(28 * s), 660, 104),
+            MINT, tracking=int(5 * s))
     d.text((76 * s, 168 * s), "Know your\nswing.",
            font=archivo(int(92 * s), 700, 103), fill=CARD, spacing=int(14 * s))
     tracked(d, (80 * s, 452 * s), "TEMPO · SWAY · SLIDE — FROM ONE PHONE VIDEO",

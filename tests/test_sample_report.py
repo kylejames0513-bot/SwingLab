@@ -84,5 +84,5 @@ def test_sample_uses_branded_config(tmp_path):
 
     path = sample.ensure_sample_report(tmp_path / "sr", branded_cfg())
     html = path.read_text()
-    assert "AceCoach" in html and "SwingLab" not in html
+    assert "AceCoach" in html and "CaddieInsight" not in html and "SwingLab" not in html
     assert "#123456" in html  # branded primary color

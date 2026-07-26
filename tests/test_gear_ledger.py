@@ -44,7 +44,7 @@ def mixed_order(order_id=7001, email="kyle@example.com"):
         "id": order_id,
         "email": email,
         "line_items": [
-            {"sku": "SL-PRO-1MO", "title": "SwingLab Pro (1 month)", "quantity": 1},
+            {"sku": "SL-PRO-1MO", "title": "CaddieInsight Pro (1 month)", "quantity": 1},
             {"sku": "SL-TEMPO-WAND", "title": "Tempo Wand", "quantity": 2},
             {"title": "Alignment Sticks"},
         ],

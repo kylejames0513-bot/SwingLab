@@ -1,4 +1,4 @@
-"""SwingLab Gear — training-aid products served from a Shopify store.
+"""CaddieInsight Gear — training-aid products served from a Shopify store.
 
 Entirely environment-driven and safely inert until configured:
 

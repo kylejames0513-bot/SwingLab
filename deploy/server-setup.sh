@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# SwingLab server setup for a fresh Ubuntu 24.04 VM.
+# CaddieInsight server setup for a fresh Ubuntu 24.04 VM.
 #
 # Run as root (cloud web consoles log you in as root):
 #
 #   curl -fsSL https://raw.githubusercontent.com/kylejames0513-bot/SwingLab/main/deploy/server-setup.sh | bash
 #
-# When it finishes it prints the URL to open. SwingLab runs as a systemd
+# When it finishes it prints the URL to open. CaddieInsight runs as a systemd
 # service ("swinglab"), restarts on crash and on reboot.
 #
 # NOTE: the app has no login yet — anyone who knows the URL can upload videos.
@@ -30,21 +30,21 @@ case "$PYVER" in
   *) echo "ERROR: Python 3.11+ required, found $PYVER. Use Ubuntu 24.04 or newer."; exit 1 ;;
 esac
 
-echo "==> Fetching SwingLab..."
+echo "==> Fetching CaddieInsight..."
 if [ -d "$INSTALL_DIR/.git" ]; then
     git -C "$INSTALL_DIR" pull --ff-only
 else
     git clone -q "$REPO_URL" "$INSTALL_DIR"
 fi
 
-echo "==> Installing SwingLab into a virtualenv..."
+echo "==> Installing CaddieInsight into a virtualenv..."
 python3 -m venv "$INSTALL_DIR/.venv"
 "$INSTALL_DIR/.venv/bin/pip" install -q -e "$INSTALL_DIR[web]"
 
 echo "==> Creating the swinglab systemd service..."
 cat > /etc/systemd/system/swinglab.service <<EOF
 [Unit]
-Description=SwingLab swing analysis web app
+Description=CaddieInsight swing analysis web app
 After=network.target
 
 [Service]
@@ -67,7 +67,7 @@ systemctl --no-pager --lines=0 status swinglab || true
 PUBLIC_IP=$(curl -4 -fsS --max-time 5 ifconfig.me || hostname -I | awk '{print $1}')
 echo
 echo "============================================================"
-echo " SwingLab is running."
+echo " CaddieInsight is running."
 echo " Open:  http://$PUBLIC_IP/"
 echo
 echo " Logs:     journalctl -u swinglab -f"

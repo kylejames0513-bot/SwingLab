@@ -1,4 +1,4 @@
-# SwingLab store assets
+# CaddieInsight store assets
 
 Brand and product artwork for the Shopify storefront, generated as code so
 every image can be reproduced or retuned. The visual system ("Fairway
@@ -14,17 +14,21 @@ pose-estimation skeletons, the product's own visual language.
 | `product-*.png` (6) | Featured images on the six gear products — instrument-sheet style: dimension lines, cross-section insets, spec footers |
 | `drill-*.png` (5) | Second gallery image per training aid: the drill it trains, with setup measurements and protocol |
 | `detail-cap.png` | Second gallery image on the cap: flat-lay construction study |
-| `product-pro.png`, `pro-report-strip.png`, `pro-overlay-detail.png`, `pro-plans.png` | The SwingLab Pro product gallery |
+| `product-pro.png`, `pro-report-strip.png`, `pro-overlay-detail.png`, `pro-plans.png` | The CaddieInsight Pro product gallery |
 | `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon |
-| `collection-gear.png` | SwingLab Gear collection image |
+| `collection-gear.png` | CaddieInsight Gear collection image |
 | `swinglab-hero.png` | Homepage hero background (Horizon theme) |
 | `swinglab-report-band.png` | Homepage "Numbers you can act on" band |
-| `banner-method.png` | "The SwingLab Method" page banner — four-position swing frieze |
-| `banner-about.png` | "About SwingLab" page banner — instrument-bench still life |
+| `banner-method.png` | "The CaddieInsight Method" page banner — four-position swing frieze |
+| `banner-about.png` | "About CaddieInsight" page banner — instrument-bench still life |
 | `og-swinglab.png` | Social share card (og:image), 1200×630 |
 
+Filenames intentionally keep their original `swinglab-`/`og-swinglab` names —
+every Shopify CDN URL and theme reference resolves by filename, so only the
+art inside changed with the CaddieInsight rebrand, never the file name.
+
 The first batch is already uploaded to the store's Shopify CDN and wired into
-products, the SwingLab Gear collection, and the Horizon theme's settings
+products, the CaddieInsight Gear collection, and the Horizon theme's settings
 (`config/settings_data.json`) and homepage (`templates/index.json`); the
 drill/banner/og set is the second upload batch. The gear-product images are
 placeholders by design — dropshipped listings will carry supplier photos once
