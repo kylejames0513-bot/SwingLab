@@ -216,7 +216,7 @@ shop:
                              # the arm-extension drill family and gear tag);
                              # swinglab:general pads out the list
   max_recommendations: 3     # gear items shown on a finished analysis page
-  store_url: "https://e0hbgh-ip.myshopify.com"
+  store_url: "https://caddieinsight.com"
                              # public storefront for the quiet "Matched
                              # training aids" link at the end of the report's
                              # practice plan — the link points at

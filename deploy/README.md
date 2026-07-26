@@ -39,35 +39,22 @@ systemctl restart swinglab       # restart the app
 cd /opt/swinglab && git pull && systemctl restart swinglab   # update
 ```
 
-## Custom domain (caddieinsight.com)
+## Custom domain (caddieinsight.com) — CONFIGURED
 
-The owner holds `caddieinsight.com`. Until it is wired up, every link keeps
-using the live Railway URL (`https://swinglab-production.up.railway.app`) —
-nothing breaks by waiting. The one-time switch:
+The domain layout is live: `caddieinsight.com` is the Shopify storefront's
+primary domain, and `app.caddieinsight.com` is a CNAME to the Railway
+service (record managed in Shopify admin → Settings → Domains →
+caddieinsight.com → DNS settings). `PUBLIC_BASE_URL` on Railway is
+`https://app.caddieinsight.com`, and every "Open the app" link in the
+storefront theme, store pages, and generated art points at the new
+subdomain. The old Railway URL keeps working indefinitely as a fallback,
+and the Shopify webhooks still deliver to it — moving them to the custom
+domain is optional and changes nothing functionally.
 
-1. **App:** in the Railway service settings, add `caddieinsight.com` as a
-   custom domain and create the CNAME record Railway shows. Once DNS is
-   live, set `PUBLIC_BASE_URL=https://caddieinsight.com` in the service's
-   environment so email links and Stripe checkout redirects use the new
-   domain.
-2. **Store (optional):** point `shop.caddieinsight.com` at Shopify (Shopify
-   admin → Settings → Domains) so the storefront leaves the
-   `.myshopify.com` address. `config.yaml`'s `shop.store_url` — the
-   report's "Matched training aids" link — then changes to the new store
-   domain.
-3. **Links that currently carry the Railway URL** (update each to
-   `https://caddieinsight.com` at switch time):
-   - the storefront theme's "Open the app" URLs — `app_url` in
-     `storefront-theme/sections/header-group.json` and
-     `footer-group.json`, the CTA/hero/comparison URLs in
-     `storefront-theme/templates/index.json`, the product page's
-     "open the app" link in `sections/main-product.liquid`, and the
-     theme's documentation/support URLs in `config/settings_schema.json`
-     (re-upsert the changed files to the Shopify theme);
-   - the "open the app" links inside the store's Pages and blog articles
-     (edited in the Shopify admin, or re-applied from the staged content
-     JSON);
-   - `PUBLIC_BASE_URL` in the Railway environment (step 1).
+`config.yaml`'s `shop.store_url` — the report's "Matched training aids"
+link — points at the storefront; it can stay on the `.myshopify.com`
+address or move to `https://caddieinsight.com` (both resolve to the same
+store).
 
 ## Tuning for real traffic
 

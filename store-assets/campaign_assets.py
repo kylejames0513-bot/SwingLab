@@ -638,7 +638,7 @@ def og_card():
            font=archivo(int(92 * s), 700, 103), fill=CARD, spacing=int(14 * s))
     tracked(d, (80 * s, 452 * s), "TEMPO · SWAY · SLIDE — FROM ONE PHONE VIDEO",
             mono(int(21 * s)), "#7fbf9a", tracking=int(2 * s))
-    tracked(d, (80 * s, 540 * s), "swinglab-production.up.railway.app",
+    tracked(d, (80 * s, 540 * s), "app.caddieinsight.com",
             mono(int(21 * s)), MINT, tracking=int(2 * s))
     # the gauge mark, large, its pivot resting on the floor band — the
     # card's one orange gesture is the mark's sweep
