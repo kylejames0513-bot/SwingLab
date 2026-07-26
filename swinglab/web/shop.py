@@ -136,15 +136,18 @@ def _fetch() -> list[dict]:
         .strip("/")
     )
     version = os.environ.get("SHOPIFY_API_VERSION") or API_VERSION
+    token = os.environ["SHOPIFY_STOREFRONT_TOKEN"].strip()
+    # Classic public tokens (bare hex) use the public header; the newer
+    # private tokens Shopify's admin issues for custom apps (atkn_/shpat_
+    # prefixes) authenticate through their own header instead.
+    if token.startswith(("atkn_", "shpat_")):
+        auth_header = {"Shopify-Storefront-Private-Token": token}
+    else:
+        auth_header = {"X-Shopify-Storefront-Access-Token": token}
     request = urllib.request.Request(
         f"https://{domain}/api/{version}/graphql.json",
         data=json.dumps({"query": _QUERY}).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "X-Shopify-Storefront-Access-Token": os.environ[
-                "SHOPIFY_STOREFRONT_TOKEN"
-            ],
-        },
+        headers={"Content-Type": "application/json", **auth_header},
     )
     with urllib.request.urlopen(request, timeout=10) as resp:
         body = json.load(resp)

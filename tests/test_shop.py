@@ -267,3 +267,41 @@ def test_done_page_without_shop_has_no_gear(tmp_path, monkeypatch):
     client = make_client(tmp_path, monkeypatch, metrics=metrics_payload(tempo=2.0))
     job_id = finish_upload(client)
     assert "Train what the report flagged" not in client.get(f"/session/{job_id}").text
+
+
+def test_storefront_token_header_selection(monkeypatch):
+    """Classic public tokens use the public header; the newer private
+    tokens (atkn_/shpat_ prefixes) must use the private-token header."""
+    from swinglab.web import shop as shop_module
+
+    captured = {}
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b'{"data": {"products": {"edges": []}}}'
+
+    def fake_urlopen(request, timeout=0):
+        captured["headers"] = dict(request.header_items())
+        import io, json as _json
+        return io.BytesIO(b'{"data": {"products": {"edges": []}}}')
+
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "example.myshopify.com")
+    monkeypatch.setattr(shop_module.urllib.request, "urlopen", fake_urlopen)
+
+    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "atkn_abc123")
+    shop_module._fetch()
+    headers = {k.lower(): v for k, v in captured["headers"].items()}
+    assert headers["shopify-storefront-private-token"] == "atkn_abc123"
+    assert "x-shopify-storefront-access-token" not in headers
+
+    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "c7694e8d6f01333a5e2f638e")
+    shop_module._fetch()
+    headers = {k.lower(): v for k, v in captured["headers"].items()}
+    assert headers["x-shopify-storefront-access-token"] == "c7694e8d6f01333a5e2f638e"
+    assert "shopify-storefront-private-token" not in headers
