@@ -227,7 +227,8 @@ def make_fake_analyze(payloads: list[dict]):
     state = {"i": 0}
 
     def fake(video_path, out_dir=None, hand="right", manual_strikes=None,
-             cfg=None, keep_work=False, fast=False, log=print, progress=None):
+             cfg=None, keep_work=False, fast=False, log=print, progress=None,
+             angle="face-on", club=None):
         payload = payloads[min(state["i"], len(payloads) - 1)]
         state["i"] += 1
         session_dir = Path(out_dir) / Path(video_path).stem

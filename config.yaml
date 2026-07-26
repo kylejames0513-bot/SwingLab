@@ -10,6 +10,10 @@ brand:
   disclaimer: >-
     Automated estimates from a single camera. Not a substitute for instruction
     from a teaching professional.
+  support_text: null         # shown wherever a user needs the operator's help
+                             # (e.g. password reset while SMTP is unconfigured),
+                             # e.g. "Email support@yourbrand.com." null = the
+                             # generic phrasing alone.
 
 detection:
   audio_height: 0.30         # normalized envelope height for a strike peak
@@ -109,6 +113,11 @@ billing:
   shopify_skus:              # Shopify variant SKU -> days of Pro one unit grants;
     SL-PRO-1MO: 31           # quantities multiply, so 2x the 1-month SKU = 62 days.
     SL-PRO-12MO: 365         # Add a SKU here and in Shopify to add a plan length.
+  pro_price_monthly_text: "$9.99/month"
+  pro_price_annual_text: "$79.99/year — $6.67/month"
+                             # DISPLAY strings for /pricing only — the store or
+                             # Stripe stays the source of truth for what is
+                             # actually charged. Keep these matching the store.
 
 shop:
   enabled: true              # gear shop pages + per-analysis recommendations.

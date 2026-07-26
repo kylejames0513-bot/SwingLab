@@ -24,7 +24,8 @@ from swinglab.web.jobs import PROCESSING, JobManager
 
 
 def fake_analyze_ok(video_path, out_dir=None, hand="right", manual_strikes=None,
-                    cfg=None, keep_work=False, fast=False, log=print, progress=None):
+                    cfg=None, keep_work=False, fast=False, log=print, progress=None,
+                    angle="face-on", club=None):
     log("Detected 1 strike(s): 3.00s")
     if progress:
         progress(0, 1)
@@ -93,7 +94,7 @@ def test_upload_page_is_branded(tmp_path, monkeypatch):
     cfg.brand["name"] = "AceCoach"
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
     html = client.get("/").text
-    assert "AceCoach" in html and "Filming tips" in html
+    assert "AceCoach" in html and "Filming checklist" in html
 
 
 def test_full_flow_upload_status_report(client):
@@ -134,9 +135,12 @@ def test_failed_job_shows_error(tmp_path, monkeypatch):
     job_id = upload(client)
     data = wait_for(client, job_id)
     assert data["status"] == "failed"
-    assert "No ball strikes" in data["error"]
+    assert "No ball strikes" in data["error"]  # the API keeps the raw error
     html = client.get(f"/session/{job_id}").text
     assert "Analysis failed" in html and "No ball strikes" in html
+    # The web page translates — CLI flags and config keys never reach it.
+    assert "--strikes" not in html and "config" not in html
+    assert "filming checklist" in html
 
 
 def test_bad_uploads_rejected(client):
@@ -313,7 +317,11 @@ def test_oversized_upload_rejected_and_discarded(tmp_path, monkeypatch):
         follow_redirects=False,
     )
     assert resp.status_code == 413
-    assert not [p for p in sessions.iterdir() if p.is_dir()]  # session cleaned up
+    # session cleaned up (only the startup-generated sample report remains)
+    assert not [
+        p for p in sessions.iterdir()
+        if p.is_dir() and p.name != "sample-report"
+    ]
     assert client.get("/api/sessions").json()["sessions"] == []
 
 

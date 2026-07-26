@@ -11,7 +11,16 @@
   .steps strong { display: block; color: var(--primary); margin-bottom: 2px; }
   .free-note { text-align: center; color: #666; font-size: 0.85rem;
                margin: 0 0 20px; }
+  .hero-ctas { margin-top: 14px; }
+  .hero-ctas a.button { margin-top: 0; }
   label { display: block; margin: 16px 0 6px; font-weight: 600; }
+  .radio-row { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
+  .radio-row label { display: flex; gap: 8px; align-items: flex-start;
+                     margin: 0; font-weight: 400; }
+  .radio-row input { margin-top: 3px; }
+  details.advanced { margin-top: 18px; }
+  details.advanced > summary { cursor: pointer; color: var(--primary);
+                               font-weight: 600; padding: 4px 0; }
   input[type=text], select {
     width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
     box-sizing: border-box; background: white; }
@@ -35,19 +44,24 @@
 {% endblock %}
 {% block main %}
   <div class="hero">
-    <h2>The range tells you nothing. The film knows.</h2>
-    <p>One phone clip becomes tempo, sway and slide numbers, key-position
-      frames, slow motion — and a practice plan with a re-film target for
-      every flag.</p>
+    <h2>The range-session product.</h2>
+    <p>One phone, honest numbers, a plan, and a re-film that proves it. One
+      clip becomes tempo, sway and slide numbers, key-position frames, slow
+      motion — and a practice plan with a re-film target for every flag.</p>
     <div class="steps">
-      <div><strong>1. Film</strong> Phone at hip height, face-on or down the line.</div>
+      <div><strong>1. Film</strong> Phone at hip height, face-on (down the line: tempo &amp; rhythm only for now).</div>
       <div><strong>2. Upload</strong> Straight off the camera roll — every swing in the clip gets measured.</div>
       <div><strong>3. Retrain</strong> Each flag comes with drills and a number that says when it's fixed.</div>
     </div>
+    {% if not user %}
+    <div class="hero-ctas">
+      <a class="button secondary" href="/sample-report/">See a sample report first</a>
+    </div>
+    {% endif %}
   </div>
   {% if require_account and (not user or not user.is_pro) %}
-  <p class="free-note">The free plan stays free — {{ free_per_month }} full
-    analyses every month, no card required.</p>
+  <p class="free-note">{{ free_per_month }} full analyses a month, free —
+    no card required.</p>
   {% endif %}
 
   <div class="card">
@@ -91,18 +105,47 @@
         <option value="left">Left-handed</option>
       </select>
 
-      <div class="check">
-        <input id="fast" name="fast" type="checkbox">
-        <label for="fast">Fast mode — results in a fraction of the time; the
-          slow-motion clips are slightly less smooth.</label>
+      <label>Camera angle</label>
+      <div class="radio-row">
+        <label><input type="radio" name="angle" value="face-on" checked required>
+          <span><strong>Face-on</strong> (recommended — full report). Camera
+          in front of you, chest toward the lens.</span></label>
+        <label><input type="radio" name="angle" value="dtl" required>
+          <span><strong>Down the line</strong> — tempo &amp; rhythm only for
+          now. Body-drift and angle numbers are measured face-on, so they're
+          honestly left out.</span></label>
       </div>
 
-      <label for="strikes">Strike times (optional)</label>
-      <input id="strikes" name="strikes" type="text" placeholder='e.g. 12.5, 31.0'>
-      <p class="hint">Only needed if automatic detection misses — seconds into the video,
-        comma separated.</p>
+      <label for="club">Club (optional)</label>
+      <select id="club" name="club">
+        <option value="" selected>Not set</option>
+        <option value="driver">Driver</option>
+        <option value="fairway-wood">Fairway wood</option>
+        <option value="hybrid">Hybrid</option>
+        <option value="iron">Iron</option>
+        <option value="wedge">Wedge</option>
+      </select>
+      <p class="hint">Shown on the report and history so sessions compare
+        cleanly — it doesn't change any thresholds yet.</p>
+
+      <details class="advanced">
+        <summary>Advanced options</summary>
+        <div class="check">
+          <input id="fast" name="fast" type="checkbox">
+          <label for="fast">Fast mode — results in a fraction of the time; the
+            slow-motion clips are slightly less smooth.</label>
+        </div>
+
+        <label for="strikes">Strike times (optional)</label>
+        <input id="strikes" name="strikes" type="text" placeholder='e.g. 12.5, 31.0'>
+        <p class="hint">Only needed if automatic detection misses — seconds into the video,
+          comma separated.</p>
+      </details>
 
       <button id="submit" type="submit">Upload &amp; analyze</button>
+      <p class="hint">Most clips take a few minutes to analyze; fast mode is
+        usually under a minute. You can leave the page — the link keeps
+        working.</p>
       <div id="upload-progress">
         <div class="bar"><div id="upload-bar" style="width: 0%"></div></div>
         <p class="bar-label" id="upload-label">Uploading…</p>
@@ -111,12 +154,20 @@
     </form>
   </div>
 
-  <div class="tips">
-    <strong>Filming tips for best results</strong>
+  <div class="tips" id="filming-checklist">
+    <strong>Filming checklist — this is what makes the numbers good</strong>
     <ul>
-      <li>Phone at hip height.</li>
-      <li>Film one clip face-on and one down the line.</li>
-      <li>Ball on a tee.</li>
+      <li><strong>Sound ON.</strong> Swings are found by the crack of impact —
+        a muted clip can't be analyzed.</li>
+      <li><strong>Whole body in frame</strong>, head to feet, from setup
+        through the finish.</li>
+      <li><strong>Phone at hip height</strong>, a few steps back.</li>
+      <li><strong>Ball on a tee</strong> (or a clean strike off a mat) so the
+        strike is clearly audible.</li>
+      <li><strong>Don't trim the clip</strong> — dead time between swings is
+        fine, and every strike becomes its own swing.</li>
+      <li><strong>Film face-on</strong> for the full report. Down-the-line
+        clips get tempo &amp; rhythm only for now.</li>
     </ul>
   </div>
 

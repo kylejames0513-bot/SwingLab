@@ -6,7 +6,31 @@ import math
 from dataclasses import dataclass
 
 from .config import Config
-from .metrics import SwingMetrics
+from .metrics import ANGLE_DTL, ANGLE_FACE_ON, SwingMetrics, session_stats
+
+# Camera-angle honesty copy. The DTL note goes on every down-the-line
+# session; the mismatch note fires only when the address pose strongly
+# disagrees with the angle the golfer picked (see
+# metrics.apparent_camera_angle — conservative on purpose).
+DTL_SESSION_NOTE = (
+    "Filmed down the line — body-drift and angle numbers are measured "
+    "face-on, so this report covers tempo and rhythm only. Film face-on for "
+    "the full report."
+)
+
+_ANGLE_PHRASES = {ANGLE_FACE_ON: "face-on", ANGLE_DTL: "down the line"}
+
+
+def angle_mismatch_note(chosen: str, apparent: str) -> str:
+    """The low-confidence warning when the footage looks like the OTHER
+    camera angle. Callers only pass a genuine disagreement."""
+    return (
+        f"Low confidence: this clip looks like it was filmed "
+        f"{_ANGLE_PHRASES.get(apparent, apparent)}, but it was uploaded as "
+        f"{_ANGLE_PHRASES.get(chosen, chosen)} — numbers may not mean what "
+        "they say. Re-film, or re-upload with the right camera-angle setting."
+    )
+
 
 # Machine-readable flag keys, mirrored by product tags in the gear shop
 # (a Shopify product tagged "swinglab:tempo" is recommended when an
@@ -94,6 +118,117 @@ def swing_notes(m: SwingMetrics, cfg: Config) -> list[str]:
             "No flags on this swing — tempo and lateral movement are inside the "
             "configured thresholds."
         )
+    # The promised low-confidence line: when target-direction inference hit
+    # its last-resort fallback, the toward/away signs are a guess. Only worth
+    # saying when a lateral number was actually measured (down-the-line
+    # sessions read NaN everywhere lateral, so the signs carry nothing).
+    if not m.target_confident and not math.isnan(m.head_sway_backswing_sw):
+        notes.append(
+            "Low confidence: which direction the target is couldn't be read "
+            "from this swing, so the toward/away signs on sway and slide are "
+            "a best guess. If they look flipped, re-film with the full "
+            "follow-through in frame."
+        )
+    return notes
+
+
+def praise_notes(
+    all_metrics: list[SwingMetrics],
+    cfg: Config,
+    stats: dict[str, dict[str, float]] | None = None,
+) -> list[str]:
+    """One short positive line per metric family that was measured AND came
+    in inside its threshold this session — the mirror of the warn notes,
+    same voice, same honest numbers. Returns [] when nothing qualifies:
+    never fake praise.
+    """
+    coach = cfg.coaching
+    if stats is None:
+        stats = session_stats(all_metrics)
+    notes: list[str] = []
+
+    def measured(attr: str) -> list[float]:
+        return [
+            v for m in all_metrics if not math.isnan(v := getattr(m, attr))
+        ]
+
+    sway = measured("head_sway_backswing_sw")
+    if sway and max(sway) <= coach["sway_warn_sw"]:
+        notes.append(
+            f"Head sway peaks at {max(sway):.2f} shoulder widths going back — "
+            f"inside the {coach['sway_warn_sw']:.2f} line. The turn is staying "
+            "centered over the ball."
+        )
+
+    tempo = measured("tempo_ratio")
+    if tempo and min(tempo) >= coach["tempo_warn_below"]:
+        notes.append(
+            f"Tempo holds at {min(tempo):.2f}:1 or better on every swing — at "
+            f"or above the {coach['tempo_warn_below']:.1f}:1 line, moving "
+            f"toward the {coach['tempo_target']:.1f}:1 reference. The "
+            "backswing is getting time to finish."
+        )
+
+    slide = measured("hip_slide_backswing_sw")
+    if slide and max(slide) <= coach["sway_warn_sw"]:
+        notes.append(
+            f"Hip slide stays at {max(slide):.2f} shoulder widths or less in "
+            f"the backswing — inside the {coach['sway_warn_sw']:.2f} line. "
+            "The hips are turning, not drifting."
+        )
+
+    dip = measured("head_dip_sw")
+    if dip and max(dip) <= coach["head_dip_warn_sw"]:
+        notes.append(
+            f"Head dip tops out at {max(dip):.2f} shoulder widths into impact "
+            f"— inside the {coach['head_dip_warn_sw']:.2f} line. Height is "
+            "holding through the strike."
+        )
+
+    arm = measured("lead_arm_angle_deg")
+    if arm and min(arm) >= coach["lead_arm_warn_deg"]:
+        notes.append(
+            f"Lead arm stays at {min(arm):.0f}\N{DEGREE SIGN} or straighter at "
+            f"impact (180\N{DEGREE SIGN} is straight) — width through the "
+            "ball is there."
+        )
+
+    tilt_measured = measured("shoulder_tilt_impact_deg")
+    tilt_fired = any(
+        (
+            not math.isnan(ti := m.shoulder_tilt_impact_deg)
+            and ti < coach["shoulder_tilt_impact_min_deg"]
+        )
+        or (not math.isnan(td := m.shoulder_tilt_delta_deg) and td < 0)
+        for m in all_metrics
+    )
+    if tilt_measured and not tilt_fired:
+        notes.append(
+            f"Shoulder tilt holds at {min(tilt_measured):.0f}\N{DEGREE SIGN} "
+            "or more at impact — the trail shoulder is working down through "
+            "the ball."
+        )
+
+    bal = measured("finish_balance_sw")
+    if bal and max(bal) <= coach["finish_balance_warn_sw"]:
+        notes.append(
+            f"Finish drift stays at {max(bal):.2f} shoulder widths or less — "
+            "the swing is ending somewhere the body can hold. Keep holding "
+            "every finish."
+        )
+
+    tempo_stats = stats.get("tempo_ratio")
+    if (
+        len(all_metrics) >= 2
+        and tempo_stats is not None
+        and tempo_stats["std"] < coach["tempo_std_praise"]
+    ):
+        notes.append(
+            f"Tempo is consistent swing to swing (\N{PLUS-MINUS SIGN}"
+            f"{tempo_stats['std']:.2f}) — same clock every time. That's an "
+            "asset worth protecting."
+        )
+
     return notes
 
 
@@ -353,7 +488,7 @@ def issue_cards(
         FLAG_TEMPO: (
             "tempo_ratio", "Tempo", ":1",
             lambda v: f"{v:.2f}:1", tempo_thr,
-            f"target {float(coach['tempo_target']):.1f}:1 · "
+            f"reference {float(coach['tempo_target']):.1f}:1 · "
             f"flagged below {tempo_thr:.1f}:1", "lower",
             under("tempo_ratio", tempo_thr),
         ),

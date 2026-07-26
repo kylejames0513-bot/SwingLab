@@ -29,18 +29,39 @@
                font-size: 0.82rem; color: #444; }
   .flag-chip b { color: var(--primary); }
   .cta { text-align: center; margin-top: 22px; }
+  .club-filter { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
+                 margin: 4px 0 16px; }
+  .club-filter a { border: 1px solid #ccc; border-radius: 999px; padding: 4px 14px;
+                   font-size: 0.85rem; color: #444; text-decoration: none; }
+  .club-filter a.active { background: var(--primary); border-color: var(--primary);
+                          color: white; }
+  details.mx { margin-top: 8px; }
+  details.mx > summary { cursor: pointer; color: var(--primary); font-size: 0.85rem; }
+  details.mx p { color: #555; font-size: 0.85rem; margin: 6px 0 0; }
+  details.mx .mx-unit { font-style: italic; color: #777; }
 {% endblock %}
 {% block main %}
   <div class="lead">
     <h2>Progress</h2>
     {% if session_count >= 2 %}
     <p class="hint">{{ session_count }} measured sessions{% if span %} ·
-      {{ span }}{% endif %}. Each dot is one session's mean, oldest to newest;
+      {{ span }}{% endif %}{% if club_selected %} ·
+      {{ club_labels.get(club_selected, club_selected) }} only{% endif %}.
+      Each dot is one session's mean, oldest to newest;
       the dashed line is the flag threshold, and the tinted side of it is the
       flag zone.</p>
     {% if sentence %}<p class="sentence">{{ sentence }}.</p>{% endif %}
     {% endif %}
   </div>
+
+  {% if clubs_present and clubs_present|length > 1 %}
+  <div class="club-filter">
+    <a href="/progress" {% if not club_selected %}class="active"{% endif %}>All clubs</a>
+    {% for c in clubs_present %}
+    <a href="/progress?club={{ c }}" {% if club_selected == c %}class="active"{% endif %}>{{ club_labels.get(c, c) }}</a>
+    {% endfor %}
+  </div>
+  {% endif %}
 
   {% if session_count == 0 %}
   <div class="card">
@@ -74,6 +95,13 @@
         <div class="stat"><span class="k">Vs first</span><span class="v {{ c.delta_class }}">{{ c.delta }}</span></div>
         <div class="stat"><span class="k">Sessions</span><span class="v">{{ c.sessions }}</span></div>
       </div>
+      {% if c.explainer %}
+      <details class="mx">
+        <summary>What is this?</summary>
+        <p>{{ c.explainer.text }}</p>
+        <p class="mx-unit">{{ c.explainer.unit_gloss }}</p>
+      </details>
+      {% endif %}
     </div>
     {% endfor %}
 

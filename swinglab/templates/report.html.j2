@@ -2,6 +2,28 @@
   {%- if v != v %}<td>—</td>
   {%- else %}<td{% if flagged %} class="flag"{% endif %}>{{ fmt|format(v) }}</td>{% endif -%}
 {%- endmacro -%}
+{% macro mhead(key, label) -%}
+  <th>{% if explainers and key in explainers -%}
+    <details class="mx"><summary>{{ label }}</summary>
+      <div class="mx-body"><p>{{ explainers[key].text }}</p>
+        <p class="mx-unit">{{ explainers[key].unit_gloss }}</p></div>
+    </details>
+  {%- else %}{{ label }}{% endif %}</th>
+{%- endmacro -%}
+{% macro issue_card(c, extra_class="") -%}
+  <div class="card sev-{{ c.severity }}{% if extra_class %} {{ extra_class }}{% endif %}">
+    <div class="card-head"><h3>{{ c.display_name }}</h3>
+      <span class="sev">{{ c.severity }}</span></div>
+    <p class="card-val">{{ c.session_label }}:
+      <strong>{{ c.session_text }}</strong>
+      <span class="bench">({{ c.benchmark_text }})</span></p>
+    {{ c.sparkline|safe }}
+    <p class="why">{{ c.why }}</p>
+    <p class="fixline"><strong>Fix:</strong> {{ c.fix }}
+      {% if c.drill_ids %}<span class="meta">Drills:
+        {% for did in c.drill_ids %}<a href="#drill-{{ did }}">{{ c.drill_names[loop.index0] }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</p>
+  </div>
+{%- endmacro -%}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -15,10 +37,17 @@
   }
   body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
          margin: 0; color: #1c1c1c; background: #fafafa; }
+  .sample-banner { background: var(--accent); color: white; padding: 10px 32px;
+                   display: flex; align-items: center; justify-content: center;
+                   gap: 14px; flex-wrap: wrap; font-size: 0.95rem; }
+  .sample-banner a { color: white; font-weight: 700; text-decoration: underline;
+                     white-space: nowrap; }
   header { background: var(--primary); color: white; padding: 20px 32px;
-           display: flex; align-items: center; gap: 16px; }
+           display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   header img.logo { height: 44px; }
   header h1 { margin: 0; font-size: 1.5rem; }
+  .hchip { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.45);
+           border-radius: 999px; padding: 3px 12px; font-size: 0.8rem; }
   main { max-width: 1100px; margin: 0 auto; padding: 24px 32px 48px; }
   h2 { color: var(--primary); border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
   table { border-collapse: collapse; width: 100%; background: white; }
@@ -26,12 +55,23 @@
      page body itself never scrolls sideways. */
   .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   th, td { border: 1px solid #ddd; padding: 8px 10px; text-align: right; }
-  th { background: var(--primary); color: white; text-align: center; }
+  th { background: var(--primary); color: white; text-align: center;
+       vertical-align: top; }
+  /* Tap a metric name to read what it is — no JS, works on phones. */
+  .mx summary { cursor: pointer; list-style: none; }
+  .mx summary::after { content: " ⓘ"; font-weight: 400; opacity: 0.75;
+                       font-size: 0.8em; }
+  .mx summary::-webkit-details-marker { display: none; }
+  .mx-body { font-weight: 400; text-align: left; font-size: 0.8rem;
+             min-width: 220px; max-width: 300px; margin-top: 6px;
+             color: rgba(255,255,255,0.95); }
+  .mx-body p { margin: 4px 0; }
+  .mx-unit { opacity: 0.85; font-style: italic; }
   tr.mean-row td { font-weight: bold; background: #f0f0f0; }
   tr.bench-row td { color: #555; font-size: 0.85rem; background: #fafafa; }
   .meta { color: #555; font-size: 0.9rem; }
-  .meta td, .meta th { text-align: left; border: none; padding: 2px 12px 2px 0; background: none; color: inherit; }
-  .meta td { overflow-wrap: anywhere; } /* long video paths must not widen the page */
+  table.meta td, table.meta th { text-align: left; border: none; padding: 2px 12px 2px 0; background: none; color: inherit; }
+  table.meta td { overflow-wrap: anywhere; } /* long video paths must not widen the page */
   .swing { background: white; border: 1px solid #e0e0e0; border-radius: 8px;
            padding: 16px 20px; margin: 20px 0; }
   .swing img, .swing video { max-width: 100%; border-radius: 4px; margin-top: 10px; }
@@ -42,6 +82,16 @@
   .video-row video { width: 100%; }
   .tips { background: #eef6f0; border-left: 4px solid var(--primary);
           padding: 12px 16px; border-radius: 4px; }
+  .praise { background: #e5f3ea; border-left: 4px solid var(--primary);
+            border-radius: 4px; padding: 12px 16px; }
+  .praise ul { margin: 6px 0 0; padding-left: 20px; }
+  .praise li { margin: 6px 0; }
+  .start-lead { font-size: 1.05rem; color: #333; }
+  .card.start-here { max-width: 640px; border-width: 1px 1px 1px 6px; }
+  details.more-issues { margin-top: 18px; }
+  details.more-issues > summary { cursor: pointer; color: var(--primary);
+                                  font-weight: 600; padding: 6px 0; }
+  details.more-issues .cards { margin-top: 12px; }
   .cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
   .card { background: white; border: 1px solid #e0e0e0; border-left: 4px solid var(--primary);
           border-radius: 8px; padding: 14px 16px; }
@@ -83,15 +133,25 @@
 </style>
 </head>
 <body>
+{% if sample_banner %}
+<div class="sample-banner">
+  <span>{{ sample_banner.text }}</span>
+  <a href="{{ sample_banner.cta_url }}">{{ sample_banner.cta_label }}</a>
+</div>
+{% endif %}
 <header>
   {% if brand.logo_path %}<img class="logo" src="{{ brand.logo_path }}" alt="logo">{% endif %}
   <h1>{{ brand.name }} — Swing Report</h1>
+  {% if club_label %}<span class="hchip">{{ club_label }}</span>{% endif %}
+  {% if dtl %}<span class="hchip">Down the line — tempo &amp; rhythm only</span>{% endif %}
 </header>
 <main>
 
 <h2>Session</h2>
 <table class="meta">
-  <tr><th>Video</th><td>{{ video.path }}</td></tr>
+  {# Filename only — the full path is server internals (web uploads live at
+     <session>/source.mov) and means nothing to the reader. #}
+  <tr><th>Video</th><td>{{ video.path.name }}</td></tr>
   <tr><th>Duration</th><td>{{ "%.1f"|format(video.duration_s) }} s</td></tr>
   <tr><th>Resolution</th><td>{{ video.display_width }}×{{ video.display_height }}
       {% if video.rotation %}(rotation metadata: {{ video.rotation }}°){% endif %}</td></tr>
@@ -99,53 +159,64 @@
   {% if video.creation_time %}<tr><th>Recorded</th><td>{{ video.creation_time }}</td></tr>{% endif %}
   <tr><th>Swings detected</th><td>{{ swings|length }}</td></tr>
   <tr><th>Handedness</th><td>{{ hand }}</td></tr>
+  <tr><th>Camera angle</th><td>{% if dtl %}Down the line (tempo &amp; rhythm only){% else %}Face-on{% endif %}</td></tr>
+  {% if club_label %}<tr><th>Club</th><td>{{ club_label }}</td></tr>{% endif %}
 </table>
 
 <h2>Metrics</h2>
 <div class="table-scroll">
 <table>
   <tr>
-    <th>Swing</th><th>Strike (s)</th><th>Backswing (s)</th><th>Downswing (s)</th>
-    <th>Tempo (target {{ "%.1f"|format(coaching.tempo_target) }})</th>
-    <th>Head sway A→T (SW)</th><th>Head sway T→I (SW)</th>
-    <th>Hip slide A→T (SW)</th><th>Hip slide T→I (SW)</th>
+    <th>Swing</th>
+    {{ mhead("strike_s", "Strike (s)") }}
+    {{ mhead("backswing_s", "Backswing (s)") }}
+    {{ mhead("downswing_s", "Downswing (s)") }}
+    {{ mhead("tempo_ratio", "Tempo (reference %.1f:1)"|format(coaching.tempo_target)) }}
+    {{ mhead("head_sway_backswing_sw", "Head sway A→T (SW)") }}
+    {{ mhead("head_sway_downswing_sw", "Head sway T→I (SW)") }}
+    {{ mhead("hip_slide_backswing_sw", "Hip slide A→T (SW)") }}
+    {{ mhead("hip_slide_downswing_sw", "Hip slide T→I (SW)") }}
   </tr>
   {% for s in swings %}
   <tr>
     <td>{{ s.metrics.swing }}</td>
-    <td>{{ "%.2f"|format(s.metrics.strike_s) }}</td>
-    <td>{{ "%.2f"|format(s.metrics.backswing_s) }}</td>
-    <td>{{ "%.2f"|format(s.metrics.downswing_s) }}</td>
-    <td{% if s.metrics.tempo_ratio < coaching.tempo_warn_below %} class="flag"{% endif %}>{{ "%.2f"|format(s.metrics.tempo_ratio) }}</td>
-    <td{% if s.metrics.head_sway_backswing_sw > coaching.sway_warn_sw %} class="flag"{% endif %}>{{ "%.2f"|format(s.metrics.head_sway_backswing_sw) }}</td>
-    <td>{{ "%.2f"|format(s.metrics.head_sway_downswing_sw) }}</td>
-    <td>{{ "%.2f"|format(s.metrics.hip_slide_backswing_sw) }}</td>
-    <td>{{ "%.2f"|format(s.metrics.hip_slide_downswing_sw) }}</td>
+    {{ num(s.metrics.strike_s) }}
+    {{ num(s.metrics.backswing_s) }}
+    {{ num(s.metrics.downswing_s) }}
+    {{ num(s.metrics.tempo_ratio, "%.2f", s.metrics.tempo_ratio < coaching.tempo_warn_below) }}
+    {{ num(s.metrics.head_sway_backswing_sw, "%.2f", s.metrics.head_sway_backswing_sw > coaching.sway_warn_sw) }}
+    {{ num(s.metrics.head_sway_downswing_sw) }}
+    {{ num(s.metrics.hip_slide_backswing_sw, "%.2f", s.metrics.hip_slide_backswing_sw > coaching.sway_warn_sw) }}
+    {{ num(s.metrics.hip_slide_downswing_sw) }}
   </tr>
   {% endfor %}
   {% if stats %}
   <tr class="mean-row">
     <td>mean ± std</td><td>—</td>
-    <td>{{ "%.2f"|format(stats.backswing_s.mean) }} ± {{ "%.2f"|format(stats.backswing_s.std) }}</td>
-    <td>{{ "%.2f"|format(stats.downswing_s.mean) }} ± {{ "%.2f"|format(stats.downswing_s.std) }}</td>
-    <td>{{ "%.2f"|format(stats.tempo_ratio.mean) }} ± {{ "%.2f"|format(stats.tempo_ratio.std) }}</td>
-    <td>{{ "%.2f"|format(stats.head_sway_backswing_sw.mean) }} ± {{ "%.2f"|format(stats.head_sway_backswing_sw.std) }}</td>
-    <td>{{ "%.2f"|format(stats.head_sway_downswing_sw.mean) }} ± {{ "%.2f"|format(stats.head_sway_downswing_sw.std) }}</td>
-    <td>{{ "%.2f"|format(stats.hip_slide_backswing_sw.mean) }} ± {{ "%.2f"|format(stats.hip_slide_backswing_sw.std) }}</td>
-    <td>{{ "%.2f"|format(stats.hip_slide_downswing_sw.mean) }} ± {{ "%.2f"|format(stats.hip_slide_downswing_sw.std) }}</td>
+    {% for key in ["backswing_s", "downswing_s", "tempo_ratio",
+                   "head_sway_backswing_sw", "head_sway_downswing_sw",
+                   "hip_slide_backswing_sw", "hip_slide_downswing_sw"] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ "%.2f"|format(st.mean) }} ± {{ "%.2f"|format(st.std) }}{% else %}—{% endif %}</td>
+    {% endfor %}
   </tr>
   {% endif %}
 </table>
 </div>
 <p class="meta">SW = shoulder widths at address. A→T = address to top, T→I = top to impact.
-Positive lateral values are movement away from the target.</p>
+Positive lateral values are movement away from the target. Tap a column name
+for what it means. Benchmarks are references, not day-one targets — moving
+toward them matters more than hitting them.</p>
 
 <h3>Impact &amp; finish</h3>
 <div class="table-scroll">
 <table>
-  <tr><th>Swing</th><th>Head dip A→I (SW)</th><th>Lead arm at impact (°)</th>
-      <th>Shoulder tilt at impact (°)</th><th>Tilt change A→I (°)</th>
-      <th>Finish balance (SW)</th></tr>
+  <tr><th>Swing</th>
+    {{ mhead("head_dip_sw", "Head dip A→I (SW)") }}
+    {{ mhead("lead_arm_angle_deg", "Lead arm at impact (°)") }}
+    {{ mhead("shoulder_tilt_impact_deg", "Shoulder tilt at impact (°)") }}
+    {{ mhead("shoulder_tilt_delta_deg", "Tilt change A→I (°)") }}
+    {{ mhead("finish_balance_sw", "Finish balance (SW)") }}</tr>
   {% for s in swings %}{% set m = s.metrics %}
   <tr><td>{{ m.swing }}</td>
     {{ num(m.head_dip_sw, flagged=(m.head_dip_sw > coaching.head_dip_warn_sw)) }}
@@ -164,13 +235,17 @@ Positive lateral values are movement away from the target.</p>
       <td>{% if st %}{{ fmt|format(st.mean) }} ± {{ fmt|format(st.std) }}{% else %}—{% endif %}</td>
     {% endfor %}
   </tr>
-  <tr class="bench-row"><td>benchmark</td>
+  {# Down the line none of these are measured, so reference numbers for
+     them would be the only numbers in the table — omit the row. #}
+  {% if not dtl %}
+  <tr class="bench-row"><td>reference</td>
     <td>≤ {{ "%.2f"|format(coaching.head_dip_warn_sw) }}</td>
     <td>≥ {{ "%.0f"|format(coaching.lead_arm_warn_deg) }}</td>
     <td>≥ {{ "%.0f"|format(coaching.shoulder_tilt_impact_min_deg) }}</td>
     <td>≥ 0</td>
     <td>≤ {{ "%.2f"|format(coaching.finish_balance_warn_sw) }}</td>
   </tr>
+  {% endif %}
   {% endif %}
 </table>
 </div>
@@ -191,15 +266,22 @@ balance is mean foot drift during the hold — lower is better.</p>
   <ul class="notes">
     {% for note in s.notes %}<li>{{ note }}</li>{% endfor %}
   </ul>
+  {% if s.strip %}
   <h3>Key positions</h3>
   <img src="{{ s.strip }}" alt="Key positions, swing {{ s.metrics.swing }}">
+  {% endif %}
+  {% if s.overlay %}
   <h3>Centerline overlay</h3>
   <img src="{{ s.overlay }}" alt="Centerline overlay, swing {{ s.metrics.swing }}">
+  {% endif %}
+  {% if s.slowmo or s.replay %}
   <div class="video-row">
+    {% if s.slowmo %}
     <figure>
       <h3>Slow motion ({{ slowmo_factor }}× slower)</h3>
       <video controls muted playsinline src="{{ s.slowmo }}"></video>
     </figure>
+    {% endif %}
     {% if s.replay %}
     <figure>
       <h3>Coach replay</h3>
@@ -210,28 +292,37 @@ balance is mean foot drift during the hold — lower is better.</p>
     </figure>
     {% endif %}
   </div>
+  {% endif %}
 </div>
 {% endfor %}
 
-<h2>What to work on</h2>
-{% if issue_cards %}
-<div class="cards">
-  {% for c in issue_cards %}
-  <div class="card sev-{{ c.severity }}">
-    <div class="card-head"><h3>{{ c.display_name }}</h3>
-      <span class="sev">{{ c.severity }}</span></div>
-    <p class="card-val">{{ c.session_label }}:
-      <strong>{{ c.session_text }}</strong>
-      <span class="bench">({{ c.benchmark_text }})</span></p>
-    {{ c.sparkline|safe }}
-    <p class="why">{{ c.why }}</p>
-    <p class="fixline"><strong>Fix:</strong> {{ c.fix }}
-      {% if c.drill_ids %}<span class="meta">Drills:
-        {% for did in c.drill_ids %}<a href="#drill-{{ did }}">{{ c.drill_names[loop.index0] }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>{% endif %}</p>
-  </div>
-  {% endfor %}
+{% if praise_notes %}
+<h2>What's working</h2>
+<div class="praise">
+  <strong>Keep these — they're already inside the reference lines.</strong>
+  <ul>
+    {% for note in praise_notes %}<li>{{ note }}</li>{% endfor %}
+  </ul>
 </div>
+{% endif %}
+
+{% if issue_cards %}
+<h2>Start here</h2>
+<p class="start-lead">Fix one thing at a time. This week:
+  <strong>{{ issue_cards[0].display_name }}</strong></p>
+{{ issue_card(issue_cards[0], "start-here") }}
+{% if issue_cards|length > 1 %}
+<details class="more-issues">
+  <summary>More to work on later ({{ issue_cards|length - 1 }})</summary>
+  <p class="meta">Real, but not this week's job. They'll still be measured on
+  every re-film.</p>
+  <div class="cards">
+    {% for c in issue_cards[1:] %}{{ issue_card(c) }}{% endfor %}
+  </div>
+</details>
+{% endif %}
 {% else %}
+<h2>What to work on</h2>
 <p class="meta">Nothing flagged this session — see the maintenance plan below.</p>
 {% endif %}
 
@@ -283,9 +374,11 @@ the gear these drills are built around.</p>
 <div class="tips">
   <strong>Filming tips for best results</strong>
   <ul>
-    <li>Phone at hip height.</li>
-    <li>Film one clip face-on and one down the line.</li>
-    <li>Ball on a tee.</li>
+    <li>Phone at hip height, sound on.</li>
+    <li>Film face-on (chest toward the camera) — that's the angle every
+      number here is measured from. A down-the-line clip gets tempo &amp;
+      rhythm only for now.</li>
+    <li>Whole body in frame, ball on a tee, and don't trim the clip.</li>
   </ul>
 </div>
 

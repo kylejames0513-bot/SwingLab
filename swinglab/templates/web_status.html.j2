@@ -43,9 +43,17 @@
       {% endif %}
     {% elif failed %}
       <h2>Analysis failed</h2>
-      <p class="error">{{ job.error }}</p>
-      <p>If your clip does contain swings, try uploading again with manual
-         strike times filled in.</p>
+      <p class="error">{{ error_help.message if error_help else job.error }}</p>
+      {% if error_help and error_help.tips %}
+      <p><strong>Things to check:</strong></p>
+      <ul>
+        {% for tip in error_help.tips %}<li>{{ tip }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if error_help and error_help.checklist %}
+      <p class="hint">The <a href="/#filming-checklist">filming checklist</a>
+        covers all of this in one place.</p>
+      {% endif %}
       <a class="button" href="/">Try again</a>
     {% else %}
       <h2 id="live-title"><span class="spinner"></span>{% if queue_position %}Waiting in line…{% else %}Analyzing your swing…{% endif %}</h2>

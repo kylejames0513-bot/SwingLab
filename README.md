@@ -52,6 +52,9 @@ Useful flags:
   detection when it misses (or when the clip has no audio track)
 - `--hand right|left` — golfer handedness (default right); also overrides the
   target-direction inference
+- `--angle face-on|dtl` — camera angle (default face-on). Every body-drift
+  and angle metric is defined face-on; `dtl` (down the line) keeps tempo,
+  durations and consistency and honestly reports the rest as not measured
 - `--fast` — skip motion-interpolated slow motion (by far the longest step);
   results in a fraction of the time, slightly less smooth clips
 - `--config path/to/config.yaml` — alternate branding/threshold config
@@ -80,6 +83,22 @@ does not track the club, does not reconstruct 3D, and makes no ball-flight
 claims. Angle metrics are the angles **as seen from the camera** (face-on),
 and lateral metrics are normalized by shoulder width at address (SW) so
 numbers are comparable across camera distances.
+
+**Camera-angle truth.** Every lateral and angular metric below is *defined*
+face-on. A down-the-line clip (`--angle dtl`, or the upload form's radio)
+gets timing only — tempo, backswing/downswing durations, consistency, which
+are camera-angle-agnostic — and the face-on-only metrics are written as
+NaN/null with a session note saying so, rather than silently mis-measured.
+As a cross-check, the projected shoulder-width-to-height ratio at address
+(wide face-on, narrow down the line) is compared against the chosen angle;
+when the footage strongly disagrees, the report carries a low-confidence
+warning. The thresholds are deliberately conservative — uncertain footage
+warns nobody. When target-direction inference falls back to its last-resort
+guess, the swing's coaching notes now carry an explicit low-confidence line
+about the toward/away signs. Every metric also ships a plain-English
+explainer (`swinglab/explainers.py`) shown behind tap-to-open expanders in
+the report tables and on `/progress` — benchmarks are framed as references
+to move toward, never day-one targets.
 
 Per swing:
 
@@ -158,11 +177,31 @@ swinglab serve --host 127.0.0.1 --port 8000
 ```
 
 Open http://127.0.0.1:8000 for a branded upload page: drag a clip in (upload
-progress shown), choose handedness and optionally **Fast mode**, and watch a
-live status page — queue position while waiting, then per-swing progress —
-while the analysis runs in the background (the exact same `pipeline` module
-the CLI uses — nothing is duplicated in the web layer). `/sessions` lists
-every past analysis.
+progress shown), choose handedness and **camera angle** (face-on = full
+report; down the line = tempo & rhythm only, stated up front), optionally a
+**club** and — under Advanced — **Fast mode** or manual strike times. Then
+watch a live status page — queue position while waiting, then per-swing
+progress — while the analysis runs in the background (the exact same
+`pipeline` module the CLI uses — nothing is duplicated in the web layer).
+`/sessions` lists every past analysis. Failed analyses are explained in
+plain English on the status page (sound off? body out of frame?) with a
+filming-checklist link — the raw pipeline error stays available via the
+JSON API and the CLI.
+
+**Public sample report** — `GET /sample-report` serves a complete example
+report generated at startup from synthetic session data run through the
+real coaching/report machinery (`swinglab/sample.py`), with a banner saying
+it's a sample and drawn stand-in imagery (never fake footage; the video
+sections are simply absent). No login required — it's linked from the
+landing page ("See a sample report first") so visitors can see the product
+before the signup wall.
+
+**Club context (display only)** — the upload form's optional club select
+(Driver / Fairway wood / Hybrid / Iron / Wedge) is stored on the job and in
+metrics.json's `meta` block and shown as a chip on the report header, the
+session list, and `/progress` (which gains a club filter once more than one
+club is present). There are **no per-club thresholds yet** — the club
+changes no numbers and no flags; it exists so sessions compare cleanly.
 
 Built to take real traffic on one machine:
 
@@ -201,6 +240,15 @@ account sees only its own history, and results are private to their owner
 Pro can be sold two ways, both **inert until configured** — the pricing page
 shows Pro as "coming soon" until one is set up. When both are configured,
 buyers are sent to the Shopify store.
+
+The pricing page shows the annual plan first (the anchor) with the monthly
+plan second, using the **display-only** strings
+`billing.pro_price_monthly_text` / `billing.pro_price_annual_text` from
+`config.yaml` (shipped: `$9.99/month` and `$79.99/year — $6.67/month`).
+These are labels, not billing: what is actually charged always lives in
+Shopify/Stripe, and the page says honestly that the store's monthly option
+is a fixed-length 31-day pass — nothing auto-renews unless the store's
+subscription setup or Stripe billing handles renewal.
 
 **Selling Pro on the Shopify store** (one checkout for gear and
 memberships): create a product whose variant SKUs map to days of access in
@@ -404,14 +452,14 @@ See `config.yaml` — everything is documented inline. Highlights:
 
 | Section | What it controls |
 | --- | --- |
-| `brand` | name, logo, colors, footer, watermark on/off, disclaimer |
+| `brand` | name, logo, colors, footer, watermark on/off, disclaimer, `support_text` (shown where users need the operator, e.g. password reset while SMTP is unconfigured) |
 | `detection` | audio peak height / prominence / minimum gap between swings |
 | `coaching` | flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, session retention, `require_account`, weekly digest on/off (`digest_enabled`) |
-| `billing` | free/Pro analyses per month (price lives in Stripe, not here) |
+| `billing` | free/Pro analyses per month, plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
 ## Tests
