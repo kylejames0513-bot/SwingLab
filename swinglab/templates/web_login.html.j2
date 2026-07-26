@@ -16,6 +16,8 @@
     box-sizing: border-box; }
   .card button { width: 100%; }
   .free-note { color: #666; font-size: 0.85rem; margin-top: 10px; text-align: center; }
+  .hero-ctas { margin-top: 16px; }
+  .hero-ctas a.button { margin-top: 0; }
   .opt { display: flex; gap: 8px; align-items: flex-start; font-weight: 400;
          font-size: 0.85rem; color: #555; margin: 14px 0 0; }
   .opt input { margin-top: 2px; }
@@ -27,15 +29,21 @@
 {% block main %}
   {% if landing %}
   <div class="hero">
-    <h2>Know your swing in minutes</h2>
-    <p>Film a few swings on your phone, upload the clip, and get tempo,
-       sway and slide numbers, key-position frames, slow motion, and
-       plain-English coaching notes.</p>
+    <h2>The range-session product.</h2>
+    <p>One phone, honest numbers, a plan, and a re-film that proves it.
+       Film a few swings, upload the clip, and get tempo, sway and slide
+       numbers, key-position frames, slow motion, and plain-English
+       coaching notes.</p>
     <div class="steps">
-      <div><strong>1. Film</strong> Phone at hip height, face-on or down the line.</div>
+      <div><strong>1. Film</strong> Phone at hip height, face-on (down the line: tempo &amp; rhythm only for now).</div>
       <div><strong>2. Upload</strong> Straight from your camera roll — no editing.</div>
       <div><strong>3. Improve</strong> A full visual report for every swing in the clip.</div>
     </div>
+    <div class="hero-ctas">
+      <a class="button secondary" href="/sample-report/">See a sample report first</a>
+    </div>
+    <p class="free-note">{{ free_per_month }} full analyses a month, free —
+      no card required.</p>
   </div>
   {% endif %}
 
@@ -127,6 +135,10 @@
       </form>
       {% if mail_enabled %}
       <a class="aux-link" href="/reset">Forgot your password?</a>
+      {% else %}
+      <p class="aux-link">Forgot your password? Password reset requires the
+        operator to configure email, and it isn't set up yet —
+        {{ brand.support_text or "contact whoever runs this " + brand.name + " instance for help" }}.</p>
       {% endif %}
     </div>
   </div>

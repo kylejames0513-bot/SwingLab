@@ -11,11 +11,15 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import __version__, diagrams
+from .clubs import club_label
 from .coaching import issue_cards as make_issue_cards
+from .coaching import praise_notes as make_praise_notes
 from .coaching import session_flags
 from .config import Config
 from .drills import gear_shop_url, practice_plan
+from .explainers import build_explainers
 from .ffmpeg import VideoInfo
+from .metrics import ANGLE_DTL, ANGLE_FACE_ON
 
 
 def _sanitize(value: Any) -> Any:
@@ -36,6 +40,7 @@ def write_metrics_json(
     stats: dict,
     session_notes: list[str],
     cfg: Config,
+    meta: dict | None = None,
 ) -> Path:
     payload = {
         "generator": {"name": cfg.brand["name"], "swinglab_version": __version__},
@@ -48,6 +53,9 @@ def write_metrics_json(
             "rotation": video.rotation,
             "creation_time": video.creation_time,
         },
+        # Session context (camera angle, club, handedness) — additive; older
+        # consumers that don't know the key simply ignore it.
+        **({"meta": meta} if meta else {}),
         "swings": [
             {
                 "metrics": s["metrics"].as_dict(),
@@ -78,16 +86,21 @@ def write_report_html(
     session_notes: list[str],
     hand: str,
     cfg: Config,
+    angle: str = ANGLE_FACE_ON,
+    club: str | None = None,
+    sample_banner: dict | None = None,
 ) -> Path:
     env = Environment(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=select_autoescape(["html"]),
     )
-    flags = session_flags([s["metrics"] for s in swings], stats, cfg)
+    all_metrics = [s["metrics"] for s in swings]
+    flags = session_flags(all_metrics, stats, cfg)
     # Issue cards: one per fired flag, each with an inline-SVG sparkline of
     # the per-swing values against the flag's benchmark (self-contained HTML,
-    # no external assets).
-    cards = make_issue_cards([s["metrics"] for s in swings], stats, cfg)
+    # no external assets). Already sorted highest-severity first — the report
+    # renders the first one full-size as "Start here" and defers the rest.
+    cards = make_issue_cards(all_metrics, stats, cfg)
     issue_ctx = [
         {**dataclasses.asdict(c),
          "sparkline": diagrams.sparkline(
@@ -109,13 +122,21 @@ def write_report_html(
         swings=swings,
         stats=stats,
         session_notes=session_notes,
+        # "What's working": every metric measured AND in range — [] hides the
+        # strip entirely (never fake praise).
+        praise_notes=make_praise_notes(all_metrics, cfg, stats),
         hand=hand,
+        angle=angle,
+        dtl=(angle == ANGLE_DTL),
+        club_label=club_label(club),
+        explainers=build_explainers(cfg.coaching),
         slowmo_factor=cfg.slowmo["factor"],
         flags=flags,
         issue_cards=issue_ctx,
         practice_plan=plan,
         drill_media=drill_media,
         gear_url=gear_shop_url(cfg),
+        sample_banner=sample_banner,
     )
     out_path.write_text(html, encoding="utf-8")
     return out_path

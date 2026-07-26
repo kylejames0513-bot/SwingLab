@@ -26,6 +26,10 @@ DEFAULTS: dict[str, Any] = {
             "Automated estimates from a single camera. Not a substitute for "
             "instruction from a teaching professional."
         ),
+        # Shown wherever a user would need the operator's help (e.g. the
+        # login page when password reset is unavailable because SMTP isn't
+        # configured). None = the generic phrasing alone.
+        "support_text": None,
     },
     "detection": {
         "audio_height": 0.30,
@@ -92,6 +96,11 @@ DEFAULTS: dict[str, Any] = {
         "pro_per_month": 0,
         "shopify_pro_handle": "swinglab-pro",
         "shopify_skus": {"SL-PRO-1MO": 31, "SL-PRO-12MO": 365},
+        # DISPLAY strings for the pricing page only — what is actually
+        # charged always lives in Shopify/Stripe. Keep these matching the
+        # store or don't set them.
+        "pro_price_monthly_text": "$9.99/month",
+        "pro_price_annual_text": "$79.99/year — $6.67/month",
     },
     "shop": {
         "enabled": True,

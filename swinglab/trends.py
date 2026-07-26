@@ -132,7 +132,7 @@ def _benchmarks(coach: dict) -> dict[str, tuple[float, str]]:
     return {
         "tempo_ratio": (
             float(coach["tempo_warn_below"]),
-            f"target {float(coach['tempo_target']):.1f}:1 · "
+            f"reference {float(coach['tempo_target']):.1f}:1 · "
             f"flagged below {float(coach['tempo_warn_below']):.1f}:1",
         ),
         "head_sway_backswing_sw": (sway, f"flagged above {sway:.2f} SW"),

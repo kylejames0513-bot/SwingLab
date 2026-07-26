@@ -64,26 +64,7 @@
   <p class="personal">{{ trend_line }}.</p>
   {% endif %}
 
-  <div class="plans">
-    <div class="card">
-      <h2>Free</h2>
-      <p class="price">$0</p>
-      <ul>
-        <li>{{ free_per_month }} swing analyses every month, forever</li>
-        <li>Full report: metrics, key positions, slow motion, overlays</li>
-        <li>Coaching notes and a practice plan for every session</li>
-        <li>No card required</li>
-      </ul>
-      {% if not user %}<a class="button" href="/">Sign up free</a>{% endif %}
-    </div>
-    <div class="card">
-      <h2>Pro</h2>
-      <p class="price">Unlimited</p>
-      <ul>
-        <li>Unlimited swing analyses</li>
-        <li>Everything in Free</li>
-        <li>Cancel anytime</li>
-      </ul>
+  {% macro pro_cta() -%}
       {% if user and user.is_pro %}
       <p class="hint">You're on Pro — thanks for the support!</p>
       {% elif user and pro_store_url %}
@@ -99,13 +80,46 @@
       {% else %}
       <a class="button" href="/login">Log in to upgrade</a>
       {% endif %}
+  {%- endmacro %}
+  <div class="plans">
+    <div class="card">
+      <h2>Pro — annual</h2>
+      <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
+      <ul>
+        <li>Unlimited swing analyses for a year</li>
+        <li>Everything in Free</li>
+        <li>One checkout covers the whole year — no monthly decision to remake</li>
+      </ul>
+      {{ pro_cta() }}
+    </div>
+    <div class="card">
+      <h2>Pro — monthly</h2>
+      <p class="price">{{ pro_price_monthly_text or "Unlimited" }}</p>
+      <ul>
+        <li>Unlimited swing analyses</li>
+        <li>Everything in Free</li>
+        <li>Nothing renews behind your back — see the note below</li>
+      </ul>
+      {{ pro_cta() }}
+    </div>
+    <div class="card">
+      <h2>Free</h2>
+      <p class="price">$0</p>
+      <ul>
+        <li>{{ free_per_month }} swing analyses every month, forever</li>
+        <li>Full report: metrics, key positions, slow motion, overlays</li>
+        <li>Coaching notes and a practice plan for every session</li>
+        <li>No card required</li>
+      </ul>
+      {% if not user %}<a class="button" href="/">Sign up free</a>{% endif %}
     </div>
   </div>
 
-  {% if pro_store_url %}
-  <p class="fineprint">Going all in? The 12-month plan on the store works out
-    cheaper than paying month to month.</p>
-  {% endif %}
+  <p class="fineprint">Honest note on the monthly option: on the
+    {{ brand.name }} store it's a fixed-length 31-day pass that simply
+    expires — nothing auto-renews unless the store's subscription setup (or
+    Stripe billing, where configured) handles renewal. Prices shown here are
+    display text; the store checkout is always the source of truth.</p>
   <p class="fineprint">Cancel anytime — Pro keeps running to the end of what
     you've paid for. Unused Pro purchases are refundable within 14 days.</p>
 

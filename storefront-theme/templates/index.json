@@ -67,8 +67,8 @@
           "settings": {
             "number": "01",
             "title": "Film a few swings",
-            "body": "Phone at hip height, face-on or down the line. Ball on a tee. That's it.",
-            "caption": "HIP HEIGHT · FACE-ON OR DTL"
+            "body": "Phone at hip height, face-on, ball on a tee. That's it. (Down-the-line clips get tempo & rhythm only for now.)",
+            "caption": "HIP HEIGHT · FACE-ON FOR THE FULL REPORT"
           }
         },
         "s2": {
@@ -314,7 +314,7 @@
           "type": "qa",
           "settings": {
             "question": "How should I film my swing?",
-            "answer": "Phone at hip height, face-on or down the line, ball on a tee. That's the whole setup — portrait clips straight off a phone work fine."
+            "answer": "Phone at hip height, face-on, ball on a tee — portrait clips straight off a phone work fine. Down-the-line clips get tempo & rhythm only for now; film face-on for the full report."
           }
         },
         "q_trim": {

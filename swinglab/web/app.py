@@ -44,11 +44,15 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.middleware.sessions import SessionMiddleware
 
+from .. import sample
+from ..clubs import CLUB_LABELS
 from ..coaching import flag_keys
 from ..config import Config
 from ..diagrams import trend_chart
+from ..explainers import build_explainers
+from ..metrics import ANGLES
 from ..trends import FLAG_LABELS, build_trends, format_delta, format_value, trend_sentence
-from . import billing, digest, mailer, shop, shopify_billing
+from . import billing, digest, humanize, mailer, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
 from .users import User, UserStore
 
@@ -119,6 +123,12 @@ def create_app(
         autoescape=select_autoescape(["html"]),
     )
 
+    # The public sample report: generated once at startup if absent (synthetic
+    # session data through the real report machinery — see swinglab.sample),
+    # then served with no auth at /sample-report/.
+    sample_dir = sessions_dir / "sample-report"
+    sample.ensure_sample_report(sample_dir, cfg)
+
     def current_user(request: Request) -> User | None:
         user_id = request.session.get("user_id")
         return users.get(user_id) if user_id else None
@@ -148,6 +158,7 @@ def create_app(
                 free_per_month=int(cfg.billing["free_per_month"]),
                 shop_enabled=shop_active(),
                 mail_enabled=mailer.enabled(),
+                club_labels=CLUB_LABELS,
                 **context,
             )
         )
@@ -224,6 +235,22 @@ def create_app(
             quota_left=left,
             trend_line=trend_line,
         )
+
+    # -- public sample report (no auth — the wow-moment, un-walled) --------
+    @app.get("/sample-report")
+    def sample_report_redirect():
+        # Trailing slash matters: the report's media paths are relative.
+        return RedirectResponse("/sample-report/", status_code=307)
+
+    @app.get("/sample-report/{file_path:path}")
+    def sample_report_file(file_path: str = ""):
+        root = sample_dir.resolve()
+        target = (root / (file_path or "report.html")).resolve()
+        if not target.is_relative_to(root):  # block path traversal
+            raise HTTPException(404, "Not found")
+        if not target.is_file():
+            raise HTTPException(404, "Not found")
+        return FileResponse(target)
 
     # -- accounts ---------------------------------------------------------
     def send_code_email(email: str, purpose: str) -> None:
@@ -429,7 +456,16 @@ def create_app(
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
-        trends = build_trends(manager.list_recent(user_id=user.id), cfg)
+        listed = manager.list_recent(user_id=user.id)
+        # Club filter — display context only, shown once >1 club is present.
+        clubs_present = sorted({j.club for j in listed if j.club})
+        club_selected = request.query_params.get("club") or ""
+        if club_selected not in clubs_present:
+            club_selected = ""
+        if club_selected:
+            listed = [j for j in listed if j.club == club_selected]
+        trends = build_trends(listed, cfg)
+        explainers = build_explainers(cfg.coaching)
         cards = []
         if trends.session_count >= 2:
             for name, mt in trends.metrics.items():
@@ -460,6 +496,8 @@ def create_app(
                         "" if improved is None else "good" if improved else "bad"
                     ),
                     "benchmark_text": mt.benchmark_text,
+                    # Same plain-English strings the report's expanders use.
+                    "explainer": explainers.get(name),
                 })
         span = None
         if trends.session_count >= 2:
@@ -483,6 +521,8 @@ def create_app(
             latest_job_id=(
                 trends.samples[-1].job_id if trends.samples else None
             ),
+            clubs_present=clubs_present,
+            club_selected=club_selected,
         )
 
     @app.get("/pricing", response_class=HTMLResponse)
@@ -492,6 +532,10 @@ def create_app(
         return render(
             "web_pricing.html.j2", request,
             trend_line=personal_trend(current_user(request)),
+            # Display strings only — the store/Stripe stays the source of
+            # truth for what is actually charged.
+            pro_price_annual_text=cfg.billing.get("pro_price_annual_text"),
+            pro_price_monthly_text=cfg.billing.get("pro_price_monthly_text"),
         )
 
     # -- gear shop --------------------------------------------------------
@@ -562,6 +606,8 @@ def create_app(
         request: Request,
         video: UploadFile = File(...),
         hand: str = Form("right"),
+        angle: str = Form("face-on"),
+        club: str = Form(""),
         strikes: str = Form(""),
         fast: str = Form(""),
     ):
@@ -586,6 +632,15 @@ def create_app(
                 raise HTTPException(400, f'Bad strike times: "{strikes}"')
         if hand not in ("right", "left"):
             raise HTTPException(400, 'hand must be "right" or "left"')
+        if angle not in ANGLES:
+            raise HTTPException(
+                400, 'angle must be "face-on" or "dtl" (down the line)'
+            )
+        if club and club not in CLUB_LABELS:
+            raise HTTPException(
+                400,
+                "club must be one of: " + ", ".join(sorted(CLUB_LABELS)),
+            )
 
         client_ip = request.client.host if request.client else None
         per_ip = int(cfg.web.get("max_active_jobs_per_ip") or 0)
@@ -599,6 +654,8 @@ def create_app(
         job = manager.create_session(
             source_name=video.filename,
             hand=hand,
+            angle=angle,
+            club=club or None,
             strikes=manual_strikes,
             fast=fast.lower() in ("on", "true", "1", "yes"),
             client_ip=client_ip,
@@ -646,12 +703,16 @@ def create_app(
     @app.get("/session/{job_id}", response_class=HTMLResponse)
     def status_page(job_id: str, request: Request):
         job = get_job_or_404(job_id, request)
+        failed = job.status == FAILED
         return render(
             "web_status.html.j2",
             request,
             job=job,
             done=job.status == DONE,
-            failed=job.status == FAILED,
+            failed=failed,
+            # Plain-English guidance instead of pipeline/CLI jargon; the raw
+            # error stays available via the JSON API.
+            error_help=humanize.friendly_error(job.error) if failed else None,
             queue_position=manager.queue_position(job),
             gear=gear_for(job),
         )

@@ -14,11 +14,13 @@ from typing import Callable
 from PIL import Image
 
 from . import annotate, audio, events, frames, metrics, overlay, pose, report, slowmo, strip
+from .coaching import DTL_SESSION_NOTE, angle_mismatch_note
 from .coaching import session_notes as make_session_notes
 from .coaching import swing_notes
 from .config import Config
 from .events import EventError
 from .ffmpeg import VideoInfo, probe, require_binaries
+from .metrics import ANGLE_DTL, ANGLE_FACE_ON, ANGLES
 
 
 class ZeroStrikesError(RuntimeError):
@@ -70,6 +72,8 @@ def analyze_video(
     fast: bool = False,
     log: Callable[[str], None] = print,
     progress: Callable[[int, int], None] | None = None,
+    angle: str = ANGLE_FACE_ON,
+    club: str | None = None,
 ) -> SessionResult:
     """Run the full pipeline for one video.
 
@@ -77,8 +81,17 @@ def analyze_video(
     once as soon as the swing count is known, then after each swing.
     ``fast`` skips motion-interpolated slow motion (the long step) for much
     quicker results.
+
+    ``angle`` is the camera angle the golfer filmed from ("face-on" or
+    "dtl"). Every lateral/angular metric is defined face-on, so a
+    down-the-line session keeps timing (tempo, durations, consistency) and
+    honestly reads NaN for the rest — with a session note saying so.
+    ``club`` is display context only (report/metrics.json meta); it changes
+    no thresholds and no numbers.
     """
     cfg = cfg or Config.load()
+    if angle not in ANGLES:
+        raise ValueError(f'angle must be one of {ANGLES}, got "{angle}"')
     require_binaries()
     video_path = Path(video_path)
     info = probe(video_path)
@@ -130,7 +143,7 @@ def analyze_video(
             try:
                 swing = _analyze_swing(
                     video_path, strike_s, swing_no, tracker, work_dir, media_dir,
-                    session_dir, hand, cfg, fast, log,
+                    session_dir, hand, cfg, fast, log, angle,
                 )
                 swings.append(swing)
                 all_metrics.append(swing["metrics"])
@@ -153,11 +166,26 @@ def analyze_video(
     # --- session outputs -------------------------------------------------
     stats = metrics.session_stats(all_metrics)
     notes = make_session_notes(all_metrics, stats, cfg)
+    # Camera-angle honesty. The DTL note leads (it reframes the whole
+    # report); the mismatch warning fires only when every per-swing address
+    # pose that had an opinion says the footage looks like the OTHER angle —
+    # conservative, so false alarms are rare.
+    guesses = [
+        s["apparent_angle"] for s in swings if s.get("apparent_angle")
+    ]
+    if guesses and all(g != angle for g in guesses):
+        notes.insert(0, angle_mismatch_note(angle, guesses[0]))
+        log("WARNING: " + angle_mismatch_note(angle, guesses[0]))
+    if angle == ANGLE_DTL:
+        notes.insert(0, DTL_SESSION_NOTE)
+    meta = {"camera_angle": angle, "club": club, "hand": hand}
     report_path = report.write_report_html(
-        session_dir / "report.html", info, swings, stats, notes, hand, cfg
+        session_dir / "report.html", info, swings, stats, notes, hand, cfg,
+        angle=angle, club=club,
     )
     metrics_path = report.write_metrics_json(
-        session_dir / "metrics.json", info, swings, stats, notes, cfg
+        session_dir / "metrics.json", info, swings, stats, notes, cfg,
+        meta=meta,
     )
 
     if not keep_work:
@@ -186,13 +214,16 @@ def _analyze_swing(
     cfg: Config,
     fast: bool,
     log: Callable[[str], None],
+    angle: str = ANGLE_FACE_ON,
 ) -> dict:
     log(f"Swing {swing_no}: analyzing strike at {strike_s:.2f}s...")
     frameset = frames.extract_window(video_path, strike_s, work_dir, swing_no, cfg)
     tracked = [tracker.detect(p) for p in frameset.paths]
     ev = events.detect_events(tracked, frameset, strike_s, cfg)
     finish_idx = frameset.index_near(ev.finish_s)
-    m = metrics.compute_metrics(swing_no, tracked, ev, finish_idx, hand, cfg=cfg)
+    m = metrics.compute_metrics(
+        swing_no, tracked, ev, finish_idx, hand, cfg=cfg, angle=angle
+    )
 
     # full-res key frames (deliverables only)
     key_times = {
@@ -262,4 +293,7 @@ def _analyze_swing(
         "overlay": str(overlay_path.relative_to(session_dir)),
         "slowmo": str(slowmo_path.relative_to(session_dir)),
         "replay": str(replay_path.relative_to(session_dir)) if replay_path else None,
+        # Camera-angle sanity check input: what the address pose looks like
+        # (face-on/dtl/None). Consumed by analyze_video, never serialized.
+        "apparent_angle": metrics.apparent_camera_angle(tracked[ev.address_idx]),
     }

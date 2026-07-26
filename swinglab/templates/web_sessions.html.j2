@@ -14,17 +14,19 @@
   .chip.done { background: #e5f3ea; color: #1a5c38; }
   .chip.failed { background: #fbe9e7; color: #b3261e; }
   .chip.processing, .chip.queued { background: #fff3e0; color: #a35406; }
+  .chip.club { background: #eef1f4; color: #33414e; font-weight: 500; }
 {% endblock %}
 {% block main %}
   <div class="card">
     <h2>Session history</h2>
     {% if sessions %}
       <table>
-        <tr><th>When</th><th>Clip</th><th>Status</th><th>Swings</th></tr>
+        <tr><th>When</th><th>Clip</th><th>Club</th><th>Status</th><th>Swings</th></tr>
         {% for s in sessions %}
         <tr>
           <td>{{ s.as_dict().created_at[:16].replace("T", " ") }}</td>
           <td><a class="session" href="/session/{{ s.id }}">{{ s.source_name or s.id }}</a></td>
+          <td>{% if s.club %}<span class="chip club">{{ club_labels.get(s.club, s.club) }}</span>{% else %}—{% endif %}</td>
           <td><span class="chip {{ s.status }}">{{ s.status }}</span></td>
           <td>{{ s.swings_total if s.swings_total else "—" }}</td>
         </tr>

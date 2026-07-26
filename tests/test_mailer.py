@@ -79,11 +79,26 @@ def test_mailer_inert_until_configured(app, monkeypatch):
     assert resp.status_code == 303
     assert get_user(client).has_password
 
-    # ...and password reset is unavailable (with no link offered).
+    # ...and password reset is unavailable — no /reset link, but the login
+    # page says WHY, honestly, instead of showing nothing.
     assert client.get("/reset").status_code == 503
     assert client.post("/reset/request", data={"email": "x@y.co"}).status_code == 503
     client.post("/logout")
-    assert "Forgot your password?" not in client.get("/login").text
+    login_html = client.get("/login").text
+    assert 'href="/reset"' not in login_html
+    assert "Password reset requires the" in login_html
+    assert "operator to configure email" in login_html
+
+
+def test_login_reset_guidance_uses_brand_support_text(tmp_path, monkeypatch):
+    monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
+    monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.brand["support_text"] = "Email help@acecoach.example."
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
+    assert "Email help@acecoach.example." in client.get("/login").text
 
 
 # -- the SMTP plumbing itself ----------------------------------------------

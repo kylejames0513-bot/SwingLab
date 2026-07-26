@@ -32,6 +32,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--hand", choices=("right", "left"), default="right", help="Golfer handedness"
     )
     ana.add_argument(
+        "--angle",
+        choices=("face-on", "dtl"),
+        default="face-on",
+        help="Camera angle. face-on (default) gives the full report; dtl "
+        "(down the line) keeps tempo/rhythm and honestly leaves the "
+        "face-on-defined body-drift and angle numbers unmeasured",
+    )
+    ana.add_argument(
         "--batch", action="store_true", help="Analyze every video in a folder"
     )
     ana.add_argument(
@@ -108,6 +116,7 @@ def _analyze_one(path: Path, args: argparse.Namespace, cfg: Config) -> SessionRe
         cfg=cfg,
         keep_work=args.keep_work,
         fast=args.fast,
+        angle=args.angle,
     )
     print_summary(result)
     return result

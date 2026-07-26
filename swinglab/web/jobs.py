@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at   REAL NOT NULL,
     source_name  TEXT,
     hand         TEXT NOT NULL DEFAULT 'right',
+    angle        TEXT NOT NULL DEFAULT 'face-on',
+    club         TEXT,
     strikes      TEXT,
     fast         INTEGER NOT NULL DEFAULT 0,
     client_ip    TEXT,
@@ -66,6 +68,8 @@ class Job:
     created_at: float = 0.0
     source_name: str | None = None
     hand: str = "right"
+    angle: str = "face-on"  # camera angle: "face-on" | "dtl"
+    club: str | None = None  # display context only — see swinglab.clubs
     strikes: list[float] | None = None
     fast: bool = False
     client_ip: str | None = None
@@ -85,6 +89,8 @@ class Job:
             ).isoformat(),
             "source_name": self.source_name,
             "hand": self.hand,
+            "angle": self.angle,
+            "club": self.club,
             "fast": self.fast,
             "log": self.log,
             "error": self.error,
@@ -107,13 +113,20 @@ class JobManager:
         with self._lock:
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(_SCHEMA)
-            # migrate pre-accounts databases in place
+            # migrate older databases in place (pre-accounts, pre-angle/club)
             columns = {
                 row[1] for row in self._conn.execute("PRAGMA table_info(jobs)")
             }
             if "user_id" not in columns:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN user_id TEXT")
-                self._conn.commit()
+            if "angle" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN angle TEXT NOT NULL"
+                    " DEFAULT 'face-on'"
+                )
+            if "club" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN club TEXT")
+            self._conn.commit()
         workers = max(1, int(cfg.web.get("workers", 2)))
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="swinglab-worker"
@@ -196,6 +209,8 @@ class JobManager:
         fast: bool = False,
         client_ip: str | None = None,
         user_id: str | None = None,
+        angle: str = "face-on",
+        club: str | None = None,
     ) -> Job:
         job_id = uuid.uuid4().hex[:12]
         job = Job(
@@ -204,6 +219,8 @@ class JobManager:
             created_at=time.time(),
             source_name=source_name,
             hand=hand,
+            angle=angle,
+            club=club,
             strikes=strikes,
             fast=fast,
             client_ip=client_ip,
@@ -246,6 +263,8 @@ class JobManager:
                 fast=job.fast,
                 log=log,
                 progress=progress,
+                angle=job.angle,
+                club=job.club,
             )
             job.report_rel = str(result.report_path.relative_to(job.session_dir))
             job.status = DONE
@@ -265,9 +284,9 @@ class JobManager:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, status, created_at, updated_at, source_name,"
-                " hand, strikes, fast, client_ip, user_id, error, report_rel,"
-                " swings_done, swings_total, log)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " hand, angle, club, strikes, fast, client_ip, user_id, error,"
+                " report_rel, swings_done, swings_total, log)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET status = excluded.status,"
                 " updated_at = excluded.updated_at, error = excluded.error,"
                 " report_rel = excluded.report_rel, swings_done = excluded.swings_done,"
@@ -279,6 +298,8 @@ class JobManager:
                     time.time(),
                     job.source_name,
                     job.hand,
+                    job.angle,
+                    job.club,
                     json.dumps(job.strikes) if job.strikes else None,
                     int(job.fast),
                     job.client_ip,
@@ -300,6 +321,8 @@ class JobManager:
             created_at=row["created_at"],
             source_name=row["source_name"],
             hand=row["hand"],
+            angle=row["angle"] or "face-on",
+            club=row["club"],
             strikes=json.loads(row["strikes"]) if row["strikes"] else None,
             fast=bool(row["fast"]),
             client_ip=row["client_ip"],
