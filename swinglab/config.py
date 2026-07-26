@@ -140,6 +140,15 @@ DEFAULTS: dict[str, Any] = {
     "billing": {
         "free_per_month": 3,
         "pro_per_month": 0,
+        # Coach-replay Pro gate. When true AND accounts are on, the annotated
+        # replay (replay_sN.mp4) is rendered only for jobs whose owner has
+        # Pro at analysis time; free users' reports show an honest locked
+        # note (with a /pricing link) in the replay slot instead, and the
+        # render is skipped entirely — the CPU is saved too. Open instances
+        # (require_account false) and CLI runs are never gated. Bare-code
+        # default is false — a white-label install stays ungated until the
+        # operator opts in; the SHIPPED config.yaml turns it on.
+        "replay_pro_only": False,
         "shopify_pro_handle": "swinglab-pro",
         "shopify_skus": {"SL-PRO-1MO": 31, "SL-PRO-12MO": 365},
         # DISPLAY strings for the pricing page only — what is actually

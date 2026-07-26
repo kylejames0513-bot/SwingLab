@@ -80,6 +80,12 @@
   .video-row { display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-start; }
   .video-row figure { margin: 0; flex: 1 1 320px; min-width: 0; }
   .video-row video { width: 100%; }
+{%- if replay_locked %}
+  .replay-locked-note { background: #f4f4f4; border: 1px dashed #bbb;
+                        border-radius: 8px; padding: 16px 18px; margin-top: 10px; }
+  .replay-locked-note p { margin: 0 0 10px; color: #444; }
+  .replay-locked-note a { color: var(--primary); font-weight: 600; }
+{%- endif %}
   .tips { background: #eef6f0; border-left: 4px solid var(--primary);
           padding: 12px 16px; border-radius: 4px; }
   .praise { background: #e5f3ea; border-left: 4px solid var(--primary);
@@ -275,7 +281,7 @@ balance is mean foot drift during the hold — lower is better.</p>
   <h3>Centerline overlay</h3>
   <img src="{{ s.overlay }}" alt="Centerline overlay, swing {{ s.metrics.swing }}">
   {% endif %}
-  {% if s.slowmo or s.replay %}
+  {% if s.slowmo or s.replay or replay_locked %}
   <div class="video-row">
     {% if s.slowmo %}
     <figure>
@@ -290,6 +296,17 @@ balance is mean foot drift during the hold — lower is better.</p>
       <figcaption class="meta">Your own footage, annotated: the tracked body,
       the hand path (wrist centroid), and the numbers appearing at each swing
       event — same window as the slow motion.</figcaption>
+    </figure>
+    {% elif replay_locked %}
+    {# billing.replay_pro_only: the replay was not rendered for this session
+       (free plan at analysis time). Say so honestly, in the replay's slot. #}
+    <figure>
+      <h3>Coach replay</h3>
+      <div class="replay-locked-note">
+        <p>Coach replay — your swing annotated frame-by-frame — is a Pro
+        feature. Upgrade and re-film to get it.</p>
+        <a href="/pricing">Upgrade to Pro →</a>
+      </div>
     </figure>
     {% endif %}
   </div>

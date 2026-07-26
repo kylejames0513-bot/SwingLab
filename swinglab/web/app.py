@@ -34,8 +34,10 @@ asked for it.
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
+import math
 import os
 import secrets
 import shutil
@@ -142,8 +144,11 @@ def create_app(
     cfg = cfg or Config.load()
     init_sentry()
     sessions_dir = Path(sessions_dir)
-    manager = JobManager(sessions_dir, cfg)
+    sessions_dir.mkdir(parents=True, exist_ok=True)
+    # Users first: the job runner needs the store to decide the coach-replay
+    # Pro gate (billing.replay_pro_only) at analysis time.
     users = UserStore(sessions_dir / "swinglab.db")
+    manager = JobManager(sessions_dir, cfg, user_store=users)
     throttle = Throttle(sessions_dir / "swinglab.db")
     app = FastAPI(title=f"{cfg.brand['name']} — swing analysis")
     app.state.jobs = manager
@@ -886,6 +891,55 @@ def create_app(
                     }
                     for job in listed
                 ]
+            }
+        )
+
+    # -- operator KPIs (see swinglab.kpis) --------------------------------
+    @app.get("/admin/kpis")
+    def admin_kpis(request: Request):
+        """The five business KPIs as JSON, for the operator only. Gated by
+        the SWINGLAB_ADMIN_TOKEN environment variable via a constant-time
+        bearer comparison — and it answers 404 (never 401/403) when the
+        variable is unset OR the token is wrong, so the endpoint's very
+        existence is invisible to anyone without the credential."""
+        token = os.environ.get("SWINGLAB_ADMIN_TOKEN") or ""
+        # "Not Found" (capital F) matches the framework's own unknown-route
+        # body exactly — the two responses are indistinguishable.
+        if not token:
+            raise HTTPException(404, "Not Found")
+        auth = request.headers.get("authorization", "")
+        supplied = auth[len("Bearer "):] if auth.startswith("Bearer ") else ""
+        # Compare on bytes (headers are decoded latin-1 upstream, so a
+        # crafted non-ASCII token must fail cleanly, not raise), and always
+        # through compare_digest — never an early-exit string equality.
+        if not hmac.compare_digest(
+            supplied.strip().encode("utf-8"), token.encode("utf-8")
+        ):
+            raise HTTPException(404, "Not Found")
+        raw_since = request.query_params.get("since")
+        if raw_since is None or raw_since == "":
+            since_days = 90.0
+        else:
+            try:
+                since_days = float(raw_since)
+            except ValueError:
+                raise HTTPException(400, "since must be a number of days")
+            # An explicit 0 is rejected, not silently defaulted, and
+            # nan/inf must not reach the window math (json can't carry
+            # them back anyway).
+            if not math.isfinite(since_days) or since_days <= 0:
+                raise HTTPException(
+                    400, "since must be a positive number of days"
+                )
+        from ..kpis import compute_kpis
+
+        results = compute_kpis(
+            sessions_dir / "swinglab.db", cfg, since_days=since_days
+        )
+        return JSONResponse(
+            {
+                "window_days": since_days,
+                "kpis": {k.key: k.as_dict() for k in results},
             }
         )
 

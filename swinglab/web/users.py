@@ -9,6 +9,10 @@ one makes ``is_pro`` true. Shopify purchases made before the buyer has an
 account wait in ``pro_grants`` until that email signs up or logs in, and
 processed orders are remembered in ``shopify_orders`` so replayed webhooks
 can't double-grant (and cancellations know how much to take back).
+``gear_orders`` is the same idea for everything that ISN'T Pro: each paid
+order's gear line items are recorded once (replay-idempotent per order,
+cancellations mark rows rather than lose the audit trail) so the
+gear-attach KPI (swinglab.kpis) has real numbers to stand on.
 
 Accounts can also *start on the Shopify store*: customer webhooks
 (shopify_billing.py) upsert a passwordless "store account" — a stub row with
@@ -77,6 +81,16 @@ CREATE TABLE IF NOT EXISTS shopify_orders (
     days       REAL NOT NULL,
     applied_at REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS gear_orders (
+    order_id     TEXT NOT NULL,
+    sku          TEXT NOT NULL,
+    title        TEXT NOT NULL,
+    quantity     INTEGER NOT NULL,
+    email        TEXT NOT NULL,
+    created_at   REAL NOT NULL,
+    cancelled_at REAL
+);
+CREATE INDEX IF NOT EXISTS gear_orders_order ON gear_orders(order_id);
 CREATE TABLE IF NOT EXISTS email_codes (
     email      TEXT NOT NULL,
     purpose    TEXT NOT NULL,
@@ -450,6 +464,48 @@ class UserStore:
             )
             self._conn.commit()
         return (row["email"], row["days"])
+
+    # -- gear order ledger (called by the Shopify webhook) -----------------
+    def record_gear_order(
+        self, order_id: str, email: str, items: list[tuple[str, str, int]]
+    ) -> bool:
+        """Remember an order's non-Pro (gear) line items — the raw material
+        for the gear-attach KPI (swinglab.kpis). ``items`` is a list of
+        (sku, title, quantity). Same replay rule as record_order, keyed per
+        order: False (and no writes) when the order was already recorded,
+        so a re-delivered webhook can never double-count a sale."""
+        now = time.time()
+        with self._lock:
+            seen = self._conn.execute(
+                "SELECT 1 FROM gear_orders WHERE order_id = ? LIMIT 1",
+                (order_id,),
+            ).fetchone()
+            if seen is not None:
+                return False
+            for sku, title, quantity in items:
+                self._conn.execute(
+                    "INSERT INTO gear_orders"
+                    " (order_id, sku, title, quantity, email, created_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (order_id, str(sku), str(title), int(quantity),
+                     email.strip().lower(), now),
+                )
+            self._conn.commit()
+        return True
+
+    def cancel_gear_order(self, order_id: str) -> int:
+        """Mark a cancelled order's gear rows (kept for audit, excluded
+        from the attach KPI). Idempotent — a replayed cancellation, or one
+        for an order with no gear, changes nothing. Returns rows newly
+        marked."""
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE gear_orders SET cancelled_at = ?"
+                " WHERE order_id = ? AND cancelled_at IS NULL",
+                (time.time(), order_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount
 
     # -- weekly digest consent (see swinglab.web.digest) ------------------
     def set_digest_opt_in(self, user_id: str, opt_in: bool) -> None:

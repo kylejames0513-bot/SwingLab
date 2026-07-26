@@ -78,6 +78,7 @@ def analyze_video(
     progress: Callable[[int, int], None] | None = None,
     angle: str = ANGLE_FACE_ON,
     club: str | None = None,
+    replay_locked: bool = False,
 ) -> SessionResult:
     """Run the full pipeline for one video.
 
@@ -85,6 +86,16 @@ def analyze_video(
     once as soon as the swing count is known, then after each swing.
     ``fast`` skips motion-interpolated slow motion (the long step) for much
     quicker results.
+
+    ``replay_locked`` is the coach-replay Pro gate (billing.replay_pro_only),
+    decided by the CALLER — the web job runner sets it for free-plan owners
+    at analysis time; the CLI and open instances never do (the default is
+    False, so this function gates nothing on its own). When True the
+    annotated replay is not rendered at all (the CPU is saved, and neither
+    metrics.json nor the session folder carries a replay), and the report
+    shows an honest locked note in each replay slot instead. It only means
+    anything while ``slowmo.annotated`` is on — with the replay feature
+    disabled outright there is nothing to lock and no note is shown.
 
     ``angle`` is the camera angle the golfer filmed from ("face-on" or
     "dtl"). Every lateral/angular metric is defined face-on, so a
@@ -181,7 +192,7 @@ def analyze_video(
                 swing = _analyze_swing(
                     video_path, strike_s, swing_no, tracker, work_dir, media_dir,
                     session_dir, hand, cfg, fast, log, angle,
-                    analysis_fps=analysis_fps,
+                    analysis_fps=analysis_fps, replay_locked=replay_locked,
                 )
                 swings.append(swing)
                 all_metrics.append(swing["metrics"])
@@ -230,6 +241,10 @@ def analyze_video(
     report_path = report.write_report_html(
         session_dir / "report.html", info, swings, stats, notes, hand, cfg,
         angle=angle, club=club, analysis_fps=analysis_fps,
+        # The locked note only exists where a replay would otherwise have
+        # been rendered — an instance with slowmo.annotated off has no
+        # replay feature to sell, so it never shows one.
+        replay_locked=replay_locked and bool(cfg.slowmo["annotated"]),
     )
     metrics_path = report.write_metrics_json(
         session_dir / "metrics.json", info, swings, stats, notes, cfg,
@@ -264,6 +279,7 @@ def _analyze_swing(
     log: Callable[[str], None],
     angle: str = ANGLE_FACE_ON,
     analysis_fps: float | None = None,
+    replay_locked: bool = False,
 ) -> dict:
     log(f"Swing {swing_no}: analyzing strike at {strike_s:.2f}s...")
     frameset = frames.extract_window(
@@ -337,9 +353,11 @@ def _analyze_swing(
     # Annotated replay: the golfer's own footage with the tracked skeleton,
     # fading hand-path trace, and event chips burned in. Never motion-
     # interpolated (see annotate.py), so it is identical in --fast mode;
-    # slowmo.annotated is the only switch.
+    # slowmo.annotated is the feature switch, and replay_locked (the
+    # per-job Pro gate, decided by the caller) skips the render entirely —
+    # no file, no CPU spent on it.
     replay_path = None
-    if cfg.slowmo["annotated"]:
+    if cfg.slowmo["annotated"] and not replay_locked:
         log(f"Swing {swing_no}: rendering annotated replay...")
         replay_frames = slowmo.extract_replay_frames(
             video_path, strike_s, work_dir / f"replay_s{swing_no}", cfg

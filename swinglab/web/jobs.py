@@ -104,9 +104,14 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, sessions_dir: Path, cfg: Config):
+    def __init__(self, sessions_dir: Path, cfg: Config, user_store=None):
+        """``user_store`` (a swinglab.web.users.UserStore, duck-typed on
+        ``.get(user_id)``) lets the runner check the owner's plan at
+        analysis time for the coach-replay Pro gate. None — the default,
+        and what any non-web caller gets — disables the gate entirely."""
         self.sessions_dir = sessions_dir
         self.cfg = cfg
+        self._users = user_store
         sessions_dir.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
         self._conn = sqlite3.connect(
@@ -250,6 +255,24 @@ class JobManager:
             self._conn.commit()
 
     # -- execution --------------------------------------------------------
+    def replay_locked(self, job: Job) -> bool:
+        """The coach-replay Pro gate (billing.replay_pro_only), decided at
+        analysis time. True ONLY when the gate is on, accounts are on, and
+        the job's owner is not Pro right now — so open instances
+        (require_account off), ownerless pre-account jobs, and managers
+        without a user store (CLI-adjacent embedders) are never gated. An
+        owner whose account row has vanished has no Pro either — gated."""
+        if not self.cfg.billing.get("replay_pro_only"):
+            return False
+        if not self.cfg.slowmo.get("annotated"):
+            return False  # no replay feature at all — nothing to gate
+        if not self.cfg.web.get("require_account"):
+            return False
+        if self._users is None or job.user_id is None:
+            return False
+        user = self._users.get(job.user_id)
+        return user is None or not user.is_pro
+
     def _run(self, job: Job, video_path: Path) -> None:
         def log(message: str) -> None:
             job.log.append(message)
@@ -262,6 +285,15 @@ class JobManager:
 
         job.status = PROCESSING
         self._save(job)
+        # Coach-replay Pro gate: decided HERE, at analysis time — a later
+        # upgrade never rewrites an existing report (re-film to get the
+        # replay), and the skip is stated honestly in the session log.
+        locked = self.replay_locked(job)
+        if locked:
+            log(
+                "Coach replay is a Pro feature — skipped for this analysis. "
+                "Upgrade and re-film to get your swing annotated frame-by-frame."
+            )
         try:
             result = analyze_video(
                 video_path,
@@ -274,6 +306,7 @@ class JobManager:
                 progress=progress,
                 angle=job.angle,
                 club=job.club,
+                replay_locked=locked,
             )
             job.report_rel = str(result.report_path.relative_to(job.session_dir))
             job.status = DONE
