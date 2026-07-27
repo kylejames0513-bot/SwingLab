@@ -124,17 +124,25 @@ def handle_webhook(
 ) -> None:
     """Verify the payload came from Shopify, then apply it. Raises
     ValueError on a bad signature (the route turns that into a 400)."""
-    secret = os.environ["SHOPIFY_WEBHOOK_SECRET"].encode()
+    # .strip() the secret the way shop.py strips the Storefront token: a
+    # trailing newline or space pasted into a PaaS variable UI would
+    # otherwise silently change the key and reject every real delivery.
+    secret = os.environ["SHOPIFY_WEBHOOK_SECRET"].strip().encode()
     expected = base64.b64encode(hmac.new(secret, payload, hashlib.sha256).digest())
     # Compare on bytes: the header is decoded latin-1 upstream, so a
     # malformed (non-ASCII) signature would make the str form of
     # compare_digest raise TypeError — a 500 instead of a clean reject.
     supplied = (signature or "").encode("latin-1", "replace")
     if not hmac.compare_digest(expected, supplied):
+        # Log the reject: without this a wrong/whitespaced secret is
+        # invisible from the app side (just uvicorn 400s), and the only
+        # other place to see it is Shopify's own delivery log.
+        logger.warning("Rejected Shopify webhook (bad signature): topic=%s", topic or "?")
         raise ValueError("Invalid Shopify webhook signature")
     try:
         data = json.loads(payload)
     except ValueError:
+        logger.warning("Rejected Shopify webhook (bad JSON body): topic=%s", topic or "?")
         raise ValueError("Invalid Shopify webhook payload")
     apply_webhook(topic, data, users, cfg)
 
@@ -167,8 +175,10 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
     if topic in CUSTOMER_UPSERT_TOPICS:
         email = (data.get("email") or "").strip().lower()
         if not email:
+            logger.info("Shopify %s webhook skipped: customer has no email.", topic)
             return  # a customer with no email has nothing to sync to
         users.upsert_store_customer(email, str(data.get("id") or "") or None)
+        logger.info("Shopify %s: synced store account for %s.", topic, email)
     elif topic in CUSTOMER_DELETE_TOPICS:
         _detach_customer(data, users, redact=False)
     elif topic in CUSTOMER_REDACT_TOPICS:
@@ -176,6 +186,16 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
     elif topic in ACK_TOPICS:
         logger.info(
             "Shopify %s webhook acknowledged — no app-side data changes.", topic
+        )
+    else:
+        # Reached only for a topic that is none of orders/*, customers/* or
+        # the GDPR acks — i.e. the operator subscribed the wrong topic in
+        # Shopify. Without this the route returns a green 200 and does
+        # nothing, so a mis-picked topic is invisible in Shopify's log.
+        logger.warning(
+            "Ignoring unrecognized Shopify webhook topic: %s "
+            "(check the webhook is 'orders/paid', not e.g. 'orders/create').",
+            topic or "?",
         )
 
 
@@ -259,12 +279,19 @@ def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
     if not order_id or not email or days <= 0:
         return  # gear-only order, or nothing to attach the grant to
     if not users.record_order(order_id, email, days):
+        logger.info("Shopify order %s already applied — skipping replay.", order_id)
         return  # replayed webhook — already granted
     user = users.get_by_email(email)
     if user is not None:
         users.grant_pro_days(user.id, days)
+        logger.info("Shopify order %s: granted %.0f Pro day(s) to %s.", order_id, days, email)
     else:
         users.add_pending_grant(email, days)
+        logger.info(
+            "Shopify order %s: parked %.0f Pro day(s) for %s "
+            "(no account yet — claimed on first signup/login).",
+            order_id, days, email,
+        )
 
 
 def _apply_cancelled(order: dict, users: UserStore) -> None:

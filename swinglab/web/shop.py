@@ -26,6 +26,7 @@ cached list (or an empty shop page) instead of an error.
 from __future__ import annotations
 
 import json
+import logging
 import os
 import threading
 import time
@@ -33,6 +34,8 @@ import urllib.request
 from typing import Any
 
 from ..config import Config
+
+logger = logging.getLogger("swinglab.web.shop")
 
 # Requesting an unsupported version falls back to the oldest supported one on
 # Shopify's side, so a pinned version keeps working after it is sunset.
@@ -89,8 +92,21 @@ def fetch_products(cfg: Config) -> list[dict]:
     try:
         products = _fetch()
     except Exception:
+        # Log the real error, then degrade. Without this a bad/expired
+        # token, a missing scope, a rejected API version, or products not
+        # published to the token's channel all look identical to an empty
+        # catalog — the /shop page just says "restocking" forever.
+        logger.exception("Shopify Storefront fetch failed — serving cached/empty catalog.")
         with _cache_lock:
             return _cache["products"] or []
+    if not products:
+        # A clean call that returns zero products is a DIFFERENT problem
+        # (nothing published to this token's sales channel) than an
+        # exception — separate them so the operator knows which to fix.
+        logger.warning(
+            "Shopify Storefront returned 0 products — check the products are "
+            "published to the sales channel that issued SHOPIFY_STOREFRONT_TOKEN."
+        )
     with _cache_lock:
         _cache.update(at=time.monotonic(), products=products)
     return products

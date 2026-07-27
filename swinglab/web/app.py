@@ -807,7 +807,12 @@ def create_app(
             billing.create_portal_url(user, _base_url(request)), status_code=303
         )
 
+    # Both the exact path and the trailing-slash variant are registered:
+    # webhook senders (Shopify, Stripe) do NOT follow 3xx, so the default
+    # trailing-slash redirect would turn a stray "/" in the configured URL
+    # into a silently-failed delivery. Accepting both makes it robust.
     @app.post("/webhooks/stripe")
+    @app.post("/webhooks/stripe/")
     async def stripe_webhook(request: Request):
         if not billing.enabled():
             raise HTTPException(503, "Payments aren't set up.")
@@ -821,6 +826,7 @@ def create_app(
         return JSONResponse({"received": True})
 
     @app.post("/webhooks/shopify")
+    @app.post("/webhooks/shopify/")
     async def shopify_webhook(request: Request):
         if not shopify_billing.enabled():
             raise HTTPException(503, "Shopify billing isn't set up.")

@@ -169,13 +169,34 @@ environment so logins survive restarts/redeploys.
    `SL-PRO-1MO` (31 days) and `SL-PRO-12MO` (365 days); prices are set on
    the product. Make sure the product's URL handle matches
    `billing.shopify_pro_handle` (default `swinglab-pro`).
-2. In Shopify → Settings → Notifications → Webhooks, add two webhooks —
-   **Order payment** (`orders/paid`) and **Order cancellation**
-   (`orders/cancelled`) — both pointing at
-   `https://<your-app>/webhooks/shopify`, and copy the signing secret shown
-   at the bottom of that page.
+2. In Shopify → Settings → Notifications → Webhooks, add **five** webhooks,
+   all pointing at the **same** URL `https://<your-app>/webhooks/shopify`
+   (no trailing slash — Shopify does not follow redirects, so a stray `/`
+   makes every delivery fail), and copy the signing secret shown at the
+   bottom of that page:
+   - **Order payment** (`orders/paid`) — grants Pro.
+   - **Order cancellation** (`orders/cancelled`) — takes Pro back.
+   - **Customer creation** (`customers/create`), **Customer update**
+     (`customers/update`), **Customer deletion** (`customers/delete`) —
+     these provision the passwordless "store account" so a buyer who
+     clicks **Log in** in the app is told to *create your password to
+     finish setup* instead of getting a bare "Wrong email or password".
+     Omit these three and the store-account claim UX is dead: the app
+     never learns the customer exists until they sign up from scratch.
+   Paste the secret with no leading/trailing whitespace — a stray newline
+   silently rejects every delivery (the app now logs a `bad signature`
+   warning when this happens).
 3. Set `SHOPIFY_STORE_DOMAIN` and `SHOPIFY_WEBHOOK_SECRET` in the host's
    environment and redeploy.
+4. **Verify it works before trusting it.** Place a real (or test) order,
+   then confirm the app actually recorded it — the app logs
+   `Shopify order <id>: granted N Pro day(s) to <email>` on success, and
+   `sqlite3 /data/sessions/swinglab.db "SELECT * FROM shopify_orders"`
+   should return a row. An empty table with a green 200 in Shopify's
+   delivery log means the wrong topic was subscribed (watch the app log
+   for `Ignoring unrecognized Shopify webhook topic`) or the SKU didn't
+   match `billing.shopify_skus` (the purchase was recorded as *gear*
+   instead — check the `gear_orders` table).
 
 Buyers check out on the Shopify storefront; a paid order unlocks Pro on the
 CaddieInsight account with the same email (or waits for that email to sign
