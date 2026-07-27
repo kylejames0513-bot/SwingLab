@@ -62,6 +62,11 @@
   {% if require_account and (not user or not user.is_pro) %}
   <p class="free-note">{{ free_per_month }} full analyses a month, free —
     no card required.</p>
+  {% elif user and user.is_pro %}
+  {# The just-signed-in store customer's proof their purchase landed —
+     without it, nothing on this page says Pro until they find /account. #}
+  <p class="free-note"><strong>Pro</strong> is active on this
+    account{% if quota_left is none %} — unlimited analyses{% endif %}.</p>
   {% endif %}
 
   <div class="card">

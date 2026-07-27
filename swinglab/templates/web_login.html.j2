@@ -25,6 +25,10 @@
             padding: 12px 16px; border-radius: 4px; margin-top: 20px; }
   .aux-link { display: block; color: #666; font-size: 0.85rem;
               margin-top: 12px; text-align: center; }
+  .continue { max-width: 420px; margin: 0 auto; }
+  .continue p.lead { color: #555; font-size: 0.95rem; margin: 6px 0 0; }
+  .resend button { background: white; color: #444; border: 1px solid #ccc;
+                   margin-top: 12px; }
 {% endblock %}
 {% block main %}
   {% if landing %}
@@ -52,6 +56,11 @@
   <div class="notice">This email already has a {{ brand.name }} store account —
     <a href="#create-account">create your password</a> to finish setup.
     Everything you've bought is waiting on it.</div>
+  {% endif %}
+  {% if code_notice %}
+  <div class="notice">This account doesn't use a password — it signs in with
+    an emailed code. Enter your email below and we'll send one. (You can add
+    a password afterwards, from your account page.)</div>
   {% endif %}
 
   {% if verify_email %}
@@ -104,6 +113,46 @@
     <a class="aux-link" href="/reset">Need another code?</a>
   </div>
 
+  {% elif code_email %}
+  <div class="card continue">
+    <h2>Check your email</h2>
+    <p>We sent a six-digit code to <strong>{{ code_email }}</strong>.
+       Enter it below — it expires in 10 minutes.</p>
+    <form action="/login/code" method="post">
+      <input type="hidden" name="email" value="{{ code_email }}">
+      <label for="lc-code">Sign-in code</label>
+      <input id="lc-code" name="code" type="text" inputmode="numeric"
+             pattern="[0-9]{6}" maxlength="6" required
+             autocomplete="one-time-code" autofocus>
+      <button type="submit">Sign in</button>
+    </form>
+    <form class="resend" action="/login/email" method="post">
+      <input type="hidden" name="email" value="{{ code_email }}">
+      <button type="submit">Send a new code</button>
+    </form>
+    <p class="free-note">Nothing arriving? Check spam — a fresh code can go
+      out once a minute.</p>
+    <a class="aux-link" href="/login?password=1">Use your password instead</a>
+  </div>
+
+  {% elif passwordless_login and not show_password %}
+  <div class="card continue">
+    <h2>Continue with your email</h2>
+    <p class="lead">{% if pro_store_url or shop_enabled %}The same one you
+      use on the store. {% endif %}We'll send a six-digit code — entering
+      it signs you in, and creates your account if you're new. No password
+      needed.</p>
+    <form action="/login/email" method="post">
+      <label for="ce-email">Email</label>
+      <input id="ce-email" name="email" type="email" required
+             autocomplete="email" value="{{ prefill_email or '' }}">
+      <button type="submit">Email me a sign-in code</button>
+    </form>
+    <a class="aux-link" href="/login?password=1">Use your password instead</a>
+    <p class="free-note">{{ free_per_month }} free analyses every month.
+      No card required.</p>
+  </div>
+
   {% else %}
   <div class="auth">
     <div class="card" id="create-account">
@@ -139,6 +188,9 @@
       <p class="aux-link">Forgot your password? Password reset requires the
         operator to configure email, and it isn't set up yet —
         {{ brand.support_text or "contact whoever runs this " + brand.name + " instance for help" }}.</p>
+      {% endif %}
+      {% if passwordless_login %}
+      <a class="aux-link" href="/login">Email me a sign-in code instead</a>
       {% endif %}
     </div>
   </div>

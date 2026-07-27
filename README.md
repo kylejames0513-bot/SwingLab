@@ -258,8 +258,10 @@ The JSON API under `/api` is the surface a future mobile app talks to:
 ### Accounts and Pro memberships
 
 With `web.require_account: true` (the shipped default), visitors sign up with
-email + password (hashed locally with scrypt — no external auth service),
-get `billing.free_per_month` analyses per calendar month, and can upgrade to
+email + password (hashed locally with scrypt — no external auth service) —
+or, once SMTP is configured, with just their email via a six-digit sign-in
+code ("One account: email-code sign-in" below). Accounts get
+`billing.free_per_month` analyses per calendar month, and can upgrade to
 **Pro** for `billing.pro_per_month` (0 = unlimited). Each
 account sees only its own history, and results are private to their owner
 (sessions from before accounts stay reachable by link). Set
@@ -376,11 +378,13 @@ What each event does:
   that id. An existing password or email is **never** overwritten, and
   replayed webhooks land on the same row (no duplicates).
 - Signing up in the app with a store account's email **claims the same
-  account**: the password is set on that row, so the Shopify link and any
-  Pro purchase already granted by the order webhooks carry over — one
-  user, everything kept. Until then, a login attempt with that email gets
-  a "create your password to finish setup" pointer instead of a
-  misleading "wrong password".
+  account** — as does signing in with an emailed code once SMTP is
+  configured (see "One account" below): either way the claim lands on
+  that row, so the Shopify link and any Pro purchase already granted by
+  the order webhooks carry over — one user, everything kept. Until then,
+  a password login attempt with that email gets pointed at the right
+  next step (the code flow, or "create your password to finish setup")
+  instead of a misleading "wrong password".
 - **customers/delete** — deletes the app user only when it is an
   unclaimed stub (no password, no analyses); any Pro days it still
   carried are parked and reclaimed if that email signs up later. A
@@ -393,8 +397,10 @@ What each event does:
 
 **Limitations, honestly:** Shopify does not expose customer credentials,
 so store passwords cannot sync — the store account carries over and the
-user sets their app password once, at claim time. Store customers created
-without an email address are skipped (there is nothing to match on).
+user proves the email is theirs once, at claim time (an emailed sign-in
+code when SMTP is on, or by setting an app password). Store customers
+created without an email address are skipped (there is nothing to match
+on).
 
 **Optional email verification (SMTP)** — inert until configured, like
 every other integration:
@@ -413,11 +419,56 @@ dependencies.
 
 > **Security note:** without SMTP configured, behavior is unchanged from
 > previous versions: signing up with an email claims whatever that email
-> already has (store account, pre-signup purchase) with no inbox proof —
-> the same trade-off the buy-before-signup claim has always had, kept
-> deliberately so the app works with zero email infrastructure.
-> Configuring SMTP closes it by verifying control of the inbox before a
-> claim.
+> already has (store account, pre-signup purchase, or a passwordless
+> account) with no inbox proof — the same trade-off the buy-before-signup
+> claim has always had, kept deliberately so the app works with zero
+> email infrastructure. Configuring SMTP closes it by verifying control
+> of the inbox before a claim.
+
+### One account: email-code sign-in
+
+With SMTP configured, the login page stops asking for a password
+(`web.passwordless_login`, shipped and defaulted `true`): it asks for the
+email first, mails a six-digit sign-in code, and a correct code signs the
+visitor in. The same step handles every account state, which is what makes
+store and app identity **one account** — the email used at Shopify
+checkout *is* the app login:
+
+- an existing app account simply logs in;
+- an unclaimed store account (provisioned by the customer webhooks) logs
+  in **and is claimed on the spot** — the code proves control of the
+  inbox, which is strictly stronger proof than the old password-claim,
+  so the Shopify link and any Pro time carry over with no extra step;
+- an email with no account at all gets one created — signup and login are
+  the same "Continue with email" flow, and there is no separate signup to
+  find.
+
+Neither the page nor the email reveals which of the three happened: every
+address gets the same "check your email" screen and the same message, so
+the form cannot be used to test which emails have accounts. The codes are
+the existing machinery — hashed at rest, 10-minute expiry, single-use,
+burned after 5 wrong guesses — and both requesting and mis-entering codes
+draw on the login throttle limits (`web.login_attempts_per_15min`, per
+email and per IP). A correct code also marks the email verified, which is
+what the store-claim rests on.
+
+Passwords stay a first-class fallback, never a dead end: accounts that
+have one can always use it ("Use your password instead" on the login
+page, where password reset also lives), and passwordless accounts can add
+one from the account page ("Add a password (optional)") — being logged in,
+which took a code, is the proof of ownership. Setting a password by
+signing up with a passwordless account's email also works, and requires
+the emailed code first while SMTP is on.
+
+The whole feature is inert without SMTP: with `SWINGLAB_SMTP_URL` or
+`SWINGLAB_MAIL_FROM` unset, the login and signup pages keep the classic
+password flows exactly — which is why the flag can ship `true` without
+affecting white-label installs that have no email infrastructure. Set
+`web.passwordless_login: false` to force password flows even with SMTP
+configured. Honest caveat: if an operator runs with SMTP for a while and
+then turns it off, accounts that never added a password cannot sign in
+until email returns (or until they set a password via signup — see the
+security note above); the account page says so when it applies.
 
 ### Gear shop (Shopify)
 
@@ -567,7 +618,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
-| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, weekly digest on/off (`digest_enabled`) |
+| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, email-code sign-in (`passwordless_login`, shipped on — self-disables without SMTP), weekly digest on/off (`digest_enabled`) |
 | `billing` | free/Pro analyses per month, the coach-replay Pro gate (`replay_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
@@ -604,6 +655,10 @@ ffmpeg auto-skip when it is not installed.
   accounts in the app, signup claims them with purchases intact, and
   optional SMTP adds code-verified claims plus password reset via email
   (the Milestone-5 reset item, shipped early).
+- **One account (done)** — passwordless email-code sign-in: with SMTP
+  configured, the store email is the app identity; one "Continue with
+  email" flow logs in, claims store accounts, or creates accounts, and a
+  password is optional. Self-disables without SMTP.
 - **Program depth (done)** — four new 2D-honest metrics (head dip, lead-arm
   extension, shoulder tilt, finish balance), issue cards with per-swing
   sparklines, illustrated drills (inline-SVG diagrams + CSS-only

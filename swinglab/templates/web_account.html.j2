@@ -2,9 +2,10 @@
 {% block title %}{{ brand.name }} — Account{% endblock %}
 {% block style %}
   .row { display: flex; justify-content: space-between; align-items: baseline;
-         padding: 12px 0; border-bottom: 1px solid #eee; }
+         gap: 16px; padding: 12px 0; border-bottom: 1px solid #eee; }
   .row:last-of-type { border-bottom: none; }
-  .row .k { color: #555; font-size: 0.9rem; }
+  .row .k { color: #555; font-size: 0.9rem; white-space: nowrap; }
+  .row > span:last-child { text-align: right; }
   .plan { display: inline-block; padding: 2px 12px; border-radius: 999px;
           font-weight: 700; font-size: 0.85rem; }
   .plan.pro { background: var(--primary); color: white; }
@@ -14,12 +15,21 @@
   form { display: inline; }
   .logout button { background: white; color: #b3261e; border: 1px solid #ddd; }
   .quiet button { background: white; color: #444; border: 1px solid #ccc; }
+  form[action="/account/password"] { display: block; margin: 8px 0 20px; }
+  form[action="/account/password"] label { display: block; margin: 8px 0 4px; }
+  form[action="/account/password"] input { width: 100%; max-width: 320px;
+    padding: 10px; border: 1px solid #ccc; border-radius: 6px;
+    box-sizing: border-box; }
 {% endblock %}
 {% block main %}
   {% if upgraded %}
   <div class="good">Thanks — your payment went through! Your plan updates to
     <strong>Pro</strong> the moment Stripe confirms it (usually seconds).
     Refresh if you don't see it yet.</div>
+  {% endif %}
+  {% if password_added %}
+  <div class="good">Password added — you can now log in with it as well as
+    with an emailed code.</div>
   {% endif %}
   <div class="card">
     <h2>Your account</h2>
@@ -39,6 +49,22 @@
     {% endif %}
     <div class="row"><span class="k">Weekly drill email</span>
       <span>{{ "On" if user.digest_opt_in else "Off" }}</span></div>
+
+    {% if not user.has_password %}
+    <h3>Add a password (optional)</h3>
+    <p class="hint">You sign in with a code emailed to
+      {{ user.email }}.{% if mail_enabled %} That keeps working — a password
+      is just a second way in.{% else %} Email isn't set up on this server
+      right now, so adding a password is the only way back in after you log
+      out.{% endif %}</p>
+    {% if password_error %}<p class="error">{{ password_error }}</p>{% endif %}
+    <form action="/account/password" method="post">
+      <label for="ap-password" class="k">New password</label>
+      <input id="ap-password" name="password" type="password" required
+             minlength="8" autocomplete="new-password">
+      <button type="submit">Add password</button>
+    </form>
+    {% endif %}
 
     {% if user.digest_opt_in %}
     <form class="quiet" action="/account/digest" method="post">
