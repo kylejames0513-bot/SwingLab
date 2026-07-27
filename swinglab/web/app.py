@@ -20,6 +20,15 @@ With SMTP configured (mailer.py, inert otherwise), claims of pre-existing
 value are verified with an emailed one-time code, and password reset works
 the same way.
 
+One account (web.passwordless_login, on by default but self-disabling
+without SMTP): the login page asks for the email first and mails a
+six-digit sign-in code — the same flow logs into an existing account,
+claims an unclaimed store account with everything bought intact, or
+creates a new account, so the store email IS the app identity and nobody
+sets a password unless they want one ("Add a password" on /account, "use
+your password instead" on the login page). Without SMTP the pages keep the
+classic password flows exactly.
+
 The optional gear shop (a /shop page plus flag-matched training-aid
 recommendations on finished analyses) is likewise inert until the SHOPIFY_*
 environment variables are set — see shop.py.
@@ -198,6 +207,13 @@ def create_app(
     def shop_active() -> bool:
         return bool(cfg.shop.get("enabled")) and shop.enabled()
 
+    def passwordless_active() -> bool:
+        """Email-code sign-in is the primary flow only when the operator
+        left web.passwordless_login on AND SMTP is configured — with either
+        missing, the login/signup pages keep the classic password flows
+        exactly (inert until configured, like every integration)."""
+        return bool(cfg.web.get("passwordless_login")) and mailer.enabled()
+
     def claim_pending_pro(user: User) -> None:
         """Attach any Shopify Pro purchase made with this email before the
         account existed (or while logged out). Runs at signup and login."""
@@ -220,6 +236,7 @@ def create_app(
                 free_per_month=int(cfg.billing["free_per_month"]),
                 shop_enabled=shop_active(),
                 mail_enabled=mailer.enabled(),
+                passwordless_login=passwordless_active(),
                 club_labels=CLUB_LABELS,
                 **context,
             )
@@ -317,15 +334,16 @@ def create_app(
     # -- accounts ---------------------------------------------------------
     def send_code_email(email: str, purpose: str) -> None:
         """Issue + email a one-time code; a rate-limited (None) issue means
-        a still-valid code is already in the inbox, so send nothing."""
+        a still-valid code is already in the inbox, so send nothing. The
+        login message depends only on the purpose, never on whether the
+        email has an account — all three account states read identically."""
         code = users.issue_email_code(email, purpose)
         if code is None:
             return
-        action = (
-            "finish setting up your account"
-            if purpose == "claim"
-            else "reset your password"
-        )
+        action = {
+            "claim": "finish setting up your account",
+            "login": "sign in",
+        }.get(purpose, "reset your password")
         mailer.send(
             email,
             f"{cfg.brand['name']} verification code: {code}",
@@ -341,7 +359,92 @@ def create_app(
         return render(
             "web_login.html.j2", request, error=None, landing=False,
             prefill_email=request.query_params.get("email", ""),
+            # ?password=1 is the "use your password instead" fallback: the
+            # classic signup + login cards, even while code sign-in is on.
+            show_password="password" in request.query_params,
         )
+
+    # -- email-code sign-in (primary once SMTP is configured) --------------
+    @app.post("/login/email")
+    def login_email(request: Request, email: str = Form("")):
+        """Step one of "Continue with email": send a sign-in code. The
+        response — and the email itself — is identical whether the address
+        has an account, an unclaimed store account, or nothing at all, so
+        the form can't be used to test which emails exist."""
+        if not passwordless_active():
+            raise HTTPException(503, "Email sign-in requires email to be set up.")
+        try:
+            normalized = users.validate_email(email)
+        except ValueError as exc:
+            return render(
+                "web_login.html.j2", request, landing=False, error=str(exc)
+            )
+        # Same limits as password login (a code request costs an email and
+        # a code row), keyed per client IP AND per target email — shared
+        # with failed code entries below, so requests and guesses draw on
+        # one budget.
+        ip = client_ip(request)
+        if not (
+            throttle.allow("code-ip", ip, login_limit, LOGIN_WINDOW_S)
+            and throttle.allow("code-email", normalized, login_limit, LOGIN_WINDOW_S)
+        ):
+            page = render(
+                "web_login.html.j2", request, landing=False,
+                error=THROTTLED_MESSAGE,
+            )
+            page.status_code = 429
+            return page
+        throttle.record("code-ip", ip)
+        throttle.record("code-email", normalized)
+        send_code_email(normalized, "login")
+        return render(
+            "web_login.html.j2", request, landing=False, error=None,
+            code_email=normalized,
+        )
+
+    @app.post("/login/code")
+    def login_code(
+        request: Request, email: str = Form(""), code: str = Form("")
+    ):
+        """Step two: a correct code signs the user in — into an existing
+        account, an unclaimed store account (claimed on the spot, Pro and
+        purchases kept), or a brand-new one. The code machinery enforces
+        the 10-minute expiry, single use, and the 5-wrong-guess burn; the
+        wrong-code message never depends on the account's state."""
+        if not passwordless_active():
+            raise HTTPException(503, "Email sign-in requires email to be set up.")
+        ip = client_ip(request)
+        normalized = email.strip().lower()
+        if not (
+            throttle.allow("code-ip", ip, login_limit, LOGIN_WINDOW_S)
+            and throttle.allow("code-email", normalized, login_limit, LOGIN_WINDOW_S)
+        ):
+            page = render(
+                "web_login.html.j2", request, landing=False,
+                code_email=normalized, error=THROTTLED_MESSAGE,
+            )
+            page.status_code = 429
+            return page
+        if not users.check_email_code(normalized, "login", code):
+            # Only failures are recorded — entering the right code first
+            # try never eats into anyone's budget.
+            throttle.record("code-ip", ip)
+            throttle.record("code-email", normalized)
+            return render(
+                "web_login.html.j2", request, landing=False,
+                code_email=normalized,
+                error="That code didn't match (or expired) — check the "
+                      "email, or send yourself a fresh code.",
+            )
+        try:
+            user = users.verify_email_signin(normalized)
+        except ValueError as exc:  # can't happen for an email a code was
+            return render(       # issued to, but never 500 on crafted input
+                "web_login.html.j2", request, landing=False, error=str(exc)
+            )
+        claim_pending_pro(user)
+        request.session["user_id"] = user.id
+        return RedirectResponse("/", status_code=303)
 
     @app.post("/login")
     def login(request: Request, email: str = Form(""), password: str = Form("")):
@@ -361,7 +464,7 @@ def create_app(
         ):
             page = render(
                 "web_login.html.j2", request, landing=False,
-                error=THROTTLED_MESSAGE,
+                error=THROTTLED_MESSAGE, show_password=True,
             )
             page.status_code = 429
             return page
@@ -369,17 +472,26 @@ def create_app(
         if user is None:
             throttle.record("login-ip", ip)
             throttle.record("login-email", normalized_email)
-            # An unclaimed store account has no password to be wrong about —
-            # point the customer at signup (prefilled) instead.
+            # An account with no password has none to be wrong about. With
+            # code sign-in active, point at "Continue with email"; without
+            # it, at signup (prefilled) to set a password — never a
+            # misleading "wrong password".
             pending = users.get_by_email(email)
             if pending is not None and not pending.has_password:
+                if passwordless_active():
+                    return render(
+                        "web_login.html.j2", request, landing=False,
+                        error=None, code_notice=True,
+                        prefill_email=pending.email,
+                    )
                 return render(
                     "web_login.html.j2", request, landing=False, error=None,
                     stub_notice=True, prefill_email=pending.email,
+                    show_password=True,
                 )
             return render(
                 "web_login.html.j2", request, landing=False,
-                error="Wrong email or password.",
+                error="Wrong email or password.", show_password=True,
             )
         claim_pending_pro(user)
         request.session["user_id"] = user.id
@@ -401,7 +513,7 @@ def create_app(
         if not throttle.allow("signup-ip", ip, signup_limit, SIGNUP_WINDOW_S):
             page = render(
                 "web_login.html.j2", request, landing=False,
-                error=THROTTLED_MESSAGE,
+                error=THROTTLED_MESSAGE, show_password=True,
             )
             page.status_code = 429
             return page
@@ -409,7 +521,8 @@ def create_app(
             normalized = users.validate_signup(email, password)
         except ValueError as exc:
             return render(
-                "web_login.html.j2", request, landing=False, error=str(exc)
+                "web_login.html.j2", request, landing=False, error=str(exc),
+                show_password=True,
             )
         # Record only attempts that clear validation — a typo'd password
         # doesn't cost the visitor one of their slots.
@@ -439,7 +552,8 @@ def create_app(
             user = users.create(normalized, password)
         except ValueError as exc:
             return render(
-                "web_login.html.j2", request, landing=False, error=str(exc)
+                "web_login.html.j2", request, landing=False, error=str(exc),
+                show_password=True,
             )
         if wants_digest:  # the signup checkbox is UNCHECKED by default
             users.set_digest_opt_in(user.id, True)
@@ -505,23 +619,48 @@ def create_app(
         request.session.clear()
         return RedirectResponse("/", status_code=303)
 
-    @app.get("/account", response_class=HTMLResponse)
-    def account(request: Request):
-        user = current_user(request)
-        if user is None:
-            return RedirectResponse("/login", status_code=303)
+    def account_page(
+        request: Request, user: User, password_error: str | None = None
+    ) -> HTMLResponse:
         return render(
             "web_account.html.j2",
             request,
             usage=manager.usage_this_month(user.id),
             quota_left=quota_left(user),
             upgraded="upgraded" in request.query_params,
+            password_added="password_added" in request.query_params,
+            password_error=password_error,
             pro_until_date=(
                 time.strftime("%B %d, %Y", time.localtime(user.pro_until))
                 if user.pro_until > time.time()
                 else None
             ),
         )
+
+    @app.get("/account", response_class=HTMLResponse)
+    def account(request: Request):
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        return account_page(request, user)
+
+    @app.post("/account/password")
+    def account_password(request: Request, password: str = Form("")):
+        """ "Add a password (optional)" for accounts that sign in by code.
+        Being logged in (which took a code) is the proof of ownership.
+        Accounts that already have a password change it through the
+        code-verified reset flow, never here — so a walked-away session
+        can't quietly swap a password it doesn't know."""
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        if user.has_password:
+            return RedirectResponse("/account", status_code=303)
+        try:
+            users.set_password(user.id, password)
+        except ValueError as exc:
+            return account_page(request, user, password_error=str(exc))
+        return RedirectResponse("/account?password_added", status_code=303)
 
     @app.post("/account/digest")
     def account_digest(request: Request, enabled: str = Form("")):

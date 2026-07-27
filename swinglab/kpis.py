@@ -176,14 +176,26 @@ def compute_kpis(
                 label, unit = labels[key]
                 results.append(_none(key, label, unit, account_gap))
         else:
-            # Claimed accounts only: an unclaimed store stub (empty
-            # password hash) cannot log in, so counting it would deflate
-            # every rate with users who never had the chance to act.
+            # Claimed accounts only: an unclaimed store stub (no password,
+            # never signed in with a code) cannot act, so counting it would
+            # deflate every rate with users who never had the chance to. A
+            # password OR a verified email (code sign-in) counts as claimed;
+            # databases predating the email_verified_at column (this
+            # connection is read-only, so no migration ran) fall back to
+            # the password test alone.
+            user_columns = {
+                r["name"] for r in conn.execute("PRAGMA table_info(users)")
+            }
+            claimed_sql = (
+                "(password_hash != '' OR email_verified_at IS NOT NULL)"
+                if "email_verified_at" in user_columns
+                else "password_hash != ''"
+            )
             cohort = [
                 row
                 for row in conn.execute(
                     "SELECT id, email, created_at, plan, subscription_status"
-                    " FROM users WHERE password_hash != '' AND created_at >= ?",
+                    f" FROM users WHERE {claimed_sql} AND created_at >= ?",
                     (cutoff,),
                 )
             ]

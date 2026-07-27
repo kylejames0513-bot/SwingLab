@@ -265,7 +265,10 @@ def test_password_reset_flow(app, outbox):
     )
     client.post("/logout")
 
-    assert "Forgot your password?" in client.get("/login").text
+    # With SMTP on, code sign-in is the primary flow — the password card
+    # (and its reset link) lives behind "use your password instead".
+    assert "Use your password instead" in client.get("/login").text
+    assert "Forgot your password?" in client.get("/login?password=1").text
     assert "Reset your password" in client.get("/reset").text
 
     resp = client.post("/reset/request", data={"email": "Kyle@Example.com"})

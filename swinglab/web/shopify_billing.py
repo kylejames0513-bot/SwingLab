@@ -58,10 +58,11 @@ created on the store automatically exists in the app:
   once, by signing up with the store email, which claims the same row).
   Replays are idempotent: the upsert lands on the same row every time.
 - ``customers/delete`` deletes the user ONLY when it is an unclaimed stub
-  (no password, no analyses); any Pro days it still carried are parked in
-  ``pro_grants`` so a later signup keeps what was bought. A claimed
-  account merely loses its ``shopify_customer_id`` link — store-side
-  deletion never destroys app data.
+  (never claimed by password or code sign-in, and no analyses); any Pro
+  days it still carried are parked in ``pro_grants`` so a later signup
+  keeps what was bought. A claimed account merely loses its
+  ``shopify_customer_id`` link — store-side deletion never destroys app
+  data.
 - ``customers/redact`` (GDPR) follows the delete semantics and further
   erases the shopify-sourced profile fields (link + source) on claimed
   accounts, and drops any parked purchase for a deleted stub's email.
@@ -179,19 +180,21 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
 
 
 def _detach_customer(customer: dict, users: UserStore, redact: bool) -> None:
-    """customers/delete and customers/redact. An unclaimed stub (no
-    password, no analyses) is deleted outright — on plain deletion any Pro
-    days it still carried are parked so a later signup keeps what was
-    bought; on redaction the parked purchase is erased too. A claimed
-    account only loses its store link (never its app data), and redaction
-    additionally clears the shopify-sourced ``source`` field."""
+    """customers/delete and customers/redact. An unclaimed stub (never
+    claimed by password or code sign-in, no analyses) is deleted outright —
+    on plain deletion any Pro days it still carried are parked so a later
+    signup keeps what was bought; on redaction the parked purchase is
+    erased too. A claimed account — including a passwordless one whose
+    owner signed in with an emailed code — only loses its store link
+    (never its app data), and redaction additionally clears the
+    shopify-sourced ``source`` field."""
     user = users.get_by_shopify(str(customer.get("id") or ""))
     if user is None:
         email = (customer.get("email") or "").strip().lower()
         user = users.get_by_email(email) if email else None
     if user is None:
         return  # unknown customer, or the webhook replayed after removal
-    if not user.has_password and not users.has_activity(user.id):
+    if not user.claimed and not users.has_activity(user.id):
         users.delete_user(user.id)
         if redact:
             users.pop_pending_grant(user.email)

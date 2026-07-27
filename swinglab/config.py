@@ -132,6 +132,13 @@ DEFAULTS: dict[str, Any] = {
         # Bare-code default is an open, no-login instance; the shipped
         # config.yaml turns accounts on.
         "require_account": False,
+        # Email-code sign-in ("one account": the store email is the app
+        # identity, nobody needs a password). Safe to default on — it only
+        # activates when SMTP is configured (SWINGLAB_SMTP_URL +
+        # SWINGLAB_MAIL_FROM); without SMTP the login/signup pages keep
+        # the classic password flows exactly, so white-label installs with
+        # no email infrastructure are unaffected.
+        "passwordless_login": True,
         # Weekly practice-plan email scheduler. Even when true, nothing
         # sends unless SMTP is configured (SWINGLAB_SMTP_URL +
         # SWINGLAB_MAIL_FROM) AND the user opted in.

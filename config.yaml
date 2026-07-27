@@ -158,6 +158,23 @@ web:
   require_account: true      # visitors must sign up before analyzing; false = open access
                              # (set SWINGLAB_SECRET in the environment so logins
                              # survive restarts)
+  passwordless_login: true   # "one account" email-code sign-in: the login page asks
+                             # for the email first, mails a six-digit code (stored
+                             # hashed, 10-minute expiry, single-use, burned after 5
+                             # wrong guesses, rate-limited per email and per IP with
+                             # the login limits above), and a correct code signs the
+                             # user in — into their existing account, into an
+                             # unclaimed store account (claimed on the spot, Pro and
+                             # purchases kept), or into a brand-new account, all
+                             # through the same step. Accounts with a password can
+                             # always use it instead ("Use your password instead" on
+                             # the login page), and passwordless accounts can add
+                             # one on /account. Self-disabling: without SMTP
+                             # (SWINGLAB_SMTP_URL + SWINGLAB_MAIL_FROM) the login
+                             # and signup pages keep the classic password flows
+                             # exactly, so this stays true safely on installs with
+                             # no email infrastructure. false forces password flows
+                             # even with SMTP configured.
   digest_enabled: true       # weekly practice-plan email ("one drill a week").
                              # Even when true it only ever sends when SMTP is
                              # configured (SWINGLAB_SMTP_URL + SWINGLAB_MAIL_FROM)

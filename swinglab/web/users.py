@@ -17,16 +17,21 @@ gear-attach KPI (swinglab.kpis) has real numbers to stand on.
 Accounts can also *start on the Shopify store*: customer webhooks
 (shopify_billing.py) upsert a passwordless "store account" — a stub row with
 ``shopify_customer_id`` set, ``source='shopify'``, and an empty password
-hash. A stub can never log in (an empty hash verifies nothing), and signing
-up with its email claims the SAME row via :meth:`create` — the password is
-set in place, so the Shopify link and any Pro time granted by order
-webhooks carry over with no duplicate user. Emails are normalized
-(trimmed + lowercased) everywhere so store and app spellings always match.
+hash. A stub can never log in with a password (an empty hash verifies
+nothing). It is claimed in one of two ways, both landing on the SAME row so
+the Shopify link and any Pro time granted by order webhooks carry over with
+no duplicate user: signing up with its email sets a password in place
+(:meth:`create`), or — with SMTP configured — signing in with an emailed
+one-time code marks the email verified (:meth:`verify_email_signin`), which
+is strictly stronger proof of ownership than the password path. An account
+is *claimed* once it has a password OR a verified email; only rows with
+neither are unclaimed stubs. Emails are normalized (trimmed + lowercased)
+everywhere so store and app spellings always match.
 
-``email_codes`` backs the optional SMTP verification (mailer.py): 6-digit
-one-time codes, stored hashed, 10-minute expiry, single-use, rate-limited
-per email — used to verify claims and to reset passwords when email is
-configured.
+``email_codes`` backs the optional SMTP flows (mailer.py): 6-digit one-time
+codes, stored hashed, 10-minute expiry, single-use, rate-limited per email —
+used for email-code sign-in, to verify claims at signup, and to reset
+passwords when email is configured.
 """
 
 from __future__ import annotations
@@ -69,7 +74,8 @@ CREATE TABLE IF NOT EXISTS users (
     shopify_customer_id TEXT,
     source              TEXT,
     digest_opt_in       INTEGER NOT NULL DEFAULT 0,
-    digest_last_sent_at REAL
+    digest_last_sent_at REAL,
+    email_verified_at   REAL
 );
 CREATE TABLE IF NOT EXISTS pro_grants (
     email TEXT PRIMARY KEY,
@@ -137,15 +143,27 @@ class User:
     pro_until: float = 0.0
     shopify_customer_id: str | None = None
     source: str | None = None  # 'shopify' for accounts born from a customer webhook
-    has_password: bool = True  # False = unclaimed store stub (cannot log in)
+    has_password: bool = True  # False = no password set (stub, or code sign-in only)
     digest_opt_in: bool = False  # weekly practice-plan email consent (off by default)
     digest_last_sent_at: float | None = None  # last digest send (claimed pre-send)
+    email_verified_at: float | None = None  # first successful code sign-in/claim
 
     @property
     def is_pro(self) -> bool:
         if self.plan == PRO and self.subscription_status in _PRO_OK_STATUSES:
             return True
         return self.pro_until > time.time()
+
+    @property
+    def email_verified(self) -> bool:
+        return self.email_verified_at is not None
+
+    @property
+    def claimed(self) -> bool:
+        """Someone has proven this account is theirs — by setting a password
+        or by signing in with an emailed code. False = an untouched store
+        stub (provisioned by a webhook, never used by its owner)."""
+        return self.has_password or self.email_verified
 
 
 class UserStore:
@@ -169,6 +187,8 @@ class UserStore:
                 # pre-digest files lack the weekly-email consent columns
                 ("digest_opt_in", "digest_opt_in INTEGER NOT NULL DEFAULT 0"),
                 ("digest_last_sent_at", "digest_last_sent_at REAL"),
+                # pre-passwordless files lack the email-verified stamp
+                ("email_verified_at", "email_verified_at REAL"),
             ):
                 if name not in columns:
                     self._conn.execute(f"ALTER TABLE users ADD COLUMN {ddl}")
@@ -176,20 +196,28 @@ class UserStore:
 
     # -- signup / login ---------------------------------------------------
     @staticmethod
-    def validate_signup(email: str, password: str) -> str:
-        """Check signup input, returning the normalized email."""
+    def validate_email(email: str) -> str:
+        """Check an email looks like one, returning it normalized."""
         email = email.strip().lower()
         if "@" not in email or "." not in email.split("@")[-1]:
             raise ValueError("That doesn't look like an email address.")
+        return email
+
+    @classmethod
+    def validate_signup(cls, email: str, password: str) -> str:
+        """Check signup input, returning the normalized email."""
+        email = cls.validate_email(email)
         if len(password) < 8:
             raise ValueError("Password must be at least 8 characters.")
         return email
 
     def create(self, email: str, password: str) -> User:
-        """Create an account — or, when the email belongs to an unclaimed
-        store stub (see upsert_store_customer), claim it: the password is
-        set on the SAME row, so its Shopify link and any Pro time already
-        granted by order webhooks stay with the user. No duplicates."""
+        """Create an account — or, when the email belongs to a row with no
+        password yet (an unclaimed store stub from upsert_store_customer,
+        or a code-only passwordless account), set the password on the SAME
+        row, so its Shopify link and any Pro time already granted by order
+        webhooks stay with the user. No duplicates. The web layer requires
+        an emailed code first when SMTP is configured — see app.py."""
         email = self.validate_signup(email, password)
         try:
             with self._lock:
@@ -241,6 +269,37 @@ class UserStore:
             ).fetchone()
         if row is None or not verify_password(password, row["password_hash"]):
             return None
+        return self._from_row(row)
+
+    def verify_email_signin(self, email: str) -> User:
+        """A sign-in code for this email was just entered correctly — the
+        one moment all three account states converge. Existing account:
+        returned as-is. Unclaimed store stub: claimed in place (the code is
+        proof of inbox ownership, so the Shopify link and anything bought
+        stay put). No account at all: a passwordless one is created. Either
+        way the email is stamped verified (first proof wins — the stamp is
+        never moved)."""
+        email = self.validate_email(email)
+        now = time.time()
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
+            if row is None:
+                self._conn.execute(
+                    "INSERT INTO users (id, email, password_hash, created_at,"
+                    " email_verified_at) VALUES (?, ?, '', ?, ?)",
+                    (uuid.uuid4().hex[:12], email, now, now),
+                )
+            elif row["email_verified_at"] is None:
+                self._conn.execute(
+                    "UPDATE users SET email_verified_at = ? WHERE id = ?",
+                    (now, row["id"]),
+                )
+            self._conn.commit()
+            row = self._conn.execute(
+                "SELECT * FROM users WHERE email = ?", (email,)
+            ).fetchone()
         return self._from_row(row)
 
     # -- lookup -----------------------------------------------------------
@@ -343,10 +402,12 @@ class UserStore:
         return row is not None
 
     def has_unclaimed_value(self, email: str) -> bool:
-        """Is there anything attached to this email worth verifying before
-        a signup claims it — an unclaimed store stub, or a Pro purchase
-        parked before signup? (A claimed account returns False: signup
-        against it fails outright, no code needed.)"""
+        """Does signup with this email set a password on an EXISTING row —
+        an unclaimed store stub, a code-only passwordless account, or a Pro
+        purchase parked before signup? With SMTP on, such signups must
+        prove control of the inbox first. (An account that already has a
+        password returns False: signup against it fails outright, no code
+        needed.)"""
         email = email.strip().lower()
         user = self.get_by_email(email)
         if user is not None:
@@ -623,4 +684,5 @@ class UserStore:
             has_password=bool(row["password_hash"]),
             digest_opt_in=bool(row["digest_opt_in"]),
             digest_last_sent_at=row["digest_last_sent_at"],
+            email_verified_at=row["email_verified_at"],
         )
