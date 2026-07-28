@@ -99,7 +99,11 @@ They provide:
 - a WAL-safe snapshot through SQLite's online backup API;
 - SHA-256 manifests for completed-job reports and generated media;
 - private, vendor-neutral S3-compatible upload/download support;
-- completion-marker semantics that reject partial uploads;
+- a provider-verified conditional claim that prevents concurrent writers from
+  sharing one backup ID;
+- a conditionally created completion marker written last, plus version- or
+  ETag-pinned bounded downloads that reject object mutation and clean partial
+  output;
 - scratch-only restores with integrity, critical-table, entitlement,
   purchase-ledger, and artifact verification.
 

@@ -5,11 +5,14 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
+from swinglab.backups import store as store_module
 from swinglab.backups.core import (
     COMPLETE_FILE,
     DATABASE_BUNDLE_PATH,
@@ -375,41 +378,192 @@ def test_cli_is_inert_without_explicit_enable_flag(
 
 
 class _RecordingS3:
-    def __init__(self, failure: str | None = None):
-        self.keys = []
-        self.failure = failure
-        self.objects = {}
-
     class _Missing(Exception):
         response = {
             "Error": {"Code": "NoSuchKey"},
             "ResponseMetadata": {"HTTPStatusCode": 404},
         }
 
+    class _Precondition(Exception):
+        response = {
+            "Error": {"Code": "PreconditionFailed"},
+            "ResponseMetadata": {"HTTPStatusCode": 412},
+        }
+
+    class _Unsupported(Exception):
+        response = {
+            "Error": {"Code": "NotImplemented"},
+            "ResponseMetadata": {"HTTPStatusCode": 501},
+        }
+
+    class _Body:
+        def __init__(self, body: bytes, *, fail_after_first_read: bool = False):
+            self._body = body
+            self._position = 0
+            self._reads = 0
+            self._fail_after_first_read = fail_after_first_read
+            self.closed = False
+
+        def read(self, amount: int) -> bytes:
+            if self._fail_after_first_read and self._reads:
+                raise RuntimeError("synthetic stream failure")
+            self._reads += 1
+            if self._position >= len(self._body):
+                return b""
+            end = min(len(self._body), self._position + amount)
+            chunk = self._body[self._position : end]
+            self._position = end
+            return chunk
+
+        def close(self) -> None:
+            self.closed = True
+
+    def __init__(
+        self,
+        failure: str | None = None,
+        *,
+        conditional_mode: str = "enforce",
+        versioned: bool = False,
+        claim_barrier: threading.Barrier | None = None,
+    ):
+        self.keys = []
+        self.failure = failure
+        self.conditional_mode = conditional_mode
+        self.versioned = versioned
+        self.claim_barrier = claim_barrier
+        self.objects = {}
+        self.versions = {}
+        self.put_calls = []
+        self.get_calls = []
+        self.mutate_before_get = {}
+        self.oversize_stream_keys = set()
+        self.failing_stream_keys = set()
+        self._version_counter = 0
+        self._claim_threads = set()
+        self._lock = threading.RLock()
+
+    @staticmethod
+    def _etag(body: bytes) -> str:
+        return f'"{hashlib.sha256(body).hexdigest()}"'
+
+    def _store(self, key: str, body: bytes, args: dict) -> dict:
+        self._version_counter += 1
+        head = {
+            "ContentLength": len(body),
+            "Metadata": dict(args.get("Metadata") or {}),
+            "ServerSideEncryption": args.get("ServerSideEncryption"),
+            "SSEKMSKeyId": args.get("SSEKMSKeyId"),
+            "ETag": self._etag(body),
+        }
+        if self.versioned:
+            head["VersionId"] = f"synthetic-v{self._version_counter}"
+        record = {"body": body, "head": head}
+        self.objects[key] = record
+        if self.versioned:
+            self.versions.setdefault(key, {})[head["VersionId"]] = {
+                "body": body,
+                "head": dict(head),
+            }
+        return record
+
+    def replace_object(self, key: str, body: bytes) -> None:
+        with self._lock:
+            existing = self.objects[key]["head"]
+            args = {
+                "Metadata": dict(existing.get("Metadata") or {}),
+                "ServerSideEncryption": existing.get("ServerSideEncryption"),
+                "SSEKMSKeyId": existing.get("SSEKMSKeyId"),
+            }
+            self._store(key, body, args)
+
     def head_object(self, Bucket, Key):
-        if Key not in self.objects:
-            raise self._Missing()
-        return self.objects[Key]["head"]
+        with self._lock:
+            if Key not in self.objects:
+                raise self._Missing()
+            head = dict(self.objects[Key]["head"])
+            head["Metadata"] = dict(head.get("Metadata") or {})
+            return head
 
     def upload_file(self, filename, bucket, key, ExtraArgs):
-        self.keys.append(key)
         if self.failure:
             raise RuntimeError(self.failure)
         body = Path(filename).read_bytes()
-        self.objects[key] = {
-            "body": body,
-            "head": {
-                "ContentLength": len(body),
-                "Metadata": ExtraArgs["Metadata"],
-                "ServerSideEncryption": ExtraArgs.get("ServerSideEncryption"),
-                "SSEKMSKeyId": ExtraArgs.get("SSEKMSKeyId"),
-            },
-        }
+        with self._lock:
+            self.keys.append(key)
+            self._store(key, body, ExtraArgs)
 
-    def download_file(self, bucket, key, filename):
-        if key not in self.objects:
-            raise self._Missing()
-        Path(filename).write_bytes(self.objects[key]["body"])
+    def put_object(self, **kwargs):
+        key = kwargs["Key"]
+        if (
+            self.claim_barrier is not None
+            and key.endswith("/CLAIM.json")
+            and kwargs.get("IfNoneMatch") == "*"
+        ):
+            thread_id = threading.get_ident()
+            with self._lock:
+                first_claim = thread_id not in self._claim_threads
+                self._claim_threads.add(thread_id)
+            if first_claim:
+                self.claim_barrier.wait(timeout=5)
+
+        body = kwargs["Body"]
+        if hasattr(body, "read"):
+            body = body.read()
+        body = bytes(body)
+        with self._lock:
+            self.put_calls.append(
+                {
+                    "key": key,
+                    "if_none_match": kwargs.get("IfNoneMatch"),
+                }
+            )
+            if kwargs.get("IfNoneMatch") == "*":
+                if self.conditional_mode == "unsupported":
+                    raise self._Unsupported()
+                if self.conditional_mode == "enforce" and key in self.objects:
+                    raise self._Precondition()
+            self.keys.append(key)
+            return self._store(key, body, kwargs)["head"]
+
+    def get_object(self, **kwargs):
+        key = kwargs["Key"]
+        with self._lock:
+            if key not in self.objects:
+                raise self._Missing()
+            if key in self.mutate_before_get:
+                replacement = self.mutate_before_get.pop(key)
+                self.replace_object(key, replacement)
+
+            if kwargs.get("VersionId"):
+                version_id = kwargs["VersionId"]
+                try:
+                    record = self.versions[key][version_id]
+                except KeyError:
+                    raise self._Missing() from None
+            else:
+                record = self.objects[key]
+            if kwargs.get("IfMatch") and (
+                kwargs["IfMatch"] != record["head"]["ETag"]
+            ):
+                raise self._Precondition()
+
+            head = dict(record["head"])
+            head["Metadata"] = dict(head.get("Metadata") or {})
+            body = record["body"]
+            if key in self.oversize_stream_keys:
+                body += b"x"
+            stream = self._Body(
+                body,
+                fail_after_first_read=key in self.failing_stream_keys,
+            )
+            self.get_calls.append(
+                {
+                    "key": key,
+                    "if_match": kwargs.get("IfMatch"),
+                    "version_id": kwargs.get("VersionId"),
+                }
+            )
+            return {**head, "Body": stream}
 
 
 def _settings(
@@ -439,6 +593,62 @@ def test_object_upload_marks_complete_last(tmp_path, synthetic_sessions):
     assert fake.keys[-2].endswith(f"/{MANIFEST_FILE}")
     assert all("jobdone" not in key for key in fake.keys)
     assert any("/objects/00000000" in key for key in fake.keys)
+    assert fake.keys[0].endswith("/CLAIM.json")
+    assert fake.put_calls[-1] == {
+        "key": fake.keys[-1],
+        "if_none_match": "*",
+    }
+
+
+def test_concurrent_uploads_allow_exactly_one_writer(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    settings = _settings()
+    fake = _RecordingS3(claim_barrier=threading.Barrier(2))
+
+    def attempt():
+        try:
+            return ("ok", upload_bundle(bundle, settings, client=fake))
+        except BackupError as exc:
+            return ("error", str(exc))
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: attempt(), range(2)))
+
+    assert [result[0] for result in results].count("ok") == 1
+    assert [result[0] for result in results].count("error") == 1
+    assert any("claimed by another writer" in result[1] for result in results)
+    complete_key = (
+        f"{settings.object_prefix(manifest['backup_id'])}/{COMPLETE_FILE}"
+    )
+    assert fake.keys.count(complete_key) == 1
+
+
+def test_upload_fails_when_conditional_put_is_unsupported(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    fake = _RecordingS3(conditional_mode="unsupported")
+
+    with pytest.raises(BackupError, match="conditional object write"):
+        upload_bundle(bundle, _settings(), client=fake)
+    assert fake.keys == []
+
+
+def test_upload_fails_when_provider_ignores_if_none_match(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    fake = _RecordingS3(conditional_mode="ignore")
+
+    with pytest.raises(BackupError, match="did not enforce"):
+        upload_bundle(bundle, _settings(), client=fake)
+    assert fake.keys
+    assert all(key.endswith("/CLAIM.json") for key in fake.keys)
 
 
 def test_object_upload_rejects_same_size_local_mutation(
@@ -462,6 +672,36 @@ def test_object_upload_rejects_same_size_local_mutation(
     with pytest.raises(BackupError, match="changed while"):
         upload_bundle(bundle, settings, client=fake)
     assert complete_key not in fake.objects
+
+
+def test_local_mutation_after_initial_validation_blocks_completion(
+    tmp_path, synthetic_sessions, monkeypatch
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    settings = _settings()
+    original_verify = store_module.verify_bundle_files
+
+    def verify_then_mutate(bundle_dir, frozen_manifest):
+        original_verify(bundle_dir, frozen_manifest)
+        database = bundle_dir / DATABASE_BUNDLE_PATH
+        body = database.read_bytes()
+        database.write_bytes(body[:-1] + bytes([body[-1] ^ 1]))
+
+    monkeypatch.setattr(
+        store_module,
+        "verify_bundle_files",
+        verify_then_mutate,
+    )
+    fake = _RecordingS3()
+
+    with pytest.raises(BackupError, match="changed after bundle verification"):
+        upload_bundle(bundle, settings, client=fake)
+    complete_key = (
+        f"{settings.object_prefix(manifest['backup_id'])}/{COMPLETE_FILE}"
+    )
+    assert complete_key not in fake.objects
+    assert not any("/objects/" in key for key in fake.keys)
 
 
 def test_completed_remote_prefix_is_never_overwritten(
@@ -562,6 +802,96 @@ def test_fake_s3_round_trip_download_and_restore(tmp_path, synthetic_sessions):
     scratch.mkdir()
     restored = restore_backup(downloaded, scratch)
     assert restored["report"]["entitlement_and_purchase_reconciliation"] == "matched"
+
+
+def test_download_rejects_object_mutated_between_head_and_get_and_cleans_partial(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    settings = _settings()
+    fake = _RecordingS3()
+    upload_bundle(bundle, settings, client=fake)
+    complete_key = (
+        f"{settings.object_prefix(manifest['backup_id'])}/{COMPLETE_FILE}"
+    )
+    original = fake.objects[complete_key]["body"]
+    fake.mutate_before_get[complete_key] = b"x" * len(original)
+    output = tmp_path / "mutated-download"
+
+    with pytest.raises(BackupError, match="changed between inspection"):
+        download_bundle(manifest["backup_id"], output, settings, client=fake)
+    assert not output.exists()
+    assert not list(tmp_path.glob(".mutated-download.partial-*"))
+
+
+def test_version_pinned_download_reads_the_inspected_version(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    settings = _settings()
+    fake = _RecordingS3(versioned=True)
+    upload_bundle(bundle, settings, client=fake)
+    complete_key = (
+        f"{settings.object_prefix(manifest['backup_id'])}/{COMPLETE_FILE}"
+    )
+    original = fake.objects[complete_key]["body"]
+    fake.mutate_before_get[complete_key] = b"x" * len(original)
+    output = tmp_path / "version-download"
+
+    downloaded = download_bundle(
+        manifest["backup_id"],
+        output,
+        settings,
+        client=fake,
+    )
+    assert downloaded["backup_id"] == manifest["backup_id"]
+    complete_get = next(
+        call for call in fake.get_calls if call["key"] == complete_key
+    )
+    assert complete_get["version_id"]
+    assert complete_get["if_match"] is None
+
+
+def test_download_rejects_stream_larger_than_declared_before_excess_write(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    settings = _settings()
+    fake = _RecordingS3()
+    upload_bundle(bundle, settings, client=fake)
+    complete_key = (
+        f"{settings.object_prefix(manifest['backup_id'])}/{COMPLETE_FILE}"
+    )
+    fake.oversize_stream_keys.add(complete_key)
+    output = tmp_path / "oversize-download"
+
+    with pytest.raises(BackupError, match="declared byte limit"):
+        download_bundle(manifest["backup_id"], output, settings, client=fake)
+    assert not output.exists()
+    assert not list(tmp_path.glob(".oversize-download.partial-*"))
+
+
+def test_download_stream_failure_removes_partial_output(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    settings = _settings()
+    fake = _RecordingS3()
+    upload_bundle(bundle, settings, client=fake)
+    complete_key = (
+        f"{settings.object_prefix(manifest['backup_id'])}/{COMPLETE_FILE}"
+    )
+    fake.failing_stream_keys.add(complete_key)
+    output = tmp_path / "stream-failure"
+
+    with pytest.raises(BackupError, match="streaming download failed"):
+        download_bundle(manifest["backup_id"], output, settings, client=fake)
+    assert not output.exists()
+    assert not list(tmp_path.glob(".stream-failure.partial-*"))
 
 
 @pytest.mark.parametrize("metadata_name", [COMPLETE_FILE, MANIFEST_FILE])

@@ -114,7 +114,7 @@ def test_railway_docker_contract_is_stable():
 
 def test_github_workflows_are_read_only_and_do_not_persist_credentials():
     workflow_dir = ROOT / ".github" / "workflows"
-    for name in ("ci.yml", "security.yml"):
+    for name in ("ci.yml", "security.yml", "stage-0b-backups.yml"):
         source = (workflow_dir / name).read_text(encoding="utf-8")
         assert re.search(r"(?m)^permissions:\n  contents: read$", source)
         assert "pull_request_target:" not in source
@@ -123,3 +123,10 @@ def test_github_workflows_are_read_only_and_do_not_persist_credentials():
         checkout_count = source.count("uses: actions/checkout@")
         assert checkout_count
         assert source.count("persist-credentials: false") == checkout_count
+
+        action_refs = re.findall(
+            r"(?m)^\s*(?:-\s+)?uses:\s*[^@\s]+@([^\s#]+)",
+            source,
+        )
+        assert action_refs
+        assert all(re.fullmatch(r"[0-9a-f]{40}", ref) for ref in action_refs)

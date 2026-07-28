@@ -421,8 +421,13 @@ command and enable gate are both supplied:
 - completed-job reports, metrics, and generated media are copied through a
   strict allowlist, checked for mutation, and recorded in SHA-256 manifests;
 - optional private S3-compatible upload/download support uses opaque object
-  keys, TLS-only endpoints, environment-only credentials, a completion marker
-  uploaded last, immutable-prefix collision checks, and bounded downloads;
+  keys, TLS-only endpoints, environment-only credentials, a conditionally
+  created and verified single-writer claim, and a conditionally created
+  completion marker uploaded last; unsupported conditional-write behavior fails
+  closed before bundle data is uploaded;
+- downloads pin every inspected object to its version ID or immutable ETag,
+  enforce declared and hard byte limits before scratch writes, reject mutation,
+  and clean partial output;
 - restore drills create a unique scratch child, reject `/data`, live session
   trees, existing paths, traversal, and symlinks, and never overwrite a
   database;
@@ -431,8 +436,10 @@ command and enable gate are both supplied:
   reconciliation, and every artifact checksum;
 - synthetic tests cover a committed-WAL snapshot, path and symlink defenses,
   corruption and ledger mismatches, incomplete generations, secret redaction,
-  opaque S3 keys, immutable completion, bounded fake-S3 round trips, and
-  scratch-only restore behavior;
+  opaque S3 keys, concurrent writers, unsupported or ignored conditional
+  writes, mutation between inspection and retrieval, oversized and interrupted
+  streams, partial-output cleanup, immutable completion, bounded fake-S3 round
+  trips, and scratch-only restore behavior;
 - the old unimplemented Litestream/rclone overwrite guidance is replaced by an
   exact first-backup, restore-drill, retention, monitoring, cost, and disable
   runbook.
@@ -460,10 +467,12 @@ approved disaster-recovery cutover that would replace live data.
 
 1. Approve the storage provider/region, privacy terms, private bucket,
    encryption, access identities, lifecycle, budget, and alert receiver.
-2. Securely inject separate prefix-scoped writer credentials (including the
-   selected provider's minimum `HeadObject`/`GetObject` permission) and
-   read-only restore credentials; install the optional transport in an approved
-   operator environment.
+2. Verify provider support for conditional `PutObject` and version- or
+   ETag-pinned `GetObject`; securely inject separate prefix-scoped writer
+   credentials and read-only restore credentials with the selected provider's
+   minimum `HeadObject`, `GetObject`, and, when applicable,
+   `GetObjectVersion` permissions; install the optional transport in an
+   approved operator environment.
 3. Create and upload the first WAL-safe production generation without changing
    `/data/sessions`.
 4. Download it through the read-only identity and complete the documented

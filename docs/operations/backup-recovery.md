@@ -96,6 +96,28 @@ Remote database and artifact object keys are opaque ordinals; logical job paths
 exist only inside the encrypted/private manifest body, not in provider-visible
 object names or metadata.
 
+Remote uploads use an explicit single-writer protocol. Before uploading bundle
+data, the writer conditionally creates `CLAIM.json` with
+`If-None-Match: *`, then deliberately attempts a different conditional claim
+and requires an explicit precondition-failed response. This verifies that the
+provider actually honors conditional creation. Unsupported, silently ignored,
+or ambiguous conditional-write behavior fails closed before bundle data is
+uploaded. Database, artifact, and manifest objects are uploaded only after the
+claim is verified; `COMPLETE.json` is itself conditionally created and remains
+the final object. An interrupted upload leaves a claimed, incomplete prefix.
+Do not reuse that backup ID. Keep the prefix for incident review and let only
+the separately controlled lifecycle administrator remove it under an approved
+policy.
+
+Downloads first inspect each object, then pin the body request to its immutable
+version ID when versioning is available or to the inspected ETag with
+`If-Match`. A provider that supplies neither identity is rejected. The download
+is streamed in bounded chunks, checks the declared and hard byte limits before
+each scratch write, verifies the pinned identity, size, encryption metadata,
+and SHA-256 digest, and removes partial scratch output on failure. An object
+changed between inspection and retrieval is therefore rejected rather than
+silently restored.
+
 SHA-256 detects corruption but is not proof against a malicious party that can
 replace both data and metadata. The approved store must therefore also provide
 private access, versioning or bounded object lock where available, and
@@ -149,15 +171,19 @@ ambiguous.
 | `CADDIE_BACKUP_SECRET_ACCESS_KEY` | yes for upload | Dedicated backup writer |
 | `CADDIE_BACKUP_SESSION_TOKEN` | only for temporary credentials | Dedicated backup writer |
 
-The writer should be limited to create/multipart-upload operations and the
-minimum read permission needed for `HeadObject` within the dedicated backup
-prefix. On AWS S3 and some compatible providers, `HeadObject` is authorized by
-`GetObject`, so object-body read capability cannot always be separated from the
-metadata checks this tooling requires. Prefer short-lived credentials, scope
-read/write to this prefix only, and deny list access outside it, deletion,
-bucket administration, public-access changes, and credential administration.
+The writer should be limited to conditional `PutObject`,
+create/multipart-upload operations, and the minimum read permission needed for
+`HeadObject` within the dedicated backup prefix. The selected provider must
+honor `If-None-Match: *` for single-part claim and completion writes and return
+an explicit precondition failure when the key already exists. On AWS S3 and
+some compatible providers, `HeadObject` is authorized by `GetObject`, so
+object-body read capability cannot always be separated from the metadata
+checks this tooling requires. Prefer short-lived credentials, scope read/write
+to this prefix only, and deny list access outside it, deletion, bucket
+administration, public-access changes, and credential administration.
 Retention deletion should be a separate lifecycle policy controlled by a
-different identity. Confirm the selected provider's actual IAM semantics.
+different identity. Confirm the selected provider's actual IAM and conditional
+write semantics.
 
 ### Secret restore credentials
 
@@ -167,8 +193,10 @@ different identity. Confirm the selected provider's actual IAM semantics.
 | `CADDIE_RESTORE_SECRET_ACCESS_KEY` | yes for download | Dedicated read-only restore identity |
 | `CADDIE_RESTORE_SESSION_TOKEN` | only for temporary credentials | Dedicated read-only restore identity |
 
-The restore identity needs read access only to completed backup prefixes. Keep
-it separate from the writer so a compromised runtime cannot read historical
+The restore identity needs `HeadObject` and `GetObject` access only to completed
+backup prefixes. It also needs `GetObjectVersion` when the selected bucket
+returns version IDs and the provider distinguishes that permission. Keep it
+separate from the writer so a compromised runtime cannot read historical
 customer data.
 
 The CLI never accepts credentials as command-line arguments, never prints its
@@ -194,6 +222,10 @@ Do not approve a storage target until all of these are true:
    rotation are enabled.
 8. The provider's region, data-processing terms, deletion semantics, and
    incident-response process are approved for identifiable customer media.
+9. A synthetic acceptance test proves that conditional object creation returns
+   a precondition failure for an existing key and cannot silently overwrite it.
+10. `HeadObject` and pinned `GetObject` requests expose a stable version ID or
+    ETag and reject a body changed after inspection.
 
 The database itself contains account and purchase data. Server-side encryption
 protects storage media, not a compromised storage administrator. If that threat
@@ -260,7 +292,10 @@ Any future scheduler must treat the command exit code and remote
   ledger-reconciliation failure;
 - artifact disappearance, mutation, size mismatch, or SHA-256 mismatch;
 - an abrupt backup-size or artifact-count drop;
-- partial prefixes accumulating without a completion marker;
+- claimed or partial prefixes accumulating without a completion marker;
+- unsupported, ignored, or ambiguous conditional-write behavior;
+- missing object identities, failed version/ETag pinning, or mutation between
+  inspection and retrieval;
 - credential expiry, access denial, bucket encryption/privacy drift, quota, or
   billing threshold;
 - a missed quarterly restore drill.
@@ -278,7 +313,8 @@ It is exact only after an execution mechanism with legitimate access to the
 mounted `/data` volume is separately approved.
 
 1. Approve a provider, region, private bucket, encryption mode, 30-day
-   lifecycle policy, budget alert, and data-processing terms.
+   lifecycle policy, budget alert, data-processing terms, and verified support
+   for conditional object creation plus version- or ETag-pinned reads.
 2. Create three scoped identities: a prefix-scoped backup writer without
    delete, a read-only restore identity, and a lifecycle administrator. Store
    their values in an approved secret manager.
@@ -323,7 +359,8 @@ mounted `/data` volume is separately approved.
    `COMPLETE.json`. It must not change `/data/sessions`.
 
 8. Upload only after an operator independently verifies bucket privacy,
-   encryption, and credential scope:
+   encryption, credential scope, and a synthetic provider acceptance test for
+   conditional creation and pinned reads. Always use a new backup ID:
 
    ```text
    python -m swinglab.backups upload \
@@ -331,8 +368,9 @@ mounted `/data` volume is separately approved.
      --confirm-private-bucket
    ```
 
-9. Confirm the remote generation contains `COMPLETE.json` as the final object
-   and record its safe backup ID, timestamps, byte totals, and command duration.
+9. Confirm the remote generation contains a verified `CLAIM.json`, contains
+   `COMPLETE.json` as the final object, and has no unexpected keys. Record its
+   safe backup ID, timestamps, byte totals, and command duration.
 10. Disable the writer gate and remove writer credentials from the operator
    environment.
 11. Do not declare success until the complete scratch restore drill below passes
@@ -478,6 +516,8 @@ Every item below is still a production action and is not authorized by Stage 0B:
   and budget;
 - create a private bucket and configure encryption, versioning/object lock,
   lifecycle, access logs, MFA, quotas, and billing alerts;
+- prove with synthetic objects that the selected provider and scoped identities
+  enforce conditional creation and version- or ETag-pinned reads;
 - create and securely inject the documented writer and restore credentials;
 - install the optional `backup` dependency in an approved operator/runtime
   environment;

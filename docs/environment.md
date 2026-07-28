@@ -86,3 +86,48 @@ by the application process itself.
 Backup enablement and credential values are deployment state. Do not commit
 them, change them in a foundation migration, or infer that backups are active
 from this documentation alone.
+
+## Inactive Stage 0B backup and scratch restore
+
+The Stage 0B operator commands are inert unless the matching enable gate is
+explicitly set to true. There is no scheduler or application-startup hook, and
+the production image does not install the optional backup transport.
+
+### Activation gates
+
+| Variable | Sensitivity | Purpose |
+| --- | --- | --- |
+| `CADDIE_BACKUP_ENABLED` | Non-secret | Must equal true before a create or upload command is accepted. |
+| `CADDIE_RESTORE_ENABLED` | Non-secret | Must equal true before a download or scratch restore drill is accepted. |
+
+### Object-storage settings
+
+| Variable | Sensitivity | Purpose |
+| --- | --- | --- |
+| `CADDIE_BACKUP_BUCKET` | Non-secret | Existing private bucket name. |
+| `CADDIE_BACKUP_PREFIX` | Non-secret | Dedicated private prefix for immutable backup generations. |
+| `CADDIE_BACKUP_REGION` | Non-secret | Provider region value used by the compatible client. |
+| `CADDIE_BACKUP_ENDPOINT_URL` | Non-secret | Optional absolute HTTPS endpoint for a non-default compatible provider. |
+| `CADDIE_BACKUP_ADDRESSING_STYLE` | Non-secret | Optional auto, path, or virtual addressing selection. |
+| `CADDIE_BACKUP_SSE` | Non-secret | Required server-side encryption mode selection. |
+| `CADDIE_BACKUP_KMS_KEY_ID` | Sensitive configuration | Stable key UUID or key ARN when customer-managed encryption is selected. |
+
+### Writer credentials
+
+| Variable | Sensitivity | Purpose |
+| --- | --- | --- |
+| `CADDIE_BACKUP_ACCESS_KEY_ID` | Secret credential | Prefix-scoped backup-writer access identifier. |
+| `CADDIE_BACKUP_SECRET_ACCESS_KEY` | Secret credential | Prefix-scoped backup-writer secret. |
+| `CADDIE_BACKUP_SESSION_TOKEN` | Secret credential | Optional token for temporary writer credentials. |
+
+### Restore credentials
+
+| Variable | Sensitivity | Purpose |
+| --- | --- | --- |
+| `CADDIE_RESTORE_ACCESS_KEY_ID` | Secret credential | Read-only restore access identifier. |
+| `CADDIE_RESTORE_SECRET_ACCESS_KEY` | Secret credential | Read-only restore secret. |
+| `CADDIE_RESTORE_SESSION_TOKEN` | Secret credential | Optional token for temporary restore credentials. |
+
+Keep every value in an approved secret manager or protected operator session.
+Setting either gate alone schedules nothing, and this integration work does not
+create a bucket, inject credentials, enable a backup, or access production data.

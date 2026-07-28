@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import shutil
 import tempfile
+import uuid
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -17,6 +19,7 @@ from .core import (
     FORMAT,
     MANIFEST_FILE,
     BackupError,
+    _canonical_json,
     _load_json,
     _join_under,
     _safe_relative_path,
@@ -30,6 +33,13 @@ MAX_COMPLETE_BYTES = 64 * 1024
 MAX_MANIFEST_BYTES = 16 * 1024 * 1024
 MAX_ARTIFACTS = 100_000
 MAX_BUNDLE_BYTES = 2 * 1024**4
+STREAM_CHUNK_BYTES = 1024 * 1024
+UPLOAD_CLAIM_FILE = "CLAIM.json"
+UPLOAD_CLAIM_FORMAT = "caddieinsight-upload-claim/v1"
+
+
+class _ConditionalConflict(RuntimeError):
+    """The provider explicitly rejected a write because the key exists."""
 
 
 @dataclass(frozen=True)
@@ -149,8 +159,8 @@ def _client(settings: S3Settings):
     )
 
 
-def _bundle_objects(manifest: dict[str, Any]) -> list[tuple[str, str, str]]:
-    """Map local logical paths to opaque remote keys."""
+def _data_objects(manifest: dict[str, Any]) -> list[tuple[str, str, str]]:
+    """Map database/artifact logical paths to opaque remote keys."""
     files = [(DATABASE_BUNDLE_PATH, "objects/00000000", "application/octet-stream")]
     files.extend(
         (
@@ -160,9 +170,14 @@ def _bundle_objects(manifest: dict[str, Any]) -> list[tuple[str, str, str]]:
         )
         for index, item in enumerate(manifest["artifacts"]["files"], start=1)
     )
-    files.append((MANIFEST_FILE, MANIFEST_FILE, "application/json"))
-    files.append((COMPLETE_FILE, COMPLETE_FILE, "application/json"))
     return files
+
+
+def _upload_objects(manifest: dict[str, Any]) -> list[tuple[str, str, str]]:
+    return [
+        *_data_objects(manifest),
+        (MANIFEST_FILE, MANIFEST_FILE, "application/json"),
+    ]
 
 
 def _not_found(exc: Exception) -> bool:
@@ -173,6 +188,16 @@ def _not_found(exc: Exception) -> bool:
     code = str(error.get("Code", "")) if isinstance(error, dict) else ""
     status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
     return code in {"404", "NoSuchKey", "NotFound"} or status == 404
+
+
+def _precondition_failed(exc: Exception) -> bool:
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    error = response.get("Error")
+    code = str(error.get("Code", "")) if isinstance(error, dict) else ""
+    status = response.get("ResponseMetadata", {}).get("HTTPStatusCode")
+    return code in {"412", "PreconditionFailed"} or status == 412
 
 
 def _head_object(
@@ -260,10 +285,261 @@ def _verified_metadata_sha256(
     return sha256
 
 
-def _verify_downloaded_sha256(path: Path, expected_sha256: str) -> None:
-    actual_sha256, _ = _sha256_file(path)
-    if actual_sha256 != expected_sha256:
-        raise BackupError("Downloaded metadata object checksum did not match.")
+def _put_if_absent(
+    s3,
+    settings: S3Settings,
+    key: str,
+    body: bytes,
+    *,
+    content_type: str,
+) -> None:
+    sha256 = hashlib.sha256(body).hexdigest()
+    try:
+        s3.put_object(
+            Bucket=settings.bucket,
+            Key=key,
+            Body=body,
+            ContentLength=len(body),
+            IfNoneMatch="*",
+            **settings.upload_args(sha256, content_type),
+        )
+    except Exception as exc:
+        if _precondition_failed(exc):
+            raise _ConditionalConflict from None
+        raise BackupError(
+            "The provider failed or does not support the required conditional "
+            "object write; no backup was completed."
+        ) from None
+
+
+def _acquire_upload_claim(
+    s3,
+    settings: S3Settings,
+    object_prefix: str,
+    backup_id: str,
+) -> None:
+    claim_key = f"{object_prefix}/{UPLOAD_CLAIM_FILE}"
+    claim_body = _canonical_json(
+        {
+            "format": UPLOAD_CLAIM_FORMAT,
+            "backup_id": backup_id,
+            "nonce": uuid.uuid4().hex,
+        }
+    )
+    probe_body = _canonical_json(
+        {
+            "format": UPLOAD_CLAIM_FORMAT,
+            "backup_id": backup_id,
+            "nonce": uuid.uuid4().hex,
+        }
+    )
+    try:
+        _put_if_absent(
+            s3,
+            settings,
+            claim_key,
+            claim_body,
+            content_type="application/json",
+        )
+    except _ConditionalConflict:
+        raise BackupError(
+            "This backup identifier is already claimed by another writer."
+        ) from None
+
+    # Prove that the provider enforces If-None-Match before any backup body is
+    # uploaded. A silent success would overwrite the claim and fails closed.
+    try:
+        _put_if_absent(
+            s3,
+            settings,
+            claim_key,
+            probe_body,
+            content_type="application/json",
+        )
+    except _ConditionalConflict:
+        pass
+    else:
+        raise BackupError(
+            "The provider did not enforce the required conditional write; "
+            "the claimed backup identifier cannot be used."
+        )
+
+    claim_sha256 = hashlib.sha256(claim_body).hexdigest()
+    claim_head = _head_object(s3, settings, claim_key)
+    assert claim_head is not None
+    _verify_remote_object(
+        claim_head,
+        expected_size=len(claim_body),
+        expected_sha256=claim_sha256,
+        settings=settings,
+    )
+
+
+def _expected_upload_files(
+    bundle_dir: Path,
+    manifest: dict[str, Any],
+) -> dict[str, tuple[int, str]]:
+    expected: dict[str, tuple[int, str]] = {
+        DATABASE_BUNDLE_PATH: (
+            int(manifest["database"]["size"]),
+            str(manifest["database"]["sha256"]),
+        )
+    }
+    expected.update(
+        {
+            f"artifacts/{item['path']}": (
+                int(item["size"]),
+                str(item["sha256"]),
+            )
+            for item in manifest["artifacts"]["files"]
+        }
+    )
+
+    manifest_path = _join_under(bundle_dir, _safe_relative_path(MANIFEST_FILE))
+    if _load_json(manifest_path) != manifest:
+        raise BackupError("The local manifest changed after bundle verification.")
+    manifest_sha256, manifest_size = _sha256_file(manifest_path)
+    complete_path = _join_under(bundle_dir, _safe_relative_path(COMPLETE_FILE))
+    complete = _load_json(complete_path)
+    if complete.get("manifest_sha256") != manifest_sha256:
+        raise BackupError("The local completion marker no longer matches its manifest.")
+    complete_sha256, complete_size = _sha256_file(complete_path)
+    expected[MANIFEST_FILE] = (manifest_size, manifest_sha256)
+    expected[COMPLETE_FILE] = (complete_size, complete_sha256)
+    return expected
+
+
+def _object_pin(head: dict[str, Any]) -> tuple[dict[str, str], str, str]:
+    version_id = head.get("VersionId")
+    if isinstance(version_id, str) and version_id and version_id != "null":
+        return {"VersionId": version_id}, "VersionId", version_id
+
+    etag = head.get("ETag")
+    if (
+        isinstance(etag, str)
+        and 2 < len(etag) <= 1024
+        and etag.startswith('"')
+        and etag.endswith('"')
+        and "\r" not in etag
+        and "\n" not in etag
+    ):
+        return {"IfMatch": etag}, "ETag", etag
+    raise BackupError(
+        "The provider supplied neither a usable object version nor immutable ETag."
+    )
+
+
+def _get_pinned_object(
+    s3,
+    settings: S3Settings,
+    key: str,
+    head: dict[str, Any],
+) -> tuple[dict[str, Any], Any]:
+    request_pin, response_field, expected_pin = _object_pin(head)
+    try:
+        response = s3.get_object(
+            Bucket=settings.bucket,
+            Key=key,
+            **request_pin,
+        )
+    except Exception as exc:
+        if _precondition_failed(exc):
+            raise BackupError(
+                "A remote object changed between inspection and download."
+            ) from None
+        raise BackupError(
+            "S3-compatible download failed; provider details were suppressed "
+            "to prevent credential or signed-URL disclosure."
+        ) from None
+    if not isinstance(response, dict) or response.get(response_field) != expected_pin:
+        body = response.get("Body") if isinstance(response, dict) else None
+        if body is not None and hasattr(body, "close"):
+            body.close()
+        raise BackupError("The provider did not honor the inspected object pin.")
+    head_etag = head.get("ETag")
+    if isinstance(head_etag, str) and response.get("ETag") != head_etag:
+        body = response.get("Body")
+        if body is not None and hasattr(body, "close"):
+            body.close()
+        raise BackupError("The remote object identity changed during download.")
+    return response, response.get("Body")
+
+
+def _stream_pinned_object(
+    s3,
+    settings: S3Settings,
+    key: str,
+    destination: Path,
+    head: dict[str, Any],
+    *,
+    expected_size: int,
+    expected_sha256: str,
+    hard_limit: int,
+) -> None:
+    if expected_size < 0 or expected_size > hard_limit:
+        raise BackupError("The remote object exceeds its enforced byte limit.")
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if destination.exists():
+        raise BackupError("A download destination unexpectedly already exists.")
+    partial = destination.with_name(
+        f".{destination.name}.part-{uuid.uuid4().hex}"
+    )
+    response: dict[str, Any] | None = None
+    body = None
+    try:
+        response, body = _get_pinned_object(s3, settings, key, head)
+        if body is None or not hasattr(body, "read"):
+            raise BackupError("The provider returned no readable object stream.")
+        _verify_remote_object(
+            response,
+            expected_size=expected_size,
+            expected_sha256=expected_sha256,
+            settings=settings,
+        )
+
+        digest = hashlib.sha256()
+        written = 0
+        with partial.open("xb") as handle:
+            while True:
+                chunk = body.read(STREAM_CHUNK_BYTES)
+                if not chunk:
+                    break
+                if not isinstance(chunk, (bytes, bytearray, memoryview)):
+                    raise BackupError("The provider returned an invalid object stream.")
+                chunk_size = len(chunk)
+                if (
+                    written + chunk_size > expected_size
+                    or written + chunk_size > hard_limit
+                ):
+                    raise BackupError(
+                        "The remote object stream exceeded its declared byte limit."
+                    )
+                handle.write(chunk)
+                digest.update(chunk)
+                written += chunk_size
+            handle.flush()
+            os.fsync(handle.fileno())
+        if written != expected_size or digest.hexdigest() != expected_sha256:
+            raise BackupError("The downloaded object size or checksum did not match.")
+        partial.replace(destination)
+    except BackupError:
+        raise
+    except Exception:
+        raise BackupError(
+            "S3-compatible streaming download failed; provider details were "
+            "suppressed to prevent credential or signed-URL disclosure."
+        ) from None
+    finally:
+        if body is not None and hasattr(body, "close"):
+            try:
+                body.close()
+            except Exception:
+                pass
+        if partial.exists():
+            try:
+                partial.unlink()
+            except OSError:
+                raise BackupError("Partial object cleanup failed.") from None
 
 
 def upload_bundle(
@@ -275,6 +551,7 @@ def upload_bundle(
     bundle_dir = bundle_dir.expanduser().resolve()
     manifest = load_and_verify_manifest(bundle_dir)
     verify_bundle_files(bundle_dir, manifest)
+    expected = _expected_upload_files(bundle_dir, manifest)
     backup_id = manifest["backup_id"]
     object_prefix = settings.object_prefix(backup_id)
     s3 = client or _client(settings)
@@ -284,11 +561,16 @@ def upload_bundle(
             "This immutable backup identifier is already complete; refusing "
             "to overwrite any remote object."
         )
+    _acquire_upload_claim(s3, settings, object_prefix, backup_id)
     try:
-        # COMPLETE.json is deliberately last. A partial prefix is not restorable.
-        for local_relative, remote_relative, content_type in _bundle_objects(manifest):
+        for local_relative, remote_relative, content_type in _upload_objects(manifest):
             path = _join_under(bundle_dir, _safe_relative_path(local_relative))
             sha256, size = _sha256_file(path)
+            expected_size, expected_sha256 = expected[local_relative]
+            if (size, sha256) != (expected_size, expected_sha256):
+                raise BackupError(
+                    "A local backup file changed after bundle verification."
+                )
             key = f"{object_prefix}/{remote_relative}"
             s3.upload_file(
                 str(path),
@@ -297,7 +579,10 @@ def upload_bundle(
                 ExtraArgs=settings.upload_args(sha256, content_type),
             )
             uploaded_sha256, uploaded_size = _sha256_file(path)
-            if (uploaded_sha256, uploaded_size) != (sha256, size):
+            if (uploaded_size, uploaded_sha256) != (
+                expected_size,
+                expected_sha256,
+            ):
                 raise BackupError(
                     "A local backup file changed while it was being uploaded."
                 )
@@ -309,6 +594,42 @@ def upload_bundle(
                 expected_sha256=sha256,
                 settings=settings,
             )
+
+        # COMPLETE.json is captured into memory, conditionally written, and
+        # verified last. A partial or racing prefix is never restorable.
+        complete_path = _join_under(
+            bundle_dir,
+            _safe_relative_path(COMPLETE_FILE),
+        )
+        complete_body = complete_path.read_bytes()
+        complete_size, complete_sha256 = expected[COMPLETE_FILE]
+        if (
+            len(complete_body) != complete_size
+            or hashlib.sha256(complete_body).hexdigest() != complete_sha256
+        ):
+            raise BackupError(
+                "The local completion marker changed after bundle verification."
+            )
+        try:
+            _put_if_absent(
+                s3,
+                settings,
+                complete_key,
+                complete_body,
+                content_type="application/json",
+            )
+        except _ConditionalConflict:
+            raise BackupError(
+                "The remote completion marker already exists; refusing overwrite."
+            ) from None
+        complete_head = _head_object(s3, settings, complete_key)
+        assert complete_head is not None
+        _verify_remote_object(
+            complete_head,
+            expected_size=complete_size,
+            expected_sha256=complete_sha256,
+            settings=settings,
+        )
     except BackupError:
         raise
     except Exception:
@@ -317,17 +638,6 @@ def upload_bundle(
             "to prevent credential or signed-URL disclosure."
         ) from None
     return backup_id
-
-
-def _download_file(s3, settings: S3Settings, key: str, destination: Path) -> None:
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        s3.download_file(settings.bucket, key, str(destination))
-    except Exception:
-        raise BackupError(
-            "S3-compatible download failed; provider details were suppressed "
-            "to prevent credential or signed-URL disclosure."
-        ) from None
 
 
 def download_bundle(
@@ -376,8 +686,16 @@ def download_bundle(
             expected_size=complete_size,
             settings=settings,
         )
-        _download_file(s3, settings, complete_key, staging / COMPLETE_FILE)
-        _verify_downloaded_sha256(staging / COMPLETE_FILE, complete_sha256)
+        _stream_pinned_object(
+            s3,
+            settings,
+            complete_key,
+            staging / COMPLETE_FILE,
+            complete_head,
+            expected_size=complete_size,
+            expected_sha256=complete_sha256,
+            hard_limit=MAX_COMPLETE_BYTES,
+        )
 
         manifest_key = f"{prefix}/{MANIFEST_FILE}"
         manifest_head = _head_object(s3, settings, manifest_key)
@@ -394,10 +712,15 @@ def download_bundle(
             expected_size=manifest_size,
             settings=settings,
         )
-        _download_file(s3, settings, manifest_key, staging / MANIFEST_FILE)
-        _verify_downloaded_sha256(
+        _stream_pinned_object(
+            s3,
+            settings,
+            manifest_key,
             staging / MANIFEST_FILE,
-            manifest_metadata_sha256,
+            manifest_head,
+            expected_size=manifest_size,
+            expected_sha256=manifest_metadata_sha256,
+            hard_limit=MAX_MANIFEST_BYTES,
         )
         complete = _load_json(staging / COMPLETE_FILE)
         manifest_sha256, _ = _sha256_file(staging / MANIFEST_FILE)
@@ -432,7 +755,7 @@ def download_bundle(
                 for item in manifest["artifacts"]["files"]
             }
         )
-        for local_relative, remote_relative, _ in _bundle_objects(manifest)[:-2]:
+        for local_relative, remote_relative, _ in _data_objects(manifest):
             key = f"{prefix}/{remote_relative}"
             head = _head_object(s3, settings, key)
             assert head is not None
@@ -443,17 +766,28 @@ def download_bundle(
                 expected_sha256=sha256,
                 settings=settings,
             )
-            _download_file(
+            _stream_pinned_object(
                 s3,
                 settings,
                 key,
                 _join_under(staging, _safe_relative_path(local_relative)),
+                head,
+                expected_size=size,
+                expected_sha256=sha256,
+                hard_limit=size,
             )
         verify_bundle_files(staging, manifest)
         staging.replace(output_dir)
         return manifest
     except Exception:
-        shutil.rmtree(staging, ignore_errors=True)
+        try:
+            shutil.rmtree(staging)
+        except FileNotFoundError:
+            pass
+        except OSError:
+            raise BackupError("Partial download cleanup failed.") from None
+        if staging.exists():
+            raise BackupError("Partial download cleanup failed.")
         raise
 
 
