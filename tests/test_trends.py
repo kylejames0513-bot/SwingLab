@@ -39,6 +39,7 @@ def stub_job(
     status: str = "done",
     report_rel: str | None = "out/report.html",
     raw: str | None = None,
+    angle: str | None = None,
 ):
     """A duck-typed job row + on-disk metrics.json, no web stack needed."""
     session_dir = tmp_path / f"job{n}"
@@ -46,12 +47,14 @@ def stub_job(
         (session_dir / "out").mkdir(parents=True, exist_ok=True)
         text = raw if raw is not None else json.dumps(payload_for(swings))
         (session_dir / "out" / "metrics.json").write_text(text)
+        (session_dir / "out" / "report.html").write_text("<html>report</html>")
     return types.SimpleNamespace(
         id=f"job{n}",
         session_dir=session_dir,
         status=status,
         created_at=1000.0 + n,
         report_rel=report_rel,
+        angle=angle,
     )
 
 
@@ -103,6 +106,68 @@ def test_null_and_nan_values_never_reach_the_series(tmp_path, cfg):
     assert [v for _, v in built.metrics["head_dip_sw"].points] == [0.1, 0.3]
 
 
+def test_mixed_valid_and_malformed_swing_rows_are_skipped_safely(
+    tmp_path, cfg
+):
+    job = stub_job(
+        tmp_path,
+        1,
+        raw=json.dumps(
+            {
+                "swings": [
+                    {"metrics": {"tempo_ratio": 3.0}},
+                    {"metrics": 1},
+                    "bad row",
+                ],
+                "session_stats": {},
+            }
+        ),
+    )
+    built = trends.build_trends([job], cfg)
+    assert built.session_count == 0
+    assert built.metrics == {}
+
+
+def test_dtl_stale_face_on_fields_do_not_enter_progress(tmp_path, cfg):
+    payload = payload_for(
+        [
+            {
+                "tempo_ratio": 3.0,
+                "head_sway_backswing_sw": 0.8,
+                "hip_slide_backswing_sw": 0.8,
+            }
+        ]
+    )
+    payload["meta"] = {"angle": "dtl"}
+    job = stub_job(tmp_path, 1, raw=json.dumps(payload))
+    built = trends.build_trends([job], cfg)
+    assert built.session_count == 1
+    assert set(built.metrics) == {"tempo_ratio"}
+    assert built.samples[0].flags == ()
+
+
+def test_job_dtl_angle_scopes_payload_when_metrics_meta_is_missing(
+    tmp_path, cfg
+):
+    job = stub_job(
+        tmp_path,
+        1,
+        [
+            {
+                "tempo_ratio": 3.0,
+                "head_sway_backswing_sw": 0.8,
+                "hip_slide_backswing_sw": 0.8,
+            }
+        ],
+        angle="dtl",
+    )
+    built = trends.build_trends([job], cfg)
+    assert built.session_count == 1
+    assert set(built.metrics) == {"tempo_ratio"}
+    assert built.samples[0].flags == ()
+    assert built.samples[0].angle == "dtl"
+
+
 def test_unfinished_unreadable_and_empty_sessions_are_skipped(tmp_path, cfg):
     jobs = [
         stub_job(tmp_path, 1, [{"tempo_ratio": 2.5}]),
@@ -116,6 +181,137 @@ def test_unfinished_unreadable_and_empty_sessions_are_skipped(tmp_path, cfg):
     built = trends.build_trends(jobs, cfg)
     assert built.session_count == 1
     assert [v for _, v in built.metrics["tempo_ratio"].points] == [2.5]
+
+
+def test_metrics_without_declared_report_never_enter_progress(tmp_path, cfg):
+    job = stub_job(tmp_path, 1, [{"tempo_ratio": 3.0}])
+    (job.session_dir / "out" / "report.html").unlink()
+    built = trends.build_trends([job], cfg)
+    assert built.session_count == 0
+    assert built.metrics == {}
+
+
+def test_refilm_required_session_never_enters_progress_or_flag_history(
+    tmp_path, cfg
+):
+    warning = (
+        "Tracking was unstable for this swing — numbers may be off; "
+        "film with a clear view."
+    )
+    rejected = stub_job(
+        tmp_path,
+        2,
+        raw=json.dumps(
+            {
+                "swings": [
+                    {
+                        "metrics": {
+                            "tempo_ratio": 1.0,
+                            "head_sway_backswing_sw": 0.9,
+                        },
+                        "notes": [warning],
+                    }
+                ],
+                "session_stats": {},
+            }
+        ),
+    )
+    built = trends.build_trends(
+        [
+            stub_job(tmp_path, 1, [{"tempo_ratio": 2.5}]),
+            rejected,
+            stub_job(tmp_path, 3, [{"tempo_ratio": 2.8}]),
+        ],
+        cfg,
+    )
+    assert built.session_count == 2
+    assert [value for _, value in built.metrics["tempo_ratio"].points] == [
+        2.5,
+        2.8,
+    ]
+    assert "sway" not in built.flag_counts
+
+
+def test_capture_only_marker_never_enters_progress(tmp_path, cfg):
+    job = stub_job(tmp_path, 1, [{"tempo_ratio": 3.0}])
+    (job.session_dir / "out" / "report.html").write_text(
+        "<html><head>"
+        '<meta name="caddieinsight-report-format" content="caddie-brief-v1">'
+        '<meta name="caddieinsight-report-outcome" content="capture_only">'
+        "</head><body>capture</body></html>"
+    )
+    built = trends.build_trends([job], cfg)
+    assert built.session_count == 0
+    assert built.metrics == {}
+
+
+def test_huge_numbers_never_crash_or_enter_progress(tmp_path, cfg):
+    huge = 10**400
+    job = stub_job(
+        tmp_path,
+        1,
+        raw=json.dumps(
+            {
+                "swings": [
+                    {
+                        "metrics": {
+                            "swing": huge,
+                            "tempo_ratio": huge,
+                            "head_sway_backswing_sw": huge,
+                        }
+                    }
+                ],
+                "session_stats": {
+                    "tempo_ratio": {"std": huge}
+                },
+            }
+        ),
+    )
+    built = trends.build_trends([job], cfg)
+    assert built.session_count == 0
+    assert built.metrics == {}
+
+
+def test_extreme_finite_values_never_emit_nonfinite_progress_mean(
+    tmp_path, cfg
+):
+    job = stub_job(
+        tmp_path,
+        1,
+        [{"tempo_ratio": 1e308}, {"tempo_ratio": 1e308}],
+    )
+    built = trends.build_trends([job], cfg)
+    assert built.session_count == 1
+    assert built.metrics["tempo_ratio"].latest == 1e308
+
+
+def test_opposite_extreme_sessions_drop_nonfinite_trend_geometry(
+    tmp_path, cfg
+):
+    built = trends.build_trends(
+        [
+            stub_job(tmp_path, 1, [{"tempo_ratio": -1e308}]),
+            stub_job(tmp_path, 2, [{"tempo_ratio": 1e308}]),
+        ],
+        cfg,
+    )
+    assert built.session_count == 2
+    assert "tempo_ratio" not in built.metrics
+    assert trends.trend_sentence(built) is None
+
+
+def test_neutral_only_session_cannot_become_latest_digest_baseline(
+    tmp_path, cfg
+):
+    built = trends.build_trends(
+        [
+            stub_job(tmp_path, 1, [{"tempo_ratio": 2.5}]),
+            stub_job(tmp_path, 2, [{"backswing_s": 0.9}]),
+        ],
+        cfg,
+    )
+    assert built.session_count == 1
+    assert built.samples[0].job_id == "job1"
 
 
 def test_latest_best_delta_respect_metric_direction(tmp_path, cfg):
@@ -152,6 +348,23 @@ def test_flag_fire_counts_across_sessions(tmp_path, cfg):
     assert built.flag_counts == {"tempo": 2, "sway": 1}
 
 
+def test_consistency_flag_is_recomputed_when_persisted_stats_are_stale(
+    tmp_path, cfg
+):
+    payload = payload_for(
+        [{"tempo_ratio": 2.5}, {"tempo_ratio": 3.5}]
+    )
+    payload["session_stats"] = {
+        "tempo_ratio": {"mean": 3.0, "std": 0.0}
+    }
+    built = trends.build_trends(
+        [stub_job(tmp_path, 1, raw=json.dumps(payload))], cfg
+    )
+    assert built.session_count == 1
+    assert built.samples[0].flags == ("consistency",)
+    assert built.flag_counts == {"consistency": 1}
+
+
 # -- the trend sentence ------------------------------------------------------
 
 def test_trend_sentence_needs_two_sessions_of_the_same_metric(tmp_path, cfg):
@@ -166,6 +379,33 @@ def test_trend_sentence_needs_two_sessions_of_the_same_metric(tmp_path, cfg):
         cfg,
     )
     assert trends.trend_sentence(disjoint) is None
+
+
+def test_trend_sentence_never_implies_latest_session_measured_old_field(
+    tmp_path, cfg
+):
+    jobs = [
+        stub_job(
+            tmp_path,
+            1,
+            [{"head_sway_backswing_sw": 0.50}],
+        ),
+        stub_job(
+            tmp_path,
+            2,
+            [{"head_sway_backswing_sw": 0.30}],
+        ),
+        stub_job(
+            tmp_path,
+            3,
+            [{"tempo_ratio": 3.0}],
+            angle="dtl",
+        ),
+    ]
+    built = trends.build_trends(jobs, cfg)
+    assert "head_sway_backswing_sw" in built.metrics
+    assert built.samples[-1].angle == "dtl"
+    assert trends.trend_sentence(built) is None
 
 
 def test_trend_sentence_uses_real_numbers_only(tmp_path, cfg):
@@ -218,6 +458,11 @@ def test_trend_chart_degrades_honestly():
     assert "<rect" not in single               # no benchmark, no band
     flat = trend_chart([1.0, 1.0], None, BRAND)  # zero range must not divide by 0
     ET.fromstring(flat)
+    flat_huge = trend_chart([1.79e308, 1.79e308], None, BRAND)
+    ET.fromstring(flat_huge)
+    assert "nan" not in flat_huge.lower()
+    assert "inf" not in flat_huge.lower()
+    assert trend_chart([-1e308, 1e308], None, BRAND) == ""
 
 
 # -- the /progress page ------------------------------------------------------

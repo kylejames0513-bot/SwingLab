@@ -17,6 +17,7 @@ import pytest
 
 from swinglab.config import Config
 from swinglab.kpis import compute_kpis, format_value
+from swinglab.report import REPORT_FORMAT_VERSION
 from swinglab.web.users import UserStore
 
 DAY = 86400
@@ -112,9 +113,11 @@ def test_empty_cohorts_are_reasons_not_zero_rates(tmp_path):
     db, store = make_db(tmp_path)
     kpis = by_key(compute_kpis(db, accounts_cfg(), now=NOW))
     assert "no accounts created" in kpis["activation_rate"].reason
-    assert "finished analysis" in kpis["w1_refilm_rate"].reason
+    assert "coaching-ready analysis" in kpis["w1_refilm_rate"].reason
     assert "no activated accounts" in kpis["free_to_pro_rate"].reason
-    assert "no finished reports" in kpis["gear_attach_per_100_reports"].reason
+    assert "no coaching-ready reports" in kpis[
+        "gear_attach_per_100_reports"
+    ].reason
     # Weekly retained filmers is a count and zero is a real answer.
     weekly = kpis["weekly_retained_filmers"]
     assert (weekly.value, weekly.numerator, weekly.reason) == (0.0, 0, None)
@@ -258,12 +261,126 @@ def test_gear_attach_math_replay_cancel_and_window(tmp_path):
     assert kpi.value == pytest.approx(25.0)
 
 
+def test_rejected_done_jobs_do_not_count_as_product_success(tmp_path):
+    db, store = make_db(tmp_path)
+    with store._lock:
+        store._conn.execute("ALTER TABLE jobs ADD COLUMN report_rel TEXT")
+        store._conn.execute(
+            "ALTER TABLE jobs ADD COLUMN angle TEXT DEFAULT 'face-on'"
+        )
+        store._conn.commit()
+
+    ready = add_user(store, "ready@x.co", NOW - 3 * DAY)
+    rejected = add_user(store, "rejected@x.co", NOW - 3 * DAY)
+    legacy = add_user(store, "legacy@x.co", NOW - 3 * DAY)
+    capture_lost = add_user(store, "capture@x.co", NOW - 3 * DAY)
+    coaching_corrupt = add_user(store, "corrupt@x.co", NOW - 3 * DAY)
+    structural_warning = add_user(
+        store, "warning@x.co", NOW - 3 * DAY
+    )
+    dtl_stale_only = add_user(store, "dtl@x.co", NOW - 3 * DAY)
+    add_job(store, "ready", ready, NOW - 2 * DAY)
+    add_job(store, "rejected", rejected, NOW - 2 * DAY)
+    add_job(store, "legacy", legacy, NOW - 2 * DAY)
+    add_job(store, "capture", capture_lost, NOW - 2 * DAY)
+    add_job(store, "corrupt", coaching_corrupt, NOW - 2 * DAY)
+    add_job(store, "warning", structural_warning, NOW - 2 * DAY)
+    add_job(store, "dtl", dtl_stale_only, NOW - 2 * DAY)
+    with store._lock:
+        store._conn.execute(
+            "UPDATE jobs SET report_rel = 'out/report.html'"
+        )
+        store._conn.execute(
+            "UPDATE jobs SET angle = 'dtl' WHERE id = 'dtl'"
+        )
+        store._conn.commit()
+
+    ready_payload = {"swings": [{"metrics": {"tempo_ratio": 3.0}}]}
+    rejected_payload = {
+        "swings": [
+            {
+                "metrics": {"tempo_ratio": 2.0},
+                "notes": [
+                    "Tracking was unstable for this swing — numbers may be "
+                    "off; film with a clear view."
+                ],
+            }
+        ]
+    }
+    for job_id, payload in (
+        ("ready", ready_payload),
+        ("rejected", rejected_payload),
+        ("legacy", None),
+        ("capture", ready_payload),
+        ("corrupt", "corrupt"),
+        (
+            "warning",
+            {
+                "swings": 1,
+                "session_notes": [
+                    "Tracking was unstable for this swing — numbers may be "
+                    "off; film with a clear view."
+                ],
+            },
+        ),
+        (
+            "dtl",
+            {
+                "swings": [
+                    {
+                        "metrics": {
+                            "head_sway_backswing_sw": 0.8,
+                        }
+                    }
+                ]
+            },
+        ),
+    ):
+        out = tmp_path / job_id / "out"
+        out.mkdir(parents=True)
+        (out / "report.html").write_text("<html>report</html>")
+        if job_id == "capture":
+            (out / "report.html").write_text(
+                "<html><head>"
+                f'<meta name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}">'
+                '<meta name="caddieinsight-report-outcome" content="capture_only">'
+                "</head><body>capture details</body></html>"
+            )
+        if job_id in ("corrupt", "warning"):
+            (out / "report.html").write_text(
+                "<html><head>"
+                f'<meta name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}">'
+                '<meta name="caddieinsight-report-outcome" content="coaching_ready">'
+                "</head><body>coaching report</body></html>"
+            )
+        if payload == "corrupt":
+            (out / "metrics.json").write_text("{truncated")
+        elif payload is not None:
+            (out / "metrics.json").write_text(json.dumps(payload))
+
+    store.record_gear_order(
+        "g1", "ready@x.co", [("SL-AID", "Training aid", 1)]
+    )
+    kpis = by_key(compute_kpis(db, accounts_cfg(), now=NOW))
+    assert (
+        kpis["activation_rate"].numerator,
+        kpis["activation_rate"].denominator,
+    ) == (3, 7)
+    assert kpis["weekly_retained_filmers"].numerator == 3
+    assert (
+        kpis["gear_attach_per_100_reports"].numerator,
+        kpis["gear_attach_per_100_reports"].denominator,
+    ) == (1, 3)
+
+
 def test_gear_attach_without_ledger_or_reports_is_honest(tmp_path):
     db, store = make_db(tmp_path)
     # No reports in the window: 0/0 stays None with the reason stated.
     kpis = by_key(compute_kpis(db, accounts_cfg(), now=NOW))
     assert kpis["gear_attach_per_100_reports"].value is None
-    assert "no finished reports" in kpis["gear_attach_per_100_reports"].reason
+    assert "no coaching-ready reports" in kpis[
+        "gear_attach_per_100_reports"
+    ].reason
     # A pre-ledger database (no gear_orders table): None, stated.
     with store._lock:
         store._conn.execute("DROP TABLE gear_orders")

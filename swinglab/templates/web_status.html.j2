@@ -1,5 +1,5 @@
 {% extends "web_layout.html.j2" %}
-{% block title %}{{ brand.name }} — {{ "Results ready" if done else ("Analysis failed" if failed else "Analyzing…") }}{% endblock %}
+{% block title %}{{ brand.name }} — {{ "Re-film needed" if refilm_needed else ("Results ready" if done else ("Analysis failed" if failed else "Analyzing…")) }}{% endblock %}
 {% block style %}
   .spinner { width: 28px; height: 28px; border: 4px solid #ddd;
              border-top-color: var(--accent); border-radius: 50%;
@@ -9,6 +9,21 @@
   .log { background: #f4f4f4; border-radius: 6px; padding: 12px 16px;
          font-family: ui-monospace, monospace; font-size: 0.85rem;
          white-space: pre-wrap; margin-top: 16px; max-height: 240px; overflow-y: auto; }
+  .result-kicker { color: var(--primary); font-size: 0.76rem; font-weight: 700;
+                   letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 4px; }
+  .coach-intro { color: #555; margin-top: 4px; }
+  .coach-block { border-left: 4px solid var(--primary); background: #f2f8f4;
+                 border-radius: 5px; padding: 12px 16px; margin: 14px 0; }
+  .coach-block.focus { border-left-color: var(--accent); background: #fff7ef; }
+  .coach-block h3 { margin: 0 0 6px; font-size: 1rem; color: var(--primary); }
+  .coach-block p { margin: 6px 0; }
+  .coach-value { font-size: 1.05rem; }
+  .coach-value .bench { color: #666; font-size: 0.84rem; }
+  .coach-warning { border: 1px solid #e7c45d; background: #fffbea;
+                   border-radius: 6px; padding: 10px 14px; color: #54440b; }
+  .coach-trend { color: #444; font-size: 0.92rem; }
+  .coach-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .coach-actions .button { margin-top: 8px; }
   .gear { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
           gap: 12px; margin-top: 12px; }
   a.gear-item { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px;
@@ -22,24 +37,129 @@
 {% block main %}
   <div class="card">
     {% if done %}
-      <h2>Results ready</h2>
-      <p>Your swing analysis is finished{% if job.swings_total %} —
-        {{ job.swings_total }} swing{{ "s" if job.swings_total != 1 }} analyzed{% endif %}.</p>
-      <a class="button" href="/session/{{ job.id }}/report">View report</a>
-      <a class="button secondary" href="/">Analyze another clip</a>
-      {% if gear %}
-        <h3 style="margin: 28px 0 0">Train what the report flagged</h3>
-        <p class="hint">Gear matched to this session's findings.</p>
-        <div class="gear">
-          {% for p in gear %}
-            <a class="gear-item" href="{{ p.url }}">
-              {% if p.image %}<img src="{{ p.image }}" alt="{{ p.image_alt or p.title }}" loading="lazy">{% endif %}
-              <span class="name">{{ p.title }}</span>
-              <span class="price">{{ p.price_display }}</span>
-            </a>
-          {% endfor %}
+      <p class="result-kicker">{% if refilm_needed %}Re-film needed · clip reviewed{% else %}Results ready{% if job.swings_total %} ·
+        {{ job.swings_total }} swing{{ "s" if job.swings_total != 1 }} measured{% endif %}{% endif %}</p>
+      {% if caddie_brief %}
+        {% if caddie_brief.refilm_required %}
+        <h2>Re-film before coaching</h2>
+        <p class="coach-intro">Your caddie needs a trustworthy view before
+          choosing a swing change.</p>
+        <p class="coach-warning"><strong>Why this session stopped:</strong>
+          {{ caddie_brief.warning }}</p>
+        <div class="coach-block focus">
+          <h3>Do this first</h3>
+          <p class="coach-value"><strong>{{ caddie_brief.focus_name }}</strong></p>
+          <p>{{ caddie_brief.why }}</p>
+          <p><strong>Next:</strong> {{ caddie_brief.fix }}</p>
         </div>
-        <p style="margin-bottom: 0"><a href="/shop">Browse all gear →</a></p>
+        <div class="coach-actions">
+          <a class="button" href="/">Re-film with the checklist</a>
+          {% if capture_report_available %}
+          <a class="button secondary" href="/session/{{ job.id }}/report">Review capture details</a>
+          {% endif %}
+        </div>
+        {% if require_account %}
+        <p class="hint">The first rejected clip each month does not use an
+          analysis. Every later upload uses the normal allowance, whether it
+          produces coaching or needs another re-film.</p>
+        {% endif %}
+        {% else %}
+        <h2>Your caddie's read</h2>
+        <p class="coach-intro">One clear next step from this session's actual
+          measurements—not another wall of numbers.</p>
+
+        {% if caddie_brief.warning %}
+        <p class="coach-warning"><strong>Measurement note:</strong>
+          {{ caddie_brief.warning }}</p>
+        {% endif %}
+
+        {% if caddie_brief.strength %}
+        <div class="coach-block">
+          <h3>Keep</h3>
+          <p>{{ caddie_brief.strength }}</p>
+        </div>
+        {% endif %}
+
+        <div class="coach-block focus">
+          <h3>{{ "Protect" if caddie_brief.clean else "Fix first" }}</h3>
+          <p class="coach-value"><strong>{{ caddie_brief.focus_name }}</strong>
+            {% if caddie_brief.focus_value %} — {{ caddie_brief.focus_value }}
+              {% if caddie_brief.benchmark_text %}
+              <span class="bench">({{ caddie_brief.benchmark_text }})</span>
+              {% endif %}
+            {% endif %}
+          </p>
+          <p>{{ caddie_brief.why }}</p>
+          <p><strong>Coach's cue:</strong> {{ caddie_brief.fix }}</p>
+          {% if caddie_brief.recurring_sessions > 1 %}
+          <p class="hint">This priority has appeared in
+            {{ caddie_brief.recurring_sessions }} comparable sessions.</p>
+          {% endif %}
+          {% if caddie_brief.remaining_issues %}
+          <p class="hint">{{ caddie_brief.remaining_issues }} other measured
+            issue{{ "s" if caddie_brief.remaining_issues != 1 }} stays in the
+            full report for later. Work on one thing first.</p>
+          {% endif %}
+        </div>
+
+        <div class="coach-block">
+          <h3>Practice this</h3>
+          <p><strong>{{ caddie_brief.drill.name }}</strong> —
+            {{ caddie_brief.drill.aim }}</p>
+          <p><strong>Dosage:</strong> {{ caddie_brief.drill.dosage }}<br>
+            <strong>Pass mark:</strong> {{ caddie_brief.drill.success_metric }}</p>
+        </div>
+
+        {% if caddie_brief.trend %}
+        <p class="coach-trend"><strong>Your journal:</strong>
+          {{ caddie_brief.trend }}.</p>
+        {% endif %}
+
+        <div class="coach-actions">
+          <a class="button" href="/session/{{ job.id }}/report">See your full coaching plan</a>
+          <a class="button secondary" href="/">Practice, then re-film</a>
+        </div>
+
+        {% if gear %}
+          <h3 style="margin: 28px 0 0">Optional aid for
+            {{ caddie_brief.focus_name }}</h3>
+          <p class="hint">No purchase is required—the drill above is complete
+            as written. This item appears only because its Shopify tag matches
+            this session's first measured priority.</p>
+          <div class="gear">
+            {% for p in gear %}
+              <a class="gear-item" href="{{ p.url }}" target="_blank" rel="noopener">
+                {% if p.image %}<img src="{{ p.image }}" alt="{{ p.image_alt or p.title }}" loading="lazy">{% endif %}
+                <span class="name">{{ p.title }}</span>
+                <span class="price">{{ p.price_display }}</span>
+              </a>
+            {% endfor %}
+          </div>
+          <p style="margin-bottom: 0"><a href="/shop">Browse the full gear shop →</a></p>
+        {% endif %}
+        {% endif %}
+      {% else %}
+        {% if legacy_report %}
+        <h2>Results ready</h2>
+        {% if current_report_only %}
+        <p>Your coaching report remains available. Its structured metrics
+          could not be read, so progress comparisons stay paused for this
+          session.</p>
+        {% else %}
+        <p>This session was created by an earlier CaddieInsight version.
+          Its original report remains available.</p>
+        {% endif %}
+        <a class="button" href="/session/{{ job.id }}/report">View original report</a>
+        {% else %}
+        <h2>Re-film before coaching</h2>
+        <p>This clip did not produce enough readable motion data to choose a
+          swing change. Re-film instead of practicing from incomplete
+          measurements.</p>
+        <a class="button secondary" href="/">Re-film with the checklist</a>
+        {% if capture_report_available %}
+        <a class="button secondary" href="/session/{{ job.id }}/report">Review capture details</a>
+        {% endif %}
+        {% endif %}
       {% endif %}
     {% elif failed %}
       <h2>Analysis failed</h2>

@@ -1,7 +1,7 @@
 """Curated practice drills matched to coaching flags.
 
 Every report ends with a practice plan: for each flag the session raised
-(see :mod:`swinglab.coaching`), two or three drills with an aim, a
+(see :mod:`swinglab.coaching`), one or more drills with an aim, a
 step-by-step protocol, a dosage, and a measurable re-film target expressed
 in the same numbers the report prints — so "fixed" means the next report
 says so. A session with no flags gets the ``clean`` maintenance set.
@@ -11,9 +11,10 @@ section of the config (:func:`build_drills`), so retuning
 ``coaching.sway_warn_sw`` and friends in config.yaml retunes the re-film
 targets with no code edits — the same white-label rule as everything else.
 
-Each drill carries a ``gear_tag`` (``swinglab:<flag>``), the same tag the
-gear shop uses to match training aids to flags (see swinglab.web.shop), and
-an optional ``gear_note`` naming what kind of aid the drill is built around.
+Each drill carries the exact ``gear_tag`` the gear shop uses to match
+training aids (see swinglab.web.shop), plus an optional ``gear_note`` naming
+what kind of aid it is built around. Shoulder tilt intentionally uses its own
+drill while sharing the arm-extension aid category.
 """
 
 from __future__ import annotations
@@ -46,6 +47,7 @@ PLAN_TITLES = {
     FLAG_HIP_SLIDE: "Hip slide",
     FLAG_HEAD_DIP: "Head dip",
     FLAG_ARM_EXTENSION: "Impact extension",
+    FLAG_SHOULDER_TILT: "Shoulder-tilt change",
     FLAG_BALANCE: "Finish balance",
     FLAG_CONSISTENCY: "Swing-to-swing consistency",
     CLEAN: "Maintenance — nothing flagged, keep it that way",
@@ -331,6 +333,36 @@ def build_drills(coach: dict) -> dict[str, list[Drill]]:
                 ),
             ),
         ],
+        FLAG_SHOULDER_TILT: [
+            Drill(
+                id="shoulder-impact-freeze",
+                name="Shoulder-tilt impact freeze",
+                aim=(
+                    "Keep the trail shoulder working down from address "
+                    "through the strike."
+                ),
+                protocol=(
+                    "Set up face-on to a mirror or phone and note the shoulder "
+                    "line at address.",
+                    "Swing at half speed and freeze at impact for three seconds.",
+                    "Check that the trail shoulder is lower than at address, "
+                    "then repeat the motion without standing up.",
+                    "Rehearse five freezes, then hit one ball through the same "
+                    "shape.",
+                ),
+                dosage="2 x 8 freezes, 3x/week",
+                success_metric=(
+                    f"Re-film face-on: shoulder tilt at impact at or above "
+                    f"{tilt}\N{DEGREE SIGN}, with address-to-impact tilt change "
+                    f"at or above 0\N{DEGREE SIGN} on every swing."
+                ),
+                gear_tag="swinglab:arm-extension",
+                gear_note=(
+                    "Built around a full-length swing mirror; a phone on a "
+                    "tripod works too."
+                ),
+            ),
+        ],
         FLAG_BALANCE: [
             Drill(
                 id="balance-feet-together",
@@ -459,9 +491,10 @@ def build_drills(coach: dict) -> dict[str, list[Drill]]:
 # practice_plan(), which rebuilds the text from the live thresholds.
 DRILLS: dict[str, list[Drill]] = build_drills(DEFAULTS["coaching"])
 
-# Flags that borrow another family's drills (shoulder-tilt shares the
-# impact-extension work; both are flip-at-impact faults).
-ISSUE_FAMILY = {FLAG_SHOULDER_TILT: FLAG_ARM_EXTENSION}
+# Fallbacks for flags that borrow another family's drills. Shoulder tilt now
+# has its own evidence-matched plan; its selected drill carries the shared
+# arm-extension gear tag separately.
+ISSUE_FAMILY: dict[str, str] = {}
 
 
 def family_for(flag: str) -> str | None:

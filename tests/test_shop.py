@@ -18,6 +18,7 @@ from fastapi.testclient import TestClient
 from swinglab.coaching import (
     FLAG_CONSISTENCY,
     FLAG_HIP_SLIDE,
+    FLAG_SHOULDER_TILT,
     FLAG_SWAY,
     FLAG_TEMPO,
     flag_keys,
@@ -103,7 +104,9 @@ def make_fake_analyze(metrics: dict):
 
 def make_client(tmp_path, monkeypatch, metrics=None):
     monkeypatch.setattr(
-        jobs_module, "analyze_video", make_fake_analyze(metrics or metrics_payload())
+        jobs_module,
+        "analyze_video",
+        make_fake_analyze(metrics if metrics is not None else metrics_payload()),
     )
     return TestClient(create_app(Config(), sessions_dir=tmp_path / "sessions"))
 
@@ -209,9 +212,12 @@ def test_flag_keys_each_threshold():
     assert flag_keys(metrics_payload(tempo=2.0), cfg) == [FLAG_TEMPO]
     assert flag_keys(metrics_payload(sway=0.5), cfg) == [FLAG_SWAY]
     assert flag_keys(metrics_payload(slide=0.5), cfg) == [FLAG_HIP_SLIDE]
-    assert flag_keys(metrics_payload(swings=3, tempo_std=0.6), cfg) == [
-        FLAG_CONSISTENCY
-    ]
+    inconsistent = metrics_payload(swings=3, tempo_std=0.0)
+    for swing, tempo in zip(
+        inconsistent["swings"], (2.5, 3.0, 3.5)
+    ):
+        swing["metrics"]["tempo_ratio"] = tempo
+    assert flag_keys(inconsistent, cfg) == [FLAG_CONSISTENCY]
     # one noisy swing is enough to flag; single swing never flags consistency
     assert FLAG_CONSISTENCY not in flag_keys(
         metrics_payload(swings=1, tempo_std=0.6), cfg
@@ -223,11 +229,37 @@ def test_flag_keys_tolerates_partial_payloads():
     assert flag_keys({}, cfg) == []
     assert flag_keys({"swings": [{"metrics": {"tempo_ratio": None}}]}, cfg) == []
     assert flag_keys({"swings": [{}], "session_stats": {}}, cfg) == []
+    assert flag_keys({"swings": 1}, cfg) == []
+    assert flag_keys(
+        {
+            "swings": [
+                {"metrics": {"tempo_ratio": 2.0}},
+                {"metrics": 1},
+                "bad row",
+            ],
+            "session_stats": 1,
+        },
+        cfg,
+    ) == [FLAG_TEMPO]
+    assert flag_keys(
+        {
+            "meta": {"angle": "dtl"},
+            "swings": [
+                {
+                    "metrics": {
+                        "tempo_ratio": 3.0,
+                        "head_sway_backswing_sw": 0.8,
+                    }
+                }
+            ],
+        },
+        cfg,
+    ) == []
 
 
 # -- recommendations --------------------------------------------------------
 
-def test_recommend_round_robins_flags_then_pads_with_general():
+def test_recommend_round_robins_measured_flags_without_general_padding():
     cfg = Config()
     picks = shop.recommend(CATALOG, [FLAG_TEMPO, FLAG_SWAY], cfg)
     titles = [p["title"] for p in picks]
@@ -236,7 +268,16 @@ def test_recommend_round_robins_flags_then_pads_with_general():
     assert titles == ["Tempo Wand", "Alignment Sticks", "Swing Metronome"]
 
     picks = shop.recommend(CATALOG, [], cfg)
-    assert [p["title"] for p in picks] == ["Logo Cap"]  # general only
+    assert picks == []
+
+
+def test_recommendations_require_issue_tag_and_availability():
+    cfg = Config()
+    sold_out = product("Sold-out Tempo Aid", ["swinglab:tempo"])
+    sold_out["available"] = False
+    unrelated = product("Unrelated Ball Marker", ["accessory"])
+    assert shop.recommend([sold_out], [FLAG_TEMPO], cfg) == []
+    assert shop.recommend([unrelated], [FLAG_TEMPO], cfg) == []
 
 
 def test_done_page_recommends_flagged_gear(tmp_path, monkeypatch, shop_env):
@@ -245,16 +286,45 @@ def test_done_page_recommends_flagged_gear(tmp_path, monkeypatch, shop_env):
     )
     job_id = finish_upload(client)
     html = client.get(f"/session/{job_id}").text
-    assert "Train what the report flagged" in html
+    assert "Your caddie's read" in html
+    assert "Optional aid for" in html
+    assert "No purchase is required" in html
     assert "Tempo Wand" in html
     assert 'href="/shop"' in html
 
 
-def test_done_page_clean_swing_gets_general_gear(tmp_path, monkeypatch, shop_env):
+def test_shoulder_tilt_priority_uses_arm_extension_gear_family(
+    tmp_path, monkeypatch, shop_env
+):
+    arm_aid = product("Impact Ball", ["swinglab:arm-extension"])
+    monkeypatch.setattr(
+        shop, "_fetch", lambda: [dict(p) for p in CATALOG] + [arm_aid]
+    )
+    payload = {
+        "swings": [
+            {
+                "metrics": {
+                    "tempo_ratio": 3.0,
+                    "shoulder_tilt_impact_deg": 10.0,
+                    "shoulder_tilt_delta_deg": -5.0,
+                }
+            }
+        ]
+    }
+    client = make_client(tmp_path, monkeypatch, metrics=payload)
+    job_id = finish_upload(client)
+    html = client.get(f"/session/{job_id}").text
+    assert FLAG_SHOULDER_TILT in html or "Shoulder-tilt change" in html
+    assert "Impact Ball" in html
+
+
+def test_done_page_clean_swing_gets_no_product_pitch(tmp_path, monkeypatch, shop_env):
     client = make_client(tmp_path, monkeypatch)  # no flags
     job_id = finish_upload(client)
     html = client.get(f"/session/{job_id}").text
-    assert "Logo Cap" in html
+    assert "Protect this baseline" in html
+    assert "Optional aid for" not in html
+    assert "Logo Cap" not in html
     assert "Tempo Wand" not in html
 
 
@@ -262,8 +332,10 @@ def test_done_page_tolerates_unreadable_metrics(tmp_path, monkeypatch, shop_env)
     client = make_client(tmp_path, monkeypatch, metrics={})
     job_id = finish_upload(client)
     html = client.get(f"/session/{job_id}").text
-    assert "Results ready" in html  # page renders; general gear still shows
-    assert "Logo Cap" in html
+    assert "Re-film needed" in html
+    assert "Re-film before coaching" in html
+    assert "did not produce enough readable motion data" in html
+    assert "Logo Cap" not in html
 
 
 def test_done_page_without_shop_has_no_gear(tmp_path, monkeypatch):
@@ -271,7 +343,7 @@ def test_done_page_without_shop_has_no_gear(tmp_path, monkeypatch):
     monkeypatch.delenv("SHOPIFY_STOREFRONT_TOKEN", raising=False)
     client = make_client(tmp_path, monkeypatch, metrics=metrics_payload(tempo=2.0))
     job_id = finish_upload(client)
-    assert "Train what the report flagged" not in client.get(f"/session/{job_id}").text
+    assert "Optional aid for" not in client.get(f"/session/{job_id}").text
 
 
 def test_storefront_collection_fetch_is_tokenless(monkeypatch):

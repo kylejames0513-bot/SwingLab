@@ -34,6 +34,24 @@ from tests.test_web import fake_analyze_ok, wait_for
 LOCKED_NOTE_TAIL = "upgrade and re-film to get yours."
 
 
+def test_pricing_copy_uses_the_same_account_gate_as_replay_entitlement(tmp_path):
+    cfg = Config()
+    cfg.slowmo["annotated"] = True
+    cfg.billing["replay_pro_only"] = True
+
+    cfg.web["require_account"] = False
+    open_html = TestClient(
+        create_app(cfg, sessions_dir=tmp_path / "open")
+    ).get("/pricing").text
+    assert "Upgrade and re-film" not in open_html
+
+    cfg.web["require_account"] = True
+    account_html = TestClient(
+        create_app(cfg, sessions_dir=tmp_path / "accounts")
+    ).get("/pricing").text
+    assert "Upgrade and re-film" in account_html
+
+
 # -- config pin (same pattern as the retention pin) ---------------------------
 
 def test_shipped_gate_and_code_default_differ_deliberately():

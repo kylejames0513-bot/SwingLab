@@ -37,6 +37,7 @@ def stub_jobs(tmp_path, payloads: list[dict]):
         session_dir = tmp_path / f"job{n}"
         (session_dir / "out").mkdir(parents=True)
         (session_dir / "out" / "metrics.json").write_text(json.dumps(payload))
+        (session_dir / "out" / "report.html").write_text("<html>report</html>")
         jobs.append(types.SimpleNamespace(
             id=f"job{n}", session_dir=session_dir, status="done",
             created_at=1000.0 + n, report_rel="out/report.html",
@@ -152,11 +153,13 @@ def test_compose_digest_content(tmp_path, cfg):
     subject, html = digest.compose_digest(
         stub_user(), cfg, jobs, base_url="https://swing.example", secret=SECRET,
     )
-    assert subject == "This week: tame the tempo (3 drills)"
+    assert subject == "This week: tame the tempo (1 drill)"
     # Drill name + dosage + pass mark, straight from the practice plan.
     assert "Three-beat count" in html
     assert "3 x 10 swings, 3x/week" in html
     assert "tempo ratio at or above 2.4:1" in html
+    assert "Late whoosh" not in html
+    assert "Pause at the top" not in html
     assert "Also flagged: Finish balance" in html
     # One honest progress line (two sessions of tempo data exist).
     assert "Tempo has moved 2.20:1" in html
@@ -172,12 +175,26 @@ def test_compose_digest_content(tmp_path, cfg):
 
 
 def test_compose_digest_clean_session_and_no_sessions(tmp_path, cfg):
-    clean = stub_jobs(tmp_path, [payload_for([{"tempo_ratio": 3.0}])])
+    clean = stub_jobs(
+        tmp_path,
+        [
+            payload_for(
+                [
+                    {
+                        "tempo_ratio": 3.0,
+                        "head_sway_backswing_sw": 0.1,
+                        "hip_slide_backswing_sw": 0.1,
+                    }
+                ]
+            )
+        ],
+    )
     subject, html = digest.compose_digest(
         stub_user(), cfg, clean, base_url="", secret=SECRET,
     )
-    assert subject == "This week: keep it clean (2 drills)"
-    assert "Baseline re-film" in html            # the maintenance drills
+    assert subject == "This week: keep it clean (1 drill)"
+    assert "Baseline re-film" in html
+    assert "Mirror checkpoints" not in html
     assert "came back clean" in html
 
     assert digest.compose_digest(stub_user(), cfg, [], secret=SECRET) is None
@@ -186,6 +203,54 @@ def test_compose_digest_clean_session_and_no_sessions(tmp_path, cfg):
         created_at=1.0, report_rel=None,
     )]
     assert digest.compose_digest(stub_user(), cfg, unfinished, secret=SECRET) is None
+
+
+def test_clean_dtl_digest_stays_with_rhythm_only(tmp_path, cfg):
+    payload = payload_for([{"tempo_ratio": 3.0}])
+    payload["meta"] = {"angle": "dtl"}
+    jobs = stub_jobs(tmp_path, [payload])
+
+    subject, html = digest.compose_digest(
+        stub_user(), cfg, jobs, base_url="", secret=SECRET
+    )
+    assert subject == "This week: protect the readable rhythm (1 drill)"
+    assert "Rhythm baseline re-film" in html
+    assert "tempo ratio" in html
+    assert "down-the-line session came back clean on tempo" in html
+    assert "head sway" not in html
+    assert "hip slide" not in html
+
+
+def test_partial_face_on_digest_does_not_send_generic_clean_plan(tmp_path, cfg):
+    jobs = stub_jobs(
+        tmp_path, [payload_for([{"tempo_ratio": 3.0}])]
+    )
+    subject, html = digest.compose_digest(
+        stub_user(), cfg, jobs, base_url="", secret=SECRET
+    )
+    assert subject == "This week: protect the readable rhythm (1 drill)"
+    assert "Rhythm baseline re-film" in html
+    assert "rebuilds a fuller baseline" in html
+    assert "Compare tempo, sway and slide" not in html
+
+
+def test_digest_uses_recomputed_consistency_priority_with_stale_stats(
+    tmp_path, cfg
+):
+    payload = payload_for(
+        [{"tempo_ratio": 2.5}, {"tempo_ratio": 3.5}]
+    )
+    payload["session_stats"] = {
+        "tempo_ratio": {"mean": 3.0, "std": 0.0}
+    }
+    jobs = stub_jobs(tmp_path, [payload])
+    subject, html = digest.compose_digest(
+        stub_user(), cfg, jobs, base_url="", secret=SECRET
+    )
+    assert subject == "This week: one tempo, every swing (1 drill)"
+    assert "One count, every club" in html
+    assert "Tempo consistency" in html
+    assert "came back clean" not in html
 
 
 # -- run_once send gates -----------------------------------------------------
@@ -205,6 +270,7 @@ def finished_session(manager, user_id, payload=None):
     (job.session_dir / "out" / "metrics.json").write_text(
         json.dumps(payload or payload_for([{"tempo_ratio": 2.2}]))
     )
+    (job.session_dir / "out" / "report.html").write_text("<html>report</html>")
     job.status = DONE
     job.report_rel = "out/report.html"
     manager._save(job)

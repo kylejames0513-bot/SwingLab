@@ -175,19 +175,23 @@ def test_new_families_present_and_complete():
             assert d.gear_tag == f"swinglab:{key}", d.id
 
 
-def test_shoulder_tilt_maps_onto_arm_extension_family():
-    assert family_for("shoulder-tilt") == "arm-extension"
+def test_shoulder_tilt_has_evidence_matched_drill_family():
+    assert family_for("shoulder-tilt") == "shoulder-tilt"
     assert family_for("arm-extension") == "arm-extension"
     assert family_for("head-dip") == "head-dip"
     assert family_for("nonsense") is None
 
 
-def test_arm_extension_and_shoulder_tilt_render_one_plan_block():
+def test_arm_extension_and_shoulder_tilt_render_distinct_plan_blocks():
     plan = practice_plan(["arm-extension", "shoulder-tilt"], Config())
-    assert [b["flag"] for b in plan] == ["arm-extension"]
+    assert [b["flag"] for b in plan] == [
+        "arm-extension",
+        "shoulder-tilt",
+    ]
     plan = practice_plan(["shoulder-tilt"], Config())
-    assert [b["flag"] for b in plan] == ["arm-extension"]
-    assert plan[0]["title"] == "Impact extension"
+    assert [b["flag"] for b in plan] == ["shoulder-tilt"]
+    assert plan[0]["title"] == "Shoulder-tilt change"
+    assert plan[0]["drills"][0].gear_tag == "swinglab:arm-extension"
 
 
 def test_new_refilm_targets_track_config_thresholds():

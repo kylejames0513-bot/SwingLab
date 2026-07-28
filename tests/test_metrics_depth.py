@@ -23,6 +23,7 @@ from swinglab.coaching import (
     flag_keys,
     issue_cards,
     session_flags,
+    session_notes,
     swing_notes,
 )
 from swinglab.config import DEFAULTS, Config
@@ -459,9 +460,17 @@ def test_swing_notes_tilt_decrease_branch():
 def test_swing_notes_clean_fallback_unchanged():
     notes = swing_notes(make_metrics(1), Config())
     assert notes == [
-        "No flags on this swing — tempo and lateral movement are inside the "
-        "configured thresholds."
+        "No measured coaching value crossed its configured threshold on "
+        "this swing."
     ]
+
+
+def test_session_consistency_requires_two_measured_tempos():
+    rows = [
+        make_metrics(1, tempo_ratio=3.0),
+        make_metrics(2, tempo_ratio=float("nan")),
+    ]
+    assert session_notes(rows, session_stats(rows), Config()) == []
 
 
 # --------------------------------------------------------------- issue cards
@@ -507,11 +516,39 @@ def test_issue_cards_lower_direction_arm_card():
     assert c.flag == "arm-extension"
     assert c.unit == "\N{DEGREE SIGN}"
     assert c.worse_direction == "lower"
-    assert c.session_text == "155\N{DEGREE SIGN}"  # mean of 140 and 170
+    assert c.session_label == "worst swing"
+    assert c.session_text == "140\N{DEGREE SIGN}"
     assert c.benchmark_text == (
         "180\N{DEGREE SIGN} is straight · flagged below 150\N{DEGREE SIGN}"
     )
     assert c.severity == "warn"  # mean 155 above 150, one of two swings flagged
+
+
+def test_delta_only_shoulder_card_uses_delta_evidence_before_sorting():
+    ms = [
+        make_metrics(
+            1,
+            head_sway_backswing_sw=0.50,
+            shoulder_tilt_impact_deg=10.0,
+            shoulder_tilt_delta_deg=-5.0,
+        ),
+        make_metrics(
+            2,
+            head_sway_backswing_sw=0.10,
+            shoulder_tilt_impact_deg=10.0,
+            shoulder_tilt_delta_deg=-3.0,
+        ),
+    ]
+    cards = issue_cards(ms, session_stats(ms), Config())
+    assert [card.flag for card in cards[:2]] == ["shoulder-tilt", "sway"]
+    shoulder = cards[0]
+    assert shoulder.metric == "shoulder_tilt_delta_deg"
+    assert shoulder.display_name == "Shoulder-tilt change"
+    assert shoulder.session_text == "-4\N{DEGREE SIGN}"
+    assert shoulder.benchmark_text.startswith("flagged below 0\N{DEGREE SIGN}")
+    assert shoulder.severity == "major"
+    assert "decreased from address" in shoulder.why
+    assert "flat" not in shoulder.why
 
 
 def test_consistency_card_uses_std_and_no_benchmark_line():

@@ -24,7 +24,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from math import atan2, cos, radians, sin
+from math import atan2, cos, isfinite, radians, sin
 from typing import Sequence
 
 # Neutral ink for ground/props/labels; brand primary draws the figure and
@@ -373,6 +373,12 @@ _SCENES = [
         [P_ADDRESS, P_IMPACT, P_IMPACT],  # repeated IMPACT = the freeze
     ),
     _scene(
+        "shoulder-impact-freeze",
+        "Shoulder-tilt impact freeze setup",
+        [_ground(), _ball(), _mirror(30), _label(40, 40, "tilt + hold")],
+        [P_ADDRESS, P_IMPACT, P_IMPACT],
+    ),
+    _scene(
         "balance-feet-together",
         "Feet-together swings setup",
         [_ground(), _ball()],
@@ -580,30 +586,52 @@ def trend_chart(
     session, accent-filled when that session is on the bad side. Returns ""
     when there is nothing to plot.
     """
-    vals = [float(v) for v in points if v is not None]
+    vals: list[float] = []
+    for value in points:
+        if value is None:
+            continue
+        try:
+            converted = float(value)
+        except (OverflowError, TypeError, ValueError):
+            continue
+        if isfinite(converted):
+            vals.append(converted)
     if not vals:
         return ""
+    benchmark_value = None
+    if benchmark is not None:
+        try:
+            candidate = float(benchmark)
+        except (OverflowError, TypeError, ValueError):
+            candidate = float("nan")
+        if isfinite(candidate):
+            benchmark_value = candidate
     primary, accent = _colors(brand)
     x0, x1 = 12.0, 308.0
     y0, y1 = 14.0, 102.0
-    domain = vals + ([float(benchmark)] if benchmark is not None else [])
+    domain = vals + (
+        [benchmark_value] if benchmark_value is not None else []
+    )
     lo, hi = min(domain), max(domain)
-    if hi - lo == 0:
-        lo, hi = lo - 1.0, hi + 1.0
-    pad = 0.10 * (hi - lo)
-    lo -= pad
-    hi += pad
+    span = hi - lo
+    if not isfinite(span):
+        return ""
     n = len(vals)
+    plot_top = y0 + 0.10 * (y1 - y0)
+    plot_bottom = y1 - 0.10 * (y1 - y0)
 
     def x_of(i: int) -> float:
         return (x0 + x1) / 2 if n == 1 else x0 + i * (x1 - x0) / (n - 1)
 
     def y_of(v: float) -> float:
-        return y1 - (v - lo) / (hi - lo) * (y1 - y0)
+        if span == 0:
+            return (plot_top + plot_bottom) / 2
+        fraction = (v - lo) / span
+        return plot_bottom - fraction * (plot_bottom - plot_top)
 
     parts: list[str] = []
-    if benchmark is not None:
-        by = y_of(float(benchmark))
+    if benchmark_value is not None:
+        by = y_of(benchmark_value)
         band_top, band_bottom = (y0 - 4.0, by) if worse == "higher" else (by, y1 + 4.0)
         if band_bottom > band_top:
             parts.append(
@@ -627,8 +655,10 @@ def trend_chart(
             'fill="none" stroke-linecap="round" stroke-linejoin="round"/>'
         )
     for i, v in enumerate(vals):
-        bad = benchmark is not None and (
-            v > benchmark if worse == "higher" else v < benchmark
+        bad = benchmark_value is not None and (
+            v > benchmark_value
+            if worse == "higher"
+            else v < benchmark_value
         )
         parts.append(
             f'<circle cx="{_n(x_of(i))}" cy="{_n(y_of(v))}" r="3.2" '

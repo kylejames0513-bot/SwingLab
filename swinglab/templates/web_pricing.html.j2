@@ -39,7 +39,8 @@
       metrics table, key-position frames, slow motion, centerline overlays,
       coaching notes, and a practice plan with re-film targets. Free is
       {{ free_per_month }} full report{% if free_per_month != 1 %}s{% endif %}
-      a month. Pro is unlimited filming{% if replay_pro_only %}, plus the
+      a month. Pro is {% if pro_per_month <= 0 %}unlimited filming{% else %}up to
+      {{ pro_per_month }} analyses a month{% endif %}{% if replay_pro_only %}, plus the
       annotated coach replay — your own footage played back with your
       tracked body, your hand path, and the key numbers appearing at each
       swing event{% endif %}{% if progress_pro_only %},
@@ -52,18 +53,18 @@
     <tr>
       <td>Swing analyses per month</td>
       <td>{{ free_per_month }}</td>
-      <td class="yes">Unlimited</td>
+      <td class="yes">{{ "Unlimited" if pro_per_month <= 0 else pro_per_month }}</td>
     </tr>
     <tr>
-      <td>Tempo, head-sway and hip-slide metrics, benchmarked</td>
+      <td>Coaching-ready clip: benchmarked motion metrics</td>
       <td class="yes">Included</td><td class="yes">Included</td>
     </tr>
     <tr>
-      <td>Key-position frames, slow motion, centerline overlays</td>
+      <td>Coaching-ready clip: key frames, slow motion, overlays</td>
       <td class="yes">Included</td><td class="yes">Included</td>
     </tr>
     <tr>
-      <td>Coaching notes and a practice plan per session</td>
+      <td>Coaching notes and a practice plan per coaching-ready session</td>
       <td class="yes">Included</td><td class="yes">Included</td>
     </tr>
     <tr>
@@ -112,7 +113,8 @@
       <h2>Pro — yearly</h2>
       <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
       <ul>
-        <li>Unlimited swing analyses for a year</li>
+        <li>{% if pro_per_month <= 0 %}Unlimited swing analyses for a year{% else %}
+          Up to {{ pro_per_month }} analyses a month for a year{% endif %}</li>
         <li>Everything Pro includes, all season</li>
         <li>One checkout covers the whole year — no monthly decision to remake</li>
       </ul>
@@ -122,7 +124,8 @@
       <h2>Pro — monthly</h2>
       <p class="price">{{ pro_price_monthly_text or "Unlimited" }}</p>
       <ul>
-        <li>Unlimited swing analyses</li>
+        <li>{% if pro_per_month <= 0 %}Unlimited swing analyses{% else %}
+          Up to {{ pro_per_month }} analyses a month{% endif %}</li>
         <li>Everything Pro includes</li>
         {% if store_subscriptions %}
         <li>Subscribe, or buy a single month at a time</li>
@@ -131,6 +134,13 @@
         {% endif %}
       </ul>
       {{ pro_cta() }}
+      {% if pro_store_url %}
+      <p class="hint">The store shows the available terms, renewal details,
+        and total price before payment.</p>
+      {% elif billing_enabled %}
+      <p class="hint">Stripe shows the exact price, billing interval, and
+        renewal details before payment.</p>
+      {% endif %}
     </div>
     {% if pro_store_url %}
     {# The lifetime tier exists only as a store purchase (SL-PRO-LIFE) —
@@ -154,7 +164,8 @@
         <li>{{ free_per_month }} full swing analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
           every month, forever</li>
         <li>Full report: metrics, key positions, slow motion, overlays</li>
-        <li>Coaching notes and a practice plan for every session</li>
+        <li>Coaching notes and a practice plan for every coaching-ready session</li>
+        <li>Capture guidance when a clip needs re-filming</li>
         <li>No card required</li>
       </ul>
       {% if not user %}<a class="button" href="/">Sign up free</a>{% endif %}
@@ -180,6 +191,5 @@
     always the source of truth for what is charged and how it renews.</p>
   {% endif %}
   <p class="fineprint">Unused Pro purchases are refundable within 14 days.</p>
-
   <p class="disclaimer">{{ brand.disclaimer }}</p>
 {% endblock %}

@@ -158,10 +158,13 @@ fast — so `--fast` does not change it. Set `slowmo.annotated: false` in
 
 ### Practice plans in the report
 
-Every report ends with a practice plan built from what the session flagged.
+Every coaching-eligible report ends with a practice plan built from what the
+session flagged. A report that needs a re-film stops at capture guidance and
+unannotated slow motion; it does not present measurements, derived coaching
+visuals, drills, or commerce from data the app has rejected.
 Each coaching flag (`tempo`, `sway`, `hip-slide`, `head-dip`,
-`arm-extension`, `balance`, `consistency` — `shoulder-tilt` shares the
-impact-extension drills, since both are flip-at-impact faults) maps to 2–3
+`arm-extension`, `shoulder-tilt`, `balance`, `consistency`) maps to
+evidence-matched
 curated drills in `swinglab/drills.py` — an aim, a step-by-step protocol, a
 dosage, and a measurable re-film target expressed in the same numbers the
 report prints, so "fixed" means the next report says so. A session with no
@@ -263,10 +266,16 @@ The JSON API under `/api` is the surface a future mobile app talks to:
 - `POST /upload` — multipart upload (`video`, `hand`, optional `strikes`,
   optional `fast`); redirects to the session page, or returns
   `{"id", "url"}` when called with `Accept: application/json`
-- `GET /api/session/{id}` — status, queue position, progress log, and (when
-  done) `report_url` + `metrics_url`
-- `GET /api/sessions` — recent sessions
-- `GET /session/{id}/files/...` — report, media, and metrics.json
+- `GET /api/session/{id}` — status, queue position, progress log, and, when
+  done, additive `coaching_eligible` + `outcome` fields. Coaching-ready
+  results include `report_url` + `metrics_url`; a current capture-only
+  re-film result includes only its safe `report_url`. Older rejected reports
+  are withheld because they predate this trust boundary.
+- `GET /api/sessions` — recent sessions, including the same additive outcome
+  fields for completed results
+- `GET /session/{id}/files/...` — owned session artifacts. Re-film-required
+  results gate raw metrics and derived coaching visuals; current capture-only
+  reports and their slow-motion capture reference remain available.
 
 ### Accounts and Pro memberships
 
@@ -275,7 +284,9 @@ email + password (hashed locally with scrypt — no external auth service) —
 or, once email delivery is configured, with just their email via a six-digit sign-in
 code ("One account: email-code sign-in" below). Accounts get
 `billing.free_per_month` analyses per calendar month, and can upgrade to
-**Pro** for `billing.pro_per_month` (0 = unlimited). Each
+**Pro** for `billing.pro_per_month` (0 = unlimited). The first rejected clip
+each month is forgiven; every later upload uses the normal allowance even if
+it also needs re-filming. Each
 account sees only its own history, and results are private to their owner
 (sessions from before accounts stay reachable by link). Set
 `require_account: false` for an open, no-login instance.
@@ -287,8 +298,9 @@ buyers are sent to the Shopify store.
 **The coach replay is one Pro quality line** (`billing.replay_pro_only`,
 shipped `true`): with accounts on, the annotated replay — the report's most
 shareable artifact — is rendered only for jobs whose owner has Pro *at
-analysis time*. A free user's report keeps everything else (metrics, slow
-motion, overlays, drills) and shows an honest lock-and-key teaser with a
+analysis time*. For a trustworthy session, a free user's report keeps
+everything else (metrics, slow motion, overlays, drills) and shows an honest
+lock-and-key teaser with a
 `/pricing` link in the replay slot; the render itself is skipped, so the
 gate saves the CPU too. Upgrading later never rewrites an old report —
 re-film to get the replay. Open instances (`require_account: false`), CLI
@@ -397,10 +409,11 @@ and strictly opt-in. It only ever sends when ALL of these hold:
   link in every email (works logged out).
 
 Each email is self-contained HTML (inline styles, brand colors, no images or
-external assets): the drills for the latest finished session's flags — name,
-dosage, and the same pass-mark numbers the report prints — plus one honest
-progress line once two sessions exist, and links to the latest report and
-`/progress`. An hourly scheduler thread sends at most one email per user per
+external assets): exactly one drill selected by the same Caddie Brief priority
+as the results page — name, dosage, and the same pass-mark numbers the report
+prints — plus one honest progress line once two sessions exist, and links to
+the latest report and `/progress`. An hourly scheduler thread sends at most
+one email per user per
 ~week (6.5 days), only to accounts with at least one finished session, and
 stamps the send time *before* attempting delivery so a crash can never
 double-send within a week. Set `PUBLIC_BASE_URL` so the email's links are
@@ -595,10 +608,10 @@ security note above); the account page says so when it applies.
 ### Gear shop (Shopify)
 
 Connect a Shopify store and the app grows a **Gear** page (`/shop`) listing
-the store's products, and — the interesting part — a **"Train what the report
-flagged"** strip on every finished analysis: a quick tempo recommends the
-tempo trainer, head sway recommends the anti-sway drills, and so on. Tag
-products in Shopify to wire them up:
+the store's products. After trustworthy coaching, a finished analysis may
+show at most one optional aid whose tag matches the session's first measured
+priority. Clean sessions, unreadable/re-film sessions, and unmatched issues
+show no product pitch. Tag products in Shopify to wire exact matches:
 
 | Shopify product tag | Recommended when the analysis shows |
 | --- | --- |
@@ -606,10 +619,10 @@ products in Shopify to wire them up:
 | `swinglab:sway` | head sway beyond `coaching.sway_warn_sw` |
 | `swinglab:hip-slide` | hip slide beyond `coaching.sway_warn_sw` |
 | `swinglab:head-dip` | head dropping beyond `coaching.head_dip_warn_sw` on the way to impact |
-| `swinglab:arm-extension` | lead arm bent under `coaching.lead_arm_warn_deg` at impact (the shoulder-tilt flag matches this tag too) |
+| `swinglab:arm-extension` | lead arm bent under `coaching.lead_arm_warn_deg` at impact, or a shoulder-tilt priority using its own evidence-matched freeze drill |
 | `swinglab:balance` | feet drifting beyond `coaching.finish_balance_warn_sw` during the finish hold |
 | `swinglab:consistency` | tempo varying noticeably across swings |
-| `swinglab:general` | anything (pads the list; what a clean swing sees) |
+| `swinglab:general` | broad store categorization only; never auto-recommended |
 
 Like payments, the shop is **inert until configured** — no link, no page —
 through the store domain:
@@ -644,11 +657,16 @@ from the strategy analysis:
 
 | KPI | Definition | Target |
 | --- | --- | --- |
-| `activation_rate` | of accounts created in the window, the share whose **first DONE report** landed within 7 days of signup | **> 50%** |
-| `w1_refilm_rate` | of those accounts with ≥ 1 DONE analysis, the share whose **second** DONE analysis landed within 7 days of their first — the re-film habit is the core loop | **> 25%** |
+| `activation_rate` | of accounts created in the window, the share whose **first coaching-ready report** landed within 7 days of signup | **> 50%** |
+| `w1_refilm_rate` | of those accounts with ≥ 1 coaching-ready analysis, the share whose **second coaching-ready analysis** landed within 7 days of their first — the re-film habit is the core loop | **> 25%** |
 | `free_to_pro_rate` | of the window's *activated* accounts, the share that gained Pro within 30 days of signup (Shopify grants timed by the order ledger's `applied_at`; a live Stripe subscription counts — Stripe state carries no grant timestamp) | **2%+** |
-| `weekly_retained_filmers` | a count, not a rate: accounts with ≥ 1 DONE analysis in the trailing 7 days | grow it |
-| `gear_attach_per_100_reports` | non-cancelled **gear orders** in the window per 100 DONE reports in the window | — |
+| `weekly_retained_filmers` | a count, not a rate: accounts with ≥ 1 coaching-ready analysis in the trailing 7 days | grow it |
+| `gear_attach_per_100_reports` | non-cancelled **gear orders** in the window per 100 coaching-ready reports in the window | — |
+
+Pre-metrics reports are treated as coaching-ready legacy results because
+re-film outcomes did not exist when they were created. New results use the
+same centralized eligibility rule as Caddie Brief, trends, quota, and the
+results page; rejected clips therefore do not inflate product KPIs.
 
 The gear side is measurable because the `orders/paid` webhook now records
 every **non-Pro** line item into a `gear_orders` ledger (order id, SKU,

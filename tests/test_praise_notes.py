@@ -52,6 +52,26 @@ def test_unmeasured_metrics_are_never_praised():
     assert "consistent" not in text       # one swing: no consistency claim
 
 
+def test_consistency_requires_two_finite_tempo_measurements():
+    ms = [
+        make_metrics(1, tempo_ratio=3.0),
+        make_metrics(2, tempo_ratio=float("nan")),
+    ]
+    text = " ".join(praise_notes(ms, Config()))
+    assert "Tempo holds" in text
+    assert "consistent swing to swing" not in text
+
+
+def test_partial_session_calls_tempo_every_measured_swing():
+    ms = [
+        make_metrics(1, tempo_ratio=3.0),
+        make_metrics(2, tempo_ratio=float("nan"), head_dip_sw=0.4),
+    ]
+    text = " ".join(praise_notes(ms, Config()))
+    assert "every measured swing" in text
+    assert "on every swing" not in text
+
+
 def test_single_breach_kills_that_familys_praise():
     ms = [make_metrics(1), make_metrics(2, head_sway_backswing_sw=0.5)]
     text = " ".join(praise_notes(ms, Config()))

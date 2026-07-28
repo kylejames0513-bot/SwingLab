@@ -26,10 +26,21 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 
+from ..caddie_brief import (
+    payload_has_coachable_data,
+    payload_is_coaching_eligible,
+    payload_requires_refilm,
+    payload_structure_is_valid,
+)
 from ..config import Config
 from ..events import EventError
 from ..ffmpeg import FFmpegError
 from ..pipeline import VideoTooLongError, ZeroStrikesError, analyze_video
+from ..report import (
+    REPORT_OUTCOME_CAPTURE,
+    REPORT_OUTCOME_COACHING,
+    persisted_report_outcome,
+)
 
 logger = logging.getLogger("swinglab.web.jobs")
 
@@ -38,6 +49,7 @@ PROCESSING = "processing"
 DONE = "done"
 FAILED = "failed"
 ACTIVE = (QUEUED, PROCESSING)
+_FREE_REFILM_CREDITS_PER_MONTH = 1
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -171,18 +183,127 @@ class JobManager:
                 ).fetchall()
         return [self._from_row(r) for r in rows]
 
+    def list_comparable(
+        self,
+        *,
+        user_id: str,
+        club: str | None,
+        through: float,
+        limit: int = 50,
+    ) -> list[Job]:
+        """Finished same-user, same-club sessions up to one session.
+
+        Filtering happens in SQLite before the limit, so a sparse club history
+        is not lost behind newer sessions made with other clubs.  This is the
+        bounded history used by the Caddie Brief; it never crosses accounts or
+        lets a later session rewrite an older session's journal context. The
+        eligibility scan is capped at five database rows per requested result
+        (500 rows maximum) so a long account history cannot create unbounded
+        report/JSON I/O on a results request.
+        """
+        wanted = min(max(int(limit), 1), 100)
+        scan_limit = min(wanted * 5, 500)
+        club_clause = "club IS NULL" if club is None else "club = ?"
+        params: tuple = (
+            (user_id, DONE, through)
+            if club is None
+            else (user_id, DONE, through, club)
+        )
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM jobs WHERE user_id = ? AND status = ?"
+                " AND created_at <= ? AND "
+                + club_clause
+                + " ORDER BY created_at DESC LIMIT ?",
+                params + (scan_limit,),
+            ).fetchall()
+        eligible = [
+            job
+            for job in (self._from_row(row) for row in rows)
+            if self.coaching_eligible(job)
+        ]
+        return eligible[:wanted]
+
     def usage_this_month(self, user_id: str) -> int:
-        """Analyses this calendar month (UTC). Failed runs don't count."""
+        """Coaching analyses used this month (UTC).
+
+        Queued/processing jobs reserve an allowance. Failed uploads do not
+        count. One finished clip that requires a re-film gets a courtesy retry
+        each month; further rejected clips count so the AI workers cannot be
+        occupied indefinitely with deliberately unusable footage.
+        """
         now = datetime.now(timezone.utc)
         month_start = now.replace(
             day=1, hour=0, minute=0, second=0, microsecond=0
         ).timestamp()
         with self._lock:
-            return self._conn.execute(
-                "SELECT COUNT(*) FROM jobs WHERE user_id = ? AND created_at >= ?"
+            rows = self._conn.execute(
+                "SELECT * FROM jobs WHERE user_id = ? AND created_at >= ?"
                 " AND status != ?",
                 (user_id, month_start, FAILED),
-            ).fetchone()[0]
+            ).fetchall()
+        jobs = [self._from_row(row) for row in rows]
+        active = sum(job.status in ACTIVE for job in jobs)
+        finished = [job for job in jobs if job.status == DONE]
+        eligible = sum(self.coaching_eligible(job) for job in finished)
+        rejected = len(finished) - eligible
+        charged_rejected = max(
+            0, rejected - _FREE_REFILM_CREDITS_PER_MONTH
+        )
+        return active + eligible + charged_rejected
+
+    def coaching_eligible(self, job: Job) -> bool:
+        """Whether a finished job can power coaching, trends, and quota."""
+        if job.status != DONE or not job.report_rel:
+            return False
+        root = job.session_dir.resolve()
+        report = (root / job.report_rel).resolve()
+        if not report.is_relative_to(root) or not report.is_file():
+            return False
+        persisted_outcome = persisted_report_outcome(report)
+        if persisted_outcome == REPORT_OUTCOME_CAPTURE:
+            return False
+        path = job.session_dir / Path(job.report_rel).parent / "metrics.json"
+        if not path.is_file():
+            # Pre-metrics web sessions remain reachable and count as completed
+            # for backward compatibility. A current capture-only report stays
+            # rejected even if its metrics file is lost or partially restored.
+            return True
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return persisted_outcome == REPORT_OUTCOME_COACHING
+        if isinstance(payload, dict) and payload_requires_refilm(
+            payload, angle=job.angle
+        ):
+            return False
+        if not payload_structure_is_valid(payload):
+            return persisted_outcome == REPORT_OUTCOME_COACHING
+        eligible = payload_is_coaching_eligible(
+            payload, self.cfg, angle=job.angle
+        )
+        if eligible:
+            return True
+        return (
+            persisted_outcome == REPORT_OUTCOME_COACHING
+            and not payload_has_coachable_data(payload, angle=job.angle)
+        )
+
+    def refilm_rejections_this_month(self, user_id: str) -> int:
+        """Finished coaching-ineligible clips for one account this month."""
+        now = datetime.now(timezone.utc)
+        month_start = now.replace(
+            day=1, hour=0, minute=0, second=0, microsecond=0
+        ).timestamp()
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM jobs WHERE user_id = ? AND created_at >= ?"
+                " AND status = ?",
+                (user_id, month_start, DONE),
+            ).fetchall()
+        return sum(
+            not self.coaching_eligible(self._from_row(row)) for row in rows
+        )
 
     def queue_position(self, job: Job) -> int | None:
         """1-based place in line while queued, else None."""
