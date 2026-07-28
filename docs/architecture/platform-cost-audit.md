@@ -2,11 +2,14 @@
 
 <!-- markdownlint-disable MD013 MD060 -->
 
-**Status:** Documentation-only architecture audit
+**Status:** Documentation-only architecture audit; Stage 0A live-account evidence complete
 
 **Audit date:** 2026-07-27
 
 **Repository snapshot:** `origin/main` at `7d79a47`
+
+**Railway measurement window:** 2026-07-28 01:59–02:08 UTC
+(2026-07-27 21:59–22:08 EDT)
 
 **Production changes made:** None
 
@@ -18,12 +21,12 @@ authenticates users, sends optional email digests, and runs up to two concurrent
 video-analysis jobs. Its durable relational state is one SQLite database and its
 job inputs and outputs are local files, all rooted at `/data/sessions`.
 
-The public production health endpoint and GitHub deployment metadata confirm that
-the application is running on Railway. The repository and the live endpoint do
-**not** reveal the complete Railway service inventory, plan, invoice, replica
-setting, volume capacity, resource limits, or backup schedule. The Railway
-dashboard was not available to this audit, so those account-level facts are
-explicitly marked **unverified** rather than inferred.
+The public production health endpoint, GitHub deployment metadata, and a
+read-only review of the signed-in Railway dashboard confirm the live topology.
+The internal Railway project `desirable-spontaneity` has one production service,
+`SwingLab`, connected to `main` with automatic deployments enabled. It runs one
+replica in US East (Virginia), has no custom start-command override, and has one
+5 GB volume mounted at `/data`.
 
 The most important conclusions are:
 
@@ -33,9 +36,10 @@ The most important conclusions are:
 2. **The current persistence model is the scaling boundary.** SQLite, local
    artifacts, an in-process executor, and process-local locks prevent safe
    horizontal replication.
-3. **Reliable backup is not demonstrated.** The repository contains backup
-   guidance, but no active backup configuration or restore test. A persistent
-   volume is not by itself a backup.
+3. **There is currently no Railway volume backup.** The live Backups page says
+   "No Backups"; the Hobby plan does not include Backups/PITR, and the repository
+   contains no active independent backup configuration. There is therefore no
+   successful restore point or retention period.
 4. **Supabase is a reasonable future home for durable relational state,
    authentication, and private objects, but not for the analysis engine.**
 5. **The migration should optimize for recoverability, not immediate savings.**
@@ -71,6 +75,10 @@ deployments, settings, DNS, or secrets.
   {"status":"ok","queued":0,"processing":0,"disk_free_mb":4576,"sessions_count":1}
   ```
 
+- A read-only signed-in Railway dashboard review from 2026-07-28 01:59 to
+  02:08 UTC (2026-07-27 21:59 to 22:08 EDT). No forms were submitted and no
+  settings, variables, deployments, replicas, volumes, backups, or data were
+  changed.
 - Current official Railway and Supabase documentation, linked in
   [Sources](#sources).
 
@@ -80,23 +88,55 @@ application observation, not a billing, backup, topology, or capacity report.
 The `sessions_count` field counts application job records; it is not a count of
 active customers.
 
-### Evidence still required from Railway
+### Stage 0A live Railway evidence
 
-The following items cannot be established from source code or the public
-endpoint:
+No dashboard screenshots were committed because the required evidence can be
+reproduced from the dashboard locations below without adding account imagery to
+the repository.
 
-| Required evidence | Railway location | Why it matters |
+| Item | Verified fact | Railway dashboard location |
 |---|---|---|
-| Current plan and current/estimated monthly bill | Workspace **Usage** | Establishes the actual cost baseline |
-| Per-service inventory and deployment command override | Project/service settings | Confirms whether any service exists beyond the repository-defined app |
-| Replica count, region, CPU/RAM limits | Service settings | Confirms topology, saturation risk, and placement |
-| 30-day CPU, memory, disk, and network graphs | Observability/Metrics | Sizes workers and quantifies savings |
-| Volume mount, capacity, and used bytes | Volume settings/Metrics | Confirms that `/data/sessions` is mounted as expected |
-| Backup schedule, last successful backup, and retained restore points | Volume **Backups** | Establishes whether provider snapshots exist |
-| Restore-drill evidence | Scratch environment and runbook | Establishes whether any backup is usable |
+| Plan and estimate | Hobby plan. For the Jul 23–Aug 23 billing period, Current Usage was `$0.34`, Estimated Bill was `$1.59`, and Current Bill was `$0.34` at measurement time. | Workspace **Usage** |
+| Project inventory | One project, internal name `desirable-spontaneity`, production environment. Dashboard showed `1/1 service online`. | **Projects** → `desirable-spontaneity` → `production` → **Architecture** |
+| Service inventory | Exactly one service: `SwingLab`, online at `app.caddieinsight.com`. One attached volume: `swinglab-volume`. | Project **Architecture** |
+| Deployment source | GitHub repository `kylejames0513-bot/SwingLab`; production branch `main`. | `SwingLab` → **Settings** → **Source** |
+| Automatic deployment | Enabled. The page says changes to `main` are automatically pushed to production and shows `Auto deploys when pushed to GitHub`; the available action is **Disable**. | `SwingLab` → **Settings** → **Source** |
+| Builder/start command | Dockerfile builder automatically detected. The Custom Start Command editor is blank, so there is no Railway start-command override. The image `CMD` remains the runtime contract. | `SwingLab` → **Settings** → **Build** / **Deploy** → **Custom Start Command** |
+| Replica and region | Exactly one replica in `US East (Virginia, USA)`. The replica field is disabled and Railway says replicas are unavailable for attached volumes. | `SwingLab` → **Settings** → **Scale** → **Regions & Replicas** |
+| Resource limits | Per-replica configured maxima: `8 vCPU` and `8 GB` RAM, each also shown as the Hobby plan limit. These are caps, not reservations or observed use. | `SwingLab` → **Settings** → **Scale** → **Replica Limits** |
+| Volume | `swinglab-volume`, mounted at `/data`, maximum size `5.00 GB`, in `US East (Virginia, USA)`. Latest visible usage sample: `171.9 MB` at 2026-07-27 16:00 EDT. | `swinglab-volume` → **Settings** / **Metrics** |
+| Backups | None. The page says `No Backups` and `This service's volume does not have any backups.` Backups/PITR require Pro. Last successful backup and retention are therefore not applicable. | `SwingLab` → **Backups** |
+| Single-replica mount check | Confirmed: production has one `SwingLab` replica and the only attached volume is mounted at `/data`. | Project **Architecture**, `SwingLab` **Settings**, and `swinglab-volume` **Settings** |
 
-Until these are collected, the exact current Railway cost and the existence of
-provider-configured backups remain **unknown**.
+### Available metric history
+
+Railway exposes a **30d** selector, but this project currently has dashboard
+observations only from July 23 through July 27. The values below are the
+available evidence, not a full 30-day baseline. Where the 30-day graph was too
+compressed for a precise tooltip, the 7-day hourly view was used over the same
+available dates and is labeled accordingly.
+
+| Meter | Observed evidence | Dashboard location |
+|---|---|---|
+| CPU | 30-day graph is populated only near Jul 23–27. A readable hourly sample reached `0.1 vCPU` at Jul 25 17:00 EDT; the Jul 27 19:00 EDT sample rounded to `0.0 vCPU`. | `SwingLab` → **Metrics** → **30d**; **7d** for hourly tooltips |
+| Memory | 30-day tooltip sample: `1.16 GB` at Jul 25 16:00 EDT. Latest readable hourly sample: `144.27 MB` at Jul 27 22:00 EDT. | `SwingLab` → **Metrics** → **30d**; **7d** for latest hourly tooltip |
+| Disk | Volume maximum `5.00 GB`; latest volume-metric sample `171.9 MB` used at Jul 27 16:00 EDT. | `swinglab-volume` → **Settings** / **Metrics** → **30d** |
+| Network | Billing-period cumulative egress was `0.23 GB` (`$0.0115`). A readable hourly ingress sample was `156.85 MB` at Jul 25 17:00 EDT; an egress sample was `41.76 kB` at Jul 27 20:00 EDT. | Workspace **Usage** and `SwingLab` → **Metrics** |
+| Requests | `1.4K total` across the available Jul 23–27 data. | `SwingLab` → **Metrics** → **30d** |
+
+### Remaining unknowns after Stage 0A
+
+- A true 30-day average, p95, and growth trend do not yet exist; the available
+  dashboard history spans only Jul 23–27.
+- Per-analysis CPU-minutes, peak memory, input/output bytes, retry cost, and
+  free-versus-Pro workload attribution are not instrumented.
+- `$1.59` is Railway's current estimate, not an issued invoice; taxes,
+  adjustments, credits, and usage after the measurement window can change it.
+- Volume metrics lagged the audit clock: the latest visible disk point was
+  16:00 EDT while the dashboard review ended after 22:00 EDT.
+- There is no backup restore point to test. RPO, RTO, and restore correctness
+  remain unmeasured until a backup system is implemented under a separately
+  approved production change.
 
 ## 1. What Railway currently hosts and runs
 
@@ -117,10 +157,9 @@ set. The image health check calls `/healthz` on that same port.
 `web.workers: 2` setting creates two analysis threads inside that process; it
 does **not** mean two Uvicorn workers or two Railway replicas.
 
-Railway settings can override an image command. Because the live service
-settings were unavailable, the command above is the repository contract and is
-strongly consistent with the observed application, but an account-level
-override was not independently ruled out.
+Railway can override an image command, but the live Custom Start Command field
+was blank during Stage 0A. The Dockerfile was automatically detected, so the
+image `CMD` above is the current runtime contract.
 
 ### Responsibilities co-located in that process
 
@@ -155,9 +194,9 @@ flowchart LR
     R --> M["SMTP / Sentry / third-party APIs"]
 ```
 
-The repository provides evidence for this one-container application. It does
-not prove that the Railway project has no additional manually configured
-services.
+The live project Architecture page confirms this is the complete production
+service inventory: one `SwingLab` service, one attached `swinglab-volume`, and
+`1/1 service online`.
 
 ## 2. Resource consumption
 
@@ -343,7 +382,7 @@ retain customer footage forever after the application retention period expires.
 
 ## 5. SQLite and session-storage backup reliability
 
-### Finding: reliable backup is not demonstrated
+### Finding: no Railway volume backups exist
 
 The SQLite database is the source of truth for:
 
@@ -360,6 +399,12 @@ SQLite runs in WAL mode. Copying only `swinglab.db` from a live process is not a
 safe backup procedure because committed data may still be represented in the
 WAL.
 
+The signed-in Railway **Backups** page explicitly reported `No Backups` and
+`This service's volume does not have any backups.` It also stated that Backups
+and PITR are available only on Pro, while this workspace is on Hobby. There is
+therefore no last successful Railway backup, no retained restore point, and no
+applicable Railway backup-retention period.
+
 The repository contains no active backup implementation:
 
 - no `litestream.yml`;
@@ -375,14 +420,11 @@ application to fall back to a path outside the intended mount. It must not be
 copied into production unchanged.
 
 Even a correctly configured Litestream stream would protect SQLite only, not
-the customer videos and generated reports. A Railway volume preserves files
-across deployments but does not prove that:
-
-- snapshots are scheduled;
-- the latest snapshot succeeded;
-- the database and files are mutually consistent;
-- backups survive project-level failure or accidental deletion; or
-- restore has ever been tested.
+the customer videos and generated reports. The current Railway volume provides
+deploy persistence, but the dashboard confirms that it has no snapshots. The
+database and files have never been restored together in a documented drill, and
+there is no demonstrated protection against project-level failure or accidental
+volume deletion.
 
 ### Minimum backup evidence required before migration
 
@@ -403,9 +445,10 @@ Postgres only; it is not an object-storage backup.
 The current application is deliberately single-node. Multiple replicas would
 be unsafe for several independent reasons:
 
-1. **Railway volume constraint.** Railway documents that a service with an
-   attached volume cannot be scaled with replicas. Railway also does not provide
-   sticky sessions for ordinary replica routing.
+1. **Railway volume constraint.** Stage 0A confirms one production replica in
+   US East (Virginia) with `swinglab-volume` mounted at `/data`. The replica
+   control is disabled and says replicas are unavailable for attached volumes.
+   Railway also does not provide sticky sessions for ordinary replica routing.
 2. **Local canonical files.** A request for upload status, a report, or media
    can land on a replica that does not have the corresponding session tree.
 3. **Local canonical database.** Separate volumes would create divergent users,
@@ -576,11 +619,35 @@ explicitly tested procedures.
 
 ## Current and projected operating cost
 
-### Current Railway bill: unverified
+### Current Railway account evidence
 
-The exact current monthly cost cannot be responsibly stated without Workspace
-Usage and service metrics. Repository settings do not contain the Railway plan,
-average CPU/RAM, billed volume size, backup bytes, or monthly egress.
+The signed-in Workspace **Usage** page was measured at 2026-07-27 21:59 EDT.
+Railway reported:
+
+| Dashboard field | Verified value |
+|---|---:|
+| Plan | Hobby |
+| Billing period | Jul 23–Aug 23 |
+| Current Usage | $0.34 |
+| Estimated Bill | $1.59 |
+| Current Bill | $0.34 |
+| Included Usage | $5.00 |
+
+The displayed bill breakdown was:
+
+| Meter | Quantity | Current cost |
+|---|---:|---:|
+| Memory | 1,384.70 minutely GB | $0.3205 |
+| CPU | 24.34 minutely vCPU | $0.0113 |
+| Egress | 0.23 GB | $0.0115 |
+| Volume | 249.13 minutely GB | $0.0009 |
+| Subtotal | — | $0.34 |
+| Included Usage | — | -$5.00 |
+| Hobby plan fee | — | +$5.00 |
+| Current Bill | — | $0.34 |
+
+`$1.59` is Railway's live estimate, not a final invoice. The value can change
+with usage, taxes, credits, or adjustments after the measurement window.
 
 As of 2026-07-27, Railway's published usage rates are:
 
@@ -605,9 +672,10 @@ usage =
   + 0.05 × outbound_GB
 ```
 
-Before taxes, promotions, and add-ons, a Hobby bill is approximately the
-greater of $5 or usage, and a Pro bill is approximately the greater of $20 or
-usage because the subscription includes an equivalent resource credit.
+The rate formula remains useful for forecasting, but the signed-in Usage page
+is the source of truth for this account. It displayed the Hobby fee and included
+usage as offsetting line items and reported the current `$1.59` estimate; do not
+add another plan fee to that estimate without checking the issued invoice.
 
 These examples are **illustrative, not measurements of CaddieInsight**:
 
@@ -667,10 +735,11 @@ scale, Auth MAU can also dominate storage cost.
 | Postgres/Auth dual run | Analysis and compatibility API remain | Compute/Auth active | Higher until old state services are retired |
 | Worker-primary target | Analysis CPU/RAM and worker output egress remain | Base plan, database, Auth, objects, egress | Reliability improves; net savings are not guaranteed |
 
-The available evidence does not support a defensible immediate cost-reduction
-claim. A single zero-queue health snapshot is not utilization history. The
-near-term value of this migration would be recovery, separation of concerns,
-and a safe path to horizontal worker scaling.
+Stage 0A provides a current `$1.59` Railway estimate, but only four to five days
+of service metrics and no per-analysis attribution. That is not enough evidence
+for a defensible migration-savings claim. The near-term value of this migration
+would be recovery, separation of concerns, and a safe path to horizontal worker
+scaling.
 
 ### Measurements needed for a real forecast
 
@@ -697,7 +766,8 @@ migration. Do not add Railway replicas now.**
 The recommended decision gates are:
 
 1. Prove current SQLite and artifact recovery.
-2. Obtain the real Railway bill and 30-day resource metrics.
+2. Accumulate a full 30-day Railway history and compare the estimate with an
+   issued invoice and per-analysis telemetry.
 3. Add contract coverage for API responses, login/passwordless sessions,
    Shopify webhook URLs and HMAC verification, Stripe behavior, and Pro
    entitlements.
