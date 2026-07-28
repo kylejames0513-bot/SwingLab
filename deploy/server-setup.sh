@@ -8,9 +8,8 @@
 # When it finishes it prints the URL to open. CaddieInsight runs as a systemd
 # service ("swinglab"), restarts on crash and on reboot.
 #
-# NOTE: the app has no login yet — anyone who knows the URL can upload videos.
-# Fine for personal testing; add gating (see ensure_user_can_analyze in
-# swinglab/web/app.py) before sharing the URL widely.
+# Accounts are enabled in the shipped config. Set SWINGLAB_SECRET before
+# sharing a production instance so signed login sessions survive restarts.
 
 set -euo pipefail
 

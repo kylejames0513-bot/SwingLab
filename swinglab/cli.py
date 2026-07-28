@@ -88,6 +88,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="The web app's sessions directory (its swinglab.db is read)",
     )
     kp.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
+
+    # Explicit operator tooling only. Merely installing the package or setting
+    # credentials starts no backup process and changes no web runtime behavior.
+    from .backups.cli import add_backup_subparser
+
+    add_backup_subparser(sub)
     return parser
 
 
@@ -164,6 +170,12 @@ def print_kpis(results, since_days: float, db_path: Path) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "backup":
+        from .backups.cli import run_backup_command
+
+        return run_backup_command(args)
+
     cfg = Config.load(args.config)
 
     if args.command == "kpis":

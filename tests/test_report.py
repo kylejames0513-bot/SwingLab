@@ -65,7 +65,7 @@ def test_report_html_reflects_branding_and_content(tmp_path):
         tmp_path / "report.html", fake_video(), swings, stats,
         ["Tempo is impressively consistent across swings."], "right", cfg,
     )
-    html = out.read_text()
+    html = out.read_text(encoding="utf-8")
     assert "AceCoach" in html and "CaddieInsight" not in html and "SwingLab" not in html
     assert "#123456" in html and "#abcdef" in html
     assert "AceCoach footer line" in html
