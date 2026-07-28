@@ -18,6 +18,17 @@ The whole product is white-label: brand name, logo, colors, footer, watermark,
 disclaimer, and every detection/coaching threshold live in `config.yaml` — no
 code edits needed to rebrand or retune.
 
+## Project foundation
+
+CaddieInsight is the customer-facing product name. The Python distribution,
+import namespace, command, database filename, and several Shopify identifiers
+remain `swinglab` for compatibility while the codebase is migrated in stages.
+
+- [Architecture and project boundaries](docs/architecture.md)
+- [Environment-variable contract](docs/environment.md)
+- [Production and Railway contract](docs/deployment.md)
+- [Architecture decisions](docs/adr/0001-caddieinsight-naming-and-compatibility.md)
+
 ## Requirements
 
 - Python 3.11+
@@ -506,13 +517,12 @@ CaddieInsight never touches checkout.
 For deployment — a one-command `docker compose up -d`, or a fresh-VM script —
 see [deploy/README.md](deploy/README.md).
 
-**Custom domain:** the owner holds `caddieinsight.com`. Point it at the
-Railway service (add the domain to the Railway service, then set
-`PUBLIC_BASE_URL=https://caddieinsight.com` once DNS is live), and optionally
-point `shop.caddieinsight.com` at the Shopify store. Theme and app links
-currently use the Railway URL and keep working until the switch — the
-"Custom domain" section of [deploy/README.md](deploy/README.md) lists where
-each link lives for the one-time change.
+**Current domain layout:** `caddieinsight.com` is the Shopify storefront and
+`app.caddieinsight.com` is the Railway application. `PUBLIC_BASE_URL` must be
+the application origin. This repository does not manage DNS or Railway
+secrets; see [deploy/README.md](deploy/README.md) and
+[docs/deployment.md](docs/deployment.md) for the preserved production
+contract.
 
 ## Measuring what matters
 

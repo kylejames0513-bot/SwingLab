@@ -6,6 +6,11 @@ dist/
 .venv/
 venv/
 
+# local environment files may contain production credentials
+.env
+.env.*
+!.env.example
+
 # downloaded pose model (fetched and cached on first run)
 swinglab/models/
 

@@ -1,0 +1,12 @@
+title = "CaddieInsight gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Allow synthetic 24-character hex Shopify public token in header-selection test"
+targetRules = ["generic-api-key"]
+condition = "AND"
+regexTarget = "line"
+paths = ['''^tests/test_shop\.py$''']
+regexes = ['''monkeypatch\.setenv\("SHOPIFY_STOREFRONT_TOKEN", "[0-9a-f]{24}"\)''']
