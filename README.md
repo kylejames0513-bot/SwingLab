@@ -241,9 +241,10 @@ Built to take real traffic on one machine:
   for load balancers and uptime monitors; alert on disk before it's full.
 - **Ops extras** — optional Sentry error monitoring: `pip install
   "swinglab[ops]"` and set `SENTRY_DSN`; with either missing it is
-  completely inert. Backups of the SQLite database (which holds paid
-  entitlements): see the tested Litestream recipe in
-  [deploy/README.md](deploy/README.md).
+  completely inert. The inactive Stage 0B backup foundation creates WAL-safe
+  SQLite snapshots, checksummed report/media bundles, and scratch-only restore
+  drills; see the
+  [backup and recovery runbook](docs/operations/backup-recovery.md).
 
 The JSON API under `/api` is the surface a future mobile app talks to:
 

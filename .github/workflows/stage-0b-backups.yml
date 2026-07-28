@@ -1,0 +1,33 @@
+name: Stage 0B backup foundation
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/stage-0b-backups.yml"
+      - "pyproject.toml"
+      - "swinglab/backups/**"
+      - "swinglab/cli.py"
+      - "tests/test_backups.py"
+
+permissions:
+  contents: read
+
+jobs:
+  synthetic-backup-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: Install test dependencies
+        run: python -m pip install --disable-pip-version-check -e ".[dev,backup]"
+      - name: Validate dependency compatibility
+        run: python -m pip check
+      - name: Run synthetic backup and recovery tests
+        run: python -m pytest tests/test_backups.py -q

@@ -6,6 +6,11 @@ dist/
 .venv/
 venv/
 
+# local credentials (document names only; never commit values)
+.env
+.env.*
+!.env.example
+
 # downloaded pose model (fetched and cached on first run)
 swinglab/models/
 
@@ -14,6 +19,10 @@ results/
 
 # web app sessions (uploads, deliverables, job database)
 sessions/
+
+# operator-created backup and scratch-restore output must stay outside the repo
+/backup-output/
+/restore-scratch/
 
 # store-asset fonts (fetched with the commands in store-assets/README.md)
 store-assets/*.ttf

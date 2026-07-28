@@ -85,71 +85,34 @@ reported to Sentry (the app logs through the standard `logging` module, so
 they land in `journalctl`/Railway logs either way). With either missing,
 nothing changes — every error path works identically without it.
 
-## Backups (Litestream) — the database holds paid entitlements
+## Backup and recovery
 
-`sessions/swinglab.db` is the source of truth for **accounts, Pro purchase
-state, and job history**. Losing it means losing who paid you. Session
-media is re-creatable (users can re-upload); the database is not — back it
-up continuously with [Litestream](https://litestream.io) (a single static
-binary that streams every SQLite WAL change to object storage; restores are
-to-the-second).
+`sessions/swinglab.db` is the source of truth for accounts, paid
+entitlements, purchase idempotency, and job history. The production database
+uses WAL mode, so copying the live `swinglab.db` file is unsafe: committed
+transactions may still be in `swinglab.db-wal`.
 
-`litestream.yml`:
+The inactive Stage 0B tooling and complete operator runbook are in
+[`docs/operations/backup-recovery.md`](../docs/operations/backup-recovery.md).
+They provide:
 
-```yaml
-# /etc/litestream.yml
-dbs:
-  - path: /opt/swinglab/sessions/swinglab.db
-    replicas:
-      - type: s3
-        bucket: yourbucket
-        path: swinglab-db
-        endpoint: https://<region>.digitaloceanspaces.com   # any S3-compatible store
-        # AWS S3: drop `endpoint`, set region instead
-        retention: 720h          # keep 30 days of point-in-time history
-```
+- a WAL-safe snapshot through SQLite's online backup API;
+- SHA-256 manifests for completed-job reports and generated media;
+- private, vendor-neutral S3-compatible upload/download support;
+- completion-marker semantics that reject partial uploads;
+- scratch-only restores with integrity, critical-table, entitlement,
+  purchase-ledger, and artifact verification.
 
-Credentials go in the environment (`LITESTREAM_ACCESS_KEY_ID`,
-`LITESTREAM_SECRET_ACCESS_KEY`). On a VM, run it as a second systemd
-service:
+Nothing is scheduled or connected by default. Do not wrap the Railway start
+command, change the Dockerfile, set credentials, create a bucket, or run a
+production backup without separate approval.
 
-```bash
-litestream replicate -config /etc/litestream.yml
-```
-
-**Railway notes:** Railway containers have no sidecar processes, so wrap
-the start command — Litestream supervises the app and replicates while it
-runs:
-
-```
-litestream replicate -config /app/litestream.yml -exec "swinglab serve --host 0.0.0.0 --port $PORT"
-```
-
-Add the `litestream` binary in the Dockerfile
-(`COPY --from=litestream/litestream:0.3 /usr/local/bin/litestream /usr/local/bin/`),
-put `litestream.yml` in the image, and set the two credential variables in
-the Railway service settings. The sessions volume must be the Railway
-volume mount so the db path is stable across deploys.
-
-**Backup/restore drill** — run it BEFORE you need it, then quarterly:
-
-1. Confirm replication is current:
-   `litestream snapshots -config /etc/litestream.yml /opt/swinglab/sessions/swinglab.db`
-   (you should see a recent snapshot; generations advance as the app writes).
-2. Restore to a scratch path:
-   `litestream restore -config /etc/litestream.yml -o /tmp/restored.db /opt/swinglab/sessions/swinglab.db`
-3. Verify the restored file is a working database with your real data:
-   `sqlite3 /tmp/restored.db "PRAGMA integrity_check; SELECT COUNT(*) FROM users; SELECT COUNT(*) FROM jobs;"`
-   — counts should match production (`sqlite3 sessions/swinglab.db ...`).
-4. Actual disaster recovery = stop the app, run the same restore with `-o`
-   pointing at `sessions/swinglab.db`, start the app. Interrupted jobs
-   re-queue themselves; sessions whose media is gone fail honestly with
-   "upload it again".
-
-What Litestream does NOT cover: the uploaded videos and generated media in
-the session folders. Those are large and re-creatable — if you want them
-too, add a nightly `rclone sync` of the sessions directory (excluding
-`swinglab.db*`, which Litestream owns) to the same bucket.
+Litestream remains a possible future database-only option, but it is not
+installed or configured. It would need a version-pinned configuration for
+`/data/sessions/swinglab.db`, a deliberate supervisor design, independent
+artifact backups, monitoring, and the same scratch restore validation. Never
+use `rclone sync` as a backup: retention or operator deletion could propagate
+into the recovery copy.
 
 ## Accounts and payments
 
