@@ -62,7 +62,7 @@ def test_report_tables_carry_details_expanders():
         Path(tempfile.mkdtemp()) / "report.html", fake_video(), swings, stats,
         [], "right", cfg,
     )
-    html = out.read_text()
+    html = out.read_text(encoding="utf-8")
     # <details>-based expanders in the table headers, no JS anywhere new.
     assert html.count('<details class="mx">') >= 12
     assert EXPLAINERS["tempo_ratio"].text[:40] in html

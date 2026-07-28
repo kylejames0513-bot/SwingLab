@@ -300,7 +300,7 @@ def test_storefront_token_header_selection(monkeypatch):
     assert headers["shopify-storefront-private-token"] == "atkn_abc123"
     assert "x-shopify-storefront-access-token" not in headers
 
-    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "c7694e8d6f01333a5e2f638e")
+    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "c7694e8d6f01333a5e2f638e")  # gitleaks:allow
     shop_module._fetch()
     headers = {k.lower(): v for k, v in captured["headers"].items()}
     assert headers["x-shopify-storefront-access-token"] == "c7694e8d6f01333a5e2f638e"

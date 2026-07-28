@@ -22,7 +22,7 @@ def test_ensure_sample_report_writes_report_and_media(tmp_path):
         "overlay_s1.png", "overlay_s2.png", "overlay_s3.png",
         "strip_s1.png", "strip_s2.png", "strip_s3.png",
     ]
-    html = path.read_text()
+    html = path.read_text(encoding="utf-8")
     # The banner says what this is, and where signup lives.
     assert sample.BANNER_TEXT in html
     assert 'href="/"' in html

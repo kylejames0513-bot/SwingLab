@@ -6,6 +6,7 @@ has its own end-to-end tests); these tests exercise the web plumbing around it.
 
 from __future__ import annotations
 
+import builtins
 import threading
 import time
 from pathlib import Path
@@ -18,7 +19,7 @@ from fastapi.testclient import TestClient
 from swinglab.config import Config
 from swinglab.ffmpeg import VideoInfo
 from swinglab.pipeline import SessionResult, ZeroStrikesError
-from swinglab.web import jobs as jobs_module
+from swinglab.web import app as app_module, jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.jobs import PROCESSING, JobManager
 
@@ -310,10 +311,26 @@ def test_per_ip_active_job_limit(tmp_path, monkeypatch):
 
 def test_oversized_upload_rejected_and_discarded(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    opened = []
+    real_open = builtins.open
+
+    def tracked_open(*args, **kwargs):
+        handle = real_open(*args, **kwargs)
+        opened.append(handle)
+        return handle
+
+    monkeypatch.setattr(app_module, "open", tracked_open, raising=False)
     cfg = Config()
     cfg.web["max_upload_mb"] = 10 / (1024 * 1024)  # 10-byte cap
     sessions = tmp_path / "s"
     client = TestClient(create_app(cfg, sessions_dir=sessions))
+    real_discard = client.app.state.jobs.discard
+
+    def discard_after_close(job):
+        assert opened and all(handle.closed for handle in opened)
+        real_discard(job)
+
+    monkeypatch.setattr(client.app.state.jobs, "discard", discard_after_close)
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"way more than ten bytes", "video/quicktime")},
