@@ -6,7 +6,7 @@ dist/
 .venv/
 venv/
 
-# local environment files may contain production credentials
+# Local environment files may contain credentials; commit names/examples only.
 .env
 .env.*
 !.env.example
@@ -19,6 +19,10 @@ results/
 
 # web app sessions (uploads, deliverables, job database)
 sessions/
+
+# operator-created backup and scratch-restore output must stay outside the repo
+/backup-output/
+/restore-scratch/
 
 # store-asset fonts (fetched with the commands in store-assets/README.md)
 store-assets/*.ttf
