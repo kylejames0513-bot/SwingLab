@@ -913,12 +913,16 @@ def create_app(
                 while chunk := await video.read(UPLOAD_CHUNK):
                     received += len(chunk)
                     if max_bytes and received > max_bytes:
-                        manager.discard(job)
                         raise HTTPException(
                             413,
                             f"Video is larger than the {max_mb:g} MB upload limit.",
                         )
                     fh.write(chunk)
+        except HTTPException:
+            # Unwind the file context before deleting the session. Windows
+            # cannot remove the open destination even though Linux can.
+            manager.discard(job)
+            raise
         except OSError:
             manager.discard(job)
             raise HTTPException(

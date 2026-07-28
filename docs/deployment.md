@@ -2,14 +2,15 @@
 
 ## Current topology
 
-- `caddieinsight.com` is the Shopify storefront.
-- `app.caddieinsight.com` is the CaddieInsight application on Railway.
+- The Shopify storefront and CaddieInsight application use separate origins.
+- `PUBLIC_BASE_URL` identifies the Railway application origin.
 - The GitHub repository remains `kylejames0513-bot/SwingLab`.
 - Railway platform settings, environment values, persistent-volume settings,
   and DNS are managed outside this repository.
 
 This document records the existing topology. It does not authorize or perform
 DNS, secret, data, Railway-setting, or production-deployment changes.
+Actual production hostnames and environment values are intentionally omitted.
 
 ## Repository deployment contract
 

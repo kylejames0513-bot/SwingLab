@@ -110,3 +110,16 @@ def test_railway_docker_contract_is_stable():
         "CMD swinglab serve --host 0.0.0.0 --port ${PORT:-8000} "
         "--sessions-dir /data/sessions"
     ) in dockerfile
+
+
+def test_github_workflows_are_read_only_and_do_not_persist_credentials():
+    workflow_dir = ROOT / ".github" / "workflows"
+    for name in ("ci.yml", "security.yml"):
+        source = (workflow_dir / name).read_text(encoding="utf-8")
+        assert re.search(r"(?m)^permissions:\n  contents: read$", source)
+        assert "pull_request_target:" not in source
+        assert not re.search(r"(?m)^\s+[a-z-]+:\s*write\s*$", source)
+
+        checkout_count = source.count("uses: actions/checkout@")
+        assert checkout_count
+        assert source.count("persist-credentials: false") == checkout_count

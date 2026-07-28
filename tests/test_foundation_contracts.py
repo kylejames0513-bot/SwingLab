@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+from pathlib import Path
 
 import pytest
 
@@ -19,8 +20,25 @@ from swinglab.web.users import UserStore
 from tests.test_web import fake_analyze_ok
 
 
-SHOPIFY_SECRET = "shpss_foundation_contract"
+SHOPIFY_SECRET = "foundation-contract-secret"
 SHOPIFY_PATHS = ("/webhooks/shopify", "/webhooks/shopify/")
+ACCOUNT_AND_API_ROUTES = {
+    ("/login", frozenset({"GET"})),
+    ("/login", frozenset({"POST"})),
+    ("/login/email", frozenset({"POST"})),
+    ("/login/code", frozenset({"POST"})),
+    ("/signup", frozenset({"POST"})),
+    ("/reset", frozenset({"GET"})),
+    ("/reset/request", frozenset({"POST"})),
+    ("/reset/confirm", frozenset({"POST"})),
+    ("/logout", frozenset({"POST"})),
+    ("/account", frozenset({"GET"})),
+    ("/account/password", frozenset({"POST"})),
+    ("/account/digest", frozenset({"POST"})),
+    ("/email/unsubscribe", frozenset({"GET"})),
+    ("/api/session/{job_id}", frozenset({"GET"})),
+    ("/api/sessions", frozenset({"GET"})),
+}
 
 
 @pytest.fixture
@@ -101,6 +119,88 @@ def test_shopify_webhook_routes_are_exact_post_pair(contract_app):
     ]
 
 
+def test_account_passwordless_and_api_routes_are_stable(contract_app):
+    actual = {
+        (route.path, frozenset(route.methods or ()))
+        for route in contract_app.routes
+        if (
+            getattr(route, "path", "").startswith("/api/")
+            or getattr(route, "path", "") in {path for path, _ in ACCOUNT_AND_API_ROUTES}
+        )
+    }
+
+    assert actual == ACCOUNT_AND_API_ROUTES
+
+
+def test_sqlite_state_remains_in_sessions_swinglab_db(contract_app):
+    expected = (contract_app.state.jobs.sessions_dir / "swinglab.db").resolve()
+    connections = (
+        contract_app.state.jobs._conn,
+        contract_app.state.users._conn,
+    )
+
+    for connection in connections:
+        database = connection.execute("PRAGMA database_list").fetchone()
+        assert database["name"] == "main"
+        assert database["file"]
+        assert Path(database["file"]).resolve() == expected
+
+    tables = {
+        row[0]
+        for row in contract_app.state.jobs._conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    assert {"jobs", "users", "auth_attempts"} <= tables
+
+
+def test_api_response_keys_are_stable(contract_app):
+    client = TestClient(contract_app)
+    email = "api-contract@example.com"
+    _signup(client, email)
+    user = _user(client, email)
+    job = contract_app.state.jobs.create_session(
+        source_name="contract.mov",
+        hand="left",
+        angle="dtl",
+        club="driver",
+        fast=True,
+        user_id=user.id,
+    )
+
+    detail = client.get(f"/api/session/{job.id}")
+    assert detail.status_code == 200
+    assert set(detail.json()) == {
+        "id",
+        "status",
+        "created_at",
+        "source_name",
+        "hand",
+        "angle",
+        "club",
+        "fast",
+        "log",
+        "error",
+        "report",
+        "swings_done",
+        "swings_total",
+        "queue_position",
+    }
+
+    index = client.get("/api/sessions")
+    assert index.status_code == 200
+    assert set(index.json()) == {"sessions"}
+    assert len(index.json()["sessions"]) == 1
+    assert set(index.json()["sessions"][0]) == {
+        "id",
+        "status",
+        "created_at",
+        "source_name",
+        "swings_done",
+        "swings_total",
+    }
+
+
 def test_valid_signed_payload_has_path_parity(contract_app):
     client = TestClient(contract_app)
     body = json.dumps({"shop_domain": "contract-test.myshopify.com"}).encode()
@@ -136,12 +236,44 @@ def test_uppercase_orders_paid_grants_pro(contract_app):
 
 def test_unknown_signed_topic_is_acknowledged(contract_app):
     client = TestClient(contract_app)
+    email = "unknown-topic@example.com"
+    _signup(client, email)
 
     response = _signed_json(
         client,
-        {"id": 71002, "email": "ignored@example.com"},
+        _pro_order(71002, email=email),
         "orders/create",
     )
+
+    assert response.status_code == 200
+    assert response.json() == {"received": True}
+    assert not _user(client, email).is_pro
+
+
+@pytest.mark.parametrize("path", SHOPIFY_PATHS)
+def test_invalid_hmac_is_rejected_on_both_paths(contract_app, path):
+    client = TestClient(contract_app)
+    response = client.post(
+        path,
+        content=b'{"id": 71004}',
+        headers={
+            "X-Shopify-Hmac-Sha256": "invalid",
+            "X-Shopify-Topic": "orders/paid",
+            "Content-Type": "application/json",
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid Shopify webhook signature"}
+
+
+def test_whitespace_around_webhook_secret_is_ignored(contract_app, monkeypatch):
+    client = TestClient(contract_app)
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", f"  {SHOPIFY_SECRET}\n")
+    body = json.dumps({"shop_domain": "contract-test.myshopify.com"}).encode()
+
+    response = _signed_post(client, body, "customers/data_request")
 
     assert response.status_code == 200
     assert response.json() == {"received": True}

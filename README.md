@@ -517,12 +517,12 @@ CaddieInsight never touches checkout.
 For deployment — a one-command `docker compose up -d`, or a fresh-VM script —
 see [deploy/README.md](deploy/README.md).
 
-**Current domain layout:** `caddieinsight.com` is the Shopify storefront and
-`app.caddieinsight.com` is the Railway application. `PUBLIC_BASE_URL` must be
-the application origin. This repository does not manage DNS or Railway
-secrets; see [deploy/README.md](deploy/README.md) and
-[docs/deployment.md](docs/deployment.md) for the preserved production
-contract.
+**Domain layout:** keep the Shopify storefront origin separate from the Railway
+application origin. `PUBLIC_BASE_URL` must be the application origin. Actual
+hostnames remain deployment state and are intentionally not recorded here.
+This repository does not manage DNS or Railway secrets; see
+[deploy/README.md](deploy/README.md) and [docs/deployment.md](docs/deployment.md)
+for the preserved production contract.
 
 ## Measuring what matters
 
