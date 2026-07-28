@@ -271,7 +271,7 @@ The JSON API under `/api` is the surface a future mobile app talks to:
 
 With `web.require_account: true` (the shipped default), visitors sign up with
 email + password (hashed locally with scrypt — no external auth service) —
-or, once SMTP is configured, with just their email via a six-digit sign-in
+or, once email delivery is configured, with just their email via a six-digit sign-in
 code ("One account: email-code sign-in" below). Accounts get
 `billing.free_per_month` analyses per calendar month, and can upgrade to
 **Pro** for `billing.pro_per_month` (0 = unlimited). Each
@@ -353,9 +353,9 @@ per-user history to chart in open mode — the route 404s).
 **Weekly practice-plan email** — the "one drill a week" promise, made real,
 and strictly opt-in. It only ever sends when ALL of these hold:
 
-- SMTP is configured (`SWINGLAB_SMTP_URL` + `SWINGLAB_MAIL_FROM`, the same
-  variables as verification/reset email) — with SMTP unset the feature has
-  zero behavior;
+- email delivery is configured (`SWINGLAB_MAIL_FROM` plus `RESEND_API_KEY`
+  or `SWINGLAB_SMTP_URL`, the same transport as verification/reset email) —
+  without it the feature has zero behavior;
 - `web.digest_enabled: true` in config.yaml (the shipped default);
 - the user asked for it — an **unchecked** "Email me one drill a week" box at
   signup, a toggle on the account page, and a signed one-click unsubscribe
@@ -390,7 +390,7 @@ What each event does:
   that id. An existing password or email is **never** overwritten, and
   replayed webhooks land on the same row (no duplicates).
 - Signing up in the app with a store account's email **claims the same
-  account** — as does signing in with an emailed code once SMTP is
+  account** — as does signing in with an emailed code once email delivery is
   configured (see "One account" below): either way the claim lands on
   that row, so the Shopify link and any Pro purchase already granted by
   the order webhooks carry over — one user, everything kept. Until then,
@@ -410,36 +410,42 @@ What each event does:
 **Limitations, honestly:** Shopify does not expose customer credentials,
 so store passwords cannot sync — the store account carries over and the
 user proves the email is theirs once, at claim time (an emailed sign-in
-code when SMTP is on, or by setting an app password). Store customers
+code when email is on, or by setting an app password). Store customers
 created without an email address are skipped (there is nothing to match
 on).
 
-**Optional email verification (SMTP)** — inert until configured, like
+**Optional email verification** — inert until configured, like
 every other integration:
 
 | Variable | What it is |
 | --- | --- |
+| `RESEND_API_KEY` | preferred HTTPS delivery through Resend; recommended on Railway, where Hobby blocks outbound SMTP |
 | `SWINGLAB_SMTP_URL` | e.g. `smtp+starttls://user:pass@smtp.example.com:587` — also `smtp://` (plain, local relays) and `smtps://` (implicit TLS, port 465); credentials URL-encoded |
 | `SWINGLAB_MAIL_FROM` | the From address, e.g. `CaddieInsight <no-reply@yourdomain.com>` |
+| `SWINGLAB_MAIL_TRANSPORT` | optional `auto` (default), `resend`, or `smtp`; `smtp` is an explicit rollback for hosts that allow it |
 
-With both set, claiming an email that already has anything attached (a
-store account, or a Pro purchase made before signup) requires a 6-digit
-code emailed to that address — 10-minute expiry, single-use, stored
-hashed, rate-limited per email — and **password reset** appears on the
-login page using the same codes. Standard library SMTP only; no new
-dependencies.
+Set `SWINGLAB_MAIL_FROM` plus one transport. When both transports are present,
+the Resend HTTPS API is preferred and SMTP remains a fallback for hosts that
+permit it. An existing `smtp.resend.com` URL with Resend's standard `resend`
+username is automatically delivered through the HTTPS API, using the same
+embedded credential; this lets existing Railway Hobby configuration work
+without duplicating the secret. Claiming an email that already has anything
+attached (a store account, or a Pro purchase made before signup) then requires
+a 6-digit code emailed to that address — 10-minute expiry, single-use, stored
+hashed, rate-limited per email — and **password reset** appears on the login
+page using the same codes. No third-party runtime dependency is required.
 
-> **Security note:** without SMTP configured, behavior is unchanged from
+> **Security note:** without email delivery configured, behavior is unchanged from
 > previous versions: signing up with an email claims whatever that email
 > already has (store account, pre-signup purchase, or a passwordless
 > account) with no inbox proof — the same trade-off the buy-before-signup
 > claim has always had, kept deliberately so the app works with zero
-> email infrastructure. Configuring SMTP closes it by verifying control
+> email infrastructure. Configuring delivery closes it by verifying control
 > of the inbox before a claim.
 
 ### One account: email-code sign-in
 
-With SMTP configured, the login page stops asking for a password
+With email delivery configured, the login page stops asking for a password
 (`web.passwordless_login`, shipped and defaulted `true`): it asks for the
 email first, mails a six-digit sign-in code, and a correct code signs the
 visitor in. The same step handles every account state, which is what makes
@@ -470,14 +476,15 @@ page, where password reset also lives), and passwordless accounts can add
 one from the account page ("Add a password (optional)") — being logged in,
 which took a code, is the proof of ownership. Setting a password by
 signing up with a passwordless account's email also works, and requires
-the emailed code first while SMTP is on.
+the emailed code first while email is on.
 
-The whole feature is inert without SMTP: with `SWINGLAB_SMTP_URL` or
-`SWINGLAB_MAIL_FROM` unset, the login and signup pages keep the classic
-password flows exactly — which is why the flag can ship `true` without
-affecting white-label installs that have no email infrastructure. Set
-`web.passwordless_login: false` to force password flows even with SMTP
-configured. Honest caveat: if an operator runs with SMTP for a while and
+The whole feature is inert without a complete transport:
+`SWINGLAB_MAIL_FROM` plus either `RESEND_API_KEY` or `SWINGLAB_SMTP_URL`.
+Without that pair, the login and signup pages keep the classic password
+flows exactly — which is why the flag can ship `true` without affecting
+white-label installs that have no email infrastructure. Set
+`web.passwordless_login: false` to force password flows even with email
+configured. Honest caveat: if an operator runs with email for a while and
 then turns it off, accounts that never added a password cannot sign in
 until email returns (or until they set a password via signup — see the
 security note above); the account page says so when it applies.
@@ -623,13 +630,13 @@ See `config.yaml` — everything is documented inline. Highlights:
 
 | Section | What it controls |
 | --- | --- |
-| `brand` | name, logo, colors, footer, watermark on/off, disclaimer, `support_text` (shown where users need the operator, e.g. password reset while SMTP is unconfigured) |
+| `brand` | name, logo, colors, footer, watermark on/off, disclaimer, `support_text` (shown where users need the operator, e.g. password reset while email is unconfigured) |
 | `detection` | audio peak height / prominence / minimum gap between swings, per-clip strike cap (`max_strikes`, shipped 8 — first N analyzed, honestly noted) |
 | `coaching` | flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
-| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, email-code sign-in (`passwordless_login`, shipped on — self-disables without SMTP), weekly digest on/off (`digest_enabled`) |
+| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, email-code sign-in (`passwordless_login`, shipped on — self-disables without email delivery), weekly digest on/off (`digest_enabled`) |
 | `billing` | free/Pro analyses per month, the coach-replay Pro gate (`replay_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
@@ -664,12 +671,12 @@ ffmpeg auto-skip when it is not installed.
   analyses; inert until the `SHOPIFY_*` environment variables are set.
 - **Shopify account sync (done)** — customer webhooks provision store
   accounts in the app, signup claims them with purchases intact, and
-  optional SMTP adds code-verified claims plus password reset via email
+  optional email delivery adds code-verified claims plus password reset
   (the Milestone-5 reset item, shipped early).
-- **One account (done)** — passwordless email-code sign-in: with SMTP
+- **One account (done)** — passwordless email-code sign-in: with email delivery
   configured, the store email is the app identity; one "Continue with
   email" flow logs in, claims store accounts, or creates accounts, and a
-  password is optional. Self-disables without SMTP.
+  password is optional. Self-disables without email delivery.
 - **Program depth (done)** — four new 2D-honest metrics (head dip, lead-arm
   extension, shoulder tilt, finish balance), issue cards with per-swing
   sparklines, illustrated drills (inline-SVG diagrams + CSS-only

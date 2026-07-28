@@ -56,14 +56,21 @@ though checkout availability can be detected from the key and price alone.
 
 ## Email
 
-Both variables are required to enable email. Without them, passwordless login,
-password reset email, and practice-plan email remain disabled or fall back to
-the documented password flow.
+`SWINGLAB_MAIL_FROM` and one delivery transport are required to enable email.
+Resend's HTTPS API is preferred on Railway and other hosts that block SMTP.
+An existing official Resend SMTP URL is automatically upgraded to HTTPS using
+its embedded credential, so migrating transport does not require duplicating
+that secret.
+Without a complete configuration, passwordless login, password reset email,
+and practice-plan email remain disabled or fall back to the documented
+password flow.
 
 | Variable | Sensitivity | Purpose |
 | --- | --- | --- |
-| `SWINGLAB_SMTP_URL` | Secret-bearing connection string | SMTP transport and credentials. |
+| `RESEND_API_KEY` | Secret | Preferred HTTPS delivery through Resend. |
+| `SWINGLAB_SMTP_URL` | Secret-bearing connection string | Optional SMTP fallback for hosts that permit outbound SMTP. |
 | `SWINGLAB_MAIL_FROM` | Non-secret | From address for application email. |
+| `SWINGLAB_MAIL_TRANSPORT` | Non-secret | Optional `auto` (default), `resend`, or `smtp` selection. Use `smtp` only as an explicit rollback on a host that permits SMTP. |
 | `PUBLIC_BASE_URL` | Non-secret | Absolute report, progress, and unsubscribe links. |
 
 ## Optional operations

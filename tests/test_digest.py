@@ -1,9 +1,9 @@
 """Weekly practice-plan digest: consent columns + in-place migration, HMAC
 unsubscribe tokens, digest composition (drills with dosage and pass mark,
 links, self-contained HTML), the pure eligibility rule and claim-before-send
-semantics, run_once's send gates (no SMTP / no consent / no finished session
+semantics, run_once's send gates (no email / no consent / no finished session
 -> nothing), and the app surfaces (signup checkbox, account toggle,
-logged-out unsubscribe, scheduler gating). No SMTP server is ever contacted."""
+logged-out unsubscribe, scheduler gating). No email provider is contacted."""
 
 from __future__ import annotations
 
@@ -55,6 +55,8 @@ def stub_user(**overrides):
 def outbox(monkeypatch):
     """SMTP 'configured' (env set) but captured instead of sent."""
     sent: list[tuple] = []
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp+starttls://u:p@mail.test:587")
     monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
     monkeypatch.setattr(
@@ -209,8 +211,9 @@ def finished_session(manager, user_id, payload=None):
     return job
 
 
-def test_run_once_sends_nothing_without_smtp(store, monkeypatch):
+def test_run_once_sends_nothing_without_email(store, monkeypatch):
     cfg, manager, users = store
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
     user = users.create("kyle@example.com", "longenough")
@@ -373,14 +376,15 @@ def test_unsubscribe_route_works_logged_out(app):
     assert get_user(app).digest_opt_in is True
 
 
-def test_scheduler_only_starts_with_smtp_and_config(tmp_path, monkeypatch):
+def test_scheduler_only_starts_with_email_transport_and_config(tmp_path, monkeypatch):
     monkeypatch.setattr(
         jobs_module, "analyze_video", make_fake_analyze(SESSION_PAYLOADS)
     )
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
     app = create_app(Config(), sessions_dir=tmp_path / "a")
-    assert app.state.digest_thread is None      # zero behavior without SMTP
+    assert app.state.digest_thread is None      # zero behavior without email
 
     monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp+starttls://u:p@mail.test:587")
     monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
@@ -393,3 +397,9 @@ def test_scheduler_only_starts_with_smtp_and_config(tmp_path, monkeypatch):
     app = create_app(Config(), sessions_dir=tmp_path / "c")
     thread = app.state.digest_thread
     assert thread is not None and thread.daemon  # dies with the process
+
+    monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    app = create_app(Config(), sessions_dir=tmp_path / "d")
+    thread = app.state.digest_thread
+    assert thread is not None and thread.daemon

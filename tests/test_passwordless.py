@@ -7,7 +7,7 @@ existing account, claims an unclaimed store stub (Pro and the Shopify link
 kept), or creates a brand-new account; wrong/expired/replayed/burned codes
 all fail; nothing — pages or emails — reveals which of the three states an
 address is in; code requests and entries share the login throttle budget;
-and with SMTP unset (or web.passwordless_login off) the login/signup pages
+and with email delivery unset (or web.passwordless_login off) the login/signup pages
 keep the classic password flows exactly, so white-label installs without
 email are untouched. Passwordless accounts can add an optional password on
 /account; password accounts keep working unchanged.
@@ -15,7 +15,9 @@ email are untouched. Passwordless accounts can add an optional password on
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import re
+import threading
 import time
 import types
 
@@ -47,6 +49,8 @@ from tests.test_web import fake_analyze_ok
 def outbox(monkeypatch):
     """Turn mail 'on' (env set) but capture sends instead of doing SMTP."""
     sent: list[tuple[str, str, str]] = []
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp+starttls://u:p@mail.test:587")
     monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
     monkeypatch.setattr(
@@ -89,7 +93,7 @@ def code_signin(client, outbox, email="kyle@example.com"):
 
 # -- the unified login page --------------------------------------------------
 
-def test_login_page_leads_with_email_when_smtp_on(app, outbox):
+def test_login_page_leads_with_email_when_delivery_on(app, outbox):
     client = TestClient(app)
     for page in (client.get("/login").text, client.get("/").text):  # + landing
         assert "Continue with your email" in page
@@ -108,7 +112,7 @@ def test_login_page_leads_with_email_when_smtp_on(app, outbox):
 def test_store_line_dropped_when_no_store_is_configured(
     tmp_path, monkeypatch, outbox
 ):
-    # White-label install with SMTP but no Shopify: the headline stays
+    # White-label install with email but no Shopify: the headline stays
     # honest — no store to mention.
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
     monkeypatch.delenv("SHOPIFY_STORE_DOMAIN", raising=False)
@@ -262,6 +266,23 @@ def test_login_codes_expire_and_are_purpose_scoped(tmp_path, monkeypatch):
     assert not users.check_email_code("a@b.co", "login", code)  # expired
 
 
+def test_failed_send_cleanup_cannot_delete_a_newer_code(tmp_path, monkeypatch):
+    now = [1_000_000.0]
+    generated = iter((111111, 222222))
+    monkeypatch.setattr(
+        users_module, "time", types.SimpleNamespace(time=lambda: now[0])
+    )
+    monkeypatch.setattr(users_module.secrets, "randbelow", lambda limit: next(generated))
+    users = UserStore(tmp_path / "db.sqlite")
+    old_code = users.issue_email_code("a@b.co", "login")
+    now[0] += users_module.CODE_RESEND_S + 1
+    new_code = users.issue_email_code("a@b.co", "login")
+
+    assert old_code != new_code
+    assert not users.discard_email_code("a@b.co", "login", old_code)
+    assert users.check_email_code("a@b.co", "login", new_code)
+
+
 def test_resend_is_rate_limited_but_original_code_still_works(app, outbox):
     client = TestClient(app)
     request_code(client, "new@example.com")
@@ -270,6 +291,123 @@ def test_resend_is_rate_limited_but_original_code_still_works(app, outbox):
     assert len(outbox) == 1  # only one email actually went out
     assert enter_code(client, last_code(outbox), "new@example.com",
                       follow_redirects=False).status_code == 303
+
+
+def test_delivery_failure_is_generic_and_immediately_retryable(
+    app, outbox, monkeypatch, caplog
+):
+    client = TestClient(app)
+    failed_bodies = []
+
+    def fail(to, subject, body):
+        failed_bodies.append(body)
+        raise mailer.EmailDeliveryRejected("sanitized provider failure")
+
+    monkeypatch.setattr(mailer, "send", fail)
+    failed = request_code(client, "new@example.com")
+    assert failed.status_code == 503
+    assert "send that email right now" in failed.text
+    assert "Check your email" not in failed.text
+    assert get_user(client, "new@example.com") is None
+    failed_code = re.search(r"\b(\d{6})\b", failed_bodies[0]).group(1)
+    assert failed_code not in caplog.text
+
+    sent = []
+    monkeypatch.setattr(
+        mailer, "send", lambda to, subject, body: sent.append((to, subject, body))
+    )
+    retry = request_code(client, "new@example.com")
+    assert retry.status_code == 200 and "Check your email" in retry.text
+    assert len(sent) == 1
+    assert enter_code(
+        client,
+        last_code(sent),
+        "new@example.com",
+        follow_redirects=False,
+    ).status_code == 303
+
+
+def test_uncertain_delivery_keeps_an_arriving_code_valid(
+    app, outbox, monkeypatch
+):
+    client = TestClient(app)
+    attempted = []
+
+    def uncertain(to, subject, body):
+        attempted.append((to, subject, body))
+        raise mailer.EmailDeliveryUncertain("outcome unknown")
+
+    monkeypatch.setattr(mailer, "send", uncertain)
+    response = request_code(client, "new@example.com")
+    assert response.status_code == 503
+    assert "confirm delivery" in response.text
+    assert 'action="/login/code"' in response.text
+    assert 'value="new@example.com"' in response.text
+    assert enter_code(
+        client,
+        last_code(attempted),
+        "new@example.com",
+        follow_redirects=False,
+    ).status_code == 303
+
+
+def test_overlapping_code_requests_wait_for_the_first_send(
+    app, outbox, monkeypatch
+):
+    entered = threading.Event()
+    release = threading.Event()
+    sends = []
+
+    def delayed_send(to, subject, body):
+        sends.append((to, subject, body))
+        entered.set()
+        assert release.wait(2)
+
+    monkeypatch.setattr(mailer, "send", delayed_send)
+
+    def post_code():
+        return TestClient(app).post(
+            "/login/email", data={"email": "new@example.com"}
+        )
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(post_code)
+        assert entered.wait(2)
+        second = pool.submit(post_code)
+        time.sleep(0.05)
+        assert not second.done()
+        release.set()
+        responses = (first.result(timeout=2), second.result(timeout=2))
+
+    assert [response.status_code for response in responses] == [200, 200]
+    assert len(sends) == 1
+
+
+def test_delivery_failure_does_not_reveal_login_account_state(
+    app, outbox, monkeypatch
+):
+    client = TestClient(app)
+    client.post(
+        "/signup",
+        data={"email": "app@example.com", "password": "longenough"},
+        follow_redirects=False,
+    )
+    client.post("/logout")
+    webhook(client, customer(email="stub@example.com"), "customers/create")
+
+    monkeypatch.setattr(
+        mailer,
+        "send",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            mailer.EmailDeliveryRejected("provider unavailable")
+        ),
+    )
+    pages = []
+    for email in ("app@example.com", "stub@example.com", "fresh@example.com"):
+        response = request_code(client, email)
+        assert response.status_code == 503
+        pages.append(response.text.replace(email, "EMAIL"))
+    assert pages[0] == pages[1] == pages[2]
 
 
 # -- throttling ---------------------------------------------------------------
@@ -308,9 +446,10 @@ def test_correct_code_entries_are_never_recorded(tight_app, outbox):
     assert len(outbox) == 2
 
 
-# -- fallbacks: SMTP off, config off, password users --------------------------
+# -- fallbacks: email off, config off, password users -------------------------
 
-def test_without_smtp_the_password_flows_are_exactly_as_before(app, monkeypatch):
+def test_without_email_the_password_flows_are_exactly_as_before(app, monkeypatch):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
     client = TestClient(app)
@@ -330,7 +469,7 @@ def test_without_smtp_the_password_flows_are_exactly_as_before(app, monkeypatch)
     assert resp.status_code == 303
 
 
-def test_config_flag_off_forces_password_flow_even_with_smtp(
+def test_config_flag_off_forces_password_flow_even_with_email(
     tmp_path, monkeypatch, outbox
 ):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)

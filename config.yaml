@@ -11,7 +11,7 @@ brand:
     Automated estimates from a single camera. Not a substitute for instruction
     from a teaching professional.
   support_text: null         # shown wherever a user needs the operator's help
-                             # (e.g. password reset while SMTP is unconfigured),
+                             # (e.g. password reset while email is unconfigured),
                              # e.g. "Email support@yourbrand.com." null = the
                              # generic phrasing alone.
 
@@ -169,15 +169,17 @@ web:
                              # through the same step. Accounts with a password can
                              # always use it instead ("Use your password instead" on
                              # the login page), and passwordless accounts can add
-                             # one on /account. Self-disabling: without SMTP
-                             # (SWINGLAB_SMTP_URL + SWINGLAB_MAIL_FROM) the login
+                             # one on /account. Self-disabling: without an email
+                             # transport (RESEND_API_KEY or SWINGLAB_SMTP_URL,
+                             # plus SWINGLAB_MAIL_FROM) the login
                              # and signup pages keep the classic password flows
                              # exactly, so this stays true safely on installs with
                              # no email infrastructure. false forces password flows
-                             # even with SMTP configured.
+                             # even with email configured.
   digest_enabled: true       # weekly practice-plan email ("one drill a week").
-                             # Even when true it only ever sends when SMTP is
-                             # configured (SWINGLAB_SMTP_URL + SWINGLAB_MAIL_FROM)
+                             # Even when true it only ever sends when email is
+                             # configured (RESEND_API_KEY or SWINGLAB_SMTP_URL,
+                             # plus SWINGLAB_MAIL_FROM)
                              # AND the account ticked the opt-in — unchecked by
                              # default at signup, toggleable on /account, one-click
                              # unsubscribe link in every email. false switches the

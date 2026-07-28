@@ -21,14 +21,14 @@ hash. A stub can never log in with a password (an empty hash verifies
 nothing). It is claimed in one of two ways, both landing on the SAME row so
 the Shopify link and any Pro time granted by order webhooks carry over with
 no duplicate user: signing up with its email sets a password in place
-(:meth:`create`), or — with SMTP configured — signing in with an emailed
+(:meth:`create`), or — with email delivery configured — signing in with an emailed
 one-time code marks the email verified (:meth:`verify_email_signin`), which
 is strictly stronger proof of ownership than the password path. An account
 is *claimed* once it has a password OR a verified email; only rows with
 neither are unclaimed stubs. Emails are normalized (trimmed + lowercased)
 everywhere so store and app spellings always match.
 
-``email_codes`` backs the optional SMTP flows (mailer.py): 6-digit one-time
+``email_codes`` backs the optional email flows (mailer.py): 6-digit one-time
 codes, stored hashed, 10-minute expiry, single-use, rate-limited per email —
 used for email-code sign-in, to verify claims at signup, and to reset
 passwords when email is configured.
@@ -217,7 +217,7 @@ class UserStore:
         or a code-only passwordless account), set the password on the SAME
         row, so its Shopify link and any Pro time already granted by order
         webhooks stay with the user. No duplicates. The web layer requires
-        an emailed code first when SMTP is configured — see app.py."""
+        an emailed code first when email delivery is configured — see app.py."""
         email = self.validate_signup(email, password)
         try:
             with self._lock:
@@ -404,7 +404,7 @@ class UserStore:
     def has_unclaimed_value(self, email: str) -> bool:
         """Does signup with this email set a password on an EXISTING row —
         an unclaimed store stub, a code-only passwordless account, or a Pro
-        purchase parked before signup? With SMTP on, such signups must
+        purchase parked before signup? With email delivery on, such signups must
         prove control of the inbox first. (An account that already has a
         password returns False: signup against it fails outright, no code
         needed.)"""
@@ -669,6 +669,23 @@ class UserStore:
                 )
             self._conn.commit()
         return ok
+
+    def discard_email_code(self, email: str, purpose: str, code: str) -> bool:
+        """Remove exactly the code a caller failed to deliver.
+
+        Matching the hash prevents a slow failed sender from deleting a newer
+        replacement code issued by another request.
+        """
+        email = email.strip().lower()
+        code_hash = self._hash_code(email, purpose, code)
+        with self._lock:
+            cursor = self._conn.execute(
+                "DELETE FROM email_codes"
+                " WHERE email = ? AND purpose = ? AND code_hash = ?",
+                (email, purpose, code_hash),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
 
     def _from_row(self, row: sqlite3.Row) -> User:
         return User(
