@@ -11,6 +11,7 @@ import base64
 import hashlib
 import hmac
 import json
+import sqlite3
 import time
 
 import pytest
@@ -186,6 +187,112 @@ def test_cancelled_unclaimed_purchase_never_grants(app):
     )
     signup(client, email="new@example.com")
     assert not get_user(client, "new@example.com").is_pro
+
+
+def test_cancellation_before_paid_is_a_tombstone(app):
+    client = TestClient(app)
+    signup(client)
+
+    order_webhook(client, pro_order(), topic="orders/cancelled")
+    order_webhook(client, pro_order(), topic="orders/paid")
+
+    assert not get_user(client).is_pro
+    row = client.app.state.users._conn.execute(
+        "SELECT days, cancelled_at FROM shopify_orders WHERE order_id = ?",
+        ("1001",),
+    ).fetchone()
+    assert row["days"] == 0
+    assert row["cancelled_at"] is not None
+
+
+def test_paid_order_ledger_and_entitlement_are_atomic(app):
+    client = TestClient(app)
+    signup(client)
+    users: UserStore = client.app.state.users
+    users._conn.execute(
+        "CREATE TRIGGER fail_paid_grant"
+        " BEFORE UPDATE OF pro_until ON users"
+        " BEGIN SELECT RAISE(ABORT, 'simulated failure'); END"
+    )
+    users._conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        order_webhook(client, pro_order())
+
+    assert not get_user(client).is_pro
+    assert users._conn.execute(
+        "SELECT 1 FROM shopify_orders WHERE order_id = ?", ("1001",)
+    ).fetchone() is None
+
+    users._conn.execute("DROP TRIGGER fail_paid_grant")
+    users._conn.commit()
+    assert order_webhook(client, pro_order()).status_code == 200
+    assert get_user(client).is_pro
+
+
+def test_cancellation_ledger_and_entitlement_are_atomic(app):
+    client = TestClient(app)
+    signup(client)
+    order_webhook(client, pro_order())
+    users: UserStore = client.app.state.users
+    before = get_user(client).pro_until
+    users._conn.execute(
+        "CREATE TRIGGER fail_cancel_revoke"
+        " BEFORE UPDATE OF pro_until ON users"
+        " BEGIN SELECT RAISE(ABORT, 'simulated failure'); END"
+    )
+    users._conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        order_webhook(client, pro_order(), topic="orders/cancelled")
+
+    row = users._conn.execute(
+        "SELECT days, cancelled_at FROM shopify_orders WHERE order_id = ?",
+        ("1001",),
+    ).fetchone()
+    assert row["days"] == 31
+    assert row["cancelled_at"] is None
+    assert get_user(client).pro_until == before
+
+    users._conn.execute("DROP TRIGGER fail_cancel_revoke")
+    users._conn.commit()
+    assert (
+        order_webhook(client, pro_order(), topic="orders/cancelled").status_code
+        == 200
+    )
+    assert not get_user(client).is_pro
+
+
+def test_late_cancellation_of_expired_order_keeps_newer_purchase(app):
+    client = TestClient(app)
+    signup(client)
+    users: UserStore = client.app.state.users
+    order_webhook(client, pro_order(order_id=1))
+    now = time.time()
+    users._conn.execute(
+        "UPDATE users SET pro_until = ? WHERE email = ?",
+        (now - DAY, "kyle@example.com"),
+    )
+    users._conn.execute(
+        "UPDATE shopify_orders"
+        " SET applied_at = ?, grant_start = ?, grant_end = ?"
+        " WHERE order_id = '1'",
+        (now - 62 * DAY, now - 62 * DAY, now - 31 * DAY),
+    )
+    users._conn.commit()
+
+    order_webhook(client, pro_order(order_id=2))
+    before = get_user(client).pro_until
+    assert before > now
+
+    order_webhook(
+        client,
+        pro_order(order_id=1),
+        topic="orders/cancelled",
+    )
+
+    assert get_user(client).pro_until == before
+    assert get_user(client).is_pro
 
 
 def test_webhook_unavailable_until_configured(tmp_path, monkeypatch):

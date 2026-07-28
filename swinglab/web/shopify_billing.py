@@ -24,12 +24,15 @@ Setup, on the Shopify side:
 
 Flow: checkout happens on the Shopify storefront; Shopify calls the
 webhook, which is the ONLY place access changes (signed webhooks can't be
-faked, storefront redirects can). A paid order extends ``pro_until`` on
-the account whose email matches the checkout email; if no account exists
-yet, the days are parked in ``pro_grants`` and claimed automatically the
-first time that email signs up or logs in. Replayed webhooks are no-ops
-(orders are recorded by id), and a cancelled order takes back exactly the
-days it granted.
+faked, storefront redirects can). A paid order first follows the stable
+Shopify customer id to a linked account, then falls back to normalized
+checkout email; if no account exists yet, the days are parked in
+``pro_grants`` and claimed automatically the first time that email signs
+up or logs in. Recording and granting happen in one SQLite transaction.
+Replayed webhooks are no-ops (orders are recorded by id), and a cancelled
+order takes back exactly the days it granted. A cancellation received
+before its paid event leaves a tombstone, so out-of-order delivery cannot
+grant already-cancelled access.
 
 This also works unchanged with Shopify's Subscriptions app: each billing
 cycle creates a new paid order with the same SKU, so Pro keeps extending
@@ -52,22 +55,26 @@ created on the store automatically exists in the app:
 - ``customers/create`` / ``customers/update`` upsert a "store account":
   no user for the (normalized) email -> a passwordless stub is created
   with ``shopify_customer_id`` and ``source='shopify'``; a user exists ->
-  only the ``shopify_customer_id`` link is set/refreshed. An existing
-  password or email is NEVER overwritten (Shopify does not expose customer
-  credentials, so passwords cannot sync — the user sets their app password
-  once, by signing up with the store email, which claims the same row).
-  Replays are idempotent: the upsert lands on the same row every time.
+  only the ``shopify_customer_id`` link is set/refreshed. The customer id
+  is the stable identity: an unclaimed store-only stub can follow a changed
+  Shopify email in place, while a claimed account keeps its verified app
+  login email rather than splitting into a second user or auto-merging
+  accounts. Replays are idempotent.
 - ``customers/delete`` deletes the user ONLY when it is an unclaimed stub
   (never claimed by password or code sign-in, and no analyses); any Pro
   days it still carried are parked in ``pro_grants`` so a later signup
   keeps what was bought. A claimed account merely loses its
   ``shopify_customer_id`` link — store-side deletion never destroys app
-  data.
+  data. A plain-delete tombstone keeps the internal former-account mapping
+  needed for the same customer's late paid event while preventing a
+  delayed create/update webhook from recreating the removed store identity.
 - ``customers/redact`` (GDPR) follows the delete semantics and further
   erases the shopify-sourced profile fields (link + source) on claimed
-  accounts, and drops any parked purchase for a deleted stub's email.
+  accounts, drops any parked purchase for a deleted stub's email, and
+  severs the former-account mapping.
 - ``customers/data_request`` and ``shop/redact`` (GDPR) are acknowledged
-  with a 200 and logged; there is nothing to change app-side.
+  with a 200 and logged. A complete export/shop-wide erasure workflow is
+  not implemented here and remains separate privacy-compliance work.
 """
 
 from __future__ import annotations
@@ -78,7 +85,7 @@ import hmac
 import json
 import logging
 import os
-import time
+from datetime import datetime
 
 from ..config import Config
 from .users import UserStore
@@ -177,15 +184,45 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
         if not email:
             logger.info("Shopify %s webhook skipped: customer has no email.", topic)
             return  # a customer with no email has nothing to sync to
-        users.upsert_store_customer(email, str(data.get("id") or "") or None)
-        logger.info("Shopify %s: synced store account for %s.", topic, email)
+        customer_id = str(data.get("id") or "") or None
+        user = users.upsert_store_customer(
+            email,
+            customer_id,
+            updated_at=_customer_updated_at(data),
+        )
+        if user is None:
+            logger.info(
+                "Shopify %s ignored for deleted/redacted customer %s.",
+                topic,
+                customer_id or "?",
+            )
+        elif customer_id and user.shopify_customer_id != customer_id:
+            logger.warning(
+                "Shopify %s did not auto-merge customer %s into app account %s"
+                " because that email is linked to customer %s.",
+                topic,
+                customer_id,
+                user.email,
+                user.shopify_customer_id or "?",
+            )
+        elif user.email != email:
+            logger.warning(
+                "Shopify %s kept customer %s on verified app email %s"
+                " instead of auto-moving it to %s.",
+                topic,
+                customer_id or "?",
+                user.email,
+                email,
+            )
+        else:
+            logger.info("Shopify %s: synced store account for %s.", topic, email)
     elif topic in CUSTOMER_DELETE_TOPICS:
         _detach_customer(data, users, redact=False)
     elif topic in CUSTOMER_REDACT_TOPICS:
         _detach_customer(data.get("customer") or {}, users, redact=True)
     elif topic in ACK_TOPICS:
         logger.info(
-            "Shopify %s webhook acknowledged — no app-side data changes.", topic
+            "Shopify %s webhook acknowledged; privacy workflow pending.", topic
         )
     else:
         # Reached only for a topic that is none of orders/*, customers/* or
@@ -199,6 +236,20 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
         )
 
 
+def _customer_updated_at(data: dict) -> float | None:
+    """Parse Shopify's resource timestamp for stale-event rejection."""
+    raw = data.get("updated_at") or data.get("created_at")
+    if isinstance(raw, (int, float)):
+        return float(raw)
+    if not isinstance(raw, str) or not raw.strip():
+        return None
+    try:
+        return datetime.fromisoformat(raw.strip().replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        logger.warning("Ignoring invalid Shopify customer timestamp.")
+        return None
+
+
 def _detach_customer(customer: dict, users: UserStore, redact: bool) -> None:
     """customers/delete and customers/redact. An unclaimed stub (never
     claimed by password or code sign-in, no analyses) is deleted outright —
@@ -208,22 +259,9 @@ def _detach_customer(customer: dict, users: UserStore, redact: bool) -> None:
     owner signed in with an emailed code — only loses its store link
     (never its app data), and redaction additionally clears the
     shopify-sourced ``source`` field."""
-    user = users.get_by_shopify(str(customer.get("id") or ""))
-    if user is None:
-        email = (customer.get("email") or "").strip().lower()
-        user = users.get_by_email(email) if email else None
-    if user is None:
-        return  # unknown customer, or the webhook replayed after removal
-    if not user.claimed and not users.has_activity(user.id):
-        users.delete_user(user.id)
-        if redact:
-            users.pop_pending_grant(user.email)
-        else:
-            remaining = (user.pro_until - time.time()) / 86400
-            if remaining > 0:
-                users.add_pending_grant(user.email, remaining)
-    else:
-        users.unlink_shopify(user.id, clear_source=redact)
+    customer_id = str(customer.get("id") or "") or None
+    email = (customer.get("email") or "").strip().lower()
+    users.remove_shopify_customer(customer_id, email, redact=redact)
 
 
 def _order_days(order: dict, cfg: Config) -> float:
@@ -265,45 +303,37 @@ def _order_email(order: dict) -> str:
     return (email or "").strip().lower()
 
 
+def _order_customer_id(order: dict) -> str | None:
+    customer_id = str((order.get("customer") or {}).get("id") or "").strip()
+    return customer_id or None
+
+
 def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
     order_id = str(order.get("id") or "")
     email = _order_email(order)
-    # Gear ledger first, independent of the Pro path: EVERY paid order's
-    # non-Pro line items are recorded (once — record_gear_order is
-    # replay-idempotent per order), so gear attach is measurable. Before
-    # this, gear-only orders were verified and then dropped on the floor.
+    customer_id = _order_customer_id(order)
     gear = _gear_items(order, cfg)
-    if order_id and gear:
-        users.record_gear_order(order_id, email, gear)
     days = _order_days(order, cfg)
-    if not order_id or not email or days <= 0:
-        return  # gear-only order, or nothing to attach the grant to
-    if not users.record_order(order_id, email, days):
+    if not order_id or (days <= 0 and not gear):
+        return
+    applied, effective_email, user_id = users.apply_shopify_order(
+        order_id, email, days, customer_id, gear=gear
+    )
+    if not applied:
         logger.info("Shopify order %s already applied — skipping replay.", order_id)
-        return  # replayed webhook — already granted
-    user = users.get_by_email(email)
-    if user is not None:
-        users.grant_pro_days(user.id, days)
-        logger.info("Shopify order %s: granted %.0f Pro day(s) to %s.", order_id, days, email)
-    else:
-        users.add_pending_grant(email, days)
-        logger.info(
-            "Shopify order %s: parked %.0f Pro day(s) for %s "
-            "(no account yet — claimed on first signup/login).",
-            order_id, days, email,
-        )
+        return
+    logger.info(
+        "Shopify order %s reconciled for %s (linked user: %s).",
+        order_id,
+        effective_email,
+        user_id or "none",
+    )
 
 
 def _apply_cancelled(order: dict, users: UserStore) -> None:
     order_id = str(order.get("id") or "")
-    # Cancellation reaches the gear ledger too (rows are marked, not
-    # deleted — the KPI skips them, the audit trail stays). Idempotent.
-    users.cancel_gear_order(order_id)
-    email, days = users.void_order(order_id)
-    if days <= 0:
-        return  # unknown order, or already voided
-    user = users.get_by_email(email)
-    if user is not None:
-        users.revoke_pro_days(user.id, days)
-    else:
-        users.reduce_pending_grant(email, days)
+    users.cancel_shopify_order(
+        order_id,
+        email=_order_email(order),
+        shopify_customer_id=_order_customer_id(order),
+    )

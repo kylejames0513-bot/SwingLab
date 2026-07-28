@@ -15,7 +15,9 @@ import hashlib
 import hmac
 import json
 import sqlite3
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 import pytest
 
@@ -62,16 +64,27 @@ def webhook(client, payload, topic, secret=SECRET):
     )
 
 
-def customer(customer_id=7001, email="buyer@example.com"):
-    return {"id": customer_id, "email": email, "first_name": "Buyer"}
+def customer(customer_id=7001, email="buyer@example.com", updated_at=None):
+    payload = {"id": customer_id, "email": email, "first_name": "Buyer"}
+    if updated_at is not None:
+        payload["updated_at"] = updated_at
+    return payload
 
 
-def pro_order(order_id=1001, email="buyer@example.com", sku="SL-PRO-1MO"):
-    return {
+def pro_order(
+    order_id=1001,
+    email="buyer@example.com",
+    sku="SL-PRO-1MO",
+    customer_id=None,
+):
+    order = {
         "id": order_id,
         "email": email,
         "line_items": [{"sku": sku, "quantity": 1}],
     }
+    if customer_id is not None:
+        order["customer"] = {"id": customer_id, "email": email}
+    return order
 
 
 def signup(client, email="buyer@example.com", password="longenough"):
@@ -190,6 +203,311 @@ def test_customers_update_links_existing_account_untouched(app):
     assert resp.status_code == 303
 
 
+def test_claimed_customer_email_change_keeps_one_stable_app_identity(app):
+    client = TestClient(app)
+    signup(client, email="old@example.com")
+    webhook(
+        client,
+        customer(email="old@example.com"),
+        "customers/update",
+    )
+    original = get_user(client, "old@example.com")
+
+    webhook(
+        client,
+        customer(email="new@example.com"),
+        "customers/update",
+    )
+
+    same_user = get_user(client, "old@example.com")
+    assert same_user.id == original.id
+    assert same_user.shopify_customer_id == "7001"
+    assert get_user(client, "new@example.com") is None
+    assert count_users(client) == 1
+
+    # Checkout email can change, but the stable Shopify id still assigns
+    # the purchase to the already-linked CaddieInsight account.
+    webhook(
+        client,
+        pro_order(email="new@example.com", customer_id=7001),
+        "orders/paid",
+    )
+    assert get_user(client, "old@example.com").is_pro
+
+
+def test_unclaimed_store_email_change_moves_the_same_stub(app):
+    client = TestClient(app)
+    webhook(client, customer(email="old@example.com"), "customers/create")
+    original = get_user(client, "old@example.com")
+
+    webhook(client, customer(email="new@example.com"), "customers/update")
+
+    moved = get_user(client, "new@example.com")
+    assert moved.id == original.id
+    assert moved.shopify_customer_id == "7001"
+    assert get_user(client, "old@example.com") is None
+    assert count_users(client) == 1
+
+
+def test_stale_customer_update_cannot_move_identity_back_to_old_email(app):
+    client = TestClient(app)
+    webhook(
+        client,
+        customer(
+            email="old@example.com",
+            updated_at="2026-07-28T12:00:00Z",
+        ),
+        "customers/create",
+    )
+    original = get_user(client, "old@example.com")
+    webhook(
+        client,
+        customer(
+            email="new@example.com",
+            updated_at="2026-07-28T13:00:00Z",
+        ),
+        "customers/update",
+    )
+    webhook(
+        client,
+        customer(
+            email="old@example.com",
+            updated_at="2026-07-28T12:30:00Z",
+        ),
+        "customers/update",
+    )
+
+    current = get_user(client, "new@example.com")
+    assert current.id == original.id
+    assert current.shopify_customer_id == "7001"
+    assert get_user(client, "old@example.com") is None
+
+
+def test_unclaimed_email_change_keeps_pending_order_cancellable(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(
+        client,
+        pro_order(email="old@example.com", customer_id=7001),
+        "orders/paid",
+    )
+    webhook(client, customer(email="old@example.com"), "customers/create")
+    webhook(client, customer(email="new@example.com"), "customers/update")
+
+    webhook(
+        client,
+        pro_order(email="new@example.com", customer_id=7001),
+        "orders/cancelled",
+    )
+
+    moved = get_user(client, "new@example.com")
+    assert not moved.is_pro
+    assert users.pending_grant_days("old@example.com") == 0
+    assert users.pending_grant_days("new@example.com") == 0
+
+
+def test_unclaimed_email_change_moves_unambiguous_guest_order(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(
+        client,
+        pro_order(order_id=1001, email="old@example.com"),
+        "orders/paid",
+    )
+    webhook(client, customer(email="old@example.com"), "customers/create")
+    webhook(client, customer(email="new@example.com"), "customers/update")
+
+    assert users.pending_grant_days("old@example.com") == 0
+    assert users.pending_grant_days("new@example.com") == 31
+    moved_order = users._conn.execute(
+        "SELECT email, shopify_customer_id, pending_days"
+        " FROM shopify_orders WHERE order_id = '1001'"
+    ).fetchone()
+    assert tuple(moved_order) == ("new@example.com", "7001", 31)
+
+    signup(client, email="new@example.com")
+    assert get_user(client, "new@example.com").is_pro
+    webhook(
+        client,
+        pro_order(order_id=1001, email="old@example.com"),
+        "orders/cancelled",
+    )
+    assert not get_user(client, "new@example.com").is_pro
+
+
+def test_email_change_never_moves_another_customers_pending_order(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(
+        client,
+        pro_order(
+            order_id=1001,
+            email="old@example.com",
+            customer_id=7001,
+        ),
+        "orders/paid",
+    )
+    webhook(
+        client,
+        pro_order(
+            order_id=1002,
+            email="old@example.com",
+            customer_id=7002,
+        ),
+        "orders/paid",
+    )
+    webhook(client, customer(email="old@example.com"), "customers/create")
+    webhook(client, customer(email="new@example.com"), "customers/update")
+
+    assert users.pending_grant_days("new@example.com") == 31
+    assert users.pending_grant_days("old@example.com") == 31
+    orders = {
+        row["order_id"]: row["email"]
+        for row in users._conn.execute(
+            "SELECT order_id, email FROM shopify_orders"
+            " ORDER BY order_id"
+        )
+    }
+    assert orders == {
+        "1001": "new@example.com",
+        "1002": "old@example.com",
+    }
+
+    signup(client, email="new@example.com")
+    before = get_user(client, "new@example.com").pro_until
+    webhook(
+        client,
+        pro_order(
+            order_id=1002,
+            email="old@example.com",
+            customer_id=7002,
+        ),
+        "orders/cancelled",
+    )
+    assert get_user(client, "new@example.com").pro_until == before
+
+
+def test_paid_customer_id_conflict_never_grants_email_stub(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(
+        client,
+        customer(customer_id=7001, email="shared@example.com"),
+        "customers/create",
+    )
+
+    webhook(
+        client,
+        pro_order(
+            order_id=1002,
+            email="shared@example.com",
+            customer_id=7002,
+        ),
+        "orders/paid",
+    )
+
+    customer_c = get_user(client, "shared@example.com")
+    assert customer_c.shopify_customer_id == "7001"
+    assert not customer_c.is_pro
+    order_d = users._conn.execute(
+        "SELECT user_id, shopify_customer_id, pending_days"
+        " FROM shopify_orders WHERE order_id = '1002'"
+    ).fetchone()
+    assert tuple(order_d) == (None, "7002", 31)
+
+    webhook(
+        client,
+        customer(customer_id=7001, email="new@example.com"),
+        "customers/update",
+    )
+    order_d = users._conn.execute(
+        "SELECT email, user_id, pending_days FROM shopify_orders"
+        " WHERE order_id = '1002'"
+    ).fetchone()
+    assert tuple(order_d) == ("shared@example.com", None, 31)
+    assert users.pending_grant_days("shared@example.com") == 31
+    assert users.pending_grant_days("new@example.com") == 0
+
+
+def test_order_before_customer_moves_by_stable_id_to_current_email(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(
+        client,
+        pro_order(
+            order_id=1001,
+            email="old@example.com",
+            customer_id=7002,
+        ),
+        "orders/paid",
+    )
+
+    webhook(
+        client,
+        customer(customer_id=7002, email="new@example.com"),
+        "customers/create",
+    )
+
+    moved = users._conn.execute(
+        "SELECT email, shopify_customer_id, pending_days"
+        " FROM shopify_orders WHERE order_id = '1001'"
+    ).fetchone()
+    assert tuple(moved) == ("new@example.com", "7002", 31)
+    assert users.pending_grant_days("old@example.com") == 0
+    assert users.pending_grant_days("new@example.com") == 31
+
+    signup(client, email="new@example.com")
+    user = get_user(client, "new@example.com")
+    assert user.shopify_customer_id == "7002"
+    assert user.is_pro
+
+
+def test_cancelling_direct_order_does_not_consume_an_older_pending_order(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    # A arrives before the customer account and remains parked.
+    webhook(
+        client,
+        pro_order(
+            order_id=1001,
+            email="buyer@example.com",
+            customer_id=7001,
+        ),
+        "orders/paid",
+    )
+    webhook(client, customer(), "customers/create")
+    # B arrives after the stub exists and is applied directly to it.
+    webhook(
+        client,
+        pro_order(
+            order_id=1002,
+            email="buyer@example.com",
+            customer_id=7001,
+        ),
+        "orders/paid",
+    )
+    users._conn.execute(
+        "UPDATE users SET pro_until = pro_until - ? WHERE email = ?",
+        (10 * DAY, "buyer@example.com"),
+    )
+    users._conn.commit()
+
+    webhook(
+        client,
+        pro_order(
+            order_id=1002,
+            email="buyer@example.com",
+            customer_id=7001,
+        ),
+        "orders/cancelled",
+    )
+
+    assert users.pending_grant_days("buyer@example.com") == 31
+    assert not get_user(client).is_pro
+    signup(client)
+    assert get_user(client).is_pro  # order A is still valid and claimable
+
+
 # -- claiming --------------------------------------------------------------
 
 def test_signup_claims_stub_and_keeps_everything_bought(app):
@@ -258,6 +576,31 @@ def test_customers_delete_removes_unclaimed_stub(app):
     assert webhook(client, {"id": 7001}, "customers/delete").status_code == 200
 
 
+def test_delete_before_delayed_create_does_not_recreate_customer(app):
+    client = TestClient(app)
+    webhook(client, {"id": 7001}, "customers/delete")
+    webhook(client, customer(), "customers/create")
+    webhook(client, customer(), "customers/update")
+
+    assert get_user(client) is None
+    assert count_users(client) == 0
+
+
+def test_delete_for_different_customer_id_does_not_unlink_same_email(app):
+    client = TestClient(app)
+    webhook(client, customer(customer_id=7001), "customers/create")
+
+    webhook(
+        client,
+        customer(customer_id=7002),
+        "customers/delete",
+    )
+
+    user = get_user(client)
+    assert user is not None
+    assert user.shopify_customer_id == "7001"
+
+
 def test_customers_delete_parks_bought_days_for_later_signup(app):
     client = TestClient(app)
     webhook(client, customer(), "customers/create")
@@ -271,6 +614,126 @@ def test_customers_delete_parks_bought_days_for_later_signup(app):
     assert abs(user.pro_until - (time.time() + 31 * DAY)) < 60
 
 
+def test_deleted_stub_purchase_claim_locks_former_customer_identity(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(client, customer(customer_id=7001), "customers/create")
+    webhook(
+        client,
+        pro_order(order_id=1001, customer_id=7001),
+        "orders/paid",
+    )
+    webhook(client, {"id": 7001}, "customers/delete")
+    assert get_user(client) is None
+
+    signup(client)
+    account = get_user(client)
+    assert account.is_pro
+    assert account.shopify_customer_id is None
+    assert account.shopify_identity_locked
+    former = users._conn.execute(
+        "SELECT former_user_id FROM shopify_customer_tombstones"
+        " WHERE customer_id = '7001'"
+    ).fetchone()
+    assert former["former_user_id"] == account.id
+
+    before = account.pro_until
+    webhook(
+        client,
+        pro_order(order_id=1002, customer_id=7002),
+        "orders/paid",
+    )
+    assert get_user(client).pro_until == before
+    assert users.claim_pending_grant(account.id, account.email) == 0
+    unrelated = users._conn.execute(
+        "SELECT user_id, pending_days FROM shopify_orders"
+        " WHERE order_id = '1002'"
+    ).fetchone()
+    assert tuple(unrelated) == (None, 31)
+
+
+def test_delete_reclaim_preserves_each_orders_remaining_days(app):
+    client = TestClient(app)
+    webhook(client, customer(), "customers/create")
+    webhook(client, pro_order(order_id=1001), "orders/paid")
+    webhook(client, pro_order(order_id=1002), "orders/paid")
+    users: UserStore = client.app.state.users
+    now = time.time()
+    user = get_user(client)
+    chain = "test-two-order-chain"
+    users._conn.execute(
+        "UPDATE users SET pro_until = ? WHERE id = ?",
+        (now + 22 * DAY, user.id),
+    )
+    users._conn.execute(
+        "UPDATE shopify_orders"
+        " SET grant_chain = ?, grant_start = ?, grant_end = ?"
+        " WHERE order_id = '1001'",
+        (chain, now - 40 * DAY, now - 9 * DAY),
+    )
+    users._conn.execute(
+        "UPDATE shopify_orders"
+        " SET grant_chain = ?, grant_start = ?, grant_end = ?"
+        " WHERE order_id = '1002'",
+        (chain, now - 9 * DAY, now + 22 * DAY),
+    )
+    users._conn.commit()
+
+    webhook(client, {"id": 7001}, "customers/delete")
+    parked = {
+        row["order_id"]: row["pending_days"]
+        for row in users._conn.execute(
+            "SELECT order_id, pending_days FROM shopify_orders"
+            " WHERE order_id IN ('1001', '1002')"
+        )
+    }
+    assert parked["1001"] == 0
+    assert parked["1002"] == pytest.approx(22, abs=0.01)
+
+    signup(client)
+    before = get_user(client).pro_until
+    webhook(client, pro_order(order_id=1001), "orders/cancelled")
+
+    assert get_user(client).pro_until == pytest.approx(before)
+    assert get_user(client).is_pro
+    order2 = users._conn.execute(
+        "SELECT user_id, grant_start, grant_end FROM shopify_orders"
+        " WHERE order_id = '1002'"
+    ).fetchone()
+    assert order2["user_id"] == get_user(client).id
+    assert order2["grant_end"] > order2["grant_start"]
+
+
+def test_customer_delete_rolls_back_everything_if_parking_fails(app):
+    client = TestClient(app)
+    webhook(client, customer(), "customers/create")
+    webhook(client, pro_order(), "orders/paid")
+    users: UserStore = client.app.state.users
+    users._conn.execute(
+        "CREATE TRIGGER fail_customer_delete"
+        " BEFORE INSERT ON pro_grants"
+        " BEGIN SELECT RAISE(ABORT, 'simulated failure'); END"
+    )
+    users._conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        webhook(client, {"id": 7001}, "customers/delete")
+
+    user = get_user(client)
+    assert user is not None
+    assert user.shopify_customer_id == "7001"
+    assert user.is_pro
+    assert users._conn.execute(
+        "SELECT 1 FROM shopify_customer_tombstones WHERE customer_id = '7001'"
+    ).fetchone() is None
+
+    users._conn.execute("DROP TRIGGER fail_customer_delete")
+    users._conn.commit()
+    assert webhook(client, {"id": 7001}, "customers/delete").status_code == 200
+    assert get_user(client) is None
+    assert users.pending_grant_days("buyer@example.com") > 0
+
+
 def test_customers_delete_only_unlinks_claimed_accounts(app):
     client = TestClient(app)
     signup(client)
@@ -281,12 +744,195 @@ def test_customers_delete_only_unlinks_claimed_accounts(app):
     user = get_user(client)
     assert user is not None  # app data survives store-side deletion
     assert user.shopify_customer_id is None
+    assert user.shopify_identity_locked
     client.post("/logout")
     resp = client.post(
         "/login", data={"email": "buyer@example.com", "password": "longenough"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
+
+
+def test_deleted_link_cannot_infer_another_customer_from_shared_email(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    shared = "shared@example.com"
+    webhook(
+        client,
+        pro_order(order_id=1001, email=shared, customer_id=7001),
+        "orders/paid",
+    )
+    webhook(
+        client,
+        pro_order(order_id=1002, email=shared, customer_id=7002),
+        "orders/paid",
+    )
+    webhook(
+        client,
+        customer(customer_id=7001, email=shared),
+        "customers/create",
+    )
+    signup(client, email=shared)
+    account = get_user(client, shared)
+    assert account.shopify_customer_id == "7001"
+    assert account.shopify_identity_locked
+    assert account.is_pro
+
+    webhook(client, {"id": 7001}, "customers/delete")
+    account = get_user(client, shared)
+    assert account.shopify_customer_id is None
+    assert account.shopify_identity_locked
+
+    assert users.claim_pending_grant(account.id, shared) == 0
+    customer_d = users._conn.execute(
+        "SELECT user_id, pending_days FROM shopify_orders"
+        " WHERE order_id = '1002'"
+    ).fetchone()
+    assert tuple(customer_d) == (None, 31)
+    assert get_user(client, shared).shopify_customer_id is None
+
+
+def test_new_customer_order_cannot_take_over_deleted_link_by_email(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    shared = "shared@example.com"
+    signup(client, email=shared)
+    webhook(
+        client,
+        customer(customer_id=7001, email=shared),
+        "customers/create",
+    )
+    webhook(client, {"id": 7001}, "customers/delete")
+    account = get_user(client, shared)
+    before = account.pro_until
+    assert account.shopify_customer_id is None
+    assert account.shopify_identity_locked
+
+    webhook(
+        client,
+        pro_order(order_id=1002, email=shared, customer_id=7002),
+        "orders/paid",
+    )
+
+    account = get_user(client, shared)
+    assert account.pro_until == before
+    assert account.shopify_customer_id is None
+    parked = users._conn.execute(
+        "SELECT user_id, shopify_customer_id, pending_days"
+        " FROM shopify_orders WHERE order_id = '1002'"
+    ).fetchone()
+    assert tuple(parked) == (None, "7002", 31)
+
+
+def test_foreign_delete_cannot_bind_to_another_former_customer(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    shared = "shared@example.com"
+    signup(client, email=shared)
+    webhook(
+        client,
+        customer(customer_id=7002, email=shared),
+        "customers/create",
+    )
+    account = get_user(client, shared)
+    webhook(client, {"id": 7002}, "customers/delete")
+    assert get_user(client, shared).shopify_customer_id is None
+
+    webhook(
+        client,
+        customer(customer_id=7001, email=shared),
+        "customers/delete",
+    )
+    foreign_tombstone = users._conn.execute(
+        "SELECT former_user_id FROM shopify_customer_tombstones"
+        " WHERE customer_id = '7001'"
+    ).fetchone()
+    assert foreign_tombstone["former_user_id"] is None
+
+    webhook(
+        client,
+        pro_order(order_id=1001, email=shared, customer_id=7001),
+        "orders/paid",
+    )
+    victim = get_user(client, shared)
+    assert victim.id == account.id
+    assert not victim.is_pro
+    parked = users._conn.execute(
+        "SELECT user_id, pending_days FROM shopify_orders"
+        " WHERE order_id = '1001'"
+    ).fetchone()
+    assert tuple(parked) == (None, 31)
+
+
+def test_late_order_for_same_deleted_customer_returns_to_former_account(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    signup(client)
+    webhook(client, customer(customer_id=7001), "customers/create")
+    account = get_user(client)
+    webhook(client, {"id": 7001}, "customers/delete")
+    unlinked = get_user(client)
+    assert unlinked.id == account.id
+    assert unlinked.shopify_customer_id is None
+    assert unlinked.shopify_identity_locked
+
+    webhook(
+        client,
+        pro_order(order_id=1001, customer_id=7001),
+        "orders/paid",
+    )
+
+    recovered = get_user(client)
+    assert recovered.id == account.id
+    assert recovered.shopify_customer_id is None
+    assert recovered.is_pro
+    order = users._conn.execute(
+        "SELECT user_id, shopify_customer_id, pending_days"
+        " FROM shopify_orders WHERE order_id = '1001'"
+    ).fetchone()
+    assert tuple(order) == (account.id, "7001", 0)
+    assert users.pending_grant_days(account.email) == 0
+    tombstone = users._conn.execute(
+        "SELECT redacted, former_user_id"
+        " FROM shopify_customer_tombstones WHERE customer_id = '7001'"
+    ).fetchone()
+    assert tuple(tombstone) == (0, account.id)
+
+    payload = {"shop_domain": "teststore.myshopify.com", "customer": customer()}
+    webhook(client, payload, "customers/redact")
+    tombstone = users._conn.execute(
+        "SELECT redacted, former_user_id"
+        " FROM shopify_customer_tombstones WHERE customer_id = '7001'"
+    ).fetchone()
+    assert tuple(tombstone) == (1, None)
+
+
+def test_customer_order_waits_for_identity_link_then_reconciles(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    signup(client)
+    account = get_user(client)
+    assert account.shopify_customer_id is None
+    assert not account.shopify_identity_locked
+
+    webhook(
+        client,
+        pro_order(order_id=1001, customer_id=7001),
+        "orders/paid",
+    )
+    assert not get_user(client).is_pro
+    parked = users._conn.execute(
+        "SELECT user_id, pending_days FROM shopify_orders"
+        " WHERE order_id = '1001'"
+    ).fetchone()
+    assert tuple(parked) == (None, 31)
+
+    webhook(client, customer(customer_id=7001), "customers/create")
+    account = get_user(client)
+    assert account.shopify_customer_id == "7001"
+    assert account.shopify_identity_locked
+    assert users.claim_pending_grant(account.id, account.email) == 31
+    assert get_user(client).is_pro
 
 
 def test_stub_with_analyses_is_never_deleted(app):
@@ -327,6 +973,99 @@ def test_customers_redact_erases_unclaimed_stub_and_parked_days(app):
     assert not get_user(client).is_pro
 
 
+def test_redact_after_delete_erases_the_parked_entitlement(app):
+    client = TestClient(app)
+    webhook(client, customer(), "customers/create")
+    webhook(client, pro_order(), "orders/paid")
+    webhook(client, {"id": 7001}, "customers/delete")
+    assert client.app.state.users.pending_grant_days("buyer@example.com") > 0
+
+    payload = {"shop_domain": "teststore.myshopify.com", "customer": customer()}
+    webhook(client, payload, "customers/redact")
+
+    signup(client)
+    assert not get_user(client).is_pro
+    tombstone = client.app.state.users._conn.execute(
+        "SELECT redacted, former_user_id"
+        " FROM shopify_customer_tombstones WHERE customer_id = '7001'"
+    ).fetchone()
+    assert tuple(tombstone) == (1, None)
+
+
+def test_redact_blocks_delayed_paid_order_from_reintroducing_identity(app):
+    client = TestClient(app)
+    webhook(client, customer(), "customers/create")
+    payload = {"shop_domain": "teststore.myshopify.com", "customer": customer()}
+    webhook(client, payload, "customers/redact")
+
+    webhook(
+        client,
+        pro_order(customer_id=7001),
+        "orders/paid",
+    )
+
+    users: UserStore = client.app.state.users
+    assert get_user(client) is None
+    assert users.pending_grant_days("buyer@example.com") == 0
+    assert users._conn.execute(
+        "SELECT 1 FROM shopify_orders WHERE order_id = '1001'"
+    ).fetchone() is None
+
+
+def test_redact_for_other_customer_id_cannot_erase_same_email_state(app):
+    client = TestClient(app)
+    webhook(client, customer(customer_id=7001), "customers/create")
+    users: UserStore = client.app.state.users
+    users.add_pending_grant("buyer@example.com", 31)
+    users.issue_email_code("buyer@example.com", "signin")
+
+    payload = {
+        "shop_domain": "teststore.myshopify.com",
+        "customer": customer(customer_id=7002),
+    }
+    webhook(client, payload, "customers/redact")
+
+    user = get_user(client)
+    assert user is not None and user.shopify_customer_id == "7001"
+    assert users.pending_grant_days("buyer@example.com") == 31
+    assert users._conn.execute(
+        "SELECT 1 FROM email_codes WHERE email = 'buyer@example.com'"
+    ).fetchone() is not None
+
+
+def test_redact_removes_only_matching_customer_pending_value(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(
+        client,
+        pro_order(order_id=1001, customer_id=7001),
+        "orders/paid",
+    )
+    webhook(
+        client,
+        pro_order(order_id=1002, customer_id=7002),
+        "orders/paid",
+    )
+    webhook(client, customer(customer_id=7001), "customers/create")
+
+    payload = {
+        "shop_domain": "teststore.myshopify.com",
+        "customer": customer(customer_id=7001),
+    }
+    webhook(client, payload, "customers/redact")
+
+    assert get_user(client) is None
+    assert users.pending_grant_days("buyer@example.com") == 31
+    pending = {
+        row["order_id"]: row["pending_days"]
+        for row in users._conn.execute(
+            "SELECT order_id, pending_days FROM shopify_orders"
+            " ORDER BY order_id"
+        )
+    }
+    assert pending == {"1001": 0, "1002": 31}
+
+
 def test_gdpr_ack_topics_return_200(app):
     client = TestClient(app)
     payload = {"shop_domain": "teststore.myshopify.com", "customer": customer()}
@@ -353,6 +1092,25 @@ def test_existing_db_gains_store_columns_in_place(tmp_path):
         "INSERT INTO users (id, email, password_hash, created_at)"
         " VALUES ('u1', 'old@example.com', 'scrypt$x', 0)"
     )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES ('legacy-order', 'old@example.com', 31, 0)"
+    )
+    conn.execute(
+        "CREATE TABLE shopify_customer_tombstones ("
+        " customer_id TEXT PRIMARY KEY,"
+        " redacted INTEGER NOT NULL DEFAULT 0,"
+        " deleted_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO shopify_customer_tombstones"
+        " (customer_id, redacted, deleted_at) VALUES ('deleted-1', 0, 1)"
+    )
     conn.commit()
     conn.close()
 
@@ -363,7 +1121,572 @@ def test_existing_db_gains_store_columns_in_place(tmp_path):
 
     stub = users.upsert_store_customer("new@example.com", "42")
     assert stub.source == "shopify" and not stub.has_password
+    order_columns = {
+        row["name"]
+        for row in users._conn.execute("PRAGMA table_info(shopify_orders)")
+    }
+    assert {
+        "user_id",
+        "shopify_customer_id",
+        "grant_chain",
+        "grant_start",
+        "grant_end",
+        "pending_days",
+        "grant_ambiguous",
+        "cancelled_at",
+    } <= order_columns
+    tombstone_columns = {
+        row["name"]
+        for row in users._conn.execute(
+            "PRAGMA table_info(shopify_customer_tombstones)"
+        )
+    }
+    assert "former_user_id" in tombstone_columns
+    migrated_tombstone = users._conn.execute(
+        "SELECT redacted, former_user_id"
+        " FROM shopify_customer_tombstones"
+        " WHERE customer_id = 'deleted-1'"
+    ).fetchone()
+    assert tuple(migrated_tombstone) == (0, None)
+    migrated_order = users._conn.execute(
+        "SELECT user_id FROM shopify_orders WHERE order_id = 'legacy-order'"
+    ).fetchone()
+    assert migrated_order["user_id"] == "u1"
 
     reopened = UserStore(old)  # second open: migrations must be no-ops
     assert reopened.get("u1") is not None
     assert reopened.get_by_shopify("42").email == "new@example.com"
+
+
+def test_legacy_stacked_orders_gain_cancellable_intervals(tmp_path):
+    db = tmp_path / "legacy-stacked.sqlite"
+    now = time.time()
+    applied_at = now - 40 * DAY
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL, created_at REAL NOT NULL,"
+        " stripe_customer_id TEXT, plan TEXT NOT NULL DEFAULT 'free',"
+        " subscription_status TEXT NOT NULL DEFAULT 'none',"
+        " pro_until REAL NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "INSERT INTO users"
+        " (id, email, password_hash, created_at, pro_until)"
+        " VALUES ('u1', 'old@example.com', 'scrypt$x', 0, ?)",
+        (now + 22 * DAY,),
+    )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.executemany(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES (?, 'old@example.com', 31, ?)",
+        (("legacy-1", applied_at), ("legacy-2", applied_at)),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    orders = users._conn.execute(
+        "SELECT * FROM shopify_orders ORDER BY order_id"
+    ).fetchall()
+    assert orders[0]["grant_chain"] == orders[1]["grant_chain"]
+    assert orders[0]["grant_start"] == pytest.approx(applied_at)
+    assert orders[0]["grant_end"] == pytest.approx(orders[1]["grant_start"])
+    assert orders[1]["grant_end"] == pytest.approx(applied_at + 62 * DAY)
+
+    applied, _, _ = users.cancel_shopify_order("legacy-2")
+    assert applied
+    assert not users.get("u1").is_pro
+
+
+def test_legacy_claimed_late_order_uses_claimed_access_window(tmp_path):
+    db = tmp_path / "legacy-claimed-late.sqlite"
+    now = time.time()
+    # Shopify created the stub one day after purchase, but the owner did not
+    # claim its parked 31 days until now. Legacy rows had no claimed_at field;
+    # pro_until is the authoritative evidence for the actual access window.
+    created_at = now - 99 * DAY
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL, created_at REAL NOT NULL,"
+        " stripe_customer_id TEXT, plan TEXT NOT NULL DEFAULT 'free',"
+        " subscription_status TEXT NOT NULL DEFAULT 'none',"
+        " pro_until REAL NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "INSERT INTO users"
+        " (id, email, password_hash, created_at, pro_until)"
+        " VALUES ('u1', 'old@example.com', 'scrypt$x', ?, ?)",
+        (created_at, now + 31 * DAY),
+    )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES ('legacy-late', 'old@example.com', 31, ?)",
+        (now - 100 * DAY,),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    order = users._conn.execute(
+        "SELECT grant_start, grant_end FROM shopify_orders"
+        " WHERE order_id = 'legacy-late'"
+    ).fetchone()
+    assert order["grant_start"] == pytest.approx(now, abs=1)
+    assert order["grant_end"] == pytest.approx(now + 31 * DAY, abs=1)
+
+    applied, _, _ = users.cancel_shopify_order("legacy-late")
+    assert applied
+    assert not users.get("u1").is_pro
+
+
+def test_paid_replay_repairs_legacy_ledger_without_entitlement(tmp_path):
+    db = tmp_path / "legacy-missing-entitlement.sqlite"
+    now = time.time()
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL, created_at REAL NOT NULL,"
+        " stripe_customer_id TEXT, plan TEXT NOT NULL DEFAULT 'free',"
+        " subscription_status TEXT NOT NULL DEFAULT 'none',"
+        " pro_until REAL NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "INSERT INTO users"
+        " (id, email, password_hash, created_at, pro_until)"
+        " VALUES ('u1', 'old@example.com', 'scrypt$x', ?, 0)",
+        (now - 100 * DAY,),
+    )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES ('legacy-crash', 'old@example.com', 31, ?)",
+        (now - 60,),
+    )
+    conn.execute(
+        "CREATE TABLE gear_orders ("
+        " order_id TEXT NOT NULL, sku TEXT NOT NULL, title TEXT NOT NULL,"
+        " quantity INTEGER NOT NULL, email TEXT NOT NULL,"
+        " created_at REAL NOT NULL, cancelled_at REAL)"
+    )
+    conn.execute(
+        "INSERT INTO gear_orders"
+        " (order_id, sku, title, quantity, email, created_at)"
+        " VALUES ('legacy-crash', 'SL-MAT', 'Mat', 1,"
+        " 'old@example.com', ?)",
+        (now - 60,),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    applied, _, _ = users.apply_shopify_order(
+        "legacy-crash",
+        "old@example.com",
+        31,
+        None,
+        gear=[("SL-MAT", "Mat", 1)],
+    )
+    assert applied
+    repaired = users.get("u1")
+    assert repaired.is_pro
+    first_end = repaired.pro_until
+    assert first_end == pytest.approx(now - 60 + 31 * DAY, abs=1)
+
+    replayed, _, _ = users.apply_shopify_order(
+        "legacy-crash",
+        "old@example.com",
+        31,
+        None,
+        gear=[("SL-MAT", "Mat", 1)],
+    )
+    assert not replayed
+    assert users.get("u1").pro_until == first_end
+    assert users._conn.execute(
+        "SELECT COUNT(*) FROM gear_orders"
+        " WHERE order_id = 'legacy-crash'"
+    ).fetchone()[0] == 1
+
+
+def test_legacy_cancellation_blocks_ambiguous_replay_repair(tmp_path):
+    db = tmp_path / "legacy-cancelled-chain.sqlite"
+    now = time.time()
+    first_paid = now - 20 * DAY
+    second_paid = now - 10 * DAY
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL, created_at REAL NOT NULL,"
+        " stripe_customer_id TEXT, plan TEXT NOT NULL DEFAULT 'free',"
+        " subscription_status TEXT NOT NULL DEFAULT 'none',"
+        " pro_until REAL NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "INSERT INTO users"
+        " (id, email, password_hash, created_at, pro_until)"
+        " VALUES ('u1', 'old@example.com', 'scrypt$x', ?, ?)",
+        (now - 100 * DAY, now + 11 * DAY),
+    )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.executemany(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES (?, 'old@example.com', ?, ?)",
+        (
+            ("legacy-cancelled", 0, first_paid),
+            ("legacy-active", 31, second_paid),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    before = users.get("u1").pro_until
+    applied, _, _ = users.apply_shopify_order(
+        "legacy-active",
+        "old@example.com",
+        31,
+        None,
+    )
+
+    assert not applied
+    assert users.get("u1").pro_until == before
+    assert users.get("u1").pro_until == pytest.approx(now + 11 * DAY)
+
+
+def test_single_expired_legacy_order_cannot_own_unrelated_live_tail(tmp_path):
+    db = tmp_path / "legacy-single-unrelated-tail.sqlite"
+    now = time.time()
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL, created_at REAL NOT NULL,"
+        " stripe_customer_id TEXT, plan TEXT NOT NULL DEFAULT 'free',"
+        " subscription_status TEXT NOT NULL DEFAULT 'none',"
+        " pro_until REAL NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "INSERT INTO users"
+        " (id, email, password_hash, created_at, pro_until)"
+        " VALUES ('u1', 'old@example.com', 'scrypt$x', ?, ?)",
+        (now - 200 * DAY, now + 100 * DAY),
+    )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES ('expired-shopify', 'old@example.com', 31, ?)",
+        (now - 100 * DAY,),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    migrated = users._conn.execute(
+        "SELECT grant_ambiguous, grant_end FROM shopify_orders"
+        " WHERE order_id = 'expired-shopify'"
+    ).fetchone()
+    assert migrated["grant_ambiguous"] == 1
+    assert migrated["grant_end"] < now
+
+    before = users.get("u1").pro_until
+    applied, _, _ = users.cancel_shopify_order("expired-shopify")
+    assert applied
+    assert users.get("u1").pro_until == before
+
+
+def test_mixed_legacy_claim_history_is_marked_ambiguous(tmp_path):
+    db = tmp_path / "legacy-ambiguous-chain.sqlite"
+    now = time.time()
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL, created_at REAL NOT NULL,"
+        " stripe_customer_id TEXT, plan TEXT NOT NULL DEFAULT 'free',"
+        " subscription_status TEXT NOT NULL DEFAULT 'none',"
+        " pro_until REAL NOT NULL DEFAULT 0)"
+    )
+    conn.execute(
+        "INSERT INTO users"
+        " (id, email, password_hash, created_at, pro_until)"
+        " VALUES ('u1', 'old@example.com', 'scrypt$x', ?, ?)",
+        (now - 99 * DAY, now + 31 * DAY),
+    )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.executemany(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES (?, 'old@example.com', 31, ?)",
+        (
+            ("parked-before-stub", now - 100 * DAY),
+            ("direct-after-stub", now - 50 * DAY),
+        ),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    flags = {
+        row["order_id"]: row["grant_ambiguous"]
+        for row in users._conn.execute(
+            "SELECT order_id, grant_ambiguous FROM shopify_orders"
+        )
+    }
+    assert flags == {
+        "parked-before-stub": 1,
+        "direct-after-stub": 1,
+    }
+
+    before = users.get("u1").pro_until
+    applied, _, _ = users.cancel_shopify_order("direct-after-stub")
+    assert applied
+    assert users.get("u1").pro_until == before
+
+
+def test_paid_replay_repairs_recent_missing_pending_grant(tmp_path):
+    db = tmp_path / "legacy-missing-pending.sqlite"
+    now = time.time()
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES ('legacy-pending-crash', 'old@example.com', 31, ?)",
+        (now - 60,),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    repaired, _, _ = users.apply_shopify_order(
+        "legacy-pending-crash",
+        "old@example.com",
+        31,
+        "7001",
+    )
+    assert repaired
+    assert users.pending_grant_days("old@example.com") == 31
+    row = users._conn.execute(
+        "SELECT pending_days, shopify_customer_id FROM shopify_orders"
+        " WHERE order_id = 'legacy-pending-crash'"
+    ).fetchone()
+    assert tuple(row) == (31, "7001")
+
+    replayed, _, _ = users.apply_shopify_order(
+        "legacy-pending-crash",
+        "old@example.com",
+        31,
+        "7001",
+    )
+    assert not replayed
+    assert users.pending_grant_days("old@example.com") == 31
+
+    stub = users.upsert_store_customer("old@example.com", "7001")
+    assert users.claim_pending_grant(stub.id, stub.email) == 31
+    assert users.get(stub.id).is_pro
+
+
+def test_paid_replay_repairs_missing_grant_after_stub_arrives(tmp_path):
+    db = tmp_path / "legacy-missing-grant-with-stub.sqlite"
+    now = time.time()
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES ('legacy-stub-crash', 'old@example.com', 31, ?)",
+        (now - 60,),
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    stub = users.upsert_store_customer("old@example.com", "7001")
+    assert not users.get(stub.id).is_pro
+
+    repaired, _, repaired_user_id = users.apply_shopify_order(
+        "legacy-stub-crash",
+        "old@example.com",
+        31,
+        "7001",
+    )
+    assert repaired
+    assert repaired_user_id == stub.id
+    assert users.get(stub.id).is_pro
+    row = users._conn.execute(
+        "SELECT user_id, shopify_customer_id, pending_days,"
+        " grant_start, grant_end FROM shopify_orders"
+        " WHERE order_id = 'legacy-stub-crash'"
+    ).fetchone()
+    assert row["user_id"] == stub.id
+    assert row["shopify_customer_id"] == "7001"
+    assert row["pending_days"] == 0
+    assert row["grant_end"] > row["grant_start"]
+
+    first_end = users.get(stub.id).pro_until
+    replayed, _, _ = users.apply_shopify_order(
+        "legacy-stub-crash",
+        "old@example.com",
+        31,
+        "7001",
+    )
+    assert not replayed
+    assert users.get(stub.id).pro_until == first_end
+
+
+def test_legacy_pending_tail_is_attributed_to_newest_order(tmp_path):
+    db = tmp_path / "legacy-pending.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.executemany(
+        "INSERT INTO shopify_orders (order_id, email, days, applied_at)"
+        " VALUES (?, 'old@example.com', 31, ?)",
+        (("legacy-1", 1), ("legacy-2", 2)),
+    )
+    conn.execute(
+        "CREATE TABLE pro_grants (email TEXT PRIMARY KEY, days REAL NOT NULL)"
+    )
+    conn.execute(
+        "INSERT INTO pro_grants (email, days)"
+        " VALUES ('old@example.com', 22)"
+    )
+    conn.commit()
+    conn.close()
+
+    users = UserStore(db)
+    parked = {
+        row["order_id"]: row["pending_days"]
+        for row in users._conn.execute(
+            "SELECT order_id, pending_days FROM shopify_orders"
+        )
+    }
+    assert parked == {"legacy-1": 0, "legacy-2": 22}
+
+
+def test_pending_grant_claim_is_atomic(app):
+    client = TestClient(app)
+    signup(client)
+    user = get_user(client)
+    users: UserStore = client.app.state.users
+    users.add_pending_grant(user.email, 31)
+    users._conn.execute(
+        "CREATE TRIGGER fail_pending_grant"
+        " BEFORE UPDATE OF pro_until ON users"
+        " BEGIN SELECT RAISE(ABORT, 'simulated failure'); END"
+    )
+    users._conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError):
+        users.claim_pending_grant(user.id, user.email)
+
+    assert users.pending_grant_days(user.email) == 31
+    assert not users.get(user.id).is_pro
+
+    users._conn.execute("DROP TRIGGER fail_pending_grant")
+    users._conn.commit()
+    assert users.claim_pending_grant(user.id, user.email) == 31
+    assert users.get(user.id).is_pro
+    assert users.pending_grant_days(user.email) == 0
+
+
+def test_concurrent_customer_upserts_keep_one_shopify_identity(tmp_path):
+    db = tmp_path / "concurrent.sqlite"
+    first = UserStore(db)
+    second = UserStore(db)
+    barrier = threading.Barrier(2)
+
+    def upsert(store, email):
+        barrier.wait()
+        return store.upsert_store_customer(email, "7001")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(
+            pool.map(
+                lambda args: upsert(*args),
+                (
+                    (first, "first@example.com"),
+                    (second, "second@example.com"),
+                ),
+            )
+        )
+
+    rows = first._conn.execute(
+        "SELECT id, email, shopify_customer_id FROM users"
+    ).fetchall()
+    assert len(rows) == 1
+    assert rows[0]["shopify_customer_id"] == "7001"
+    assert results[0].id == results[1].id == rows[0]["id"]
+
+
+def test_concurrent_store_open_migrates_legacy_order_table_once(tmp_path):
+    db = tmp_path / "legacy-concurrent.sqlite"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,"
+        " password_hash TEXT NOT NULL, created_at REAL NOT NULL,"
+        " stripe_customer_id TEXT, plan TEXT NOT NULL DEFAULT 'free',"
+        " subscription_status TEXT NOT NULL DEFAULT 'none')"
+    )
+    conn.execute(
+        "CREATE TABLE shopify_orders ("
+        " order_id TEXT PRIMARY KEY, email TEXT NOT NULL,"
+        " days REAL NOT NULL, applied_at REAL NOT NULL)"
+    )
+    conn.commit()
+    conn.close()
+    barrier = threading.Barrier(2)
+
+    def open_store():
+        barrier.wait()
+        return UserStore(db)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        stores = list(pool.map(lambda _: open_store(), range(2)))
+
+    columns = {
+        row["name"]
+        for row in stores[0]._conn.execute("PRAGMA table_info(shopify_orders)")
+    }
+    assert {
+        "user_id",
+        "shopify_customer_id",
+        "grant_chain",
+        "grant_start",
+        "grant_end",
+        "pending_days",
+        "grant_ambiguous",
+        "cancelled_at",
+    } <= columns

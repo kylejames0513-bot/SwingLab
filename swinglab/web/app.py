@@ -244,9 +244,7 @@ def create_app(
     def claim_pending_pro(user: User) -> None:
         """Attach any Shopify Pro purchase made with this email before the
         account existed (or while logged out). Runs at signup and login."""
-        days = users.pop_pending_grant(user.email)
-        if days:
-            users.grant_pro_days(user.id, days)
+        users.claim_pending_grant(user.id, user.email)
 
     def render(template: str, request: Request, **context) -> HTMLResponse:
         return HTMLResponse(

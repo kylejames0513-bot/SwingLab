@@ -83,6 +83,71 @@ def test_replayed_webhook_never_double_counts_gear(app):
     assert get_user(client).pro_until == before_pro  # Pro replay rule intact
 
 
+def test_replay_repairs_legacy_gear_only_partial_mixed_order(app):
+    client = TestClient(app)
+    signup(client)
+    users: UserStore = client.app.state.users
+    order = mixed_order()
+    users.record_gear_order(
+        str(order["id"]),
+        order["email"],
+        [
+            ("SL-TEMPO-WAND", "Tempo Wand", 2),
+            ("", "Alignment Sticks", 1),
+        ],
+    )
+    assert not get_user(client).is_pro
+
+    order_webhook(client, order)
+
+    assert get_user(client).is_pro
+    assert len(gear_rows(client)) == 2
+    assert users._conn.execute(
+        "SELECT 1 FROM shopify_orders WHERE order_id = '7001'"
+    ).fetchone() is not None
+
+
+def test_replay_repairs_legacy_pro_only_partial_mixed_order(app):
+    client = TestClient(app)
+    signup(client)
+    users: UserStore = client.app.state.users
+    users.record_order("7001", "kyle@example.com", 31)
+    users.grant_pro_days(get_user(client).id, 31)
+    before = get_user(client).pro_until
+
+    order_webhook(client, mixed_order())
+
+    assert get_user(client).pro_until == before
+    assert len(gear_rows(client)) == 2
+
+
+def test_cancelled_legacy_gear_only_partial_blocks_paid_replay(app):
+    client = TestClient(app)
+    signup(client)
+    users: UserStore = client.app.state.users
+    order = mixed_order()
+    users.record_gear_order(
+        str(order["id"]),
+        order["email"],
+        [
+            ("SL-TEMPO-WAND", "Tempo Wand", 2),
+            ("", "Alignment Sticks", 1),
+        ],
+    )
+    users.cancel_gear_order(str(order["id"]))
+
+    order_webhook(client, order)
+
+    assert not get_user(client).is_pro
+    assert all(row["cancelled_at"] is not None for row in gear_rows(client))
+    tombstone = users._conn.execute(
+        "SELECT days, pending_days, cancelled_at FROM shopify_orders"
+        " WHERE order_id = '7001'"
+    ).fetchone()
+    assert tombstone["days"] == tombstone["pending_days"] == 0
+    assert tombstone["cancelled_at"] is not None
+
+
 def test_gear_only_order_is_recorded_and_grants_nothing(app):
     client = TestClient(app)
     signup(client)
@@ -112,6 +177,17 @@ def test_cancelled_order_marks_gear_and_replays_safely(app):
     # and Pro cancellation semantics are untouched.
     order_webhook(client, mixed_order(), topic="orders/cancelled")
     assert [r["cancelled_at"] for r in gear_rows(client)] == stamps
+    assert not get_user(client).is_pro
+
+
+def test_cancellation_before_paid_blocks_delayed_gear_and_pro(app):
+    client = TestClient(app)
+    signup(client)
+
+    order_webhook(client, mixed_order(), topic="orders/cancelled")
+    order_webhook(client, mixed_order(), topic="orders/paid")
+
+    assert gear_rows(client) == []
     assert not get_user(client).is_pro
 
 
