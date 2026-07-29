@@ -62,7 +62,6 @@ def fresh_cache():
 @pytest.fixture
 def shop_env(monkeypatch):
     monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
-    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "shpat-test")
     monkeypatch.setattr(shop, "_fetch", lambda: [dict(p) for p in CATALOG])
 
 
@@ -135,6 +134,12 @@ def test_shop_inert_without_env(tmp_path, monkeypatch):
     assert not shop.enabled()
     assert client.get("/shop").status_code == 404
     assert 'href="/shop"' not in client.get("/").text
+
+
+def test_shop_needs_only_the_public_store_domain(monkeypatch):
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.delenv("SHOPIFY_STOREFRONT_TOKEN", raising=False)
+    assert shop.enabled()
 
 
 def test_shop_disabled_in_config(tmp_path, monkeypatch, shop_env):
@@ -269,39 +274,40 @@ def test_done_page_without_shop_has_no_gear(tmp_path, monkeypatch):
     assert "Train what the report flagged" not in client.get(f"/session/{job_id}").text
 
 
-def test_storefront_token_header_selection(monkeypatch):
-    """Classic public tokens use the public header; the newer private
-    tokens (atkn_/shpat_ prefixes) must use the private-token header."""
+def test_storefront_collection_fetch_is_tokenless(monkeypatch):
+    """The public Gear collection must not inherit an unrelated bad token."""
     from swinglab.web import shop as shop_module
 
     captured = {}
 
-    class _Resp:
-        def __enter__(self):
-            return self
-
-        def __exit__(self, *a):
-            return False
-
-        def read(self):
-            return b'{"data": {"products": {"edges": []}}}'
-
     def fake_urlopen(request, timeout=0):
         captured["headers"] = dict(request.header_items())
-        import io, json as _json
-        return io.BytesIO(b'{"data": {"products": {"edges": []}}}')
+        captured["body"] = json.loads(request.data)
+        import io
+        return io.BytesIO(
+            b'{"data": {"collection": {"products": {"edges": []}}}}'
+        )
 
     monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "example.myshopify.com")
+    # A value left over from the broken configuration is deliberately ignored.
+    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "shpat_not-a-storefront-token")
     monkeypatch.setattr(shop_module.urllib.request, "urlopen", fake_urlopen)
 
-    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "atkn_abc123")
-    shop_module._fetch()
+    assert shop_module._fetch() == []
     headers = {k.lower(): v for k, v in captured["headers"].items()}
-    assert headers["shopify-storefront-private-token"] == "atkn_abc123"
-    assert "x-shopify-storefront-access-token" not in headers
-
-    monkeypatch.setenv("SHOPIFY_STOREFRONT_TOKEN", "c7694e8d6f01333a5e2f638e")  # gitleaks:allow
-    shop_module._fetch()
-    headers = {k.lower(): v for k, v in captured["headers"].items()}
-    assert headers["x-shopify-storefront-access-token"] == "c7694e8d6f01333a5e2f638e"
     assert "shopify-storefront-private-token" not in headers
+    assert "x-shopify-storefront-access-token" not in headers
+    assert 'collection(handle: "swinglab-gear")' in captured["body"]["query"]
+
+
+def test_storefront_missing_gear_collection_is_empty(monkeypatch):
+    from swinglab.web import shop as shop_module
+    import io
+
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "example.myshopify.com")
+    monkeypatch.setattr(
+        shop_module.urllib.request,
+        "urlopen",
+        lambda request, timeout=0: io.BytesIO(b'{"data": {"collection": null}}'),
+    )
+    assert shop_module._fetch() == []

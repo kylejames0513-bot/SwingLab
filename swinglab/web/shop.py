@@ -2,15 +2,17 @@
 
 Entirely environment-driven and safely inert until configured:
 
-    SHOPIFY_STORE_DOMAIN      yourstore.myshopify.com (or the custom domain)
-    SHOPIFY_STOREFRONT_TOKEN  Storefront API access token (read-only, safe to
-                              keep on the server; it can only see published
-                              catalog data)
+    SHOPIFY_STORE_DOMAIN  yourstore.myshopify.com (or the custom domain)
 
-With those unset, ``enabled()`` is False: no Shop link in the navigation, no
+With that unset, ``enabled()`` is False: no Shop link in the navigation, no
 /shop page, no gear recommendations on finished analyses. Products, prices,
 and images live in Shopify — manage them in the Shopify admin, never in code
 (the same rule as Stripe prices in billing.py).
+
+The catalog reads Shopify's public ``swinglab-gear`` collection without an
+access token. This keeps an unrelated, stale Admin API token from poisoning a
+query that Shopify already exposes to the public storefront, and it keeps the
+Pro membership product out of the Gear page.
 
 Recommendations: tag a product in Shopify with ``swinglab:<flag>`` — where
 <flag> is one of the keys produced by :func:`swinglab.coaching.flag_keys`
@@ -37,25 +39,27 @@ from ..config import Config
 
 logger = logging.getLogger("swinglab.web.shop")
 
-# Requesting an unsupported version falls back to the oldest supported one on
-# Shopify's side, so a pinned version keeps working after it is sunset.
-API_VERSION = "2025-07"
+# Pin a currently supported schema so a retired version cannot silently fall
+# forward to a different contract.
+API_VERSION = "2026-07"
 
 GENERAL_FLAG = "general"
 
 _QUERY = """
-{
-  products(first: 50, sortKey: BEST_SELLING) {
-    edges {
-      node {
-        title
-        handle
-        description
-        tags
-        availableForSale
-        onlineStoreUrl
-        featuredImage { url altText }
-        priceRange { minVariantPrice { amount currencyCode } }
+query CaddieInsightGear {
+  collection(handle: "swinglab-gear") {
+    products(first: 50, sortKey: BEST_SELLING) {
+      edges {
+        node {
+          title
+          handle
+          description
+          tags
+          availableForSale
+          onlineStoreUrl
+          featuredImage { url altText }
+          priceRange { minVariantPrice { amount currencyCode } }
+        }
       }
     }
   }
@@ -67,10 +71,7 @@ _cache: dict[str, Any] = {"at": 0.0, "products": None}
 
 
 def enabled() -> bool:
-    return bool(
-        os.environ.get("SHOPIFY_STORE_DOMAIN")
-        and os.environ.get("SHOPIFY_STOREFRONT_TOKEN")
-    )
+    return bool(os.environ.get("SHOPIFY_STORE_DOMAIN"))
 
 
 def clear_cache() -> None:
@@ -105,7 +106,7 @@ def fetch_products(cfg: Config) -> list[dict]:
         # exception — separate them so the operator knows which to fix.
         logger.warning(
             "Shopify Storefront returned 0 products — check the products are "
-            "published to the sales channel that issued SHOPIFY_STOREFRONT_TOKEN."
+            "published in the public swinglab-gear collection."
         )
     with _cache_lock:
         _cache.update(at=time.monotonic(), products=products)
@@ -152,26 +153,21 @@ def _fetch() -> list[dict]:
         .strip("/")
     )
     version = os.environ.get("SHOPIFY_API_VERSION") or API_VERSION
-    token = os.environ["SHOPIFY_STOREFRONT_TOKEN"].strip()
-    # Classic public tokens (bare hex) use the public header; the newer
-    # private tokens Shopify's admin issues for custom apps (atkn_/shpat_
-    # prefixes) authenticate through their own header instead.
-    if token.startswith(("atkn_", "shpat_")):
-        auth_header = {"Shopify-Storefront-Private-Token": token}
-    else:
-        auth_header = {"X-Shopify-Storefront-Access-Token": token}
     request = urllib.request.Request(
         f"https://{domain}/api/{version}/graphql.json",
         data=json.dumps({"query": _QUERY}).encode("utf-8"),
-        headers={"Content-Type": "application/json", **auth_header},
+        headers={"Content-Type": "application/json"},
     )
     with urllib.request.urlopen(request, timeout=10) as resp:
         body = json.load(resp)
     if body.get("errors"):
         raise RuntimeError(f"Shopify Storefront API error: {body['errors']}")
+    collection = (body.get("data") or {}).get("collection")
+    if collection is None:
+        return []
     return [
         _product(edge["node"], domain)
-        for edge in body["data"]["products"]["edges"]
+        for edge in collection["products"]["edges"]
     ]
 
 

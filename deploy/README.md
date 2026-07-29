@@ -189,11 +189,11 @@ Optional: connect a Shopify store and the app grows a **Gear** page plus
 per-analysis training-aid recommendations (see the main README for how
 products are matched to swing flags). To enable it:
 
-1. In Shopify admin → **Settings → Apps and sales channels → Develop apps**,
-   create an app, give it the **Storefront API** `unauthenticated_read_product_listings`
-   scope, install it, and copy the Storefront API access token.
-2. Set `SHOPIFY_STORE_DOMAIN` (e.g. `yourstore.myshopify.com`) and
-   `SHOPIFY_STOREFRONT_TOKEN` in the host's environment and redeploy.
+1. In Shopify, create or confirm the public collection with handle
+   `swinglab-gear`, and publish the Gear products to it.
+2. Set `SHOPIFY_STORE_DOMAIN` (e.g. `yourstore.myshopify.com`) in the host's
+   environment and redeploy. The catalog uses Shopify's public Storefront
+   query and does not need an access token.
 
 Until then the shop is invisible — no link, no page. A Shopify outage
 degrades to the last cached product list, never an error page.
