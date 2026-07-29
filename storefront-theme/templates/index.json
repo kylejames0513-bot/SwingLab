@@ -346,7 +346,7 @@
           "type": "qa",
           "settings": {
             "question": "What does the free plan include?",
-            "answer": "Three swing analyses per calendar month, free forever. Every analysis produces the full report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes."
+            "answer": "One full swing analysis per calendar month, free forever. It produces the complete report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes. Pro adds unlimited filming, the annotated coach replay, and the progress dashboard."
           }
         },
         "q_pro_unlock": {
