@@ -134,6 +134,7 @@
   }
   .sl-header__cta { background: var(--sl-green); color: var(--sl-green-ink); }
   .sl-header__cta:hover { background: var(--sl-green-btn); color: #fff; }
+  .sl-header__nav .sl-header__mobile-cta { display: none; }
   .sl-header__cart { background: transparent; color: var(--sl-green); }
   .sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange); }
   .sl-header__toggle {
@@ -213,6 +214,11 @@
     .sl-header__link { width: 100%; padding: 12px 0; font-size: 17px; }
     .sl-header__link.is-current { box-shadow: none; color: var(--sl-orange); }
     .sl-header__mobile-only { display: block; }
+    .sl-header__nav .sl-header__mobile-cta {
+      display: flex;
+      width: 100%;
+      margin: 6px 0 8px;
+    }
     .sl-header__toggle { display: flex; }
     .sl-header__actions .sl-header__action,
     .sl-header__actions .sl-header__cta { display: none; }
@@ -248,8 +254,7 @@
     {% endif %}
   </a>
   <nav class="sl-header__nav" id="sl-nav" aria-label="Main navigation">
-    {% if storefront_url %}<a class="sl-header__link" href="{{ storefront_url }}">Home</a>{% endif %}
-    <a class="sl-header__link{% if current_path == '/' %} is-current{% endif %}" href="/" {% if current_path == '/' %}aria-current="page"{% endif %}>Analyze</a>
+    <a class="sl-header__cta sl-header__mobile-cta" href="/">Analyze a swing</a>
     {% if user or not require_account %}
       <a class="sl-header__link{% if current_path == '/sessions' %} is-current{% endif %}" href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
       {% if user and require_account %}<a class="sl-header__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>{% endif %}
@@ -259,21 +264,15 @@
     <a class="sl-header__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" {% if current_path == '/pricing' %}aria-current="page"{% endif %}>Pro</a>
     {% if user %}
       <a class="sl-header__link sl-header__mobile-only{% if current_path == '/account' %} is-current{% endif %}" href="/account" {% if current_path == '/account' %}aria-current="page"{% endif %}>Account</a>
-    {% else %}
-      <a class="sl-header__link sl-header__mobile-only{% if current_path == '/login' %} is-current{% endif %}" href="/login" {% if current_path == '/login' %}aria-current="page"{% endif %}>Sign in</a>
-      <a class="sl-header__link sl-header__mobile-only{% if current_path == '/signup' %} is-current{% endif %}" href="/signup" {% if current_path == '/signup' %}aria-current="page"{% endif %}>Create free account</a>
     {% endif %}
-    {% if storefront_url %}<a class="sl-header__link sl-header__mobile-only" href="{{ storefront_url }}/cart">Cart</a>{% endif %}
     {% if storefront_url %}<a class="sl-header__link sl-header__mobile-only" href="{{ storefront_url }}/account">Orders</a>{% endif %}
   </nav>
   <div class="sl-header__actions">
     {% if storefront_url %}<a class="sl-header__action" href="{{ storefront_url }}/account">Orders</a>{% endif %}
     {% if user %}
       <a class="sl-header__action" href="/account">Account</a>
-    {% else %}
-      <a class="sl-header__action" href="/login">App sign in</a>
-      <a class="sl-header__cta" href="/signup">Start free</a>
     {% endif %}
+    <a class="sl-header__cta" href="/">Analyze a swing</a>
     {% if storefront_url %}<a class="sl-header__cart" href="{{ storefront_url }}/cart">Cart</a>{% endif %}
     <button class="sl-header__toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sl-nav" data-nav-toggle>
       <span></span><span></span><span></span>
