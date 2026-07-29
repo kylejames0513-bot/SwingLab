@@ -127,7 +127,21 @@ def compose_digest(
     name = esc(str(cfg.brand["name"]))
     sentence = trend_sentence(trends)
     report_url = esc(f"{base_url}/session/{latest.job_id}/report")
-    progress_url = esc(f"{base_url}/progress")
+    # The progress dashboard can be Pro-gated (billing.progress_pro_only,
+    # effective only with accounts on). Don't send a free subscriber a
+    # weekly link that dead-ends at a lock screen — point them at their
+    # session history instead, which is theirs on every plan.
+    progress_gated = bool(
+        cfg.billing.get("progress_pro_only")
+        and cfg.web.get("require_account")
+        and not user.is_pro
+    )
+    if progress_gated:
+        progress_url = esc(f"{base_url}/sessions")
+        progress_label = "Your sessions"
+    else:
+        progress_url = esc(f"{base_url}/progress")
+        progress_label = "Your progress"
     unsub_url = esc(
         f"{base_url}/email/unsubscribe?token={unsubscribe_token(user.id, secret)}"
     )
@@ -188,7 +202,7 @@ def compose_digest(
         f"{also}"
         f'<p style="margin:0 0 4px;"><a href="{report_url}" '
         f'style="color:{primary};">Your latest report</a> · '
-        f'<a href="{progress_url}" style="color:{primary};">Your progress</a></p>'
+        f'<a href="{progress_url}" style="color:{primary};">{progress_label}</a></p>'
         f'<p style="margin:16px 0 0;font-size:12px;color:#888;">'
         f"You asked {name} for one drill a week — this is it, once a week, "
         "nothing else. "

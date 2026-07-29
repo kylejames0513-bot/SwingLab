@@ -177,7 +177,10 @@ Each billing cycle's order carries the same SKU, so access re-extends
 automatically with no app-side changes. Enable customer accounts so
 subscribers can manage or cancel their own subscription. (Selling plans
 must be created inside the Subscriptions app — plans created by other API
-clients are not billed by it.)
+clients are not billed by it.) Once the plans are live, set
+`billing.store_subscriptions: true` in config.yaml and redeploy so the
+app's pricing page starts describing auto-renewal — it stays in honest
+passes-only wording until then.
 
 **Selling Pro as a Stripe subscription:**
 

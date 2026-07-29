@@ -41,7 +41,8 @@
       {{ free_per_month }} full report{% if free_per_month != 1 %}s{% endif %}
       a month. Pro is unlimited filming{% if replay_pro_only %}, plus the
       annotated coach replay — your own footage played back with your
-      skeleton, hand path, and live metric chips drawn on every frame{% endif %}{% if progress_pro_only %},
+      tracked body, your hand path, and the key numbers appearing at each
+      swing event{% endif %}{% if progress_pro_only %},
       plus the progress dashboard that charts every metric session over
       session so you can watch a fix stick{% endif %}.</p>
   </div>
@@ -107,13 +108,13 @@
   {%- endmacro %}
   <div class="plans">
     <div class="card hero">
-      <span class="badge">Best value — save 33%</span>
+      {% if pro_annual_badge_text %}<span class="badge">{{ pro_annual_badge_text }}</span>{% endif %}
       <h2>Pro — yearly</h2>
       <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
       <ul>
         <li>Unlimited swing analyses for a year</li>
         <li>Everything Pro includes, all season</li>
-        <li>A third off the monthly price, one decision a year</li>
+        <li>One checkout covers the whole year — no monthly decision to remake</li>
       </ul>
       {{ pro_cta() }}
     </div>
@@ -123,20 +124,29 @@
       <ul>
         <li>Unlimited swing analyses</li>
         <li>Everything Pro includes</li>
+        {% if store_subscriptions %}
         <li>Subscribe, or buy a single month at a time</li>
+        {% else %}
+        <li>One month at a time — it simply expires, nothing renews</li>
+        {% endif %}
       </ul>
       {{ pro_cta() }}
     </div>
+    {% if pro_store_url %}
+    {# The lifetime tier exists only as a store purchase (SL-PRO-LIFE) —
+       a Stripe-only install has no one-payment product to sell, so the
+       card would promise something its checkout can't deliver. #}
     <div class="card">
       <h2>Pro — lifetime</h2>
       <p class="price">{{ pro_price_lifetime_text or "One payment" }}</p>
       <ul>
         <li>One payment — Pro for as long as {{ brand.name }} runs</li>
-        <li>Pays for itself against the yearly plan in two seasons</li>
+        <li>Everything Pro includes, forever</li>
         <li>Never renews, never expires</li>
       </ul>
       {{ pro_cta() }}
     </div>
+    {% endif %}
     <div class="card">
       <h2>Free</h2>
       <p class="price">$0</p>
@@ -151,6 +161,7 @@
     </div>
   </div>
 
+  {% if pro_store_url and store_subscriptions %}
   <p class="fineprint">How renewal works: bought as a subscription on the
     {{ brand.name }} store, monthly and yearly Pro renew automatically —
     cancel anytime and Pro keeps running to the end of the period you've
@@ -158,6 +169,16 @@
     365, and they simply expire. Lifetime is a single payment and never
     renews. Prices shown here are display text; the store checkout is
     always the source of truth.</p>
+  {% elif pro_store_url %}
+  <p class="fineprint">How it works: nothing auto-renews. On the
+    {{ brand.name }} store a month is a fixed 31-day pass and a year is
+    365 days — they simply expire, and quantities stack. Lifetime is a
+    single payment and never ends. Prices shown here are display text;
+    the store checkout is always the source of truth.</p>
+  {% else %}
+  <p class="fineprint">Prices shown here are display text — checkout is
+    always the source of truth for what is charged and how it renews.</p>
+  {% endif %}
   <p class="fineprint">Unused Pro purchases are refundable within 14 days.</p>
 
   <p class="disclaimer">{{ brand.disclaimer }}</p>

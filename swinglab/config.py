@@ -170,10 +170,20 @@ DEFAULTS: dict[str, Any] = {
         "shopify_skus": {"SL-PRO-1MO": 31, "SL-PRO-12MO": 365, "SL-PRO-LIFE": 36500},
         # DISPLAY strings for the pricing page only — what is actually
         # charged always lives in Shopify/Stripe. Keep these matching the
-        # store or don't set them.
+        # store or don't set them. The badge is a display string for the
+        # same reason: the "save 33%" arithmetic is only true of the real
+        # store prices, so it lives here where the operator retunes it (or
+        # empties it) alongside them.
         "pro_price_monthly_text": "$4.99/month",
         "pro_price_annual_text": "$39.99/year — $3.33/month",
         "pro_price_lifetime_text": "$79.99 once — Pro for good",
+        "pro_annual_badge_text": "Best value — save 33%",
+        # True only once the store actually sells auto-renewing
+        # subscriptions (Shopify's Subscriptions app installed, selling
+        # plans attached to the monthly/yearly variants). The pricing page
+        # describes renewal from this flag — false keeps the copy honest
+        # on a passes-only store, where nothing ever auto-renews.
+        "store_subscriptions": False,
     },
     "shop": {
         "enabled": True,

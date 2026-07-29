@@ -40,8 +40,10 @@
     <div class="row"><span class="k">Analyses this month</span>
       <span>{{ usage }}{% if quota_left is not none %} — {{ quota_left }} left{% endif %}</span></div>
     {% if pro_lifetime %}
+    {# "Never expires" is true regardless of any subscription the user
+       also holds — "no renewals" would not be. #}
     <div class="row"><span class="k">Pro access</span>
-      <span>Lifetime — one payment, no renewals</span></div>
+      <span>Lifetime — never expires</span></div>
     {% elif pro_until_date %}
     <div class="row"><span class="k">Pro access until</span>
       <span>{{ pro_until_date }}</span></div>
@@ -102,9 +104,12 @@
       {% endif %}
     {% elif pro_store_url %}
       <a class="button" href="{{ pro_store_url }}">Upgrade to Pro</a>
-      <p class="hint">Pro is unlimited analyses{% if replay_pro_only %}, the
-        annotated coach replay of every swing{% endif %}{% if progress_pro_only %},
-        and the progress dashboard{% endif %}. Check out with
+      <p class="hint">Pro is unlimited
+        analyses{% if replay_pro_only and progress_pro_only %}, the
+        annotated coach replay of every swing, and the progress
+        dashboard{% elif replay_pro_only %} and the annotated coach replay
+        of every swing{% elif progress_pro_only %} and the progress
+        dashboard{% endif %}. Check out with
         <strong>{{ user.email }}</strong> — it unlocks on this account
         automatically.</p>
     {% elif billing_enabled %}

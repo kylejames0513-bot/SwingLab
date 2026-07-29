@@ -102,3 +102,38 @@ def test_gate_needs_accounts_progress_stays_404_without_them(
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
     # Same rule as before the gate existed: no accounts, no /progress.
     assert client.get("/progress").status_code == 404
+
+
+def test_digest_links_free_users_to_sessions_not_the_lock(
+    tmp_path, monkeypatch
+):
+    from swinglab.web.digest import compose_digest
+    from swinglab.web.users import UserStore
+
+    app = make_app(tmp_path, monkeypatch)
+    client = TestClient(app)
+    signup(client)
+    upload_and_wait(client)
+
+    users: UserStore = app.state.users
+    user = users.get_by_email("kyle@example.com")
+    jobs = app.state.jobs.list_recent(user_id=user.id)
+    cfg = app.state.cfg if hasattr(app.state, "cfg") else None
+    # compose against the same gated config the app runs
+    from swinglab.config import Config as _C
+    gated_cfg = _C()
+    gated_cfg.web["require_account"] = True
+    gated_cfg.billing["progress_pro_only"] = True
+
+    subject, html = compose_digest(
+        user, gated_cfg, jobs, base_url="https://app.example", secret="s"
+    )
+    assert "Your sessions" in html and "/sessions" in html
+    assert "Your progress" not in html
+
+    users.grant_pro_days(user.id, 31)
+    pro_user = users.get_by_email("kyle@example.com")
+    subject, html = compose_digest(
+        pro_user, gated_cfg, jobs, base_url="https://app.example", secret="s"
+    )
+    assert "Your progress" in html and "/progress" in html

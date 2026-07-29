@@ -58,9 +58,10 @@
         session, and let the report show what moved.</li>
     </ol>
     <p class="why">Each drill below says exactly what number tells you it
-      worked{% if user %} — upload a clip to get yours{% else %} —
-      <a href="/signup">a free account</a> gets a full analysis every
-      month{% endif %}.</p>
+      worked{% if user or not require_account %} — upload a clip to get
+      yours{% else %} — <a href="/signup">a free account</a> gets
+      {{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
+      every month{% endif %}.</p>
   </div>
 
   {% for fam in families %}

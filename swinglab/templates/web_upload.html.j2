@@ -91,10 +91,12 @@
     {% if quota_left is defined and quota_left is not none %}
       {% if quota_left > 0 %}
       <p class="hint">{{ quota_left }} analys{{ "es" if quota_left != 1 else "is" }} left
-        this month{% if user and not user.is_pro and billing_enabled %} —
+        this month{% if user and not user.is_pro and (billing_enabled or pro_store_url) %} —
         <a href="/pricing">go unlimited with Pro</a>{% endif %}.</p>
       {% elif trend_line %}
-      {# The conversion moment: their own numbers, never invented ones. #}
+      {# The conversion moment: their own numbers, never invented ones.
+         Only free users reach this branch (trend_line is computed for
+         non-Pro users), so "free" is the right label here. #}
       <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.</p>
       <p class="trend-note">{{ trend_line }}.</p>
       {% if billing_enabled or pro_store_url %}
@@ -104,10 +106,17 @@
       <p class="hint">They reset on the 1st.</p>
       {% endif %}
       {% else %}
+      {# A Pro account only lands here when the operator capped Pro too
+         (billing.pro_per_month > 0) — its allowance isn't "free". #}
+      {% if user and user.is_pro %}
+      <p class="error">You've used this month's analyses. They reset on
+        the 1st.</p>
+      {% else %}
       <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.
-        {% if user and not user.is_pro and billing_enabled %}
+        {% if user and (billing_enabled or pro_store_url) %}
         <a href="/pricing">Upgrade to Pro</a> for unlimited swings, or come back
         on the 1st.{% else %}They reset on the 1st.{% endif %}</p>
+      {% endif %}
       {% endif %}
     {% endif %}
     <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
@@ -152,6 +161,10 @@
 
       <label>Where's your game? (optional)</label>
       <div class="radio-row">
+        {# "Not set" mirrors the club select's blank first option — a radio
+           group can't be un-picked, so unset needs its own button. #}
+        <label><input type="radio" name="level" value="" checked>
+          <span><strong>Not set</strong> — no framing either way.</span></label>
         <label><input type="radio" name="level" value="new">
           <span><strong>New to golf</strong> — the report frames benchmarks
           as references to move toward, not day-one targets.</span></label>

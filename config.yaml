@@ -231,9 +231,20 @@ billing:
   pro_price_monthly_text: "$4.99/month"
   pro_price_annual_text: "$39.99/year — $3.33/month"
   pro_price_lifetime_text: "$79.99 once — Pro for good"
+  pro_annual_badge_text: "Best value — save 33%"
                              # DISPLAY strings for /pricing only — the store or
                              # Stripe stays the source of truth for what is
-                             # actually charged. Keep these matching the store.
+                             # actually charged. Keep these matching the store;
+                             # the badge's savings math lives here (not in the
+                             # template) so changing prices can't strand a
+                             # stale claim. Empty badge = no badge.
+  store_subscriptions: false # flip to true ONLY once the Shopify
+                             # Subscriptions app is installed with selling
+                             # plans on the monthly/yearly variants — the
+                             # pricing page describes auto-renewal from this
+                             # flag, and on a passes-only store that claim
+                             # would be false (a "subscription" that never
+                             # renews). Lifetime never gets a selling plan.
 
 shop:
   enabled: true              # gear shop pages + per-analysis recommendations.

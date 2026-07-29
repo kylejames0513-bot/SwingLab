@@ -308,9 +308,14 @@ monthly), then monthly, then lifetime (the anchor), then free — using the
 `pro_price_annual_text` / `pro_price_lifetime_text` from `config.yaml`
 (shipped: `$4.99/month`, `$39.99/year — $3.33/month`, `$79.99 once — Pro
 for good`). These are labels, not billing: what is actually charged always
-lives in Shopify/Stripe. Bought as store subscriptions, monthly/yearly
-renew automatically (cancel anytime, Pro runs to period end); bought as
-one-time passes they simply expire; lifetime is a single payment.
+lives in Shopify/Stripe. The pricing page's renewal copy is driven by
+`billing.store_subscriptions` (shipped `false`): flip it to `true` only
+once the store actually sells auto-renewing subscriptions via Shopify's
+Subscriptions app — then the page says monthly/yearly renew automatically
+(cancel anytime, Pro runs to period end). Until then it says honestly that
+passes simply expire. Lifetime is always a single payment, and its card
+only renders when the Shopify store is configured (the lifetime SKU has no
+Stripe equivalent).
 
 **Selling Pro on the Shopify store** (one checkout for gear and
 memberships): create a product whose variant SKUs map to days of access in
@@ -351,11 +356,13 @@ ever changes via the signed webhooks.
 Two retention surfaces, both built from numbers the pipeline already wrote —
 nothing is ever estimated after the fact:
 
-**Progress dashboard (`/progress`)** — every logged-in account gets one card
-per metric with data: an inline-SVG trend chart of the session means (dots on
-sessions, dashed line + shaded band at the flag threshold), latest / best /
-change-vs-first stats, and a strip showing which flags keep firing across
-sessions. Legacy sessions that predate the newer metrics simply contribute
+**Progress dashboard (`/progress`)** — one card per metric with data: an
+inline-SVG trend chart of the session means (dots on sessions, dashed line +
+shaded band at the flag threshold), latest / best / change-vs-first stats,
+and a strip showing which flags keep firing across sessions. With
+`billing.progress_pro_only` on (the shipped config), it's a Pro surface:
+free accounts see an honest locked teaser instead, and the weekly digest
+links them to their session history rather than the lock screen. Legacy sessions that predate the newer metrics simply contribute
 the fields they have; sessions with no readable numbers are skipped. With
 fewer than two measured sessions the page says so honestly instead of
 charting a single dot. Requires `web.require_account: true` (there is no

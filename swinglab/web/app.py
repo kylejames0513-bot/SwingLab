@@ -139,15 +139,16 @@ def ensure_user_can_analyze(
     if limit <= 0:  # unlimited
         return
     if manager.usage_this_month(user.id) >= limit:
+        noun = "analysis" if limit == 1 else "analyses"
         if user.is_pro:
             raise HTTPException(
                 402,
-                f"You've reached this month's limit of {limit} analyses. "
+                f"You've reached this month's limit of {limit} {noun}. "
                 "It resets on the 1st.",
             )
         raise HTTPException(
             402,
-            f"You've used your {limit} free analyses this month. "
+            f"You've used your {limit} free {noun} this month. "
             "Upgrade to Pro for unlimited swings — or come back on the 1st.",
         )
 
@@ -264,8 +265,22 @@ def create_app(
                     else None
                 ),
                 free_per_month=int(cfg.billing["free_per_month"]),
-                replay_pro_only=bool(cfg.billing.get("replay_pro_only")),
-                progress_pro_only=bool(cfg.billing.get("progress_pro_only")),
+                # EFFECTIVE gates, not raw flags — copy that advertises a
+                # Pro lock must track what is actually locked. The replay
+                # gate only exists when the replay feature is on and
+                # accounts are on (jobs.replay_locked applies the same
+                # conditions); the progress gate only exists with accounts
+                # on (/progress is 404 without them). A raw flag with the
+                # rest missing must never put a false lock on a page.
+                replay_pro_only=bool(
+                    cfg.billing.get("replay_pro_only")
+                    and cfg.slowmo.get("annotated")
+                    and cfg.web.get("require_account")
+                ),
+                progress_pro_only=bool(
+                    cfg.billing.get("progress_pro_only")
+                    and cfg.web.get("require_account")
+                ),
                 shop_enabled=shop_active(),
                 mail_enabled=mailer.enabled(),
                 passwordless_login=passwordless_active(),
@@ -974,6 +989,10 @@ def create_app(
             pro_price_annual_text=cfg.billing.get("pro_price_annual_text"),
             pro_price_monthly_text=cfg.billing.get("pro_price_monthly_text"),
             pro_price_lifetime_text=cfg.billing.get("pro_price_lifetime_text"),
+            pro_annual_badge_text=cfg.billing.get("pro_annual_badge_text"),
+            # Renewal copy tracks what the store actually sells — false on
+            # a passes-only store, where nothing auto-renews.
+            store_subscriptions=bool(cfg.billing.get("store_subscriptions")),
         )
 
     # -- gear shop --------------------------------------------------------

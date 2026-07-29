@@ -31,8 +31,8 @@ LEVEL_NOTES: dict[str, str] = {
     ),
     "experienced": (
         "Benchmarks below are stated plainly: tour-average references with "
-        "fixed flag thresholds, measured face-on in shoulder widths. The "
-        "deltas and per-swing spread are where the work usually is."
+        "fixed flag thresholds. The deltas and per-swing spread are where "
+        "the work usually is."
     ),
 }
 

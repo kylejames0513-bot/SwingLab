@@ -57,10 +57,13 @@ def test_defaults_pin_the_tier_ladder():
         DEFAULTS["billing"]["pro_price_lifetime_text"]
         == "$79.99 once — Pro for good"
     )
+    assert DEFAULTS["billing"]["pro_annual_badge_text"] == "Best value — save 33%"
     # Both gates ship OFF in bare-code defaults (white-label installs stay
-    # ungated); the shipped config.yaml turns them on.
+    # ungated); the shipped config.yaml turns them on. Subscriptions copy
+    # stays off everywhere until the store actually sells them.
     assert DEFAULTS["billing"]["replay_pro_only"] is False
     assert DEFAULTS["billing"]["progress_pro_only"] is False
+    assert DEFAULTS["billing"]["store_subscriptions"] is False
 
 
 # -- the lifetime grant rides the day ledger ----------------------------------
@@ -134,12 +137,22 @@ def test_account_keeps_the_dated_row_for_passes(app):
 
 # -- pricing page: three tiers, locks advertised ------------------------------
 
-def make_pricing_app(tmp_path, monkeypatch, replay=False, progress=False):
+def make_pricing_app(
+    tmp_path, monkeypatch, replay=False, progress=False,
+    shopify=True, subscriptions=False, accounts=True,
+):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    if shopify:
+        monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+        monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "shpss_test_secret")
+    else:
+        monkeypatch.delenv("SHOPIFY_STORE_DOMAIN", raising=False)
+        monkeypatch.delenv("SHOPIFY_WEBHOOK_SECRET", raising=False)
     cfg = Config()
-    cfg.web["require_account"] = True
+    cfg.web["require_account"] = accounts
     cfg.billing["replay_pro_only"] = replay
     cfg.billing["progress_pro_only"] = progress
+    cfg.billing["store_subscriptions"] = subscriptions
     return create_app(cfg, sessions_dir=tmp_path / "sessions")
 
 
@@ -155,6 +168,30 @@ def test_pricing_page_shows_all_three_tiers(tmp_path, monkeypatch):
     assert "1 full swing analysis" in html
     # The old false claim is gone for good.
     assert "only difference is how often you can film" not in html
+
+
+def test_lifetime_card_needs_the_store(tmp_path, monkeypatch):
+    # Lifetime exists only as a store SKU — a Stripe-only install has no
+    # one-payment product, so the card must not promise one.
+    client = TestClient(make_pricing_app(tmp_path, monkeypatch, shopify=False))
+    html = client.get("/pricing").text
+    assert "Pro — lifetime" not in html
+    assert "Pro — yearly" in html  # the rest of the ladder still renders
+
+
+def test_annual_badge_is_a_display_string(tmp_path, monkeypatch):
+    # The savings arithmetic lives in config next to the prices — clearing
+    # it removes the claim instead of stranding a stale one in the template.
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "shpss_test_secret")
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["pro_annual_badge_text"] = ""
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    html = TestClient(app).get("/pricing").text
+    assert "save 33%" not in html
+    assert "Pro — yearly" in html
 
 
 def test_pricing_page_advertises_gates_only_when_they_exist(
@@ -176,9 +213,50 @@ def test_pricing_page_advertises_gates_only_when_they_exist(
     assert "Progress dashboard &amp; trends" not in html
 
 
-def test_pricing_renewal_fineprint_is_honest(tmp_path, monkeypatch):
-    client = TestClient(make_pricing_app(tmp_path, monkeypatch))
+def test_lock_claims_track_the_effective_gate_not_the_raw_flag(
+    tmp_path, monkeypatch
+):
+    # Raw flags on, but accounts OFF: nothing is actually locked for
+    # anyone (open instances are never gated), so the public pricing page
+    # must not claim a lock either.
+    client = TestClient(
+        make_pricing_app(
+            tmp_path / "a", monkeypatch, replay=True, progress=True,
+            accounts=False,
+        )
+    )
     html = client.get("/pricing").text
+    assert "Annotated coach replay video" not in html
+    assert "Progress dashboard &amp; trends" not in html
+
+    # Replay flag on but the replay feature itself off: no replay exists
+    # for anyone — the page must not sell one.
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["replay_pro_only"] = True
+    cfg.slowmo["annotated"] = False
+    app = create_app(cfg, sessions_dir=tmp_path / "b")
+    html = TestClient(app).get("/pricing").text
+    assert "Annotated coach replay video" not in html
+
+
+def test_pricing_renewal_fineprint_is_honest(tmp_path, monkeypatch):
+    # Passes-only store (the shipped default until the Subscriptions app
+    # is actually installed): no auto-renew claim anywhere.
+    passes = TestClient(make_pricing_app(tmp_path / "a", monkeypatch))
+    html = passes.get("/pricing").text
+    assert "renew automatically" not in html
+    assert "nothing auto-renews" in html
+    assert "single payment and never ends" in html
+    assert "refundable within 14 days" in html
+
+    # With billing.store_subscriptions on, the subscription mechanics are
+    # described — including how cancellation works.
+    subs = TestClient(
+        make_pricing_app(tmp_path / "b", monkeypatch, subscriptions=True)
+    )
+    html = subs.get("/pricing").text
     assert "renew automatically" in html
-    assert "Lifetime is a single payment and never" in html
+    assert "cancel anytime" in html
     assert "refundable within 14 days" in html
