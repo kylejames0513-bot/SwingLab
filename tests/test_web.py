@@ -26,7 +26,7 @@ from swinglab.web.jobs import PROCESSING, JobManager
 
 def fake_analyze_ok(video_path, out_dir=None, hand="right", manual_strikes=None,
                     cfg=None, keep_work=False, fast=False, log=print, progress=None,
-                    angle="face-on", club=None, replay_locked=False):
+                    angle="face-on", club=None, level=None, replay_locked=False):
     log("Detected 1 strike(s): 3.00s")
     if progress:
         progress(0, 1)

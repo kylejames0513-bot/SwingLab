@@ -108,6 +108,19 @@ def _pro_order(order_id: int, **email_fields: str) -> dict:
     }
 
 
+def _pro_refund(order_id: int, refund_id: int) -> dict:
+    return {
+        "id": refund_id,
+        "order_id": order_id,
+        "refund_line_items": [
+            {
+                "quantity": 1,
+                "line_item": {"sku": "SL-PRO-1MO"},
+            }
+        ],
+    }
+
+
 def test_shopify_webhook_routes_are_exact_post_pair(contract_app):
     routes = sorted(
         (route.path, frozenset(route.methods or ()))
@@ -166,6 +179,7 @@ def test_api_response_keys_are_stable(contract_app):
         hand="left",
         angle="dtl",
         club="driver",
+        level="improving",
         fast=True,
         user_id=user.id,
     )
@@ -180,6 +194,7 @@ def test_api_response_keys_are_stable(contract_app):
         "hand",
         "angle",
         "club",
+        "level",
         "fast",
         "log",
         "error",
@@ -234,6 +249,27 @@ def test_uppercase_orders_paid_grants_pro(contract_app):
 
     assert response.status_code == 200
     assert _user(client, email).is_pro
+
+
+def test_uppercase_refunds_create_revokes_pro(contract_app):
+    client = TestClient(contract_app)
+    email = "uppercase-refund@example.com"
+    _signup(client, email)
+    _signed_json(
+        client,
+        _pro_order(71005, email=email),
+        "ORDERS_PAID",
+    )
+    assert _user(client, email).is_pro
+
+    response = _signed_json(
+        client,
+        _pro_refund(71005, 81005),
+        "REFUNDS_CREATE",
+    )
+
+    assert response.status_code == 200
+    assert not _user(client, email).is_pro
 
 
 def test_unknown_signed_topic_is_acknowledged(contract_app):

@@ -131,7 +131,7 @@
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "compare" },
     { "type": "text", "id": "heading", "label": "Heading", "default": "Free gets you started. Pro keeps score." },
-    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Both plans run the same analysis and return the same report. Pro removes the monthly cap." },
+    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Both plans run the same analysis engine. Free is one full report a month; Pro is unlimited filming plus the annotated coach replay and the progress dashboard." },
     { "type": "text", "id": "free_label", "label": "Free column label", "default": "Free" },
     { "type": "text", "id": "pro_label", "label": "Pro column label", "default": "Pro" },
     { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Get Pro" },
@@ -146,7 +146,7 @@
       "name": "Feature row",
       "settings": [
         { "type": "text", "id": "feature", "label": "Feature", "default": "Swing analyses" },
-        { "type": "text", "id": "free_value", "label": "Free value", "default": "3 per month" },
+        { "type": "text", "id": "free_value", "label": "Free value", "default": "1 per month" },
         { "type": "text", "id": "pro_value", "label": "Pro value", "default": "Unlimited" }
       ]
     }
@@ -156,12 +156,14 @@
     {
       "name": "Free vs Pro",
       "blocks": [
-        { "type": "row", "settings": { "feature": "Swing analyses", "free_value": "3 per month", "pro_value": "Unlimited" } },
+        { "type": "row", "settings": { "feature": "Swing analyses", "free_value": "1 per month", "pro_value": "Unlimited" } },
         { "type": "row", "settings": { "feature": "Full report — strip, overlay, slow motion", "free_value": "Included", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Coaching notes + practice plan", "free_value": "Included", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Private, per-account session history", "free_value": "Included", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Matched training-aid recommendations", "free_value": "Included", "pro_value": "Included" } },
-        { "type": "row", "settings": { "feature": "Price", "free_value": "$0", "pro_value": "$9.99/mo or $79.99/yr" } }
+        { "type": "row", "settings": { "feature": "Annotated coach replay video", "free_value": "—", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Progress dashboard & trends", "free_value": "—", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Price", "free_value": "$0", "pro_value": "$4.99/mo · $39.99/yr · $79.99 lifetime" } }
       ]
     }
   ]

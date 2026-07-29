@@ -6,6 +6,8 @@
   <th>{% if explainers and key in explainers -%}
     <details class="mx"><summary>{{ label }}</summary>
       <div class="mx-body"><p>{{ explainers[key].text }}</p>
+        {% if explainers[key].how %}<p class="mx-how">How it's measured:
+          {{ explainers[key].how }}</p>{% endif %}
         <p class="mx-unit">{{ explainers[key].unit_gloss }}</p></div>
     </details>
   {%- else %}{{ label }}{% endif %}</th>
@@ -76,6 +78,7 @@
              min-width: 220px; max-width: 300px; margin-top: 6px;
              color: rgba(255,255,255,0.95); }
   .mx-body p { margin: 4px 0; }
+  .mx-how { opacity: 0.9; }
   .mx-unit { opacity: 0.85; font-style: italic; }
   tr.mean-row td { font-weight: bold; background: #f0f0f0; }
   tr.bench-row td { color: #555; font-size: 0.85rem; background: #fafafa; }
@@ -95,6 +98,10 @@
                         border-radius: 8px; padding: 16px 18px; margin-top: 10px; }
   .replay-locked-note p { margin: 0 0 10px; color: #444; }
   .replay-locked-note a { color: var(--primary); font-weight: 600; }
+  .replay-locked-note .lock-badge { display: inline-block;
+    background: var(--primary); color: white; border-radius: 999px;
+    padding: 3px 12px; font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.02em; margin-bottom: 10px; }
 {%- endif %}
   .tips { background: #eef6f0; border-left: 4px solid var(--primary);
           padding: 12px 16px; border-radius: 4px; }
@@ -166,6 +173,7 @@
   {% endif %}
   <span class="report-label">Swing report</span>
   {% if club_label %}<span class="hchip">{{ club_label }}</span>{% endif %}
+  {% if level_label %}<span class="hchip">{{ level_label }}</span>{% endif %}
   {% if dtl %}<span class="hchip">Down the line — tempo &amp; rhythm only</span>{% endif %}
   {% if app_url %}
     <nav class="report-nav" aria-label="Report navigation">
@@ -192,9 +200,15 @@
   <tr><th>Handedness</th><td>{{ hand }}</td></tr>
   <tr><th>Camera angle</th><td>{% if dtl %}Down the line (tempo &amp; rhythm only){% else %}Face-on{% endif %}</td></tr>
   {% if club_label %}<tr><th>Club</th><td>{{ club_label }}</td></tr>{% endif %}
+  {% if level_label %}<tr><th>Experience</th><td>{{ level_label }}</td></tr>{% endif %}
 </table>
 
 <h2>Metrics</h2>
+{% if level_note %}
+{# One framing line per declared experience level (swinglab.levels) —
+   reframing for the reader, never a change to any number below. #}
+<p class="meta">{{ level_note }}</p>
+{% endif %}
 <div class="table-scroll">
 <table>
   <tr>
@@ -323,13 +337,20 @@ balance is mean foot drift during the hold — lower is better.</p>
     </figure>
     {% elif replay_locked %}
     {# billing.replay_pro_only: the replay was not rendered for this session
-       (free plan at analysis time). Say so honestly, in the replay's slot. #}
+       (free plan at analysis time). Say what it is, honestly, in its slot. #}
     <figure>
       <h3>Coach replay</h3>
       <div class="replay-locked-note">
-        <p>Coach replay — your swing annotated frame-by-frame — is a Pro
-        feature. Upgrade and re-film to get it.</p>
-        <a href="/pricing">Upgrade to Pro →</a>
+        <span class="lock-badge">&#128274; Included with Pro</span>
+        {# Promise exactly what annotate.py draws: the skeleton, the hand
+           path, and the numbers appearing at each swing event — the same
+           wording as the unlocked replay's caption. #}
+        <p>The coach replay is this swing played back with your tracked
+        body, your hand path, and the numbers appearing at each swing
+        event — the same footage you filmed,
+        annotated like a lesson. It's rendered at analysis time, so
+        upgrade and re-film to get yours.</p>
+        <a href="/pricing">See Pro plans →</a>
       </div>
     </figure>
     {% endif %}

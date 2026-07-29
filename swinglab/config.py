@@ -146,7 +146,7 @@ DEFAULTS: dict[str, Any] = {
         "digest_enabled": True,
     },
     "billing": {
-        "free_per_month": 3,
+        "free_per_month": 1,
         "pro_per_month": 0,
         # Coach-replay Pro gate. When true AND accounts are on, the annotated
         # replay (replay_sN.mp4) is rendered only for jobs whose owner has
@@ -157,13 +157,33 @@ DEFAULTS: dict[str, Any] = {
         # default is false — a white-label install stays ungated until the
         # operator opts in; the SHIPPED config.yaml turns it on.
         "replay_pro_only": False,
+        # Progress-dashboard Pro gate, same shape as replay_pro_only: when
+        # true AND accounts are on, /progress shows free users a locked
+        # teaser (what the dashboard tracks, plus a /pricing link) instead
+        # of their trend charts. Open instances are never gated. Bare-code
+        # default is false; the SHIPPED config.yaml turns it on.
+        "progress_pro_only": False,
         "shopify_pro_handle": "swinglab-pro",
-        "shopify_skus": {"SL-PRO-1MO": 31, "SL-PRO-12MO": 365},
+        # Variant SKU -> days of Pro one unit grants. SL-PRO-LIFE is the
+        # lifetime tier: 36500 days (100 years); the account page displays
+        # anything more than 50 years out as "Lifetime" rather than a date.
+        "shopify_skus": {"SL-PRO-1MO": 31, "SL-PRO-12MO": 365, "SL-PRO-LIFE": 36500},
         # DISPLAY strings for the pricing page only — what is actually
         # charged always lives in Shopify/Stripe. Keep these matching the
-        # store or don't set them.
-        "pro_price_monthly_text": "$9.99/month",
-        "pro_price_annual_text": "$79.99/year — $6.67/month",
+        # store or don't set them. The badge is a display string for the
+        # same reason: the "save 33%" arithmetic is only true of the real
+        # store prices, so it lives here where the operator retunes it (or
+        # empties it) alongside them.
+        "pro_price_monthly_text": "$4.99/month",
+        "pro_price_annual_text": "$39.99/year — $3.33/month",
+        "pro_price_lifetime_text": "$79.99 once — Pro for good",
+        "pro_annual_badge_text": "Best value — save 33%",
+        # True only once the store actually sells auto-renewing
+        # subscriptions (Shopify's Subscriptions app installed, selling
+        # plans attached to the monthly/yearly variants). The pricing page
+        # describes renewal from this flag — false keeps the copy honest
+        # on a passes-only store, where nothing ever auto-renews.
+        "store_subscriptions": False,
     },
     "shop": {
         "enabled": True,

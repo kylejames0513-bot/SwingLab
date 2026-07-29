@@ -1,10 +1,12 @@
-"""Plain-English metric explainers for beginners.
+"""Two-register metric explainers: beginner voice plus a precise line.
 
 Every metric the report prints gets a 2-3 sentence "what it is / why it
 matters / what good looks like" in beginner language, plus a one-line unit
-gloss. The report's metric tables show these behind a tap-to-open
-``<details>`` expander, and the /progress cards reuse the exact same
-strings — one voice everywhere.
+gloss, plus a one-line ``how`` — the precise measurement statement (what is
+tracked, between which events, against which flag threshold) for readers
+who want the method, not reassurance. The report's metric tables show all
+of it behind a tap-to-open ``<details>`` expander, and the /progress cards
+reuse the exact same strings — one voice everywhere.
 
 Threshold numbers inside the copy are rendered from the live ``coaching``
 config section (:func:`build_explainers`), the same white-label rule as the
@@ -36,6 +38,8 @@ class Explainer:
     title: str       # plain-English name
     text: str        # 2-3 sentences: what it is / why it matters / what good looks like
     unit_gloss: str  # one line about the unit
+    how: str = ""    # one precise line: what's measured, between which events,
+                     # against which threshold — the experienced-player register
 
 
 def build_explainers(coach: dict) -> dict[str, Explainer]:
@@ -57,6 +61,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "clip. It's how the report tells your swings apart — nothing to "
             "train here.",
             SECONDS_GLOSS,
+            how="Located from the impact transient in the clip's audio "
+                "track — which is why sound has to be on.",
         ),
         Explainer(
             "backswing_s",
@@ -66,6 +72,9 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "number on its own — what matters is how it compares to the "
             "downswing, which is the tempo ratio.",
             SECONDS_GLOSS,
+            how="Takeaway (tracked hands leaving address) to top (highest "
+                "hand position before impact), timed at the analysis frame "
+                "rate.",
         ),
         Explainer(
             "downswing_s",
@@ -74,6 +83,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "Tour players sit near 0.25 s, but the ratio to your backswing "
             "matters far more than the raw time.",
             SECONDS_GLOSS,
+            how="Top of backswing to the audio-located impact, timed at the "
+                "analysis frame rate.",
         ),
         Explainer(
             "tempo_ratio",
@@ -85,6 +96,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             f"it, and staying at or above {tempo_warn}:1 keeps it off the "
             "flag list.",
             RATIO_GLOSS,
+            how=f"backswing_s \N{DIVISION SIGN} downswing_s; flagged below "
+                f"{tempo_warn}:1 against the {tempo_target}:1 reference.",
         ),
         Explainer(
             "head_sway_backswing_sw",
@@ -95,6 +108,9 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             f"can rotate freely — it just shouldn't travel more than about "
             f"{sway} SW.",
             SW_GLOSS,
+            how="Lateral head-center travel, address \N{RIGHTWARDS ARROW} "
+                "top, from the 2D face-on pose track, normalized by shoulder "
+                f"width; flagged beyond {sway} SW.",
         ),
         Explainer(
             "head_sway_downswing_sw",
@@ -104,6 +120,9 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "coming down is normal and isn't flagged on its own; it's shown "
             "as context for the backswing number.",
             SW_GLOSS,
+            how="Lateral head-center travel, top \N{RIGHTWARDS ARROW} "
+                "impact, same normalization; sign is direction (negative = "
+                "toward the target). Context only — no flag.",
         ),
         Explainer(
             "hip_slide_backswing_sw",
@@ -113,6 +132,9 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "coils, so the downswing starts with nothing to push from. "
             f"Turning inside about {sway} SW is the reference.",
             SW_GLOSS,
+            how="Lateral mid-hip travel, address \N{RIGHTWARDS ARROW} top, "
+                "from the 2D face-on pose track in shoulder widths; flagged "
+                f"beyond {sway} SW.",
         ),
         Explainer(
             "hip_slide_downswing_sw",
@@ -121,6 +143,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "the target, which is exactly how a downswing starts. Context, "
             "not a flag.",
             SW_GLOSS,
+            how="Lateral mid-hip travel, top \N{RIGHTWARDS ARROW} impact; "
+                "negative = toward the target. Context only — no flag.",
         ),
         Explainer(
             "head_dip_sw",
@@ -130,6 +154,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "point, so clean contact needs a last-instant rescue. Staying "
             f"under about {dip} SW is the reference.",
             SW_GLOSS,
+            how="Vertical head-center drop, address \N{RIGHTWARDS ARROW} "
+                f"impact, in shoulder widths; flagged beyond {dip} SW.",
         ),
         Explainer(
             "lead_arm_angle_deg",
@@ -139,6 +165,9 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "impact shortens your reach at the exact moment that decides "
             f"contact. Staying above about {arm}{_DEG} is the reference.",
             DEG_GLOSS + f" 180{_DEG} = a perfectly straight arm.",
+            how="Shoulder\N{EN DASH}elbow\N{EN DASH}wrist angle of the lead "
+                "arm at the impact frame, as projected face-on; flagged "
+                f"below {arm}{_DEG}.",
         ),
         Explainer(
             "shoulder_tilt_impact_deg",
@@ -149,6 +178,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "stalled and the hands flipped at the ball. At least about "
             f"{tilt}{_DEG} of tilt is the reference.",
             DEG_GLOSS + " Positive = trail shoulder lower.",
+            how="Angle of the shoulder line against horizontal at the "
+                f"impact frame; flagged below {tilt}{_DEG}.",
         ),
         Explainer(
             "shoulder_tilt_delta_deg",
@@ -158,6 +189,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "the ball — so a negative change (tilt shrinking) is the "
             "classic stand-up pattern.",
             DEG_GLOSS + " Zero or positive change is the reference.",
+            how="Impact tilt minus address tilt; flagged when negative "
+                "(tilt shrinking through the ball).",
         ),
         Explainer(
             "finish_balance_sw",
@@ -167,6 +200,8 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "whole swing stayed in balance; a step or stumble reads tenths. "
             f"At or under about {bal} SW is the reference.",
             SW_GLOSS,
+            how="Foot travel while the finish is held, in shoulder widths; "
+                f"flagged beyond {bal} SW.",
         ),
     ]
     return {e.metric: e for e in entries}

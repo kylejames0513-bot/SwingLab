@@ -13,7 +13,7 @@
         "chip1": "TEMPO 3.0:1",
         "chip2": "SWAY +0.4 SW",
         "chip3": "4 KEY FRAMES",
-        "fine_print": "Free plan includes 3 analyses a month, forever — no card required.",
+        "fine_print": "Free plan includes 1 full analysis a month, forever — no card required.",
         "image": "shopify://shop_images/swinglab-hero.png"
       }
     },
@@ -162,9 +162,9 @@
           "settings": {
             "badge": "MEMBERSHIP",
             "title": "CaddieInsight Pro",
-            "description": "Unlimited swing analyses with every deliverable. Checkout here unlocks Pro on the CaddieInsight account matching your email.",
+            "description": "Unlimited swing analyses, the annotated coach replay of every swing, and the progress dashboard. Checkout here unlocks Pro on the CaddieInsight account matching your email.",
             "price_text": "",
-            "price_note": "1 month $9.99 · 12 months $79.99",
+            "price_note": "Month $4.99 · Year $39.99 · Lifetime $79.99",
             "product": "swinglab-pro",
             "use_product_price": true,
             "image": "shopify://shop_images/product-pro.png",
@@ -177,7 +177,7 @@
           "settings": {
             "badge": "FREE PLAN",
             "title": "Try CaddieInsight Free",
-            "description": "3 swing analyses every month, free forever — the full report on every one.",
+            "description": "1 full swing analysis every month, free forever — the complete report each time.",
             "price_text": "$0",
             "price_note": "No card required",
             "url": "https://app.caddieinsight.com",
@@ -205,7 +205,7 @@
           "type": "row",
           "settings": {
             "feature": "Swing analyses",
-            "free_value": "3 per month",
+            "free_value": "1 per month",
             "pro_value": "Unlimited"
           }
         },
@@ -241,12 +241,28 @@
             "pro_value": "Included"
           }
         },
+        "r_replay": {
+          "type": "row",
+          "settings": {
+            "feature": "Annotated coach replay video",
+            "free_value": "—",
+            "pro_value": "Included"
+          }
+        },
+        "r_progress": {
+          "type": "row",
+          "settings": {
+            "feature": "Progress dashboard & trends",
+            "free_value": "—",
+            "pro_value": "Included"
+          }
+        },
         "r_price": {
           "type": "row",
           "settings": {
             "feature": "Price",
             "free_value": "$0",
-            "pro_value": "$9.99/mo or $79.99/yr"
+            "pro_value": "$4.99/mo · $39.99/yr · $79.99 lifetime"
           }
         }
       },
@@ -256,12 +272,14 @@
         "r_notes",
         "r_history",
         "r_gear",
+        "r_replay",
+        "r_progress",
         "r_price"
       ],
       "settings": {
         "anchor": "compare",
         "heading": "Free gets you started. Pro keeps score.",
-        "sub": "Both plans run the same analysis and return the same report. Pro removes the monthly cap.",
+        "sub": "Both plans run the same analysis engine. Free is one full report a month; Pro is unlimited filming plus the annotated coach replay and the progress dashboard.",
         "free_label": "Free",
         "pro_label": "Pro",
         "primary_label": "Get Pro",
@@ -328,7 +346,7 @@
           "type": "qa",
           "settings": {
             "question": "What does the free plan include?",
-            "answer": "Three swing analyses per calendar month, free forever. Every analysis produces the full report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes."
+            "answer": "One full swing analysis per calendar month, free forever. It produces the complete report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes. Pro adds unlimited filming, the annotated coach replay, and the progress dashboard."
           }
         },
         "q_pro_unlock": {

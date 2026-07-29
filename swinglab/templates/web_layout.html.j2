@@ -252,8 +252,9 @@
     <a class="sl-header__link{% if current_path == '/' %} is-current{% endif %}" href="/" {% if current_path == '/' %}aria-current="page"{% endif %}>Analyze</a>
     {% if user or not require_account %}
       <a class="sl-header__link{% if current_path == '/sessions' %} is-current{% endif %}" href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
-      {% if user and require_account %}<a class="sl-header__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress</a>{% endif %}
+      {% if user and require_account %}<a class="sl-header__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>{% endif %}
     {% endif %}
+    <a class="sl-header__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
     {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
     <a class="sl-header__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" {% if current_path == '/pricing' %}aria-current="page"{% endif %}>Pro</a>
     {% if user %}

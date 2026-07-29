@@ -88,6 +88,7 @@ def test_progress_cards_reuse_the_same_strings(tmp_path, monkeypatch):
     )
     cfg = Config()
     cfg.web["require_account"] = True
+    cfg.billing["free_per_month"] = 0  # this test needs two sessions
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
     signup(client)
     upload_and_wait(client)

@@ -13,6 +13,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import __version__, diagrams
 from .clubs import club_label
+from .levels import level_label, level_note
 from .coaching import issue_cards as make_issue_cards
 from .coaching import praise_notes as make_praise_notes
 from .coaching import session_flags
@@ -89,6 +90,7 @@ def write_report_html(
     cfg: Config,
     angle: str = ANGLE_FACE_ON,
     club: str | None = None,
+    level: str | None = None,
     sample_banner: dict | None = None,
     analysis_fps: float | None = None,
     replay_locked: bool = False,
@@ -142,6 +144,10 @@ def write_report_html(
         angle=angle,
         dtl=(angle == ANGLE_DTL),
         club_label=club_label(club),
+        # Experience-level framing (swinglab.levels): a chip plus one line
+        # above the metrics — reframing only, never a threshold change.
+        level_label=level_label(level),
+        level_note=level_note(level),
         explainers=build_explainers(cfg.coaching),
         slowmo_factor=cfg.slowmo["factor"],
         flags=flags,

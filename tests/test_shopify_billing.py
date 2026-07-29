@@ -72,6 +72,24 @@ def pro_order(order_id=1001, email="kyle@example.com", sku="SL-PRO-1MO", qty=1):
     }
 
 
+def pro_refund(
+    order_id=1001,
+    refund_id=9001,
+    sku="SL-PRO-1MO",
+    qty=1,
+):
+    return {
+        "id": refund_id,
+        "order_id": order_id,
+        "refund_line_items": [
+            {
+                "quantity": qty,
+                "line_item": {"sku": sku},
+            }
+        ],
+    }
+
+
 def get_user(client, email="kyle@example.com"):
     users: UserStore = client.app.state.users
     return users.get_by_email(email)
@@ -187,6 +205,70 @@ def test_cancelled_unclaimed_purchase_never_grants(app):
     )
     signup(client, email="new@example.com")
     assert not get_user(client, "new@example.com").is_pro
+
+
+def test_refunded_pro_order_takes_back_its_days_idempotently(app):
+    client = TestClient(app)
+    signup(client)
+    order_webhook(client, pro_order(order_id=1))
+    order_webhook(client, pro_order(order_id=2))
+
+    assert order_webhook(
+        client, pro_refund(order_id=1), topic="refunds/create"
+    ).status_code == 200
+    assert abs(get_user(client).pro_until - (time.time() + 31 * DAY)) < 60
+
+    # Replayed refunds share the order cancellation ledger, so the surviving
+    # second purchase can never be subtracted twice.
+    order_webhook(client, pro_refund(order_id=1), topic="refunds/create")
+    assert abs(get_user(client).pro_until - (time.time() + 31 * DAY)) < 60
+
+
+def test_refund_before_paid_is_a_tombstone(app):
+    client = TestClient(app)
+    signup(client)
+
+    order_webhook(client, pro_refund(), topic="refunds/create")
+    order_webhook(client, pro_order(), topic="orders/paid")
+
+    assert not get_user(client).is_pro
+    row = client.app.state.users._conn.execute(
+        "SELECT days, cancelled_at FROM shopify_orders WHERE order_id = ?",
+        ("1001",),
+    ).fetchone()
+    assert row["days"] == 0
+    assert row["cancelled_at"] is not None
+
+
+def test_gear_only_or_unattributable_refund_does_not_revoke_pro(app):
+    client = TestClient(app)
+    signup(client)
+    order_webhook(client, pro_order())
+    before = get_user(client).pro_until
+
+    gear_refund = pro_refund(sku="SL-TEMPO-WAND")
+    order_webhook(client, gear_refund, topic="refunds/create")
+    order_webhook(
+        client,
+        {"id": 9002, "order_id": 1001, "refund_line_items": []},
+        topic="refunds/create",
+    )
+
+    assert get_user(client).pro_until == before
+
+
+def test_partial_pro_refund_uses_whole_order_reversal_semantics(app):
+    client = TestClient(app)
+    signup(client)
+    order_webhook(client, pro_order(qty=2))
+    assert get_user(client).is_pro
+
+    # The ledger owns one interval per order rather than per line-item unit.
+    # An attributable refund therefore follows orders/cancelled and reverses
+    # the whole order instead of guessing which part of its interval survived.
+    order_webhook(client, pro_refund(qty=1), topic="refunds/create")
+
+    assert not get_user(client).is_pro
 
 
 def test_cancellation_before_paid_is_a_tombstone(app):

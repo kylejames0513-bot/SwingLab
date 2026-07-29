@@ -57,7 +57,7 @@
   <div class="hero">
     <p class="eyebrow">Swing analysis from one phone video</p>
     <h2>Make every range session count.</h2>
-    <p>Create a free {{ brand.name }} account for {{ free_per_month }} full analyses every month,
+    <p>Create a free {{ brand.name }} account for {{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month,
        or sign in to continue where you left off.</p>
     <div class="steps">
       <div><strong>1. Film</strong> Phone at hip height, face-on (down the line: tempo &amp; rhythm only for now).</div>
@@ -68,7 +68,7 @@
   <div class="choice-grid">
     <section class="card choice choice--primary">
       <h3>Create a free account</h3>
-      <p>{{ free_per_month }} full swing analyses every month — no card required,
+      <p>{{ free_per_month }} full swing analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month — no card required,
          no purchase, and no Shopify account needed.</p>
       <a class="button" href="/signup">Start free</a>
     </section>
@@ -185,8 +185,8 @@
     {% if auth_view == "signup" %}
     <h2>Create your free account</h2>
     <p class="lead">We’ll send a six-digit verification code. Entering it
-      creates your {{ brand.name }} account with {{ free_per_month }} free
-      analyses every month.</p>
+      creates your {{ brand.name }} account with
+      {{ free_per_month }} free analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month.</p>
     {% else %}
     <h2>Welcome back</h2>
     <p class="lead">Enter your {{ brand.name }} email and we’ll send a secure
@@ -222,7 +222,7 @@
   <div class="card auth-shell">
     {% if auth_view == "signup" %}
       <h2>Create your free account</h2>
-      <p class="lead">{{ free_per_month }} full analyses every month. No card required.</p>
+      <p class="lead">{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month. No card required.</p>
       <form action="/signup" method="post">
         <label for="su-email">Email</label>
         <input id="su-email" name="email" type="email" required

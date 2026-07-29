@@ -133,16 +133,20 @@ environment so logins survive restarts/redeploys.
 1. In the Shopify admin, create a product for Pro access (digital — untick
    "This is a physical product"). Give each variant a SKU from
    `billing.shopify_skus` in config.yaml — the shipped mapping is
-   `SL-PRO-1MO` (31 days) and `SL-PRO-12MO` (365 days); prices are set on
-   the product. Make sure the product's URL handle matches
-   `billing.shopify_pro_handle` (default `swinglab-pro`).
-2. In Shopify → Settings → Notifications → Webhooks, add **five** webhooks,
+   `SL-PRO-1MO` (31 days), `SL-PRO-12MO` (365 days), and `SL-PRO-LIFE`
+   (36500 days — the lifetime tier; the app displays it as "Lifetime");
+   prices are set on the product. Make sure the product's URL handle
+   matches `billing.shopify_pro_handle` (default `swinglab-pro`).
+2. In Shopify → Settings → Notifications → Webhooks, add **six** webhooks,
    all pointing at the **same** URL `https://<your-app>/webhooks/shopify`
    (no trailing slash — Shopify does not follow redirects, so a stray `/`
    makes every delivery fail), and copy the signing secret shown at the
    bottom of that page:
    - **Order payment** (`orders/paid`) — grants Pro.
    - **Order cancellation** (`orders/cancelled`) — takes Pro back.
+   - **Refund creation** (`refunds/create`) — takes the whole order's Pro
+     grant back when a refunded line item identifies a configured Pro SKU;
+     gear-only or unattributable refunds leave Pro unchanged.
    - **Customer creation** (`customers/create`), **Customer update**
      (`customers/update`), **Customer deletion** (`customers/delete`) —
      these provision the passwordless "store account" so a buyer who
@@ -168,8 +172,22 @@ environment so logins survive restarts/redeploys.
 Buyers check out on the Shopify storefront; a paid order unlocks Pro on the
 CaddieInsight account with the same email (or waits for that email to sign
 up).
-For auto-renewing memberships, add Shopify's free Subscriptions app to the
-product — each billing cycle's order re-extends access automatically.
+For auto-renewing memberships, install Shopify's free **Subscriptions** app
+(requires Shopify Payments) and create its selling plans in the app's UI:
+a monthly plan attached to the 1-month variant only and a yearly plan
+attached to the 12-month variant only — never to the lifetime variant.
+Each billing cycle's order carries the same SKU, so access re-extends
+through the existing webhook path. The entitlement ledger currently grants
+fixed terms (31 days for monthly and 365 days for yearly); it does not have
+the authoritative next billing-cycle date required to align access exactly
+to Shopify calendar months/years. Do not infer that date from an order
+timestamp or selling-plan name. Enable customer accounts so
+subscribers can manage or cancel their own subscription. (Selling plans
+must be created inside the Subscriptions app — plans created by other API
+clients are not billed by it.) Once the plans are live, set
+`billing.store_subscriptions: true` in config.yaml and redeploy so the
+app's pricing page starts describing auto-renewal — it stays in honest
+passes-only wording until then.
 
 **Selling Pro as a Stripe subscription:**
 

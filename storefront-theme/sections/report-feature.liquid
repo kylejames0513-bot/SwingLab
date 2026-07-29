@@ -7,7 +7,7 @@
     {%- if section.blocks.size > 0 -%}
       <ul class="sl-check-list sl-report__list">
         {%- for block in section.blocks -%}
-          <li{{ block.shopify_attributes }}>{{ block.settings.text }}</li>
+          <li {{ block.shopify_attributes }}>{{ block.settings.text }}</li>
         {%- endfor -%}
       </ul>
     {%- endif -%}

@@ -78,6 +78,7 @@ def analyze_video(
     progress: Callable[[int, int], None] | None = None,
     angle: str = ANGLE_FACE_ON,
     club: str | None = None,
+    level: str | None = None,
     replay_locked: bool = False,
 ) -> SessionResult:
     """Run the full pipeline for one video.
@@ -102,7 +103,9 @@ def analyze_video(
     down-the-line session keeps timing (tempo, durations, consistency) and
     honestly reads NaN for the rest — with a session note saying so.
     ``club`` is display context only (report/metrics.json meta); it changes
-    no thresholds and no numbers.
+    no thresholds and no numbers. ``level`` (experience level, see
+    swinglab.levels) is the same kind of context: a chip and one framing
+    line on the report, never an analysis input.
     """
     cfg = cfg or Config.load()
     if angle not in ANGLES:
@@ -232,6 +235,7 @@ def analyze_video(
     meta = {
         "camera_angle": angle,
         "club": club,
+        "level": level,
         "hand": hand,
         # The frame rate the analysis windows were actually extracted at
         # (analysis.fps, or the auto-fps pick for high-fps sources) — the
@@ -240,7 +244,7 @@ def analyze_video(
     }
     report_path = report.write_report_html(
         session_dir / "report.html", info, swings, stats, notes, hand, cfg,
-        angle=angle, club=club, analysis_fps=analysis_fps,
+        angle=angle, club=club, level=level, analysis_fps=analysis_fps,
         # The locked note only exists where a replay would otherwise have
         # been rendered — an instance with slowmo.annotated off has no
         # replay feature to sell, so it never shows one.

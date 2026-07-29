@@ -189,7 +189,7 @@ web:
                              # email's report/progress/unsubscribe links are absolute.
 
 billing:
-  free_per_month: 3          # analyses per calendar month on the free plan
+  free_per_month: 1          # analyses per calendar month on the free plan
   pro_per_month: 0           # ...on Pro (0 = unlimited). Prices are set in Shopify or
                              # Stripe, never here. Two ways to sell Pro:
                              #   Shopify (preferred): set SHOPIFY_STORE_DOMAIN and
@@ -211,16 +211,39 @@ billing:
                              # default is false (white-label installs stay
                              # ungated until they opt in) — shipped on, the
                              # same deliberate difference as retention_days.
+  progress_pro_only: true    # the /progress dashboard (trend charts across
+                             # sessions) is the other clean quality line.
+                             # true + accounts on: free users see an honest
+                             # locked teaser describing what the dashboard
+                             # tracks, with a /pricing link, instead of
+                             # their charts. Open instances (require_account:
+                             # false) are never gated, and no trend data is
+                             # computed for a locked view. Bare-code default
+                             # is false — same deliberate difference as
+                             # replay_pro_only.
   shopify_pro_handle: swinglab-pro   # the Pro product's handle on the Shopify store
                                      # (the /products/<handle> part of its URL)
   shopify_skus:              # Shopify variant SKU -> days of Pro one unit grants;
     SL-PRO-1MO: 31           # quantities multiply, so 2x the 1-month SKU = 62 days.
     SL-PRO-12MO: 365         # Add a SKU here and in Shopify to add a plan length.
-  pro_price_monthly_text: "$9.99/month"
-  pro_price_annual_text: "$79.99/year — $6.67/month"
+    SL-PRO-LIFE: 36500       # lifetime = 100 years; the account page shows
+                             # anything >50 years out as "Lifetime", not a date.
+  pro_price_monthly_text: "$4.99/month"
+  pro_price_annual_text: "$39.99/year — $3.33/month"
+  pro_price_lifetime_text: "$79.99 once — Pro for good"
+  pro_annual_badge_text: "Best value — save 33%"
                              # DISPLAY strings for /pricing only — the store or
                              # Stripe stays the source of truth for what is
-                             # actually charged. Keep these matching the store.
+                             # actually charged. Keep these matching the store;
+                             # the badge's savings math lives here (not in the
+                             # template) so changing prices can't strand a
+                             # stale claim. Empty badge = no badge.
+  store_subscriptions: true  # Shopify Subscriptions is installed with selling
+                             # plans on the monthly/yearly variants — the
+                             # pricing page describes auto-renewal from this
+                             # flag, and on a passes-only store that claim
+                             # would be false (a "subscription" that never
+                             # renews). Lifetime never gets a selling plan.
 
 shop:
   enabled: true              # gear shop pages + per-analysis recommendations.

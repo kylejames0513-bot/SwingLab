@@ -84,7 +84,7 @@ def metrics_payload(tempo=3.0, sway=0.1, slide=0.1, swings=1, tempo_std=0.1):
 def make_fake_analyze(metrics: dict):
     def fake(video_path, out_dir=None, hand="right", manual_strikes=None,
              cfg=None, keep_work=False, fast=False, log=print, progress=None,
-             angle="face-on", club=None, replay_locked=False):
+             angle="face-on", club=None, level=None, replay_locked=False):
         session_dir = Path(out_dir) / Path(video_path).stem
         session_dir.mkdir(parents=True)
         report = session_dir / "report.html"

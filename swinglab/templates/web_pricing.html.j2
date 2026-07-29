@@ -3,7 +3,7 @@
 {% block style %}
   .lead { text-align: center; margin-bottom: 24px; }
   .lead h2 { font-size: 1.8rem; margin: 0 0 8px; }
-  .lead p { color: #555; font-size: 1.02rem; max-width: 520px; margin: 0 auto; }
+  .lead p { color: #555; font-size: 1.02rem; max-width: 560px; margin: 0 auto; }
   table.compare { width: 100%; border-collapse: collapse; background: white;
                   border: 1px solid #e0e0e0; border-radius: 8px;
                   margin: 24px 0 28px; overflow: hidden; }
@@ -13,9 +13,16 @@
   .compare td:first-child { text-align: left; color: #444; }
   .compare tr:last-child td { border-bottom: none; }
   .compare .yes { color: var(--primary); font-weight: 600; }
+  .compare .no { color: #999; }
   .plans { display: flex; gap: 20px; flex-wrap: wrap; }
-  .plans .card { flex: 1 1 240px; display: flex; flex-direction: column; }
+  .plans .card { flex: 1 1 220px; display: flex; flex-direction: column; }
+  .plans .card.hero { border: 2px solid var(--primary); position: relative; }
+  .badge { display: inline-block; background: var(--primary); color: white;
+           border-radius: 999px; padding: 3px 12px; font-size: 0.75rem;
+           font-weight: 700; letter-spacing: 0.02em; margin-bottom: 8px;
+           align-self: flex-start; }
   .plans h2 { margin-top: 0; }
+  .plans .card.hero h2 { margin-top: 4px; }
   .price { font-size: 1.6rem; font-weight: 700; color: var(--primary); }
   ul { padding-left: 20px; color: #444; flex: 1; }
   li { margin: 8px 0; }
@@ -27,11 +34,17 @@
 {% endblock %}
 {% block main %}
   <div class="lead">
-    <h2>Every analysis is the full analysis</h2>
-    <p>Free and Pro get the same report — the metrics table, key-position
-      frames, slow motion, centerline overlays, coaching notes, and a
-      practice plan with re-film targets. The only difference is how often
-      you can film.</p>
+    <h2>One analysis engine. Two ways to use it.</h2>
+    <p>Free and Pro run the same analysis and get the same report — the
+      metrics table, key-position frames, slow motion, centerline overlays,
+      coaching notes, and a practice plan with re-film targets. Free is
+      {{ free_per_month }} full report{% if free_per_month != 1 %}s{% endif %}
+      a month. Pro is unlimited filming{% if replay_pro_only %}, plus the
+      annotated coach replay — your own footage played back with your
+      tracked body, your hand path, and the key numbers appearing at each
+      swing event{% endif %}{% if progress_pro_only %},
+      plus the progress dashboard that charts every metric session over
+      session so you can watch a fix stick{% endif %}.</p>
   </div>
 
   <table class="compare">
@@ -57,6 +70,18 @@
       <td>Private session history</td>
       <td class="yes">Included</td><td class="yes">Included</td>
     </tr>
+    {% if replay_pro_only %}
+    <tr>
+      <td>&#128274; Annotated coach replay video</td>
+      <td class="no">&mdash;</td><td class="yes">Included</td>
+    </tr>
+    {% endif %}
+    {% if progress_pro_only %}
+    <tr>
+      <td>&#128274; Progress dashboard &amp; trends</td>
+      <td class="no">&mdash;</td><td class="yes">Included</td>
+    </tr>
+    {% endif %}
   </table>
 
   {% if trend_line %}
@@ -82,12 +107,13 @@
       {% endif %}
   {%- endmacro %}
   <div class="plans">
-    <div class="card">
-      <h2>Pro — annual</h2>
+    <div class="card hero">
+      {% if pro_annual_badge_text %}<span class="badge">{{ pro_annual_badge_text }}</span>{% endif %}
+      <h2>Pro — yearly</h2>
       <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
       <ul>
         <li>Unlimited swing analyses for a year</li>
-        <li>Everything in Free</li>
+        <li>Everything Pro includes, all season</li>
         <li>One checkout covers the whole year — no monthly decision to remake</li>
       </ul>
       {{ pro_cta() }}
@@ -97,16 +123,36 @@
       <p class="price">{{ pro_price_monthly_text or "Unlimited" }}</p>
       <ul>
         <li>Unlimited swing analyses</li>
-        <li>Everything in Free</li>
-        <li>Nothing renews behind your back — see the note below</li>
+        <li>Everything Pro includes</li>
+        {% if store_subscriptions %}
+        <li>Subscribe, or buy a single month at a time</li>
+        {% else %}
+        <li>One month at a time — it simply expires, nothing renews</li>
+        {% endif %}
       </ul>
       {{ pro_cta() }}
     </div>
+    {% if pro_store_url %}
+    {# The lifetime tier exists only as a store purchase (SL-PRO-LIFE) —
+       a Stripe-only install has no one-payment product to sell, so the
+       card would promise something its checkout can't deliver. #}
+    <div class="card">
+      <h2>Pro — lifetime</h2>
+      <p class="price">{{ pro_price_lifetime_text or "One payment" }}</p>
+      <ul>
+        <li>One payment — Pro for as long as {{ brand.name }} runs</li>
+        <li>Everything Pro includes, forever</li>
+        <li>Never renews, never expires</li>
+      </ul>
+      {{ pro_cta() }}
+    </div>
+    {% endif %}
     <div class="card">
       <h2>Free</h2>
       <p class="price">$0</p>
       <ul>
-        <li>{{ free_per_month }} swing analyses every month, forever</li>
+        <li>{{ free_per_month }} full swing analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
+          every month, forever</li>
         <li>Full report: metrics, key positions, slow motion, overlays</li>
         <li>Coaching notes and a practice plan for every session</li>
         <li>No card required</li>
@@ -115,13 +161,25 @@
     </div>
   </div>
 
-  <p class="fineprint">Honest note on the monthly option: on the
-    {{ brand.name }} store it's a fixed-length 31-day pass that simply
-    expires — nothing auto-renews unless the store's subscription setup (or
-    Stripe billing, where configured) handles renewal. Prices shown here are
-    display text; the store checkout is always the source of truth.</p>
-  <p class="fineprint">Cancel anytime — Pro keeps running to the end of what
-    you've paid for. Unused Pro purchases are refundable within 14 days.</p>
+  {% if pro_store_url and store_subscriptions %}
+  <p class="fineprint">How renewal works: bought as a subscription on the
+    {{ brand.name }} store, monthly and yearly Pro renew automatically —
+    cancel anytime and Pro keeps running to the end of the period you've
+    paid for. Bought as a one-time pass, a month is 31 days and a year is
+    365, and they simply expire. Lifetime is a single payment and never
+    renews. Prices shown here are display text; the store checkout is
+    always the source of truth.</p>
+  {% elif pro_store_url %}
+  <p class="fineprint">How it works: nothing auto-renews. On the
+    {{ brand.name }} store a month is a fixed 31-day pass and a year is
+    365 days — they simply expire, and quantities stack. Lifetime is a
+    single payment and never ends. Prices shown here are display text;
+    the store checkout is always the source of truth.</p>
+  {% else %}
+  <p class="fineprint">Prices shown here are display text — checkout is
+    always the source of truth for what is charged and how it renews.</p>
+  {% endif %}
+  <p class="fineprint">Unused Pro purchases are refundable within 14 days.</p>
 
   <p class="disclaimer">{{ brand.disclaimer }}</p>
 {% endblock %}

@@ -63,8 +63,10 @@ from starlette.requests import ClientDisconnect
 from .. import sample
 from ..clubs import CLUB_LABELS
 from ..coaching import flag_keys
+from ..levels import LEVEL_LABELS
 from ..config import Config
-from ..diagrams import trend_chart
+from ..diagrams import drill_animation, drill_diagram, trend_chart
+from ..drills import PLAN_TITLES, build_drills, gear_shop_url
 from ..explainers import build_explainers
 from ..metrics import ANGLES
 from ..trends import FLAG_LABELS, build_trends, format_delta, format_value, trend_sentence
@@ -80,6 +82,9 @@ UPLOAD_CHUNK = 1024 * 1024
 
 LOGIN_WINDOW_S = 15 * 60  # window for web.login_attempts_per_15min
 SIGNUP_WINDOW_S = 3600  # window for web.signups_per_hour_per_ip
+# Pro time further out than this displays as "Lifetime" rather than a date
+# (the SL-PRO-LIFE grant is 100 years of days; see billing.shopify_skus).
+LIFETIME_DISPLAY_MIN_S = 50 * 365 * 86400
 THROTTLED_MESSAGE = "Too many attempts — wait a few minutes and try again."
 EMAIL_DELIVERY_MESSAGE = (
     "We couldn't send that email right now. Please try again in a moment."
@@ -134,15 +139,16 @@ def ensure_user_can_analyze(
     if limit <= 0:  # unlimited
         return
     if manager.usage_this_month(user.id) >= limit:
+        noun = "analysis" if limit == 1 else "analyses"
         if user.is_pro:
             raise HTTPException(
                 402,
-                f"You've reached this month's limit of {limit} analyses. "
+                f"You've reached this month's limit of {limit} {noun}. "
                 "It resets on the 1st.",
             )
         raise HTTPException(
             402,
-            f"You've used your {limit} free analyses this month. "
+            f"You've used your {limit} free {noun} this month. "
             "Upgrade to Pro for unlimited swings — or come back on the 1st.",
         )
 
@@ -259,6 +265,22 @@ def create_app(
                     else None
                 ),
                 free_per_month=int(cfg.billing["free_per_month"]),
+                # EFFECTIVE gates, not raw flags — copy that advertises a
+                # Pro lock must track what is actually locked. The replay
+                # gate only exists when the replay feature is on and
+                # accounts are on (jobs.replay_locked applies the same
+                # conditions); the progress gate only exists with accounts
+                # on (/progress is 404 without them). A raw flag with the
+                # rest missing must never put a false lock on a page.
+                replay_pro_only=bool(
+                    cfg.billing.get("replay_pro_only")
+                    and cfg.slowmo.get("annotated")
+                    and cfg.web.get("require_account")
+                ),
+                progress_pro_only=bool(
+                    cfg.billing.get("progress_pro_only")
+                    and cfg.web.get("require_account")
+                ),
                 shop_enabled=shop_active(),
                 mail_enabled=mailer.enabled(),
                 passwordless_login=passwordless_active(),
@@ -343,6 +365,12 @@ def create_app(
             max_upload_mb=float(cfg.web.get("max_upload_mb") or 0),
             quota_left=left,
             trend_line=trend_line,
+            # First-session guide: shown until the account has any session
+            # at all — the panel IS the onboarding, so one upload retires it.
+            first_run=(
+                user is not None
+                and not manager.list_recent(limit=1, user_id=user.id)
+            ),
         )
 
     # -- public sample report (no auth — the wow-moment, un-walled) --------
@@ -360,6 +388,35 @@ def create_app(
         if not target.is_file():
             raise HTTPException(404, "Not found")
         return FileResponse(target)
+
+    # -- public drill library (no auth — same posture as the sample) -------
+    @app.get("/drills", response_class=HTMLResponse)
+    def drills_page(request: Request):
+        """Every drill the practice plans prescribe, with setup diagrams,
+        animations, dosages, and re-film pass marks — plus a curated
+        four-week Beginner Path through them. Public on purpose: the
+        library is the product's proof, not a secret."""
+        library = build_drills(cfg.coaching)
+        families = [
+            {"key": key, "title": PLAN_TITLES[key], "drills": library[key]}
+            for key in PLAN_TITLES
+            if key in library
+        ]
+        drill_media = {
+            d.id: {
+                "diagram": drill_diagram(d.id, cfg.brand),
+                "animation": drill_animation(d.id, cfg.brand),
+            }
+            for fam in families
+            for d in fam["drills"]
+        }
+        return render(
+            "web_drills.html.j2",
+            request,
+            families=families,
+            drill_media=drill_media,
+            gear_url=gear_shop_url(cfg),
+        )
 
     # -- accounts ---------------------------------------------------------
     def send_code_email(email: str, purpose: str) -> None:
@@ -768,6 +825,11 @@ def create_app(
     def account_page(
         request: Request, user: User, password_error: str | None = None
     ) -> HTMLResponse:
+        # A Shopify lifetime purchase lands as a very long day grant
+        # (SL-PRO-LIFE = 100 years). Anything more than 50 years out is
+        # displayed as "Lifetime" — a dated row for the year 2126 would be
+        # technically true and practically silly.
+        pro_lifetime = user.pro_until - time.time() > LIFETIME_DISPLAY_MIN_S
         return render(
             "web_account.html.j2",
             request,
@@ -776,9 +838,10 @@ def create_app(
             upgraded="upgraded" in request.query_params,
             password_added="password_added" in request.query_params,
             password_error=password_error,
+            pro_lifetime=pro_lifetime,
             pro_until_date=(
                 time.strftime("%B %d, %Y", time.localtime(user.pro_until))
-                if user.pro_until > time.time()
+                if user.pro_until > time.time() and not pro_lifetime
                 else None
             ),
         )
@@ -839,6 +902,12 @@ def create_app(
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
+        # Progress Pro gate (billing.progress_pro_only), the same shape as
+        # the coach-replay gate: free accounts see an honest locked teaser
+        # instead of their charts, and no trend data is computed for it.
+        # Open instances never reach here (the require_account check above).
+        if cfg.billing.get("progress_pro_only") and not user.is_pro:
+            return render("web_progress.html.j2", request, locked=True)
         listed = manager.list_recent(user_id=user.id)
         # Club filter — display context only, shown once >1 club is present.
         clubs_present = sorted({j.club for j in listed if j.club})
@@ -919,6 +988,11 @@ def create_app(
             # truth for what is actually charged.
             pro_price_annual_text=cfg.billing.get("pro_price_annual_text"),
             pro_price_monthly_text=cfg.billing.get("pro_price_monthly_text"),
+            pro_price_lifetime_text=cfg.billing.get("pro_price_lifetime_text"),
+            pro_annual_badge_text=cfg.billing.get("pro_annual_badge_text"),
+            # Renewal copy tracks what the store actually sells — false on
+            # a passes-only store, where nothing auto-renews.
+            store_subscriptions=bool(cfg.billing.get("store_subscriptions")),
         )
 
     # -- gear shop --------------------------------------------------------
@@ -997,6 +1071,7 @@ def create_app(
         hand: str = Form("right"),
         angle: str = Form("face-on"),
         club: str = Form(""),
+        level: str = Form(""),
         strikes: str = Form(""),
         fast: str = Form(""),
     ):
@@ -1030,6 +1105,11 @@ def create_app(
                 400,
                 "club must be one of: " + ", ".join(sorted(CLUB_LABELS)),
             )
+        if level and level not in LEVEL_LABELS:
+            raise HTTPException(
+                400,
+                "level must be one of: " + ", ".join(sorted(LEVEL_LABELS)),
+            )
 
         ip = client_ip(request)
         per_ip = int(cfg.web.get("max_active_jobs_per_ip") or 0)
@@ -1045,6 +1125,7 @@ def create_app(
             hand=hand,
             angle=angle,
             club=club or None,
+            level=level or None,
             strikes=manual_strikes,
             fast=fast.lower() in ("on", "true", "1", "yes"),
             client_ip=ip,

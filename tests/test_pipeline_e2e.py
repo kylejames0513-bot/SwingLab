@@ -116,7 +116,7 @@ def test_dtl_angle_honest_end_to_end(tmp_path, fast_cfg):
     )
     data = json.loads(result.metrics_path.read_text())
     assert data["meta"] == {
-        "camera_angle": "dtl", "club": "iron", "hand": "right",
+        "camera_angle": "dtl", "club": "iron", "level": None, "hand": "right",
         "analysis_fps": 30.0,
     }
     m = data["swings"][0]["metrics"]

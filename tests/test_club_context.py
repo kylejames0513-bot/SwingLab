@@ -193,6 +193,7 @@ def test_progress_hides_filter_with_single_club(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_module, "analyze_video", make_fake_analyze(payloads))
     cfg = Config()
     cfg.web["require_account"] = True
+    cfg.billing["free_per_month"] = 0  # unlimited for this test
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
     signup(client)
     _upload_with_club(client, "iron")

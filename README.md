@@ -283,32 +283,49 @@ Pro can be sold two ways, both **inert until configured** — the pricing page
 shows Pro as "coming soon" until one is set up. When both are configured,
 buyers are sent to the Shopify store.
 
-**The coach replay is the Pro quality line** (`billing.replay_pro_only`,
+**The coach replay is one Pro quality line** (`billing.replay_pro_only`,
 shipped `true`): with accounts on, the annotated replay — the report's most
 shareable artifact — is rendered only for jobs whose owner has Pro *at
 analysis time*. A free user's report keeps everything else (metrics, slow
-motion, overlays, drills) and shows an honest locked note with a `/pricing`
-link in the replay slot; the render itself is skipped, so the gate saves
-the CPU too. Upgrading later never rewrites an old report — re-film to get
-the replay. Open instances (`require_account: false`), CLI runs, and the
-public sample report are **never** gated, and the bare-code default is
-`false` — the same deliberate DEFAULTS-vs-shipped difference as
+motion, overlays, drills) and shows an honest lock-and-key teaser with a
+`/pricing` link in the replay slot; the render itself is skipped, so the
+gate saves the CPU too. Upgrading later never rewrites an old report —
+re-film to get the replay. Open instances (`require_account: false`), CLI
+runs, and the public sample report are **never** gated, and the bare-code
+default is `false` — the same deliberate DEFAULTS-vs-shipped difference as
 `retention_days`, pinned by tests.
 
-The pricing page shows the annual plan first (the anchor) with the monthly
-plan second, using the **display-only** strings
-`billing.pro_price_monthly_text` / `billing.pro_price_annual_text` from
-`config.yaml` (shipped: `$9.99/month` and `$79.99/year — $6.67/month`).
-These are labels, not billing: what is actually charged always lives in
-Shopify/Stripe, and the page says honestly that the store's monthly option
-is a fixed-length 31-day pass — nothing auto-renews unless the store's
-subscription setup or Stripe billing handles renewal.
+**The progress dashboard is the other** (`billing.progress_pro_only`,
+shipped `true`, bare default `false` — same pattern): free accounts opening
+`/progress` see a locked teaser describing what the dashboard tracks, with
+a `/pricing` link, instead of their trend charts; no trend data is computed
+for a locked view. Both gates are advertised, not hidden: the pricing page
+and the storefront comparison list them as explicit Pro rows.
+
+The pricing page shows the yearly plan first (the hero, a third off
+monthly), then monthly, then lifetime (the anchor), then free — using the
+**display-only** strings `billing.pro_price_monthly_text` /
+`pro_price_annual_text` / `pro_price_lifetime_text` from `config.yaml`
+(shipped: `$4.99/month`, `$39.99/year — $3.33/month`, `$79.99 once — Pro
+for good`). These are labels, not billing: what is actually charged always
+lives in Shopify/Stripe. The pricing page's renewal copy is driven by
+`billing.store_subscriptions` (shipped `true` for CaddieInsight; the
+bare-code default remains `false`): enable it only once the store actually
+sells auto-renewing subscriptions via Shopify's Subscriptions app. When on,
+the page says monthly/yearly renew automatically (cancel anytime, Pro runs
+to period end); when off, it says honestly that passes simply expire.
+Lifetime is always a single payment, and its card
+only renders when the Shopify store is configured (the lifetime SKU has no
+Stripe equivalent).
 
 **Selling Pro on the Shopify store** (one checkout for gear and
 memberships): create a product whose variant SKUs map to days of access in
 `billing.shopify_skus` (shipped mapping: `SL-PRO-1MO` → 31 days,
-`SL-PRO-12MO` → 365), point `orders/paid` + `orders/cancelled` webhooks at
-`/webhooks/shopify`, and set:
+`SL-PRO-12MO` → 365, `SL-PRO-LIFE` → 36500 — a hundred years; the account
+page shows anything more than 50 years out as "Lifetime"), point
+`orders/paid`, `orders/cancelled`, and `refunds/create` webhooks at
+`/webhooks/shopify`, and
+set:
 
 | Variable | What it is |
 | --- | --- |
@@ -319,9 +336,16 @@ memberships): create a product whose variant SKUs map to days of access in
 A paid order first extends Pro on the account linked to the stable Shopify
 customer ID, then falls back to the account matching the checkout email; a
 purchase made before signup is claimed automatically when that email creates
-an account or logs in. Replayed webhooks never double-grant, cancelled
-orders take their days back, and Shopify's Subscriptions app works
-unchanged (each billing cycle's order re-extends access).
+an account or logs in. Replayed webhooks never double-grant; cancelled orders
+and refunds that identify a Pro SKU take their whole order grant back. A
+gear-only or unattributable refund leaves Pro unchanged.
+
+Shopify's Subscriptions app creates a new paid order for each successful
+billing cycle, so the same SKU path re-extends access. Today those grants are
+still fixed passes (31 days for monthly, 365 for yearly), not authoritative
+Shopify calendar-period ends. Exact calendar-month/year alignment needs
+subscription billing-cycle data and must not be inferred from the order
+timestamp or selling-plan name.
 
 **Selling Pro as a Stripe subscription:**
 
@@ -341,11 +365,13 @@ ever changes via the signed webhooks.
 Two retention surfaces, both built from numbers the pipeline already wrote —
 nothing is ever estimated after the fact:
 
-**Progress dashboard (`/progress`)** — every logged-in account gets one card
-per metric with data: an inline-SVG trend chart of the session means (dots on
-sessions, dashed line + shaded band at the flag threshold), latest / best /
-change-vs-first stats, and a strip showing which flags keep firing across
-sessions. Legacy sessions that predate the newer metrics simply contribute
+**Progress dashboard (`/progress`)** — one card per metric with data: an
+inline-SVG trend chart of the session means (dots on sessions, dashed line +
+shaded band at the flag threshold), latest / best / change-vs-first stats,
+and a strip showing which flags keep firing across sessions. With
+`billing.progress_pro_only` on (the shipped config), it's a Pro surface:
+free accounts see an honest locked teaser instead, and the weekly digest
+links them to their session history rather than the lock screen. Legacy sessions that predate the newer metrics simply contribute
 the fields they have; sessions with no readable numbers are skipped. With
 fewer than two measured sessions the page says so honestly instead of
 charting a single dot. Requires `web.require_account: true` (there is no
@@ -665,7 +691,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, email-code sign-in (`passwordless_login`, shipped on — self-disables without email delivery), weekly digest on/off (`digest_enabled`) |
-| `billing` | free/Pro analyses per month, the coach-replay Pro gate (`replay_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
+| `billing` | free/Pro analyses per month, the coach-replay and progress-dashboard Pro gates (`replay_pro_only` / `progress_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
 ## Tests
