@@ -324,7 +324,7 @@ def test_signup_checkbox_is_opt_in(app):
     )
     assert get_user(app, "opted@example.com").digest_opt_in is True
 
-    assert "Email me one drill a week" in TestClient(app).get("/login").text
+    assert "Email me one drill a week" in TestClient(app).get("/signup").text
 
 
 def test_account_page_toggle(app):

@@ -316,7 +316,8 @@ memberships): create a product whose variant SKUs map to days of access in
 | `SHOPIFY_STORE_DOMAIN` | `yourstore.myshopify.com` (shared with the gear shop) |
 | `SHOPIFY_WEBHOOK_SECRET` | signing secret from Settings → Notifications → Webhooks |
 
-A paid order extends Pro on the account matching the checkout email; a
+A paid order first extends Pro on the account linked to the stable Shopify
+customer ID, then falls back to the account matching the checkout email; a
 purchase made before signup is claimed automatically when that email creates
 an account or logs in. Replayed webhooks never double-grant, cancelled
 orders take their days back, and Shopify's Subscriptions app works
@@ -469,21 +470,24 @@ page using the same codes. No third-party runtime dependency is required.
 
 ### One account: email-code sign-in
 
-With email delivery configured, the login page stops asking for a password
-(`web.passwordless_login`, shipped and defaulted `true`): it asks for the
-email first, mails a six-digit sign-in code, and a correct code signs the
-visitor in. The same step handles every account state, which is what makes
-store and app identity **one account** — the email used at Shopify
-checkout *is* the app login:
+With email delivery configured, the signed-out experience presents separate
+**Create free account** (`GET /signup`) and **Sign in** (`GET /login`) choices.
+Both use the same private email-code backend
+(`web.passwordless_login`, shipped and defaulted `true`): the visitor enters
+an email, receives a six-digit code, and verifies it before any new account is
+created. Keeping one verified backend for both visible intentions is what
+makes store and app identity **one account**. Existing users keep signing in
+with their current verified CaddieInsight email; a new user who bought first
+creates the app account with the email used at Shopify checkout:
 
 - an existing app account simply logs in;
 - an unclaimed store account (provisioned by the customer webhooks) logs
   in **and is claimed on the spot** — the code proves control of the
   inbox, which is strictly stronger proof than the old password-claim,
   so the Shopify link and any Pro time carry over with no extra step;
-- an email with no account at all gets one created — signup and login are
-  the same "Continue with email" flow, and there is no separate signup to
-  find.
+- an email with no account at all gets a Free account after code
+  verification. The dedicated signup page explains the free allowance and
+  that no purchase or Shopify customer account is required.
 
 Neither the page nor the email reveals which of the three happened: every
 address gets the same "check your email" screen and the same message, so
@@ -494,13 +498,13 @@ draw on the login throttle limits (`web.login_attempts_per_15min`, per
 email and per IP). A correct code also marks the email verified, which is
 what the store-claim rests on.
 
-Passwords stay a first-class fallback, never a dead end: accounts that
-have one can always use it ("Use your password instead" on the login
-page, where password reset also lives), and passwordless accounts can add
-one from the account page ("Add a password (optional)") — being logged in,
-which took a code, is the proof of ownership. Setting a password by
-signing up with a passwordless account's email also works, and requires
-the emailed code first while email is on.
+Passwords stay a first-class fallback, never a dead end: accounts that have
+one can always use it, and password recovery is linked directly from the
+primary sign-in screen. Passwordless accounts can add one from the Account
+page ("Add a password (optional)"); accounts that already have one get a
+visible change/reset link there. Setting a password by signing up with a
+passwordless account's email also works, and requires the emailed code first
+while email is on.
 
 The whole feature is inert without a complete transport:
 `SWINGLAB_MAIL_FROM` plus either `RESEND_API_KEY` or `SWINGLAB_SMTP_URL`.

@@ -262,6 +262,8 @@ def create_app(
                 shop_enabled=shop_active(),
                 mail_enabled=mailer.enabled(),
                 passwordless_login=passwordless_active(),
+                storefront_url=(cfg.shop.get("store_url") or "").rstrip("/"),
+                current_path=request.url.path,
                 club_labels=CLUB_LABELS,
                 **context,
             )
@@ -323,7 +325,10 @@ def create_app(
     def home(request: Request):
         user = current_user(request)
         if cfg.web.get("require_account") and user is None:
-            return render("web_login.html.j2", request, error=None, landing=True)
+            return render(
+                "web_login.html.j2", request, error=None, landing=True,
+                auth_view="landing",
+            )
         left = quota_left(user)
         # The conversion moment: a free user out of analyses sees their own
         # trend next to the upgrade path — only when it truly exists.
@@ -424,26 +429,44 @@ def create_app(
             return RedirectResponse("/", status_code=303)
         return render(
             "web_login.html.j2", request, error=None, landing=False,
+            auth_view="login",
             prefill_email=request.query_params.get("email", ""),
             # ?password=1 is the "use your password instead" fallback: the
             # classic signup + login cards, even while code sign-in is on.
             show_password="password" in request.query_params,
         )
 
+    @app.get("/signup", response_class=HTMLResponse)
+    def signup_page(request: Request):
+        if current_user(request) is not None:
+            return RedirectResponse("/", status_code=303)
+        return render(
+            "web_login.html.j2", request, error=None, landing=False,
+            auth_view="signup",
+            prefill_email=request.query_params.get("email", ""),
+            show_password="password" in request.query_params,
+        )
+
     # -- email-code sign-in (primary once email delivery is configured) ----
     @app.post("/login/email")
-    def login_email(request: Request, email: str = Form("")):
+    def login_email(
+        request: Request,
+        email: str = Form(""),
+        auth_intent: str = Form("login"),
+    ):
         """Step one of "Continue with email": send a sign-in code. The
         response — and the email itself — is identical whether the address
         has an account, an unclaimed store account, or nothing at all, so
         the form can't be used to test which emails exist."""
         if not passwordless_active():
             raise HTTPException(503, "Email sign-in requires email to be set up.")
+        auth_view = "signup" if auth_intent == "signup" else "login"
         try:
             normalized = users.validate_email(email)
         except ValueError as exc:
             return render(
-                "web_login.html.j2", request, landing=False, error=str(exc)
+                "web_login.html.j2", request, landing=False, error=str(exc),
+                auth_view=auth_view,
             )
         # Same limits as password login (a code request costs an email and
         # a code row), keyed per client IP AND per target email — shared
@@ -457,6 +480,7 @@ def create_app(
             page = render(
                 "web_login.html.j2", request, landing=False,
                 error=THROTTLED_MESSAGE,
+                auth_view=auth_view,
             )
             page.status_code = 429
             return page
@@ -466,9 +490,9 @@ def create_app(
             send_code_email(normalized, "login")
         except mailer.EmailDeliveryError as exc:
             delivery_context = (
-                {"code_email": normalized}
+                {"code_email": normalized, "auth_view": auth_view}
                 if isinstance(exc, mailer.EmailDeliveryUncertain)
-                else {"prefill_email": normalized}
+                else {"prefill_email": normalized, "auth_view": auth_view}
             )
             page = render(
                 "web_login.html.j2", request, landing=False,
@@ -478,12 +502,15 @@ def create_app(
             return page
         return render(
             "web_login.html.j2", request, landing=False, error=None,
-            code_email=normalized,
+            code_email=normalized, auth_view=auth_view,
         )
 
     @app.post("/login/code")
     def login_code(
-        request: Request, email: str = Form(""), code: str = Form("")
+        request: Request,
+        email: str = Form(""),
+        code: str = Form(""),
+        auth_intent: str = Form("login"),
     ):
         """Step two: a correct code signs the user in — into an existing
         account, an unclaimed store account (claimed on the spot, Pro and
@@ -492,6 +519,7 @@ def create_app(
         wrong-code message never depends on the account's state."""
         if not passwordless_active():
             raise HTTPException(503, "Email sign-in requires email to be set up.")
+        auth_view = "signup" if auth_intent == "signup" else "login"
         ip = client_ip(request)
         normalized = email.strip().lower()
         if not (
@@ -501,6 +529,7 @@ def create_app(
             page = render(
                 "web_login.html.j2", request, landing=False,
                 code_email=normalized, error=THROTTLED_MESSAGE,
+                auth_view=auth_view,
             )
             page.status_code = 429
             return page
@@ -512,6 +541,7 @@ def create_app(
             return render(
                 "web_login.html.j2", request, landing=False,
                 code_email=normalized,
+                auth_view=auth_view,
                 error="That code didn't match (or expired) — check the "
                       "email, or send yourself a fresh code.",
             )
@@ -519,7 +549,8 @@ def create_app(
             user = users.verify_email_signin(normalized)
         except ValueError as exc:  # can't happen for an email a code was
             return render(       # issued to, but never 500 on crafted input
-                "web_login.html.j2", request, landing=False, error=str(exc)
+                "web_login.html.j2", request, landing=False, error=str(exc),
+                auth_view=auth_view,
             )
         claim_pending_pro(user)
         request.session["user_id"] = user.id
@@ -544,6 +575,7 @@ def create_app(
             page = render(
                 "web_login.html.j2", request, landing=False,
                 error=THROTTLED_MESSAGE, show_password=True,
+                auth_view="login",
             )
             page.status_code = 429
             return page
@@ -562,15 +594,17 @@ def create_app(
                         "web_login.html.j2", request, landing=False,
                         error=None, code_notice=True,
                         prefill_email=pending.email,
+                        auth_view="login",
                     )
                 return render(
                     "web_login.html.j2", request, landing=False, error=None,
                     stub_notice=True, prefill_email=pending.email,
-                    show_password=True,
+                    show_password=True, auth_view="signup",
                 )
             return render(
                 "web_login.html.j2", request, landing=False,
                 error="Wrong email or password.", show_password=True,
+                auth_view="login",
             )
         claim_pending_pro(user)
         request.session["user_id"] = user.id
@@ -593,6 +627,7 @@ def create_app(
             page = render(
                 "web_login.html.j2", request, landing=False,
                 error=THROTTLED_MESSAGE, show_password=True,
+                auth_view="signup",
             )
             page.status_code = 429
             return page
@@ -601,7 +636,7 @@ def create_app(
         except ValueError as exc:
             return render(
                 "web_login.html.j2", request, landing=False, error=str(exc),
-                show_password=True,
+                show_password=True, auth_view="signup",
             )
         # Record only attempts that clear validation — a typo'd password
         # doesn't cost the visitor one of their slots.
@@ -623,6 +658,7 @@ def create_app(
                             verify_email=normalized,
                             verify_password=password,
                             verify_digest="on" if wants_digest else "",
+                            auth_view="signup",
                         )
                     else:
                         page = render(
@@ -630,6 +666,7 @@ def create_app(
                             error=delivery_error_message(exc),
                             show_password=True,
                             prefill_email=normalized,
+                            auth_view="signup",
                         )
                     page.status_code = 503
                     return page
@@ -637,12 +674,14 @@ def create_app(
                     "web_login.html.j2", request, landing=False, error=None,
                     verify_email=normalized, verify_password=password,
                     verify_digest="on" if wants_digest else "",
+                    auth_view="signup",
                 )
             if not users.check_email_code(normalized, "claim", code):
                 return render(
                     "web_login.html.j2", request, landing=False,
                     verify_email=normalized, verify_password=password,
                     verify_digest="on" if wants_digest else "",
+                    auth_view="signup",
                     error="That code didn't match (or expired) — check the "
                           "email, or resubmit without a code for a new one.",
                 )
@@ -651,7 +690,7 @@ def create_app(
         except ValueError as exc:
             return render(
                 "web_login.html.j2", request, landing=False, error=str(exc),
-                show_password=True,
+                show_password=True, auth_view="signup",
             )
         if wants_digest:  # the signup checkbox is UNCHECKED by default
             users.set_digest_opt_in(user.id, True)
@@ -666,7 +705,7 @@ def create_app(
             raise HTTPException(503, "Password reset requires email to be set up.")
         return render(
             "web_login.html.j2", request, error=None, landing=False,
-            reset_stage="request",
+            reset_stage="request", auth_view="login",
         )
 
     @app.post("/reset/request")
@@ -687,6 +726,7 @@ def create_app(
         return render(
             "web_login.html.j2", request, error=None, landing=False,
             reset_stage="confirm", reset_email=normalized,
+            auth_view="login",
         )
 
     @app.post("/reset/confirm")
@@ -704,6 +744,7 @@ def create_app(
             return render(
                 "web_login.html.j2", request, landing=False,
                 reset_stage="confirm", reset_email=normalized,
+                auth_view="login",
                 error="Password must be at least 8 characters.",
             )
         user = users.get_by_email(normalized)
@@ -711,6 +752,7 @@ def create_app(
             return render(
                 "web_login.html.j2", request, landing=False,
                 reset_stage="confirm", reset_email=normalized,
+                auth_view="login",
                 error="That code didn't match (or expired) — request a new one.",
             )
         users.set_password(user.id, password)

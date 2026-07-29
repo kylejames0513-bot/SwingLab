@@ -27,6 +27,7 @@ ACCOUNT_AND_API_ROUTES = {
     ("/login", frozenset({"POST"})),
     ("/login/email", frozenset({"POST"})),
     ("/login/code", frozenset({"POST"})),
+    ("/signup", frozenset({"GET"})),
     ("/signup", frozenset({"POST"})),
     ("/reset", frozenset({"GET"})),
     ("/reset/request", frozenset({"POST"})),

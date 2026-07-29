@@ -195,7 +195,7 @@
       "settings": {
         "anchor": "shop",
         "heading": "Start with CaddieInsight",
-        "subheading": "Buy Pro here, then sign in with the same email in the CaddieInsight app"
+        "subheading": "Buy Pro here, then open CaddieInsight to use it"
       }
     },
     "comparison": {
@@ -268,7 +268,7 @@
         "primary_url": "shopify://products/swinglab-pro",
         "secondary_label": "Start free",
         "secondary_url": "https://app.caddieinsight.com",
-        "footnote": "Pro unlocks automatically on the CaddieInsight account matching your checkout email. Bought before signing up? It's claimed when that email creates an account."
+        "footnote": "Already use CaddieInsight? Keep signing in with your current account email. New here? Create your account with the email used at Shopify checkout."
       }
     },
     "coach_notes": {
@@ -335,7 +335,7 @@
           "type": "qa",
           "settings": {
             "question": "How does Pro unlock after I buy it here?",
-            "answer": "A paid order automatically extends Pro on the CaddieInsight account that matches your checkout email. If you buy before creating an account, the purchase is claimed the moment that email signs up or logs in."
+            "answer": "If you already use CaddieInsight, Pro connects to your linked account and you should keep signing in with its current email. If you are new, create your account with the email used at Shopify checkout."
           }
         },
         "q_lefty": {

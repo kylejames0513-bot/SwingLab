@@ -51,10 +51,57 @@ def upload(client, filename="swing.mov"):
 def test_logged_out_visitors_see_landing_and_cannot_analyze(app):
     client = TestClient(app)
     html = client.get("/").text
-    assert "Create account" in html and "Log in" in html
+    assert "Create a free account" in html and "Sign in" in html
+    assert "2 full analyses every month" in html
+    assert "Automated estimates from a single camera" in html
     assert upload(client).status_code == 401
     assert client.get("/sessions", follow_redirects=False).status_code == 303
     assert client.get("/api/sessions").status_code == 401
+
+
+def test_header_connects_store_app_and_account_paths(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "example.myshopify.com")
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.shop["store_url"] = "https://caddieinsight.com"
+    cfg.brand["logo_url"] = "https://cdn.example.test/caddieinsight-logo.png"
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+
+    page = client.get("/login").text
+    assert 'href="https://caddieinsight.com"' in page
+    assert 'aria-label="CaddieInsight home"' in page
+    assert 'href="/signup"' in page and 'href="/login"' in page
+    assert 'href="/shop"' in page and 'href="/pricing"' in page
+    assert 'href="https://caddieinsight.com/cart"' in page
+    assert 'href="https://caddieinsight.com/account">Orders</a>' in page
+    assert 'src="https://cdn.example.test/caddieinsight-logo.png"' in page
+    assert "App sign in" in page
+    assert 'aria-controls="sl-nav"' in page
+
+
+def test_open_mode_keeps_public_history_navigation(tmp_path):
+    cfg = Config()
+    cfg.web["require_account"] = False
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+
+    page = client.get("/").text
+    assert 'href="/sessions"' in page
+    assert 'href="/progress"' not in page
+    assert 'href="/account"' not in page
+
+
+def test_free_account_landing_uses_configured_brand_and_allowance(tmp_path):
+    cfg = Config()
+    cfg.brand["name"] = "AceCoach"
+    cfg.brand["footer_text"] = "AceCoach swing analysis."
+    cfg.billing["free_per_month"] = 7
+    cfg.web["require_account"] = True
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+
+    page = client.get("/").text
+    assert "Create a free AceCoach account for 7 full analyses" in page
+    assert "CaddieInsight" not in page
 
 
 def test_signup_login_logout_flow(app):
@@ -63,7 +110,7 @@ def test_signup_login_logout_flow(app):
     assert "Analyze your swing" in client.get("/").text
 
     client.post("/logout")
-    assert "Create account" in client.get("/").text
+    assert "Create a free account" in client.get("/").text
 
     bad = client.post(
         "/login", data={"email": "kyle@example.com", "password": "wrongwrong"}

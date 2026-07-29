@@ -18,6 +18,7 @@ DEFAULTS: dict[str, Any] = {
     "brand": {
         "name": "CaddieInsight",
         "logo_path": None,
+        "logo_url": None,
         "primary_color": "#1a5c38",
         "accent_color": "#e8720c",
         "footer_text": "CaddieInsight — swing analysis from a single phone video.",

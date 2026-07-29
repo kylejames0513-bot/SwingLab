@@ -49,6 +49,9 @@ mutation UpsertThemeFiles($themeId: ID!, $files: [OnlineStoreThemeFilesUpsertFil
 }
 ```
 
-with `files: [{ filename, body: { type: TEXT, value } }]`, theme id
-`gid://shopify/OnlineStoreTheme/154296680620`. Preview in Shopify admin
-under Online Store → Themes → swinglab-storefront-theme.
+with `files: [{ filename, body: { type: TEXT, value } }]`, draft theme id
+`gid://shopify/OnlineStoreTheme/154368999596`. Preview
+`caddieinsight-storefront-theme` in Shopify admin under
+Online Store → Themes before publishing it manually. Never upsert these
+working-copy changes directly to the live MAIN theme
+(`gid://shopify/OnlineStoreTheme/154372636844`).

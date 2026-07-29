@@ -3,56 +3,313 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14472c">
 <title>{% block title %}{{ brand.name }}{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  :root { --primary: {{ brand.primary_color }}; --accent: {{ brand.accent_color }}; }
-  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-         margin: 0; background: #fafafa; color: #1c1c1c; }
-  header { background: var(--primary); color: white; padding: 16px 32px;
-           display: flex; align-items: center; justify-content: space-between;
-           flex-wrap: wrap; gap: 8px; }
-  header h1 { margin: 0; font-size: 1.5rem; }
-  header h1 a { color: inherit; text-decoration: none; }
-  nav a { color: rgba(255,255,255,0.9); text-decoration: none; margin-left: 20px;
-          font-size: 0.95rem; white-space: nowrap; }
-  nav a:hover { text-decoration: underline; }
-  main { max-width: 640px; margin: 40px auto; padding: 0 24px; }
-  .card { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 24px; }
-  button, a.button { display: inline-block; margin-top: 20px; background: var(--accent);
-           color: white; border: none; padding: 12px 28px; font-size: 1rem;
-           border-radius: 6px; cursor: pointer; text-decoration: none; }
-  button:hover, a.button:hover { filter: brightness(1.08); }
-  button:disabled { background: #bbb; cursor: default; filter: none; }
-  a.button.secondary { background: white; color: var(--primary);
-                       border: 1px solid var(--primary); }
-  .hint { color: #666; font-size: 0.85rem; margin-top: 4px; }
-  .bar { background: #e6e6e6; border-radius: 6px; height: 14px; margin: 14px 0 6px; }
+  :root {
+    --primary: {{ brand.primary_color }};
+    --accent: {{ brand.accent_color }};
+    --sl-bg: #f7f5f0;
+    --sl-bg-card: #fffdf9;
+    --sl-ink: #17201a;
+    --sl-ink-soft: #4a544c;
+    --sl-ink-muted: #7a8279;
+    --sl-green: #14472c;
+    --sl-green-btn: #1a5c38;
+    --sl-green-ink: #e9f2ec;
+    --sl-orange: #e8720c;
+    --sl-orange-soft: #fff3e4;
+    --sl-border: #e3ded3;
+    --sl-pad-x: clamp(20px, 5vw, 56px);
+    --sl-font-sans: "Archivo", Helvetica, Arial, sans-serif;
+    --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--sl-bg);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--sl-green-btn); }
+  a:hover { color: var(--sl-orange); }
+  :focus-visible {
+    outline: 2px solid var(--sl-green-btn);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+  .sl-skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    background: var(--sl-green);
+    color: var(--sl-green-ink);
+    padding: 10px 18px;
+    border-radius: 0 0 10px 0;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .sl-skip:focus-visible { left: 0; outline-color: var(--sl-orange); outline-offset: -3px; }
+  .sl-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: clamp(16px, 3vw, 32px);
+    min-height: 72px;
+    padding: 0 var(--sl-pad-x);
+    background: rgba(247, 245, 240, 0.94);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--sl-border);
+  }
+  .sl-header__logo {
+    color: var(--sl-green);
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    font-size: 21px;
+    font-weight: 900;
+    letter-spacing: -0.025em;
+    text-decoration: none;
+  }
+  .sl-header__logo-img { display: block; height: 38px; width: auto; }
+  .sl-header__nav {
+    display: flex;
+    align-items: center;
+    gap: clamp(18px, 2.4vw, 30px);
+    margin-left: auto;
+  }
+  .sl-header__link {
+    color: var(--sl-ink);
+    font-size: 15px;
+    font-weight: 500;
+    padding: 4px 0;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .sl-header__link:hover { color: var(--sl-green-btn); }
+  .sl-header__link.is-current {
+    box-shadow: inset 0 -2px 0 var(--sl-orange);
+    color: var(--sl-green);
+    font-weight: 700;
+  }
+  .sl-header__mobile-only { display: none; }
+  .sl-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .sl-header__action {
+    color: var(--sl-ink);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .sl-header__action:hover { color: var(--sl-green-btn); }
+  .sl-header__cta,
+  .sl-header__cart {
+    border: 1.5px solid var(--sl-green);
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 38px;
+    padding: 7px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .sl-header__cta { background: var(--sl-green); color: var(--sl-green-ink); }
+  .sl-header__cta:hover { background: var(--sl-green-btn); color: #fff; }
+  .sl-header__cart { background: transparent; color: var(--sl-green); }
+  .sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange); }
+  .sl-header__toggle {
+    display: none;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    width: 42px;
+    height: 42px;
+    background: none;
+    border: 0;
+    cursor: pointer;
+    padding: 9px;
+    margin: 0;
+  }
+  .sl-header__toggle span {
+    display: block;
+    width: 100%;
+    height: 2px;
+    background: var(--sl-ink);
+    border-radius: 2px;
+    transition: transform .2s ease, opacity .2s ease;
+  }
+  .sl-header__toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+  .sl-header__toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
+  .sl-header__toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+  main { max-width: 680px; margin: 48px auto; padding: 0 24px; }
+  .card {
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border);
+    border-radius: 16px;
+    padding: clamp(22px, 4vw, 32px);
+    box-shadow: 0 1px 2px rgba(15,42,27,.04), 0 16px 36px -24px rgba(15,42,27,.24);
+  }
+  button, a.button {
+    display: inline-block;
+    margin-top: 20px;
+    background: var(--sl-green-btn);
+    color: white;
+    border: 1.5px solid var(--sl-green-btn);
+    padding: 12px 24px;
+    font: inherit;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  button:hover, a.button:hover { background: var(--sl-green); color: white; }
+  button:disabled { background: #bbb; border-color: #bbb; cursor: default; }
+  a.button.secondary { background: transparent; color: var(--sl-green); border-color: var(--sl-green); }
+  a.button.secondary:hover { background: var(--sl-green); color: white; }
+  .hint { color: var(--sl-ink-soft); font-size: 0.88rem; margin-top: 4px; }
+  .bar { background: #e6e3dc; border-radius: 6px; height: 14px; margin: 14px 0 6px; }
   .bar > div { background: var(--accent); border-radius: 6px; height: 100%;
                transition: width 0.4s; min-width: 6px; }
-  .bar-label { color: #555; font-size: 0.9rem; }
+  .bar-label { color: var(--sl-ink-soft); font-size: 0.9rem; }
   .error { color: #b3261e; white-space: pre-wrap; }
-  .disclaimer { color: #666; font-style: italic; font-size: 0.85rem; margin-top: 24px; }
-  footer { text-align: center; color: #777; font-size: 0.85rem; padding: 24px; }
+  .disclaimer { color: var(--sl-ink-muted); font-style: italic; font-size: 0.85rem; margin-top: 24px; }
+  footer { text-align: center; color: var(--sl-ink-muted); font-size: 0.85rem; padding: 28px 24px; }
+  @media (max-width: 980px) {
+    .sl-header__nav {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      display: none;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      margin: 0;
+      padding: 10px var(--sl-pad-x) 24px;
+      background: var(--sl-bg);
+      border-bottom: 1px solid var(--sl-border);
+      box-shadow: 0 18px 30px -18px rgba(15,42,27,.25);
+    }
+    .sl-header__nav.is-open { display: flex; }
+    .sl-header__link { width: 100%; padding: 12px 0; font-size: 17px; }
+    .sl-header__link.is-current { box-shadow: none; color: var(--sl-orange); }
+    .sl-header__mobile-only { display: block; }
+    .sl-header__toggle { display: flex; }
+    .sl-header__actions .sl-header__action,
+    .sl-header__actions .sl-header__cta { display: none; }
+    .sl-header__cart { min-height: 34px; padding: 5px 12px; }
+  }
+  @media (max-width: 560px) {
+    .sl-header { min-height: 64px; }
+    .sl-header__logo { font-size: 18px; }
+    .sl-header__logo-img { height: 26px; max-width: 165px; object-fit: contain; }
+    .sl-header__actions .sl-header__cta { display: none; }
+    main { margin-top: 32px; padding: 0 18px; }
+  }
+  @media (max-width: 360px) {
+    .sl-header { gap: 6px; padding-inline: 12px; }
+    .sl-header__actions { gap: 6px; }
+    .sl-header__logo-img { height: 22px; max-width: 132px; }
+    .sl-header__cart { padding: 5px 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sl-header__toggle span { transition: none; }
+  }
   {% block style %}{% endblock %}
 </style>
 </head>
 <body>
-<header>
-  <h1><a href="/">{{ brand.name }}</a></h1>
-  <nav>
-    {%- if user -%}
-      <a href="/">New analysis</a><a href="/sessions">History</a>{% if require_account %}<a href="/progress">Progress</a>{% endif %}{% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}<a href="/account">Account</a>
-    {%- elif require_account -%}
-      {% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}<a href="/pricing">Pricing</a><a href="/login">Log in</a>
-    {%- else -%}
-      <a href="/">New analysis</a><a href="/sessions">History</a>{% if shop_enabled %}<a href="/shop">Gear</a>{% endif %}
-    {%- endif -%}
+<a class="sl-skip" href="#MainContent">Skip to content</a>
+<header class="sl-header" data-sl-header>
+  <a class="sl-header__logo" href="{{ storefront_url or '/' }}" aria-label="{{ brand.name }} home">
+    {% if brand.logo_url %}
+      <img class="sl-header__logo-img" src="{{ brand.logo_url }}" alt="{{ brand.name }}">
+    {% else %}
+      {{ brand.name | upper }}
+    {% endif %}
+  </a>
+  <nav class="sl-header__nav" id="sl-nav" aria-label="Main navigation">
+    {% if storefront_url %}<a class="sl-header__link" href="{{ storefront_url }}">Home</a>{% endif %}
+    <a class="sl-header__link{% if current_path == '/' %} is-current{% endif %}" href="/" {% if current_path == '/' %}aria-current="page"{% endif %}>Analyze</a>
+    {% if user or not require_account %}
+      <a class="sl-header__link{% if current_path == '/sessions' %} is-current{% endif %}" href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
+      {% if user and require_account %}<a class="sl-header__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress</a>{% endif %}
+    {% endif %}
+    {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
+    <a class="sl-header__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" {% if current_path == '/pricing' %}aria-current="page"{% endif %}>Pro</a>
+    {% if user %}
+      <a class="sl-header__link sl-header__mobile-only{% if current_path == '/account' %} is-current{% endif %}" href="/account" {% if current_path == '/account' %}aria-current="page"{% endif %}>Account</a>
+    {% else %}
+      <a class="sl-header__link sl-header__mobile-only{% if current_path == '/login' %} is-current{% endif %}" href="/login" {% if current_path == '/login' %}aria-current="page"{% endif %}>Sign in</a>
+      <a class="sl-header__link sl-header__mobile-only{% if current_path == '/signup' %} is-current{% endif %}" href="/signup" {% if current_path == '/signup' %}aria-current="page"{% endif %}>Create free account</a>
+    {% endif %}
+    {% if storefront_url %}<a class="sl-header__link sl-header__mobile-only" href="{{ storefront_url }}/cart">Cart</a>{% endif %}
+    {% if storefront_url %}<a class="sl-header__link sl-header__mobile-only" href="{{ storefront_url }}/account">Orders</a>{% endif %}
   </nav>
+  <div class="sl-header__actions">
+    {% if storefront_url %}<a class="sl-header__action" href="{{ storefront_url }}/account">Orders</a>{% endif %}
+    {% if user %}
+      <a class="sl-header__action" href="/account">Account</a>
+    {% else %}
+      <a class="sl-header__action" href="/login">App sign in</a>
+      <a class="sl-header__cta" href="/signup">Start free</a>
+    {% endif %}
+    {% if storefront_url %}<a class="sl-header__cart" href="{{ storefront_url }}/cart">Cart</a>{% endif %}
+    <button class="sl-header__toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sl-nav" data-nav-toggle>
+      <span></span><span></span><span></span>
+    </button>
+  </div>
 </header>
-<main>
+<main id="MainContent">
 {% block main %}{% endblock %}
 </main>
 <footer>{{ brand.footer_text }}</footer>
+<script>
+  (function () {
+    var header = document.querySelector('[data-sl-header]');
+    if (!header) return;
+    var button = header.querySelector('[data-nav-toggle]');
+    var nav = header.querySelector('#sl-nav');
+    if (!button || !nav) return;
+    function setOpen(open) {
+      nav.classList.toggle('is-open', open);
+      button.setAttribute('aria-expanded', open ? 'true' : 'false');
+    }
+    button.addEventListener('click', function () {
+      setOpen(!nav.classList.contains('is-open'));
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key === 'Escape' && nav.classList.contains('is-open')) {
+        setOpen(false);
+        button.focus();
+      }
+    });
+    document.addEventListener('click', function (event) {
+      if (nav.classList.contains('is-open') && !header.contains(event.target)) {
+        setOpen(false);
+      }
+    });
+  })();
+</script>
 {% block script %}{% endblock %}
 </body>
 </html>

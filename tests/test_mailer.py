@@ -551,9 +551,9 @@ def test_password_reset_flow(app, outbox):
     )
     client.post("/logout")
 
-    # With email on, code sign-in is the primary flow — the password card
-    # (and its reset link) lives behind "use your password instead".
-    assert "Use your password instead" in client.get("/login").text
+    # Password help is visible from the primary code-sign-in screen instead
+    # of being hidden behind the password fallback.
+    assert "Forgot or reset your password?" in client.get("/login").text
     assert "Forgot your password?" in client.get("/login?password=1").text
     assert "Reset your password" in client.get("/reset").text
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import math
+import os
 from pathlib import Path
 from typing import Any
 
@@ -148,6 +149,8 @@ def write_report_html(
         practice_plan=plan,
         drill_media=drill_media,
         gear_url=gear_shop_url(cfg),
+        storefront_url=(cfg.shop.get("store_url") or "").rstrip("/"),
+        app_url=(os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/"),
         sample_banner=sample_banner,
         analysis_fps=analysis_fps,
         replay_locked=replay_locked,

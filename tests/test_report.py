@@ -57,8 +57,10 @@ def branded_cfg() -> Config:
     return cfg
 
 
-def test_report_html_reflects_branding_and_content(tmp_path):
+def test_report_html_reflects_branding_and_content(tmp_path, monkeypatch):
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example-golf.test")
     cfg = branded_cfg()
+    cfg.shop["store_url"] = "https://example-golf.test"
     swings = [fake_swing(1), fake_swing(2), fake_swing(3)]
     stats = session_stats([s["metrics"] for s in swings])
     out = write_report_html(
@@ -75,6 +77,35 @@ def test_report_html_reflects_branding_and_content(tmp_path):
     assert html.count("media/slowmo_s") == 3
     assert "mean ± std" in html
     assert "rotation metadata: 90°" in html
+    assert 'aria-label="Report navigation"' in html
+    assert 'href="https://example-golf.test">Home</a>' in html
+    assert 'href="https://app.example-golf.test/">Analyze</a>' in html
+    assert 'href="https://app.example-golf.test/sessions">History</a>' in html
+    assert "fonts.googleapis.com" not in html
+
+
+def test_cli_report_stays_offline_and_has_no_broken_app_links(
+    tmp_path, monkeypatch
+):
+    monkeypatch.delenv("PUBLIC_BASE_URL", raising=False)
+    cfg = branded_cfg()
+    cfg.shop["store_url"] = ""
+    swing = fake_swing(1)
+    out = write_report_html(
+        tmp_path / "report.html",
+        fake_video(),
+        [swing],
+        session_stats([swing["metrics"]]),
+        [],
+        "right",
+        cfg,
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "fonts.googleapis.com" not in html
+    assert "fonts.gstatic.com" not in html
+    assert 'href="/"' not in html
+    assert 'href="/sessions"' not in html
+    assert 'aria-label="Report navigation"' not in html
 
 
 def test_metrics_json_valid_and_nan_becomes_null(tmp_path):

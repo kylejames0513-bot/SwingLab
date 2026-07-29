@@ -1,6 +1,14 @@
 {%- liquid
   assign menu = section.settings.menu
   assign app_url = section.settings.app_url
+  assign gear_url = routes.collections_url | append: '/swinglab-gear'
+  assign pro_product = all_products['swinglab-pro']
+  assign cap_product = all_products['swinglab-performance-cap']
+  assign method_page = pages['the-swinglab-method']
+  assign how_page = pages['how-swinglab-works']
+  assign faq_page = pages['faq']
+  assign shipping_page = pages['shipping-returns']
+  assign about_page = pages['about']
 
   comment
     A menu whose top-level links have children replaces the built-in
@@ -25,7 +33,7 @@
           <p class="sl-footer__tagline">{{ section.settings.tagline }}</p>
         {%- endif -%}
         {%- if app_url != blank -%}
-          <a class="sl-footer__applink" href="{{ app_url }}" target="_blank" rel="noopener">Open the app</a>
+          <a class="sl-footer__applink" href="{{ app_url }}">Open the app</a>
         {%- endif -%}
       </div>
 
@@ -43,20 +51,20 @@
       {%- else -%}
         <nav class="sl-footer__col" aria-label="Shop">
           <p class="sl-footer__head">Shop</p>
-          <a class="sl-footer__link" href="/collections/swinglab-gear">Training gear</a>
-          <a class="sl-footer__link" href="/products/swinglab-pro">Pro Membership</a>
-          <a class="sl-footer__link" href="/products/swinglab-performance-cap">Performance Cap</a>
+          <a class="sl-footer__link" href="{{ gear_url }}">Training gear</a>
+          {%- if pro_product != blank -%}<a class="sl-footer__link" href="{{ pro_product.url }}">Pro Membership</a>{%- endif -%}
+          {%- if cap_product != blank -%}<a class="sl-footer__link" href="{{ cap_product.url }}">Performance Cap</a>{%- endif -%}
         </nav>
         <nav class="sl-footer__col" aria-label="Learn">
           <p class="sl-footer__head">Learn</p>
-          <a class="sl-footer__link" href="/pages/the-swinglab-method">The Method</a>
-          <a class="sl-footer__link" href="/pages/how-swinglab-works">How CaddieInsight Works</a>
-          <a class="sl-footer__link" href="/pages/faq">FAQ</a>
+          {%- if method_page != blank -%}<a class="sl-footer__link" href="{{ method_page.url }}">The Method</a>{%- endif -%}
+          {%- if how_page != blank -%}<a class="sl-footer__link" href="{{ how_page.url }}">How CaddieInsight Works</a>{%- endif -%}
+          {%- if faq_page != blank -%}<a class="sl-footer__link" href="{{ faq_page.url }}">FAQ</a>{%- endif -%}
         </nav>
         <nav class="sl-footer__col" aria-label="Support">
           <p class="sl-footer__head">Support</p>
-          <a class="sl-footer__link" href="/pages/shipping-returns">Shipping &amp; Returns</a>
-          <a class="sl-footer__link" href="/pages/about">About</a>
+          {%- if shipping_page != blank -%}<a class="sl-footer__link" href="{{ shipping_page.url }}">Shipping &amp; Returns</a>{%- endif -%}
+          {%- if about_page != blank -%}<a class="sl-footer__link" href="{{ about_page.url }}">About</a>{%- endif -%}
         </nav>
       {%- endif -%}
     </div>

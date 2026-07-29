@@ -6,17 +6,29 @@
   },
   "layout": {
     "cart": {
+      "count_one": "Cart, 1 item",
+      "count_other": "Cart, {{ count }} items",
       "title": "Cart"
     },
     "navigation": {
-      "menu": "Menu"
+      "analyze": "Analyze",
+      "app_sign_in": "App sign in",
+      "caddieinsight_home": "CaddieInsight home",
+      "create_free_account": "Create free account",
+      "gear": "Gear",
+      "home": "Home",
+      "main": "Main navigation",
+      "menu": "Menu",
+      "orders": "Orders",
+      "pro": "Pro",
+      "start_free": "Start free"
     }
   },
   "products": {
     "product": {
       "add_to_cart": "Add to cart",
       "benefit_report": "Tempo, sway, hip-slide, and consistency metrics",
-      "benefit_unlock": "Access unlocks from your Shopify checkout email",
+      "benefit_unlock": "Access connects to your existing linked account, or your checkout email if you are new",
       "benefit_unlimited": "Unlimited swing analyses while Pro is active",
       "benefit_video": "Key frames, centerline overlay, and slow-motion clips",
       "includes": "CaddieInsight Pro includes",
@@ -28,7 +40,7 @@
       "purchase_options": "Purchase options",
       "show_image": "Show image {{ number }}",
       "sold_out": "Sold out",
-      "unlock_body": "After checkout, create or log in to CaddieInsight with the same email you used in Shopify. When the paid-order webhook arrives, Pro is added to that account.",
+      "unlock_body": "Already use CaddieInsight? Sign in with your current CaddieInsight email. New here? Create your account with the email used at Shopify checkout. Pro connects automatically when the paid-order webhook arrives.",
       "unlock_heading": "How Pro unlocks"
     }
   }

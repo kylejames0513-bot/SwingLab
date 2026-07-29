@@ -35,19 +35,29 @@
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
   }
-  body { font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-         margin: 0; color: #1c1c1c; background: #fafafa; }
+  body { font-family: Arial, Helvetica, sans-serif;
+         margin: 0; color: #17201a; background: #f7f5f0; }
   .sample-banner { background: var(--accent); color: white; padding: 10px 32px;
                    display: flex; align-items: center; justify-content: center;
                    gap: 14px; flex-wrap: wrap; font-size: 0.95rem; }
   .sample-banner a { color: white; font-weight: 700; text-decoration: underline;
                      white-space: nowrap; }
-  header { background: var(--primary); color: white; padding: 20px 32px;
-           display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  header img.logo { height: 44px; }
-  header h1 { margin: 0; font-size: 1.5rem; }
+  .report-header { background: rgba(247,245,240,.94); color: #17201a;
+           min-height: 72px; padding: 0 clamp(20px,5vw,56px);
+           display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+           border-bottom: 1px solid #e3ded3; }
+  .report-header img.logo { height: 36px; }
+  .report-brand { color: var(--primary); font-size: 21px; font-weight: 900;
+                  letter-spacing: -.025em; text-decoration: none; }
+  .report-label { color: #7a8279; font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+                  font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
+  .report-nav { display: flex; align-items: center; gap: 20px; margin-left: auto; }
+  .report-nav a { color: #17201a; font-size: 14px; font-weight: 600;
+                  text-decoration: none; white-space: nowrap; }
+  .report-nav a:hover { color: var(--primary); }
   .hchip { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.45);
-           border-radius: 999px; padding: 3px 12px; font-size: 0.8rem; }
+           border-radius: 999px; padding: 3px 12px; font-size: 0.8rem;
+           color: var(--primary); border-color: rgba(20,71,44,.28); }
   main { max-width: 1100px; margin: 0 auto; padding: 24px 32px 48px; }
   h2 { color: var(--primary); border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
   table { border-collapse: collapse; width: 100%; background: white; }
@@ -133,7 +143,9 @@
                 border-top: 1px solid #ddd; padding-top: 12px; }
   footer { text-align: center; color: #777; font-size: 0.85rem; padding: 16px; }
   @media (max-width: 640px) {
-    header { padding: 16px 20px; }
+    .report-header { align-items: flex-start; flex-direction: column;
+                     gap: 8px; padding: 16px 20px; }
+    .report-nav { gap: 16px; margin: 4px 0 0; width: 100%; }
     main { padding: 16px 16px 40px; }
   }
 </style>
@@ -145,11 +157,23 @@
   <a href="{{ sample_banner.cta_url }}">{{ sample_banner.cta_label }}</a>
 </div>
 {% endif %}
-<header>
+<header class="report-header">
   {% if brand.logo_path %}<img class="logo" src="{{ brand.logo_path }}" alt="logo">{% endif %}
-  <h1>{{ brand.name }} — Swing Report</h1>
+  {% if storefront_url %}
+    <a class="report-brand" href="{{ storefront_url }}">{{ brand.name | upper }}</a>
+  {% else %}
+    <span class="report-brand">{{ brand.name | upper }}</span>
+  {% endif %}
+  <span class="report-label">Swing report</span>
   {% if club_label %}<span class="hchip">{{ club_label }}</span>{% endif %}
   {% if dtl %}<span class="hchip">Down the line — tempo &amp; rhythm only</span>{% endif %}
+  {% if app_url %}
+    <nav class="report-nav" aria-label="Report navigation">
+      {% if storefront_url %}<a href="{{ storefront_url }}">Home</a>{% endif %}
+      <a href="{{ app_url }}/">Analyze</a>
+      <a href="{{ app_url }}/sessions">History</a>
+    </nav>
+  {% endif %}
 </header>
 <main>
 
