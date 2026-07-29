@@ -74,18 +74,22 @@ def test_header_connects_store_app_and_account_paths(tmp_path, monkeypatch):
     assert 'href="/signup"' in page
     assert 'href="/shop"' in page and 'href="/pricing"' in page
     assert 'href="https://caddieinsight.com/cart"' in page
-    assert 'href="https://caddieinsight.com/account">Orders</a>' in page
+    assert 'href="https://caddieinsight.com/account"' in page
+    assert "Orders &amp; subscriptions" in page
     assert 'src="https://cdn.example.test/caddieinsight-logo.png"' in page
     assert "Analyze a swing" in page
     assert "App sign in" not in page
     assert "Start free" not in page
     assert ">Analyze</a>" not in page
-    assert 'aria-controls="sl-nav"' in page
+    assert 'aria-controls="sl-mobile-menu"' in page
+    assert 'aria-haspopup="dialog"' in page
+    assert '<dialog class="sl-menu"' in page
 
     signup(client)
     signed_in_page = client.get("/").text
     assert 'href="/sessions"' in signed_in_page
-    assert 'href="/account">Account</a>' in signed_in_page
+    assert 'href="/account"' in signed_in_page
+    assert "CaddieInsight profile" in signed_in_page
     assert "Analyze a swing" in signed_in_page
 
 
@@ -98,6 +102,10 @@ def test_open_mode_keeps_public_history_navigation(tmp_path):
     assert 'href="/sessions"' in page
     assert 'href="/progress"' not in page
     assert 'href="/account"' not in page
+    assert 'href="/login"' not in page
+    assert 'href="/signup"' not in page
+    assert "<span>Sign in</span>" not in page
+    assert "<span>Create free account</span>" not in page
     assert "Analyze a swing" in page
 
 
