@@ -39,7 +39,6 @@ present.
 | Variable | Sensitivity | Purpose |
 | --- | --- | --- |
 | `SHOPIFY_STORE_DOMAIN` | Non-secret | Store hostname shared with the purchase bridge. |
-| `SHOPIFY_STOREFRONT_TOKEN` | Secret | Read-only Storefront API credential. |
 | `SHOPIFY_API_VERSION` | Non-secret | Optional Storefront API version override; code supplies a default. |
 
 ## Stripe billing

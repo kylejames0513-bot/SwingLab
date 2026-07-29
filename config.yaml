@@ -222,10 +222,10 @@ billing:
 
 shop:
   enabled: true              # gear shop pages + per-analysis recommendations.
-                             # Also needs SHOPIFY_STORE_DOMAIN and
-                             # SHOPIFY_STOREFRONT_TOKEN in the environment —
-                             # inert until both are set. Products and prices
-                             # live in Shopify, never here.
+                             # Also needs SHOPIFY_STORE_DOMAIN in the
+                             # environment — inert until set. The app reads
+                             # the public swinglab-gear collection without a
+                             # token. Products and prices live in Shopify.
   cache_minutes: 10          # in-memory product list cache (per-process)
   tag_prefix: "swinglab:"    # products tagged swinglab:tempo / swinglab:sway /
                              # swinglab:hip-slide / swinglab:consistency /

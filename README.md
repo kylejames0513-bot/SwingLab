@@ -533,15 +533,15 @@ products in Shopify to wire them up:
 | `swinglab:general` | anything (pads the list; what a clean swing sees) |
 
 Like payments, the shop is **inert until configured** — no link, no page —
-via two environment variables:
+through the store domain:
 
 | Variable | What it is |
 | --- | --- |
 | `SHOPIFY_STORE_DOMAIN` | `yourstore.myshopify.com` (or the custom domain) |
-| `SHOPIFY_STOREFRONT_TOKEN` | Storefront API access token (Shopify admin → Settings → Apps and sales channels → Develop apps → create an app with the Storefront API scope) |
 
 Products, prices, and images live in Shopify — manage them in the Shopify
-admin, never in code. The product list is cached in memory
+admin, add the Gear products to the public `swinglab-gear` collection, and
+never duplicate them in code. The product list is cached in memory
 (`shop.cache_minutes`), and a Shopify outage degrades to the last cached
 list instead of an error. "Buy" links go to the Shopify storefront;
 CaddieInsight never touches checkout.
