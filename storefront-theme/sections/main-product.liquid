@@ -1,6 +1,10 @@
 {%- assign current = product.selected_or_first_available_variant -%}
 {%- assign main_alt = product.featured_media.alt | default: product.title -%}
 {%- assign selected_selling_plan = product.selected_selling_plan -%}
+{%- assign current_is_lifetime = false -%}
+{%- if current.sku == 'SL-PRO-LIFE' -%}
+  {%- assign current_is_lifetime = true -%}
+{%- endif -%}
 
 {%- liquid
   assign is_membership = false
@@ -85,13 +89,21 @@
           <input type="hidden" name="id" value="{{ current.id }}">
         {%- endif -%}
 
-        {%- if product.selling_plan_groups.size > 0 -%}
+        <div id="sl-selling-plan-options" data-variant-id="{{ current.id }}">
+        {%- if current.selling_plan_allocations.size > 0 and current_is_lifetime == false -%}
+          {%- assign selected_plan_available = false -%}
+          {%- for allocation in current.selling_plan_allocations -%}
+            {%- if selected_selling_plan and selected_selling_plan.id == allocation.selling_plan.id -%}
+              {%- assign selected_plan_available = true -%}
+            {%- endif -%}
+          {%- endfor -%}
+
           <fieldset class="sl-plan-set">
             <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
 
-            {%- unless product.requires_selling_plan -%}
+            {%- unless current.requires_selling_plan -%}
               <label class="sl-plan-option">
-                <input type="radio" name="selling_plan" value="" {% unless selected_selling_plan %}checked{% endunless %}>
+                <input type="radio" name="selling_plan" value="" {% unless selected_plan_available %}checked{% endunless %}>
                 <span>
                   <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
                   <small>{{ 'products.product.one_time_help' | t }}</small>
@@ -100,34 +112,69 @@
             {%- endunless -%}
 
             {%- assign plan_checked = false -%}
-            {%- for group in product.selling_plan_groups -%}
-              {%- for selling_plan in group.selling_plans -%}
-                {%- assign is_checked = false -%}
-                {%- if selected_selling_plan and selected_selling_plan.id == selling_plan.id -%}
-                  {%- assign is_checked = true -%}
-                {%- elsif product.requires_selling_plan and selected_selling_plan == blank and plan_checked == false -%}
-                  {%- assign is_checked = true -%}
-                {%- endif -%}
+            {%- for allocation in current.selling_plan_allocations -%}
+              {%- assign selling_plan = allocation.selling_plan -%}
+              {%- assign is_checked = false -%}
+              {%- if selected_plan_available and selected_selling_plan.id == selling_plan.id -%}
+                {%- assign is_checked = true -%}
+              {%- elsif current.requires_selling_plan and selected_plan_available == false and plan_checked == false -%}
+                {%- assign is_checked = true -%}
+              {%- endif -%}
 
-                <label class="sl-plan-option">
-                  <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if is_checked %}checked{% endif %}>
-                  <span>
-                    <strong>{{ selling_plan.name }}</strong>
-                    {%- if selling_plan.description != blank -%}
-                      <small>{{ selling_plan.description }}</small>
-                    {%- else -%}
-                      <small>{{ group.name }}</small>
-                    {%- endif -%}
-                  </span>
-                </label>
+              <label class="sl-plan-option">
+                <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if is_checked %}checked{% endif %}>
+                <span>
+                  <strong>{{ selling_plan.name }}</strong>
+                  {%- if selling_plan.description != blank -%}
+                    <small>{{ selling_plan.description }}</small>
+                  {%- endif -%}
+                </span>
+              </label>
 
-                {%- if is_checked -%}
-                  {%- assign plan_checked = true -%}
-                {%- endif -%}
-              {%- endfor -%}
+              {%- if is_checked -%}
+                {%- assign plan_checked = true -%}
+              {%- endif -%}
             {%- endfor -%}
           </fieldset>
         {%- endif -%}
+        </div>
+
+        {%- for variant in product.variants -%}
+          {%- assign variant_is_lifetime = false -%}
+          {%- if variant.sku == 'SL-PRO-LIFE' -%}
+            {%- assign variant_is_lifetime = true -%}
+          {%- endif -%}
+          <template data-sl-selling-plan-template="{{ variant.id }}">
+            {%- if variant.selling_plan_allocations.size > 0 and variant_is_lifetime == false -%}
+              <fieldset class="sl-plan-set">
+                <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
+
+                {%- unless variant.requires_selling_plan -%}
+                  <label class="sl-plan-option">
+                    <input type="radio" name="selling_plan" value="" checked>
+                    <span>
+                      <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
+                      <small>{{ 'products.product.one_time_help' | t }}</small>
+                    </span>
+                  </label>
+                {%- endunless -%}
+
+                {%- for allocation in variant.selling_plan_allocations -%}
+                  {%- assign selling_plan = allocation.selling_plan -%}
+                  <label class="sl-plan-option">
+                    <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if variant.requires_selling_plan and forloop.first %}checked{% endif %}>
+                    <span>
+                      <strong>{{ selling_plan.name }}</strong>
+                      {%- if selling_plan.description != blank -%}
+                        <small>{{ selling_plan.description }}</small>
+                      {%- endif -%}
+                    </span>
+                  </label>
+                {%- endfor -%}
+              </fieldset>
+            {%- endif -%}
+          </template>
+        {%- endfor -%}
 
         <button type="submit" class="sl-btn sl-btn--primary sl-add" {% unless product.available %}disabled{% endunless %}>
           {% if product.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
@@ -209,10 +256,42 @@
     var priceCurrent = document.getElementById('sl-price-current');
     var priceCompare = document.getElementById('sl-price-compare');
     var saveBadge = document.getElementById('sl-badge-save');
+    var planContainer = document.getElementById('sl-selling-plan-options');
+    var planSelections = {};
+
+    function rememberPlanSelection() {
+      if (!planContainer || !planContainer.dataset.variantId) return;
+      var checked = planContainer.querySelector('input[name="selling_plan"]:checked');
+      planSelections[planContainer.dataset.variantId] = checked ? checked.value : '';
+    }
+
+    function renderSellingPlans(variantId) {
+      if (!planContainer) return;
+      rememberPlanSelection();
+      var template = document.querySelector(
+        'template[data-sl-selling-plan-template="' + variantId + '"]'
+      );
+      planContainer.replaceChildren();
+      planContainer.dataset.variantId = variantId;
+      if (!template) return;
+      planContainer.appendChild(template.content.cloneNode(true));
+
+      var remembered = planSelections[variantId];
+      if (remembered === undefined) return;
+      var radios = planContainer.querySelectorAll('input[name="selling_plan"]');
+      radios.forEach(function (radio) {
+        radio.checked = radio.value === remembered;
+      });
+      if (!planContainer.querySelector('input[name="selling_plan"]:checked') && radios.length) {
+        radios[0].checked = true;
+      }
+    }
+
     if (select) {
       select.addEventListener('change', function () {
         var opt = select.options[select.selectedIndex];
         if (!opt) return;
+        renderSellingPlans(opt.value);
         if (price && opt.dataset.price) price.textContent = opt.dataset.price;
         if (priceCurrent && opt.dataset.price) priceCurrent.textContent = opt.dataset.price;
         if (priceCompare && saveBadge) {

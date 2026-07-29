@@ -17,8 +17,8 @@ Setup, on the Shopify side:
    days of Pro in ``billing.shopify_skus`` (config.yaml) — e.g. variant
    ``SL-PRO-1MO`` grants 31 days. Prices live on the product in Shopify,
    never in code (the same rule as Stripe prices and gear prices).
-2. In Settings -> Notifications -> Webhooks, add ``orders/paid`` and
-   ``orders/cancelled`` webhooks pointing at
+2. In Settings -> Notifications -> Webhooks, add ``orders/paid``,
+   ``orders/cancelled``, and ``refunds/create`` webhooks pointing at
    ``https://<your-app>/webhooks/shopify`` and copy the signing secret
    shown on that page into ``SHOPIFY_WEBHOOK_SECRET``.
 
@@ -30,13 +30,18 @@ checkout email; if no account exists yet, the days are parked in
 ``pro_grants`` and claimed automatically the first time that email signs
 up or logs in. Recording and granting happen in one SQLite transaction.
 Replayed webhooks are no-ops (orders are recorded by id), and a cancelled
-order takes back exactly the days it granted. A cancellation received
-before its paid event leaves a tombstone, so out-of-order delivery cannot
-grant already-cancelled access.
+order takes back exactly the days it granted. A refund whose line items
+identify a configured Pro SKU follows the same whole-order reversal
+semantics; a gear-only or unattributable refund cannot revoke Pro. A
+cancellation or attributable refund received before its paid event leaves a
+tombstone, so out-of-order delivery cannot grant already-reversed access.
 
-This also works unchanged with Shopify's Subscriptions app: each billing
-cycle creates a new paid order with the same SKU, so Pro keeps extending
-itself for as long as the subscription runs.
+Shopify's Subscriptions app also creates a new paid order for each successful
+billing cycle, so the same SKU grant path keeps extending Pro. The bridge
+still grants fixed SKU terms (31 and 365 days), however; exact alignment to
+Shopify's calendar-month/calendar-year contract dates requires authoritative
+subscription billing-cycle data that is not present in an ``orders/paid``
+payload and is deliberately not inferred here.
 
 The same ``orders/paid`` webhook also feeds the gear ledger: every line
 item that is NOT a Pro SKU is recorded in ``gear_orders`` (order id, sku,
@@ -94,6 +99,7 @@ logger = logging.getLogger("swinglab.web.shopify")
 
 PAID_TOPICS = ("orders/paid", "ORDERS_PAID")
 CANCELLED_TOPICS = ("orders/cancelled", "ORDERS_CANCELLED")
+REFUND_TOPICS = ("refunds/create", "REFUNDS_CREATE")
 CUSTOMER_UPSERT_TOPICS = (
     "customers/create", "customers/update",
     "CUSTOMERS_CREATE", "CUSTOMERS_UPDATE",
@@ -159,7 +165,7 @@ def apply_webhook(topic: str, data: dict, users: UserStore, cfg: Config) -> None
     access, customer events sync store accounts, GDPR events are
     acknowledged. Unknown topics are no-ops (still a 200 — Shopify retries
     anything else)."""
-    if topic in PAID_TOPICS or topic in CANCELLED_TOPICS:
+    if topic in PAID_TOPICS or topic in CANCELLED_TOPICS or topic in REFUND_TOPICS:
         apply_order(topic, data, users, cfg)
     else:
         apply_customer(topic, data, users)
@@ -174,6 +180,8 @@ def apply_order(topic: str, order: dict, users: UserStore, cfg: Config) -> None:
         _apply_paid(order, users, cfg)
     elif topic in CANCELLED_TOPICS:
         _apply_cancelled(order, users)
+    elif topic in REFUND_TOPICS:
+        _apply_refund(order, users, cfg)
 
 
 def apply_customer(topic: str, data: dict, users: UserStore) -> None:
@@ -337,3 +345,46 @@ def _apply_cancelled(order: dict, users: UserStore) -> None:
         email=_order_email(order),
         shopify_customer_id=_order_customer_id(order),
     )
+
+
+def _apply_refund(refund: dict, users: UserStore, cfg: Config) -> None:
+    """Reverse a refunded Pro order using the cancellation ledger.
+
+    Shopify's ``refunds/create`` payload embeds each refunded order line in
+    ``refund_line_items[].line_item``. Only a positive-quantity line whose
+    SKU is configured as Pro is strong enough evidence to revoke access.
+    This avoids taking Pro away when a mixed order refunds gear only, while
+    reusing ``cancel_shopify_order`` gives refunds the existing atomic,
+    replay-idempotent, and refund-before-paid tombstone behavior.
+
+    The existing order ledger models one entitlement interval per order, not
+    per line-item quantity. Consequently any attributable Pro refund reverses
+    that order's entire Pro grant, matching the current whole-order
+    cancellation semantics. The storefront policy permits refunds only for
+    unused Pro purchases, so partial-use/partial-quantity refunds require
+    explicit operator reconciliation rather than an unsafe guess here.
+    """
+    pro_skus = {
+        str(sku)
+        for sku, days in (cfg.billing.get("shopify_skus") or {}).items()
+        if float(days) > 0
+    }
+    has_pro_refund = False
+    for refunded in refund.get("refund_line_items") or []:
+        try:
+            quantity = int(refunded.get("quantity") or 0)
+        except (TypeError, ValueError):
+            quantity = 0
+        line_item = refunded.get("line_item") or {}
+        if quantity > 0 and str(line_item.get("sku") or "") in pro_skus:
+            has_pro_refund = True
+            break
+    if not has_pro_refund:
+        logger.info(
+            "Shopify refund %s for order %s did not identify a Pro SKU;"
+            " entitlement unchanged.",
+            refund.get("id") or "?",
+            refund.get("order_id") or "?",
+        )
+        return
+    users.cancel_shopify_order(str(refund.get("order_id") or ""))

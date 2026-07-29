@@ -309,11 +309,12 @@ monthly), then monthly, then lifetime (the anchor), then free — using the
 (shipped: `$4.99/month`, `$39.99/year — $3.33/month`, `$79.99 once — Pro
 for good`). These are labels, not billing: what is actually charged always
 lives in Shopify/Stripe. The pricing page's renewal copy is driven by
-`billing.store_subscriptions` (shipped `false`): flip it to `true` only
-once the store actually sells auto-renewing subscriptions via Shopify's
-Subscriptions app — then the page says monthly/yearly renew automatically
-(cancel anytime, Pro runs to period end). Until then it says honestly that
-passes simply expire. Lifetime is always a single payment, and its card
+`billing.store_subscriptions` (shipped `true` for CaddieInsight; the
+bare-code default remains `false`): enable it only once the store actually
+sells auto-renewing subscriptions via Shopify's Subscriptions app. When on,
+the page says monthly/yearly renew automatically (cancel anytime, Pro runs
+to period end); when off, it says honestly that passes simply expire.
+Lifetime is always a single payment, and its card
 only renders when the Shopify store is configured (the lifetime SKU has no
 Stripe equivalent).
 
@@ -322,7 +323,8 @@ memberships): create a product whose variant SKUs map to days of access in
 `billing.shopify_skus` (shipped mapping: `SL-PRO-1MO` → 31 days,
 `SL-PRO-12MO` → 365, `SL-PRO-LIFE` → 36500 — a hundred years; the account
 page shows anything more than 50 years out as "Lifetime"), point
-`orders/paid` + `orders/cancelled` webhooks at `/webhooks/shopify`, and
+`orders/paid`, `orders/cancelled`, and `refunds/create` webhooks at
+`/webhooks/shopify`, and
 set:
 
 | Variable | What it is |
@@ -334,9 +336,16 @@ set:
 A paid order first extends Pro on the account linked to the stable Shopify
 customer ID, then falls back to the account matching the checkout email; a
 purchase made before signup is claimed automatically when that email creates
-an account or logs in. Replayed webhooks never double-grant, cancelled
-orders take their days back, and Shopify's Subscriptions app works
-unchanged (each billing cycle's order re-extends access).
+an account or logs in. Replayed webhooks never double-grant; cancelled orders
+and refunds that identify a Pro SKU take their whole order grant back. A
+gear-only or unattributable refund leaves Pro unchanged.
+
+Shopify's Subscriptions app creates a new paid order for each successful
+billing cycle, so the same SKU path re-extends access. Today those grants are
+still fixed passes (31 days for monthly, 365 for yearly), not authoritative
+Shopify calendar-period ends. Exact calendar-month/year alignment needs
+subscription billing-cycle data and must not be inferred from the order
+timestamp or selling-plan name.
 
 **Selling Pro as a Stripe subscription:**
 

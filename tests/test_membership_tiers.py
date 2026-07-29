@@ -9,6 +9,7 @@ parking all apply to it unchanged — these tests prove that.
 
 from __future__ import annotations
 
+from pathlib import Path
 import time
 
 import pytest
@@ -59,11 +60,31 @@ def test_defaults_pin_the_tier_ladder():
     )
     assert DEFAULTS["billing"]["pro_annual_badge_text"] == "Best value — save 33%"
     # Both gates ship OFF in bare-code defaults (white-label installs stay
-    # ungated); the shipped config.yaml turns them on. Subscriptions copy
-    # stays off everywhere until the store actually sells them.
+    # ungated); the shipped config.yaml turns them on. Subscription copy is
+    # also opt-in at the bare-code layer; CaddieInsight's shipped config
+    # enables it only after the live selling plans have been provisioned.
     assert DEFAULTS["billing"]["replay_pro_only"] is False
     assert DEFAULTS["billing"]["progress_pro_only"] is False
     assert DEFAULTS["billing"]["store_subscriptions"] is False
+
+
+def test_shipped_config_pins_the_live_membership_ladder():
+    """The file copied into the production image must not drift from the
+    prices, SKUs, quota, or renewal mode advertised by the live release."""
+    shipped = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+    billing = shipped.billing
+
+    assert billing["free_per_month"] == 1
+    assert billing["shopify_skus"] == {
+        "SL-PRO-1MO": 31,
+        "SL-PRO-12MO": 365,
+        "SL-PRO-LIFE": 36500,
+    }
+    assert billing["pro_price_monthly_text"] == "$4.99/month"
+    assert billing["pro_price_annual_text"] == "$39.99/year — $3.33/month"
+    assert billing["pro_price_lifetime_text"] == "$79.99 once — Pro for good"
+    assert billing["pro_annual_badge_text"] == "Best value — save 33%"
+    assert billing["store_subscriptions"] is True
 
 
 # -- the lifetime grant rides the day ledger ----------------------------------

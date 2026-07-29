@@ -238,8 +238,7 @@ billing:
                              # the badge's savings math lives here (not in the
                              # template) so changing prices can't strand a
                              # stale claim. Empty badge = no badge.
-  store_subscriptions: false # flip to true ONLY once the Shopify
-                             # Subscriptions app is installed with selling
+  store_subscriptions: true  # Shopify Subscriptions is installed with selling
                              # plans on the monthly/yearly variants — the
                              # pricing page describes auto-renewal from this
                              # flag, and on a passes-only store that claim
