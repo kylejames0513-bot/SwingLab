@@ -387,8 +387,10 @@ What each event does:
 - **customers/create, customers/update** — creates a passwordless "store
   account" for the customer's (normalized) email, tagged with the Shopify
   customer id — or, if an account already exists, just links/refreshes
-  that id. An existing password or email is **never** overwritten, and
-  replayed webhooks land on the same row (no duplicates).
+  that id. The customer id is the stable identity: an unclaimed store-only
+  stub can follow a Shopify email change on the same row; a claimed account
+  keeps its verified app login email instead of being split or silently
+  merged. Replayed webhooks land on the same row (no duplicates).
 - Signing up in the app with a store account's email **claims the same
   account** — as does signing in with an emailed code once email delivery is
   configured (see "One account" below): either way the claim lands on
@@ -401,18 +403,40 @@ What each event does:
   unclaimed stub (no password, no analyses); any Pro days it still
   carried are parked and reclaimed if that email signs up later. A
   claimed account merely loses its store link — store-side deletion never
-  destroys app data.
+  destroys app data. A tombstone prevents a delayed create/update webhook
+  from recreating the deleted store identity while retaining the internal
+  account mapping needed to recognize that same customer's late paid
+  events. Redaction severs that mapping.
 - **customers/redact** (GDPR) — same as delete, and additionally erases
   the Shopify-sourced profile fields on claimed accounts and any parked
   purchase for a deleted stub's email. `customers/data_request` and
   `shop/redact` are acknowledged (200) and logged.
 
+Paid orders follow the linked Shopify customer id first. Normalized checkout
+email is used directly only for guest orders without a customer id; a
+customer-bearing order that arrives before its customer webhook is parked
+until the stable identity can be established. Email fallback never crosses
+a conflicting Shopify customer id. Customer-specific parked value can move
+to a later Shopify email without carrying another customer sharing the old
+address. Recording the order and changing Pro access are one database
+transaction, and an early cancellation is remembered so a delayed paid
+event cannot restore cancelled access.
+
 **Limitations, honestly:** Shopify does not expose customer credentials,
 so store passwords cannot sync — the store account carries over and the
 user proves the email is theirs once, at claim time (an emailed sign-in
-code when email is on, or by setting an app password). Store customers
-created without an email address are skipped (there is nothing to match
-on).
+code when email is on, or by setting an app password). A claimed user's
+Shopify email change is deliberately not made their app login until the
+new inbox is verified; support must currently handle that change. Store
+customers created without an email address are skipped (there is nothing
+to match on). Webhooks cover changes after subscription; a full historical
+customer backfill/reconciliation still requires an Admin API process.
+Legacy order histories whose exact grant ownership cannot be proven are
+left unchanged for that reconciliation instead of guessing and revoking or
+restoring the wrong customer's access. `customers/data_request` and
+`shop/redact` currently receive the required signed acknowledgement but do
+not yet run a complete customer export or shop-wide erasure workflow; that
+privacy-compliance workflow remains separate release work.
 
 **Optional email verification** — inert until configured, like
 every other integration:
