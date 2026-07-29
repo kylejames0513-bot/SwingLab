@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     hand         TEXT NOT NULL DEFAULT 'right',
     angle        TEXT NOT NULL DEFAULT 'face-on',
     club         TEXT,
+    level        TEXT,
     strikes      TEXT,
     fast         INTEGER NOT NULL DEFAULT 0,
     client_ip    TEXT,
@@ -73,6 +74,7 @@ class Job:
     hand: str = "right"
     angle: str = "face-on"  # camera angle: "face-on" | "dtl"
     club: str | None = None  # display context only — see swinglab.clubs
+    level: str | None = None  # display framing only — see swinglab.levels
     strikes: list[float] | None = None
     fast: bool = False
     client_ip: str | None = None
@@ -94,6 +96,7 @@ class Job:
             "hand": self.hand,
             "angle": self.angle,
             "club": self.club,
+            "level": self.level,
             "fast": self.fast,
             "log": self.log,
             "error": self.error,
@@ -134,6 +137,8 @@ class JobManager:
                 )
             if "club" not in columns:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN club TEXT")
+            if "level" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN level TEXT")
             self._conn.commit()
         workers = max(1, int(cfg.web.get("workers", 2)))
         self._pool = ThreadPoolExecutor(
@@ -225,6 +230,7 @@ class JobManager:
         user_id: str | None = None,
         angle: str = "face-on",
         club: str | None = None,
+        level: str | None = None,
     ) -> Job:
         job_id = uuid.uuid4().hex[:12]
         job = Job(
@@ -235,6 +241,7 @@ class JobManager:
             hand=hand,
             angle=angle,
             club=club,
+            level=level,
             strikes=strikes,
             fast=fast,
             client_ip=client_ip,
@@ -306,6 +313,7 @@ class JobManager:
                 progress=progress,
                 angle=job.angle,
                 club=job.club,
+                level=job.level,
                 replay_locked=locked,
             )
             job.report_rel = str(result.report_path.relative_to(job.session_dir))
@@ -369,9 +377,9 @@ class JobManager:
         with self._lock:
             self._conn.execute(
                 "INSERT INTO jobs (id, status, created_at, updated_at, source_name,"
-                " hand, angle, club, strikes, fast, client_ip, user_id, error,"
+                " hand, angle, club, level, strikes, fast, client_ip, user_id, error,"
                 " report_rel, swings_done, swings_total, log)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET status = excluded.status,"
                 " updated_at = excluded.updated_at, error = excluded.error,"
                 " report_rel = excluded.report_rel, swings_done = excluded.swings_done,"
@@ -385,6 +393,7 @@ class JobManager:
                     job.hand,
                     job.angle,
                     job.club,
+                    job.level,
                     json.dumps(job.strikes) if job.strikes else None,
                     int(job.fast),
                     job.client_ip,
@@ -408,6 +417,7 @@ class JobManager:
             hand=row["hand"],
             angle=row["angle"] or "face-on",
             club=row["club"],
+            level=row["level"],
             strikes=json.loads(row["strikes"]) if row["strikes"] else None,
             fast=bool(row["fast"]),
             client_ip=row["client_ip"],

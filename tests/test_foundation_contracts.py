@@ -166,6 +166,7 @@ def test_api_response_keys_are_stable(contract_app):
         hand="left",
         angle="dtl",
         club="driver",
+        level="improving",
         fast=True,
         user_id=user.id,
     )
@@ -180,6 +181,7 @@ def test_api_response_keys_are_stable(contract_app):
         "hand",
         "angle",
         "club",
+        "level",
         "fast",
         "log",
         "error",

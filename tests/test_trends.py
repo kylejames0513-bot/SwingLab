@@ -228,7 +228,7 @@ def make_fake_analyze(payloads: list[dict]):
 
     def fake(video_path, out_dir=None, hand="right", manual_strikes=None,
              cfg=None, keep_work=False, fast=False, log=print, progress=None,
-             angle="face-on", club=None, replay_locked=False):
+             angle="face-on", club=None, level=None, replay_locked=False):
         payload = payloads[min(state["i"], len(payloads) - 1)]
         state["i"] += 1
         session_dir = Path(out_dir) / Path(video_path).stem
@@ -343,7 +343,7 @@ def test_blocked_upload_page_shows_own_trend_and_pro_cta(accounts_app, monkeypat
     upload_and_wait(client)
     upload_and_wait(client)  # free_per_month = 2 -> quota exhausted
     html = client.get("/").text
-    assert "You've used this month's analyses" in html
+    assert "You've used this month's free analyses" in html
     assert "has moved 2.20:1" in html              # their own numbers
     assert "Keep the film rolling" in html         # the Pro CTA
 
@@ -361,7 +361,8 @@ def test_blocked_upload_page_stays_generic_without_trend_data(tmp_path, monkeypa
     signup(client)
     upload_and_wait(client)
     html = client.get("/").text
-    assert "You've used this month's analyses" in html
+    # free_per_month = 1, so the copy goes singular.
+    assert "You've used this month's free analysis" in html
     assert "Upgrade to Pro" in html                # the generic line
     assert "Keep the film rolling" not in html     # no data, no personal pitch
 

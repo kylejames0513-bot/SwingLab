@@ -193,10 +193,10 @@ def pro_plans():
     img, d = canvas()
     s = S
     cards = [
-        ("FREE", "$0", ["3 analyses every month", "Full report, every deliverable",
+        ("FREE", "$0", ["1 full analysis every month", "Complete report each time",
                         "Coaching notes per swing"], False),
-        ("PRO", "Unlimited", ["Unlimited swing analyses", "Everything in Free",
-                              "Cancel anytime"], True),
+        ("PRO", "Unlimited", ["Unlimited swing analyses", "Annotated coach replay",
+                              "Progress dashboard"], True),
     ]
     cw, ch = 620 * s, 980 * s
     gx, gy = 150 * s, 280 * s

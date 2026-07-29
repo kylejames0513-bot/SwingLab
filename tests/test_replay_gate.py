@@ -31,7 +31,7 @@ from swinglab.web.users import PRO, UserStore
 from tests.test_report import fake_swing, fake_video
 from tests.test_web import fake_analyze_ok, wait_for
 
-LOCKED_NOTE_TAIL = "Upgrade and re-film to get it."
+LOCKED_NOTE_TAIL = "upgrade and re-film to get yours."
 
 
 # -- config pin (same pattern as the retention pin) ---------------------------
@@ -208,7 +208,8 @@ def test_report_locked_note_in_each_replay_slot(tmp_path):
     )
     html = out.read_text()
     # One locked slot per swing, beside each slow-mo, honest wording + link.
-    assert html.count("your swing annotated frame-by-frame") == 2
+    assert html.count("annotated like a lesson") == 2
+    assert html.count("Included with Pro") == 2
     assert html.count(LOCKED_NOTE_TAIL) == 2
     assert 'href="/pricing"' in html
     assert "media/replay_s" not in html  # no replay video anywhere
