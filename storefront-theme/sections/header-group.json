@@ -15,7 +15,6 @@
       "type": "header",
       "settings": {
         "logo_text": "CADDIEINSIGHT",
-        "menu": "swinglab-main",
         "app_url": "https://app.caddieinsight.com"
       }
     }

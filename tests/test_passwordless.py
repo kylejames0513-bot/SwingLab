@@ -95,18 +95,29 @@ def code_signin(client, outbox, email="kyle@example.com"):
 
 def test_login_page_leads_with_email_when_delivery_on(app, outbox):
     client = TestClient(app)
-    for page in (client.get("/login").text, client.get("/").text):  # + landing
-        assert "Continue with your email" in page
-        assert "use on the store" in page  # store is configured here
-        assert "six-digit code" in page
-        assert "Use your password instead" in page
-        assert 'action="/login/email"' in page
-        # The password cards are behind the fallback link, not shown here.
-        assert "Create account" not in page
+    landing = client.get("/").text
+    assert "Create a free account" in landing
+    assert "Already have an account?" in landing
+    assert 'href="/signup"' in landing and 'href="/login"' in landing
+
+    page = client.get("/login").text
+    assert "Welcome back" in page
+    assert "six-digit sign-in code" in page
+    assert "Forgot or reset your password?" in page
+    assert 'action="/login/email"' in page
+    assert 'name="auth_intent" value="login"' in page
+    assert 'href="/signup"' in page
+
+    signup = client.get("/signup").text
+    assert "Create your free account" in signup
+    assert "creates your CaddieInsight account" in signup
+    assert 'name="auth_intent" value="signup"' in signup
+    assert 'action="/login/email"' in signup
 
     fallback = client.get("/login?password=1").text
-    assert "Create account" in fallback and "Log in" in fallback
+    assert "Sign in with your password" in fallback
     assert "Email me a sign-in code instead" in fallback
+    assert "Create your free account" in client.get("/signup?password=1").text
 
 
 def test_store_line_dropped_when_no_store_is_configured(
@@ -122,8 +133,33 @@ def test_store_line_dropped_when_no_store_is_configured(
     cfg.web["require_account"] = True
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
     page = client.get("/login").text
-    assert "Continue with your email" in page
+    assert "Welcome back" in page
     assert "use on the store" not in page
+
+
+def test_explicit_free_signup_keeps_intent_through_verification(app, outbox):
+    client = TestClient(app)
+    sent = client.post(
+        "/login/email",
+        data={"email": "new@example.com", "auth_intent": "signup"},
+    )
+    assert sent.status_code == 200
+    assert "Verify your email" in sent.text
+    assert "created only after the code is verified" in sent.text
+    assert 'name="auth_intent" value="signup"' in sent.text
+
+    completed = client.post(
+        "/login/code",
+        data={
+            "email": "new@example.com",
+            "code": last_code(outbox),
+            "auth_intent": "signup",
+        },
+        follow_redirects=False,
+    )
+    assert completed.status_code == 303
+    user = get_user(client, "new@example.com")
+    assert user is not None and not user.is_pro
 
 
 # -- the three account states, one flow --------------------------------------
@@ -229,7 +265,7 @@ def test_wrong_code_does_not_sign_in(app, outbox):
     resp = enter_code(client, "000000", "new@example.com")
     assert resp.status_code == 200 and "didn't match" in resp.text
     assert get_user(client, "new@example.com") is None  # nothing created
-    assert "Continue with your email" in client.get("/").text  # logged out
+    assert "Create a free account" in client.get("/").text  # logged out
 
 
 def test_code_cannot_be_replayed_after_success(app, outbox):
@@ -453,9 +489,13 @@ def test_without_email_the_password_flows_are_exactly_as_before(app, monkeypatch
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
     client = TestClient(app)
-    for page in (client.get("/login").text, client.get("/").text):
-        assert "Create account" in page and "Log in" in page
-        assert "Continue with your email" not in page
+    landing = client.get("/").text
+    assert "Create a free account" in landing and "Sign in" in landing
+    login = client.get("/login").text
+    signup = client.get("/signup").text
+    assert "Sign in with your password" in login
+    assert "Create your free account" in signup
+    for page in (login, signup):
         assert 'action="/login/email"' not in page
     assert client.post("/login/email", data={"email": "a@b.co"}).status_code == 503
     assert client.post(
@@ -478,7 +518,8 @@ def test_config_flag_off_forces_password_flow_even_with_email(
     cfg.web["passwordless_login"] = False
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
     page = client.get("/login").text
-    assert "Create account" in page and "Continue with your email" not in page
+    assert "Sign in with your password" in page
+    assert "Create your free account" in client.get("/signup").text
     assert client.post("/login/email", data={"email": "a@b.co"}).status_code == 503
 
 
@@ -493,7 +534,7 @@ def test_password_holders_can_still_use_their_password(app, outbox):
         "/login", data={"email": "kyle@example.com", "password": "wrongwrong"}
     )
     assert "Wrong email or password" in wrong.text
-    assert "Log in" in wrong.text  # error renders on the password view
+    assert "Sign in with your password" in wrong.text
     ok = client.post(
         "/login", data={"email": "kyle@example.com", "password": "longenough"},
         follow_redirects=False,
@@ -540,7 +581,9 @@ def test_passwordless_account_can_add_a_password(app, outbox):
     )
     assert ok.status_code == 303
     assert "Password added" in client.get(ok.headers["location"]).text
-    assert "Add a password (optional)" not in client.get("/account").text
+    account = client.get("/account").text
+    assert "Add a password (optional)" not in account
+    assert "Change or reset password" in account
 
     client.post("/logout")  # the new password works at the classic form...
     resp = client.post(
@@ -558,7 +601,9 @@ def test_password_accounts_do_not_see_add_password(app, outbox):
         "/signup", data={"email": "kyle@example.com", "password": "longenough"},
         follow_redirects=False,
     )
-    assert "Add a password" not in client.get("/account").text
+    account = client.get("/account").text
+    assert "Add a password" not in account
+    assert "Change or reset password" in account
     # The route refuses to replace an existing password: changes go
     # through the code-verified reset flow only.
     resp = client.post(

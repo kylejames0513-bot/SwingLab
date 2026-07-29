@@ -1,10 +1,18 @@
 {%- liquid
   assign cart_count = cart.item_count | default: 0
-  assign menu = section.settings.menu
   assign app_url = section.settings.app_url
+  assign app_login_url = app_url | append: '/login'
+  assign app_signup_url = app_url | append: '/signup'
+  assign gear_url = routes.collections_url | append: '/swinglab-gear'
+  assign pro_product = all_products['swinglab-pro']
+  if cart_count == 1
+    assign cart_aria = 'layout.cart.count_one' | t
+  else
+    assign cart_aria = 'layout.cart.count_other' | t: count: cart_count
+  endif
 -%}
 <header class="sl-header" data-sl-header>
-  <a href="{{ routes.root_url }}" class="sl-header__logo">
+  <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
     {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
     {%- if logo -%}
       {{ logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
@@ -13,31 +21,37 @@
     {%- endif -%}
   </a>
 
-  <nav class="sl-header__nav" id="sl-nav" aria-label="Main navigation">
-    {%- if menu != blank and menu.links.size > 0 -%}
-      {%- for link in menu.links -%}
-        <a href="{{ link.url }}" class="sl-header__link{% if link.current %} is-current{% endif %}"{% if link.current %} aria-current="page"{% endif %}>{{ link.title }}</a>
-      {%- endfor -%}
-    {%- else -%}
-      <a href="/collections/swinglab-gear" class="sl-header__link">Gear</a>
-      <a href="/pages/the-swinglab-method" class="sl-header__link">The Method</a>
-      <a href="/products/swinglab-pro" class="sl-header__link">Pro Membership</a>
-      <a href="/pages/faq" class="sl-header__link">FAQ</a>
+  <nav class="sl-header__nav" id="sl-nav" aria-label="{{ 'layout.navigation.main' | t }}">
+    <a href="{{ routes.root_url }}" class="sl-header__link{% if request.page_type == 'index' %} is-current{% endif %}"{% if request.page_type == 'index' %} aria-current="page"{% endif %}>{{ 'layout.navigation.home' | t }}</a>
+    {%- if app_url != blank -%}
+      <a href="{{ app_url }}" class="sl-header__link">{{ 'layout.navigation.analyze' | t }}</a>
+    {%- endif -%}
+    <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
+    {%- if pro_product != blank -%}
+      <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
     {%- endif -%}
     {%- if app_url != blank -%}
-      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--outline sl-header__app sl-header__app--nav" target="_blank" rel="noopener">Open the app</a>
+      <a href="{{ app_login_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.navigation.app_sign_in' | t }}</a>
+      <a href="{{ app_signup_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.navigation.create_free_account' | t }}</a>
     {%- endif -%}
+    <a href="{{ routes.account_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.navigation.orders' | t }}</a>
+    <a href="{{ routes.cart_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.cart.title' | t }} ({{ cart_count }})</a>
   </nav>
 
   <div class="sl-header__actions">
+    <a href="{{ routes.account_url }}" class="sl-header__signin">{{ 'layout.navigation.orders' | t }}</a>
     {%- if app_url != blank -%}
-      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--outline sl-header__app sl-header__app--bar" target="_blank" rel="noopener">Open the app</a>
+      <a href="{{ app_login_url }}" class="sl-header__signin">{{ 'layout.navigation.app_sign_in' | t }}</a>
+      <a href="{{ app_signup_url }}" class="sl-btn sl-btn--sm sl-btn--primary sl-header__app">{{ 'layout.navigation.start_free' | t }}</a>
     {%- endif -%}
-    <a href="{{ routes.cart_url }}" class="sl-header__cart" aria-label="Cart, {{ cart_count }} {% if cart_count == 1 %}item{% else %}items{% endif %}">
-      Cart
+    <a href="{{ routes.cart_url }}" class="sl-header__cart"
+       aria-label="{{ cart_aria }}"
+       data-cart-one="{{ 'layout.cart.count_one' | t }}"
+       data-cart-other="{{ 'layout.cart.count_other' | t: count: '__COUNT__' }}">
+      <span class="sl-header__cart-label">{{ 'layout.cart.title' | t }}</span>
       <span class="sl-header__cart-count" data-cart-count aria-hidden="true">{{ cart_count }}</span>
     </a>
-    <button class="sl-header__toggle" type="button" aria-label="Menu" aria-expanded="false" aria-controls="sl-nav" data-nav-toggle>
+    <button class="sl-header__toggle" type="button" aria-label="{{ 'layout.navigation.menu' | t }}" aria-expanded="false" aria-controls="sl-nav" data-nav-toggle>
       <span></span><span></span><span></span>
     </button>
   </div>
@@ -91,6 +105,7 @@
   font-weight: 700;
   box-shadow: inset 0 -2px 0 var(--sl-orange);
 }
+.sl-header__mobile-only { display: none; }
 .sl-header__actions {
   display: flex;
   align-items: center;
@@ -98,7 +113,14 @@
   flex-shrink: 0;
 }
 .sl-header__app { white-space: nowrap; }
-.sl-header__app--nav { display: none; }
+.sl-header__signin {
+  color: var(--sl-ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.sl-header__signin:hover { color: var(--sl-green-btn); }
 .sl-header__cart {
   display: inline-flex;
   align-items: center;
@@ -153,8 +175,7 @@
   .sl-header__toggle span { transition: none; }
 }
 
-@media (max-width: 849px) {
-  .sl-header__app--bar { display: none; }
+@media (max-width: 980px) {
   .sl-header__toggle { display: flex; }
   .sl-header__nav {
     position: absolute;
@@ -174,7 +195,22 @@
   .sl-header__nav.is-open { display: flex; }
   .sl-header__link { font-size: 17px; padding: 12px 0; width: 100%; }
   .sl-header__link.is-current { box-shadow: none; color: var(--sl-orange); }
-  .sl-header__app--nav { display: inline-block; margin-top: 14px; }
+  .sl-header__mobile-only { display: block; }
+  .sl-header__actions .sl-header__signin,
+  .sl-header__actions .sl-header__app { display: none; }
+  .sl-header__cart { padding: 5px 8px 5px 12px; }
+}
+@media (max-width: 480px) {
+  .sl-header { height: 64px; gap: 10px; }
+  .sl-header__logo-img { height: 26px; max-width: 165px; object-fit: contain; }
+  .sl-header__logo { font-size: 18px; }
+}
+@media (max-width: 360px) {
+  .sl-header { gap: 6px; padding-inline: 12px; }
+  .sl-header__actions { gap: 6px; }
+  .sl-header__logo-img { height: 22px; max-width: 132px; }
+  .sl-header__cart { padding: 4px; }
+  .sl-header__cart-label { display: none; }
 }
 {% endstylesheet %}
 
@@ -209,16 +245,26 @@
        "cart:change" event any section may dispatch after a fetch add-to-cart
        (detail.item_count optional — omitted means re-fetch) */
     var count = header.querySelector('[data-cart-count]');
+    var cartLink = count && count.closest('.sl-header__cart');
+    function setCount(value) {
+      if (!count || !cartLink) return;
+      var number = Number(value) || 0;
+      count.textContent = number;
+      var label = number === 1
+        ? cartLink.getAttribute('data-cart-one')
+        : cartLink.getAttribute('data-cart-other').replace('__COUNT__', number);
+      cartLink.setAttribute('aria-label', label);
+    }
     function refreshCount() {
       fetch('{{ routes.cart_url }}.js', { headers: { 'Accept': 'application/json' } })
         .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (c) { if (c && count) count.textContent = c.item_count; })
+        .then(function (c) { if (c) setCount(c.item_count); })
         .catch(function () {});
     }
     window.addEventListener('pageshow', function (e) { if (e.persisted) refreshCount(); });
     document.addEventListener('cart:change', function (e) {
       if (e.detail && typeof e.detail.item_count !== 'undefined' && count) {
-        count.textContent = e.detail.item_count;
+        setCount(e.detail.item_count);
       } else {
         refreshCount();
       }
@@ -243,17 +289,11 @@
       "default": "CADDIEINSIGHT"
     },
     {
-      "type": "link_list",
-      "id": "menu",
-      "label": "Navigation menu",
-      "info": "Leave empty to use the default Gear / The Method / Pro Membership / FAQ links."
-    },
-    {
       "type": "text",
       "id": "app_url",
       "label": "App URL",
       "default": "https://app.caddieinsight.com",
-      "info": "The \"Open the app\" button links here. Leave empty to hide the button."
+      "info": "Analyze, sign-in, and free-account links use this origin. Leave empty to hide app links."
     }
   ]
 }

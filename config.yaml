@@ -3,6 +3,8 @@
 brand:
   name: CaddieInsight
   logo_path: null            # path to a logo image shown in the report header, or null
+  logo_url: "https://caddieinsight.com/cdn/shop/files/swinglab-logo.png?width=480"
+                             # optional hosted wordmark for the web-app header
   primary_color: "#1a5c38"   # headers, table accents, skeleton "corrected" tint in legends
   accent_color: "#e8720c"    # highlights, warnings, "captured" tint in legends
   footer_text: "CaddieInsight — swing analysis from a single phone video."

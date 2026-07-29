@@ -5,7 +5,7 @@
          gap: 16px; padding: 12px 0; border-bottom: 1px solid #eee; }
   .row:last-of-type { border-bottom: none; }
   .row .k { color: #555; font-size: 0.9rem; white-space: nowrap; }
-  .row > span:last-child { text-align: right; }
+  .row > span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
   .plan { display: inline-block; padding: 2px 12px; border-radius: 999px;
           font-weight: 700; font-size: 0.85rem; }
   .plan.pro { background: var(--primary); color: white; }
@@ -64,6 +64,11 @@
              minlength="8" autocomplete="new-password">
       <button type="submit">Add password</button>
     </form>
+    {% elif mail_enabled %}
+    <h3>Password and sign-in</h3>
+    <p class="hint">You can keep using emailed codes, change your password,
+      or recover it if you forget it.</p>
+    <a class="button secondary" href="/reset">Change or reset password</a>
     {% endif %}
 
     {% if user.digest_opt_in %}

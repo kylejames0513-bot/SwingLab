@@ -32,7 +32,7 @@
         <p class="hint">Gear matched to this session's findings.</p>
         <div class="gear">
           {% for p in gear %}
-            <a class="gear-item" href="{{ p.url }}" target="_blank" rel="noopener">
+            <a class="gear-item" href="{{ p.url }}">
               {% if p.image %}<img src="{{ p.image }}" alt="{{ p.image_alt or p.title }}" loading="lazy">{% endif %}
               <span class="name">{{ p.title }}</span>
               <span class="price">{{ p.price_display }}</span>
