@@ -1,274 +1,637 @@
 {%- liquid
   assign cart_count = cart.item_count | default: 0
   assign app_url = section.settings.app_url
-  assign drills_url = app_url | append: '/drills'
+  assign app_history_url = app_url | append: '/sessions'
+  assign app_progress_url = app_url | append: '/progress'
+  assign app_drills_url = app_url | append: '/drills'
+  assign app_account_url = app_url | append: '/account'
   assign gear_url = routes.collections_url | append: '/swinglab-gear'
   assign pro_product = all_products['swinglab-pro']
+  assign menu_id = 'sl-mobile-menu-' | append: section.id
+  assign menu_title_id = menu_id | append: '-title'
   if cart_count == 1
     assign cart_aria = 'layout.cart.count_one' | t
   else
     assign cart_aria = 'layout.cart.count_other' | t: count: cart_count
   endif
 -%}
-<header class="sl-header" data-sl-header>
-  <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
-    {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
-    {%- if logo -%}
-      {{ logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
-    {%- else -%}
-      {{ section.settings.logo_text | default: shop.name }}
-    {%- endif -%}
-  </a>
 
-  <nav class="sl-header__nav" id="sl-nav" aria-label="{{ 'layout.navigation.main' | t }}">
-    {%- if app_url != blank -%}
-      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--primary sl-header__mobile-cta">{{ 'layout.navigation.analyze_a_swing' | t }}</a>
-      <a href="{{ drills_url }}" class="sl-header__link">{{ 'layout.navigation.drills' | t }}</a>
-    {%- endif -%}
-    <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
-    {%- if pro_product != blank -%}
-      <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
-    {%- endif -%}
-    <a href="{{ routes.account_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.navigation.orders' | t }}</a>
-  </nav>
-
-  <div class="sl-header__actions">
-    <a href="{{ routes.account_url }}" class="sl-header__signin">{{ 'layout.navigation.orders' | t }}</a>
-    {%- if app_url != blank -%}
-      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--primary sl-header__app">{{ 'layout.navigation.analyze_a_swing' | t }}</a>
-    {%- endif -%}
-    <a href="{{ routes.cart_url }}" class="sl-header__cart"
-       aria-label="{{ cart_aria }}"
-       data-cart-one="{{ 'layout.cart.count_one' | t }}"
-       data-cart-other="{{ 'layout.cart.count_other' | t: count: '__COUNT__' }}">
-      <span class="sl-header__cart-label">{{ 'layout.cart.title' | t }}</span>
-      <span class="sl-header__cart-count" data-cart-count aria-hidden="true">{{ cart_count }}</span>
+<header class="sl-header" data-sl-header data-menu-id="{{ menu_id }}">
+  <div class="sl-header__inner">
+    <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
+      {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
+      {%- if logo -%}
+        {{ logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
+      {%- else -%}
+        {{ section.settings.logo_text | default: shop.name }}
+      {%- endif -%}
     </a>
-    <button class="sl-header__toggle" type="button" aria-label="{{ 'layout.navigation.menu' | t }}" aria-expanded="false" aria-controls="sl-nav" data-nav-toggle>
-      <span></span><span></span><span></span>
-    </button>
+
+    <nav class="sl-header__desktop-nav" aria-label="{{ 'layout.navigation.main' | t }}">
+      {%- if app_url != blank -%}
+        <details class="sl-header__dropdown" data-header-dropdown>
+          <summary class="sl-header__dropdown-trigger">
+            {{ 'layout.navigation.my_game' | t }}
+            <span class="sl-header__chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="sl-header__dropdown-menu">
+            <a href="{{ app_history_url }}">{{ 'layout.navigation.history' | t }}</a>
+            <a href="{{ app_progress_url }}">{{ 'layout.navigation.progress' | t }}</a>
+            <a href="{{ app_drills_url }}">{{ 'layout.navigation.drills' | t }}</a>
+          </div>
+        </details>
+      {%- endif -%}
+      <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
+      {%- if pro_product != blank -%}
+        <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
+      {%- endif -%}
+    </nav>
+
+    <div class="sl-header__actions">
+      <details class="sl-header__dropdown sl-header__account" data-header-dropdown>
+        <summary class="sl-header__dropdown-trigger">
+          {{ 'layout.navigation.account' | t }}
+          <span class="sl-header__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="sl-header__dropdown-menu sl-header__dropdown-menu--right">
+          {%- if app_url != blank -%}
+            <a href="{{ app_account_url }}">{{ 'layout.navigation.caddieinsight_profile' | t }}</a>
+          {%- endif -%}
+          <a href="{{ routes.account_url }}">{{ 'layout.navigation.orders_subscriptions' | t }}</a>
+        </div>
+      </details>
+
+      <a href="{{ routes.cart_url }}" class="sl-header__cart"
+         aria-label="{{ cart_aria }}"
+         data-cart-one="{{ 'layout.cart.count_one' | t }}"
+         data-cart-other="{{ 'layout.cart.count_other' | t: count: '__COUNT__' }}">
+        <span class="sl-header__cart-label">{{ 'layout.cart.title' | t }}</span>
+        <span class="sl-header__cart-count" data-cart-count aria-hidden="true">{{ cart_count }}</span>
+      </a>
+
+      {%- if app_url != blank -%}
+        <a href="{{ app_url }}" class="sl-header__cta sl-header__app">{{ 'layout.navigation.analyze_a_swing' | t }}</a>
+      {%- endif -%}
+
+      <button class="sl-header__toggle" type="button"
+              aria-label="{{ 'layout.navigation.menu' | t }}"
+              aria-expanded="false"
+              aria-haspopup="dialog"
+              aria-controls="{{ menu_id }}"
+              data-menu-open>
+        <span></span><span></span><span></span>
+      </button>
+    </div>
   </div>
 </header>
 
+<dialog class="sl-menu" id="{{ menu_id }}" aria-labelledby="{{ menu_title_id }}" data-sl-menu>
+  <div class="sl-menu__panel">
+    <div class="sl-menu__head">
+      <h2 class="sl-menu__title" id="{{ menu_title_id }}">{{ 'layout.navigation.menu_title' | t }}</h2>
+      <button class="sl-menu__close" type="button" aria-label="{{ 'layout.navigation.close_menu' | t }}" data-menu-close>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <nav class="sl-menu__nav" aria-label="{{ 'layout.navigation.main' | t }}">
+      {%- if app_url != blank -%}
+        <a href="{{ app_url }}" class="sl-header__cta sl-menu__cta" data-menu-link>{{ 'layout.navigation.analyze_a_swing' | t }}</a>
+      {%- endif -%}
+
+      {%- if app_url != blank -%}
+      <div class="sl-menu__group">
+        <p class="sl-menu__eyebrow">{{ 'layout.navigation.my_game' | t }}</p>
+        <a href="{{ app_history_url }}" class="sl-menu__link" data-menu-link>
+          <span>{{ 'layout.navigation.history' | t }}</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        <a href="{{ app_progress_url }}" class="sl-menu__link" data-menu-link>
+          <span>{{ 'layout.navigation.progress' | t }}</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        <a href="{{ app_drills_url }}" class="sl-menu__link" data-menu-link>
+          <span>{{ 'layout.navigation.drills' | t }}</span><span aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+      {%- endif -%}
+
+      <div class="sl-menu__group">
+        <p class="sl-menu__eyebrow">{{ 'layout.navigation.shop' | t }}</p>
+        <a href="{{ gear_url }}" class="sl-menu__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>
+          <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {%- if pro_product != blank -%}
+          <a href="{{ pro_product.url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
+            <span>{{ 'layout.navigation.pro' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+        {%- endif -%}
+      </div>
+
+      <div class="sl-menu__group">
+        <p class="sl-menu__eyebrow">{{ 'layout.navigation.account' | t }}</p>
+        {%- if app_url != blank -%}
+          <a href="{{ app_account_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.caddieinsight_profile' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+        {%- endif -%}
+        <a href="{{ routes.account_url }}" class="sl-menu__link" data-menu-link>
+          <span>{{ 'layout.navigation.orders_subscriptions' | t }}</span><span aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+    </nav>
+  </div>
+</dialog>
+
 {% stylesheet %}
+html.sl-menu-open { overflow: hidden; }
 .sl-header {
   position: sticky;
   top: 0;
   z-index: 40;
-  display: flex;
-  align-items: center;
-  gap: clamp(16px, 3vw, 32px);
-  height: 72px;
+  min-height: 72px;
   padding: 0 var(--sl-pad-x);
-  background: rgba(247, 245, 240, 0.82);
-  -webkit-backdrop-filter: blur(12px);
-  backdrop-filter: blur(12px);
+  background: rgba(247, 245, 240, 0.94);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--sl-border);
 }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .sl-header { background: var(--sl-bg); }
 }
+.sl-header__inner {
+  width: 100%;
+  max-width: 1280px;
+  min-height: 72px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  gap: clamp(16px, 2.5vw, 28px);
+}
 .sl-header__logo {
-  font-weight: 900;
-  font-size: 22px;
-  letter-spacing: -0.02em;
-  color: var(--sl-green);
-  text-decoration: none;
   display: flex;
   align-items: center;
   flex-shrink: 0;
+  color: var(--sl-green);
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
+  text-decoration: none;
 }
-.sl-header__logo-img { height: 38px; width: auto; display: block; }
-.sl-header__nav {
+.sl-header__logo-img { display: block; width: auto; height: 38px; }
+.sl-header__desktop-nav {
   display: flex;
-  gap: clamp(18px, 2.4vw, 30px);
   align-items: center;
+  gap: 8px;
   margin-left: auto;
 }
-.sl-header__link {
+.sl-header__link,
+.sl-header__dropdown-trigger {
+  min-height: 38px;
+  padding: 9px 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border-radius: 999px;
   color: var(--sl-ink);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
   text-decoration: none;
-  font-size: 15px;
-  font-weight: 500;
-  padding: 4px 0;
+  white-space: nowrap;
+  cursor: pointer;
 }
-.sl-header__link:hover { color: var(--sl-green-btn); }
+.sl-header__link:hover,
+.sl-header__dropdown-trigger:hover,
+.sl-header__dropdown[open] > .sl-header__dropdown-trigger {
+  background: var(--sl-bg-card);
+  color: var(--sl-green-btn);
+}
 .sl-header__link.is-current {
+  background: var(--sl-orange-soft);
   color: var(--sl-green);
-  font-weight: 700;
-  box-shadow: inset 0 -2px 0 var(--sl-orange);
 }
-.sl-header__mobile-only { display: none; }
-.sl-header__nav .sl-header__mobile-cta { display: none; }
+.sl-header__dropdown { position: relative; }
+.sl-header__dropdown summary { list-style: none; }
+.sl-header__dropdown summary::-webkit-details-marker { display: none; }
+.sl-header__chevron {
+  width: 7px;
+  height: 7px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: translateY(-2px) rotate(45deg);
+  transition: transform .18s ease;
+}
+.sl-header__dropdown[open] .sl-header__chevron { transform: translateY(2px) rotate(225deg); }
+.sl-header__dropdown-menu {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  z-index: 45;
+  width: max-content;
+  min-width: 210px;
+  padding: 8px;
+  display: grid;
+  gap: 2px;
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: 14px;
+  box-shadow: 0 18px 42px -24px rgba(15, 42, 27, 0.42);
+}
+.sl-header__dropdown-menu--right { right: 0; left: auto; }
+.sl-header__dropdown-menu a {
+  padding: 10px 12px;
+  border-radius: 9px;
+  color: var(--sl-ink);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.sl-header__dropdown-menu a:hover {
+  background: var(--sl-orange-soft);
+  color: var(--sl-green);
+}
 .sl-header__actions {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   flex-shrink: 0;
 }
-.sl-header__app { white-space: nowrap; }
-.sl-header__signin {
-  color: var(--sl-ink);
+.sl-header__cta {
+  min-height: 40px;
+  padding: 7px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--sl-green);
+  border-radius: 999px;
+  background: var(--sl-green);
+  color: var(--sl-green-ink);
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
+  line-height: 1;
   text-decoration: none;
   white-space: nowrap;
 }
-.sl-header__signin:hover { color: var(--sl-green-btn); }
+.sl-header__cta:hover { background: var(--sl-green-btn); color: #fff; }
+.sl-header__app { white-space: nowrap; }
 .sl-header__cart {
+  min-height: 40px;
+  padding: 6px 8px 6px 14px;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  color: var(--sl-ink);
-  text-decoration: none;
-  font-size: 14px;
-  font-weight: 600;
-  border: 1.5px solid var(--sl-ink);
+  border: 1.5px solid var(--sl-green);
   border-radius: 999px;
-  padding: 6px 8px 6px 15px;
+  color: var(--sl-green);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  text-decoration: none;
   white-space: nowrap;
   transition: border-color .15s ease, color .15s ease;
 }
-.sl-header__cart:hover { border-color: var(--sl-green-btn); color: var(--sl-green-btn); }
+.sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange); }
 .sl-header__cart-count {
+  min-width: 22px;
+  padding: 5px 6px;
+  border-radius: 999px;
+  background: var(--sl-green);
+  color: var(--sl-green-ink);
   font-family: var(--sl-font-mono);
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
-  min-width: 22px;
   text-align: center;
-  background: var(--sl-green);
-  color: var(--sl-green-ink);
-  border-radius: 999px;
-  padding: 5px 6px;
 }
 .sl-header__toggle {
   display: none;
+  width: 44px;
+  height: 44px;
+  padding: 10px;
   flex-direction: column;
+  align-items: stretch;
   justify-content: center;
   gap: 5px;
-  width: 42px;
-  height: 42px;
-  background: none;
-  border: 0;
+  border: 1.5px solid var(--sl-green);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--sl-green);
   cursor: pointer;
-  padding: 9px;
 }
 .sl-header__toggle span {
   display: block;
-  height: 2px;
   width: 100%;
-  background: var(--sl-ink);
+  height: 2px;
   border-radius: 2px;
-  transition: transform .2s ease, opacity .2s ease;
+  background: currentColor;
 }
-.sl-header__toggle[aria-expanded="true"] span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
-.sl-header__toggle[aria-expanded="true"] span:nth-child(2) { opacity: 0; }
-.sl-header__toggle[aria-expanded="true"] span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
-@media (prefers-reduced-motion: reduce) {
-  .sl-header__toggle span { transition: none; }
+.sl-menu {
+  width: 100vw;
+  max-width: none;
+  height: 100dvh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  overflow: hidden;
 }
-
+.sl-menu::backdrop { background: rgba(10, 28, 18, 0.46); }
+.sl-menu__panel {
+  width: min(88vw, 360px);
+  height: 100dvh;
+  margin-left: auto;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  background: var(--sl-bg);
+  border-left: 1px solid var(--sl-border);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: -24px 0 60px -34px rgba(15, 42, 27, 0.55);
+}
+.sl-menu[open] .sl-menu__panel { animation: sl-menu-in .22s ease-out both; }
+@keyframes sl-menu-in {
+  from { opacity: .85; transform: translateX(28px); }
+  to { opacity: 1; transform: translateX(0); }
+}
+.sl-menu__head {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.sl-menu__title {
+  margin: 0;
+  color: var(--sl-green);
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+.sl-menu__close {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border: 1.5px solid var(--sl-border);
+  border-radius: 50%;
+  background: var(--sl-bg-card);
+  color: var(--sl-ink);
+  cursor: pointer;
+}
+.sl-menu__close span {
+  position: absolute;
+  top: 20px;
+  left: 11px;
+  width: 20px;
+  height: 2px;
+  border-radius: 2px;
+  background: currentColor;
+}
+.sl-menu__close span:first-child { transform: rotate(45deg); }
+.sl-menu__close span:last-child { transform: rotate(-45deg); }
+.sl-menu__nav {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.sl-menu__cta {
+  width: 100%;
+  min-height: 48px;
+  justify-content: center;
+}
+.sl-menu__group {
+  padding-top: 18px;
+  display: grid;
+  gap: 2px;
+  border-top: 1px solid var(--sl-border);
+}
+.sl-menu__eyebrow {
+  margin: 0 0 7px;
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.sl-menu__link {
+  min-height: 46px;
+  padding: 10px 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border-radius: 8px;
+  color: var(--sl-ink);
+  font-size: 17px;
+  font-weight: 650;
+  text-decoration: none;
+}
+.sl-menu__link:hover { color: var(--sl-green-btn); }
+.sl-menu__link.is-current {
+  padding-inline: 10px;
+  background: var(--sl-orange-soft);
+  color: var(--sl-green);
+}
 @media (max-width: 980px) {
+  .sl-header { min-height: 64px; }
+  .sl-header__inner { min-height: 64px; gap: 10px; }
+  .sl-header__desktop-nav,
+  .sl-header__account,
+  .sl-header__app { display: none; }
+  .sl-header__actions { margin-left: auto; gap: 8px; }
   .sl-header__toggle { display: flex; }
-  .sl-header__nav {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    right: 0;
-    display: none;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-    margin: 0;
-    padding: 8px var(--sl-pad-x) 24px;
-    background: var(--sl-bg);
-    border-bottom: 1px solid var(--sl-border);
-    box-shadow: 0 18px 30px -18px rgba(15, 42, 27, 0.25);
-  }
-  .sl-header__nav.is-open { display: flex; }
-  .sl-header__link { font-size: 17px; padding: 12px 0; width: 100%; }
-  .sl-header__link.is-current { box-shadow: none; color: var(--sl-orange); }
-  .sl-header__mobile-only { display: block; }
-  .sl-header__nav .sl-header__mobile-cta {
-    display: flex;
-    justify-content: center;
-    width: 100%;
-    margin: 8px 0 6px;
-  }
-  .sl-header__actions .sl-header__signin,
-  .sl-header__actions .sl-header__app { display: none; }
-  .sl-header__cart { padding: 5px 8px 5px 12px; }
-}
-@media (max-width: 480px) {
-  .sl-header { height: 64px; gap: 10px; }
-  .sl-header__logo-img { height: 26px; max-width: 165px; object-fit: contain; }
+  .sl-header__logo-img { height: 28px; max-width: 175px; object-fit: contain; }
   .sl-header__logo { font-size: 18px; }
+  .sl-header__cart { min-height: 38px; }
 }
-@media (max-width: 360px) {
-  .sl-header { gap: 6px; padding-inline: 12px; }
-  .sl-header__actions { gap: 6px; }
-  .sl-header__logo-img { height: 22px; max-width: 132px; }
-  .sl-header__cart { padding: 4px; }
-  .sl-header__cart-label { display: none; }
+@media (max-width: 390px) {
+  .sl-header { padding-inline: 12px; }
+  .sl-header__logo-img { height: 24px; max-width: 142px; }
+  .sl-header__cart { padding: 5px 8px 5px 10px; }
+  .sl-header__cart-count { min-width: 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sl-header__chevron { transition: none; }
+  .sl-menu[open] .sl-menu__panel { animation: none; }
 }
 {% endstylesheet %}
 
 <script>
   (function () {
-    var header = document.querySelector('[data-sl-header]');
-    if (!header) return;
-    var btn = header.querySelector('[data-nav-toggle]');
-    var nav = header.querySelector('#sl-nav');
-
-    function setOpen(open) {
-      nav.classList.toggle('is-open', open);
-      btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    if (window.CaddieInsightHeader) {
+      window.CaddieInsightHeader.init(document);
+      return;
     }
 
-    if (btn && nav) {
-      btn.addEventListener('click', function () {
-        setOpen(!nav.classList.contains('is-open'));
-      });
-      document.addEventListener('keydown', function (e) {
-        if (e.key === 'Escape' && nav.classList.contains('is-open')) {
-          setOpen(false);
-          btn.focus();
-        }
-      });
-      document.addEventListener('click', function (e) {
-        if (nav.classList.contains('is-open') && !header.contains(e.target)) setOpen(false);
-      });
-    }
-
-    /* live cart count: refreshed on back/forward-cache restores, and on a
-       "cart:change" event any section may dispatch after a fetch add-to-cart
-       (detail.item_count optional — omitted means re-fetch) */
-    var count = header.querySelector('[data-cart-count]');
-    var cartLink = count && count.closest('.sl-header__cart');
-    function setCount(value) {
-      if (!count || !cartLink) return;
-      var number = Number(value) || 0;
-      count.textContent = number;
-      var label = number === 1
-        ? cartLink.getAttribute('data-cart-one')
-        : cartLink.getAttribute('data-cart-other').replace('__COUNT__', number);
-      cartLink.setAttribute('aria-label', label);
-    }
-    function refreshCount() {
-      fetch('{{ routes.cart_url }}.js', { headers: { 'Accept': 'application/json' } })
-        .then(function (r) { return r.ok ? r.json() : null; })
-        .then(function (c) { if (c) setCount(c.item_count); })
-        .catch(function () {});
-    }
-    window.addEventListener('pageshow', function (e) { if (e.persisted) refreshCount(); });
-    document.addEventListener('cart:change', function (e) {
-      if (e.detail && typeof e.detail.item_count !== 'undefined' && count) {
-        setCount(e.detail.item_count);
-      } else {
-        refreshCount();
+    function findHeaders(root) {
+      var headers = [];
+      if (root && root.matches && root.matches('[data-sl-header]')) headers.push(root);
+      if (root && root.querySelectorAll) {
+        var descendants = root.querySelectorAll('[data-sl-header]');
+        for (var i = 0; i < descendants.length; i++) headers.push(descendants[i]);
       }
-    });
+      return headers;
+    }
+
+    function initHeader(header) {
+      if (!header || header.dataset.slHeaderReady === 'true') return;
+
+      var menu = document.getElementById(header.getAttribute('data-menu-id'));
+      var openButton = header.querySelector('[data-menu-open]');
+      if (!menu || !openButton) return;
+
+      var controller = new AbortController();
+      var listenerOptions = { signal: controller.signal };
+      var closeButton = menu.querySelector('[data-menu-close]');
+      var menuLinks = menu.querySelectorAll('[data-menu-link]');
+      var desktopMenus = header.querySelectorAll('[data-header-dropdown]');
+      var desktopQuery = window.matchMedia('(min-width: 981px)');
+      var restoreMenuFocus = false;
+
+      function finishMenuClose() {
+        openButton.setAttribute('aria-expanded', 'false');
+        document.documentElement.classList.remove('sl-menu-open');
+        if (restoreMenuFocus && document.contains(openButton)) openButton.focus();
+        restoreMenuFocus = false;
+      }
+
+      function closeMenu(restoreFocus) {
+        if (!menu.hasAttribute('open')) return;
+        restoreMenuFocus = restoreFocus;
+        if (typeof menu.close === 'function') {
+          menu.close();
+        } else {
+          menu.removeAttribute('open');
+          finishMenuClose();
+        }
+      }
+
+      function openMenu() {
+        if (menu.hasAttribute('open')) return;
+        if (typeof menu.showModal === 'function') {
+          menu.showModal();
+        } else {
+          menu.setAttribute('open', '');
+        }
+        openButton.setAttribute('aria-expanded', 'true');
+        document.documentElement.classList.add('sl-menu-open');
+        if (closeButton) closeButton.focus();
+      }
+
+      function closeDesktopMenus() {
+        for (var i = 0; i < desktopMenus.length; i++) {
+          desktopMenus[i].removeAttribute('open');
+        }
+      }
+
+      function closeOnBreakpointChange(event) {
+        closeDesktopMenus();
+        if (event.matches) closeMenu(false);
+      }
+
+      function setCount(value) {
+        var count = header.querySelector('[data-cart-count]');
+        var cartLink = count && count.closest('.sl-header__cart');
+        if (!count || !cartLink) return;
+        var number = Number(value) || 0;
+        count.textContent = number;
+        var label = number === 1
+          ? cartLink.getAttribute('data-cart-one')
+          : cartLink.getAttribute('data-cart-other').replace('__COUNT__', number);
+        cartLink.setAttribute('aria-label', label);
+      }
+
+      function refreshCount() {
+        fetch('{{ routes.cart_url }}.js', { headers: { 'Accept': 'application/json' } })
+          .then(function (response) { return response.ok ? response.json() : null; })
+          .then(function (cart) { if (cart) setCount(cart.item_count); })
+          .catch(function () {});
+      }
+
+      openButton.addEventListener('click', openMenu, listenerOptions);
+      if (closeButton) {
+        closeButton.addEventListener('click', function () { closeMenu(true); }, listenerOptions);
+      }
+      menu.addEventListener('cancel', function (event) {
+        event.preventDefault();
+        closeMenu(true);
+      }, listenerOptions);
+      menu.addEventListener('close', finishMenuClose, listenerOptions);
+      menu.addEventListener('click', function (event) {
+        if (event.target === menu) closeMenu(true);
+      }, listenerOptions);
+      for (var i = 0; i < menuLinks.length; i++) {
+        menuLinks[i].addEventListener('click', function () { closeMenu(false); }, listenerOptions);
+      }
+      desktopQuery.addEventListener('change', closeOnBreakpointChange, listenerOptions);
+
+      for (var j = 0; j < desktopMenus.length; j++) {
+        desktopMenus[j].addEventListener('toggle', function (event) {
+          if (!event.currentTarget.open) return;
+          for (var k = 0; k < desktopMenus.length; k++) {
+            if (desktopMenus[k] !== event.currentTarget) desktopMenus[k].removeAttribute('open');
+          }
+        }, listenerOptions);
+        desktopMenus[j].addEventListener('focusout', function (event) {
+          if (!event.currentTarget.contains(event.relatedTarget)) {
+            event.currentTarget.removeAttribute('open');
+          }
+        }, listenerOptions);
+      }
+      document.addEventListener('click', function (event) {
+        for (var i = 0; i < desktopMenus.length; i++) {
+          if (!desktopMenus[i].contains(event.target)) desktopMenus[i].removeAttribute('open');
+        }
+      }, listenerOptions);
+      document.addEventListener('keydown', function (event) {
+        if (event.key !== 'Escape') return;
+        for (var i = 0; i < desktopMenus.length; i++) {
+          if (!desktopMenus[i].hasAttribute('open')) continue;
+          desktopMenus[i].removeAttribute('open');
+          var summary = desktopMenus[i].querySelector('summary');
+          if (summary) summary.focus();
+        }
+      }, listenerOptions);
+      window.addEventListener('pageshow', function (event) {
+        if (event.persisted) refreshCount();
+      }, listenerOptions);
+      document.addEventListener('cart:change', function (event) {
+        if (event.detail && typeof event.detail.item_count !== 'undefined') {
+          setCount(event.detail.item_count);
+        } else {
+          refreshCount();
+        }
+      }, listenerOptions);
+
+      header.dataset.slHeaderReady = 'true';
+      header.slHeaderCleanup = function () {
+        closeMenu(false);
+        closeDesktopMenus();
+        controller.abort();
+        document.documentElement.classList.remove('sl-menu-open');
+        delete header.dataset.slHeaderReady;
+        delete header.slHeaderCleanup;
+      };
+    }
+
+    function init(root) {
+      var headers = findHeaders(root);
+      for (var i = 0; i < headers.length; i++) initHeader(headers[i]);
+    }
+
+    function unload(root) {
+      var headers = findHeaders(root);
+      for (var i = 0; i < headers.length; i++) {
+        if (headers[i].slHeaderCleanup) headers[i].slHeaderCleanup();
+      }
+    }
+
+    window.CaddieInsightHeader = { init: init, unload: unload };
+    init(document);
+    document.addEventListener('shopify:section:load', function (event) { init(event.target); });
+    document.addEventListener('shopify:section:unload', function (event) { unload(event.target); });
   })();
 </script>
 
@@ -293,7 +656,7 @@
       "id": "app_url",
       "label": "App URL",
       "default": "https://app.caddieinsight.com",
-      "info": "Analyze and Drills links use this origin. Leave empty to hide app links."
+      "info": "Analyze and My Game links use this origin. Leave empty to hide app links."
     }
   ]
 }
