@@ -46,6 +46,7 @@ def contract_app(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
     monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "contract-test.myshopify.com")
     monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", SHOPIFY_SECRET)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
 

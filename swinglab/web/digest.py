@@ -1,7 +1,7 @@
 """The weekly practice-plan email — "one drill a week", made real.
 
 Consent-first and inert by default, the same rule as every integration:
-nothing ever sends unless SMTP is configured (mailer.py), config
+nothing ever sends unless email delivery is configured (mailer.py), config
 ``web.digest_enabled`` is on, AND the user ticked "Email me one drill a
 week" (unchecked at signup; toggled on the account page; one-click
 unsubscribe link in every email). With any of the three missing, this
@@ -18,7 +18,7 @@ Delivery model: an hourly daemon thread (started by app.py only when the
 preconditions above hold). Each tick sends to opted-in users whose last
 send is at least DIGEST_INTERVAL_S (6.5 days) old and who have at least
 one finished session. The send is CLAIMED first — digest_last_sent_at is
-stamped in SQLite before the SMTP attempt — so a crash mid-send skips a
+stamped in SQLite before the delivery attempt — so a crash mid-send skips a
 week instead of ever double-emailing within one. The thread never raises.
 
 Unsubscribe links carry an HMAC-SHA256 token over the user id + purpose,
@@ -204,7 +204,7 @@ def compose_digest(
 
 def run_once(users, manager, cfg: Config, secret: str, now: float | None = None) -> int:
     """One scheduler tick: send to every currently-eligible user. Returns
-    how many digests went out. Zero behavior when SMTP is unconfigured or
+    how many digests went out. Zero behavior when email is unconfigured or
     the digest is disabled in config."""
     if not mailer.enabled() or not cfg.web.get("digest_enabled", True):
         return 0
@@ -245,7 +245,7 @@ def _loop(manager, users, cfg: Config, secret: str) -> None:
 
 def start_scheduler(manager, users, cfg: Config, secret: str) -> threading.Thread | None:
     """Start the hourly digest thread (daemon — dies with the process).
-    Returns None — and nothing at all runs — unless SMTP is configured AND
+    Returns None — and nothing at all runs — unless email is configured AND
     ``web.digest_enabled`` is on. The first tick runs immediately so a
     restart never silently skips a due week."""
     if not mailer.enabled() or not cfg.web.get("digest_enabled", True):

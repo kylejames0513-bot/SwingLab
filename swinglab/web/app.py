@@ -16,17 +16,17 @@ subscription (billing.py). Set SWINGLAB_SECRET so logins survive restarts.
 Accounts can also start on the store: Shopify customer webhooks provision
 passwordless "store accounts" that signing up with the same email claims in
 place — purchases and the Shopify link carry over (shopify_billing.py).
-With SMTP configured (mailer.py, inert otherwise), claims of pre-existing
+With email delivery configured (mailer.py, inert otherwise), claims of pre-existing
 value are verified with an emailed one-time code, and password reset works
 the same way.
 
 One account (web.passwordless_login, on by default but self-disabling
-without SMTP): the login page asks for the email first and mails a
+without email delivery): the login page asks for the email first and mails a
 six-digit sign-in code — the same flow logs into an existing account,
 claims an unclaimed store account with everything bought intact, or
 creates a new account, so the store email IS the app identity and nobody
 sets a password unless they want one ("Add a password" on /account, "use
-your password instead" on the login page). Without SMTP the pages keep the
+your password instead" on the login page). Without email delivery the pages keep the
 classic password flows exactly.
 
 The optional gear shop (a /shop page plus flag-matched training-aid
@@ -36,7 +36,7 @@ environment variables are set — see shop.py.
 Retention surfaces: /progress charts each account's metrics across finished
 sessions (swinglab.trends + diagrams.trend_chart), and an opt-in weekly
 practice-plan email (digest.py) runs on an hourly scheduler thread — only
-when SMTP is configured and web.digest_enabled is on, and only to users who
+when email delivery is configured and web.digest_enabled is on, and only to users who
 asked for it.
 """
 
@@ -50,6 +50,7 @@ import math
 import os
 import secrets
 import shutil
+import threading
 import time
 from pathlib import Path
 
@@ -80,6 +81,13 @@ UPLOAD_CHUNK = 1024 * 1024
 LOGIN_WINDOW_S = 15 * 60  # window for web.login_attempts_per_15min
 SIGNUP_WINDOW_S = 3600  # window for web.signups_per_hour_per_ip
 THROTTLED_MESSAGE = "Too many attempts — wait a few minutes and try again."
+EMAIL_DELIVERY_MESSAGE = (
+    "We couldn't send that email right now. Please try again in a moment."
+)
+EMAIL_DELIVERY_UNCERTAIN_MESSAGE = (
+    "We couldn't confirm delivery. If a code arrives, it will still work; "
+    "otherwise try again in a minute."
+)
 
 
 def init_sentry() -> bool:
@@ -159,6 +167,10 @@ def create_app(
     users = UserStore(sessions_dir / "swinglab.db")
     manager = JobManager(sessions_dir, cfg, user_store=users)
     throttle = Throttle(sessions_dir / "swinglab.db")
+    code_send_locks: dict[
+        tuple[str, str], tuple[threading.Lock, int]
+    ] = {}
+    code_send_locks_guard = threading.Lock()
     app = FastAPI(title=f"{cfg.brand['name']} — swing analysis")
     app.state.jobs = manager
     app.state.users = users
@@ -207,10 +219,25 @@ def create_app(
     def shop_active() -> bool:
         return bool(cfg.shop.get("enabled")) and shop.enabled()
 
+    def acquire_code_send_lock(key: tuple[str, str]) -> threading.Lock:
+        """Reference-count a per-address lock without retaining attacker keys."""
+        with code_send_locks_guard:
+            lock, refs = code_send_locks.get(key, (threading.Lock(), 0))
+            code_send_locks[key] = (lock, refs + 1)
+        return lock
+
+    def release_code_send_lock(key: tuple[str, str]) -> None:
+        with code_send_locks_guard:
+            lock, refs = code_send_locks[key]
+            if refs == 1:
+                del code_send_locks[key]
+            else:
+                code_send_locks[key] = (lock, refs - 1)
+
     def passwordless_active() -> bool:
         """Email-code sign-in is the primary flow only when the operator
-        left web.passwordless_login on AND SMTP is configured — with either
-        missing, the login/signup pages keep the classic password flows
+        left web.passwordless_login on AND email delivery is configured —
+        with either missing, the login/signup pages keep the classic password flows
         exactly (inert until configured, like every integration)."""
         return bool(cfg.web.get("passwordless_login")) and mailer.enabled()
 
@@ -337,20 +364,61 @@ def create_app(
         a still-valid code is already in the inbox, so send nothing. The
         login message depends only on the purpose, never on whether the
         email has an account — all three account states read identically."""
-        code = users.issue_email_code(email, purpose)
-        if code is None:
-            return
-        action = {
-            "claim": "finish setting up your account",
-            "login": "sign in",
-        }.get(purpose, "reset your password")
-        mailer.send(
-            email,
-            f"{cfg.brand['name']} verification code: {code}",
-            f"Your {cfg.brand['name']} verification code is {code}.\n\n"
-            f"Enter it to {action}. The code expires in 10 minutes.\n"
-            "If you didn't request this, you can ignore this email.",
-        )
+        key = (email.strip().lower(), purpose)
+        send_lock = acquire_code_send_lock(key)
+        try:
+            with send_lock:
+                code = users.issue_email_code(email, purpose)
+                if code is None:
+                    return
+                action = {
+                    "claim": "finish setting up your account",
+                    "login": "sign in",
+                }.get(purpose, "reset your password")
+                try:
+                    mailer.send(
+                        email,
+                        f"{cfg.brand['name']} verification code: {code}",
+                        f"Your {cfg.brand['name']} verification code is {code}.\n\n"
+                        f"Enter it to {action}. The code expires in 10 minutes.\n"
+                        "If you didn't request this, you can ignore this email.",
+                    )
+                except mailer.EmailDeliveryRejected as exc:
+                    # A definitive rejection cannot produce a usable email, so
+                    # remove this exact code and let an immediate retry mint one.
+                    users.discard_email_code(email, purpose, code)
+                    logger.error(
+                        "email-code delivery rejected (purpose=%s; detail=%s)",
+                        purpose,
+                        exc,
+                    )
+                    raise
+                except mailer.EmailDeliveryUncertain as exc:
+                    # A timeout/disconnect may occur after provider acceptance.
+                    # Keep the code valid in case the email still arrives.
+                    logger.error(
+                        "email-code delivery uncertain (purpose=%s; detail=%s)",
+                        purpose,
+                        exc,
+                    )
+                    raise
+                except Exception as exc:
+                    # Unknown sender failures are ambiguous by default. Keeping
+                    # the code avoids emailing a code that has been invalidated.
+                    logger.error(
+                        "email-code delivery outcome unknown (purpose=%s)",
+                        purpose,
+                    )
+                    raise mailer.EmailDeliveryUncertain(
+                        "Email delivery could not be confirmed."
+                    ) from exc
+        finally:
+            release_code_send_lock(key)
+
+    def delivery_error_message(exc: mailer.EmailDeliveryError) -> str:
+        if isinstance(exc, mailer.EmailDeliveryUncertain):
+            return EMAIL_DELIVERY_UNCERTAIN_MESSAGE
+        return EMAIL_DELIVERY_MESSAGE
 
     @app.get("/login", response_class=HTMLResponse)
     def login_page(request: Request):
@@ -364,7 +432,7 @@ def create_app(
             show_password="password" in request.query_params,
         )
 
-    # -- email-code sign-in (primary once SMTP is configured) --------------
+    # -- email-code sign-in (primary once email delivery is configured) ----
     @app.post("/login/email")
     def login_email(request: Request, email: str = Form("")):
         """Step one of "Continue with email": send a sign-in code. The
@@ -396,7 +464,20 @@ def create_app(
             return page
         throttle.record("code-ip", ip)
         throttle.record("code-email", normalized)
-        send_code_email(normalized, "login")
+        try:
+            send_code_email(normalized, "login")
+        except mailer.EmailDeliveryError as exc:
+            delivery_context = (
+                {"code_email": normalized}
+                if isinstance(exc, mailer.EmailDeliveryUncertain)
+                else {"prefill_email": normalized}
+            )
+            page = render(
+                "web_login.html.j2", request, landing=False,
+                error=delivery_error_message(exc), **delivery_context,
+            )
+            page.status_code = 503
+            return page
         return render(
             "web_login.html.j2", request, landing=False, error=None,
             code_email=normalized,
@@ -507,7 +588,7 @@ def create_app(
     ):
         wants_digest = digest_opt.lower() in ("on", "true", "1", "yes")
         # Signup throttle: per client IP, sliding hour window. Every signup
-        # costs a scrypt hash (and, with SMTP on, an email) — this stops
+        # costs a scrypt hash (and, with email on, an email) — this stops
         # throwaway-email loops from getting that CPU for free.
         ip = client_ip(request)
         if not throttle.allow("signup-ip", ip, signup_limit, SIGNUP_WINDOW_S):
@@ -534,7 +615,26 @@ def create_app(
         # security note.
         if mailer.enabled() and users.has_unclaimed_value(normalized):
             if not code.strip():
-                send_code_email(normalized, "claim")
+                try:
+                    send_code_email(normalized, "claim")
+                except mailer.EmailDeliveryError as exc:
+                    if isinstance(exc, mailer.EmailDeliveryUncertain):
+                        page = render(
+                            "web_login.html.j2", request, landing=False,
+                            error=delivery_error_message(exc),
+                            verify_email=normalized,
+                            verify_password=password,
+                            verify_digest="on" if wants_digest else "",
+                        )
+                    else:
+                        page = render(
+                            "web_login.html.j2", request, landing=False,
+                            error=delivery_error_message(exc),
+                            show_password=True,
+                            prefill_email=normalized,
+                        )
+                    page.status_code = 503
+                    return page
                 return render(
                     "web_login.html.j2", request, landing=False, error=None,
                     verify_email=normalized, verify_password=password,
@@ -561,7 +661,7 @@ def create_app(
         request.session["user_id"] = user.id
         return RedirectResponse("/", status_code=303)
 
-    # -- password reset (available once SWINGLAB_SMTP_* is configured) ----
+    # -- password reset (available once email delivery is configured) -----
     @app.get("/reset", response_class=HTMLResponse)
     def reset_page(request: Request):
         if not mailer.enabled():
@@ -578,7 +678,13 @@ def create_app(
         normalized = email.strip().lower()
         user = users.get_by_email(normalized)
         if user is not None and user.has_password:
-            send_code_email(normalized, "reset")
+            try:
+                send_code_email(normalized, "reset")
+            except mailer.EmailDeliveryError:
+                # Keep the same response as an unknown address. Returning a
+                # provider-specific error only for real accounts would turn a
+                # temporary outage into an account-enumeration tool.
+                pass
         # Same response either way — don't reveal which emails have accounts.
         return render(
             "web_login.html.j2", request, error=None, landing=False,
@@ -1106,7 +1212,7 @@ def create_app(
         )
 
     # Weekly practice-plan digest: hourly daemon thread, started ONLY when
-    # SMTP is configured AND web.digest_enabled is on — otherwise None and
+    # Email is configured AND web.digest_enabled is on — otherwise None and
     # zero behavior (see digest.py for the consent + claim-before-send rules).
     app.state.digest_thread = digest.start_scheduler(manager, users, cfg, secret)
 

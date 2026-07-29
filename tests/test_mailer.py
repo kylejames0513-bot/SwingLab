@@ -1,13 +1,14 @@
-"""Optional SMTP email: inert until configured, and — once configured —
+"""Optional email delivery: inert until configured, and — once configured —
 code-verified account claims plus password reset.
 
-No SMTP server is ever contacted: the URL parser and smtplib calls are
-tested against fakes, and the app-level flows monkeypatch mailer.send to
-capture the outgoing mail (and the 6-digit codes inside it).
+No provider is ever contacted: HTTPS and SMTP calls are tested against fakes,
+and app-level flows capture the outgoing mail and six-digit codes.
 """
 
 from __future__ import annotations
 
+import io
+import json
 import re
 import types
 
@@ -37,6 +38,7 @@ from tests.test_web import fake_analyze_ok
 def outbox(monkeypatch):
     """Turn mail 'on' (env set) but capture sends instead of doing SMTP."""
     sent: list[tuple[str, str, str]] = []
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
     monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp+starttls://u:p@mail.test:587")
     monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
     monkeypatch.setattr(
@@ -62,13 +64,15 @@ def last_code(outbox):
 # -- inert until configured ------------------------------------------------
 
 def test_mailer_inert_until_configured(app, monkeypatch):
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
     assert not mailer.enabled()
     with pytest.raises(RuntimeError):
         mailer.send("a@b.co", "hi", "there")
 
-    # Without SMTP, claiming keeps today's behavior exactly: no code step.
+    # Without email delivery, claiming keeps today's behavior: no code step.
     client = TestClient(app)
     webhook(client, customer(), "customers/create")
     resp = client.post(
@@ -91,6 +95,7 @@ def test_mailer_inert_until_configured(app, monkeypatch):
 
 
 def test_login_reset_guidance_uses_brand_support_text(tmp_path, monkeypatch):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
@@ -101,7 +106,192 @@ def test_login_reset_guidance_uses_brand_support_text(tmp_path, monkeypatch):
     assert "Email help@acecoach.example." in client.get("/login").text
 
 
-# -- the SMTP plumbing itself ----------------------------------------------
+# -- delivery plumbing -----------------------------------------------------
+
+def test_partial_and_whitespace_configuration_stays_inert(monkeypatch):
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
+    monkeypatch.setenv("RESEND_API_KEY", "   ")
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "   ")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+    assert not mailer.enabled()
+
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "   ")
+    assert not mailer.enabled()
+
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+    assert mailer.enabled()
+
+    monkeypatch.setenv("SWINGLAB_MAIL_TRANSPORT", "")
+    assert mailer.enabled()  # blank means the documented auto default
+
+    monkeypatch.setenv("SWINGLAB_MAIL_TRANSPORT", "typo")
+    assert mailer.enabled()  # configured intent stays fail-closed
+    with pytest.raises(mailer.EmailDeliveryRejected) as raised:
+        mailer.send("a@b.co", "hi", "there")
+    assert "must be auto, resend, or smtp" in str(raised.value)
+
+
+def test_send_uses_resend_https_api(monkeypatch):
+    requests = []
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp://must-not-be-used.test")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def getcode(self):
+            return self.status
+
+    def fake_urlopen(request, timeout):
+        requests.append((request, timeout))
+        return FakeResponse()
+
+    monkeypatch.setattr(mailer.urllib_request, "urlopen", fake_urlopen)
+    mailer.send("kyle@example.com", "Your code", "123456 inside")
+
+    [(request, timeout)] = requests
+    assert request.full_url == "https://api.resend.com/emails"
+    assert request.method == "POST"
+    assert timeout == mailer._DELIVERY_TIMEOUT_S
+    assert request.get_header("Authorization") == "Bearer re_test_secret"
+    assert request.get_header("Content-type") == "application/json"
+    assert request.get_header("User-agent")
+    idempotency_key = request.get_header("Idempotency-key")
+    assert idempotency_key.startswith("caddie-")
+    assert "kyle@example.com" not in idempotency_key
+    assert "123456" not in idempotency_key
+    assert json.loads(request.data) == {
+        "from": "CaddieInsight <no-reply@test.example>",
+        "to": ["kyle@example.com"],
+        "subject": "Your code",
+        "text": "123456 inside",
+    }
+
+
+def test_existing_resend_smtp_url_is_upgraded_to_https(monkeypatch):
+    requests = []
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setenv(
+        "SWINGLAB_SMTP_URL",
+        "smtp+starttls://resend:re_existing_key@smtp.resend.com:587",
+    )
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def getcode(self):
+            return self.status
+
+    def fake_urlopen(request, timeout):
+        requests.append(request)
+        return FakeResponse()
+
+    monkeypatch.setattr(mailer.urllib_request, "urlopen", fake_urlopen)
+    mailer.send("kyle@example.com", "Your code", "123456 inside")
+
+    assert len(requests) == 1
+    assert requests[0].get_header("Authorization") == "Bearer re_existing_key"
+
+
+def test_resend_html_uses_html_field(monkeypatch):
+    payloads = []
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
+    monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def getcode(self):
+            return self.status
+
+    def fake_urlopen(request, timeout):
+        payloads.append(json.loads(request.data))
+        return FakeResponse()
+
+    monkeypatch.setattr(mailer.urllib_request, "urlopen", fake_urlopen)
+    mailer.send("kyle@example.com", "Weekly plan", "<h1>Drill</h1>", html=True)
+
+    assert payloads[0]["html"] == "<h1>Drill</h1>"
+    assert "text" not in payloads[0]
+
+
+def test_resend_http_error_is_sanitized(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_super_secret")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    def reject(request, timeout):
+        raise mailer.urllib_error.HTTPError(
+            request.full_url,
+            403,
+            "provider body contains re_super_secret and 123456",
+            {},
+            io.BytesIO(b"provider body contains re_super_secret and 123456"),
+        )
+
+    monkeypatch.setattr(mailer.urllib_request, "urlopen", reject)
+    with pytest.raises(mailer.EmailDeliveryError) as raised:
+        mailer.send("kyle@example.com", "Your code", "123456 inside")
+    message = str(raised.value)
+    assert message == "Resend returned HTTP 403."
+    assert "re_super_secret" not in message
+    assert "123456" not in message
+
+
+def test_resend_network_failure_is_uncertain_and_sanitized(monkeypatch):
+    monkeypatch.setenv("RESEND_API_KEY", "re_super_secret")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    def disconnect(request, timeout):
+        raise mailer.urllib_error.URLError(
+            "connection lost after re_super_secret and 123456"
+        )
+
+    monkeypatch.setattr(mailer.urllib_request, "urlopen", disconnect)
+    with pytest.raises(mailer.EmailDeliveryUncertain) as raised:
+        mailer.send("kyle@example.com", "Your code", "123456 inside")
+    assert str(raised.value) == "Resend delivery could not be confirmed."
+    assert "re_super_secret" not in str(raised.value)
+    assert "123456" not in str(raised.value)
+
+
+@pytest.mark.parametrize("status", [408, 409, 500, 503])
+def test_resend_ambiguous_http_status_is_uncertain(monkeypatch, status):
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    def ambiguous_error(request, timeout):
+        raise mailer.urllib_error.HTTPError(
+            request.full_url, status, "ambiguous", {}, io.BytesIO()
+        )
+
+    monkeypatch.setattr(mailer.urllib_request, "urlopen", ambiguous_error)
+    with pytest.raises(mailer.EmailDeliveryUncertain):
+        mailer.send("kyle@example.com", "Your code", "123456 inside")
+
+
+# -- SMTP fallback ---------------------------------------------------------
 
 def test_smtp_url_parsing():
     assert mailer._parse_url("smtp://relay.local") == (
@@ -120,6 +310,8 @@ def test_smtp_url_parsing():
 
 
 def test_send_drives_smtplib(monkeypatch):
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.setenv(
         "SWINGLAB_SMTP_URL", "smtp+starttls://user%40x.com:secret@mail.test:587"
     )
@@ -161,6 +353,52 @@ def test_send_drives_smtplib(monkeypatch):
     assert "123456" in message.get_content()
 
 
+def test_smtp_cleanup_failure_after_acceptance_is_not_reported_as_failure(
+    monkeypatch
+):
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp://mail.test:25")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout=None):
+            self.sent = False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            raise OSError("QUIT disconnected")
+
+        def send_message(self, message):
+            self.sent = True
+
+    monkeypatch.setattr(mailer.smtplib, "SMTP", FakeSMTP)
+    mailer.send("kyle@example.com", "Your code", "123456 inside")
+
+
+def test_explicit_smtp_transport_is_a_rollback_override(monkeypatch):
+    calls = []
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_key")
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp://mail.test:25")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+    monkeypatch.setenv("SWINGLAB_MAIL_TRANSPORT", "smtp")
+    monkeypatch.setattr(
+        mailer,
+        "_send_smtp",
+        lambda *args: calls.append(args),
+    )
+    monkeypatch.setattr(
+        mailer,
+        "_send_resend",
+        lambda *args: pytest.fail("Resend API should not be used"),
+    )
+
+    mailer.send("kyle@example.com", "Your code", "123456 inside")
+    assert len(calls) == 1
+
+
 # -- verified claims -------------------------------------------------------
 
 def test_claiming_a_stub_requires_the_emailed_code(app, outbox):
@@ -187,6 +425,54 @@ def test_claiming_a_stub_requires_the_emailed_code(app, outbox):
     user = get_user(client)
     assert user.has_password and user.is_pro  # claim kept the purchase
     assert user.shopify_customer_id == "7001"
+
+
+def test_uncertain_claim_delivery_still_shows_a_working_code_form(
+    app, outbox, monkeypatch
+):
+    client = TestClient(app)
+    webhook(client, customer(), "customers/create")
+    attempted = []
+
+    def uncertain(to, subject, body):
+        attempted.append((to, subject, body))
+        raise mailer.EmailDeliveryUncertain("outcome unknown")
+
+    monkeypatch.setattr(mailer, "send", uncertain)
+    form = {"email": "buyer@example.com", "password": "longenough"}
+    response = client.post("/signup", data=form)
+    assert response.status_code == 503
+    assert 'action="/signup"' in response.text
+    assert "Verification code" in response.text
+
+    verified = client.post(
+        "/signup",
+        data={**form, "code": last_code(attempted)},
+        follow_redirects=False,
+    )
+    assert verified.status_code == 303
+    assert get_user(client).shopify_customer_id == "7001"
+
+
+def test_invalid_transport_mode_cannot_bypass_store_claim_verification(
+    app, monkeypatch
+):
+    client = TestClient(app)
+    webhook(client, customer(), "customers/create")
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp://mail.test:25")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+    monkeypatch.setenv("SWINGLAB_MAIL_TRANSPORT", "typo")
+
+    response = client.post(
+        "/signup",
+        data={"email": "buyer@example.com", "password": "longenough"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 503
+    user = get_user(client)
+    assert user.shopify_customer_id == "7001"
+    assert not user.has_password
 
 
 def test_parked_presignup_purchase_also_requires_code(app, outbox):
@@ -265,7 +551,7 @@ def test_password_reset_flow(app, outbox):
     )
     client.post("/logout")
 
-    # With SMTP on, code sign-in is the primary flow — the password card
+    # With email on, code sign-in is the primary flow — the password card
     # (and its reset link) lives behind "use your password instead".
     assert "Use your password instead" in client.get("/login").text
     assert "Forgot your password?" in client.get("/login?password=1").text
@@ -307,6 +593,40 @@ def test_reset_request_never_reveals_whether_an_account_exists(app, outbox):
     resp = client.post("/reset/request", data={"email": "ghost@example.com"})
     assert resp.status_code == 200 and "code is on its way" in resp.text
     assert outbox == []  # nothing sent for unknown emails
+
+
+def test_reset_delivery_failure_keeps_response_private_and_allows_retry(
+    app, outbox, monkeypatch
+):
+    client = TestClient(app)
+    client.post(
+        "/signup",
+        data={"email": "kyle@example.com", "password": "oldpassword"},
+        follow_redirects=False,
+    )
+    client.post("/logout")
+
+    monkeypatch.setattr(
+        mailer,
+        "send",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            mailer.EmailDeliveryRejected("provider unavailable")
+        ),
+    )
+    known = client.post("/reset/request", data={"email": "kyle@example.com"})
+    unknown = client.post("/reset/request", data={"email": "ghost@example.com"})
+    assert known.status_code == unknown.status_code == 200
+    assert known.text.replace("kyle@example.com", "EMAIL") == unknown.text.replace(
+        "ghost@example.com", "EMAIL"
+    )
+
+    sent = []
+    monkeypatch.setattr(
+        mailer, "send", lambda to, subject, body: sent.append((to, subject, body))
+    )
+    retry = client.post("/reset/request", data={"email": "kyle@example.com"})
+    assert retry.status_code == 200
+    assert len(sent) == 1
 
 
 def test_short_new_password_does_not_burn_the_code(app, outbox):
