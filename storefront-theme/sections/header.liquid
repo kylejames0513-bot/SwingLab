@@ -1,8 +1,7 @@
 {%- liquid
   assign cart_count = cart.item_count | default: 0
   assign app_url = section.settings.app_url
-  assign app_login_url = app_url | append: '/login'
-  assign app_signup_url = app_url | append: '/signup'
+  assign drills_url = app_url | append: '/drills'
   assign gear_url = routes.collections_url | append: '/swinglab-gear'
   assign pro_product = all_products['swinglab-pro']
   if cart_count == 1
@@ -22,27 +21,21 @@
   </a>
 
   <nav class="sl-header__nav" id="sl-nav" aria-label="{{ 'layout.navigation.main' | t }}">
-    <a href="{{ routes.root_url }}" class="sl-header__link{% if request.page_type == 'index' %} is-current{% endif %}"{% if request.page_type == 'index' %} aria-current="page"{% endif %}>{{ 'layout.navigation.home' | t }}</a>
     {%- if app_url != blank -%}
-      <a href="{{ app_url }}" class="sl-header__link">{{ 'layout.navigation.analyze' | t }}</a>
+      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--primary sl-header__mobile-cta">{{ 'layout.navigation.analyze_a_swing' | t }}</a>
+      <a href="{{ drills_url }}" class="sl-header__link">{{ 'layout.navigation.drills' | t }}</a>
     {%- endif -%}
     <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
     {%- if pro_product != blank -%}
       <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
     {%- endif -%}
-    {%- if app_url != blank -%}
-      <a href="{{ app_login_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.navigation.app_sign_in' | t }}</a>
-      <a href="{{ app_signup_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.navigation.create_free_account' | t }}</a>
-    {%- endif -%}
     <a href="{{ routes.account_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.navigation.orders' | t }}</a>
-    <a href="{{ routes.cart_url }}" class="sl-header__link sl-header__mobile-only">{{ 'layout.cart.title' | t }} ({{ cart_count }})</a>
   </nav>
 
   <div class="sl-header__actions">
     <a href="{{ routes.account_url }}" class="sl-header__signin">{{ 'layout.navigation.orders' | t }}</a>
     {%- if app_url != blank -%}
-      <a href="{{ app_login_url }}" class="sl-header__signin">{{ 'layout.navigation.app_sign_in' | t }}</a>
-      <a href="{{ app_signup_url }}" class="sl-btn sl-btn--sm sl-btn--primary sl-header__app">{{ 'layout.navigation.start_free' | t }}</a>
+      <a href="{{ app_url }}" class="sl-btn sl-btn--sm sl-btn--primary sl-header__app">{{ 'layout.navigation.analyze_a_swing' | t }}</a>
     {%- endif -%}
     <a href="{{ routes.cart_url }}" class="sl-header__cart"
        aria-label="{{ cart_aria }}"
@@ -106,6 +99,7 @@
   box-shadow: inset 0 -2px 0 var(--sl-orange);
 }
 .sl-header__mobile-only { display: none; }
+.sl-header__nav .sl-header__mobile-cta { display: none; }
 .sl-header__actions {
   display: flex;
   align-items: center;
@@ -196,6 +190,12 @@
   .sl-header__link { font-size: 17px; padding: 12px 0; width: 100%; }
   .sl-header__link.is-current { box-shadow: none; color: var(--sl-orange); }
   .sl-header__mobile-only { display: block; }
+  .sl-header__nav .sl-header__mobile-cta {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    margin: 8px 0 6px;
+  }
   .sl-header__actions .sl-header__signin,
   .sl-header__actions .sl-header__app { display: none; }
   .sl-header__cart { padding: 5px 8px 5px 12px; }
@@ -293,7 +293,7 @@
       "id": "app_url",
       "label": "App URL",
       "default": "https://app.caddieinsight.com",
-      "info": "Analyze, sign-in, and free-account links use this origin. Leave empty to hide app links."
+      "info": "Analyze and Drills links use this origin. Leave empty to hide app links."
     }
   ]
 }

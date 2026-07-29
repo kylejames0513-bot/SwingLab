@@ -12,9 +12,11 @@
     },
     "navigation": {
       "analyze": "Analyze",
+      "analyze_a_swing": "Analyze a swing",
       "app_sign_in": "App sign in",
       "caddieinsight_home": "CaddieInsight home",
       "create_free_account": "Create free account",
+      "drills": "Drills",
       "gear": "Gear",
       "home": "Home",
       "main": "Main navigation",

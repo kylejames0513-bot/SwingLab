@@ -71,13 +71,22 @@ def test_header_connects_store_app_and_account_paths(tmp_path, monkeypatch):
     page = client.get("/login").text
     assert 'href="https://caddieinsight.com"' in page
     assert 'aria-label="CaddieInsight home"' in page
-    assert 'href="/signup"' in page and 'href="/login"' in page
+    assert 'href="/signup"' in page
     assert 'href="/shop"' in page and 'href="/pricing"' in page
     assert 'href="https://caddieinsight.com/cart"' in page
     assert 'href="https://caddieinsight.com/account">Orders</a>' in page
     assert 'src="https://cdn.example.test/caddieinsight-logo.png"' in page
-    assert "App sign in" in page
+    assert "Analyze a swing" in page
+    assert "App sign in" not in page
+    assert "Start free" not in page
+    assert ">Analyze</a>" not in page
     assert 'aria-controls="sl-nav"' in page
+
+    signup(client)
+    signed_in_page = client.get("/").text
+    assert 'href="/sessions"' in signed_in_page
+    assert 'href="/account">Account</a>' in signed_in_page
+    assert "Analyze a swing" in signed_in_page
 
 
 def test_open_mode_keeps_public_history_navigation(tmp_path):
@@ -89,6 +98,7 @@ def test_open_mode_keeps_public_history_navigation(tmp_path):
     assert 'href="/sessions"' in page
     assert 'href="/progress"' not in page
     assert 'href="/account"' not in page
+    assert "Analyze a swing" in page
 
 
 def test_free_account_landing_uses_configured_brand_and_allowance(tmp_path):
