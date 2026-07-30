@@ -245,6 +245,22 @@ billing:
                              # would be false (a "subscription" that never
                              # renews). Lifetime never gets a selling plan.
 
+shopify_customer_sync:
+  enabled: false             # outbound app-account -> Shopify customer sync.
+                             # Keep false until Admin API access, protected
+                             # customer data approval, dry-run reconciliation,
+                             # and the staged rollout checklist are complete.
+  auto_sync_new_users: true  # when enabled, queue new app accounts after the
+                             # local signup commits; Shopify failure must never
+                             # undo or block the CaddieInsight registration.
+  request_timeout_seconds: 10
+  max_attempts: 5
+  retry_base_seconds: 30     # exponential retry starts here for transient
+                             # transport, 5xx, and throttling failures.
+  retry_max_seconds: 3600    # cap between automatic attempts; manual retry
+                             # remains available through the protected admin API.
+  retry_jitter_ratio: 0.2    # stable per-user spread to avoid retry waves.
+
 shop:
   enabled: true              # gear shop pages + per-analysis recommendations.
                              # Also needs SHOPIFY_STORE_DOMAIN in the

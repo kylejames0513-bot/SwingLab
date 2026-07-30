@@ -43,6 +43,7 @@ asked for it.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -70,6 +71,8 @@ from ..drills import PLAN_TITLES, build_drills, gear_shop_url
 from ..explainers import build_explainers
 from ..metrics import ANGLES
 from ..trends import FLAG_LABELS, build_trends, format_delta, format_value, trend_sentence
+from ..integrations.shopify import admin as shopify_admin
+from ..integrations.shopify import customer_sync as shopify_customer_sync
 from . import billing, digest, humanize, mailer, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
 from .throttle import Throttle
@@ -111,7 +114,12 @@ def init_sentry() -> bool:
             "monitoring stays off. Install it with: pip install \"swinglab[ops]\""
         )
         return False
-    sentry_sdk.init(dsn=dsn)
+    sentry_sdk.init(
+        dsn=dsn,
+        send_default_pii=False,
+        include_local_variables=False,
+        max_request_body_size="never",
+    )
     logger.info("Sentry error monitoring enabled.")
     return True
 
@@ -162,9 +170,17 @@ def _base_url(request: Request) -> str:
 
 
 def create_app(
-    cfg: Config | None = None, sessions_dir: str | Path = "sessions"
+    cfg: Config | None = None,
+    sessions_dir: str | Path = "sessions",
+    *,
+    shopify_admin_client: shopify_admin.ShopifyAdminClient | None = None,
+    start_shopify_sync_worker: bool = True,
 ) -> FastAPI:
     cfg = cfg or Config.load()
+    shopify_sync_settings = shopify_customer_sync.validate_sync_settings(
+        cfg.shopify_customer_sync
+    )
+    shopify_sync_enabled = shopify_sync_settings["enabled"]
     init_sentry()
     sessions_dir = Path(sessions_dir)
     sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -181,6 +197,39 @@ def create_app(
     app.state.jobs = manager
     app.state.users = users
     app.state.cfg = cfg
+
+    shopify_sync_coordinator = None
+    if shopify_sync_enabled:
+        # Explicit startup validation: enabling the outbound bridge without
+        # its backend-only Admin credentials is an operator error.  The
+        # disabled default leaves every existing webhook/storefront path
+        # untouched.
+        shopify_admin_client = (
+            shopify_admin_client
+            or shopify_admin.ShopifyAdminClient.from_env(
+                timeout_seconds=float(
+                    shopify_sync_settings.get("request_timeout_seconds") or 10
+                ),
+            )
+        )
+        shopify_sync_coordinator = (
+            shopify_customer_sync.ShopifyCustomerSyncCoordinator(
+                users,
+                shopify_admin_client,
+                shopify_sync_settings,
+                start=False,
+            )
+        )
+    app.state.shopify_admin_client = shopify_admin_client
+    app.state.shopify_sync = shopify_sync_coordinator
+    if shopify_sync_coordinator is not None:
+        if start_shopify_sync_worker:
+            app.router.add_event_handler(
+                "startup", shopify_sync_coordinator.start
+            )
+        app.router.add_event_handler(
+            "shutdown", shopify_sync_coordinator.shutdown
+        )
 
     secret = os.environ.get("SWINGLAB_SECRET")
     if not secret:
@@ -221,6 +270,37 @@ def create_app(
     def current_user(request: Request) -> User | None:
         user_id = request.session.get("user_id")
         return users.get(user_id) if user_id else None
+
+    def queue_shopify_sync(user: User, *, identity_just_verified: bool = False) -> None:
+        """Persist and wake outbound sync without delaying registration."""
+
+        if (
+            shopify_sync_coordinator is None
+            or not shopify_sync_settings.get("auto_sync_new_users", True)
+            or user.shopify_customer_id
+        ):
+            return
+        # New password signups are deliberately queued too: the worker
+        # records requires_review without contacting Shopify until the email
+        # is verified.  A later successful email-code sign-in wakes it again.
+        if identity_just_verified or user.shopify_sync_status in (
+            "not_started",
+            "requires_review",
+        ):
+            shopify_sync_coordinator.enqueue(user.id)
+
+    def require_admin(request: Request) -> None:
+        """Apply the existing indistinguishable, constant-time admin guard."""
+
+        token = os.environ.get("SWINGLAB_ADMIN_TOKEN") or ""
+        if not token:
+            raise HTTPException(404, "Not Found")
+        auth = request.headers.get("authorization", "")
+        supplied = auth[len("Bearer "):] if auth.startswith("Bearer ") else ""
+        if not hmac.compare_digest(
+            supplied.strip().encode("utf-8"), token.encode("utf-8")
+        ):
+            raise HTTPException(404, "Not Found")
 
     def shop_active() -> bool:
         return bool(cfg.shop.get("enabled")) and shop.enabled()
@@ -602,14 +682,33 @@ def create_app(
                 error="That code didn't match (or expired) — check the "
                       "email, or send yourself a fresh code.",
             )
+        prior_user = users.get_by_email(normalized)
         try:
-            user = users.verify_email_signin(normalized)
+            user = users.verify_email_signin(
+                normalized,
+                shopify_sync_pending=bool(
+                    shopify_sync_coordinator is not None
+                    and shopify_sync_settings.get(
+                        "auto_sync_new_users", True
+                    )
+                    and (
+                        prior_user is None
+                        or not prior_user.email_verified
+                    )
+                ),
+            )
         except ValueError as exc:  # can't happen for an email a code was
             return render(       # issued to, but never 500 on crafted input
                 "web_login.html.j2", request, landing=False, error=str(exc),
                 auth_view=auth_view,
             )
         claim_pending_pro(user)
+        queue_shopify_sync(
+            user,
+            identity_just_verified=(
+                prior_user is None or not prior_user.email_verified
+            ),
+        )
         request.session["user_id"] = user.id
         return RedirectResponse("/", status_code=303)
 
@@ -703,7 +802,15 @@ def create_app(
         # made before signup) must prove control of the inbox first. When
         # it isn't, signup proceeds exactly as before — see the README's
         # security note.
-        if mailer.enabled() and users.has_unclaimed_value(normalized):
+        email_just_verified = False
+        bridge_requires_verification = bool(
+            shopify_sync_coordinator is not None
+            and shopify_sync_settings.get("auto_sync_new_users", True)
+        )
+        if mailer.enabled() and (
+            users.has_unclaimed_value(normalized)
+            or bridge_requires_verification
+        ):
             if not code.strip():
                 try:
                     send_code_email(normalized, "claim")
@@ -742,8 +849,21 @@ def create_app(
                     error="That code didn't match (or expired) — check the "
                           "email, or resubmit without a code for a new one.",
                 )
+            email_just_verified = True
+        prior_user = users.get_by_email(normalized)
         try:
-            user = users.create(normalized, password)
+            user = users.create(
+                normalized,
+                password,
+                email_verified=email_just_verified,
+                shopify_sync_pending=bool(
+                    prior_user is None
+                    and shopify_sync_coordinator is not None
+                    and shopify_sync_settings.get(
+                        "auto_sync_new_users", True
+                    )
+                ),
+            )
         except ValueError as exc:
             return render(
                 "web_login.html.j2", request, landing=False, error=str(exc),
@@ -752,6 +872,8 @@ def create_app(
         if wants_digest:  # the signup checkbox is UNCHECKED by default
             users.set_digest_opt_in(user.id, True)
         claim_pending_pro(user)
+        if prior_user is None:
+            queue_shopify_sync(user)
         request.session["user_id"] = user.id
         return RedirectResponse("/", status_code=303)
 
@@ -1278,20 +1400,7 @@ def create_app(
         bearer comparison — and it answers 404 (never 401/403) when the
         variable is unset OR the token is wrong, so the endpoint's very
         existence is invisible to anyone without the credential."""
-        token = os.environ.get("SWINGLAB_ADMIN_TOKEN") or ""
-        # "Not Found" (capital F) matches the framework's own unknown-route
-        # body exactly — the two responses are indistinguishable.
-        if not token:
-            raise HTTPException(404, "Not Found")
-        auth = request.headers.get("authorization", "")
-        supplied = auth[len("Bearer "):] if auth.startswith("Bearer ") else ""
-        # Compare on bytes (headers are decoded latin-1 upstream, so a
-        # crafted non-ASCII token must fail cleanly, not raise), and always
-        # through compare_digest — never an early-exit string equality.
-        if not hmac.compare_digest(
-            supplied.strip().encode("utf-8"), token.encode("utf-8")
-        ):
-            raise HTTPException(404, "Not Found")
+        require_admin(request)
         raw_since = request.query_params.get("since")
         if raw_since is None or raw_since == "":
             since_days = 90.0
@@ -1317,6 +1426,67 @@ def create_app(
                 "window_days": since_days,
                 "kpis": {k.key: k.as_dict() for k in results},
             }
+        )
+
+    @app.get("/admin/shopify-sync")
+    def admin_shopify_sync(request: Request):
+        """PII-minimized customer-link health for the operator only."""
+
+        require_admin(request)
+        raw_limit = request.query_params.get("limit", "50")
+        try:
+            limit = int(raw_limit)
+        except ValueError:
+            raise HTTPException(400, "limit must be an integer")
+        if not 1 <= limit <= 200:
+            raise HTTPException(400, "limit must be between 1 and 200")
+        rows, next_cursor = users.list_shopify_sync_health(
+            limit=limit,
+            after=request.query_params.get("after") or None,
+        )
+        return JSONResponse(
+            {
+                "enabled": shopify_sync_enabled,
+                "users": [
+                    {
+                        "user_id": user.id,
+                        "user_ref": hashlib.sha256(
+                            user.id.encode("utf-8")
+                        ).hexdigest()[:12],
+                        "linked": bool(user.shopify_customer_id),
+                        "shopify_customer_id": user.shopify_customer_id,
+                        "status": user.shopify_sync_status,
+                        "last_synced_at": user.shopify_last_synced_at,
+                        "safe_error": user.shopify_sync_error,
+                        "attempts": user.shopify_sync_attempts,
+                        "manual_retry_available": user.shopify_sync_status
+                        == "failed",
+                        "manual_review_needed": user.shopify_sync_status
+                        == "requires_review",
+                        "auto_retry_at": user.shopify_sync_next_attempt_at,
+                    }
+                    for user in rows
+                ],
+                "next_cursor": next_cursor,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/admin/shopify-sync/{user_id}/retry")
+    def admin_retry_shopify_sync(user_id: str, request: Request):
+        require_admin(request)
+        if shopify_sync_coordinator is None:
+            raise HTTPException(
+                503, "Shopify customer synchronization is disabled."
+            )
+        if users.get(user_id) is None:
+            raise HTTPException(404, "User not found.")
+        if not shopify_sync_coordinator.enqueue(user_id):
+            raise HTTPException(404, "User not found.")
+        return JSONResponse(
+            {"queued": True, "user_id": user_id},
+            status_code=202,
+            headers={"Cache-Control": "no-store"},
         )
 
     @app.get("/healthz")
