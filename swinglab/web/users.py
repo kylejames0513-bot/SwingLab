@@ -49,8 +49,23 @@ import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..integrations.shopify.identity import customer_gid, normalize_customer_id
+
 FREE = "free"
 PRO = "pro"
+
+SHOPIFY_SYNC_NOT_STARTED = "not_started"
+SHOPIFY_SYNC_PENDING = "pending"
+SHOPIFY_SYNC_SYNCED = "synced"
+SHOPIFY_SYNC_FAILED = "failed"
+SHOPIFY_SYNC_REQUIRES_REVIEW = "requires_review"
+SHOPIFY_SYNC_STATUSES = (
+    SHOPIFY_SYNC_NOT_STARTED,
+    SHOPIFY_SYNC_PENDING,
+    SHOPIFY_SYNC_SYNCED,
+    SHOPIFY_SYNC_FAILED,
+    SHOPIFY_SYNC_REQUIRES_REVIEW,
+)
 
 # Subscription statuses that keep Pro features on. past_due keeps access
 # during Stripe's retry window instead of cutting a paying customer off over
@@ -58,6 +73,18 @@ PRO = "pro"
 _PRO_OK_STATUSES = ("active", "trialing", "past_due")
 
 _SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 16384, 8, 1
+_SHOPIFY_SYNC_ERROR_MAX = 500
+_SHOPIFY_SYNC_PAGE_MAX = 1000
+_SHOPIFY_CUSTOMER_UNIQUE_INDEX = "users_shopify_customer_id_unique"
+_SHOPIFY_IDENTITY_CONFLICT_ERROR = (
+    "Shopify customer identity conflict requires administrative review."
+)
+_SHOPIFY_INVALID_ID_ERROR = (
+    "Stored Shopify customer identity requires administrative review."
+)
+_SHOPIFY_LINK_REMOVED_ERROR = (
+    "Shopify customer link was removed and requires administrative review."
+)
 
 # One-time email codes (claim verification, password reset).
 CODE_TTL_S = 600  # codes live 10 minutes
@@ -81,7 +108,13 @@ CREATE TABLE IF NOT EXISTS users (
     source              TEXT,
     digest_opt_in       INTEGER NOT NULL DEFAULT 0,
     digest_last_sent_at REAL,
-    email_verified_at   REAL
+    email_verified_at   REAL,
+    shopify_sync_status TEXT NOT NULL DEFAULT 'not_started',
+    shopify_last_synced_at REAL,
+    shopify_sync_error  TEXT,
+    shopify_sync_attempts INTEGER NOT NULL DEFAULT 0,
+    shopify_sync_next_attempt_at REAL,
+    shopify_sync_attempt_token TEXT
 );
 CREATE TABLE IF NOT EXISTS pro_grants (
     email TEXT PRIMARY KEY,
@@ -152,6 +185,48 @@ def verify_password(password: str, stored: str) -> bool:
         return False
 
 
+def _safe_sync_error(value: str | None) -> str | None:
+    """Bound a caller-supplied, already-safe operational summary."""
+
+    if value is None:
+        return None
+    summary = " ".join(str(value).split())
+    return summary[:_SHOPIFY_SYNC_ERROR_MAX] or None
+
+
+def _compatible_customer_id(value: object | None) -> str | None:
+    """Normalize real Shopify IDs while preserving legacy opaque fixtures.
+
+    Production Admin and webhook IDs are numeric/GID values. A few older
+    white-label databases and compatibility tests used opaque placeholders;
+    preserving them here avoids rewriting established PR #28 behavior. New
+    Admin-sync writes use :func:`normalize_customer_id` directly and therefore
+    cannot introduce another opaque value.
+    """
+
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return normalize_customer_id(raw)
+    except ValueError:
+        return raw
+
+
+def _page_limit(limit: int) -> int:
+    if isinstance(limit, bool):
+        raise ValueError("limit must be a positive integer")
+    try:
+        parsed = int(limit)
+    except (TypeError, ValueError):
+        raise ValueError("limit must be a positive integer")
+    if parsed <= 0:
+        raise ValueError("limit must be a positive integer")
+    return min(parsed, _SHOPIFY_SYNC_PAGE_MAX)
+
+
 @dataclass
 class User:
     id: str
@@ -169,6 +244,14 @@ class User:
     digest_opt_in: bool = False  # weekly practice-plan email consent (off by default)
     digest_last_sent_at: float | None = None  # last digest send (claimed pre-send)
     email_verified_at: float | None = None  # first successful code sign-in/claim
+    shopify_sync_status: str = SHOPIFY_SYNC_NOT_STARTED
+    shopify_last_synced_at: float | None = None
+    shopify_sync_error: str | None = None
+    shopify_sync_attempts: int = 0
+    shopify_sync_next_attempt_at: float | None = None
+    # Opaque compare-and-set token for the currently active attempt. It is
+    # persisted so a stale worker result cannot overwrite a newer attempt.
+    shopify_sync_attempt_token: str | None = None
 
     @property
     def is_pro(self) -> bool:
@@ -207,6 +290,7 @@ class UserStore:
                     row["name"]
                     for row in self._conn.execute("PRAGMA table_info(users)")
                 }
+                sync_status_added = "shopify_sync_status" not in columns
                 for name, ddl in (
                     ("pro_until", "pro_until REAL NOT NULL DEFAULT 0"),
                     ("shopify_customer_id", "shopify_customer_id TEXT"),
@@ -221,9 +305,30 @@ class UserStore:
                     ("digest_last_sent_at", "digest_last_sent_at REAL"),
                     # pre-passwordless files lack the verified stamp
                     ("email_verified_at", "email_verified_at REAL"),
+                    (
+                        "shopify_sync_status",
+                        "shopify_sync_status TEXT NOT NULL DEFAULT 'not_started'",
+                    ),
+                    ("shopify_last_synced_at", "shopify_last_synced_at REAL"),
+                    ("shopify_sync_error", "shopify_sync_error TEXT"),
+                    (
+                        "shopify_sync_attempts",
+                        "shopify_sync_attempts INTEGER NOT NULL DEFAULT 0",
+                    ),
+                    (
+                        "shopify_sync_next_attempt_at",
+                        "shopify_sync_next_attempt_at REAL",
+                    ),
+                    (
+                        "shopify_sync_attempt_token",
+                        "shopify_sync_attempt_token TEXT",
+                    ),
                 ):
                     if name not in columns:
                         self._conn.execute(f"ALTER TABLE users ADD COLUMN {ddl}")
+                self._prepare_shopify_sync_schema(
+                    initialize_statuses=sync_status_added
+                )
                 order_columns = {
                     row["name"]
                     for row in self._conn.execute(
@@ -337,6 +442,139 @@ class UserStore:
             except Exception:
                 self._conn.rollback()
                 raise
+
+    def _prepare_shopify_sync_schema(self, initialize_statuses: bool) -> None:
+        """Initialize sync state and add the customer-ID uniqueness guard.
+
+        Older databases may already contain the same Shopify identity on more
+        than one user because the original column had no unique constraint.
+        Startup must never choose a winner or delete account data. Conflicting
+        rows are instead marked for review and the partial index is deferred;
+        after an operator resolves the rows, the next open creates the index.
+
+        The caller owns ``BEGIN IMMEDIATE`` so canonicalization, preflight, and
+        index creation are serialized across app processes.
+        """
+
+        if initialize_statuses:
+            self._conn.execute(
+                "UPDATE users SET shopify_sync_status = CASE"
+                " WHEN shopify_customer_id IS NULL THEN ? ELSE ? END,"
+                " shopify_sync_error = NULL,"
+                " shopify_sync_attempts = COALESCE(shopify_sync_attempts, 0),"
+                " shopify_sync_next_attempt_at = NULL,"
+                " shopify_sync_attempt_token = NULL",
+                (SHOPIFY_SYNC_NOT_STARTED, SHOPIFY_SYNC_SYNCED),
+            )
+        else:
+            # Reconcile only impossible/default states. Real pending, failed,
+            # and review states survive every idempotent reopen.
+            self._conn.execute(
+                "UPDATE users SET shopify_sync_status = ?"
+                " WHERE shopify_customer_id IS NOT NULL"
+                " AND shopify_sync_status = ?",
+                (SHOPIFY_SYNC_SYNCED, SHOPIFY_SYNC_NOT_STARTED),
+            )
+            self._conn.execute(
+                "UPDATE users SET shopify_sync_status = ?"
+                " WHERE shopify_customer_id IS NULL"
+                " AND shopify_sync_status = ?",
+                (SHOPIFY_SYNC_NOT_STARTED, SHOPIFY_SYNC_SYNCED),
+            )
+            placeholders = ", ".join("?" for _ in SHOPIFY_SYNC_STATUSES)
+            self._conn.execute(
+                "UPDATE users SET shopify_sync_status = ?,"
+                " shopify_sync_error = ?,"
+                " shopify_sync_attempt_token = NULL"
+                f" WHERE shopify_sync_status NOT IN ({placeholders})",
+                (
+                    SHOPIFY_SYNC_REQUIRES_REVIEW,
+                    _SHOPIFY_INVALID_ID_ERROR,
+                    *SHOPIFY_SYNC_STATUSES,
+                ),
+            )
+
+        rows = self._conn.execute(
+            "SELECT id, shopify_customer_id FROM users"
+            " WHERE shopify_customer_id IS NOT NULL"
+        ).fetchall()
+        identities: dict[str, list[sqlite3.Row]] = {}
+        invalid_ids: set[str] = set()
+        for row in rows:
+            try:
+                canonical = normalize_customer_id(row["shopify_customer_id"])
+            except ValueError:
+                invalid_ids.add(row["id"])
+                continue
+            if canonical is not None:
+                identities.setdefault(canonical, []).append(row)
+
+        conflict_ids: set[str] = set()
+        for canonical, identity_rows in identities.items():
+            if len(identity_rows) > 1:
+                conflict_ids.update(row["id"] for row in identity_rows)
+                continue
+            row = identity_rows[0]
+            if row["shopify_customer_id"] != canonical:
+                self._conn.execute(
+                    "UPDATE users SET shopify_customer_id = ? WHERE id = ?",
+                    (canonical, row["id"]),
+                )
+
+        # Also catch duplicate opaque legacy IDs without trying to interpret
+        # or discard them.
+        exact_duplicates = self._conn.execute(
+            "SELECT shopify_customer_id FROM users"
+            " WHERE shopify_customer_id IS NOT NULL"
+            " GROUP BY shopify_customer_id HAVING COUNT(*) > 1"
+        ).fetchall()
+        for duplicate in exact_duplicates:
+            conflict_ids.update(
+                row["id"]
+                for row in self._conn.execute(
+                    "SELECT id FROM users WHERE shopify_customer_id = ?",
+                    (duplicate["shopify_customer_id"],),
+                ).fetchall()
+            )
+
+        if invalid_ids:
+            self._conn.executemany(
+                "UPDATE users SET shopify_sync_status = ?,"
+                " shopify_sync_error = ?,"
+                " shopify_sync_next_attempt_at = NULL,"
+                " shopify_sync_attempt_token = NULL WHERE id = ?",
+                (
+                    (
+                        SHOPIFY_SYNC_REQUIRES_REVIEW,
+                        _SHOPIFY_INVALID_ID_ERROR,
+                        user_id,
+                    )
+                    for user_id in invalid_ids
+                ),
+            )
+        if conflict_ids:
+            self._conn.executemany(
+                "UPDATE users SET shopify_sync_status = ?,"
+                " shopify_sync_error = ?,"
+                " shopify_sync_next_attempt_at = NULL,"
+                " shopify_sync_attempt_token = NULL WHERE id = ?",
+                (
+                    (
+                        SHOPIFY_SYNC_REQUIRES_REVIEW,
+                        _SHOPIFY_IDENTITY_CONFLICT_ERROR,
+                        user_id,
+                    )
+                    for user_id in conflict_ids
+                ),
+            )
+            return
+
+        self._conn.execute(
+            f"CREATE UNIQUE INDEX IF NOT EXISTS"
+            f" {_SHOPIFY_CUSTOMER_UNIQUE_INDEX}"
+            " ON users(shopify_customer_id)"
+            " WHERE shopify_customer_id IS NOT NULL"
+        )
 
     def _backfill_shopify_grant_provenance(
         self, backfill_pending: bool
@@ -633,7 +871,14 @@ class UserStore:
             raise ValueError("Password must be at least 8 characters.")
         return email
 
-    def create(self, email: str, password: str) -> User:
+    def create(
+        self,
+        email: str,
+        password: str,
+        *,
+        shopify_sync_pending: bool = False,
+        email_verified: bool = False,
+    ) -> User:
         """Create an account — or, when the email belongs to a row with no
         password yet (an unclaimed store stub from upsert_store_customer,
         or a code-only passwordless account), set the password on the SAME
@@ -651,22 +896,63 @@ class UserStore:
                         raise ValueError(
                             "An account with that email already exists — log in."
                         )
-                    self._conn.execute(
-                        "UPDATE users SET password_hash = ? WHERE id = ?",
-                        (hash_password(password), row["id"]),
-                    )
+                    if shopify_sync_pending and row["shopify_customer_id"] is None:
+                        self._conn.execute(
+                            "UPDATE users SET password_hash = ?,"
+                            " email_verified_at ="
+                            " COALESCE(email_verified_at, ?),"
+                            " shopify_sync_status = ?,"
+                            " shopify_sync_next_attempt_at = NULL,"
+                            " shopify_sync_attempt_token = NULL WHERE id = ?",
+                            (
+                                hash_password(password),
+                                time.time() if email_verified else None,
+                                SHOPIFY_SYNC_PENDING,
+                                row["id"],
+                            ),
+                        )
+                    else:
+                        self._conn.execute(
+                            "UPDATE users SET password_hash = ?,"
+                            " email_verified_at ="
+                            " COALESCE(email_verified_at, ?) WHERE id = ?",
+                            (
+                                hash_password(password),
+                                time.time() if email_verified else None,
+                                row["id"],
+                            ),
+                        )
                     self._conn.commit()
                     row = self._conn.execute(
                         "SELECT * FROM users WHERE id = ?", (row["id"],)
                     ).fetchone()
                     return self._from_row(row)
                 user = User(
-                    id=uuid.uuid4().hex[:12], email=email, created_at=time.time()
+                    id=uuid.uuid4().hex[:12],
+                    email=email,
+                    created_at=time.time(),
+                    shopify_sync_status=(
+                        SHOPIFY_SYNC_PENDING
+                        if shopify_sync_pending
+                        else SHOPIFY_SYNC_NOT_STARTED
+                    ),
+                    email_verified_at=(
+                        time.time() if email_verified else None
+                    ),
                 )
                 self._conn.execute(
-                    "INSERT INTO users (id, email, password_hash, created_at)"
-                    " VALUES (?, ?, ?, ?)",
-                    (user.id, email, hash_password(password), user.created_at),
+                    "INSERT INTO users"
+                    " (id, email, password_hash, created_at,"
+                    " email_verified_at, shopify_sync_status)"
+                    " VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        user.id,
+                        email,
+                        hash_password(password),
+                        user.created_at,
+                        user.email_verified_at,
+                        user.shopify_sync_status,
+                    ),
                 )
                 self._conn.commit()
         except sqlite3.IntegrityError:
@@ -693,7 +979,9 @@ class UserStore:
             return None
         return self._from_row(row)
 
-    def verify_email_signin(self, email: str) -> User:
+    def verify_email_signin(
+        self, email: str, *, shopify_sync_pending: bool = False
+    ) -> User:
         """A sign-in code for this email was just entered correctly — the
         one moment all three account states converge. Existing account:
         returned as-is. Unclaimed store stub: claimed in place (the code is
@@ -710,14 +998,44 @@ class UserStore:
             if row is None:
                 self._conn.execute(
                     "INSERT INTO users (id, email, password_hash, created_at,"
-                    " email_verified_at) VALUES (?, ?, '', ?, ?)",
-                    (uuid.uuid4().hex[:12], email, now, now),
+                    " email_verified_at, shopify_sync_status)"
+                    " VALUES (?, ?, '', ?, ?, ?)",
+                    (
+                        uuid.uuid4().hex[:12],
+                        email,
+                        now,
+                        now,
+                        (
+                            SHOPIFY_SYNC_PENDING
+                            if shopify_sync_pending
+                            else SHOPIFY_SYNC_NOT_STARTED
+                        ),
+                    ),
                 )
-            elif row["email_verified_at"] is None:
-                self._conn.execute(
-                    "UPDATE users SET email_verified_at = ? WHERE id = ?",
-                    (now, row["id"]),
-                )
+            else:
+                sets = []
+                values: list[object] = []
+                if row["email_verified_at"] is None:
+                    sets.append("email_verified_at = ?")
+                    values.append(now)
+                if (
+                    shopify_sync_pending
+                    and row["shopify_customer_id"] is None
+                ):
+                    sets.extend(
+                        (
+                            "shopify_sync_status = ?",
+                            "shopify_sync_next_attempt_at = NULL",
+                            "shopify_sync_attempt_token = NULL",
+                        )
+                    )
+                    values.append(SHOPIFY_SYNC_PENDING)
+                if sets:
+                    values.append(row["id"])
+                    self._conn.execute(
+                        f"UPDATE users SET {', '.join(sets)} WHERE id = ?",
+                        values,
+                    )
             self._conn.commit()
             row = self._conn.execute(
                 "SELECT * FROM users WHERE email = ?", (email,)
@@ -743,9 +1061,310 @@ class UserStore:
             ).fetchone()
         return self._from_row(row) if row else None
 
+    def _shopify_identity_rows(
+        self,
+        customer_id: object,
+        *,
+        exclude_user_id: str | None = None,
+    ) -> list[sqlite3.Row]:
+        """Find logical owners across canonical and legacy GID storage.
+
+        The caller must hold ``self._lock``. A legacy database with a deferred
+        unique index can contain both ``7001`` and a Customer GID for the same
+        identity, so raw SQL equality against only one representation is not a
+        sufficient guard.
+        """
+
+        canonical_id = _compatible_customer_id(customer_id)
+        if canonical_id is None:
+            return []
+        candidates = [canonical_id]
+        try:
+            gid = customer_gid(canonical_id)
+        except ValueError:
+            gid = None
+        if gid and gid != canonical_id:
+            candidates.append(gid)
+        placeholders = ", ".join("?" for _ in candidates)
+        rows = self._conn.execute(
+            f"SELECT * FROM users WHERE shopify_customer_id IN ({placeholders})",
+            candidates,
+        ).fetchall()
+        return [
+            row
+            for row in rows
+            if row["id"] != exclude_user_id
+            and _compatible_customer_id(row["shopify_customer_id"])
+            == canonical_id
+        ]
+
+    # -- outbound Shopify customer synchronization -----------------------
+    def mark_shopify_sync_pending(
+        self, user_id: str, safe_error: str | None = None
+    ) -> User | None:
+        """Queue or re-queue a user and invalidate any older attempt token."""
+
+        with self._lock:
+            error_assignment = (
+                ", shopify_sync_error = ?" if safe_error is not None else ""
+            )
+            params: list[object] = [SHOPIFY_SYNC_PENDING]
+            if safe_error is not None:
+                params.append(_safe_sync_error(safe_error))
+            params.append(user_id)
+            cursor = self._conn.execute(
+                "UPDATE users SET shopify_sync_status = ?"
+                f"{error_assignment},"
+                " shopify_sync_next_attempt_at = NULL,"
+                " shopify_sync_attempt_token = NULL"
+                " WHERE id = ?",
+                params,
+            )
+            self._conn.commit()
+            if cursor.rowcount != 1:
+                return None
+            row = self._conn.execute(
+                "SELECT * FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+        return self._from_row(row)
+
+    def start_shopify_sync(self, user_id: str) -> tuple[User, str]:
+        """Start one compare-and-set-protected sync attempt.
+
+        The returned token is deliberately opaque. A newer call replaces it,
+        so success/failure from a slow or crashed older worker becomes a no-op.
+        """
+
+        attempt = uuid.uuid4().hex
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT 1 FROM users WHERE id = ?", (user_id,)
+                ).fetchone()
+                if row is None:
+                    self._conn.rollback()
+                    raise KeyError(user_id)
+                self._conn.execute(
+                    "UPDATE users SET shopify_sync_status = ?,"
+                    " shopify_sync_attempts = shopify_sync_attempts + 1,"
+                    " shopify_sync_next_attempt_at = NULL,"
+                    " shopify_sync_attempt_token = ? WHERE id = ?",
+                    (SHOPIFY_SYNC_PENDING, attempt, user_id),
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM users WHERE id = ?", (user_id,)
+                ).fetchone()
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return self._from_row(row), attempt
+
+    def record_shopify_sync_success(
+        self, user_id: str, attempt: str, customer_id: object
+    ) -> bool:
+        """Commit a linked customer only for the current attempt token.
+
+        Durable Shopify identity is immutable once linked. A different linked
+        ID or an ID already owned by another user is retained for operator
+        review rather than guessed or overwritten.
+        """
+
+        canonical_id = normalize_customer_id(customer_id)
+        if canonical_id is None:
+            raise ValueError("A Shopify customer ID is required.")
+        attempt = str(attempt or "").strip()
+        if not attempt:
+            return False
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT shopify_customer_id FROM users"
+                    " WHERE id = ? AND shopify_sync_attempt_token = ?",
+                    (user_id, attempt),
+                ).fetchone()
+                if row is None:
+                    self._conn.rollback()
+                    return False
+                current_id = _compatible_customer_id(row["shopify_customer_id"])
+                owners = self._shopify_identity_rows(
+                    canonical_id,
+                    exclude_user_id=user_id,
+                )
+                if (
+                    (current_id is not None and current_id != canonical_id)
+                    or owners
+                ):
+                    self._conn.execute(
+                        "UPDATE users SET shopify_sync_status = ?,"
+                        " shopify_sync_error = ?,"
+                        " shopify_sync_next_attempt_at = NULL,"
+                        " shopify_sync_attempt_token = NULL"
+                        " WHERE id = ? AND shopify_sync_attempt_token = ?",
+                        (
+                            SHOPIFY_SYNC_REQUIRES_REVIEW,
+                            _SHOPIFY_IDENTITY_CONFLICT_ERROR,
+                            user_id,
+                            attempt,
+                        ),
+                    )
+                    self._conn.commit()
+                    return False
+                cursor = self._conn.execute(
+                    "UPDATE users SET shopify_customer_id = ?,"
+                    " shopify_identity_locked = 1,"
+                    " shopify_sync_status = ?,"
+                    " shopify_last_synced_at = ?,"
+                    " shopify_sync_error = NULL,"
+                    " shopify_sync_next_attempt_at = NULL,"
+                    " shopify_sync_attempt_token = NULL"
+                    " WHERE id = ? AND shopify_sync_attempt_token = ?",
+                    (
+                        canonical_id,
+                        SHOPIFY_SYNC_SYNCED,
+                        time.time(),
+                        user_id,
+                        attempt,
+                    ),
+                )
+                self._conn.commit()
+                return cursor.rowcount == 1
+            except sqlite3.IntegrityError:
+                self._conn.rollback()
+                # A legacy database may gain a conflicting row while its
+                # unique index is intentionally deferred. Preserve both rows
+                # and make the active attempt visible for review.
+                self._conn.execute("BEGIN IMMEDIATE")
+                self._conn.execute(
+                    "UPDATE users SET shopify_sync_status = ?,"
+                    " shopify_sync_error = ?,"
+                    " shopify_sync_next_attempt_at = NULL,"
+                    " shopify_sync_attempt_token = NULL"
+                    " WHERE id = ? AND shopify_sync_attempt_token = ?",
+                    (
+                        SHOPIFY_SYNC_REQUIRES_REVIEW,
+                        _SHOPIFY_IDENTITY_CONFLICT_ERROR,
+                        user_id,
+                        attempt,
+                    ),
+                )
+                self._conn.commit()
+                return False
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def record_shopify_sync_failure(
+        self,
+        user_id: str,
+        attempt: str,
+        status: str,
+        safe_error: str,
+        next_attempt_at: float | None = None,
+    ) -> bool:
+        """Record a terminal attempt result if its token is still current."""
+
+        if status not in (SHOPIFY_SYNC_FAILED, SHOPIFY_SYNC_REQUIRES_REVIEW):
+            raise ValueError("Shopify sync failure status is invalid.")
+        if status == SHOPIFY_SYNC_REQUIRES_REVIEW:
+            next_attempt_at = None
+        elif next_attempt_at is not None:
+            next_attempt_at = float(next_attempt_at)
+        attempt = str(attempt or "").strip()
+        if not attempt:
+            return False
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE users SET shopify_sync_status = ?,"
+                " shopify_sync_error = ?,"
+                " shopify_sync_next_attempt_at = ?,"
+                " shopify_sync_attempt_token = NULL"
+                " WHERE id = ? AND shopify_sync_attempt_token = ?",
+                (
+                    status,
+                    _safe_sync_error(safe_error),
+                    next_attempt_at,
+                    user_id,
+                    attempt,
+                ),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def list_due_shopify_syncs(
+        self, now: float | None = None, limit: int = 20
+    ) -> list[User]:
+        """Pending work plus retryable failures, including crashed attempts."""
+
+        now = time.time() if now is None else float(now)
+        limit = _page_limit(limit)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM users"
+                " WHERE shopify_sync_status = ?"
+                " OR (shopify_sync_status = ?"
+                "     AND shopify_sync_next_attempt_at IS NOT NULL"
+                "     AND shopify_sync_next_attempt_at <= ?)"
+                " ORDER BY"
+                " CASE shopify_sync_status WHEN ? THEN 0 ELSE 1 END,"
+                " COALESCE(shopify_sync_next_attempt_at, created_at),"
+                " created_at, id LIMIT ?",
+                (
+                    SHOPIFY_SYNC_PENDING,
+                    SHOPIFY_SYNC_FAILED,
+                    now,
+                    SHOPIFY_SYNC_PENDING,
+                    limit,
+                ),
+            ).fetchall()
+        return [self._from_row(row) for row in rows]
+
+    def _page_shopify_users(
+        self,
+        where: str,
+        params: tuple[object, ...],
+        limit: int,
+        after: str | None,
+    ) -> tuple[list[User], str | None]:
+        limit = _page_limit(limit)
+        cursor = str(after or "").strip()
+        cursor_clause = " AND id > ?" if cursor else ""
+        query_params = params + ((cursor,) if cursor else ()) + (limit + 1,)
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM users WHERE {where}{cursor_clause}"
+                " ORDER BY id LIMIT ?",
+                query_params,
+            ).fetchall()
+        has_more = len(rows) > limit
+        page = rows[:limit]
+        users = [self._from_row(row) for row in page]
+        next_cursor = users[-1].id if has_more and users else None
+        return users, next_cursor
+
+    def list_shopify_sync_health(
+        self, limit: int = 50, after: str | None = None
+    ) -> tuple[list[User], str | None]:
+        """Deterministically page users for a protected admin surface."""
+
+        return self._page_shopify_users("1 = 1", (), limit, after)
+
+    def list_shopify_backfill(
+        self, limit: int = 50, after: str | None = None
+    ) -> tuple[list[User], str | None]:
+        """Page every row so dry-runs explicitly report linked-row skips."""
+
+        return self._page_shopify_users("1 = 1", (), limit, after)
+
     # -- store accounts (called by the Shopify customer webhooks) ---------
     def get_by_shopify(self, customer_id: str) -> User | None:
-        return self._one("shopify_customer_id", customer_id)
+        return self._one(
+            "shopify_customer_id", _compatible_customer_id(customer_id)
+        )
 
     def upsert_store_customer(
         self,
@@ -766,6 +1385,7 @@ class UserStore:
         delayed create/update delivery was intentionally ignored.
         """
         email = email.strip().lower()
+        customer_id = _compatible_customer_id(customer_id)
         with self._lock:
             try:
                 # The transaction is the cross-process identity lock. Two
@@ -782,11 +1402,36 @@ class UserStore:
                         self._conn.rollback()
                         return None
 
-                    linked = self._conn.execute(
-                        "SELECT * FROM users WHERE shopify_customer_id = ?",
-                        (customer_id,),
-                    ).fetchone()
+                    identity_rows = self._shopify_identity_rows(customer_id)
+                    if len(identity_rows) > 1:
+                        self._conn.executemany(
+                            "UPDATE users SET shopify_sync_status = ?,"
+                            " shopify_sync_error = ?,"
+                            " shopify_sync_next_attempt_at = NULL,"
+                            " shopify_sync_attempt_token = NULL WHERE id = ?",
+                            (
+                                (
+                                    SHOPIFY_SYNC_REQUIRES_REVIEW,
+                                    _SHOPIFY_IDENTITY_CONFLICT_ERROR,
+                                    identity_row["id"],
+                                )
+                                for identity_row in identity_rows
+                            ),
+                        )
+                        self._conn.commit()
+                        return self._from_row(identity_rows[0])
+                    linked = identity_rows[0] if identity_rows else None
                     if linked is not None:
+                        if linked["shopify_customer_id"] != customer_id:
+                            self._conn.execute(
+                                "UPDATE users SET shopify_customer_id = ?"
+                                " WHERE id = ?",
+                                (customer_id, linked["id"]),
+                            )
+                            linked = self._conn.execute(
+                                "SELECT * FROM users WHERE id = ?",
+                                (linked["id"],),
+                            ).fetchone()
                         if (
                             linked["shopify_updated_at"] is not None
                             and (
@@ -921,9 +1566,18 @@ class UserStore:
                                 (updated_at, linked["id"]),
                             )
                         self._conn.execute(
-                            "UPDATE users SET shopify_identity_locked = 1"
+                            "UPDATE users SET shopify_identity_locked = 1,"
+                            " shopify_sync_status = ?,"
+                            " shopify_last_synced_at = ?,"
+                            " shopify_sync_error = NULL,"
+                            " shopify_sync_next_attempt_at = NULL,"
+                            " shopify_sync_attempt_token = NULL"
                             " WHERE id = ?",
-                            (linked["id"],),
+                            (
+                                SHOPIFY_SYNC_SYNCED,
+                                time.time(),
+                                linked["id"],
+                            ),
                         )
                         self._move_customer_pending_to_email(
                             customer_id, email
@@ -942,14 +1596,21 @@ class UserStore:
                         "INSERT INTO users"
                         " (id, email, password_hash, created_at,"
                         "  shopify_customer_id, shopify_identity_locked,"
-                        "  shopify_updated_at, source)"
-                        " VALUES (?, ?, '', ?, ?, 1, ?, 'shopify')",
+                        "  shopify_updated_at, source, shopify_sync_status,"
+                        "  shopify_last_synced_at)"
+                        " VALUES (?, ?, '', ?, ?, 1, ?, 'shopify', ?, ?)",
                         (
                             uuid.uuid4().hex[:12],
                             email,
                             time.time(),
                             customer_id,
                             updated_at,
+                            (
+                                SHOPIFY_SYNC_SYNCED
+                                if customer_id
+                                else SHOPIFY_SYNC_NOT_STARTED
+                            ),
+                            time.time() if customer_id else None,
                         ),
                     )
                 elif (
@@ -960,9 +1621,20 @@ class UserStore:
                     self._conn.execute(
                         "UPDATE users SET shopify_customer_id = ?,"
                         " shopify_identity_locked = 1,"
-                        " shopify_updated_at = COALESCE(?, shopify_updated_at)"
+                        " shopify_updated_at = COALESCE(?, shopify_updated_at),"
+                        " shopify_sync_status = ?,"
+                        " shopify_last_synced_at = ?,"
+                        " shopify_sync_error = NULL,"
+                        " shopify_sync_next_attempt_at = NULL,"
+                        " shopify_sync_attempt_token = NULL"
                         " WHERE id = ?",
-                        (customer_id, updated_at, row["id"]),
+                        (
+                            customer_id,
+                            updated_at,
+                            SHOPIFY_SYNC_SYNCED,
+                            time.time(),
+                            row["id"],
+                        ),
                     )
                 if customer_id:
                     linked_row = self._conn.execute(
@@ -1000,7 +1672,7 @@ class UserStore:
         and concurrent webhook windows that could otherwise lose or
         resurrect paid access.
         """
-        customer_id = (customer_id or "").strip() or None
+        customer_id = _compatible_customer_id(customer_id)
         email = email.strip().lower()
         with self._lock:
             try:
@@ -1170,14 +1842,24 @@ class UserStore:
                     self._conn.commit()
                     return "deleted"
 
-                sets = "shopify_customer_id = NULL"
+                sets = (
+                    "shopify_customer_id = NULL, shopify_sync_status = ?,"
+                    " shopify_sync_error = ?,"
+                    " shopify_sync_next_attempt_at = NULL,"
+                    " shopify_sync_attempt_token = NULL"
+                )
                 if redact:
                     self._erase_customer_pending(
                         customer_id, user["email"]
                     )
                     sets += ", source = NULL"
                 self._conn.execute(
-                    f"UPDATE users SET {sets} WHERE id = ?", (user["id"],)
+                    f"UPDATE users SET {sets} WHERE id = ?",
+                    (
+                        SHOPIFY_SYNC_REQUIRES_REVIEW,
+                        _SHOPIFY_LINK_REMOVED_ERROR,
+                        user["id"],
+                    ),
                 )
                 self._conn.commit()
                 return "unlinked"
@@ -1189,12 +1871,22 @@ class UserStore:
         """Drop the store link (customers/delete on a claimed account);
         clear_source additionally erases the shopify-sourced profile field
         for customers/redact."""
-        sets = "shopify_customer_id = NULL"
+        sets = (
+            "shopify_customer_id = NULL, shopify_sync_status = ?,"
+            " shopify_sync_error = ?,"
+            " shopify_sync_next_attempt_at = NULL,"
+            " shopify_sync_attempt_token = NULL"
+        )
         if clear_source:
             sets += ", source = NULL"
         with self._lock:
             self._conn.execute(
-                f"UPDATE users SET {sets} WHERE id = ?", (user_id,)
+                f"UPDATE users SET {sets} WHERE id = ?",
+                (
+                    SHOPIFY_SYNC_REQUIRES_REVIEW,
+                    _SHOPIFY_LINK_REMOVED_ERROR,
+                    user_id,
+                ),
             )
             self._conn.commit()
 
@@ -1555,7 +2247,7 @@ class UserStore:
         that cannot be associated with either a linked user or an email.
         """
         email = email.strip().lower()
-        customer_id = (shopify_customer_id or "").strip() or None
+        customer_id = _compatible_customer_id(shopify_customer_id)
         gear = gear or []
         if not order_id or (days <= 0 and not gear):
             return (False, email, None)
@@ -1912,7 +2604,7 @@ class UserStore:
         delivery for the already-cancelled order from granting access.
         """
         email = email.strip().lower()
-        customer_id = (shopify_customer_id or "").strip() or None
+        customer_id = _compatible_customer_id(shopify_customer_id)
         if not order_id:
             return (False, email, 0.0)
         with self._lock:
@@ -2273,4 +2965,10 @@ class UserStore:
             digest_opt_in=bool(row["digest_opt_in"]),
             digest_last_sent_at=row["digest_last_sent_at"],
             email_verified_at=row["email_verified_at"],
+            shopify_sync_status=row["shopify_sync_status"],
+            shopify_last_synced_at=row["shopify_last_synced_at"],
+            shopify_sync_error=row["shopify_sync_error"],
+            shopify_sync_attempts=int(row["shopify_sync_attempts"] or 0),
+            shopify_sync_next_attempt_at=row["shopify_sync_next_attempt_at"],
+            shopify_sync_attempt_token=row["shopify_sync_attempt_token"],
         )
