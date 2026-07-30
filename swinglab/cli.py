@@ -89,6 +89,51 @@ def build_parser() -> argparse.ArgumentParser:
     )
     kp.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
 
+    shopify_backfill = sub.add_parser(
+        "shopify-backfill",
+        help="Dry-run or apply one restartable batch of Shopify customer links.",
+    )
+    shopify_backfill.add_argument(
+        "--sessions-dir",
+        type=Path,
+        default=Path("sessions"),
+        help="The web app's sessions directory (contains swinglab.db)",
+    )
+    shopify_backfill.add_argument(
+        "--batch-size",
+        type=int,
+        default=50,
+        help="Users to inspect in this invocation (1-1000, default 50)",
+    )
+    shopify_backfill.add_argument(
+        "--after",
+        default=None,
+        metavar="CURSOR",
+        help="Opaque next_cursor printed by the previous batch",
+    )
+    apply_group = shopify_backfill.add_mutually_exclusive_group()
+    apply_group.add_argument(
+        "--dry-run",
+        action="store_false",
+        dest="apply",
+        help="Read matches without changing customer links or sync state (default)",
+    )
+    apply_group.add_argument(
+        "--apply",
+        action="store_true",
+        help="Perform the idempotent customer upserts for this batch",
+    )
+    shopify_backfill.set_defaults(apply=False)
+    shopify_backfill.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="Print the PII-minimized operator batch result as JSON",
+    )
+    shopify_backfill.add_argument(
+        "--config", type=Path, default=None, help="Path to config.yaml"
+    )
+
     # Explicit operator tooling only. Merely installing the package or setting
     # credentials starts no backup process and changes no web runtime behavior.
     from .backups.cli import add_backup_subparser
@@ -177,6 +222,67 @@ def main(argv: list[str] | None = None) -> int:
         return run_backup_command(args)
 
     cfg = Config.load(args.config)
+
+    if args.command == "shopify-backfill":
+        import json
+
+        from .integrations.shopify.admin import (
+            ShopifyAdminClient,
+            ShopifyAdminConfigurationError,
+        )
+        from .integrations.shopify.backfill import run_backfill_batch
+        from .integrations.shopify.customer_sync import (
+            validate_sync_settings,
+        )
+        from .web.users import UserStore
+
+        if not 1 <= args.batch_size <= 1000:
+            print(
+                "shopify-backfill: batch size must be between 1 and 1000",
+                file=sys.stderr,
+            )
+            return 2
+        db_path = args.sessions_dir / "swinglab.db"
+        if not db_path.is_file():
+            print(
+                "shopify-backfill: database not found; pass the existing "
+                "sessions directory with --sessions-dir",
+                file=sys.stderr,
+            )
+            return 2
+        try:
+            settings = validate_sync_settings(cfg.shopify_customer_sync)
+            client = ShopifyAdminClient.from_env(
+                timeout_seconds=settings["request_timeout_seconds"],
+            )
+            users = UserStore(db_path)
+            summary = run_backfill_batch(
+                users,
+                client,
+                batch_size=args.batch_size,
+                after=args.after,
+                dry_run=not args.apply,
+                settings=settings,
+            )
+        except ShopifyAdminConfigurationError as exc:
+            print(f"shopify-backfill: {exc.safe_summary}", file=sys.stderr)
+            return 2
+
+        if args.as_json:
+            print(json.dumps(summary.as_dict(), indent=2, ensure_ascii=False))
+        else:
+            mode = "APPLY" if args.apply else "DRY RUN"
+            print(
+                f"Shopify customer backfill — {mode}\n"
+                f"scanned={summary.scanned} linked={summary.linked} "
+                f"would_link={summary.would_link} "
+                f"would_create={summary.would_create} "
+                f"requires_review={summary.requires_review} "
+                f"failed={summary.failed} skipped={summary.skipped}"
+            )
+            if summary.next_cursor:
+                print(f"next_cursor={summary.next_cursor}")
+        return 1 if summary.failed else 0
 
     if args.command == "kpis":
         import json
