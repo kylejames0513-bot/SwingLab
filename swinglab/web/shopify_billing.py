@@ -93,6 +93,7 @@ import os
 from datetime import datetime
 
 from ..config import Config
+from ..integrations.shopify.identity import normalize_customer_id
 from .users import UserStore
 
 logger = logging.getLogger("swinglab.web.shopify")
@@ -193,6 +194,10 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
             logger.info("Shopify %s webhook skipped: customer has no email.", topic)
             return  # a customer with no email has nothing to sync to
         customer_id = str(data.get("id") or "") or None
+        try:
+            comparable_customer_id = normalize_customer_id(customer_id)
+        except ValueError:
+            comparable_customer_id = customer_id
         user = users.upsert_store_customer(
             email,
             customer_id,
@@ -200,30 +205,26 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
         )
         if user is None:
             logger.info(
-                "Shopify %s ignored for deleted/redacted customer %s.",
+                "Shopify %s ignored for a deleted/redacted customer.",
                 topic,
-                customer_id or "?",
             )
-        elif customer_id and user.shopify_customer_id != customer_id:
+        elif (
+            comparable_customer_id
+            and user.shopify_customer_id != comparable_customer_id
+        ):
             logger.warning(
-                "Shopify %s did not auto-merge customer %s into app account %s"
-                " because that email is linked to customer %s.",
+                "Shopify %s did not auto-merge an identity conflict; "
+                "administrative review is required.",
                 topic,
-                customer_id,
-                user.email,
-                user.shopify_customer_id or "?",
             )
         elif user.email != email:
             logger.warning(
-                "Shopify %s kept customer %s on verified app email %s"
-                " instead of auto-moving it to %s.",
+                "Shopify %s preserved the verified app login email instead "
+                "of applying a store-side identity change.",
                 topic,
-                customer_id or "?",
-                user.email,
-                email,
             )
         else:
-            logger.info("Shopify %s: synced store account for %s.", topic, email)
+            logger.info("Shopify %s synchronized a store account.", topic)
     elif topic in CUSTOMER_DELETE_TOPICS:
         _detach_customer(data, users, redact=False)
     elif topic in CUSTOMER_REDACT_TOPICS:
@@ -324,18 +325,13 @@ def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
     days = _order_days(order, cfg)
     if not order_id or (days <= 0 and not gear):
         return
-    applied, effective_email, user_id = users.apply_shopify_order(
+    applied, _, _ = users.apply_shopify_order(
         order_id, email, days, customer_id, gear=gear
     )
     if not applied:
-        logger.info("Shopify order %s already applied — skipping replay.", order_id)
+        logger.info("Shopify order webhook replay skipped.")
         return
-    logger.info(
-        "Shopify order %s reconciled for %s (linked user: %s).",
-        order_id,
-        effective_email,
-        user_id or "none",
-    )
+    logger.info("Shopify order webhook reconciled.")
 
 
 def _apply_cancelled(order: dict, users: UserStore) -> None:
@@ -381,10 +377,7 @@ def _apply_refund(refund: dict, users: UserStore, cfg: Config) -> None:
             break
     if not has_pro_refund:
         logger.info(
-            "Shopify refund %s for order %s did not identify a Pro SKU;"
-            " entitlement unchanged.",
-            refund.get("id") or "?",
-            refund.get("order_id") or "?",
+            "Shopify refund did not identify a Pro SKU; entitlement unchanged."
         )
         return
     users.cancel_shopify_order(str(refund.get("order_id") or ""))

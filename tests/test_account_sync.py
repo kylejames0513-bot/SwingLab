@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -121,6 +122,64 @@ def test_customers_create_provisions_a_stub(app):
     users: UserStore = client.app.state.users
     assert users.authenticate("buyer@example.com", "") is None
     assert users.get_by_shopify("7001").id == user.id
+
+
+def test_customer_gid_is_canonicalized_without_false_conflict_log(app, caplog):
+    client = TestClient(app)
+    payload = customer(
+        customer_id="gid://shopify/Customer/7001",
+        email="buyer@example.com",
+    )
+
+    with caplog.at_level(logging.INFO, logger="swinglab.web.shopify"):
+        assert webhook(client, payload, "customers/create").status_code == 200
+
+    assert get_user(client).shopify_customer_id == "7001"
+    assert not any(
+        "identity conflict" in record.message for record in caplog.records
+    )
+
+
+def test_shopify_webhook_logs_redact_customer_and_order_data(app, caplog):
+    client = TestClient(app)
+    customer_id = 987654321
+    order_id = 123456789
+    refund_id = 456789123
+    email = "private.buyer@example.com"
+
+    with caplog.at_level(logging.INFO, logger="swinglab.web.shopify"):
+        webhook(
+            client,
+            customer(customer_id=customer_id, email=email),
+            "customers/create",
+        )
+        webhook(
+            client,
+            pro_order(
+                order_id=order_id,
+                email=email,
+                customer_id=customer_id,
+            ),
+            "orders/paid",
+        )
+        webhook(
+            client,
+            {
+                "id": refund_id,
+                "order_id": order_id,
+                "refund_line_items": [
+                    {
+                        "quantity": 1,
+                        "line_item": {"sku": "GEAR-ONLY"},
+                    }
+                ],
+            },
+            "refunds/create",
+        )
+
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    for protected_value in (email, customer_id, order_id, refund_id):
+        assert str(protected_value) not in rendered
 
 
 def test_replayed_customer_webhook_is_idempotent(app):
