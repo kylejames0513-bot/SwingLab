@@ -27,6 +27,7 @@ remain `swinglab` for compatibility while the codebase is migrated in stages.
 - [Architecture and project boundaries](docs/architecture.md)
 - [Environment-variable contract](docs/environment.md)
 - [Production and Railway contract](docs/deployment.md)
+- [Shopify customer-sync runbook](docs/shopify-customer-sync.md)
 - [Architecture decisions](docs/adr/0001-caddieinsight-naming-and-compatibility.md)
 
 ## Requirements
@@ -400,7 +401,9 @@ absolute.
 
 ### Account sync with Shopify
 
-Accounts start on the store: a customer created in Shopify automatically
+The existing inbound bridge from merged
+[GitHub PR #28](https://github.com/kylejames0513-bot/SwingLab/pull/28) starts
+accounts on the store: a customer created in Shopify automatically
 exists in the web app, and everything they bought is waiting when they
 finish setup there. In the Shopify admin, under **Settings → Notifications
 → Webhooks**, add three more webhooks — `customers/create`,
@@ -464,6 +467,31 @@ restoring the wrong customer's access. `customers/data_request` and
 `shop/redact` currently receive the required signed acknowledgement but do
 not yet run a complete customer export or shop-wide erasure workflow; that
 privacy-compliance workflow remains separate release work.
+
+#### App-first Shopify customer sync
+
+The complementary outbound bridge links verified CaddieInsight registrations
+through Shopify Admin GraphQL. It is disabled by default:
+
+```yaml
+shopify_customer_sync:
+  enabled: false
+  auto_sync_new_users: true
+```
+
+Local registration always commits first, so Shopify downtime never prevents
+access to CaddieInsight. Email is used only for the initial normalized,
+verified match; after linking, the stored Shopify customer ID is durable.
+Passwords are never synchronized, and Shopify email updates do not silently
+replace the app login identity.
+
+Activation requires canonical `SHOPIFY_ADMIN_STORE_DOMAIN`, backend-only
+`SHOPIFY_ADMIN_ACCESS_TOKEN`, `SHOPIFY_ADMIN_API_VERSION`, the minimum customer
+scopes and protected email access, protected admin health/retry routes, and a
+reviewed dry-run backfill. Do not run a production backfill automatically. See
+the
+[Shopify customer-sync runbook](docs/shopify-customer-sync.md) for setup,
+retries, staged rollout, rollback, and the manual verification checklist.
 
 **Optional email verification** — inert until configured, like
 every other integration:
@@ -723,10 +751,14 @@ ffmpeg auto-skip when it is not installed.
 - **Shopify gear shop (done)** — `/shop` page backed by a Shopify store's
   Storefront API plus flag-matched training-aid recommendations on finished
   analyses; inert until the `SHOPIFY_*` environment variables are set.
-- **Shopify account sync (done)** — customer webhooks provision store
+- **Shopify inbound account sync (done)** — customer webhooks provision store
   accounts in the app, signup claims them with purchases intact, and
   optional email delivery adds code-verified claims plus password reset
   (the Milestone-5 reset item, shipped early).
+- **Shopify app-first customer sync (staged)** — the backend Admin GraphQL
+  bridge is disabled by default and activates only after protected customer
+  access, development verification, dry-run reconciliation, and explicit
+  rollout approval.
 - **One account (done)** — passwordless email-code sign-in: with email delivery
   configured, the store email is the app identity; one "Continue with
   email" flow logs in, claims store accounts, or creates accounts, and a

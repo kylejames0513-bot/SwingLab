@@ -68,4 +68,3 @@ def test_empty_backfill_defaults_to_dry_run_json(
     assert payload["dry_run"] is True
     assert payload["scanned"] == 0
     assert payload["items"] == []
-

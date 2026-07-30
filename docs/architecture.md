@@ -55,16 +55,38 @@ purchase entitlements. `swinglab.integrations.shopify` exposes those modules as
 `storefront` and `webhooks`, giving future code a stable integration boundary
 without breaking existing imports.
 
-Shopify checkout remains hosted by Shopify. The application only links to the
-storefront and consumes signed webhooks.
+Merged
+[GitHub PR #28](https://github.com/kylejames0513-bot/SwingLab/pull/28) is the
+inbound identity foundation: customer webhooks provision or link store-first
+accounts, the Shopify customer ID is the durable identity, and email changes,
+deletion/redaction, replay, and entitlement conflicts are handled
+conservatively. That behavior remains compatible.
+
+The outbound customer bridge also lives behind
+`swinglab.integrations.shopify`. Its backend-only Admin GraphQL client links
+verified app-first registrations and provides controlled reconciliation. It is
+inert while `shopify_customer_sync.enabled` is false. Registration is
+local-first: an Admin API outage can leave durable pending work but cannot
+prevent the user from accessing CaddieInsight.
+
+Email is only the normalized initial matching key. After a successful link,
+`shopify_customer_id` is authoritative. Shopify updates never silently replace
+the verified CaddieInsight authentication email, and golf or authentication
+data is never copied into Shopify.
+
+Shopify checkout remains hosted by Shopify. The app continues to consume
+signed webhooks for commerce effects; outbound customer sync does not import
+orders or change entitlement semantics. See
+[Shopify customer sync](shopify-customer-sync.md) for the security, backfill,
+rollout, and rollback contract.
 
 ### Deployment and state
 
 The root `Dockerfile` is the live Railway build and runtime contract. The
 console command is `swinglab`, Railway supplies `PORT`, and persistent state is
 rooted at `/data/sessions`. `swinglab.db` contains accounts, purchases, and job
-history. Platform settings, secrets, volumes, DNS, and production deployment
-state live outside this repository.
+history, including durable customer-sync status. Platform settings, secrets,
+volumes, DNS, and production deployment state live outside this repository.
 
 The current SQLite database and in-process job queue require a single
 application replica. Horizontal scaling must wait until durable state and job

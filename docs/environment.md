@@ -41,6 +41,36 @@ present.
 | `SHOPIFY_STORE_DOMAIN` | Non-secret | Store hostname shared with the purchase bridge. |
 | `SHOPIFY_API_VERSION` | Non-secret | Optional Storefront API version override; code supplies a default. |
 
+## Shopify Admin API customer sync
+
+Outbound app-account-to-Shopify customer sync is a separate, backend-only
+capability. It remains inert while `shopify_customer_sync.enabled` is false,
+even if every environment variable below is present.
+
+| Variable | Sensitivity | Purpose |
+| --- | --- | --- |
+| `SHOPIFY_ADMIN_STORE_DOMAIN` | Non-secret | Canonical `your-store.myshopify.com` Admin API host. Custom storefront domains are rejected so the Admin token cannot be sent to the wrong origin. |
+| `SHOPIFY_ADMIN_ACCESS_TOKEN` | Secret | Backend-only Admin GraphQL credential. It must never be rendered into HTML, returned by an API, placed in mobile/client code, or written to logs. |
+| `SHOPIFY_ADMIN_API_VERSION` | Non-secret | Explicit Admin GraphQL version. Review it against Shopify's stable-version schedule each quarter. |
+
+Keep `SHOPIFY_ADMIN_STORE_DOMAIN` and `SHOPIFY_ADMIN_API_VERSION` separate from
+the existing `SHOPIFY_STORE_DOMAIN` and `SHOPIFY_API_VERSION`: the latter pair
+belongs to storefront/webhook behavior, may use a custom storefront hostname,
+and must not silently retarget the Admin bridge.
+
+The app installation needs the minimum `read_customers` and `write_customers`
+scopes. Customer email is protected customer data, so configure and, where
+applicable, obtain approval for that field in the Shopify Partner Dashboard
+before enabling sync. Do not request names, addresses, phone numbers, orders,
+or other customer fields unless a separately reviewed feature requires them.
+See Shopify's
+[protected customer data requirements](https://shopify.dev/docs/apps/launch/protected-customer-data)
+and the [customerSet mutation](https://shopify.dev/docs/api/admin-graphql/latest/mutations/customerSet).
+
+`SWINGLAB_ADMIN_TOKEN` separately protects local sync-health and retry routes;
+it is not a Shopify credential. Full setup and rollout instructions are in
+[Shopify customer sync](shopify-customer-sync.md).
+
 ## Stripe billing
 
 Stripe is optional. Treat all three variables as one production bundle even
@@ -76,7 +106,7 @@ password flow.
 
 | Variable | Sensitivity | Purpose |
 | --- | --- | --- |
-| `SENTRY_DSN` | Secret-bearing | Enables Sentry only when the `ops` package extra is also installed. |
+| `SENTRY_DSN` | Secret-bearing | Enables Sentry only when the `ops` package extra is also installed; default PII, request bodies, and frame locals are disabled in code. |
 | `SWINGLAB_ADMIN_TOKEN` | Secret | Enables bearer-token access to `GET /admin/kpis`; the route returns 404 without a valid token. |
 
 ## Optional Litestream backup recipe
