@@ -13,6 +13,10 @@ CaddieInsight has two complementary Shopify identity paths:
 2. The outbound Admin GraphQL bridge links app-first registrations to Shopify.
    It is controlled by `shopify_customer_sync.enabled`, which is `false` in
    both code defaults and the shipped `config.yaml`.
+3. The separately gated Customer Account authorization-code/PKCE path provides
+   Shopify-owned sign-in and recovery after durable identity reconciliation.
+   It is disabled by default and is documented in
+   [Shopify Customer Account migration](shopify-customer-accounts.md).
 
 Merely deploying the code, adding Admin credentials, or running ordinary tests
 must not contact Shopify or start a customer backfill. Production activation
@@ -25,11 +29,14 @@ error, or Shopify outage cannot roll the local account back.
 
 ## Ownership and identity rules
 
-CaddieInsight remains authoritative for authentication, golf profiles, clubs,
-distances, sessions, shots, goals, progress, reports, recommendations,
-coaching data, and app preferences. Shopify remains authoritative for
-products, apparel, orders, shipping, fulfillment, refunds, discounts, and
-commerce history.
+CaddieInsight remains authoritative for golf profiles, clubs, distances,
+sessions, shots, goals, progress, reports, recommendations, coaching data,
+and app preferences. Until the separately gated Customer Account cutover,
+legacy app authentication remains the fallback. At cutover, Shopify Customer
+Accounts becomes authoritative for sign-in, recovery, commerce identity, and
+Shopify marketing consent. Shopify remains authoritative for products,
+apparel, orders, shipping, fulfillment, refunds, discounts, and commerce
+history.
 
 The bridge follows these rules:
 

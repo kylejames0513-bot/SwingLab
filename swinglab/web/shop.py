@@ -14,6 +14,12 @@ access token. This keeps an unrelated, stale Admin API token from poisoning a
 query that Shopify already exposes to the public storefront, and it keeps the
 Pro membership product out of the Gear page.
 
+The shipped CaddieInsight configuration additionally keeps unproven products
+out of the app catalog: a product must carry one of three candidate tags *and*
+the explicit fulfillment-verification tag.  That source-of-truth evidence is
+set in Shopify only after a US sample and supplier/return/tracking review; the
+bare-code default remains open for white-label compatibility.
+
 Recommendations: tag a product in Shopify with ``swinglab:<flag>`` — where
 <flag> is one of the keys produced by :func:`swinglab.coaching.flag_keys`.
 Only available products explicitly matched to a measured issue appear in a
@@ -69,6 +75,36 @@ _cache_lock = threading.Lock()
 _cache: dict[str, Any] = {"at": 0.0, "products": None}
 
 
+def first_sale_products(products: list[dict], cfg: Config) -> list[dict]:
+    """Return only supplier-proven launch aids when the explicit gate is on.
+
+    Product titles, prices, and stock remain Shopify-owned.  Tags merely keep
+    the app from promoting a candidate before the operator has real sample
+    and fulfillment evidence; they do not claim the product corrects a swing.
+    """
+
+    if not bool(cfg.shop.get("first_sale_catalog_only")):
+        return products
+    verified_tag = str(
+        cfg.shop.get("first_sale_verified_tag")
+        or "caddieinsight:fulfillment-verified"
+    )
+    candidate_tags = {
+        str(tag)
+        for tag in (cfg.shop.get("first_sale_candidate_tags") or ())
+        if str(tag).strip()
+    }
+    if not candidate_tags:
+        return []
+    return [
+        product
+        for product in products
+        if product.get("available") is True
+        and verified_tag in set(product.get("tags") or ())
+        and candidate_tags.intersection(set(product.get("tags") or ()))
+    ]
+
+
 def enabled() -> bool:
     return bool(os.environ.get("SHOPIFY_STORE_DOMAIN"))
 
@@ -88,7 +124,7 @@ def fetch_products(cfg: Config) -> list[dict]:
     with _cache_lock:
         fresh = _cache["products"] is not None and time.monotonic() - _cache["at"] < ttl
         if fresh:
-            return _cache["products"]
+            return first_sale_products(_cache["products"], cfg)
     try:
         products = _fetch()
     except Exception:
@@ -98,7 +134,7 @@ def fetch_products(cfg: Config) -> list[dict]:
         # catalog — the /shop page just says "restocking" forever.
         logger.exception("Shopify Storefront fetch failed — serving cached/empty catalog.")
         with _cache_lock:
-            return _cache["products"] or []
+            return first_sale_products(_cache["products"] or [], cfg)
     if not products:
         # A clean call that returns zero products is a DIFFERENT problem
         # (nothing published to this token's sales channel) than an
@@ -109,7 +145,7 @@ def fetch_products(cfg: Config) -> list[dict]:
         )
     with _cache_lock:
         _cache.update(at=time.monotonic(), products=products)
-    return products
+    return first_sale_products(products, cfg)
 
 
 def recommend(
@@ -121,6 +157,7 @@ def recommend(
 ) -> list[dict]:
     """Gear matched to an analysis's flags, round-robin so one flag can't
     crowd out the others.  No measured flag means no recommendation."""
+    products = first_sale_products(products, cfg)
     prefix = str(cfg.shop.get("tag_prefix") or "swinglab:")
     max_items = (
         int(limit)

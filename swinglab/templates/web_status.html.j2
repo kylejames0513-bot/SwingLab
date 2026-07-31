@@ -128,7 +128,7 @@
             this session's first measured priority.</p>
           <div class="gear">
             {% for p in gear %}
-              <a class="gear-item" href="{{ p.url }}" target="_blank" rel="noopener">
+              <a class="gear-item" href="{{ p.url }}" target="_blank" rel="noopener" data-gear-match data-session-id="{{ job.id }}">
                 {% if p.image %}<img src="{{ p.image }}" alt="{{ p.image_alt or p.title }}" loading="lazy">{% endif %}
                 <span class="name">{{ p.title }}</span>
                 <span class="price">{{ p.price_display }}</span>
@@ -244,6 +244,22 @@
   poll();
   setInterval(poll, 1500);
 })();
+</script>
+{% endif %}
+{% if gear %}
+<script>
+  (function () {
+    var items = document.querySelectorAll('[data-gear-match]');
+    for (var i = 0; i < items.length; i++) {
+      items[i].addEventListener('click', function () {
+        fetch('/api/v1/events', {
+          method: 'POST', credentials: 'same-origin',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ event: 'gear_match_clicked', session_id: this.getAttribute('data-session-id') })
+        }).catch(function () { /* measurement must not interrupt the store link */ });
+      });
+    }
+  })();
 </script>
 {% endif %}
 {% endblock %}

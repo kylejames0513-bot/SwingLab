@@ -277,6 +277,17 @@ shop:
                              # own drill but shares the arm-extension gear tag).
                              # swinglab:general is never auto-recommended.
   max_recommendations: 3     # gear items shown on a finished analysis page
+  first_sale_catalog_only: true
+                             # Until a product is sample-tested and has real
+                             # supplier/return/tracking evidence, CaddieInsight
+                             # will not promote it in-app. The three candidate
+                             # tags below are additive to the measured
+                             # swinglab:<flag> recommendation tag.
+  first_sale_verified_tag: "caddieinsight:fulfillment-verified"
+  first_sale_candidate_tags:
+    - "caddieinsight:clip-on-swing-metronome"
+    - "caddieinsight:anti-sway-hip-resistance-band"
+    - "caddieinsight:alignment-stick-set"
   store_url: "https://caddieinsight.com"
                              # public storefront for the quiet "Matched
                              # training aids" link at the end of the report's

@@ -94,17 +94,17 @@
       {% if user and user.is_pro %}
       <p class="hint">You're on Pro — thanks for the support!</p>
       {% elif user and pro_store_url %}
-      <a class="button" href="{{ pro_store_url }}">Get Pro on the {{ brand.name }} store</a>
+      <a class="button" href="{{ pro_store_url }}" data-pro-click>Get Pro on the {{ brand.name }} store</a>
       <p class="hint">Check out with <strong>{{ user.email }}</strong> —
         Pro unlocks on this account automatically.</p>
       {% elif user and billing_enabled %}
-      <form action="/billing/checkout" method="post">
+      <form action="/billing/checkout" method="post" data-pro-click>
         <button type="submit">Upgrade to Pro</button>
       </form>
       {% elif not billing_enabled and not pro_store_url %}
       <p class="hint">Coming soon.</p>
       {% else %}
-      <a class="button" href="/login">Log in to upgrade</a>
+      <a class="button" href="/login" data-pro-click>Log in to upgrade</a>
       {% endif %}
   {%- endmacro %}
   <div class="plans">
@@ -116,6 +116,7 @@
         <li>{% if pro_per_month <= 0 %}Unlimited swing analyses for a year{% else %}
           Up to {{ pro_per_month }} analyses a month for a year{% endif %}</li>
         <li>Everything Pro includes, all season</li>
+        {% if replay_pro_only %}<li>Upgrade and re-film with your annotated coach replay</li>{% endif %}
         <li>One checkout covers the whole year — no monthly decision to remake</li>
       </ul>
       {{ pro_cta() }}
@@ -192,4 +193,21 @@
   {% endif %}
   <p class="fineprint">Unused Pro purchases are refundable within 14 days.</p>
   <p class="disclaimer">{{ brand.disclaimer }}</p>
+{% endblock %}
+{% block script %}
+<script>
+  (function () {
+    var ctas = document.querySelectorAll('[data-pro-click]');
+    function track() {
+      fetch('/api/v1/events', {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ event: 'pro_clicked' })
+      }).catch(function () { /* checkout must continue even if telemetry is down */ });
+    }
+    for (var i = 0; i < ctas.length; i++) {
+      ctas[i].addEventListener(ctas[i].tagName === 'FORM' ? 'submit' : 'click', track);
+    }
+  })();
+</script>
 {% endblock %}

@@ -165,16 +165,16 @@
 
       <label for="hand">Handedness</label>
       <select id="hand" name="hand">
-        <option value="right" selected>Right-handed</option>
-        <option value="left">Left-handed</option>
+        <option value="right" {% if not golfer_profile or golfer_profile.handedness == 'right' %}selected{% endif %}>Right-handed</option>
+        <option value="left" {% if golfer_profile and golfer_profile.handedness == 'left' %}selected{% endif %}>Left-handed</option>
       </select>
 
       <label>Camera angle</label>
       <div class="radio-row">
-        <label><input type="radio" name="angle" value="face-on" checked required>
+        <label><input type="radio" name="angle" value="face-on" {% if not golfer_profile or golfer_profile.camera_angle == 'face-on' %}checked{% endif %} required>
           <span><strong>Face-on</strong> (recommended — full report). Camera
           in front of you, chest toward the lens.</span></label>
-        <label><input type="radio" name="angle" value="dtl" required>
+        <label><input type="radio" name="angle" value="dtl" {% if golfer_profile and golfer_profile.camera_angle == 'dtl' %}checked{% endif %} required>
           <span><strong>Down the line</strong> — tempo &amp; rhythm only for
           now. Body-drift and angle numbers are measured face-on, so they're
           honestly left out.</span></label>
@@ -182,12 +182,12 @@
 
       <label for="club">Club (optional)</label>
       <select id="club" name="club">
-        <option value="" selected>Not set</option>
-        <option value="driver">Driver</option>
-        <option value="fairway-wood">Fairway wood</option>
-        <option value="hybrid">Hybrid</option>
-        <option value="iron">Iron</option>
-        <option value="wedge">Wedge</option>
+        <option value="" {% if not golfer_profile or not golfer_profile.preferred_club %}selected{% endif %}>Not set</option>
+        <option value="driver" {% if golfer_profile and golfer_profile.preferred_club == 'driver' %}selected{% endif %}>Driver</option>
+        <option value="fairway-wood" {% if golfer_profile and golfer_profile.preferred_club == 'fairway-wood' %}selected{% endif %}>Fairway wood</option>
+        <option value="hybrid" {% if golfer_profile and golfer_profile.preferred_club == 'hybrid' %}selected{% endif %}>Hybrid</option>
+        <option value="iron" {% if golfer_profile and golfer_profile.preferred_club == 'iron' %}selected{% endif %}>Iron</option>
+        <option value="wedge" {% if golfer_profile and golfer_profile.preferred_club == 'wedge' %}selected{% endif %}>Wedge</option>
       </select>
       <p class="hint">Shown on the report and history so sessions compare
         cleanly — it doesn't change any thresholds yet.</p>
@@ -196,15 +196,15 @@
       <div class="radio-row">
         {# "Not set" mirrors the club select's blank first option — a radio
            group can't be un-picked, so unset needs its own button. #}
-        <label><input type="radio" name="level" value="" checked>
+        <label><input type="radio" name="level" value="" {% if not golfer_profile %}checked{% endif %}>
           <span><strong>Not set</strong> — no framing either way.</span></label>
-        <label><input type="radio" name="level" value="new">
+        <label><input type="radio" name="level" value="new" {% if golfer_profile and golfer_profile.experience_mode == 'start' %}checked{% endif %}>
           <span><strong>New to golf</strong> — the report frames benchmarks
           as references to move toward, not day-one targets.</span></label>
-        <label><input type="radio" name="level" value="improving">
+        <label><input type="radio" name="level" value="improving" {% if golfer_profile and golfer_profile.experience_mode == 'improve' %}checked{% endif %}>
           <span><strong>Improving</strong> — the standard report
           voice.</span></label>
-        <label><input type="radio" name="level" value="experienced">
+        <label><input type="radio" name="level" value="experienced" {% if golfer_profile and golfer_profile.experience_mode == 'compete' %}checked{% endif %}>
           <span><strong>Experienced</strong> — benchmarks stated plainly,
           numbers first.</span></label>
       </div>

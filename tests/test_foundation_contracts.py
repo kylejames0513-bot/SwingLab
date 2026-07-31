@@ -39,6 +39,16 @@ ACCOUNT_AND_API_ROUTES = {
     ("/email/unsubscribe", frozenset({"GET"})),
     ("/api/session/{job_id}", frozenset({"GET"})),
     ("/api/sessions", frozenset({"GET"})),
+    ("/api/v1/me", frozenset({"GET"})),
+    ("/api/v1/profile", frozenset({"GET"})),
+    ("/api/v1/profile", frozenset({"PUT"})),
+    ("/api/v1/today", frozenset({"GET"})),
+    ("/api/v1/sessions", frozenset({"GET"})),
+    ("/api/v1/sessions/{job_id}", frozenset({"GET"})),
+    ("/api/v1/sessions/{job_id}/brief", frozenset({"GET"})),
+    ("/api/v1/practice-checkins", frozenset({"GET"})),
+    ("/api/v1/practice-checkins", frozenset({"POST"})),
+    ("/api/v1/events", frozenset({"POST"})),
 }
 
 

@@ -4,7 +4,12 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#14472c">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>{% block title %}{{ brand.name }}{% endblock %}</title>
+<link rel="manifest" href="/app.webmanifest">
+<link rel="icon" href="/static/pwa-icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/static/pwa-icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
@@ -396,11 +401,12 @@
 
     <nav class="sl-header__desktop-nav" aria-label="Main navigation">
       <details class="sl-header__dropdown" data-header-dropdown>
-        <summary class="sl-header__dropdown-trigger{% if current_path == '/sessions' or current_path == '/progress' or current_path == '/drills' %} is-current{% endif %}">
+        <summary class="sl-header__dropdown-trigger{% if current_path == '/today' or current_path == '/sessions' or current_path == '/progress' or current_path == '/drills' %} is-current{% endif %}">
           My Game
           <span class="sl-header__chevron" aria-hidden="true"></span>
         </summary>
         <div class="sl-header__dropdown-menu">
+          {% if require_account %}<a href="/today" {% if current_path == '/today' %}aria-current="page"{% endif %}>Today</a>{% endif %}
           <a href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
           {% if require_account %}
             <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>
@@ -459,7 +465,12 @@
       <a class="sl-header__cta sl-menu__cta" href="/" data-menu-link>Analyze a swing</a>
 
       <div class="sl-menu__group">
-        <p class="sl-menu__eyebrow">My Game</p>
+        <p class="sl-menu__eyebrow">Practice</p>
+        {% if require_account %}
+        <a class="sl-menu__link{% if current_path == '/today' %} is-current{% endif %}" href="/today" data-menu-link {% if current_path == '/today' %}aria-current="page"{% endif %}>
+          <span>Today</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {% endif %}
         <a class="sl-menu__link{% if current_path == '/sessions' %} is-current{% endif %}" href="/sessions" data-menu-link {% if current_path == '/sessions' %}aria-current="page"{% endif %}>
           <span>History</span><span aria-hidden="true">&rarr;</span>
         </a>
@@ -608,6 +619,16 @@
       }
     });
   })();
+</script>
+<script>
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("/service-worker.js").catch(function () {
+        // Offline support is progressive enhancement; a failed registration
+        // must never affect account, report, or upload behavior.
+      });
+    });
+  }
 </script>
 {% block script %}{% endblock %}
 </body>

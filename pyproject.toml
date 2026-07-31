@@ -50,7 +50,7 @@ caddieinsight-backup = "swinglab.backups.__main__:main"
 include = ["swinglab*"]
 
 [tool.setuptools.package-data]
-swinglab = ["templates/*.j2"]
+swinglab = ["templates/*.j2", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
