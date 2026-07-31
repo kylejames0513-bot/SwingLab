@@ -142,6 +142,57 @@ def test_signup_login_logout_flow(app):
     assert "Analyze your swing" in client.get("/").text  # email case-insensitive
 
 
+def test_password_login_rejects_cross_origin_form_post(app):
+    client = TestClient(app)
+    signup(client)
+    client.post("/logout")
+
+    rejected = client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        headers={"Origin": "https://attacker.example"},
+        follow_redirects=False,
+    )
+    assert rejected.status_code == 403
+    assert client.get("/account", follow_redirects=False).status_code == 303
+
+    allowed = client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        headers={"Origin": "http://testserver"},
+        follow_redirects=False,
+    )
+    assert allowed.status_code == 303
+
+
+@pytest.mark.parametrize(
+    ("path", "data"),
+    (
+        ("/logout", {}),
+        ("/account/digest", {"enabled": "on"}),
+        ("/billing/checkout", {}),
+        ("/billing/portal", {}),
+    ),
+)
+def test_session_mutating_forms_reject_cross_origin(app, path, data):
+    client = TestClient(app)
+    signup(client)
+    users: UserStore = app.state.users
+    user = users.get_by_email("kyle@example.com")
+    assert user is not None and not user.digest_opt_in
+
+    rejected = client.post(
+        path,
+        data=data,
+        headers={"Origin": "https://evil.example"},
+        follow_redirects=False,
+    )
+
+    assert rejected.status_code == 403
+    assert client.get("/account").status_code == 200
+    assert not users.get(user.id).digest_opt_in
+
+
 def test_bad_signups_rejected(app):
     client = TestClient(app)
     signup(client, email="a@b.co")

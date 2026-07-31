@@ -8,6 +8,15 @@ def test_defaults_without_file():
     assert cfg.brand["name"] == "CaddieInsight"
     assert cfg.detection["audio_height"] == 0.30
     assert cfg.coaching["tempo_target"] == 3.0
+    assert cfg.shopify_customer_sync == {
+        "enabled": False,
+        "auto_sync_new_users": True,
+        "request_timeout_seconds": 10,
+        "max_attempts": 5,
+        "retry_base_seconds": 30,
+        "retry_max_seconds": 3600,
+        "retry_jitter_ratio": 0.2,
+    }
 
 
 def test_partial_yaml_deep_merges(tmp_path):
@@ -23,6 +32,25 @@ def test_partial_yaml_deep_merges(tmp_path):
     assert cfg.brand["disclaimer"] == DEFAULTS["brand"]["disclaimer"]
     assert cfg.detection["audio_height"] == 0.5
     assert cfg.detection["min_gap_s"] == 4.0
+
+
+def test_shopify_customer_sync_partial_yaml_keeps_safe_defaults(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "shopify_customer_sync:\n"
+        "  enabled: true\n"
+        "  retry_max_seconds: 120\n"
+    )
+
+    cfg = Config.load(path)
+
+    assert cfg.shopify_customer_sync["enabled"] is True
+    assert cfg.shopify_customer_sync["auto_sync_new_users"] is True
+    assert cfg.shopify_customer_sync["request_timeout_seconds"] == 10
+    assert cfg.shopify_customer_sync["max_attempts"] == 5
+    assert cfg.shopify_customer_sync["retry_base_seconds"] == 30
+    assert cfg.shopify_customer_sync["retry_max_seconds"] == 120
+    assert cfg.shopify_customer_sync["retry_jitter_ratio"] == 0.2
 
 
 def test_missing_explicit_defaults(tmp_path):

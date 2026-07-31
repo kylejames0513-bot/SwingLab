@@ -185,6 +185,21 @@ DEFAULTS: dict[str, Any] = {
         # on a passes-only store, where nothing ever auto-renews.
         "store_subscriptions": False,
     },
+    "shopify_customer_sync": {
+        # App-created accounts remain local-first. This bridge is deliberately
+        # off until an operator provisions the Admin API credentials, reviews
+        # the protected-customer-data requirements, and enables a staged
+        # rollout. auto_sync_new_users only has an effect while enabled.
+        "enabled": False,
+        "auto_sync_new_users": True,
+        # Outbound Admin API calls must be bounded. Retry delays are
+        # exponential from retry_base_seconds and never exceed the cap.
+        "request_timeout_seconds": 10,
+        "max_attempts": 5,
+        "retry_base_seconds": 30,
+        "retry_max_seconds": 3600,
+        "retry_jitter_ratio": 0.2,
+    },
     "shop": {
         "enabled": True,
         "cache_minutes": 10,
@@ -272,6 +287,10 @@ class Config:
     @property
     def billing(self) -> dict[str, Any]:
         return self.data["billing"]
+
+    @property
+    def shopify_customer_sync(self) -> dict[str, Any]:
+        return self.data["shopify_customer_sync"]
 
     @property
     def shop(self) -> dict[str, Any]:

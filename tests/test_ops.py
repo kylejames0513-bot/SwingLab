@@ -36,11 +36,14 @@ def test_dsn_without_sdk_degrades_with_a_warning(monkeypatch, caplog):
 def test_dsn_with_sdk_initializes(monkeypatch):
     calls = {}
     fake = types.ModuleType("sentry_sdk")
-    fake.init = lambda dsn=None, **kw: calls.setdefault("dsn", dsn)
+    fake.init = lambda **kwargs: calls.update(kwargs)
     monkeypatch.setitem(sys.modules, "sentry_sdk", fake)
     monkeypatch.setenv("SENTRY_DSN", "https://key@sentry.example/1")
     assert init_sentry() is True
     assert calls["dsn"] == "https://key@sentry.example/1"
+    assert calls["send_default_pii"] is False
+    assert calls["include_local_variables"] is False
+    assert calls["max_request_body_size"] == "never"
 
 
 def test_app_creation_works_in_every_sentry_state(tmp_path, monkeypatch):

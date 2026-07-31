@@ -240,11 +240,11 @@ def run_once(users, manager, cfg: Config, secret: str, now: float | None = None)
         try:
             mailer.send(user.email, subject, body, html=True)
             sent += 1
-            logger.info("digest: sent weekly practice plan to %s", user.email)
-        except Exception as exc:
+            logger.info("digest: sent weekly practice plan")
+        except Exception:
             # The claim above stands: a failed send waits for next week
             # rather than risking a double-send on retry.
-            logger.error("digest: send to %s failed: %s", user.email, exc)
+            logger.error("digest: weekly practice-plan delivery failed")
     return sent
 
 

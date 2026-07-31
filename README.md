@@ -27,6 +27,7 @@ remain `swinglab` for compatibility while the codebase is migrated in stages.
 - [Architecture and project boundaries](docs/architecture.md)
 - [Environment-variable contract](docs/environment.md)
 - [Production and Railway contract](docs/deployment.md)
+- [Shopify customer-sync runbook](docs/shopify-customer-sync.md)
 - [Architecture decisions](docs/adr/0001-caddieinsight-naming-and-compatibility.md)
 
 ## Requirements
@@ -315,8 +316,8 @@ sells auto-renewing subscriptions via Shopify's Subscriptions app. When on,
 the page says monthly/yearly renew automatically (cancel anytime, Pro runs
 to period end); when off, it says honestly that passes simply expire.
 Lifetime is always a single payment, and its card
-only renders when the Shopify store is configured (the lifetime SKU has no
-Stripe equivalent).
+only renders when the primary Shopify commerce bridge is configured (the
+lifetime SKU has no Stripe equivalent).
 
 **Selling Pro on the Shopify store** (one checkout for gear and
 memberships): create a product whose variant SKUs map to days of access in
@@ -332,6 +333,13 @@ set:
 | `SWINGLAB_SECRET` | long random string signing login cookies (always set this) |
 | `SHOPIFY_STORE_DOMAIN` | `yourstore.myshopify.com` (shared with the gear shop) |
 | `SHOPIFY_WEBHOOK_SECRET` | signing secret from Settings → Notifications → Webhooks |
+| `SHOPIFY_PRIVACY_WEBHOOK_SECRET` | dedicated bridge app's client secret, used only for its mandatory privacy deliveries |
+
+The store domain and primary `SHOPIFY_WEBHOOK_SECRET` are the commerce gate:
+both are required before the app advertises the Pro store link or applies
+Shopify-connected signup semantics. A store plus only
+`SHOPIFY_PRIVACY_WEBHOOK_SECRET` keeps the shared endpoint available for signed
+mandatory compliance deliveries, but does not expose checkout to buyers.
 
 A paid order first extends Pro on the account linked to the stable Shopify
 customer ID, then falls back to the account matching the checkout email; a
@@ -400,32 +408,37 @@ absolute.
 
 ### Account sync with Shopify
 
-Accounts start on the store: a customer created in Shopify automatically
+The existing inbound bridge from merged
+[GitHub PR #28](https://github.com/kylejames0513-bot/SwingLab/pull/28) starts
+accounts on the store: a customer created in Shopify automatically
 exists in the web app, and everything they bought is waiting when they
 finish setup there. In the Shopify admin, under **Settings → Notifications
 → Webhooks**, add three more webhooks — `customers/create`,
 `customers/update`, and `customers/delete` — pointing at the **same**
 `https://<your-app>/webhooks/shopify` endpoint the order webhooks use.
-One endpoint, one signing secret (`SHOPIFY_WEBHOOK_SECRET`), nothing else
-to configure.
+The existing manual notification topics use `SHOPIFY_WEBHOOK_SECRET`.
+Mandatory privacy topics declared by the dedicated app use its separate
+`SHOPIFY_PRIVACY_WEBHOOK_SECRET`. Every recognized mutation also has to name
+the exact configured store in `X-Shopify-Shop-Domain`; a valid signature from
+another installed store cannot touch this database.
 
 What each event does:
 
 - **customers/create, customers/update** — creates a passwordless "store
   account" for the customer's (normalized) email, tagged with the Shopify
-  customer id — or, if an account already exists, just links/refreshes
-  that id. The customer id is the stable identity: an unclaimed store-only
-  stub can follow a Shopify email change on the same row; a claimed account
-  keeps its verified app login email instead of being split or silently
-  merged. Replayed webhooks land on the same row (no duplicates).
+  customer id. If a verified account already exists, it can link/refresh that
+  id. An unverified pre-existing local account is never trusted merely because
+  its typed email matches; the customer identity is parked until inbox proof.
+  The customer id is the stable identity: an unclaimed store-only stub can
+  follow a Shopify email change on the same row; a claimed account keeps its
+  verified app login email instead of being split or silently merged.
+  Replayed webhooks land on the same row (no duplicates).
 - Signing up in the app with a store account's email **claims the same
-  account** — as does signing in with an emailed code once email delivery is
-  configured (see "One account" below): either way the claim lands on
-  that row, so the Shopify link and any Pro purchase already granted by
-  the order webhooks carry over — one user, everything kept. Until then,
-  a password login attempt with that email gets pointed at the right
-  next step (the code flow, or "create your password to finish setup")
-  instead of a misleading "wrong password".
+  account** only after an emailed code proves inbox ownership. The claim lands
+  on that row, so the Shopify link and any Pro purchase already granted by the
+  order webhooks carry over. A pre-verification password/session cannot survive
+  the ownership transition. Until proof, a password login attempt gets pointed
+  at the code flow instead of a misleading "wrong password".
 - **customers/delete** — deletes the app user only when it is an
   unclaimed stub (no password, no analyses); any Pro days it still
   carried are parked and reclaimed if that email signs up later. A
@@ -436,8 +449,14 @@ What each event does:
   events. Redaction severs that mapping.
 - **customers/redact** (GDPR) — same as delete, and additionally erases
   the Shopify-sourced profile fields on claimed accounts and any parked
-  purchase for a deleted stub's email. `customers/data_request` and
-  `shop/redact` are acknowledged (200) and logged.
+  purchase for a deleted stub's email.
+- **customers/data_request** — captures a replay-idempotent,
+  integrity-checked, expiring export snapshot for protected operator
+  delivery; credential hashes and one-time secrets are excluded.
+- **shop/redact** — for the exact configured store, transactionally erases
+  local Shopify ledgers, store bindings, pending links, and store-only
+  identities while preserving independently owned CaddieInsight accounts
+  and golf analyses.
 
 Paid orders follow the linked Shopify customer id first. Normalized checkout
 email is used directly only for guest orders without a customer id; a
@@ -450,9 +469,10 @@ transaction, and an early cancellation is remembered so a delayed paid
 event cannot restore cancelled access.
 
 **Limitations, honestly:** Shopify does not expose customer credentials,
-so store passwords cannot sync — the store account carries over and the
-user proves the email is theirs once, at claim time (an emailed sign-in
-code when email is on, or by setting an app password). A claimed user's
+so store passwords cannot sync. A deployment with the primary Shopify commerce
+bridge configured requires inbox proof before a password account can claim or
+later receive a commerce identity; store-first and app-first claims use an
+emailed one-time code. A claimed user's
 Shopify email change is deliberately not made their app login until the
 new inbox is verified; support must currently handle that change. Store
 customers created without an email address are skipped (there is nothing
@@ -460,10 +480,40 @@ to match on). Webhooks cover changes after subscription; a full historical
 customer backfill/reconciliation still requires an Admin API process.
 Legacy order histories whose exact grant ownership cannot be proven are
 left unchanged for that reconciliation instead of guessing and revoking or
-restoring the wrong customer's access. `customers/data_request` and
-`shop/redact` currently receive the required signed acknowledgement but do
-not yet run a complete customer export or shop-wide erasure workflow; that
-privacy-compliance workflow remains separate release work.
+restoring the wrong customer's access. Privacy export snapshots require an
+authorized operator to deliver them through an approved support/privacy
+channel before their retention deadline; sensitive exports are never emailed
+automatically by the webhook.
+
+#### App-first Shopify customer sync
+
+The complementary outbound bridge links verified CaddieInsight registrations
+through Shopify Admin GraphQL. It is disabled by default:
+
+```yaml
+shopify_customer_sync:
+  enabled: false
+  auto_sync_new_users: true
+```
+
+Local registration always commits first, so Shopify downtime never prevents
+access to CaddieInsight. Email is used only for the initial normalized,
+verified match; after linking, the stored Shopify customer ID is durable.
+Passwords are never synchronized, and Shopify email updates do not silently
+replace the app login identity.
+
+Activation requires canonical `SHOPIFY_STORE_DOMAIN` and
+`SHOPIFY_ADMIN_STORE_DOMAIN` values that match each other and the persisted
+Shop binding, explicit `SHOPIFY_ADMIN_API_VERSION`, and exactly one
+backend-only authentication mode: the preferred `SHOPIFY_ADMIN_CLIENT_ID` plus
+`SHOPIFY_ADMIN_CLIENT_SECRET`, or the legacy `SHOPIFY_ADMIN_ACCESS_TOKEN`. A
+split-store configuration leaves inbound signed webhooks healthy but blocks
+outbound enrollment, worker startup, and customer requests. Activation also
+requires the minimum customer scopes and protected email access, protected
+admin health/retry routes, a bound Shop GID, and a reviewed dry-run backfill.
+Do not run a production backfill automatically. See the
+[Shopify customer-sync runbook](docs/shopify-customer-sync.md) for setup,
+retries, staged rollout, rollback, and the manual verification checklist.
 
 **Optional email verification** — inert until configured, like
 every other integration:
@@ -486,13 +536,12 @@ a 6-digit code emailed to that address — 10-minute expiry, single-use, stored
 hashed, rate-limited per email — and **password reset** appears on the login
 page using the same codes. No third-party runtime dependency is required.
 
-> **Security note:** without email delivery configured, behavior is unchanged from
-> previous versions: signing up with an email claims whatever that email
-> already has (store account, pre-signup purchase, or a passwordless
-> account) with no inbox proof — the same trade-off the buy-before-signup
-> claim has always had, kept deliberately so the app works with zero
-> email infrastructure. Configuring delivery closes it by verifying control
-> of the inbox before a claim.
+> **Security note:** when the primary Shopify commerce bridge is configured,
+> every password signup and every store/purchase claim requires inbox proof. If
+> email delivery is unavailable, setup fails closed instead of attaching
+> Shopify identity or value to an unverified password/session. A standalone
+> installation with no primary commerce bridge can still use the documented local
+> no-mail fallback.
 
 ### One account: email-code sign-in
 
@@ -723,10 +772,14 @@ ffmpeg auto-skip when it is not installed.
 - **Shopify gear shop (done)** — `/shop` page backed by a Shopify store's
   Storefront API plus flag-matched training-aid recommendations on finished
   analyses; inert until the `SHOPIFY_*` environment variables are set.
-- **Shopify account sync (done)** — customer webhooks provision store
+- **Shopify inbound account sync (done)** — customer webhooks provision store
   accounts in the app, signup claims them with purchases intact, and
   optional email delivery adds code-verified claims plus password reset
   (the Milestone-5 reset item, shipped early).
+- **Shopify app-first customer sync (staged)** — the backend Admin GraphQL
+  bridge is disabled by default and activates only after protected customer
+  access, development verification, dry-run reconciliation, and explicit
+  rollout approval.
 - **One account (done)** — passwordless email-code sign-in: with email delivery
   configured, the store email is the app identity; one "Continue with
   email" flow logs in, claims store accounts, or creates accounts, and a

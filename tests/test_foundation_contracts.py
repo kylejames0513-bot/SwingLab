@@ -71,6 +71,8 @@ def _signed_post(
         headers={
             "X-Shopify-Hmac-Sha256": signature,
             "X-Shopify-Topic": topic,
+            "X-Shopify-Shop-Domain": "contract-test.myshopify.com",
+            "X-Shopify-Webhook-Id": "foundation-contract-test-delivery",
             "Content-Type": "application/json",
         },
         follow_redirects=False,
@@ -92,7 +94,21 @@ def _signup(client: TestClient, email: str) -> None:
         data={"email": email, "password": "longenough"},
         follow_redirects=False,
     )
+    if response.status_code == 503:
+        users: UserStore = client.app.state.users
+        intent = users.issue_signup_intent(email, "longenough")
+        code = users.issue_email_code(email, "claim")
+        assert code is not None
+        users.complete_signup_intent_with_code(intent, code)
+        response = client.post(
+            "/login",
+            data={"email": email, "password": "longenough"},
+            follow_redirects=False,
+        )
     assert response.status_code == 303
+    users: UserStore = client.app.state.users
+    if not users.get_by_email(email).email_verified:
+        users.verify_email_signin(email)
 
 
 def _user(client: TestClient, email: str):

@@ -83,7 +83,9 @@ export SENTRY_DSN=https://...@o0.ingest.sentry.io/0
 With both in place, unexpected analysis failures and web errors are
 reported to Sentry (the app logs through the standard `logging` module, so
 they land in `journalctl`/Railway logs either way). With either missing,
-nothing changes — every error path works identically without it.
+nothing changes — every error path works identically without it. The SDK is
+initialized with default PII, request-body capture, and frame-local capture
+disabled.
 
 ## Backup and recovery
 
@@ -149,9 +151,9 @@ environment so logins survive restarts/redeploys.
      gear-only or unattributable refunds leave Pro unchanged.
    - **Customer creation** (`customers/create`), **Customer update**
      (`customers/update`), **Customer deletion** (`customers/delete`) —
-     these provision the passwordless "store account" so a buyer who
-     clicks **Log in** in the app is told to *create your password to
-     finish setup* instead of getting a bare "Wrong email or password".
+     these provision the passwordless "store account" so a buyer can use
+     the emailed-code flow to prove inbox ownership and claim the same
+     account instead of getting a bare "Wrong email or password".
      Omit these three and the store-account claim UX is dead: the app
      never learns the customer exists until they sign up from scratch.
    Paste the secret with no leading/trailing whitespace — a stray newline
@@ -159,11 +161,23 @@ environment so logins survive restarts/redeploys.
    warning when this happens).
 3. Set `SHOPIFY_STORE_DOMAIN` and `SHOPIFY_WEBHOOK_SECRET` in the host's
    environment and redeploy.
-4. **Verify it works before trusting it.** Place a real (or test) order,
-   then confirm the app actually recorded it — the app logs
-   `Shopify order <id>: granted N Pro day(s) to <email>` on success, and
-   `sqlite3 /data/sessions/swinglab.db "SELECT * FROM shopify_orders"`
-   should return a row. An empty table with a green 200 in Shopify's
+4. Configure and verify app email delivery. A Shopify-connected password
+   signup or store-account claim fails closed when the inbox code cannot be
+   delivered.
+5. The six manual topics above do not create Shopify's mandatory privacy
+   subscriptions. After the endpoint code and matching
+   `SHOPIFY_PRIVACY_WEBHOOK_SECRET` are deployed together, release and install
+   the validated `shopify.app.toml` through the separately gated procedure in
+   [`docs/shopify-customer-sync.md`](../docs/shopify-customer-sync.md#webhook-configuration).
+   Do not run `shopify app deploy` before that secret/endpoint gate. A store
+   domain plus only this privacy secret keeps compliance deliveries available,
+   but does not enable Pro links, checkout, or commerce-connected signup
+   semantics; those still require the primary `SHOPIFY_WEBHOOK_SECRET`.
+6. **Verify it works before trusting it.** Place a real (or test) order,
+   then confirm the app actually recorded it — the app logs the PII-free
+   message `Shopify order webhook reconciled.`, and
+   `sqlite3 /data/sessions/swinglab.db "SELECT COUNT(*) FROM shopify_orders"`
+   should return a non-zero count. A zero count with a green 200 in Shopify's
    delivery log means the wrong topic was subscribed (watch the app log
    for `Ignoring unrecognized Shopify webhook topic`) or the SKU didn't
    match `billing.shopify_skus` (the purchase was recorded as *gear*
@@ -172,6 +186,42 @@ environment so logins survive restarts/redeploys.
 Buyers check out on the Shopify storefront; a paid order unlocks Pro on the
 CaddieInsight account with the same email (or waits for that email to sign
 up).
+
+**Linking app-first accounts to Shopify (disabled by default):**
+
+The inbound customer/order webhook bridge above remains independent. Outbound
+Admin GraphQL sync is controlled by `shopify_customer_sync.enabled`, which is
+shipped as `false`; adding a token does not activate it.
+
+1. Configure the installed Shopify app with the minimum `read_customers` and
+   `write_customers` scopes plus protected customer data access for email.
+2. Add the canonical `SHOPIFY_ADMIN_STORE_DOMAIN` (`*.myshopify.com`),
+   explicit `SHOPIFY_ADMIN_API_VERSION`, and the preferred
+   `SHOPIFY_ADMIN_CLIENT_ID` plus `SHOPIFY_ADMIN_CLIENT_SECRET` to the backend
+   environment. A legacy `SHOPIFY_ADMIN_ACCESS_TOKEN` is an alternative, never
+   a second mode. Never put either secret in storefront, browser, or mobile
+   code. Before enabling outbound sync, set `SHOPIFY_STORE_DOMAIN` to that
+   exact same canonical hostname; a custom or different webhook-store domain
+   fail-closes outbound enrollment and customer calls.
+3. Keep the flag off while testing registration with Shopify unavailable and
+   while reviewing `GET /admin/shopify-sync`.
+4. Run the read-only schema preflight, then authenticate and persist the exact
+   store binding without touching customers:
+   `swinglab shopify-backfill --sessions-dir /data/sessions --preflight-only --json`
+   and then
+   `swinglab shopify-backfill --sessions-dir /data/sessions --bind-only --confirm-store your-store.myshopify.com --json`.
+5. Run the default dry run and review conflicts. Use explicit small batches
+   with `--apply` only after review; never schedule this command at
+   deploy/startup.
+6. Enable automatic new-user sync only after the staged checklist is complete.
+
+Manual retry is protected at
+`POST /admin/shopify-sync/ref/{user_ref}/retry`. Roll back by disabling the flag
+first; keep the inbound webhooks and persistent volume, and never delete
+customers created in Shopify as a rollback shortcut. See
+[`docs/shopify-customer-sync.md`](../docs/shopify-customer-sync.md) for the
+verified-email rule, scopes, retries, rollout, checks, and limitations.
+
 For auto-renewing memberships, install Shopify's free **Subscriptions** app
 (requires Shopify Payments) and create its selling plans in the app's UI:
 a monthly plan attached to the 1-month variant only and a yearly plan

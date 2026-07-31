@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import sqlite3
 import threading
 import time
@@ -48,17 +49,29 @@ def app(tmp_path, monkeypatch):
     return create_app(cfg, sessions_dir=tmp_path / "sessions")
 
 
-def webhook(client, payload, topic, secret=SECRET):
+def webhook(
+    client,
+    payload,
+    topic,
+    secret=SECRET,
+    shop_domain="teststore.myshopify.com",
+    webhook_id=None,
+):
     body = json.dumps(payload).encode()
     signature = base64.b64encode(
         hmac.new(secret.encode(), body, hashlib.sha256).digest()
     ).decode()
+    delivery_id = webhook_id or hashlib.sha256(
+        topic.encode() + b"\0" + body
+    ).hexdigest()
     return client.post(
         "/webhooks/shopify",
         content=body,
         headers={
             "X-Shopify-Hmac-Sha256": signature,
             "X-Shopify-Topic": topic,
+            "X-Shopify-Shop-Domain": shop_domain,
+            "X-Shopify-Webhook-Id": delivery_id,
             "Content-Type": "application/json",
         },
     )
@@ -87,12 +100,37 @@ def pro_order(
     return order
 
 
-def signup(client, email="buyer@example.com", password="longenough"):
+def signup(
+    client,
+    email="buyer@example.com",
+    password="longenough",
+    *,
+    verified=True,
+):
     resp = client.post(
         "/signup", data={"email": email, "password": password},
         follow_redirects=False,
     )
+    if resp.status_code == 503:
+        # Account-sync tests do not exercise mail transport. Model successful
+        # inbox proof directly when a Shopify identity/value makes it
+        # mandatory; the dedicated mailer tests cover the HTTP email flow.
+        users: UserStore = client.app.state.users
+        intent = users.issue_signup_intent(email, password)
+        code = users.issue_email_code(email, "claim")
+        assert code is not None
+        users.complete_signup_intent_with_code(intent, code)
+        resp = client.post(
+            "/login",
+            data={"email": email, "password": password},
+            follow_redirects=False,
+        )
     assert resp.status_code == 303
+    if verified:
+        users = client.app.state.users
+        current = users.get_by_email(email)
+        if current is not None and not current.email_verified:
+            users.verify_email_signin(email)
     return resp
 
 
@@ -121,6 +159,64 @@ def test_customers_create_provisions_a_stub(app):
     users: UserStore = client.app.state.users
     assert users.authenticate("buyer@example.com", "") is None
     assert users.get_by_shopify("7001").id == user.id
+
+
+def test_customer_gid_is_canonicalized_without_false_conflict_log(app, caplog):
+    client = TestClient(app)
+    payload = customer(
+        customer_id="gid://shopify/Customer/7001",
+        email="buyer@example.com",
+    )
+
+    with caplog.at_level(logging.INFO, logger="swinglab.web.shopify"):
+        assert webhook(client, payload, "customers/create").status_code == 200
+
+    assert get_user(client).shopify_customer_id == "7001"
+    assert not any(
+        "identity conflict" in record.message for record in caplog.records
+    )
+
+
+def test_shopify_webhook_logs_redact_customer_and_order_data(app, caplog):
+    client = TestClient(app)
+    customer_id = 987654321
+    order_id = 123456789
+    refund_id = 456789123
+    email = "private.buyer@example.com"
+
+    with caplog.at_level(logging.INFO, logger="swinglab.web.shopify"):
+        webhook(
+            client,
+            customer(customer_id=customer_id, email=email),
+            "customers/create",
+        )
+        webhook(
+            client,
+            pro_order(
+                order_id=order_id,
+                email=email,
+                customer_id=customer_id,
+            ),
+            "orders/paid",
+        )
+        webhook(
+            client,
+            {
+                "id": refund_id,
+                "order_id": order_id,
+                "refund_line_items": [
+                    {
+                        "quantity": 1,
+                        "line_item": {"sku": "GEAR-ONLY"},
+                    }
+                ],
+            },
+            "refunds/create",
+        )
+
+    rendered = "\n".join(record.getMessage() for record in caplog.records)
+    for protected_value in (email, customer_id, order_id, refund_id):
+        assert str(protected_value) not in rendered
 
 
 def test_replayed_customer_webhook_is_idempotent(app):
@@ -513,7 +609,11 @@ def test_cancelling_direct_order_does_not_consume_an_older_pending_order(app):
 def test_signup_claims_stub_and_keeps_everything_bought(app):
     client = TestClient(app)
     webhook(client, customer(), "customers/create")
-    webhook(client, pro_order(), "orders/paid")  # lands on the stub directly
+    webhook(
+        client,
+        pro_order(customer_id=7001),
+        "orders/paid",
+    )  # stable customer identity lands on the stub directly
     stub = get_user(client)
     assert stub.pro_until > time.time() and not stub.has_password
 
@@ -655,8 +755,16 @@ def test_deleted_stub_purchase_claim_locks_former_customer_identity(app):
 def test_delete_reclaim_preserves_each_orders_remaining_days(app):
     client = TestClient(app)
     webhook(client, customer(), "customers/create")
-    webhook(client, pro_order(order_id=1001), "orders/paid")
-    webhook(client, pro_order(order_id=1002), "orders/paid")
+    webhook(
+        client,
+        pro_order(order_id=1001, customer_id=7001),
+        "orders/paid",
+    )
+    webhook(
+        client,
+        pro_order(order_id=1002, customer_id=7001),
+        "orders/paid",
+    )
     users: UserStore = client.app.state.users
     now = time.time()
     user = get_user(client)
@@ -707,7 +815,11 @@ def test_delete_reclaim_preserves_each_orders_remaining_days(app):
 def test_customer_delete_rolls_back_everything_if_parking_fails(app):
     client = TestClient(app)
     webhook(client, customer(), "customers/create")
-    webhook(client, pro_order(), "orders/paid")
+    webhook(
+        client,
+        pro_order(customer_id=7001),
+        "orders/paid",
+    )
     users: UserStore = client.app.state.users
     users._conn.execute(
         "CREATE TRIGGER fail_customer_delete"
@@ -1027,6 +1139,7 @@ def test_redact_for_other_customer_id_cannot_erase_same_email_state(app):
 
     user = get_user(client)
     assert user is not None and user.shopify_customer_id == "7001"
+    assert not user.shopify_sync_blocked
     assert users.pending_grant_days("buyer@example.com") == 31
     assert users._conn.execute(
         "SELECT 1 FROM email_codes WHERE email = 'buyer@example.com'"
@@ -1063,7 +1176,7 @@ def test_redact_removes_only_matching_customer_pending_value(app):
             " ORDER BY order_id"
         )
     }
-    assert pending == {"1001": 0, "1002": 31}
+    assert pending == {"1002": 31}
 
 
 def test_gdpr_ack_topics_return_200(app):
@@ -1071,6 +1184,90 @@ def test_gdpr_ack_topics_return_200(app):
     payload = {"shop_domain": "teststore.myshopify.com", "customer": customer()}
     assert webhook(client, payload, "customers/data_request").status_code == 200
     assert webhook(client, {"shop_domain": "x"}, "shop/redact").status_code == 200
+
+
+def test_reverse_order_identity_and_value_wait_for_inbox_proof(app):
+    users: UserStore = app.state.users
+    email = "reverse-order@example.com"
+    attacker_password = "attacker-password"
+    attacker = users.create(
+        email,
+        attacker_password,
+        email_verified=False,
+    )
+    before_epoch = attacker.auth_epoch
+
+    pending = users.upsert_store_customer(
+        email,
+        "7001",
+        updated_at=100,
+    )
+    assert pending is not None
+    assert pending.id == attacker.id
+    assert pending.shopify_customer_id is None
+    assert pending.shopify_sync_status == "requires_review"
+    parked_link = users._conn.execute(
+        "SELECT customer_id, email FROM shopify_pending_customer_links"
+        " WHERE customer_id = '7001'"
+    ).fetchone()
+    assert tuple(parked_link) == ("7001", email)
+
+    applied, _, user_id = users.apply_shopify_order(
+        "9001",
+        email,
+        31,
+        "7001",
+    )
+    assert applied and user_id is None
+    assert users.claim_pending_grant(attacker.id, email) == 0
+    assert not users.get(attacker.id).is_pro
+
+    verified = users.verify_email_signin(email)
+    assert verified.email_verified
+    assert verified.auth_epoch == before_epoch + 1
+    assert not verified.has_password
+    assert verified.shopify_customer_id == "7001"
+    assert users.authenticate(email, attacker_password) is None
+    assert users.claim_pending_grant(verified.id, email) == 31
+    assert users.get(verified.id).is_pro
+
+    replay = users.upsert_store_customer(
+        email,
+        "7001",
+        updated_at=100,
+    )
+    assert replay is not None and replay.id == verified.id
+    reapplied, _, _ = users.apply_shopify_order(
+        "9001",
+        email,
+        31,
+        "7001",
+    )
+    assert not reapplied
+
+
+def test_missing_timestamp_replay_cannot_roll_back_pending_link_email(app):
+    users: UserStore = app.state.users
+    users.create(
+        "current@example.com",
+        "unverified-password",
+        email_verified=False,
+    )
+    users.upsert_store_customer(
+        "current@example.com",
+        "7001",
+        updated_at=200,
+    )
+    users.upsert_store_customer(
+        "stale@example.com",
+        "7001",
+        updated_at=None,
+    )
+    parked = users._conn.execute(
+        "SELECT email, updated_at FROM shopify_pending_customer_links"
+        " WHERE customer_id = '7001'"
+    ).fetchone()
+    assert tuple(parked) == ("current@example.com", 200)
 
 
 # -- migration -------------------------------------------------------------
@@ -1294,6 +1491,10 @@ def test_paid_replay_repairs_legacy_ledger_without_entitlement(tmp_path):
     conn.close()
 
     users = UserStore(db)
+    users._conn.execute(
+        "UPDATE users SET email_verified_at = created_at WHERE id = 'u1'"
+    )
+    users._conn.commit()
     applied, _, _ = users.apply_shopify_order(
         "legacy-crash",
         "old@example.com",

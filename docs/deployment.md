@@ -52,16 +52,54 @@ may trigger Railway's existing automatic deployment. Review the complete image,
 route, environment, and data-path contracts before merge. This repository must
 not initiate a production deployment as part of foundation work.
 
+## Shopify customer-sync deployment gate
+
+Outbound Admin API customer sync ships with
+`shopify_customer_sync.enabled: false`. Admin credentials alone must not
+activate it, and deployment must not run the existing-user backfill.
+
+Before enabling the flag:
+
+1. verify a current WAL-safe backup and scratch restore;
+2. confirm the database has no duplicate non-null Shopify customer IDs and its
+   unique constraint is present;
+3. confirm `read_customers`, `write_customers`, and protected email access for
+   the installed Shopify app;
+4. configure the canonical Admin store, explicit stable API version, and
+   exactly one authentication mode: preferred client ID/client secret or
+   legacy static access token;
+5. run the read-only schema preflight, then use `--bind-only` with exact
+   canonical-store confirmation to persist the authenticated Shop GID without
+   reading or mutating customers;
+6. test existing-customer reuse, new-customer creation, Shopify outage,
+   throttling, duplicate matches, and verified-email behavior in development;
+7. verify coarse public `/healthz`, exact protected
+   `GET /admin/shopify-sync`, and `user_ref`-based manual retry;
+8. run `swinglab shopify-backfill --sessions-dir /data/sessions` without
+   `--apply`, review the dry-run summary, then use explicit small `--apply`
+   batches only during a monitored stage.
+
+Merging code, setting credentials, and enabling automatic sync are separate
+actions. None authorizes a production backfill. The complete staged checklist
+is in [Shopify customer sync](shopify-customer-sync.md).
+
 ## Rollback
 
-1. Redeploy the previously successful application commit or revert the
-   foundation commit.
-2. Keep the existing Railway volume attached at the same mount point. Never
+1. If outbound customer sync is active, set
+   `shopify_customer_sync.enabled: false` first and redeploy/restart so no new
+   attempts begin.
+2. Redeploy the previously successful application commit or revert the
+   application commit.
+3. Keep the existing Railway volume attached at the same mount point. Never
    create a replacement volume as a rollback shortcut.
-3. Verify `GET /healthz`.
-4. Verify a signed Shopify test delivery reaches `/webhooks/shopify`.
-5. Verify existing account and entitlement records are visible before accepting
-   new purchases.
+4. Keep the existing inbound Shopify webhooks configured.
+5. Verify `GET /healthz`.
+6. Verify registration still succeeds while the Admin API is unavailable.
+7. Verify a signed Shopify test delivery reaches `/webhooks/shopify`.
+8. Verify existing account, customer-link, and entitlement records are visible
+   before accepting new purchases.
 
 Rollback changes application code only. It must not delete data, rotate secrets,
-alter DNS, or replace the persistent volume.
+alter DNS, replace the persistent volume, or delete Shopify customers created
+during the rollout. External customer creation is reconciled after the
+incident; it is never undone as a routine rollback shortcut.
