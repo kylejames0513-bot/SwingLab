@@ -27,7 +27,10 @@ Setup, on the Shopify side:
 2. In Settings -> Notifications -> Webhooks, add ``orders/paid``,
    ``orders/cancelled``, and ``refunds/create`` webhooks pointing at
    ``https://<your-app>/webhooks/shopify`` and copy the signing secret
-   shown on that page into ``SHOPIFY_WEBHOOK_SECRET``.
+   shown on that page into ``SHOPIFY_WEBHOOK_SECRET``. After the supplier
+   proof gate is cleared, ``fulfillments/create`` and ``fulfillments/update``
+   can send the same endpoint a delivery-status telemetry signal; neither
+   topic changes order or fulfillment state.
 
 Flow: checkout happens on the Shopify storefront; Shopify calls the
 webhook, which is the ONLY place access changes (signed webhooks can't be
@@ -116,6 +119,12 @@ logger = logging.getLogger("swinglab.web.shopify")
 PAID_TOPICS = ("orders/paid", "ORDERS_PAID")
 CANCELLED_TOPICS = ("orders/cancelled", "ORDERS_CANCELLED")
 REFUND_TOPICS = ("refunds/create", "REFUNDS_CREATE")
+FULFILLMENT_TOPICS = (
+    "fulfillments/create",
+    "fulfillments/update",
+    "FULFILLMENTS_CREATE",
+    "FULFILLMENTS_UPDATE",
+)
 CUSTOMER_UPSERT_TOPICS = (
     "customers/create", "customers/update",
     "CUSTOMERS_CREATE", "CUSTOMERS_UPDATE",
@@ -136,6 +145,7 @@ MUTATING_TOPICS = (
     *PAID_TOPICS,
     *CANCELLED_TOPICS,
     *REFUND_TOPICS,
+    *FULFILLMENT_TOPICS,
     *CUSTOMER_UPSERT_TOPICS,
     *CUSTOMER_DELETE_TOPICS,
     *PRIVACY_TOPICS,
@@ -269,8 +279,14 @@ def apply_webhook(
     access, customer events sync store accounts, GDPR events are
     acknowledged. Unknown topics are no-ops (still a 200 — Shopify retries
     anything else)."""
-    if topic in PAID_TOPICS or topic in CANCELLED_TOPICS or topic in REFUND_TOPICS:
+    if (
+        topic in PAID_TOPICS
+        or topic in CANCELLED_TOPICS
+        or topic in REFUND_TOPICS
+    ):
         apply_order(topic, data, users, cfg)
+    elif topic in FULFILLMENT_TOPICS:
+        _apply_fulfillment(data, users)
     else:
         apply_customer(topic, data, users, event_id=event_id)
 
@@ -520,13 +536,53 @@ def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
     days = _order_days(order, cfg)
     if not order_id or (days <= 0 and not gear):
         return
-    applied, _, _ = users.apply_shopify_order(
+    applied, _, user_id = users.apply_shopify_order(
         order_id, email, days, customer_id, gear=gear
     )
     if not applied:
         logger.info("Shopify order webhook replay skipped.")
         return
+    _record_order_funnel_event(users, "paid_order", order_id, user_id)
     logger.info("Shopify order webhook reconciled.")
+
+
+def _apply_fulfillment(fulfillment: dict, users: UserStore) -> None:
+    """Record a proof-of-shipment funnel event without mutating commerce.
+
+    The fulfillment APIs and supplier remain Shopify-owned.  This handler
+    intentionally only counts a signed, same-store delivery when the prior
+    paid-order ledger already proves exactly one app account for its order.
+    """
+
+    order_id = str(fulfillment.get("order_id") or "").strip()
+    user_id = users.user_id_for_shopify_order(order_id)
+    _record_order_funnel_event(users, "fulfillment_updated", order_id, user_id)
+
+
+def _record_order_funnel_event(
+    users: UserStore,
+    event_name: str,
+    order_id: str,
+    user_id: str | None,
+) -> None:
+    """Best-effort, replay-safe telemetry for a transactionally known user."""
+
+    if not order_id or user_id is None:
+        return
+    # Keep the external order reference out of the product-event ledger.
+    # The SHA-256 digest is only an idempotency key and is removed with the
+    # linked account's product events during redaction.
+    reference = hashlib.sha256(order_id.encode("utf-8")).hexdigest()
+    try:
+        users.record_product_event(
+            event_name,
+            user_id=user_id,
+            dedupe_key=f"shopify.{event_name}.{reference}",
+        )
+    except Exception:
+        # Measurement must never make Shopify retry a successful paid or
+        # fulfillment webhook, and the log intentionally has no order/user ID.
+        logger.warning("Shopify funnel event write unavailable: event=%s", event_name)
 
 
 def _apply_cancelled(order: dict, users: UserStore) -> None:

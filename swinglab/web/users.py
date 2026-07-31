@@ -910,20 +910,6 @@ class UserStore:
                     self._conn.execute(
                         "ALTER TABLE gear_orders ADD COLUMN user_id TEXT"
                     )
-                    # Link old mixed Pro/gear orders only where their own
-                    # durable order row already proves the same user.  Never
-                    # fill this analytics pointer by matching an email.
-                    self._conn.execute(
-                        "UPDATE gear_orders SET user_id = ("
-                        " SELECT shopify_orders.user_id FROM shopify_orders"
-                        " WHERE shopify_orders.order_id = gear_orders.order_id"
-                        "   AND shopify_orders.user_id IS NOT NULL"
-                        ") WHERE user_id IS NULL AND EXISTS ("
-                        " SELECT 1 FROM shopify_orders"
-                        " WHERE shopify_orders.order_id = gear_orders.order_id"
-                        "   AND shopify_orders.user_id IS NOT NULL"
-                        ")"
-                    )
                 tombstone_columns = {
                     row["name"]
                     for row in self._conn.execute(
@@ -959,6 +945,20 @@ class UserStore:
                     "     WHERE users.email = shopify_orders.email"
                     "   )"
                     " )"
+                )
+                # Link old mixed Pro/gear orders only where their own
+                # durable order row now proves the same user. Never fill this
+                # analytics pointer by matching a checkout email.
+                self._conn.execute(
+                    "UPDATE gear_orders SET user_id = ("
+                    " SELECT shopify_orders.user_id FROM shopify_orders"
+                    " WHERE shopify_orders.order_id = gear_orders.order_id"
+                    "   AND shopify_orders.user_id IS NOT NULL"
+                    ") WHERE user_id IS NULL AND EXISTS ("
+                    " SELECT 1 FROM shopify_orders"
+                    " WHERE shopify_orders.order_id = gear_orders.order_id"
+                    "   AND shopify_orders.user_id IS NOT NULL"
+                    ")"
                 )
                 self._conn.execute(
                     "UPDATE shopify_orders"
@@ -5210,6 +5210,33 @@ class UserStore:
         counts = {name: 0 for name in PRODUCT_EVENT_NAMES}
         counts.update({str(row["event_name"]): int(row["count"]) for row in rows})
         return counts
+
+    def user_id_for_shopify_order(self, order_id: object) -> str | None:
+        """Return the one durable app identity attached to a paid order.
+
+        A fulfillment webhook often carries only an order ID.  The paid-order
+        transaction records the app user alongside both Pro and gear rows, so
+        fulfillment telemetry can remain identity-bound without falling back
+        to an email lookup.  Ambiguous or legacy rows deliberately produce no
+        event rather than guessing an account.
+        """
+
+        normalized_order_id = str(order_id or "").strip()
+        if not normalized_order_id or len(normalized_order_id) > _SHOPIFY_PRIVACY_ID_MAX:
+            return None
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT DISTINCT user_id FROM ("
+                " SELECT user_id FROM shopify_orders WHERE order_id = ?"
+                " UNION"
+                " SELECT user_id FROM gear_orders WHERE order_id = ?"
+                ") WHERE user_id IS NOT NULL LIMIT 2",
+                (normalized_order_id, normalized_order_id),
+            ).fetchall()
+        if len(rows) != 1:
+            return None
+        user_id = rows[0]["user_id"]
+        return str(user_id) if isinstance(user_id, str) and user_id else None
 
     # -- Shopify Customer Account migration state ------------------------
     @staticmethod

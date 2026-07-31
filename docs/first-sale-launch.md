@@ -36,11 +36,20 @@ The local, PII-minimized event ledger supports:
 `checkout_started`, `paid_order`, `fulfillment_updated`, and
 `repeat_analysis`.
 
-It stores no IP address, email, request body, video label, or arbitrary
-client properties. Some commerce events require a same-origin storefront
-integration or verified Shopify webhooks before they can be recorded. The
-operator endpoint is protected by `SWINGLAB_ADMIN_TOKEN`; it is a measurement
-surface, not a checkout or fulfillment system.
+It stores no IP address, email, request body, video label, arbitrary client
+properties, or raw Shopify order ID. Signed same-store `orders/paid` webhooks
+record `paid_order`, while `fulfillments/create` and `fulfillments/update`
+record `fulfillment_updated` only if the paid-order ledger proves one linked
+app identity. They are telemetry only: the app never changes Shopify order,
+inventory, or fulfillment state. Cart/checkout events still require a
+same-origin storefront integration. The operator endpoint is protected by
+`SWINGLAB_ADMIN_TOKEN`; it is a measurement surface, not a checkout or
+fulfillment system.
+
+`fulfillments/create` and `fulfillments/update` need the current Shopify
+fulfillment-read scope before an operator subscribes them. Do not add that
+scope or webhook subscription until the bridge and supplier release gates are
+approved; the code remains inert without the incoming signed delivery.
 
 ## Catalog gate: no paid traffic before proof
 
