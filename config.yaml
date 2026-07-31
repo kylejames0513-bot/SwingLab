@@ -247,10 +247,9 @@ billing:
                              # renews). Lifetime never gets a selling plan.
 
 shopify_customer_sync:
-  enabled: false             # outbound app-account -> Shopify customer sync.
-                             # Keep false until Admin API access, protected
-                             # customer data approval, dry-run reconciliation,
-                             # and the staged rollout checklist are complete.
+  enabled: true              # outbound app-account -> Shopify customer sync.
+                             # Enabled after production Admin access, store
+                             # binding, and a clean dry-run reconciliation.
   auto_sync_new_users: true  # when enabled, queue new app accounts after the
                              # local signup commits; Shopify failure must never
                              # undo or block the CaddieInsight registration.
