@@ -89,6 +89,28 @@ and the [customerSet mutation](https://shopify.dev/docs/api/admin-graphql/latest
 it is not a Shopify credential. Full setup and rollout instructions are in
 [Shopify customer sync](shopify-customer-sync.md).
 
+## Shopify Customer Account sign-in migration
+
+Customer Account sign-in is independent of the backend Admin customer-sync
+worker and remains disabled unless its own feature flag is exactly true. It
+uses authorization code + PKCE, the Customer Account API discovery endpoints,
+and a backend-only confidential-client secret. It never sends or copies an app
+password.
+
+| Variable | Sensitivity | Purpose |
+| --- | --- | --- |
+| `SHOPIFY_CUSTOMER_ACCOUNTS_ENABLED` | Non-secret | Exact `true` enables `/auth/shopify/*`; empty/false leaves all routes unavailable. |
+| `SHOPIFY_CUSTOMER_ACCOUNT_STOREFRONT_DOMAIN` | Non-secret | HTTPS storefront domain used for Customer Account discovery; not necessarily the Admin `*.myshopify.com` host. |
+| `SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID` | Non-secret identifier | Customer Account API client ID. |
+| `SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET` | Secret | Confidential-client credential retained only on the backend. |
+| `SHOPIFY_CUSTOMER_ACCOUNT_REDIRECT_URI` | Non-secret | Must exactly equal `${PUBLIC_BASE_URL}/auth/shopify/callback`. |
+| `SHOPIFY_CUSTOMER_ACCOUNT_TIMEOUT_SECONDS` | Non-secret | Optional 1–30 second outbound timeout; default 10. |
+
+An enabled-but-incomplete configuration fails startup rather than silently
+falling back to legacy local login. Before enabling it anywhere, register the
+exact callback and post-logout URLs in Shopify Customer Account settings and
+follow [Shopify Customer Account migration](shopify-customer-accounts.md).
+
 ## Stripe billing
 
 Stripe is optional. Treat all three variables as one production bundle even

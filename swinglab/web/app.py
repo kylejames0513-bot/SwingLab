@@ -59,6 +59,7 @@ from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
@@ -88,11 +89,17 @@ from ..report import (
 )
 from ..trends import FLAG_LABELS, build_trends, format_delta, format_value, trend_sentence
 from ..integrations.shopify import admin as shopify_admin
+from ..integrations.shopify import customer_accounts as shopify_customer_accounts
 from ..integrations.shopify import customer_sync as shopify_customer_sync
 from . import billing, digest, humanize, mailer, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
 from .throttle import Throttle
-from .users import User, UserStore
+from .users import (
+    PRODUCT_EVENT_NAMES,
+    GolferProfile,
+    User,
+    UserStore,
+)
 
 logger = logging.getLogger("swinglab.web")
 
@@ -115,6 +122,9 @@ EMAIL_DELIVERY_UNCERTAIN_MESSAGE = (
 SHOPIFY_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024
 LOGIN_FLOW_SESSION_KEY = "email_login_flow_nonce"
 SIGNUP_FLOW_SESSION_KEY = "password_signup_flow_nonce"
+PRODUCT_ANON_SESSION_KEY = "product_anon_id"
+PRODUCT_EVENT_MAX_BODY_BYTES = 8 * 1024
+SHOPIFY_ACCOUNT_BROWSER_SESSION_KEY = "shopify_customer_account_session"
 
 
 def _shopify_sync_cohort_percent(raw: str | None) -> float:
@@ -336,6 +346,26 @@ def create_app(
     app.state.jobs = manager
     app.state.users = users
     app.state.cfg = cfg
+    static_dir = Path(__file__).parent / "static"
+    # Static assets contain only the install shell (icon + service worker),
+    # never a report, user data, or video.  The worker itself caches public
+    # help/offline pages only; completed reports remain network-only.
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+    # Customer Account sign-in is a separate, explicitly enabled migration
+    # feature.  Invalid enabled configuration stops startup rather than
+    # silently dropping visitors back into a weaker/ambiguous login path.
+    customer_account_settings = (
+        shopify_customer_accounts.CustomerAccountSettings.from_env()
+    )
+    shopify_customer_account_client = (
+        shopify_customer_accounts.ShopifyCustomerAccountClient(
+            customer_account_settings
+        )
+        if customer_account_settings is not None
+        else None
+    )
+    app.state.shopify_customer_accounts = shopify_customer_account_client
 
     shopify_sync_coordinator = None
     if shopify_sync_enabled:
@@ -466,6 +496,115 @@ def create_app(
     def clear_flow_session_nonce(request: Request, key: str) -> None:
         request.session.pop(key, None)
 
+    def product_anonymous_id(request: Request) -> str:
+        """Return a signed-browser, non-PII identifier for funnel counts."""
+
+        existing = request.session.get(PRODUCT_ANON_SESSION_KEY)
+        if isinstance(existing, str) and 16 <= len(existing) <= 128:
+            return existing
+        anonymous_id = "a" + secrets.token_urlsafe(18)
+        request.session[PRODUCT_ANON_SESSION_KEY] = anonymous_id
+        return anonymous_id
+
+    def record_product_event(
+        request: Request,
+        event_name: str,
+        *,
+        user: User | None = None,
+        session_id: str | None = None,
+        dedupe_key: str | None = None,
+        metadata: dict[str, str] | None = None,
+    ) -> None:
+        """Best-effort first-party instrumentation that never blocks golf.
+
+        Event rows are deliberately minimal and error handling stays silent to
+        visitors: a measurement outage must not prevent a signup, upload, or
+        results page.  The stored event schema forbids emails, request bodies,
+        IP addresses, and free-form client properties.
+        """
+
+        try:
+            resolved_user = user or current_user(request)
+            users.record_product_event(
+                event_name,
+                user_id=resolved_user.id if resolved_user is not None else None,
+                session_id=session_id,
+                anonymous_id=(
+                    None if resolved_user is not None else product_anonymous_id(request)
+                ),
+                metadata=metadata,
+                dedupe_key=dedupe_key,
+            )
+        except Exception:
+            logger.warning("Product event write unavailable (event=%s).", event_name)
+
+    async def bounded_json_object(request: Request) -> dict:
+        raw = await _read_bounded_request_body(request, PRODUCT_EVENT_MAX_BODY_BYTES)
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, ValueError):
+            raise HTTPException(400, "Invalid JSON payload.") from None
+        if not isinstance(payload, dict):
+            raise HTTPException(400, "Invalid JSON payload.")
+        return payload
+
+    async def product_event_json(request: Request) -> dict:
+        payload = await bounded_json_object(request)
+        # Keep this API narrowly versioned.  It has no generic metadata sink,
+        # so a future client cannot accidentally send email, video labels, or
+        # practice notes into analytics.
+        if set(payload) - {"event", "session_id"}:
+            raise HTTPException(400, "Invalid event payload.")
+        return payload
+
+    def profile_payload(profile: GolferProfile | None) -> dict | None:
+        if profile is None:
+            return None
+        return {
+            "experience_mode": profile.experience_mode,
+            "handicap_range": profile.handicap_range,
+            "primary_goal": profile.primary_goal,
+            "practice_minutes": profile.practice_minutes,
+            "sessions_per_week": profile.sessions_per_week,
+            "handedness": profile.handedness,
+            "camera_angle": profile.camera_angle,
+            "preferred_club": profile.preferred_club,
+            "reduced_motion": profile.reduced_motion,
+            "marketing_email_opt_in": profile.marketing_email_opt_in,
+            "is_complete": profile.is_complete,
+            "updated_at": profile.updated_at,
+        }
+
+    def caddie_brief_payload(brief) -> dict | None:
+        if brief is None:
+            return None
+        drill = None
+        if brief.drill is not None:
+            drill = {
+                "id": brief.drill.id,
+                "name": brief.drill.name,
+                "aim": brief.drill.aim,
+                "dosage": brief.drill.dosage,
+                "pass_mark": brief.drill.success_metric,
+            }
+        return {
+            "version": 1,
+            "focus": {
+                "key": brief.focus_flag,
+                "name": brief.focus_name,
+                "value": brief.focus_value,
+                "benchmark": brief.benchmark_text,
+                "why": brief.why,
+                "cue": brief.fix,
+            },
+            "drill": drill,
+            "trend": brief.trend,
+            "warning": brief.warning,
+            "refilm_required": brief.refilm_required,
+            "recurring_sessions": brief.recurring_sessions,
+            "remaining_issues": brief.remaining_issues,
+        }
+
     def shopify_sync_eligible(email: str) -> bool:
         """Require both the feature flag and an explicit staged cohort."""
 
@@ -586,6 +725,9 @@ def create_app(
                 shop_enabled=shop_active(),
                 mail_enabled=mailer.enabled(),
                 passwordless_login=passwordless_active(),
+                shopify_customer_accounts_enabled=(
+                    shopify_customer_account_client is not None
+                ),
                 storefront_url=(cfg.shop.get("store_url") or "").rstrip("/"),
                 current_path=request.url.path,
                 club_labels=CLUB_LABELS,
@@ -717,9 +859,48 @@ def create_app(
             return None
 
     # -- pages ------------------------------------------------------------
+    @app.get("/app.webmanifest")
+    def web_manifest():
+        return JSONResponse(
+            {
+                "name": cfg.brand["name"],
+                "short_name": cfg.brand["name"],
+                "start_url": "/today",
+                "scope": "/",
+                "display": "standalone",
+                "background_color": "#f6f1e7",
+                "theme_color": "#123f32",
+                "icons": [
+                    {
+                        "src": "/static/pwa-icon.svg",
+                        "sizes": "any",
+                        "type": "image/svg+xml",
+                        "purpose": "any maskable",
+                    }
+                ],
+            },
+            media_type="application/manifest+json",
+        )
+
+    @app.get("/service-worker.js")
+    def service_worker():
+        response = FileResponse(
+            static_dir / "service-worker.js",
+            media_type="application/javascript",
+        )
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+    @app.get("/offline", response_class=HTMLResponse)
+    def offline_page(request: Request):
+        response = render("web_offline.html.j2", request)
+        response.headers["Cache-Control"] = "public, max-age=300"
+        return response
+
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
         user = current_user(request)
+        record_product_event(request, "landing_view", user=user)
         if cfg.web.get("require_account") and user is None:
             return render(
                 "web_login.html.j2", request, error=None, landing=True,
@@ -758,6 +939,9 @@ def create_app(
         return render(
             "web_upload.html.j2",
             request,
+            golfer_profile=(
+                users.get_golfer_profile(user.id) if user is not None else None
+            ),
             max_upload_mb=float(cfg.web.get("max_upload_mb") or 0),
             quota_left=left,
             trend_line=trend_line,
@@ -819,6 +1003,165 @@ def create_app(
         )
 
     # -- accounts ---------------------------------------------------------
+    def customer_account_client_or_404():
+        if shopify_customer_account_client is None:
+            raise HTTPException(404, "Not Found")
+        return shopify_customer_account_client
+
+    def establish_customer_account_session(
+        request: Request,
+        user: User,
+        identity: shopify_customer_accounts.CustomerAccountIdentity,
+    ) -> None:
+        # The provider id_token is kept server-side only so the Customer
+        # Account logout endpoint can receive its required hint.  The signed
+        # browser cookie holds only a random opaque lookup key.
+        browser_session_id = users.issue_shopify_customer_account_browser_session(
+            user.id,
+            identity.id_token,
+            expires_at=identity.expires_at,
+        )
+        request.session[SHOPIFY_ACCOUNT_BROWSER_SESSION_KEY] = browser_session_id
+        establish_session(request, user)
+
+    @app.get("/auth/shopify/start")
+    def shopify_account_start(request: Request):
+        client = customer_account_client_or_404()
+        user = current_user(request)
+        mode = "link" if user is not None else "login"
+        state = secrets.token_urlsafe(32)
+        nonce = secrets.token_urlsafe(32)
+        verifier = shopify_customer_accounts.new_pkce_verifier()
+        try:
+            users.issue_shopify_customer_account_oauth_state(
+                state=state,
+                verifier=verifier,
+                nonce=nonce,
+                user_id=user.id if user is not None else None,
+                mode=mode,
+            )
+            target = client.authorization_url(
+                state=state,
+                nonce=nonce,
+                verifier=verifier,
+            )
+        except shopify_customer_accounts.ShopifyCustomerAccountError as exc:
+            raise HTTPException(503, str(exc)) from None
+        return RedirectResponse(target, status_code=303)
+
+    @app.get("/auth/shopify/callback", response_class=HTMLResponse)
+    def shopify_account_callback(
+        request: Request,
+        state: str = "",
+        code: str = "",
+        error: str = "",
+    ):
+        client = customer_account_client_or_404()
+        flow = users.consume_shopify_customer_account_oauth_state(state)
+        if flow is None:
+            raise HTTPException(400, "Shopify sign-in could not be verified. Start again.")
+        # The authorization server may return error details intended for the
+        # browser.  Do not reflect them: they can be unpredictable and are
+        # not needed for a safe retry.
+        if error or not code:
+            return render_no_store(
+                "web_login.html.j2",
+                request,
+                landing=False,
+                auth_view="login",
+                error="Shopify sign-in was not completed. Please try again.",
+            )
+        try:
+            identity = client.authenticate_callback(
+                code=code,
+                verifier=flow.verifier,
+                nonce=flow.nonce,
+            )
+        except shopify_customer_accounts.ShopifyCustomerAccountError as exc:
+            return render_no_store(
+                "web_login.html.j2",
+                request,
+                landing=False,
+                auth_view="login",
+                error=str(exc),
+            )
+
+        if flow.mode == "link":
+            user = current_user(request)
+            if (
+                user is None
+                or flow.user_id is None
+                or not hmac.compare_digest(user.id, flow.user_id)
+            ):
+                raise HTTPException(400, "Shopify account linking expired. Start again.")
+        else:
+            # A Customer Account login may enter CaddieInsight only through a
+            # durable, explicitly reconciled customer ID / prior subject.  No
+            # email lookup, auto-create, or duplicate merge exists here.
+            user = users.get_by_shopify_account_subject(identity.subject)
+            if user is None:
+                user = users.get_by_shopify(identity.customer_id)
+            if user is None:
+                return render_no_store(
+                    "web_login.html.j2",
+                    request,
+                    landing=False,
+                    auth_view="login",
+                    error=(
+                        "This Shopify account is not linked to a CaddieInsight "
+                        "account yet. Sign in with your current app method, then "
+                        "connect Shopify from your account page."
+                    ),
+                )
+        try:
+            linked = users.link_shopify_customer_account(
+                user.id,
+                subject=identity.subject,
+                customer_id=identity.customer_id,
+                authenticated=True,
+            )
+            establish_customer_account_session(request, linked, identity)
+        except ValueError as exc:
+            return render_no_store(
+                "web_login.html.j2",
+                request,
+                landing=False,
+                auth_view="login",
+                error=str(exc),
+            )
+        destination = "/account?shopify_connected" if flow.mode == "link" else "/today"
+        return RedirectResponse(
+            destination,
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/auth/shopify/logout")
+    def shopify_account_logout(request: Request):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        client = customer_account_client_or_404()
+        user = current_user(request)
+        browser_session_id = request.session.get(SHOPIFY_ACCOUNT_BROWSER_SESSION_KEY)
+        request.session.clear()
+        browser_session = users.consume_shopify_customer_account_browser_session(
+            browser_session_id
+        )
+        if (
+            user is None
+            or browser_session is None
+            or not hmac.compare_digest(user.id, browser_session.user_id)
+        ):
+            return RedirectResponse("/", status_code=303)
+        try:
+            return RedirectResponse(
+                client.logout_url(id_token=browser_session.id_token), status_code=303
+            )
+        except shopify_customer_accounts.ShopifyCustomerAccountError:
+            # Local logout is already complete.  Do not trap someone in their
+            # account because a provider discovery call is temporarily down.
+            return RedirectResponse("/", status_code=303)
+
     def send_code_email(
         email: str,
         purpose: str,
@@ -1055,6 +1398,13 @@ def create_app(
                 prior_user is None or not prior_user.email_verified
             ),
         )
+        if prior_user is None or not prior_user.email_verified:
+            record_product_event(
+                request,
+                "account_verified",
+                user=user,
+                dedupe_key=f"account_verified:{user.id}",
+            )
         clear_flow_session_nonce(request, LOGIN_FLOW_SESSION_KEY)
         establish_session(request, user)
         return RedirectResponse("/", status_code=303)
@@ -1206,6 +1556,12 @@ def create_app(
                 return page
             claim_pending_pro(user)
             queue_shopify_sync(user, identity_just_verified=True)
+            record_product_event(
+                request,
+                "account_verified",
+                user=user,
+                dedupe_key=f"account_verified:{user.id}",
+            )
             clear_flow_session_nonce(request, SIGNUP_FLOW_SESSION_KEY)
             establish_session(request, user)
             return RedirectResponse(
@@ -1417,8 +1773,10 @@ def create_app(
             usage=manager.usage_this_month(user.id),
             quota_left=quota_left(user),
             upgraded="upgraded" in request.query_params,
+            shopify_connected="shopify_connected" in request.query_params,
             password_added="password_added" in request.query_params,
             password_error=password_error,
+            golfer_profile=users.get_golfer_profile(user.id),
             pro_lifetime=pro_lifetime,
             pro_until_date=(
                 time.strftime("%B %d, %Y", time.localtime(user.pro_until))
@@ -1470,6 +1828,149 @@ def create_app(
             user.id, enabled.lower() in ("on", "true", "1", "yes")
         )
         return RedirectResponse("/account", status_code=303)
+
+    @app.get("/onboarding", response_class=HTMLResponse)
+    def onboarding_page(request: Request):
+        if not cfg.web.get("require_account"):
+            raise HTTPException(404, "Golfer setup needs accounts enabled.")
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        return render(
+            "web_onboarding.html.j2",
+            request,
+            profile=users.get_golfer_profile(user.id),
+            error=None,
+        )
+
+    @app.post("/onboarding")
+    def onboarding_save(
+        request: Request,
+        experience_mode: str = Form("improve"),
+        handicap_range: str = Form(""),
+        primary_goal: str = Form(""),
+        practice_minutes: str = Form("20"),
+        sessions_per_week: str = Form("2"),
+        handedness: str = Form("right"),
+        camera_angle: str = Form("face-on"),
+        preferred_club: str = Form(""),
+        reduced_motion: str = Form(""),
+        marketing_email: str = Form(""),
+    ):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        if not cfg.web.get("require_account"):
+            raise HTTPException(404, "Golfer setup needs accounts enabled.")
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        try:
+            users.upsert_golfer_profile(
+                user.id,
+                experience_mode=experience_mode,
+                handicap_range=handicap_range,
+                primary_goal=primary_goal,
+                practice_minutes=practice_minutes,
+                sessions_per_week=sessions_per_week,
+                handedness=handedness,
+                camera_angle=camera_angle,
+                preferred_club=preferred_club,
+                reduced_motion=reduced_motion.lower() in ("on", "true", "1", "yes"),
+                marketing_email_opt_in=(
+                    marketing_email.lower() in ("on", "true", "1", "yes")
+                ),
+            )
+        except ValueError as exc:
+            return render(
+                "web_onboarding.html.j2",
+                request,
+                profile=users.get_golfer_profile(user.id),
+                error=str(exc),
+                submitted={
+                    "experience_mode": experience_mode,
+                    "handicap_range": handicap_range,
+                    "primary_goal": primary_goal,
+                    "practice_minutes": practice_minutes,
+                    "sessions_per_week": sessions_per_week,
+                    "handedness": handedness,
+                    "camera_angle": camera_angle,
+                    "preferred_club": preferred_club,
+                    "reduced_motion": reduced_motion,
+                    "marketing_email": marketing_email,
+                },
+            )
+        return RedirectResponse("/today?setup_saved", status_code=303)
+
+    def current_practice_plan(brief, profile: GolferProfile | None) -> list[dict]:
+        """Turn the measured brief into 10/20/45 minute choices.
+
+        The drill and pass mark remain the source of truth.  Durations merely
+        control how much of that one prescription someone takes on today.
+        """
+
+        if brief is None or brief.drill is None or brief.refilm_required:
+            return []
+        preferred = profile.practice_minutes if profile else 20
+        choices = (
+            (10, "Quick reset", "Set up the drill, make a small set of slow reps, and stop while the cue is clear."),
+            (20, "Standard session", "Run the listed drill dosage once, then make a few normal swings using the same cue."),
+            (45, "Deep practice", "Use three short, focused sets with a reset between them; keep only the same cue and pass mark."),
+        )
+        return [
+            {
+                "minutes": minutes,
+                "title": title,
+                "detail": detail,
+                "selected": minutes == preferred,
+                "dosage": brief.drill.dosage,
+                "pass_mark": brief.drill.success_metric,
+            }
+            for minutes, title, detail in choices
+        ]
+
+    @app.get("/today", response_class=HTMLResponse)
+    def today_page(request: Request):
+        if not cfg.web.get("require_account"):
+            raise HTTPException(404, "Today needs accounts enabled.")
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        profile = users.get_golfer_profile(user.id)
+        latest = manager.list_recent(limit=1, user_id=user.id)
+        latest_job = latest[0] if latest else None
+        brief = caddie_brief_for(latest_job) if latest_job is not None else None
+        checkins = users.list_practice_checkins(user.id, limit=20)
+        checked_session_ids = {checkin.session_id for checkin in checkins}
+        return render(
+            "web_today.html.j2",
+            request,
+            profile=profile,
+            latest_job=latest_job,
+            caddie_brief=brief,
+            practice_choices=current_practice_plan(brief, profile),
+            latest_practiced=(
+                latest_job is not None and latest_job.id in checked_session_ids
+            ),
+            practice_done="practice_done" in request.query_params,
+            setup_saved="setup_saved" in request.query_params,
+        )
+
+    @app.post("/practice/checkins")
+    def practice_checkin(request: Request, session_id: str = Form("")):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        job = get_job_or_404(session_id, request)
+        if (
+            job.status != DONE
+            or not manager.coaching_eligible(job)
+            or caddie_brief_for(job) is None
+        ):
+            raise HTTPException(400, "This session is not ready for a practice check-in.")
+        users.record_practice_checkin(user.id, job.id)
+        return RedirectResponse("/today?practice_done", status_code=303)
 
     @app.get("/email/unsubscribe", response_class=HTMLResponse)
     def email_unsubscribe(request: Request, token: str = ""):
@@ -1594,6 +2095,9 @@ def create_app(
             "web_shop.html.j2",
             request,
             products=shop.fetch_products(cfg),
+            first_sale_gate_active=bool(
+                cfg.shop.get("first_sale_catalog_only")
+            ),
         )
 
     # -- billing ----------------------------------------------------------
@@ -1680,6 +2184,13 @@ def create_app(
             raise HTTPException(403, "Invalid request origin.")
         user = current_user(request)
         ensure_user_can_analyze(user, manager, cfg)
+        had_completed_analysis = bool(
+            user is not None
+            and any(
+                item.status == DONE
+                for item in manager.list_recent(user_id=user.id)
+            )
+        )
         suffix = Path(video.filename or "clip.mov").suffix.lower()
         if suffix not in VIDEO_SUFFIXES:
             raise HTTPException(
@@ -1734,6 +2245,22 @@ def create_app(
             client_ip=ip,
             user_id=user.id if user else None,
         )
+        if user is not None:
+            record_product_event(
+                request,
+                "upload_started",
+                user=user,
+                session_id=job.id,
+                dedupe_key=f"upload_started:{job.id}",
+            )
+            if had_completed_analysis:
+                record_product_event(
+                    request,
+                    "repeat_analysis",
+                    user=user,
+                    session_id=job.id,
+                    dedupe_key=f"repeat_analysis:{job.id}",
+                )
         max_mb = float(cfg.web.get("max_upload_mb") or 0)
         max_bytes = int(max_mb * 1024 * 1024)
         dest = job.session_dir / f"source{suffix}"
@@ -1873,6 +2400,22 @@ def create_app(
         failed = job.status == FAILED
         report_path = resolved_report(job)
         brief = caddie_brief_for(job) if report_path is not None else None
+        if job.status == DONE:
+            record_product_event(
+                request,
+                "upload_completed",
+                user=current_user(request),
+                session_id=job.id,
+                dedupe_key=f"upload_completed:{job.id}",
+            )
+            if brief is not None and not brief.refilm_required:
+                record_product_event(
+                    request,
+                    "brief_viewed",
+                    user=current_user(request),
+                    session_id=job.id,
+                    dedupe_key=f"brief_viewed:{job.id}",
+                )
         report_only = job.status == DONE and coaching_eligible and brief is None
         current_report_only = bool(
             report_only
@@ -2049,7 +2592,247 @@ def create_app(
             }
         )
 
+    # -- /api/v1: stable PWA/native resources ----------------------------
+    def api_v1_user(request: Request) -> User:
+        if not cfg.web.get("require_account"):
+            raise HTTPException(404, "Account API is not enabled.")
+        user = current_user(request)
+        if user is None:
+            raise HTTPException(401, "Log in first.")
+        return user
+
+    def api_v1_session_payload(job: Job) -> dict:
+        payload = api_payload(job)
+        payload["resource_version"] = 1
+        return payload
+
+    @app.get("/api/v1/me")
+    def api_v1_me(request: Request):
+        user = api_v1_user(request)
+        return JSONResponse(
+            {
+                "resource_version": 1,
+                "identity": {
+                    "id": user.id,
+                    "email": user.email,
+                    "email_verified": user.email_verified,
+                    "shopify_customer_linked": bool(user.shopify_customer_id),
+                    "shopify_account_state": user.shopify_account_migration_state,
+                },
+                "profile": profile_payload(users.get_golfer_profile(user.id)),
+            }
+        )
+
+    @app.get("/api/v1/profile")
+    def api_v1_profile(request: Request):
+        user = api_v1_user(request)
+        return JSONResponse(
+            {
+                "resource_version": 1,
+                "profile": profile_payload(users.get_golfer_profile(user.id)),
+            }
+        )
+
+    @app.put("/api/v1/profile")
+    async def api_v1_update_profile(request: Request):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        user = api_v1_user(request)
+        payload = await bounded_json_object(request)
+        expected = {
+            "experience_mode",
+            "handicap_range",
+            "primary_goal",
+            "practice_minutes",
+            "sessions_per_week",
+            "handedness",
+            "camera_angle",
+            "preferred_club",
+            "reduced_motion",
+            "marketing_email_opt_in",
+        }
+        if set(payload) != expected:
+            raise HTTPException(400, "A complete golfer profile is required.")
+        if not isinstance(payload["reduced_motion"], bool) or not isinstance(
+            payload["marketing_email_opt_in"], bool
+        ):
+            raise HTTPException(400, "Accessibility and marketing values must be boolean.")
+        try:
+            profile = users.upsert_golfer_profile(
+                user.id,
+                experience_mode=payload["experience_mode"],
+                handicap_range=payload["handicap_range"],
+                primary_goal=payload["primary_goal"],
+                practice_minutes=payload["practice_minutes"],
+                sessions_per_week=payload["sessions_per_week"],
+                handedness=payload["handedness"],
+                camera_angle=payload["camera_angle"],
+                preferred_club=payload["preferred_club"],
+                reduced_motion=payload["reduced_motion"],
+                marketing_email_opt_in=payload["marketing_email_opt_in"],
+            )
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        return JSONResponse(
+            {"resource_version": 1, "profile": profile_payload(profile)}
+        )
+
+    @app.get("/api/v1/today")
+    def api_v1_today(request: Request):
+        user = api_v1_user(request)
+        profile = users.get_golfer_profile(user.id)
+        recent = manager.list_recent(limit=1, user_id=user.id)
+        latest = recent[0] if recent else None
+        brief = caddie_brief_for(latest) if latest is not None else None
+        checked = {
+            checkin.session_id
+            for checkin in users.list_practice_checkins(user.id, limit=20)
+        }
+        return JSONResponse(
+            {
+                "resource_version": 1,
+                "profile": profile_payload(profile),
+                "latest_session": (
+                    api_v1_session_payload(latest) if latest is not None else None
+                ),
+                "caddie_brief": caddie_brief_payload(brief),
+                "practice_plan": current_practice_plan(brief, profile),
+                "practice_checked_in": bool(latest and latest.id in checked),
+            }
+        )
+
+    @app.get("/api/v1/sessions")
+    def api_v1_sessions(request: Request):
+        user = api_v1_user(request)
+        return JSONResponse(
+            {
+                "resource_version": 1,
+                "sessions": [
+                    api_v1_session_payload(job)
+                    for job in manager.list_recent(user_id=user.id)
+                ],
+            }
+        )
+
+    @app.get("/api/v1/sessions/{job_id}")
+    def api_v1_session(job_id: str, request: Request):
+        api_v1_user(request)
+        return JSONResponse(api_v1_session_payload(get_job_or_404(job_id, request)))
+
+    @app.get("/api/v1/sessions/{job_id}/brief")
+    def api_v1_session_brief(job_id: str, request: Request):
+        api_v1_user(request)
+        job = get_job_or_404(job_id, request)
+        if job.status != DONE:
+            raise HTTPException(409, "This analysis is not complete.")
+        brief = caddie_brief_for(job)
+        if brief is None:
+            raise HTTPException(404, "No Caddie Brief is available for this session.")
+        return JSONResponse(
+            {"resource_version": 1, "caddie_brief": caddie_brief_payload(brief)}
+        )
+
+    @app.get("/api/v1/practice-checkins")
+    def api_v1_practice_checkins(request: Request):
+        user = api_v1_user(request)
+        return JSONResponse(
+            {
+                "resource_version": 1,
+                "checkins": [
+                    {
+                        "session_id": item.session_id,
+                        "completed_at": item.completed_at,
+                    }
+                    for item in users.list_practice_checkins(user.id)
+                ],
+            }
+        )
+
+    @app.post("/api/v1/practice-checkins")
+    async def api_v1_practice_checkin(request: Request):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        user = api_v1_user(request)
+        payload = await bounded_json_object(request)
+        if set(payload) != {"session_id"} or not isinstance(
+            payload["session_id"], str
+        ):
+            raise HTTPException(400, "A session id is required.")
+        job = get_job_or_404(payload["session_id"], request)
+        if (
+            job.status != DONE
+            or not manager.coaching_eligible(job)
+            or caddie_brief_for(job) is None
+        ):
+            raise HTTPException(400, "This session is not ready for a practice check-in.")
+        checkin = users.record_practice_checkin(user.id, job.id)
+        return JSONResponse(
+            {
+                "resource_version": 1,
+                "checkin": {
+                    "session_id": checkin.session_id,
+                    "completed_at": checkin.completed_at,
+                },
+            }
+        )
+
+    @app.post("/api/v1/events")
+    async def api_v1_product_event(request: Request):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        payload = await product_event_json(request)
+        event_name = payload.get("event")
+        if not isinstance(event_name, str) or event_name not in PRODUCT_EVENT_NAMES:
+            raise HTTPException(400, "Unsupported product event.")
+        session_id = payload.get("session_id")
+        if session_id is not None and not isinstance(session_id, str):
+            raise HTTPException(400, "Invalid event session id.")
+        user = current_user(request)
+        public_events = {
+            "landing_view",
+            "pro_clicked",
+            "cart_started",
+            "checkout_started",
+        }
+        if user is None and event_name not in public_events:
+            raise HTTPException(401, "Log in first.")
+        if session_id is not None and user is not None:
+            get_job_or_404(session_id, request)
+        record_product_event(
+            request,
+            event_name,
+            user=user,
+            session_id=session_id,
+        )
+        return JSONResponse({"accepted": True}, status_code=202)
+
     # -- operator KPIs (see swinglab.kpis) --------------------------------
+    @app.get("/admin/product-events")
+    def admin_product_events(request: Request):
+        """PII-free conversion and migration counts for the operator only."""
+
+        require_admin(request)
+        raw_days = request.query_params.get("since_days", "30")
+        try:
+            since_days = float(raw_days)
+        except ValueError:
+            raise HTTPException(400, "since_days must be a positive number") from None
+        if not math.isfinite(since_days) or not 0 < since_days <= 3650:
+            raise HTTPException(400, "since_days must be a positive number")
+        response = JSONResponse(
+            {
+                "since_days": since_days,
+                "events": users.product_event_counts(
+                    since=time.time() - since_days * 86400
+                ),
+                "shopify_customer_account_migration": (
+                    users.shopify_account_migration_counts()
+                ),
+            }
+        )
+        response.headers["Cache-Control"] = "no-store"
+        return response
+
     @app.get("/admin/kpis")
     def admin_kpis(request: Request):
         """The five business KPIs as JSON, for the operator only. Gated by

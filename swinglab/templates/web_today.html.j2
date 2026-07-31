@@ -1,0 +1,68 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Today{% endblock %}
+{% block style %}
+  .today-hero { border-left: 5px solid var(--accent); background: #fff8ed; }
+  .today-kicker { color: var(--primary); font-weight: 700; font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 5px; }
+  .today-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .practice-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+  .practice-option { border: 1px solid #dce2dd; border-radius: 8px; padding: 13px; }
+  .practice-option.selected { border: 2px solid var(--primary); background: #f2f8f4; }
+  .practice-option h4 { margin: 0 0 6px; color: var(--primary); }
+  .practice-option p { font-size: .9rem; margin: 7px 0; color: #4d554f; }
+  .success { background: #e5f3ea; border-left: 4px solid var(--primary); padding: 12px 16px; border-radius: 4px; }
+  @media (max-width: 720px) { .practice-options { grid-template-columns: 1fr; } }
+{% endblock %}
+{% block main %}
+  {% if setup_saved %}<p class="success">Your setup is saved. Your caddie will use it to keep the next step clear and practical.</p>{% endif %}
+  {% if practice_done %}<p class="success">Practice check-in saved. When you re-film, we’ll compare the next session to this focus.</p>{% endif %}
+  <div class="card today-hero">
+    <p class="today-kicker">Today’s next move</p>
+    {% if not profile or not profile.is_complete %}
+      <h2>Set up your first coaching loop</h2>
+      <p>Tell your caddie how you learn and what you have time for. It takes about a minute and never changes what gets measured.</p>
+      <div class="today-actions"><a class="button" href="/onboarding">Finish golfer setup</a><a class="button secondary" href="/">Analyze a swing</a></div>
+    {% elif not latest_job %}
+      <h2>Film a baseline</h2>
+      <p>Use one phone clip. Your first Caddie Brief will give you one priority, one drill, a pass mark, and a re-film target.</p>
+      <a class="button" href="/#upload-form">Analyze my swing free</a>
+    {% elif latest_job.status != 'done' %}
+      <h2>Your swing is being analyzed</h2>
+      <p>Keep this simple: when the result is ready, your caddie will show one next step—not a wall of numbers.</p>
+      <a class="button" href="/session/{{ latest_job.id }}">See analysis status</a>
+    {% elif caddie_brief and caddie_brief.refilm_required %}
+      <h2>Re-film before practicing a change</h2>
+      <p>{{ caddie_brief.warning or caddie_brief.why }}</p>
+      <div class="today-actions"><a class="button" href="/#upload-form">Re-film with the checklist</a><a class="button secondary" href="/session/{{ latest_job.id }}">See capture guidance</a></div>
+    {% elif caddie_brief and caddie_brief.drill %}
+      <h2>{{ caddie_brief.focus_name }}</h2>
+      <p><strong>Why it matters:</strong> {{ caddie_brief.why }}</p>
+      <p><strong>Your cue:</strong> {{ caddie_brief.fix }}</p>
+      <h3>Practice {{ caddie_brief.drill.name }}</h3>
+      <p>{{ caddie_brief.drill.aim }}</p>
+      <div class="practice-options">
+        {% for choice in practice_choices %}
+        <div class="practice-option{% if choice.selected %} selected{% endif %}">
+          <h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
+          <p>{{ choice.detail }}</p>
+          <p><strong>Drill:</strong> {{ choice.dosage }}</p>
+          <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="today-actions">
+        {% if latest_practiced %}<span class="success">Practice logged</span>{% else %}<form action="/practice/checkins" method="post"><input type="hidden" name="session_id" value="{{ latest_job.id }}"><button type="submit">I practiced this</button></form>{% endif %}
+        <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
+        <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
+      </div>
+    {% else %}
+      <h2>Review your latest session</h2>
+      <p>Your report is ready. Open it to see the evidence and choose your next practice step.</p>
+      <a class="button" href="/session/{{ latest_job.id }}">Open results</a>
+    {% endif %}
+  </div>
+  <div class="card">
+    <h3>Your loop</h3>
+    <p><strong>Film</strong> → Caddie Brief → <strong>one drill</strong> → re-film target → visible progress.</p>
+    <p class="hint">{{ "Start" if profile and profile.experience_mode == 'start' else "Improve" if profile and profile.experience_mode == 'improve' else "Compete" if profile else "Improve" }} mode is selected. <a href="/onboarding">Adjust your golfer setup</a> any time.</p>
+  </div>
+{% endblock %}

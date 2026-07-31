@@ -181,6 +181,49 @@ def test_gear_only_order_changes_nothing(app):
     assert not get_user(client).is_pro
 
 
+def test_paid_and_fulfillment_events_require_a_durable_order_identity(app):
+    client = TestClient(app)
+    signup(client)
+    users: UserStore = client.app.state.users
+
+    # A gear-only order stores the durable local account pointer at paid
+    # time. The later fulfillment payload carries only an order ID, so it
+    # can never fall back to the checkout email to classify the event.
+    order = pro_order(order_id=8181, sku="SL-TEMPO-WAND")
+    assert order_webhook(client, order).status_code == 200
+    assert users.product_event_counts()["paid_order"] == 1
+    gear_user_id = users._conn.execute(
+        "SELECT user_id FROM gear_orders WHERE order_id = ?", ("8181",)
+    ).fetchone()["user_id"]
+    assert gear_user_id == get_user(client).id
+
+    fulfillment = {"id": 992, "order_id": 8181}
+    assert order_webhook(
+        client, fulfillment, topic="fulfillments/create"
+    ).status_code == 200
+    assert users.product_event_counts()["fulfillment_updated"] == 1
+
+    # Webhook replays remain measurement-idempotent too.
+    assert order_webhook(
+        client, fulfillment, topic="fulfillments/update"
+    ).status_code == 200
+    assert users.product_event_counts()["fulfillment_updated"] == 1
+
+
+def test_unlinked_paid_order_is_not_silently_classified_for_funnel_metrics(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+
+    assert order_webhook(
+        client, pro_order(order_id=8182, email="new@example.com")
+    ).status_code == 200
+    assert users.product_event_counts()["paid_order"] == 0
+    assert order_webhook(
+        client, {"id": 993, "order_id": 8182}, topic="fulfillments/create"
+    ).status_code == 200
+    assert users.product_event_counts()["fulfillment_updated"] == 0
+
+
 def test_purchase_before_signup_is_claimed_at_signup(app):
     client = TestClient(app)
     order_webhook(client, pro_order(email="new@example.com"))

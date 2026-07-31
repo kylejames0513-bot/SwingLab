@@ -205,6 +205,11 @@ DEFAULTS: dict[str, Any] = {
         "cache_minutes": 10,
         "tag_prefix": "swinglab:",
         "max_recommendations": 3,
+        # Bare-code/white-label behavior remains compatible.  The shipped
+        # CaddieInsight config enables the supplier-evidence gate below.
+        "first_sale_catalog_only": False,
+        "first_sale_verified_tag": "caddieinsight:fulfillment-verified",
+        "first_sale_candidate_tags": [],
         # Public storefront URL for the report's "Matched training aids"
         # link; empty = the report renders no link. The shipped config.yaml
         # points at the CaddieInsight store.

@@ -34,7 +34,10 @@
       {% endfor %}
     </div>
   {% else %}
-    <div class="card"><p>The shop is being restocked—check back soon. Your
-      report's drills still include everything needed to practice.</p></div>
+    <div class="card"><p>{% if first_sale_gate_active %}Practice aids are
+      shown here only after sample-tested fulfillment, tracking, and return
+      evidence are verified. Check back soon.{% else %}The shop is being
+      restocked—check back soon.{% endif %} Your report's drills still include
+      everything needed to practice.</p></div>
   {% endif %}
 {% endblock %}

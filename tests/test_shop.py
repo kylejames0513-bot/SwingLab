@@ -204,6 +204,50 @@ def test_products_are_cached(monkeypatch, shop_env):
     assert len(calls) == 1
 
 
+def test_first_sale_catalog_gate_requires_candidate_and_fulfillment_proof(
+    monkeypatch, shop_env
+):
+    """The app must not promote a launch SKU on its candidate tag alone."""
+    cfg = Config()
+    cfg.shop.update(
+        {
+            "first_sale_catalog_only": True,
+            "first_sale_verified_tag": "caddieinsight:fulfillment-verified",
+            "first_sale_candidate_tags": [
+                "caddieinsight:clip-on-swing-metronome",
+                "caddieinsight:anti-sway-hip-resistance-band",
+            ],
+        }
+    )
+    products = [
+        product(
+            "Verified metronome",
+            [
+                "swinglab:tempo",
+                "caddieinsight:clip-on-swing-metronome",
+                "caddieinsight:fulfillment-verified",
+            ],
+        ),
+        product(
+            "Candidate without proof",
+            ["swinglab:hip-slide", "caddieinsight:anti-sway-hip-resistance-band"],
+        ),
+        product(
+            "Proven but not a launch candidate",
+            ["swinglab:sway", "caddieinsight:fulfillment-verified"],
+        ),
+    ]
+    monkeypatch.setattr(shop, "_fetch", lambda: products)
+
+    assert [item["title"] for item in shop.fetch_products(cfg)] == [
+        "Verified metronome"
+    ]
+    assert [
+        item["title"]
+        for item in shop.recommend(products, [FLAG_TEMPO, FLAG_HIP_SLIDE], cfg)
+    ] == ["Verified metronome"]
+
+
 # -- coaching flags ---------------------------------------------------------
 
 def test_flag_keys_each_threshold():

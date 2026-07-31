@@ -1,0 +1,102 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Your golfer setup{% endblock %}
+{% block style %}
+  .setup-lead { max-width: 650px; color: #4d554f; }
+  .setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+  .setup-grid .full { grid-column: 1 / -1; }
+  .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .choice-grid label { display: block; border: 1px solid #d7ddd8; border-radius: 9px; padding: 12px; cursor: pointer; }
+  .choice-grid input { margin-right: 7px; }
+  .choice-grid strong { display: block; color: var(--primary); margin: 5px 0 2px; }
+  .choice-grid span { font-size: .86rem; color: #555; }
+  .consent { border-top: 1px solid #e4e7e4; margin-top: 20px; padding-top: 16px; }
+  .consent label { display: flex; align-items: flex-start; gap: 9px; }
+  .consent input { margin-top: 4px; }
+  @media (max-width: 620px) { .setup-grid, .choice-grid { grid-template-columns: 1fr; } }
+{% endblock %}
+{% block main %}
+{% set experience = submitted.experience_mode if submitted is defined else (profile.experience_mode if profile else 'improve') %}
+{% set handicap = submitted.handicap_range if submitted is defined else (profile.handicap_range if profile else '') %}
+{% set goal = submitted.primary_goal if submitted is defined else (profile.primary_goal if profile else '') %}
+{% set minutes = submitted.practice_minutes if submitted is defined else (profile.practice_minutes if profile else 20) %}
+{% set weekly = submitted.sessions_per_week if submitted is defined else (profile.sessions_per_week if profile else 2) %}
+{% set hand = submitted.handedness if submitted is defined else (profile.handedness if profile else 'right') %}
+{% set angle = submitted.camera_angle if submitted is defined else (profile.camera_angle if profile else 'face-on') %}
+{% set club = submitted.preferred_club if submitted is defined else (profile.preferred_club if profile else '') %}
+{% set reduced = submitted.reduced_motion if submitted is defined else (profile.reduced_motion if profile else false) %}
+{% set marketing = submitted.marketing_email if submitted is defined else (profile.marketing_email_opt_in if profile else false) %}
+  <div class="card">
+    <p class="eyebrow">Make your next step fit your game</p>
+    <h2>Your golfer setup</h2>
+    <p class="setup-lead">This changes the explanations and practice options—not the measurements. You can change it any time, and you never have to label your game with an exact handicap.</p>
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+    <form action="/onboarding" method="post">
+      <div class="setup-grid">
+        <fieldset class="full">
+          <legend>How should your caddie explain things?</legend>
+          <div class="choice-grid">
+            <label><input type="radio" name="experience_mode" value="start" {% if experience == 'start' %}checked{% endif %}><strong>Start</strong><span>Plain language, filming help, and confidence-building drills.</span></label>
+            <label><input type="radio" name="experience_mode" value="improve" {% if experience == 'improve' %}checked{% endif %}><strong>Improve</strong><span>One priority, practice time choices, and a re-film target.</span></label>
+            <label><input type="radio" name="experience_mode" value="compete" {% if experience == 'compete' %}checked{% endif %}><strong>Compete</strong><span>More benchmarks and comparison context when you want it.</span></label>
+          </div>
+        </fieldset>
+
+        <div>
+          <label for="handicap">Handicap range (optional)</label>
+          <select id="handicap" name="handicap_range">
+            <option value="" {% if not handicap %}selected{% endif %}>Prefer not to say</option>
+            <option value="new_to_golf" {% if handicap == 'new_to_golf' %}selected{% endif %}>New to golf</option>
+            <option value="30_plus" {% if handicap == '30_plus' %}selected{% endif %}>30+</option>
+            <option value="20_to_29" {% if handicap == '20_to_29' %}selected{% endif %}>20–29</option>
+            <option value="15_to_19" {% if handicap == '15_to_19' %}selected{% endif %}>15–19</option>
+            <option value="10_to_14" {% if handicap == '10_to_14' %}selected{% endif %}>10–14</option>
+            <option value="under_10" {% if handicap == 'under_10' %}selected{% endif %}>Under 10</option>
+          </select>
+        </div>
+        <div>
+          <label for="goal">What would feel like a win?</label>
+          <select id="goal" name="primary_goal">
+            <option value="" {% if not goal %}selected{% endif %}>Choose a main goal</option>
+            <option value="consistency" {% if goal == 'consistency' %}selected{% endif %}>More consistency</option>
+            <option value="tempo" {% if goal == 'tempo' %}selected{% endif %}>Better tempo</option>
+            <option value="weight_shift" {% if goal == 'weight_shift' %}selected{% endif %}>Better weight shift</option>
+            <option value="strike_quality" {% if goal == 'strike_quality' %}selected{% endif %}>Cleaner strike</option>
+            <option value="balance" {% if goal == 'balance' %}selected{% endif %}>Better balance</option>
+            <option value="confidence" {% if goal == 'confidence' %}selected{% endif %}>More confidence</option>
+          </select>
+        </div>
+        <div>
+          <label for="minutes">Time for a normal practice</label>
+          <select id="minutes" name="practice_minutes">
+            {% for item in [10, 20, 45] %}<option value="{{ item }}" {% if minutes|int == item %}selected{% endif %}>{{ item }} minutes</option>{% endfor %}
+          </select>
+        </div>
+        <div>
+          <label for="weekly">Practice sessions most weeks</label>
+          <select id="weekly" name="sessions_per_week">
+            <option value="1" {% if weekly|int == 1 %}selected{% endif %}>1</option>
+            <option value="2" {% if weekly|int == 2 %}selected{% endif %}>2</option>
+            <option value="3" {% if weekly|int == 3 %}selected{% endif %}>3 or more</option>
+          </select>
+        </div>
+        <div>
+          <label for="handedness">Handedness</label>
+          <select id="handedness" name="handedness"><option value="right" {% if hand == 'right' %}selected{% endif %}>Right-handed</option><option value="left" {% if hand == 'left' %}selected{% endif %}>Left-handed</option></select>
+        </div>
+        <div>
+          <label for="camera">Usual camera angle</label>
+          <select id="camera" name="camera_angle"><option value="face-on" {% if angle == 'face-on' %}selected{% endif %}>Face-on (recommended)</option><option value="dtl" {% if angle == 'dtl' %}selected{% endif %}>Down the line</option></select>
+        </div>
+        <div>
+          <label for="club">Club you work on most</label>
+          <select id="club" name="preferred_club"><option value="" {% if not club %}selected{% endif %}>Not set</option><option value="driver" {% if club == 'driver' %}selected{% endif %}>Driver</option><option value="fairway-wood" {% if club == 'fairway-wood' %}selected{% endif %}>Fairway wood</option><option value="hybrid" {% if club == 'hybrid' %}selected{% endif %}>Hybrid</option><option value="iron" {% if club == 'iron' %}selected{% endif %}>Iron</option><option value="wedge" {% if club == 'wedge' %}selected{% endif %}>Wedge</option></select>
+        </div>
+      </div>
+      <div class="consent">
+        <label><input type="checkbox" name="reduced_motion" {% if reduced %}checked{% endif %}><span><strong>Reduce motion where available</strong><br><span class="hint">Keeps animated guidance calm without changing your analysis.</span></span></label>
+        <label><input type="checkbox" name="marketing_email" {% if marketing %}checked{% endif %}><span><strong>Send me occasional CaddieInsight product and launch updates</strong><br><span class="hint">Optional. This is separate from your weekly drill email and stays off unless you choose it.</span></span></label>
+      </div>
+      <button type="submit">Save my setup</button>
+    </form>
+  </div>
+{% endblock %}

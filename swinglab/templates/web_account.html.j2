@@ -31,6 +31,9 @@
   <div class="good">Password added — you can now log in with it as well as
     with an emailed code.</div>
   {% endif %}
+  {% if shopify_connected %}
+  <div class="good">Shopify sign-in is connected. Your Shopify customer identity is linked without copying a password.</div>
+  {% endif %}
   <div class="card">
     <h2>Your account</h2>
     <div class="row"><span class="k">Email</span><span>{{ user.email }}</span></div>
@@ -52,8 +55,16 @@
     <div class="row"><span class="k">Store</span>
       <span>Connected to the {{ brand.name }} store</span></div>
     {% endif %}
+    {% if shopify_customer_accounts_enabled %}
+    <div class="row"><span class="k">Shopify sign-in</span>
+      <span>{% if user.shopify_account_migration_state == 'shopify_authenticated' %}Connected{% elif user.shopify_account_migration_state == 'linked_pending_first_sign_in' %}Linked — sign in once to finish{% else %}Not connected{% endif %}</span></div>
+    {% endif %}
     <div class="row"><span class="k">Weekly drill email</span>
       <span>{{ "On" if user.digest_opt_in else "Off" }}</span></div>
+    <div class="row"><span class="k">Golfer setup</span>
+      <span>{% if golfer_profile and golfer_profile.is_complete %}Ready{% else %}Needs a few choices{% endif %} · <a href="/onboarding">Edit</a></span></div>
+    <div class="row"><span class="k">Product updates</span>
+      <span>{{ "On" if golfer_profile and golfer_profile.marketing_email_opt_in else "Off" }} · <a href="/onboarding">Edit</a></span></div>
 
     {% if not user.has_password %}
     <h3>Add a password (optional)</h3>
@@ -121,7 +132,14 @@
     {% else %}
       <p class="hint">Pro memberships are coming soon.</p>
     {% endif %}
-    <form class="logout" action="/logout" method="post">
+    {% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}
+    <p class="hint">Your Shopify Customer Account is the sign-in currently used in this browser. Your CaddieInsight golf data stays here.</p>
+    {% elif shopify_customer_accounts_enabled %}
+    <h3>Connect Shopify sign-in</h3>
+    <p class="hint">Connect the Shopify account you control. We use its verified customer identity—not an email guess—and never copy a password.</p>
+    <a class="button secondary" href="/auth/shopify/start">Connect Shopify sign-in</a>
+    {% endif %}
+    <form class="logout" action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
       <button type="submit">Log out</button>
     </form>
   </div>

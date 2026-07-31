@@ -208,6 +208,7 @@
     </div>
     {% else %}
     <div class="aux-links">
+      {% if shopify_customer_accounts_enabled %}<a class="aux-link" href="/auth/shopify/start">Sign in with Shopify</a>{% endif %}
       <a class="aux-link" href="/login?password=1">Use your password</a>
       <a class="aux-link" href="/reset">Forgot or reset your password?</a>
     </div>
@@ -256,6 +257,9 @@
       {% endif %}
       {% if passwordless_login %}
       <a class="aux-link" href="/login">Email me a sign-in code instead</a>
+      {% endif %}
+      {% if shopify_customer_accounts_enabled %}
+      <a class="aux-link" href="/auth/shopify/start">Sign in with Shopify</a>
       {% endif %}
       <p class="free-note">New to {{ brand.name }}?
         <a href="/signup">Create a free account</a>.</p>
