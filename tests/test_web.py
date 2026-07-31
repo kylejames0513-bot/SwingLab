@@ -7,6 +7,7 @@ has its own end-to-end tests); these tests exercise the web plumbing around it.
 from __future__ import annotations
 
 import builtins
+import json
 import threading
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ from fastapi.testclient import TestClient
 from swinglab.config import Config
 from swinglab.ffmpeg import VideoInfo
 from swinglab.pipeline import SessionResult, ZeroStrikesError
+from swinglab.report import REPORT_FORMAT_VERSION
 from swinglab.web import app as app_module, jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.jobs import PROCESSING, JobManager
@@ -37,7 +39,14 @@ def fake_analyze_ok(video_path, out_dir=None, hand="right", manual_strikes=None,
     (media / "strip_s1.png").write_bytes(b"\x89PNG fake")
     report = session_dir / "report.html"
     report.write_text("<html><body>fake report</body></html>")
-    (session_dir / "metrics.json").write_text("{}")
+    (session_dir / "metrics.json").write_text(
+        json.dumps(
+            {
+                "swings": [{"metrics": {"tempo_ratio": 3.0}}],
+                "session_stats": {},
+            }
+        )
+    )
     info = VideoInfo(Path(video_path), 20.0, 854, 480, 30.0, 0, None, True)
     return SessionResult(
         session_dir=session_dir, report_path=report,
@@ -98,6 +107,396 @@ def test_upload_page_is_branded(tmp_path, monkeypatch):
     assert "AceCoach" in html and "Filming checklist" in html
 
 
+def test_open_mode_first_analysis_state_is_per_browser(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    app = create_app(Config(), sessions_dir=tmp_path / "sessions")
+    first = TestClient(app)
+    fresh = TestClient(app)
+
+    assert "Build your swing baseline" in first.get("/").text
+    assert "Build your swing baseline" in fresh.get("/").text
+
+    job_id = upload(first)
+    wait_for(first, job_id)
+
+    returning_html = first.get("/").text
+    assert "Your next coaching check-in" in returning_html
+    assert 'id="fast" name="fast" type="checkbox" checked' not in returning_html
+
+    fresh_html = fresh.get("/").text
+    assert "Build your swing baseline" in fresh_html
+    assert 'id="fast" name="fast" type="checkbox" checked' in fresh_html
+
+
+def test_failed_open_analysis_does_not_consume_first_baseline(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_no_strikes)
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+
+    assert "Build your swing baseline" in client.get("/").text
+    job_id = upload(client)
+    assert wait_for(client, job_id)["status"] == "failed"
+
+    html = client.get("/").text
+    assert "Build your swing baseline" in html
+    assert 'id="fast" name="fast" type="checkbox" checked' in html
+
+
+def test_unreliable_camera_result_stops_coaching_and_gear(tmp_path, monkeypatch):
+    warning = (
+        "Low confidence: this clip looks like it was filmed down the line, "
+        "but it was uploaded as face-on — numbers may not mean what they say."
+    )
+
+    def fake_bad_angle(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.report_path.write_text(
+            "<html><head>"
+            f'<meta name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}">'
+            '<meta name="caddieinsight-report-outcome" content="coaching_ready">'
+            "</head><body>unsafe coaching report</body></html>",
+            encoding="utf-8",
+        )
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "meta": {"camera_angle": "face-on"},
+                    "session_notes": [warning],
+                    "swings": [{"metrics": {"tempo_ratio": 2.0}}],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_bad_angle)
+    monkeypatch.setattr(app_module.shop, "enabled", lambda: True)
+    monkeypatch.setattr(
+        app_module.shop,
+        "fetch_products",
+        lambda cfg: pytest.fail("unreliable measurements must not request gear"),
+    )
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+
+    job_id = upload(client)
+    outcome = wait_for(client, job_id)
+    html = client.get(f"/session/{job_id}").text
+
+    assert "Re-film before coaching" in html
+    assert "Re-film needed · clip reviewed" in html
+    assert warning in html
+    assert "Practice this" not in html
+    assert "Optional aid" not in html
+    assert "Build your swing baseline" in client.get("/").text
+    assert outcome["status"] == "done"
+    assert outcome["outcome"] == "refilm_required"
+    assert outcome["coaching_eligible"] is False
+    assert "report_url" not in outcome
+    assert "metrics_url" not in outcome
+    listed = client.get("/api/sessions").json()["sessions"]
+    assert listed[0]["outcome"] == "refilm_required"
+    assert "Re-film needed" in client.get("/sessions").text
+    report = client.get(
+        f"/session/{job_id}/report", follow_redirects=False
+    )
+    assert report.status_code == 303
+    assert report.headers["location"] == f"/session/{job_id}"
+    direct_report = client.get(
+        f"/session/{job_id}/files/out/source/report.html",
+        follow_redirects=False,
+    )
+    assert direct_report.status_code == 303
+    direct_metrics = client.get(
+        f"/session/{job_id}/files/out/source/metrics.json",
+        follow_redirects=False,
+    )
+    assert direct_metrics.status_code == 303
+    job = client.app.state.jobs.get(job_id)
+    report_path = job.session_dir / "out" / "source" / "report.html"
+    metrics_path = report_path.with_name("metrics.json")
+    report_path.with_name("report.html.").write_bytes(report_path.read_bytes())
+    metrics_path.with_name("metrics.json.").write_bytes(
+        metrics_path.read_bytes()
+    )
+    assert client.get(
+        f"/session/{job_id}/files/out/source/report.html.",
+        follow_redirects=False,
+    ).status_code == 303
+    assert client.get(
+        f"/session/{job_id}/files/out/source/metrics.json.",
+        follow_redirects=False,
+    ).status_code == 303
+
+
+def test_current_capture_only_report_stays_available_but_metrics_do_not(
+    tmp_path, monkeypatch
+):
+    warning = (
+        "Tracking was unstable for this swing — numbers may be off; "
+        "film with a clear view."
+    )
+
+    def fake_capture_only(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {"tempo_ratio": 2.0},
+                            "notes": [warning],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        result.report_path.write_text(
+            "<html><head>"
+            f'<meta name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}">'
+            '<meta name="caddieinsight-report-outcome" content="capture_only">'
+            "</head><body>safe capture details</body></html>",
+            encoding="utf-8",
+        )
+        slowmo = result.session_dir / "media" / "slowmo_s1.mp4"
+        slowmo.parent.mkdir(exist_ok=True)
+        slowmo.write_bytes(b"fake slowmo")
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_capture_only)
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+    job_id = upload(client)
+    outcome = wait_for(client, job_id)
+
+    assert outcome["outcome"] == "refilm_required"
+    assert "report_url" in outcome
+    assert "metrics_url" not in outcome
+    status = client.get(f"/session/{job_id}").text
+    assert "Review capture details" in status
+    report = client.get(f"/session/{job_id}/report", follow_redirects=True)
+    assert report.status_code == 200
+    assert "safe capture details" in report.text
+    assert client.get(
+        f"/session/{job_id}/files/out/source/metrics.json",
+        follow_redirects=False,
+    ).status_code == 303
+    assert client.get(
+        f"/session/{job_id}/files/out/source/media/strip_s1.png",
+        follow_redirects=False,
+    ).status_code == 303
+    metrics = (
+        client.app.state.jobs.get(job_id).session_dir
+        / "out"
+        / "source"
+        / "metrics.json"
+    )
+    uppercase_metrics = metrics.with_name("METRICS.JSON")
+    uppercase_metrics.write_bytes(metrics.read_bytes())
+    strip = (
+        client.app.state.jobs.get(job_id).session_dir
+        / "out"
+        / "source"
+        / "media"
+        / "strip_s1.png"
+    )
+    uppercase_strip = strip.with_name("STRIP_S1.PNG")
+    uppercase_strip.write_bytes(strip.read_bytes())
+    assert client.get(
+        f"/session/{job_id}/files/out/source/METRICS.JSON",
+        follow_redirects=False,
+    ).status_code == 303
+    assert client.get(
+        f"/session/{job_id}/files/out/source/media/STRIP_S1.PNG",
+        follow_redirects=False,
+    ).status_code == 303
+    assert client.get(
+        f"/session/{job_id}/files/out/source/media/slowmo_s1.mp4",
+        follow_redirects=False,
+    ).status_code == 200
+    metrics.unlink()
+    restored = client.get(f"/api/session/{job_id}").json()
+    assert restored["outcome"] == "refilm_required"
+    assert restored["coaching_eligible"] is False
+    restored_status = client.get(f"/session/{job_id}").text
+    assert "Review capture details" in restored_status
+    assert client.get(
+        f"/session/{job_id}/report", follow_redirects=True
+    ).status_code == 200
+
+
+def test_capture_only_marker_vetoes_coaching_ready_metrics(
+    tmp_path, monkeypatch
+):
+    def fake_capture_with_eligible_metrics(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.report_path.write_text(
+            "<html><head>"
+            f'<meta name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}">'
+            '<meta name="caddieinsight-report-outcome" content="capture_only">'
+            "</head><body>capture-only report</body></html>",
+            encoding="utf-8",
+        )
+        result.metrics_path.write_text(
+            json.dumps({"swings": [{"metrics": {"tempo_ratio": 3.0}}]}),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(
+        jobs_module, "analyze_video", fake_capture_with_eligible_metrics
+    )
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+    job_id = upload(client)
+    outcome = wait_for(client, job_id)
+    assert outcome["outcome"] == "refilm_required"
+    assert outcome["coaching_eligible"] is False
+    assert "report_url" in outcome and "metrics_url" not in outcome
+    status = client.get(f"/session/{job_id}").text
+    assert "Your caddie's read" not in status
+    assert "Practice this" not in status
+    assert "Review capture details" in status
+    assert client.get(
+        f"/session/{job_id}/files/out/source/metrics.json",
+        follow_redirects=False,
+    ).status_code == 303
+
+
+def test_job_dtl_angle_scopes_no_meta_payload_and_withholds_stale_raw_metrics(
+    tmp_path, monkeypatch
+):
+    def fake_dtl_without_meta(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {
+                                "tempo_ratio": 3.0,
+                                "head_sway_backswing_sw": 0.8,
+                            }
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_dtl_without_meta)
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+    job_id = upload(client, extra={"angle": "dtl"})
+    outcome = wait_for(client, job_id)
+
+    assert outcome["angle"] == "dtl"
+    assert outcome["coaching_eligible"] is True
+    assert outcome["outcome"] == "coaching_ready"
+    assert "metrics_url" not in outcome
+    status = client.get(f"/session/{job_id}").text
+    assert "Protect your tempo baseline" in status
+    assert "Head sway" not in status
+    assert client.get(
+        f"/session/{job_id}/files/out/source/metrics.json",
+        follow_redirects=False,
+    ).status_code == 303
+
+
+def test_severe_warning_vetoes_structural_marker_recovery(
+    tmp_path, monkeypatch
+):
+    warning = (
+        "Tracking was unstable for this swing — numbers may be off; "
+        "film with a clear view."
+    )
+
+    def fake_structural_warning(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.report_path.write_text(
+            "<html><head>"
+            f'<meta name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}">'
+            '<meta name="caddieinsight-report-outcome" content="coaching_ready">'
+            "</head><body>unsafe coaching</body></html>",
+            encoding="utf-8",
+        )
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": 1,
+                    "session_notes": [warning],
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_structural_warning)
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+    job_id = upload(client)
+    outcome = wait_for(client, job_id)
+
+    assert outcome["coaching_eligible"] is False
+    assert outcome["outcome"] == "refilm_required"
+    assert "report_url" not in outcome
+    assert "metrics_url" not in outcome
+    status = client.get(f"/session/{job_id}").text
+    assert "Re-film before coaching" in status
+    assert warning in status
+
+
+@pytest.mark.parametrize(
+    "bad_metrics",
+    ["{truncated", '{"swings": 1}', '{"swings": []}'],
+)
+def test_current_coaching_report_survives_corrupt_metrics_without_exposing_them(
+    tmp_path, monkeypatch, bad_metrics
+):
+    def fake_coaching_with_corrupt_metrics(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.report_path.write_text(
+            "<html><head>"
+            f'<meta name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}">'
+            '<meta name="caddieinsight-report-outcome" content="coaching_ready">'
+            "</head><body>persisted coaching report</body></html>",
+            encoding="utf-8",
+        )
+        result.metrics_path.write_text(bad_metrics, encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(
+        jobs_module, "analyze_video", fake_coaching_with_corrupt_metrics
+    )
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+    job_id = upload(client)
+    outcome = wait_for(client, job_id)
+
+    assert outcome["outcome"] == "coaching_ready"
+    assert outcome["coaching_eligible"] is True
+    assert "report_url" in outcome
+    assert "metrics_url" not in outcome
+    status = client.get(f"/session/{job_id}").text
+    assert "structured metrics could not be read" in " ".join(status.split())
+    report = client.get(f"/session/{job_id}/report", follow_redirects=True)
+    assert report.status_code == 200
+    assert "persisted coaching report" in report.text
+    assert client.get(
+        f"/session/{job_id}/files/out/source/metrics.json",
+        follow_redirects=False,
+    ).status_code == 303
+
+
 def test_full_flow_upload_status_report(client):
     job_id = upload(client)
     data = wait_for(client, job_id)
@@ -155,7 +554,40 @@ def test_failed_job_shows_error(tmp_path, monkeypatch):
     assert "Analysis failed" in html and "No ball strikes" in html
     # The web page translates — CLI flags and config keys never reach it.
     assert "--strikes" not in html and "config" not in html
-    assert "filming checklist" in html
+
+
+def test_failed_job_cannot_serve_partial_result_artifacts(
+    tmp_path, monkeypatch
+):
+    def write_results_then_fail(video_path, out_dir=None, **kwargs):
+        session = Path(out_dir) / Path(video_path).stem
+        media = session / "media"
+        media.mkdir(parents=True)
+        (session / "report.html").write_text("<html>partial report</html>")
+        (session / "metrics.json").write_text(
+            json.dumps({"swings": [{"metrics": {"tempo_ratio": 3.0}}]})
+        )
+        (media / "strip_s1.png").write_bytes(b"partial strip")
+        raise RuntimeError("metrics persistence failed")
+
+    monkeypatch.setattr(
+        jobs_module, "analyze_video", write_results_then_fail
+    )
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
+    )
+    job_id = upload(client)
+    assert wait_for(client, job_id)["status"] == "failed"
+    for path in (
+        "out/source/report.html",
+        "out/source/metrics.json",
+        "out/source/media/strip_s1.png",
+    ):
+        response = client.get(
+            f"/session/{job_id}/files/{path}", follow_redirects=False
+        )
+        assert response.status_code == 303
+        assert response.headers["location"] == f"/session/{job_id}"
 
 
 def test_bad_uploads_rejected(client):
@@ -263,8 +695,72 @@ def test_legacy_status_json_sessions_are_imported(tmp_path):
     data = client.get("/api/session/abc123").json()
     assert data["status"] == "done"
     assert data["swings_total"] == 2
+    status = client.get("/session/abc123").text
+    assert "View original report" in status
+    assert 'href="/session/abc123/report"' in status
     report = client.get("/session/abc123/report", follow_redirects=True)
     assert "legacy report" in report.text
+
+
+def test_done_job_without_report_has_consistent_refilm_outcome(tmp_path):
+    sessions = tmp_path / "sessions"
+    manager = JobManager(sessions, Config())
+    job = manager.create_session(source_name="missing.mov")
+    job.status = "done"
+    job.report_rel = None
+    manager._save(job)
+    metrics = job.session_dir / "out" / "source" / "metrics.json"
+    metrics.parent.mkdir(parents=True)
+    metrics.write_text(
+        json.dumps({"swings": [{"metrics": {"tempo_ratio": 3.0}}]})
+    )
+    leftover_report = metrics.parent / "report.html"
+    leftover_report.write_text("<html>undeclared coaching report</html>")
+    client = TestClient(create_app(Config(), sessions_dir=sessions))
+
+    single = client.get(f"/api/session/{job.id}").json()
+    listed = client.get("/api/sessions").json()["sessions"][0]
+    assert single["outcome"] == "refilm_required"
+    assert single["coaching_eligible"] is False
+    assert "report_url" not in single and "metrics_url" not in single
+    assert listed["outcome"] == single["outcome"]
+    assert client.get(
+        f"/session/{job.id}/files/out/source/metrics.json",
+        follow_redirects=False,
+    ).status_code == 303
+    assert client.get(
+        f"/session/{job.id}/files/out/source/report.html",
+        follow_redirects=False,
+    ).status_code == 303
+
+
+def test_done_job_with_missing_declared_report_cannot_power_coaching(
+    tmp_path
+):
+    sessions = tmp_path / "sessions"
+    manager = JobManager(sessions, Config())
+    job = manager.create_session(source_name="partial.mov")
+    job.status = "done"
+    job.report_rel = "out/report.html"
+    metrics = job.session_dir / "out" / "metrics.json"
+    metrics.parent.mkdir(parents=True)
+    metrics.write_text(
+        json.dumps({"swings": [{"metrics": {"tempo_ratio": 3.0}}]})
+    )
+    manager._save(job)
+    client = TestClient(create_app(Config(), sessions_dir=sessions))
+
+    outcome = client.get(f"/api/session/{job.id}").json()
+    assert outcome["outcome"] == "refilm_required"
+    assert outcome["coaching_eligible"] is False
+    assert "report_url" not in outcome and "metrics_url" not in outcome
+    status = client.get(f"/session/{job.id}").text
+    assert "Your caddie's read" not in status
+    assert "Re-film before coaching" in status
+    assert client.get(
+        f"/session/{job.id}/files/out/metrics.json",
+        follow_redirects=False,
+    ).status_code == 303
 
 
 def test_queue_is_bounded_and_positions_reported(tmp_path, monkeypatch):

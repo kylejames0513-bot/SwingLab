@@ -8,8 +8,8 @@ unsubscribe link in every email). With any of the three missing, this
 module does exactly nothing.
 
 What a digest contains, all pulled from real data and never invented:
-the drills for the user's LATEST finished session's fired flags (name,
-dosage, and the pass mark — the same re-film targets the report prints),
+the first Caddie Brief drill for the user's LATEST finished session (name,
+dosage, and pass mark — the same action the results page leads with),
 one progress line from swinglab.trends when two sessions exist, and links
 to the latest report and /progress. Self-contained HTML: inline styles,
 brand colors from config, no images, no external assets at all.
@@ -31,14 +31,23 @@ from __future__ import annotations
 import hashlib
 import hmac
 import html
+import json
 import logging
 import os
 import threading
 import time
 
+from ..caddie_brief import (
+    build_caddie_brief_from_payload,
+)
 from ..config import Config
-from ..drills import CLEAN, practice_plan
-from ..trends import FLAG_LABELS, build_trends, trend_sentence
+from ..drills import CLEAN
+from ..trends import (
+    FLAG_LABELS,
+    build_trends,
+    metrics_json_path,
+    trend_sentence,
+)
 from . import mailer
 
 logger = logging.getLogger("swinglab.web.digest")
@@ -110,16 +119,56 @@ def compose_digest(
     count); ``base_url`` prefixes every link (PUBLIC_BASE_URL in
     production); ``secret`` signs the unsubscribe token.
     """
+    jobs = list(jobs)
     trends = build_trends(jobs, cfg)
     if not trends.samples:
         return None
     latest = trends.samples[-1]
-    plan = practice_plan(latest.flags, cfg)
-    block = plan[0]
-    drills = block["drills"]
-    focus = _FOCUS.get(block["flag"], block["title"].lower())
-    count = len(drills)
-    subject = f"This week: {focus} ({count} drill{'s' if count != 1 else ''})"
+    latest_job = next(
+        (job for job in jobs if job.id == latest.job_id), None
+    )
+    if latest_job is None:
+        return None
+    metrics_path = metrics_json_path(latest_job)
+    if metrics_path is None:
+        return None
+    try:
+        payload = json.loads(metrics_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    brief = build_caddie_brief_from_payload(
+        payload,
+        cfg,
+        angle=getattr(latest_job, "angle", None),
+    )
+    if brief is None or brief.refilm_required or brief.drill is None:
+        return None
+    full_baseline = all(
+        field in latest.means
+        for field in (
+            "tempo_ratio",
+            "head_sway_backswing_sw",
+            "hip_slide_backswing_sw",
+        )
+    )
+    limited_baseline = not latest.flags and (
+        latest.angle == "dtl" or not full_baseline
+    )
+    # The weekly promise is deliberately singular. This is the exact drill
+    # selected by the same Caddie Brief priority used on status/report pages.
+    drills = [brief.drill]
+    focus = (
+        (
+            "protect the readable rhythm"
+            if "tempo_ratio" in latest.means
+            else "complete the baseline"
+        )
+        if limited_baseline
+        else _FOCUS.get(
+            brief.focus_flag or CLEAN, brief.focus_name.lower()
+        )
+    )
+    subject = f"This week: {focus} (1 drill)"
 
     esc = html.escape
     primary = esc(str(cfg.brand["primary_color"]))
@@ -153,8 +202,26 @@ def compose_digest(
         context_line = f"Your last session flagged: <strong>{esc(flagged)}</strong>."
     else:
         context_line = (
-            "Your last session came back clean — this week is about keeping "
-            "the baseline current."
+            (
+                "Your last down-the-line session came back clean on tempo — "
+                "this week stays with rhythm, the measurement this angle "
+                "supports."
+            )
+            if latest.angle == "dtl"
+            else (
+                "Your last session stayed inside the lines it could read — "
+                "this week protects that rhythm and rebuilds a fuller baseline."
+            )
+            if limited_baseline and "tempo_ratio" in latest.means
+            else (
+                "Your last session stayed inside the lines it could read — "
+                "this week is about capturing a fuller baseline."
+            )
+            if limited_baseline
+            else (
+                "Your last session came back clean — this week is about keeping "
+                "the baseline current."
+            )
         )
 
     mono = "font-family:ui-monospace,Menlo,Consolas,monospace;"
@@ -172,8 +239,13 @@ def compose_digest(
     )
 
     also = ""
-    if len(plan) > 1:
-        others = ", ".join(esc(b["title"]) for b in plan[1:])
+    other_flags = [
+        flag for flag in latest.flags if flag != brief.focus_flag
+    ]
+    if other_flags:
+        others = ", ".join(
+            esc(FLAG_LABELS.get(flag, flag)) for flag in other_flags
+        )
         also = (
             f'<p style="margin:0 0 16px;font-size:13px;color:#666;">Also '
             f"flagged: {others} — the full plans are on your report.</p>"

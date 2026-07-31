@@ -21,27 +21,43 @@ are claimed accounts — unclaimed store stubs cannot log in or film, so they
 are excluded rather than silently deflating every rate):
 
 - **activation_rate** — of accounts created in the window, the share whose
-  first DONE analysis landed within 7 days of signup.
-- **w1_refilm_rate** — of those window accounts with at least one DONE
-  analysis, the share whose SECOND DONE analysis landed within 7 days of
-  their first (the re-film habit is the product's core loop).
+  first coaching-ready analysis landed within 7 days of signup.
+- **w1_refilm_rate** — of those window accounts with at least one
+  coaching-ready analysis, the share whose SECOND coaching-ready analysis
+  landed within 7 days of their first (the re-film habit is the product's
+  core loop).
 - **free_to_pro_rate** — of the window's activated accounts, the share that
   gained Pro within 30 days of signup. Shopify grants are timed by the
   order ledger's ``applied_at``; a Stripe-subscribed account (``plan
   'pro'`` with a live status) counts as converted — Stripe state carries no
   grant timestamp, and a subscription necessarily starts after signup.
 - **weekly_retained_filmers** — a count, not a rate: accounts with at least
-  one DONE analysis in the trailing 7 days (regardless of the window).
+  one coaching-ready analysis in the trailing 7 days (regardless of the
+  window).
 - **gear_attach_per_100_reports** — non-cancelled gear orders in the window
-  per 100 DONE reports in the window (both sides from ``created_at``).
+  per 100 coaching-ready reports in the window (both sides from
+  ``created_at``).
 """
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+from .caddie_brief import (
+    payload_has_coachable_data,
+    payload_is_coaching_eligible,
+    payload_requires_refilm,
+    payload_structure_is_valid,
+)
+from .report import (
+    REPORT_OUTCOME_CAPTURE,
+    REPORT_OUTCOME_COACHING,
+    persisted_report_outcome,
+)
 
 ACTIVATION_WINDOW_S = 7 * 86400
 REFILM_WINDOW_S = 7 * 86400
@@ -94,6 +110,46 @@ def _tables(conn: sqlite3.Connection) -> set[str]:
         row[0]
         for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")
     }
+
+
+def _coaching_ready(row, sessions_dir: Path, cfg) -> bool:
+    """Apply the product eligibility rule to a persisted KPI job row.
+
+    A report without metrics predates re-film outcomes, so it remains a
+    coaching-ready legacy result. New reports must have valid metrics that
+    pass the same Caddie Brief decision used by the web app.
+    """
+    report_rel = row["report_rel"]
+    if not isinstance(report_rel, str) or not report_rel:
+        return False
+    root = (sessions_dir / str(row["id"])).resolve()
+    report = (root / report_rel).resolve()
+    if not report.is_relative_to(root) or not report.is_file():
+        return False
+    persisted_outcome = persisted_report_outcome(report)
+    if persisted_outcome == REPORT_OUTCOME_CAPTURE:
+        return False
+    metrics = report.parent / "metrics.json"
+    if not metrics.is_file():
+        return True
+    try:
+        payload = json.loads(metrics.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return persisted_outcome == REPORT_OUTCOME_COACHING
+    job_angle = row["angle"] if "angle" in row.keys() else None
+    if isinstance(payload, dict) and payload_requires_refilm(
+        payload, angle=job_angle
+    ):
+        return False
+    if not payload_structure_is_valid(payload):
+        return persisted_outcome == REPORT_OUTCOME_COACHING
+    eligible = payload_is_coaching_eligible(payload, cfg, angle=job_angle)
+    if eligible:
+        return True
+    return (
+        persisted_outcome == REPORT_OUTCOME_COACHING
+        and not payload_has_coachable_data(payload, angle=job_angle)
+    )
 
 
 def compute_kpis(
@@ -149,20 +205,34 @@ def compute_kpis(
             account_gap = "no users table in the database yet"
 
         # -- shared raw material ------------------------------------------
-        done_by_user: dict[str, list[float]] = {}
-        done_in_window = 0
+        ready_by_user: dict[str, list[float]] = {}
+        ready_in_window = 0
         if "jobs" in tables:
+            job_columns = {
+                row["name"] for row in conn.execute("PRAGMA table_info(jobs)")
+            }
+            outcome_aware = "report_rel" in job_columns
+            selected = "id, user_id, created_at"
+            if outcome_aware:
+                selected += ", report_rel"
+                if "angle" in job_columns:
+                    selected += ", angle"
             for row in conn.execute(
-                "SELECT user_id, created_at FROM jobs WHERE status = ?",
-                (_DONE,),
+                f"SELECT {selected} FROM jobs WHERE status = ?", (_DONE,)
             ):
+                # A jobs schema without report_rel predates rejected-clip
+                # outcomes. Preserve that legacy KPI meaning explicitly.
+                if outcome_aware and not _coaching_ready(
+                    row, db_path.parent, cfg
+                ):
+                    continue
                 if row["created_at"] >= cutoff:
-                    done_in_window += 1
+                    ready_in_window += 1
                 if row["user_id"]:
-                    done_by_user.setdefault(row["user_id"], []).append(
+                    ready_by_user.setdefault(row["user_id"], []).append(
                         row["created_at"]
                     )
-            for times in done_by_user.values():
+            for times in ready_by_user.values():
                 times.sort()
 
         results: list[Kpi] = []
@@ -201,7 +271,7 @@ def compute_kpis(
             ]
 
             def first_done_delay(user_row) -> float | None:
-                times = done_by_user.get(user_row["id"])
+                times = ready_by_user.get(user_row["id"])
                 if not times:
                     return None
                 return times[0] - user_row["created_at"]
@@ -228,17 +298,17 @@ def compute_kpis(
 
             # w1_refilm_rate
             label, unit = labels["w1_refilm_rate"]
-            filmers = [u for u in cohort if done_by_user.get(u["id"])]
+            filmers = [u for u in cohort if ready_by_user.get(u["id"])]
             refilmed = [
                 u for u in filmers
-                if len(done_by_user[u["id"]]) >= 2
-                and done_by_user[u["id"]][1] - done_by_user[u["id"]][0]
+                if len(ready_by_user[u["id"]]) >= 2
+                and ready_by_user[u["id"]][1] - ready_by_user[u["id"]][0]
                 <= REFILM_WINDOW_S
             ]
             if not filmers:
                 results.append(_none(
                     "w1_refilm_rate", label, unit,
-                    f"no account created in {window} has a finished "
+                    f"no account created in {window} has a coaching-ready "
                     "analysis yet",
                 ))
             else:
@@ -287,7 +357,7 @@ def compute_kpis(
             label, unit = labels["weekly_retained_filmers"]
             recent = {
                 user_id
-                for user_id, times in done_by_user.items()
+                for user_id, times in ready_by_user.items()
                 if any(t >= now - RETENTION_TRAILING_S for t in times)
             }
             results.append(Kpi(
@@ -304,11 +374,11 @@ def compute_kpis(
                 "no gear order ledger in this database yet (it is created "
                 "when the app runs with this version)",
             ))
-        elif done_in_window == 0:
+        elif ready_in_window == 0:
             results.append(_none(
                 "gear_attach_per_100_reports", label, unit,
-                f"no finished reports in {window} — attach per 100 reports "
-                "is 0/0",
+                f"no coaching-ready reports in {window} — attach per 100 "
+                "reports is 0/0",
             ))
         else:
             gear_orders = conn.execute(
@@ -318,8 +388,8 @@ def compute_kpis(
             ).fetchone()[0]
             results.append(Kpi(
                 "gear_attach_per_100_reports", label,
-                value=100.0 * gear_orders / done_in_window, unit=unit,
-                numerator=gear_orders, denominator=done_in_window,
+                value=100.0 * gear_orders / ready_in_window, unit=unit,
+                numerator=gear_orders, denominator=ready_in_window,
             ))
         return results
     finally:

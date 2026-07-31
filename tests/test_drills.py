@@ -11,6 +11,7 @@ from pathlib import Path
 from swinglab.coaching import (
     FLAG_CONSISTENCY,
     FLAG_HIP_SLIDE,
+    FLAG_SHOULDER_TILT,
     FLAG_SWAY,
     FLAG_TEMPO,
     session_flags,
@@ -27,8 +28,17 @@ from swinglab.ffmpeg import VideoInfo
 from swinglab.metrics import SwingMetrics, session_stats
 from swinglab.report import write_report_html
 
-ALL_KEYS = (FLAG_TEMPO, FLAG_SWAY, FLAG_HIP_SLIDE, "head-dip",
-            "arm-extension", "balance", FLAG_CONSISTENCY, CLEAN)
+ALL_KEYS = (
+    FLAG_TEMPO,
+    FLAG_SWAY,
+    FLAG_HIP_SLIDE,
+    "head-dip",
+    "arm-extension",
+    FLAG_SHOULDER_TILT,
+    "balance",
+    FLAG_CONSISTENCY,
+    CLEAN,
+)
 
 
 def fake_video() -> VideoInfo:
@@ -77,10 +87,10 @@ def render_report(tmp_path, swings, cfg) -> str:
 
 # -- library completeness ----------------------------------------------------
 
-def test_every_flag_key_has_two_to_three_drills():
+def test_every_flag_key_has_one_to_three_complete_drills():
     assert set(DRILLS) == set(ALL_KEYS)
     for key in ALL_KEYS:
-        assert 2 <= len(DRILLS[key]) <= 3
+        assert 1 <= len(DRILLS[key]) <= 3
 
 
 def test_every_drill_is_complete():
@@ -162,8 +172,9 @@ def test_clean_session_renders_maintenance_set(tmp_path):
 def test_gear_link_present_when_store_url_set(tmp_path):
     cfg = Config()
     cfg.shop["store_url"] = "https://example.myshopify.com/"
-    html = render_report(tmp_path, [fake_swing(1)], cfg)
-    assert "Matched training aids" in html
+    html = render_report(tmp_path, [fake_swing(1, tempo=2.0)], cfg)
+    assert "Browse optional training aids" in html
+    assert "No purchase is required" in html
     assert "https://example.myshopify.com/collections/swinglab-gear" in html
 
 
@@ -171,5 +182,12 @@ def test_report_fine_without_store_url(tmp_path):
     cfg = Config()  # defaults ship with store_url empty
     assert gear_shop_url(cfg) is None
     html = render_report(tmp_path, [fake_swing(1)], cfg)
-    assert "Matched training aids" not in html
+    assert "Browse optional training aids" not in html
     assert "Practice plan" in html
+
+
+def test_clean_report_never_pitches_gear_even_when_store_url_is_set(tmp_path):
+    cfg = Config()
+    cfg.shop["store_url"] = "https://example.myshopify.com/"
+    html = render_report(tmp_path, [fake_swing(1)], cfg)
+    assert "Browse optional training aids" not in html

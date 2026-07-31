@@ -12,6 +12,7 @@
   .chip { display: inline-block; padding: 2px 10px; border-radius: 999px;
           font-size: 0.8rem; font-weight: 600; }
   .chip.done { background: #e5f3ea; color: #1a5c38; }
+  .chip.refilm { background: #fff3e0; color: #8a4b08; }
   .chip.failed { background: #fbe9e7; color: #b3261e; }
   .chip.processing, .chip.queued { background: #fff3e0; color: #a35406; }
   .chip.club { background: #eef1f4; color: #33414e; font-weight: 500; }
@@ -27,7 +28,13 @@
           <td>{{ s.as_dict().created_at[:16].replace("T", " ") }}</td>
           <td><a class="session" href="/session/{{ s.id }}">{{ s.source_name or s.id }}</a></td>
           <td>{% if s.club %}<span class="chip club">{{ club_labels.get(s.club, s.club) }}</span>{% else %}—{% endif %}</td>
-          <td><span class="chip {{ s.status }}">{{ s.status }}</span></td>
+          <td>
+            {% if s.id in refilm_ids %}
+            <span class="chip refilm">Re-film needed</span>
+            {% else %}
+            <span class="chip {{ s.status }}">{{ s.status }}</span>
+            {% endif %}
+          </td>
           <td>{{ s.swings_total if s.swings_total else "—" }}</td>
         </tr>
         {% endfor %}

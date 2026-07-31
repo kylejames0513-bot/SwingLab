@@ -7,6 +7,9 @@ billing.apply_event directly with event payloads shaped like Stripe's.
 
 from __future__ import annotations
 
+import json
+import re
+
 import pytest
 
 fastapi = pytest.importorskip("fastapi")
@@ -191,6 +194,229 @@ def test_session_mutating_forms_reject_cross_origin(app, path, data):
     assert rejected.status_code == 403
     assert client.get("/account").status_code == 200
     assert not users.get(user.id).digest_opt_in
+def test_first_analysis_is_framed_as_a_fast_baseline(app):
+    client = TestClient(app)
+    signup(client)
+
+    first = client.get("/").text
+    assert "Build your swing baseline" in first
+    assert re.search(r'id="fast"[^>]*checked', first)
+
+    resp = upload(client)
+    wait_for(client, resp.headers["location"].rsplit("/", 1)[-1])
+
+    later = client.get("/").text
+    assert "Your next coaching check-in" in later
+    assert not re.search(r'id="fast"[^>]*checked', later)
+
+
+def test_refilm_result_preserves_free_retry_and_first_baseline(tmp_path, monkeypatch):
+    attempts = 0
+    warning = (
+        "Low confidence: this clip looks like it was filmed down the line, "
+        "but it was uploaded as face-on — numbers may not mean what they say."
+    )
+
+    def first_unreliable_then_valid(video_path, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        result = fake_analyze_ok(video_path, **kwargs)
+        if attempts == 1:
+            result.metrics_path.write_text(
+                json.dumps(
+                    {
+                        "meta": {"camera_angle": "face-on"},
+                        "session_notes": [warning],
+                        "swings": [{"metrics": {"tempo_ratio": 2.0}}],
+                    }
+                ),
+                encoding="utf-8",
+            )
+        return result
+
+    monkeypatch.setattr(
+        jobs_module, "analyze_video", first_unreliable_then_valid
+    )
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["free_per_month"] = 1
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    app.state.users.create("kyle@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
+
+    first = upload(client)
+    first_id = first.headers["location"].rsplit("/", 1)[-1]
+    assert wait_for(client, first_id)["status"] == "done"
+    first_status = client.get(f"/session/{first_id}").text
+    assert "Re-film before coaching" in first_status
+    assert "Every later upload uses the normal allowance" in first_status
+    assert client.app.state.jobs.usage_this_month(
+        client.app.state.users.get_by_email("kyle@example.com").id
+    ) == 0
+    first_home = client.get("/").text
+    assert "Build your swing baseline" in first_home
+    assert "Your next upload uses the normal allowance" in first_home
+
+    retry = upload(client)
+    assert retry.status_code == 303
+    retry_id = retry.headers["location"].rsplit("/", 1)[-1]
+    assert wait_for(client, retry_id)["status"] == "done"
+    assert client.app.state.jobs.usage_this_month(
+        client.app.state.users.get_by_email("kyle@example.com").id
+    ) == 1
+    assert "Your next coaching check-in" in client.get("/").text
+
+
+def test_repeated_refilm_results_eventually_use_the_allowance(
+    tmp_path, monkeypatch
+):
+    warning = (
+        "Tracking was unstable for this swing — numbers may be off; "
+        "film with a clear view."
+    )
+
+    def always_unreliable(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {"tempo_ratio": 2.0},
+                            "notes": [warning],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", always_unreliable)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["free_per_month"] = 1
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+    signup(client)
+    user = client.app.state.users.get_by_email("kyle@example.com")
+
+    first = upload(client)
+    wait_for(client, first.headers["location"].rsplit("/", 1)[-1])
+    assert client.app.state.jobs.usage_this_month(user.id) == 0
+
+    courtesy_retry = upload(client)
+    assert courtesy_retry.status_code == 303
+    wait_for(
+        client, courtesy_retry.headers["location"].rsplit("/", 1)[-1]
+    )
+    assert client.app.state.jobs.usage_this_month(user.id) == 1
+
+    blocked = upload(client)
+    assert blocked.status_code == 402
+    home = client.get("/").text
+    assert "Your baseline still needs a clear clip" in home
+    assert "first rejected clip did not use an analysis" in home
+    assert "Build your swing baseline" not in home
+
+
+def test_charged_refilm_is_explained_before_allowance_is_empty(
+    tmp_path, monkeypatch
+):
+    warning = (
+        "Tracking was unstable for this swing — numbers may be off; "
+        "film with a clear view."
+    )
+
+    def always_unreliable(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {"tempo_ratio": 2.0},
+                            "notes": [warning],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", always_unreliable)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["free_per_month"] = 3
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+    signup(client)
+
+    for _ in range(2):
+        response = upload(client)
+        wait_for(client, response.headers["location"].rsplit("/", 1)[-1])
+
+    home = client.get("/").text
+    assert "Your baseline still needs a clear clip" in home
+    assert "2 analyses left" in home
+    assert "1 additional unusable" in home
+    assert "first rejected clip did" in home
+
+
+def test_finite_pro_is_not_upsold_after_rejected_clips(
+    tmp_path, monkeypatch
+):
+    warning = (
+        "Tracking was unstable for this swing — numbers may be off; "
+        "film with a clear view."
+    )
+
+    def always_unreliable(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {"tempo_ratio": 2.0},
+                            "notes": [warning],
+                        }
+                    ]
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", always_unreliable)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["pro_per_month"] = 1
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    users: UserStore = app.state.users
+    users.create("kyle@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
+    users: UserStore = client.app.state.users
+    user = users.get_by_email("kyle@example.com")
+    users.set_plan(user.id, PRO, "active")
+
+    for _ in range(2):
+        response = upload(client)
+        wait_for(client, response.headers["location"].rsplit("/", 1)[-1])
+
+    home = client.get("/").text
+    assert "Your baseline still needs a clear clip" in home
+    assert "see Pro options" not in home
+    assert "try again after the reset on the 1st" in home
 
 
 def test_bad_signups_rejected(app):
@@ -230,6 +456,36 @@ def test_free_quota_enforced_and_pro_unlimited(app):
     assert upload(client).status_code == 303  # unlimited now
 
 
+def test_shopify_only_pro_purchase_is_offered_at_both_quota_states(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
+    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+    monkeypatch.delenv("STRIPE_PRICE_ID", raising=False)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["free_per_month"] = 1
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    app.state.users.create("kyle@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
+
+    available = client.get("/").text
+    assert "go unlimited with Pro" in available
+
+    resp = upload(client)
+    wait_for(client, resp.headers["location"].rsplit("/", 1)[-1])
+    exhausted = client.get("/").text
+    assert "Upgrade to Pro" in exhausted
+    assert 'href="/pricing"' in exhausted
+
+
 def test_sessions_are_private_to_their_owner(app):
     alice, bob = TestClient(app), TestClient(app)
     signup(alice, email="alice@example.com")
@@ -262,6 +518,7 @@ def test_account_page_shows_usage(app):
     wait_for(client, resp.headers["location"].rsplit("/", 1)[-1])
     html = client.get("/account").text
     assert "kyle@example.com" in html
+    assert "Allowance used this month" in html
     assert "1 left" in html  # 2/month, 1 used
     assert "Free" in html
 
@@ -306,3 +563,37 @@ def test_checkout_unavailable_until_stripe_configured(app, monkeypatch):
     signup(client)
     assert client.post("/billing/checkout", follow_redirects=False).status_code == 503
     assert "coming soon" in client.get("/account").text
+
+
+def test_stripe_pricing_keeps_the_annual_led_offer(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fake")
+    monkeypatch.setenv("STRIPE_PRICE_ID", "price_single_recurring_plan")
+    cfg = Config()
+    cfg.web["require_account"] = True
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+    signup(client)
+
+    html = client.get("/pricing").text
+    assert html.count('action="/billing/checkout"') == 2
+    assert "Pro — yearly" in html
+    assert "Pro — monthly" in html
+    assert html.index("Pro — yearly") < html.index("Pro — monthly")
+    assert "$39.99/year" in html
+    assert "Stripe shows the exact price, billing interval" in html
+
+
+def test_finite_pro_allowance_is_described_as_finite(tmp_path, monkeypatch):
+    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fake")
+    monkeypatch.setenv("STRIPE_PRICE_ID", "price_single_recurring_plan")
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["pro_per_month"] = 12
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+    signup(client)
+
+    html = client.get("/pricing").text
+    assert "Up to 12 analyses a month" in " ".join(html.split())
+    assert ">12</td>" in html
+    assert "Unlimited swing analyses" not in html
+    assert "Coaching-ready clip" in html
+    assert "for every session" not in html

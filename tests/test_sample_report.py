@@ -46,6 +46,19 @@ def test_ensure_sample_report_is_idempotent(tmp_path):
     assert marker in second.read_text()  # existing report left alone
 
 
+def test_ensure_sample_report_refreshes_only_an_old_synthetic_format(tmp_path):
+    sample_dir = tmp_path / "sr"
+    sample_dir.mkdir()
+    report = sample_dir / "report.html"
+    report.write_text("<html>old synthetic sample</html>", encoding="utf-8")
+
+    refreshed = sample.ensure_sample_report(sample_dir, Config())
+    html = refreshed.read_text(encoding="utf-8")
+    assert "old synthetic sample" not in html
+    assert 'name="caddieinsight-report-format" content="caddie-brief-v1"' in html
+    assert "Your caddie's read" in html
+
+
 def test_sample_report_route_is_public(tmp_path):
     cfg = Config()
     cfg.web["require_account"] = True  # locked-down instance...
@@ -77,6 +90,8 @@ def test_landing_page_advertises_sample_and_free_tier(tmp_path):
     open_client = TestClient(create_app(Config(), sessions_dir=tmp_path / "s2"))
     upload_html = open_client.get("/").text  # open-mode hero
     assert "See a sample report first" in upload_html
+    assert "Build your swing baseline" in upload_html
+    assert 'id="fast" name="fast" type="checkbox" checked' in upload_html
 
 
 def test_sample_uses_branded_config(tmp_path):

@@ -20,7 +20,7 @@ from swinglab.metrics import session_stats
 from swinglab.report import write_metrics_json, write_report_html
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
-from swinglab.web.jobs import JobManager
+from swinglab.web.jobs import DONE, JobManager
 from tests.test_report import branded_cfg, fake_swing, fake_video
 from tests.test_trends import (
     make_fake_analyze,
@@ -50,6 +50,39 @@ def test_job_round_trips_club_and_angle_through_sqlite(tmp_path):
     # And a job created without either keeps honest defaults.
     plain = manager.get(manager.create_session(source_name="x.mov").id)
     assert plain.club is None and plain.angle == "face-on"
+
+
+def test_comparable_history_filters_before_limit_and_never_crosses_users(
+    tmp_path
+):
+    manager = JobManager(tmp_path / "s", Config())
+
+    def finished(user_id, club):
+        job = manager.create_session(user_id=user_id, club=club)
+        out = job.session_dir / "out"
+        out.mkdir()
+        (out / "metrics.json").write_text(
+            json.dumps(payload_for([{"tempo_ratio": 3.0}]))
+        )
+        (out / "report.html").write_text("<html>report</html>")
+        job.status = DONE
+        job.report_rel = "out/report.html"
+        manager._save(job)
+        return job
+
+    old_iron = finished("golfer-a", "iron")
+    for _ in range(55):
+        finished("golfer-a", "driver")
+    finished("golfer-b", "iron")
+    current_iron = finished("golfer-a", "iron")
+    finished("golfer-a", "iron")  # later than the viewed session
+
+    comparable = manager.list_comparable(
+        user_id="golfer-a",
+        club="iron",
+        through=current_iron.created_at,
+    )
+    assert [job.id for job in comparable] == [current_iron.id, old_iron.id]
 
 
 def test_upload_forwards_club_and_shows_chip(tmp_path, monkeypatch):

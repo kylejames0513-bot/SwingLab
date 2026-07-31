@@ -16,9 +16,11 @@
   .sold-out { color: #b3261e; font-size: 0.85rem; }
 {% endblock %}
 {% block main %}
-  <h2>Training gear</h2>
-  <p class="hint">Each product pairs with something the swing report measures —
-    tempo, sway, and hip slide. Checkout happens in our shop.</p>
+  <h2>Golf gear</h2>
+  <p class="hint">Browse the broader store here. When an available training aid
+    directly matches a measured swing priority, CaddieInsight explains that
+    match after your coaching brief. Your drills work without a purchase;
+    checkout happens in our Shopify store.</p>
   {% if products %}
     <div class="grid">
       {% for p in products %}
@@ -32,6 +34,7 @@
       {% endfor %}
     </div>
   {% else %}
-    <div class="card"><p>The shop is being restocked — check back soon.</p></div>
+    <div class="card"><p>The shop is being restocked—check back soon. Your
+      report's drills still include everything needed to practice.</p></div>
   {% endif %}
 {% endblock %}

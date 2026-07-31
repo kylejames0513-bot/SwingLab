@@ -31,6 +31,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="caddieinsight-report-format" content="{{ report_format_version }}">
+<meta name="caddieinsight-report-outcome" content="{{ report_outcome }}">
 <title>{{ brand.name }} — Swing Report</title>
 <style>
   :root {
@@ -105,6 +107,23 @@
 {%- endif %}
   .tips { background: #eef6f0; border-left: 4px solid var(--primary);
           padding: 12px 16px; border-radius: 4px; }
+  .brief { background: white; border: 1px solid #d9e5dd;
+           border-top: 5px solid var(--primary); border-radius: 8px;
+           padding: 18px 22px; margin-bottom: 22px; }
+  .brief h2 { margin-top: 0; }
+  .brief-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+                gap: 14px; }
+  .brief-block { background: #f2f8f4; border-radius: 6px; padding: 12px 14px; }
+  .brief-block.focus { background: #fff7ef; }
+  .brief-block h3 { color: var(--primary); font-size: 0.95rem; margin: 0 0 6px; }
+  .brief-block p { margin: 5px 0; }
+  .brief-value { font-size: 1.05rem; }
+  .brief .bench { color: #666; font-size: 0.85rem; }
+  .brief-warning { border: 1px solid #e7c45d; background: #fffbea;
+                   border-radius: 6px; padding: 10px 14px; color: #54440b; }
+  details.measurements { margin: 18px 0 26px; }
+  details.measurements > summary { cursor: pointer; color: var(--primary);
+                                   font-weight: 700; padding: 10px 0; }
   .praise { background: #e5f3ea; border-left: 4px solid var(--primary);
             border-radius: 4px; padding: 12px 16px; }
   .praise ul { margin: 6px 0 0; padding-left: 20px; }
@@ -185,6 +204,62 @@
 </header>
 <main>
 
+{% if caddie_brief %}
+<section class="brief">
+  {% if caddie_brief.refilm_required %}
+  <h2>Re-film before coaching</h2>
+  <p>Your caddie needs a trustworthy view before choosing a swing change.</p>
+  <p class="brief-warning"><strong>Why this session stopped:</strong>
+    {{ caddie_brief.warning }}</p>
+  <div class="brief-block focus">
+    <h3>Do this first</h3>
+    <p class="brief-value"><strong>{{ caddie_brief.focus_name }}</strong></p>
+    <p>{{ caddie_brief.why }}</p>
+    <p><strong>Next:</strong> {{ caddie_brief.fix }}</p>
+  </div>
+  {% else %}
+  <h2>Your caddie's read</h2>
+  <p>Start with one thing. The measurements and full drill library stay below
+    when you want the detail.</p>
+  {% if caddie_brief.warning %}
+  <p class="brief-warning"><strong>Measurement note:</strong>
+    {{ caddie_brief.warning }}</p>
+  {% endif %}
+  <div class="brief-grid">
+    {% if caddie_brief.strength %}
+    <div class="brief-block">
+      <h3>Keep</h3>
+      <p>{{ caddie_brief.strength }}</p>
+    </div>
+    {% endif %}
+    <div class="brief-block focus">
+      <h3>{{ "Protect" if caddie_brief.clean else "Fix first" }}</h3>
+      <p class="brief-value"><strong>{{ caddie_brief.focus_name }}</strong>
+        {% if caddie_brief.focus_value %} — {{ caddie_brief.focus_value }}
+          {% if caddie_brief.benchmark_text %}
+          <span class="bench">({{ caddie_brief.benchmark_text }})</span>
+          {% endif %}
+        {% endif %}
+      </p>
+      <p>{{ caddie_brief.why }}</p>
+      <p><strong>Coach's cue:</strong> {{ caddie_brief.fix }}</p>
+    </div>
+    <div class="brief-block">
+      <h3>Practice this</h3>
+      <p><strong><a href="#drill-{{ caddie_brief.drill.id }}">{{
+        caddie_brief.drill.name }}</a></strong> —
+        {{ caddie_brief.drill.aim }}</p>
+      <p><strong>Dosage:</strong> {{ caddie_brief.drill.dosage }}<br>
+        <strong>Pass mark:</strong> {{ caddie_brief.drill.success_metric }}</p>
+    </div>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+
+{% set refilm_required = caddie_brief and caddie_brief.refilm_required %}
+<details class="measurements">
+<summary>{% if refilm_required %}See capture details{% else %}See the measurements and session details{% endif %}</summary>
 <h2>Session</h2>
 <table class="meta">
   {# Filename only — the full path is server internals (web uploads live at
@@ -203,6 +278,7 @@
   {% if level_label %}<tr><th>Experience</th><td>{{ level_label }}</td></tr>{% endif %}
 </table>
 
+{% if not refilm_required %}
 <h2>Metrics</h2>
 {% if level_note %}
 {# One framing line per declared experience level (swinglab.levels) —
@@ -304,22 +380,26 @@ balance is mean foot drift during the hold — lower is better.</p>
   {% for note in session_notes %}<li>{{ note }}</li>{% endfor %}
 </ul>
 {% endif %}
+{% endif %}
+</details>
 
 {% for s in swings %}
 <div class="swing">
   <h2>Swing {{ s.metrics.swing }}</h2>
+  {% if not refilm_required %}
   <ul class="notes">
     {% for note in s.notes %}<li>{{ note }}</li>{% endfor %}
   </ul>
-  {% if s.strip %}
+  {% endif %}
+  {% if not refilm_required and s.strip %}
   <h3>Key positions</h3>
   <img src="{{ s.strip }}" alt="Key positions, swing {{ s.metrics.swing }}">
   {% endif %}
-  {% if s.overlay %}
+  {% if not refilm_required and s.overlay %}
   <h3>Centerline overlay</h3>
   <img src="{{ s.overlay }}" alt="Centerline overlay, swing {{ s.metrics.swing }}">
   {% endif %}
-  {% if s.slowmo or s.replay or replay_locked %}
+  {% if s.slowmo or (not refilm_required and (s.replay or replay_locked)) %}
   <div class="video-row">
     {% if s.slowmo %}
     <figure>
@@ -327,7 +407,7 @@ balance is mean foot drift during the hold — lower is better.</p>
       <video controls muted playsinline src="{{ s.slowmo }}"></video>
     </figure>
     {% endif %}
-    {% if s.replay %}
+    {% if not refilm_required and s.replay %}
     <figure>
       <h3>Coach replay</h3>
       <video controls muted playsinline src="{{ s.replay }}"></video>
@@ -335,7 +415,7 @@ balance is mean foot drift during the hold — lower is better.</p>
       the hand path (wrist centroid), and the numbers appearing at each swing
       event — same window as the slow motion.</figcaption>
     </figure>
-    {% elif replay_locked %}
+    {% elif not refilm_required and replay_locked %}
     {# billing.replay_pro_only: the replay was not rendered for this session
        (free plan at analysis time). Say what it is, honestly, in its slot. #}
     <figure>
@@ -359,6 +439,7 @@ balance is mean foot drift during the hold — lower is better.</p>
 </div>
 {% endfor %}
 
+{% if not (caddie_brief and caddie_brief.refilm_required) %}
 {% if praise_notes %}
 <h2>What's working</h2>
 <div class="praise">
@@ -386,7 +467,12 @@ balance is mean foot drift during the hold — lower is better.</p>
 {% endif %}
 {% else %}
 <h2>What to work on</h2>
+{% if limited_baseline %}
+<p class="meta">No readable value crossed its line, but this session did not
+  produce a complete baseline. Use the focused capture plan below.</p>
+{% else %}
 <p class="meta">Nothing flagged this session — see the maintenance plan below.</p>
+{% endif %}
 {% endif %}
 
 <h2>Practice plan</h2>
@@ -395,15 +481,21 @@ balance is mean foot drift during the hold — lower is better.</p>
 weeks, then re-film — the targets below are the pass marks, in the same
 numbers as the table above.</p>
 {% else %}
+{% if limited_baseline %}
+<p class="meta">Built only from what this session could read. The next
+re-film should complete the baseline before broader maintenance targets
+are used.</p>
+{% else %}
 <p class="meta">Nothing flagged this session. The plan below protects the
 baseline.</p>
+{% endif %}
 {% endif %}
 {% for block in practice_plan %}
 <div class="plan">
   <h3>{{ block.title }}</h3>
   {% for d in block.drills %}
-  <div class="drill" id="drill-{{ d.id }}">
-    <h4>{{ d.name }}</h4>
+  <div class="drill">
+    <h4 id="drill-{{ d.id }}" tabindex="-1">{{ d.name }}</h4>
     <p class="aim">{{ d.aim }}</p>
     <ol>
       {% for step in d.protocol %}<li>{{ step }}</li>{% endfor %}
@@ -429,9 +521,11 @@ baseline.</p>
   {% endfor %}
 </div>
 {% endfor %}
-{% if gear_url %}
-<p class="gear-link"><a href="{{ gear_url }}">Matched training aids</a> —
-the gear these drills are built around.</p>
+{% if gear_url and caddie_brief and caddie_brief.focus_flag %}
+<p class="gear-link">No purchase is required—the drill above is complete as
+written. <a href="{{ gear_url }}">Browse optional training aids</a> tagged to
+measured coaching issues.</p>
+{% endif %}
 {% endif %}
 
 <div class="tips">

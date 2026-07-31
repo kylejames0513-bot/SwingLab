@@ -23,6 +23,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable
 
+from .caddie_brief import (
+    payload_is_coaching_eligible,
+    payload_structure_is_valid,
+)
 from .coaching import (
     FLAG_ARM_EXTENSION,
     FLAG_BALANCE,
@@ -35,7 +39,8 @@ from .coaching import (
     flag_keys,
 )
 from .config import Config
-from .metrics import NUMERIC_FIELDS
+from .metrics import NUMERIC_FIELDS, finite_float
+from .report import REPORT_OUTCOME_CAPTURE, persisted_report_outcome
 
 # Mirrors jobs.DONE without importing the web layer (or the pipeline it
 # drags in).
@@ -98,6 +103,7 @@ class SessionSample:
     means: dict[str, float]  # metric -> session mean, only metrics with data
     flags: tuple[str, ...]  # fired coaching flags (same keys as coaching.py)
     swing_count: int
+    angle: str | None  # persisted camera angle, when this payload recorded it
 
 
 @dataclass(frozen=True)
@@ -187,10 +193,18 @@ def metrics_json_path(job) -> Path | None:
     or None for jobs that never finished."""
     if getattr(job, "status", None) != DONE or not getattr(job, "report_rel", None):
         return None
-    return job.session_dir / Path(job.report_rel).parent / "metrics.json"
+    root = job.session_dir.resolve()
+    report = (root / Path(job.report_rel)).resolve()
+    if not report.is_relative_to(root) or not report.is_file():
+        return None
+    if persisted_report_outcome(report) == REPORT_OUTCOME_CAPTURE:
+        return None
+    return report.parent / "metrics.json"
 
 
-def _session_means(payload: dict) -> dict[str, float]:
+def _session_means(
+    payload: dict, *, angle: str | None = None
+) -> dict[str, float]:
     """Per-metric mean across the session's swings. A metric only appears
     when at least one swing has a real number for it — missing keys (legacy
     sessions), nulls (NaN sanitized to null on disk), and stray NaN/inf all
@@ -198,21 +212,36 @@ def _session_means(payload: dict) -> dict[str, float]:
     swings = payload.get("swings") or []
     if not isinstance(swings, list):
         return {}
+    meta = payload.get("meta") or {}
+    resolved_angle = angle or (
+        meta.get("angle") or meta.get("camera_angle")
+        if isinstance(meta, dict)
+        else None
+    )
+    dtl_fields = {"backswing_s", "downswing_s", "tempo_ratio"}
     means: dict[str, float] = {}
     for name in NUMERIC_FIELDS:
+        if resolved_angle == "dtl" and name not in dtl_fields:
+            continue
         values = []
         for swing in swings:
             if not isinstance(swing, dict):
                 continue
-            value = (swing.get("metrics") or {}).get(name)
-            if (
-                isinstance(value, (int, float))
-                and not isinstance(value, bool)
-                and math.isfinite(value)
-            ):
-                values.append(float(value))
+            metrics = swing.get("metrics") or {}
+            if not isinstance(metrics, dict):
+                continue
+            value = finite_float(metrics.get(name))
+            if value is not None:
+                values.append(value)
         if values:
-            means[name] = round(sum(values) / len(values), 3)
+            try:
+                mean = math.fsum(
+                    value / len(values) for value in values
+                )
+            except OverflowError:
+                continue
+            if math.isfinite(mean):
+                means[name] = round(mean, 3)
     return means
 
 
@@ -226,21 +255,30 @@ def session_sample(job, cfg: Config) -> SessionSample | None:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(payload, dict):
+    if not payload_structure_is_valid(payload):
         return None
-    means = _session_means(payload)
+    job_angle = getattr(job, "angle", None)
+    if not payload_is_coaching_eligible(payload, cfg, angle=job_angle):
+        return None
+    means = _session_means(payload, angle=job_angle)
     if not means:
         return None
     try:
         finished_at = path.stat().st_mtime
     except OSError:
         finished_at = float(getattr(job, "created_at", 0.0) or 0.0)
+    sample_angle = job_angle
+    if sample_angle is None:
+        meta = payload.get("meta") or {}
+        if isinstance(meta, dict):
+            sample_angle = meta.get("angle") or meta.get("camera_angle")
     return SessionSample(
         job_id=job.id,
         finished_at=finished_at,
         means=means,
-        flags=tuple(flag_keys(payload, cfg)),
+        flags=tuple(flag_keys(payload, cfg, angle=job_angle)),
         swing_count=len(payload.get("swings") or []),
+        angle=sample_angle,
     )
 
 
@@ -264,6 +302,16 @@ def build_trends(jobs: Iterable, cfg: Config) -> Trends:
         label, unit, worse = _METRIC_INFO[name]
         benchmark, benchmark_text = benches.get(name, (None, ""))
         values = [v for _, v in points]
+        try:
+            span = max(values) - min(values)
+            delta = values[-1] - values[0] if len(values) >= 2 else None
+        except OverflowError:
+            continue
+        if (
+            not math.isfinite(span)
+            or (delta is not None and not math.isfinite(delta))
+        ):
+            continue
         better = {"higher": "lower", "lower": "higher"}.get(worse)
         best = (
             max(values) if better == "higher"
@@ -277,7 +325,7 @@ def build_trends(jobs: Iterable, cfg: Config) -> Trends:
             points=tuple(points),
             latest=values[-1],
             best=best,
-            delta=round(values[-1] - values[0], 3) if len(values) >= 2 else None,
+            delta=round(delta, 3) if delta is not None else None,
             benchmark=benchmark,
             benchmark_text=benchmark_text,
             worse=worse,
@@ -295,7 +343,12 @@ def trend_sentence(trends: Trends) -> str | None:
     2.79:1 across 5 sessions". None until two sessions have measured the
     same benchmarked metric — this never fabricates a number, so callers
     must hide the line entirely when it is None."""
+    if not trends.samples:
+        return None
+    latest_means = trends.samples[-1].means
     for name in _SENTENCE_PRIORITY:
+        if name not in latest_means:
+            continue
         trend = trends.metrics.get(name)
         if trend is None or len(trend.points) < 2:
             continue

@@ -37,7 +37,7 @@
     <div class="row"><span class="k">Plan</span>
       <span class="plan {{ 'pro' if user.is_pro else 'free' }}">
         {{ "Pro" if user.is_pro else "Free" }}</span></div>
-    <div class="row"><span class="k">Analyses this month</span>
+    <div class="row"><span class="k">Allowance used this month</span>
       <span>{{ usage }}{% if quota_left is not none %} — {{ quota_left }} left{% endif %}</span></div>
     {% if pro_lifetime %}
     {# "Never expires" is true regardless of any subscription the user
@@ -114,7 +114,9 @@
         automatically.</p>
     {% elif billing_enabled %}
       <form action="/billing/checkout" method="post">
-        <button type="submit">Upgrade to Pro — unlimited swings</button>
+        <button type="submit">Upgrade to Pro —
+          {% if pro_per_month <= 0 %}unlimited swings{% else %}up to
+          {{ pro_per_month }} analyses a month{% endif %}</button>
       </form>
     {% else %}
       <p class="hint">Pro memberships are coming soon.</p>

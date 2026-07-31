@@ -12,6 +12,7 @@ as seen from the camera — never claimed as 3D body angles.
 from __future__ import annotations
 
 import math
+import statistics
 from dataclasses import asdict, dataclass
 
 import numpy as np
@@ -41,6 +42,23 @@ FACE_ON_ONLY_FIELDS = (
     "shoulder_tilt_delta_deg",
     "finish_balance_sw",
 )
+
+
+def finite_float(value: object) -> float | None:
+    """Return one finite numeric value, or ``None`` for unsafe input.
+
+    Persisted JSON can contain arbitrarily large integers. Converting those
+    directly to ``float`` raises ``OverflowError`` instead of returning
+    infinity, so every reader of restored/legacy metrics uses this one
+    defensive conversion.
+    """
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return None
+    try:
+        converted = float(value)
+    except (OverflowError, TypeError, ValueError):
+        return None
+    return converted if math.isfinite(converted) else None
 
 
 @dataclass
@@ -372,14 +390,27 @@ def session_stats(all_metrics: list[SwingMetrics]) -> dict[str, dict[str, float]
     """
     stats: dict[str, dict[str, float]] = {}
     for field_name in NUMERIC_FIELDS:
-        values = np.array(
-            [getattr(m, field_name) for m in all_metrics], dtype=np.float64
-        )
-        values = values[~np.isnan(values)]
-        if len(values) == 0:
+        values = [
+            value
+            for metric in all_metrics
+            if (
+                value := finite_float(getattr(metric, field_name))
+            )
+            is not None
+        ]
+        if not values:
+            continue
+        try:
+            mean = math.fsum(
+                value / len(values) for value in values
+            )
+            std = statistics.pstdev(values)
+        except (OverflowError, TypeError, ValueError):
+            continue
+        if not math.isfinite(mean) or not math.isfinite(std):
             continue
         stats[field_name] = {
-            "mean": round(float(values.mean()), 3),
-            "std": round(float(values.std()), 3),
+            "mean": round(mean, 3),
+            "std": round(std, 3),
         }
     return stats

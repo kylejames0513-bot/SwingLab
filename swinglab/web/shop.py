@@ -15,10 +15,11 @@ query that Shopify already exposes to the public storefront, and it keeps the
 Pro membership product out of the Gear page.
 
 Recommendations: tag a product in Shopify with ``swinglab:<flag>`` — where
-<flag> is one of the keys produced by :func:`swinglab.coaching.flag_keys`
-(``tempo``, ``sway``, ``hip-slide``, ``consistency``) — and it is suggested
-whenever an analysis raises that flag. Products tagged ``swinglab:general``
-pad out the list (and are what a flag-free swing sees).
+<flag> is one of the keys produced by :func:`swinglab.coaching.flag_keys`.
+Only available products explicitly matched to a measured issue appear in a
+session recommendation.  A clean or unreadable session receives no product
+recommendation; the coaching must earn the commerce.  The standalone shop
+continues to expose the broader Shopify catalog.
 
 The product list is cached in memory for ``shop.cache_minutes`` so browsing
 never hammers the Storefront API, and a Shopify outage degrades to the last
@@ -42,8 +43,6 @@ logger = logging.getLogger("swinglab.web.shop")
 # Pin a currently supported schema so a retired version cannot silently fall
 # forward to a different contract.
 API_VERSION = "2026-07"
-
-GENERAL_FLAG = "general"
 
 _QUERY = """
 query CaddieInsightGear {
@@ -113,19 +112,32 @@ def fetch_products(cfg: Config) -> list[dict]:
     return products
 
 
-def recommend(products: list[dict], flags: list[str], cfg: Config) -> list[dict]:
+def recommend(
+    products: list[dict],
+    flags: list[str],
+    cfg: Config,
+    *,
+    limit: int | None = None,
+) -> list[dict]:
     """Gear matched to an analysis's flags, round-robin so one flag can't
-    crowd out the others, padded with ``general`` items up to the limit."""
+    crowd out the others.  No measured flag means no recommendation."""
     prefix = str(cfg.shop.get("tag_prefix") or "swinglab:")
-    limit = int(cfg.shop.get("max_recommendations") or 3)
+    max_items = (
+        int(limit)
+        if limit is not None
+        else int(cfg.shop.get("max_recommendations") or 3)
+    )
 
     def tagged(product: dict, flag: str) -> bool:
-        return (prefix + flag) in product["tags"]
+        return (
+            product.get("available") is True
+            and (prefix + flag) in set(product.get("tags") or ())
+        )
 
     picks: list[dict] = []
     queues = [[p for p in products if tagged(p, flag)] for flag in flags]
     added = True
-    while added and len(picks) < limit:
+    while added and len(picks) < max_items:
         added = False
         for queue in queues:
             while queue:
@@ -134,14 +146,9 @@ def recommend(products: list[dict], flags: list[str], cfg: Config) -> list[dict]
                     picks.append(product)
                     added = True
                     break
-            if len(picks) >= limit:
+            if len(picks) >= max_items:
                 break
-    for product in products:
-        if len(picks) >= limit:
-            break
-        if tagged(product, GENERAL_FLAG) and product not in picks:
-            picks.append(product)
-    return picks[:limit]
+    return picks[:max_items]
 
 
 def _fetch() -> list[dict]:

@@ -108,6 +108,219 @@ def test_cli_report_stays_offline_and_has_no_broken_app_links(
     assert 'aria-label="Report navigation"' not in html
 
 
+def test_report_leads_with_coaching_and_collapses_raw_measurements(tmp_path):
+    cfg = branded_cfg()
+    swings = [fake_swing(1, tempo=2.0)]
+    stats = session_stats([s["metrics"] for s in swings])
+    out = write_report_html(
+        tmp_path / "report.html", fake_video(), swings, stats, [], "right", cfg
+    )
+    html = out.read_text(encoding="utf-8")
+    assert 'name="caddieinsight-report-outcome" content="coaching_ready"' in html
+    assert "Your caddie's read" in html
+    assert "Fix first" in html
+    assert "Practice this" in html
+    assert '<details class="measurements">' in html
+    assert html.index("Your caddie's read") < html.index(">Session</h2>")
+    assert html.index("Your caddie's read") < html.index(">Metrics</h2>")
+
+
+def test_report_brief_keeps_quality_warning_above_collapsed_details(tmp_path):
+    cfg = branded_cfg()
+    swing = fake_swing(1, tempo=2.0)
+    swing["metrics"].target_confident = False
+    warning = "Low confidence: target direction could not be read."
+    swing["notes"] = [warning]
+    stats = session_stats([swing["metrics"]])
+    out = write_report_html(
+        tmp_path / "report.html", fake_video(), [swing], stats, [], "right", cfg
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "Measurement note" in html and warning in html
+    assert html.index("Measurement note") < html.index('<details class="measurements">')
+
+
+def test_report_brief_surfaces_root_camera_warning_before_dtl_scope_note(tmp_path):
+    cfg = branded_cfg()
+    swing = fake_swing(1, tempo=2.0)
+    swing["notes"] = ["Let the backswing finish before starting down."]
+    swing["replay"] = "media/replay_s1.mp4"
+    warning = (
+        "Low confidence: this clip looks like it was filmed face-on, but it "
+        "was uploaded as down the line — numbers may not mean what they say."
+    )
+    stats = session_stats([swing["metrics"]])
+    out = write_report_html(
+        tmp_path / "report.html",
+        fake_video(),
+        [swing],
+        stats,
+        [warning, "Pick one count and rehearse it."],
+        "right",
+        cfg,
+        angle="dtl",
+        replay_locked=True,
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "Re-film before coaching" in html and warning in html
+    assert html.index(warning) < html.index('<details class="measurements">')
+    assert "<h2>Practice plan</h2>" not in html
+    assert "<h2>Start here</h2>" not in html
+    assert "Browse optional training aids" not in html
+    assert "Upgrade to Pro" not in html
+    assert "Let the backswing finish" not in html
+    assert "Pick one count" not in html
+    assert "<summary>See capture details</summary>" in html
+    assert "<h2>Metrics</h2>" not in html
+    assert "media/strip_s1.png" not in html
+    assert "media/overlay_s1.png" not in html
+    assert "media/replay_s1.mp4" not in html
+    assert "media/slowmo_s1.mp4" in html
+
+
+def test_report_with_no_coachable_fields_is_capture_only(tmp_path):
+    cfg = branded_cfg()
+    metric = SwingMetrics(
+        swing=1,
+        strike_s=3.0,
+        backswing_s=0.9,
+        downswing_s=0.3,
+        tempo_ratio=float("nan"),
+        head_sway_backswing_sw=float("nan"),
+        head_sway_downswing_sw=float("nan"),
+        hip_slide_backswing_sw=float("nan"),
+        hip_slide_downswing_sw=float("nan"),
+        target_direction=1,
+    )
+    swing = {
+        "metrics": metric,
+        "notes": [],
+        "strip": "media/strip_s1.png",
+        "overlay": "media/overlay_s1.png",
+        "slowmo": "media/slowmo_s1.mp4",
+        "replay": "media/replay_s1.mp4",
+    }
+    out = write_report_html(
+        tmp_path / "report.html",
+        fake_video(),
+        [swing],
+        session_stats([metric]),
+        [],
+        "right",
+        cfg,
+    )
+    html = out.read_text(encoding="utf-8")
+    assert 'name="caddieinsight-report-outcome" content="capture_only"' in html
+    assert "Re-film before coaching" in html
+    assert "did not produce enough readable motion data" in html
+    assert "<summary>See capture details</summary>" in html
+    assert "<h2>Practice plan</h2>" not in html
+    assert "media/strip_s1.png" not in html
+    assert "media/overlay_s1.png" not in html
+    assert "media/replay_s1.mp4" not in html
+    assert "media/slowmo_s1.mp4" in html
+
+
+def test_clean_dtl_report_uses_only_rhythm_maintenance(tmp_path):
+    cfg = branded_cfg()
+    metric = SwingMetrics(
+        swing=1,
+        strike_s=3.0,
+        backswing_s=0.9,
+        downswing_s=0.3,
+        tempo_ratio=3.0,
+        head_sway_backswing_sw=0.80,
+        head_sway_downswing_sw=float("nan"),
+        hip_slide_backswing_sw=0.80,
+        hip_slide_downswing_sw=float("nan"),
+        target_direction=1,
+    )
+    swing = {
+        "metrics": metric,
+        "notes": [],
+        "slowmo": "media/slowmo_s1.mp4",
+    }
+    out = write_report_html(
+        tmp_path / "report.html",
+        fake_video(),
+        [swing],
+        session_stats([metric]),
+        [],
+        "right",
+        cfg,
+        angle="dtl",
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "Protect your tempo baseline" in html
+    assert "Rhythm baseline re-film" in html
+    assert "Rhythm-only maintenance" in html
+    assert "Keep every measured tempo ratio" in html
+    assert "Compare tempo, sway and slide" not in html
+    assert "switch the next baseline clip to face-on" in html
+    assert "Head sway (backswing)" not in html
+    assert "Hip slide (backswing)" not in html
+    assert "Start here" not in html
+    assert "0.80" not in html
+
+
+def test_partial_face_on_report_does_not_claim_full_clean_baseline(tmp_path):
+    cfg = branded_cfg()
+    metric = SwingMetrics(
+        swing=1,
+        strike_s=3.0,
+        backswing_s=0.9,
+        downswing_s=0.3,
+        tempo_ratio=3.0,
+        head_sway_backswing_sw=float("nan"),
+        head_sway_downswing_sw=float("nan"),
+        hip_slide_backswing_sw=float("nan"),
+        hip_slide_downswing_sw=float("nan"),
+        target_direction=1,
+    )
+    swing = {
+        "metrics": metric,
+        "notes": [],
+        "slowmo": "media/slowmo_s1.mp4",
+    }
+    out = write_report_html(
+        tmp_path / "report.html",
+        fake_video(),
+        [swing],
+        session_stats([metric]),
+        [],
+        "right",
+        cfg,
+    )
+    html = out.read_text(encoding="utf-8")
+    normalized = " ".join(html.split())
+    assert "Protect your tempo baseline" in html
+    assert "Rhythm baseline re-film" in html
+    assert "did not produce a complete baseline" in normalized
+    assert "complete body-motion baseline" in html
+    assert "Compare tempo, sway and slide" not in html
+
+
+def test_report_issue_card_leads_with_triggering_swing_not_safe_mean(tmp_path):
+    cfg = branded_cfg()
+    swings = [fake_swing(1), fake_swing(2)]
+    swings[0]["metrics"].head_sway_backswing_sw = 0.50
+    swings[1]["metrics"].head_sway_backswing_sw = 0.10
+    stats = session_stats([swing["metrics"] for swing in swings])
+    out = write_report_html(
+        tmp_path / "report.html",
+        fake_video(),
+        swings,
+        stats,
+        [],
+        "right",
+        cfg,
+    )
+    html = out.read_text(encoding="utf-8")
+    assert "worst swing" in html
+    assert "0.50 SW" in html
+    assert "session mean</span><strong>0.30 SW" not in html
+
+
 def test_metrics_json_valid_and_nan_becomes_null(tmp_path):
     cfg = Config()
     swing = fake_swing(1, tempo=float("nan"))

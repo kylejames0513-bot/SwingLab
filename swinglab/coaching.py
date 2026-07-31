@@ -3,10 +3,17 @@
 from __future__ import annotations
 
 import math
+import statistics
 from dataclasses import dataclass
 
 from .config import Config
-from .metrics import ANGLE_DTL, ANGLE_FACE_ON, SwingMetrics, session_stats
+from .metrics import (
+    ANGLE_DTL,
+    ANGLE_FACE_ON,
+    SwingMetrics,
+    finite_float,
+    session_stats,
+)
 
 # Camera-angle honesty copy. The DTL note goes on every down-the-line
 # session; the mismatch note fires only when the address pose strongly
@@ -124,8 +131,8 @@ def swing_notes(m: SwingMetrics, cfg: Config) -> list[str]:
 
     if not notes:
         notes.append(
-            "No flags on this swing — tempo and lateral movement are inside the "
-            "configured thresholds."
+            "No measured coaching value crossed its configured threshold on "
+            "this swing."
         )
     # The promised low-confidence line: when target-direction inference hit
     # its last-resort fallback, the toward/away signs are a guess. Only worth
@@ -172,7 +179,8 @@ def praise_notes(
     tempo = measured("tempo_ratio")
     if tempo and min(tempo) >= coach["tempo_warn_below"]:
         notes.append(
-            f"Tempo holds at {min(tempo):.2f}:1 or better on every swing — at "
+            f"Tempo holds at {min(tempo):.2f}:1 or better on every measured "
+            "swing — at "
             f"or above the {coach['tempo_warn_below']:.1f}:1 line, moving "
             f"toward the {coach['tempo_target']:.1f}:1 reference. The "
             "backswing is getting time to finish."
@@ -228,7 +236,7 @@ def praise_notes(
 
     tempo_stats = stats.get("tempo_ratio")
     if (
-        len(all_metrics) >= 2
+        len(tempo) >= 2
         and tempo_stats is not None
         and tempo_stats["std"] < coach["tempo_std_praise"]
     ):
@@ -241,7 +249,9 @@ def praise_notes(
     return notes
 
 
-def flag_keys(payload: dict, cfg: Config) -> list[str]:
+def flag_keys(
+    payload: dict, cfg: Config, *, angle: str | None = None
+) -> list[str]:
     """The session's issues as flag keys, from a parsed metrics.json payload.
 
     Applies the same coaching thresholds as the prose notes above, but in a
@@ -249,11 +259,17 @@ def flag_keys(payload: dict, cfg: Config) -> list[str]:
     NaN written as null) by skipping what it can't read.
     """
     coach = cfg.coaching
-    swings = payload.get("swings") or []
+    swings = payload.get("swings")
+    if not isinstance(swings, list):
+        swings = []
 
     def metric(swing: dict, key: str) -> float | None:
-        value = (swing.get("metrics") or {}).get(key)
-        return float(value) if isinstance(value, (int, float)) else None
+        if not isinstance(swing, dict):
+            return None
+        metrics = swing.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            return None
+        return finite_float(metrics.get(key))
 
     def any_over(key: str, threshold: float) -> bool:
         return any(
@@ -282,15 +298,37 @@ def flag_keys(payload: dict, cfg: Config) -> list[str]:
         flags.append(FLAG_SHOULDER_TILT)
     if any_over("finish_balance_sw", coach["finish_balance_warn_sw"]):
         flags.append(FLAG_BALANCE)
-    tempo_std = ((payload.get("session_stats") or {}).get("tempo_ratio") or {}).get(
-        "std"
-    )
+    tempo_values = [
+        value
+        for swing in swings
+        if (value := metric(swing, "tempo_ratio")) is not None
+    ]
+    tempo_std = None
+    if len(tempo_values) >= 2:
+        try:
+            candidate_std = statistics.pstdev(tempo_values)
+        except (OverflowError, TypeError, ValueError):
+            candidate_std = float("nan")
+        if math.isfinite(candidate_std):
+            tempo_std = round(candidate_std, 3)
     if (
-        len(swings) >= 2
-        and isinstance(tempo_std, (int, float))
+        len(tempo_values) >= 2
+        and tempo_std is not None
         and tempo_std >= coach["tempo_std_praise"]
     ):
         flags.append(FLAG_CONSISTENCY)
+    meta = payload.get("meta") or {}
+    resolved_angle = angle or (
+        meta.get("angle") or meta.get("camera_angle")
+        if isinstance(meta, dict)
+        else None
+    )
+    if resolved_angle == ANGLE_DTL:
+        flags = [
+            flag
+            for flag in flags
+            if flag in (FLAG_TEMPO, FLAG_CONSISTENCY)
+        ]
     return flags
 
 
@@ -542,6 +580,33 @@ def issue_cards(
     cards: list[IssueCard] = []
     for flag in session_flags(all_metrics, stats, cfg):
         metric, name, unit, fmt, benchmark, bench_text, worse, rule = specs[flag]
+        why = WHY_TEXT[flag]
+        fix = FIX_TEXT[flag]
+        if flag == FLAG_SHOULDER_TILT:
+            impact_fired = any(
+                under(
+                    "shoulder_tilt_impact_deg",
+                    coach["shoulder_tilt_impact_min_deg"],
+                )(metric_row)
+                for metric_row in all_metrics
+            )
+            if not impact_fired:
+                metric = "shoulder_tilt_delta_deg"
+                name = "Shoulder-tilt change"
+                benchmark = 0.0
+                bench_text = (
+                    f"flagged below 0{deg} (tilt decreased from address)"
+                )
+                rule = under("shoulder_tilt_delta_deg", 0.0)
+                why = (
+                    "The measured shoulder tilt decreased from address instead "
+                    "of building through the strike. That loss of angle can be "
+                    "an early sign that the body is standing up through impact."
+                )
+                fix = (
+                    "Rehearse increasing the tilt from address to impact — "
+                    "the freeze drill makes that change visible."
+                )
 
         per_swing = tuple(
             None if math.isnan(v := getattr(m, metric)) else float(v)
@@ -571,6 +636,17 @@ def issue_cards(
                 "major" if breaches or (measured >= 2 and flagged == measured)
                 else "warn"
             )
+            if not breaches:
+                measured_values = [
+                    value for value in per_swing if value is not None
+                ]
+                if measured_values:
+                    session_label = "worst swing"
+                    session_value = (
+                        max(measured_values)
+                        if worse == "higher"
+                        else min(measured_values)
+                    )
         session_text = fmt(session_value) if session_value is not None else "—"
 
         family_key = drills.family_for(flag)
@@ -590,8 +666,8 @@ def issue_cards(
                 benchmark_text=bench_text,
                 worse_direction=worse,
                 severity=severity,
-                why=WHY_TEXT[flag],
-                fix=FIX_TEXT[flag],
+                why=why,
+                fix=fix,
                 drill_ids=tuple(d.id for d in ds),
                 drill_names=tuple(d.name for d in ds),
             )
@@ -607,7 +683,12 @@ def session_notes(
     coach = cfg.coaching
     notes: list[str] = []
     tempo_stats = stats.get("tempo_ratio")
-    if len(all_metrics) >= 2 and tempo_stats is not None:
+    measured_tempos = [
+        metric.tempo_ratio
+        for metric in all_metrics
+        if not math.isnan(metric.tempo_ratio)
+    ]
+    if len(measured_tempos) >= 2 and tempo_stats is not None:
         if tempo_stats["std"] < coach["tempo_std_praise"]:
             notes.append(
                 f"Tempo is impressively consistent across swings (std dev "

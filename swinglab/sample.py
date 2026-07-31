@@ -30,7 +30,7 @@ from .config import Config
 from .drawing import draw_skeleton, load_font
 from .ffmpeg import VideoInfo
 from .metrics import SwingMetrics, session_stats
-from .report import write_report_html
+from .report import REPORT_FORMAT_VERSION, write_report_html
 
 # What the banner on top of the sample says. cta_url is the app's landing
 # page, where signup lives.
@@ -253,18 +253,33 @@ def build_sample_swings(sample_dir: Path, cfg: Config) -> list[dict]:
 
 
 def ensure_sample_report(sample_dir: Path, cfg: Config) -> Path:
-    """Generate the sample report into ``sample_dir`` if absent; return the
-    report path either way. Idempotent — an existing report is left alone."""
+    """Generate or format-refresh the synthetic public sample report.
+
+    Current-format reports are left byte-for-byte alone.  An older synthetic
+    report is regenerated through the real renderer and atomically replaces
+    only ``sample-report/report.html``; customer sessions are never involved.
+    """
     sample_dir = Path(sample_dir)
     report_path = sample_dir / "report.html"
     if report_path.is_file():
-        return report_path
+        try:
+            existing = report_path.read_text(encoding="utf-8")
+        except OSError:
+            existing = ""
+        marker = (
+            'name="caddieinsight-report-format" '
+            f'content="{REPORT_FORMAT_VERSION}"'
+        )
+        if marker in existing:
+            return report_path
+    sample_dir.mkdir(parents=True, exist_ok=True)
     swings = build_sample_swings(sample_dir, cfg)
     all_metrics = [s["metrics"] for s in swings]
     stats = session_stats(all_metrics)
     notes = make_session_notes(all_metrics, stats, cfg)
+    temporary_report = report_path.with_name(".report.html.tmp")
     write_report_html(
-        report_path,
+        temporary_report,
         sample_video(),
         swings,
         stats,
@@ -278,4 +293,5 @@ def ensure_sample_report(sample_dir: Path, cfg: Config) -> Path:
             "cta_url": "/",
         },
     )
+    temporary_report.replace(report_path)
     return report_path

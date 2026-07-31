@@ -44,10 +44,20 @@
 {% endblock %}
 {% block main %}
   <div class="hero">
-    <h2>The range-session product.</h2>
-    <p>One phone, honest numbers, a plan, and a re-film that proves it. One
-      clip becomes tempo, sway and slide numbers, key-position frames, slow
-      motion — and a practice plan with a re-film target for every flag.</p>
+    {% if first_analysis and charged_refilm_attempts %}
+    <h2>Your baseline still needs a clear clip.</h2>
+    <p>Your first rejected clip did not use an analysis. Later uploads use
+      the normal monthly allowance, even when the footage still cannot
+      produce trustworthy coaching.</p>
+    {% elif first_analysis %}
+    <h2>Build your swing baseline.</h2>
+    <p>Your first clip gives your caddie something real to coach: one strength,
+      one priority, one drill, and a re-film target that proves the change.</p>
+    {% else %}
+    <h2>Your next coaching check-in.</h2>
+    <p>One phone, honest numbers, one clear next step, and a re-film that
+      proves whether the work is helping.</p>
+    {% endif %}
     <div class="steps">
       <div><strong>1. Film</strong> Phone at hip height, face-on (down the line: tempo &amp; rhythm only for now).</div>
       <div><strong>2. Upload</strong> Straight off the camera roll — every swing in the clip gets measured.</div>
@@ -66,7 +76,8 @@
   {# The just-signed-in store customer's proof their purchase landed —
      without it, nothing on this page says Pro until they find /account. #}
   <p class="free-note"><strong>Pro</strong> is active on this
-    account{% if quota_left is none %} — unlimited analyses{% endif %}.</p>
+    account{% if quota_left is none %} — unlimited analyses{% else %} —
+    {{ quota_left }} left this month{% endif %}.</p>
   {% endif %}
 
   {% if first_run %}
@@ -91,17 +102,37 @@
     {% if quota_left is defined and quota_left is not none %}
       {% if quota_left > 0 %}
       <p class="hint">{{ quota_left }} analys{{ "es" if quota_left != 1 else "is" }} left
-        this month{% if user and not user.is_pro and (billing_enabled or pro_store_url) %} —
-        <a href="/pricing">go unlimited with Pro</a>{% endif %}.</p>
+        this month{% if user and not user.is_pro and pro_available %} —
+        <a href="/pricing">{% if pro_per_month <= 0 %}go unlimited with Pro{% else %}go Pro for up to {{ pro_per_month }} analyses a month{% endif %}</a>{% endif %}.</p>
+      {% if refilm_rejections %}
+      <p class="hint">Your first rejected clip this month did not use an
+        analysis. Your next upload uses the normal allowance whether it
+        produces coaching or needs another re-film.</p>
+      {% endif %}
+      {% if charged_refilm_attempts %}
+      <p class="hint">{{ charged_refilm_attempts }} additional unusable
+        re-film{{ "s have" if charged_refilm_attempts != 1 else " has" }}
+        counted toward this month's allowance. The first rejected clip did
+        not.</p>
+      {% endif %}
+      {% elif baseline_blocked %}
+      <p class="error">Your baseline still needs a clear clip, and this
+        month's allowance has been used.</p>
+      <p class="hint">The first rejected clip did not use an analysis.
+        Every later upload uses the normal allowance, whether it produces
+        coaching or needs another re-film. Review the filming checklist,
+        then try again after the reset on the 1st{% if user and not user.is_pro and pro_available %}
+        or <a href="/pricing">see Pro options</a>{% endif %}.</p>
       {% elif trend_line %}
       {# The conversion moment: their own numbers, never invented ones.
          Only free users reach this branch (trend_line is computed for
          non-Pro users), so "free" is the right label here. #}
       <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.</p>
       <p class="trend-note">{{ trend_line }}.</p>
-      {% if billing_enabled or pro_store_url %}
-      <a class="button" href="/pricing">Keep the film rolling — unlimited
-        analyses</a>
+      {% if pro_available %}
+      <a class="button" href="/pricing">Keep the film rolling —
+        {% if pro_per_month <= 0 %}unlimited analyses{% else %}up to
+        {{ pro_per_month }} analyses a month{% endif %}</a>
       {% else %}
       <p class="hint">They reset on the 1st.</p>
       {% endif %}
@@ -113,8 +144,10 @@
         the 1st.</p>
       {% else %}
       <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.
-        {% if user and (billing_enabled or pro_store_url) %}
-        <a href="/pricing">Upgrade to Pro</a> for unlimited swings, or come back
+        {% if user and not user.is_pro and pro_available %}
+        <a href="/pricing">Upgrade to Pro</a> for
+        {% if pro_per_month <= 0 %}unlimited swings{% else %}up to
+        {{ pro_per_month }} analyses a month{% endif %}, or come back
         on the 1st.{% else %}They reset on the 1st.{% endif %}</p>
       {% endif %}
       {% endif %}
@@ -181,7 +214,7 @@
       <details class="advanced">
         <summary>Advanced options</summary>
         <div class="check">
-          <input id="fast" name="fast" type="checkbox">
+          <input id="fast" name="fast" type="checkbox"{% if first_analysis %} checked{% endif %}>
           <label for="fast">Fast mode — results in a fraction of the time; the
             slow-motion clips are slightly less smooth.</label>
         </div>

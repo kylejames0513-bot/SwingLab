@@ -189,7 +189,8 @@ web:
                              # email's report/progress/unsubscribe links are absolute.
 
 billing:
-  free_per_month: 1          # analyses per calendar month on the free plan
+  free_per_month: 1          # one coaching-ready analysis per calendar month;
+                             # the first rejected clip is a courtesy re-film.
   pro_per_month: 0           # ...on Pro (0 = unlimited). Prices are set in Shopify or
                              # Stripe, never here. Two ways to sell Pro:
                              #   Shopify (preferred): set SHOPIFY_STORE_DOMAIN and
@@ -272,9 +273,9 @@ shop:
                              # swinglab:hip-slide / swinglab:consistency /
                              # swinglab:head-dip / swinglab:arm-extension /
                              # swinglab:balance are recommended when an
-                             # analysis flags that issue (shoulder-tilt shares
-                             # the arm-extension drill family and gear tag);
-                             # swinglab:general pads out the list
+                             # analysis flags that issue (shoulder tilt has its
+                             # own drill but shares the arm-extension gear tag).
+                             # swinglab:general is never auto-recommended.
   max_recommendations: 3     # gear items shown on a finished analysis page
   store_url: "https://caddieinsight.com"
                              # public storefront for the quiet "Matched
