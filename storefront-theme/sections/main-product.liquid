@@ -1,0 +1,546 @@
+{%- assign current = product.selected_or_first_available_variant -%}
+{%- assign main_alt = product.featured_media.alt | default: product.title -%}
+{%- assign selected_selling_plan = product.selected_selling_plan -%}
+{%- assign current_is_lifetime = false -%}
+{%- if current.sku == 'SL-PRO-LIFE' -%}
+  {%- assign current_is_lifetime = true -%}
+{%- endif -%}
+
+{%- liquid
+  assign is_membership = false
+  if product.type == 'Membership'
+    assign is_membership = true
+  endif
+
+  # swing-report flag chips, parsed from tags of the form "swinglab:<flag>"
+  assign flag_str = ''
+  for tag in product.tags
+    assign t = tag | downcase
+    assign t_prefix = t | slice: 0, 9
+    if t_prefix == 'swinglab:'
+      assign flag = t | remove_first: 'swinglab:' | replace: '-', ' ' | strip
+      if flag != blank
+        assign flag_str = flag_str | append: flag | append: ','
+      endif
+    endif
+  endfor
+  assign flags = flag_str | split: ','
+
+  # compare-at state for the selected variant
+  assign has_compare = false
+  assign save_pct = 0
+  if current.compare_at_price > current.price
+    assign has_compare = true
+    assign save_pct = current.compare_at_price | minus: current.price | times: 100 | divided_by: current.compare_at_price
+  endif
+-%}
+
+<div class="sl-wrap sl-product{% if is_membership %} sl-product--pro{% endif %}">
+  <div class="sl-product-media">
+    {%- if product.featured_media -%}
+      {{ product.featured_media | image_url: width: 1400 | image_tag: class: 'sl-product-img', alt: main_alt, id: 'sl-main-image' }}
+    {%- else -%}
+      <div class="sl-placeholder sl-product-img" aria-hidden="true"></div>
+    {%- endif -%}
+
+    {%- if product.media.size > 1 -%}
+      <div class="sl-product-thumbs">
+        {%- for media in product.media -%}
+          {%- assign thumb_alt = media.alt | default: product.title -%}
+          <button type="button" class="sl-thumb{% if forloop.first %} is-active{% endif %}"
+                  data-full="{{ media | image_url: width: 1400 }}" aria-label="{{ 'products.product.show_image' | t: number: forloop.index }}">
+            {{ media | image_url: width: 200 | image_tag: loading: 'lazy', alt: thumb_alt }}
+          </button>
+        {%- endfor -%}
+      </div>
+    {%- endif -%}
+  </div>
+
+  <div class="sl-product-info">
+    {%- if product.type != blank -%}<p class="sl-eyebrow">{{ product.type }}</p>{%- endif -%}
+    <h1 class="sl-product-title">{{ product.title }}</h1>
+
+    {%- if is_membership -%}
+      {%- comment -%} ------- CaddieInsight Pro membership experience ------- {%- endcomment -%}
+      <p class="sl-product-kicker">{{ 'products.product.pro_kicker' | t }}</p>
+      <p class="sl-price" id="sl-price">{{ current.price | money }}</p>
+
+      <ul class="sl-product-benefits" aria-label="{{ 'products.product.includes' | t }}">
+        <li>{{ 'products.product.benefit_unlimited' | t }}</li>
+        <li>{{ 'products.product.benefit_report' | t }}</li>
+        <li>{{ 'products.product.benefit_video' | t }}</li>
+        <li>{{ 'products.product.benefit_unlock' | t }}</li>
+      </ul>
+
+      {% form 'product', product, class: 'sl-product-form' %}
+        {%- if product.variants.size > 1 -%}
+          <label class="sl-label" for="sl-variant">{{ 'products.product.plan' | t }}</label>
+          <select name="id" id="sl-variant" class="sl-select">
+            {%- for variant in product.variants -%}
+              <option value="{{ variant.id }}"
+                      {% if variant.id == current.id %}selected{% endif %}
+                      {% unless variant.available %}disabled{% endunless %}
+                      data-price="{{ variant.price | money }}">
+                {{ variant.title }} - {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
+              </option>
+            {%- endfor -%}
+          </select>
+        {%- else -%}
+          <input type="hidden" name="id" value="{{ current.id }}">
+        {%- endif -%}
+
+        <div id="sl-selling-plan-options" data-variant-id="{{ current.id }}">
+        {%- if current.selling_plan_allocations.size > 0 and current_is_lifetime == false -%}
+          {%- assign selected_plan_available = false -%}
+          {%- for allocation in current.selling_plan_allocations -%}
+            {%- if selected_selling_plan and selected_selling_plan.id == allocation.selling_plan.id -%}
+              {%- assign selected_plan_available = true -%}
+            {%- endif -%}
+          {%- endfor -%}
+
+          <fieldset class="sl-plan-set">
+            <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
+
+            {%- unless current.requires_selling_plan -%}
+              <label class="sl-plan-option">
+                <input type="radio" name="selling_plan" value="" {% unless selected_plan_available %}checked{% endunless %}>
+                <span>
+                  <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
+                  <small>{{ 'products.product.one_time_help' | t }}</small>
+                </span>
+              </label>
+            {%- endunless -%}
+
+            {%- assign plan_checked = false -%}
+            {%- for allocation in current.selling_plan_allocations -%}
+              {%- assign selling_plan = allocation.selling_plan -%}
+              {%- assign is_checked = false -%}
+              {%- if selected_plan_available and selected_selling_plan.id == selling_plan.id -%}
+                {%- assign is_checked = true -%}
+              {%- elsif current.requires_selling_plan and selected_plan_available == false and plan_checked == false -%}
+                {%- assign is_checked = true -%}
+              {%- endif -%}
+
+              <label class="sl-plan-option">
+                <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if is_checked %}checked{% endif %}>
+                <span>
+                  <strong>{{ selling_plan.name }}</strong>
+                  {%- if selling_plan.description != blank -%}
+                    <small>{{ selling_plan.description }}</small>
+                  {%- endif -%}
+                </span>
+              </label>
+
+              {%- if is_checked -%}
+                {%- assign plan_checked = true -%}
+              {%- endif -%}
+            {%- endfor -%}
+          </fieldset>
+        {%- endif -%}
+        </div>
+
+        {%- for variant in product.variants -%}
+          {%- assign variant_is_lifetime = false -%}
+          {%- if variant.sku == 'SL-PRO-LIFE' -%}
+            {%- assign variant_is_lifetime = true -%}
+          {%- endif -%}
+          <template data-sl-selling-plan-template="{{ variant.id }}">
+            {%- if variant.selling_plan_allocations.size > 0 and variant_is_lifetime == false -%}
+              <fieldset class="sl-plan-set">
+                <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
+
+                {%- unless variant.requires_selling_plan -%}
+                  <label class="sl-plan-option">
+                    <input type="radio" name="selling_plan" value="" checked>
+                    <span>
+                      <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
+                      <small>{{ 'products.product.one_time_help' | t }}</small>
+                    </span>
+                  </label>
+                {%- endunless -%}
+
+                {%- for allocation in variant.selling_plan_allocations -%}
+                  {%- assign selling_plan = allocation.selling_plan -%}
+                  <label class="sl-plan-option">
+                    <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if variant.requires_selling_plan and forloop.first %}checked{% endif %}>
+                    <span>
+                      <strong>{{ selling_plan.name }}</strong>
+                      {%- if selling_plan.description != blank -%}
+                        <small>{{ selling_plan.description }}</small>
+                      {%- endif -%}
+                    </span>
+                  </label>
+                {%- endfor -%}
+              </fieldset>
+            {%- endif -%}
+          </template>
+        {%- endfor -%}
+
+        <button type="submit" class="sl-btn sl-btn--primary sl-add" {% unless product.available %}disabled{% endunless %}>
+          {% if product.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
+        </button>
+      {% endform %}
+
+      <div class="sl-product-note">
+        <strong>{{ 'products.product.unlock_heading' | t }}</strong>
+        <p>{{ 'products.product.unlock_body' | t }}</p>
+        <a href="https://app.caddieinsight.com">{{ 'products.product.open_app' | t }}</a>
+      </div>
+
+    {%- else -%}
+      {%- comment -%} ------- Gear and apparel experience ------- {%- endcomment -%}
+      {%- if flags.size > 0 -%}
+        <div class="sl-main-product__flags">
+          <span class="sl-mono-label">{{ section.settings.flags_label | default: 'Recommended when your report flags' }}:</span>
+          {%- for flag in flags -%}
+            <span class="sl-chip">{{ flag }}</span>
+          {%- endfor -%}
+        </div>
+      {%- endif -%}
+
+      <p class="sl-price sl-main-product__price">
+        <span id="sl-price-current">{{ current.price | money }}</span>
+        <s class="sl-price-compare" id="sl-price-compare"{% unless has_compare %} hidden{% endunless %}>{%- if has_compare -%}{{ current.compare_at_price | money }}{%- endif -%}</s>
+        <span class="sl-badge-save" id="sl-badge-save"{% unless has_compare %} hidden{% endunless %}>{%- if has_compare -%}Save {{ save_pct }}%{%- endif -%}</span>
+      </p>
+
+      {% form 'product', product, class: 'sl-product-form' %}
+        {%- if product.variants.size > 1 -%}
+          <label class="sl-label" for="sl-variant">Options</label>
+          <select name="id" id="sl-variant" class="sl-select">
+            {%- for variant in product.variants -%}
+              {%- assign v_save = 0 -%}
+              {%- if variant.compare_at_price > variant.price -%}
+                {%- assign v_save = variant.compare_at_price | minus: variant.price | times: 100 | divided_by: variant.compare_at_price -%}
+              {%- endif -%}
+              <option value="{{ variant.id }}"
+                      {% if variant.id == current.id %}selected{% endif %}
+                      {% unless variant.available %}disabled{% endunless %}
+                      data-price="{{ variant.price | money }}"
+                      {% if variant.compare_at_price > variant.price %}data-compare="{{ variant.compare_at_price | money }}" data-save="{{ v_save }}"{% endif %}>
+                {{ variant.title }} - {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
+              </option>
+            {%- endfor -%}
+          </select>
+        {%- else -%}
+          <input type="hidden" name="id" value="{{ current.id }}">
+        {%- endif -%}
+
+        <div class="sl-main-product__qty">
+          <label class="sl-label" for="sl-qty">Quantity</label>
+          <input id="sl-qty" class="sl-qty" type="number" name="quantity" value="1" min="1" inputmode="numeric">
+        </div>
+
+        <button type="submit" class="sl-btn sl-btn--primary sl-add" {% unless product.available %}disabled{% endunless %}>
+          {% if product.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
+        </button>
+      {% endform %}
+
+      <ul class="sl-main-product__trust" aria-label="Ordering details">
+        {%- if section.settings.trust_1 != blank -%}<li>{{ section.settings.trust_1 }}</li>{%- endif -%}
+        {%- if section.settings.trust_2 != blank -%}<li>{{ section.settings.trust_2 }}</li>{%- endif -%}
+        {%- if section.settings.trust_3 != blank -%}<li>{{ section.settings.trust_3 }}</li>{%- endif -%}
+      </ul>
+    {%- endif -%}
+
+    {%- if product.description != blank -%}
+      <div class="sl-product-desc sl-rte">{{ product.description }}</div>
+    {%- endif -%}
+  </div>
+</div>
+
+<script>
+  (function () {
+    var select = document.getElementById('sl-variant');
+    var price = document.getElementById('sl-price');
+    var priceCurrent = document.getElementById('sl-price-current');
+    var priceCompare = document.getElementById('sl-price-compare');
+    var saveBadge = document.getElementById('sl-badge-save');
+    var planContainer = document.getElementById('sl-selling-plan-options');
+    var planSelections = {};
+
+    function rememberPlanSelection() {
+      if (!planContainer || !planContainer.dataset.variantId) return;
+      var checked = planContainer.querySelector('input[name="selling_plan"]:checked');
+      planSelections[planContainer.dataset.variantId] = checked ? checked.value : '';
+    }
+
+    function renderSellingPlans(variantId) {
+      if (!planContainer) return;
+      rememberPlanSelection();
+      var template = document.querySelector(
+        'template[data-sl-selling-plan-template="' + variantId + '"]'
+      );
+      planContainer.replaceChildren();
+      planContainer.dataset.variantId = variantId;
+      if (!template) return;
+      planContainer.appendChild(template.content.cloneNode(true));
+
+      var remembered = planSelections[variantId];
+      if (remembered === undefined) return;
+      var radios = planContainer.querySelectorAll('input[name="selling_plan"]');
+      radios.forEach(function (radio) {
+        radio.checked = radio.value === remembered;
+      });
+      if (!planContainer.querySelector('input[name="selling_plan"]:checked') && radios.length) {
+        radios[0].checked = true;
+      }
+    }
+
+    if (select) {
+      select.addEventListener('change', function () {
+        var opt = select.options[select.selectedIndex];
+        if (!opt) return;
+        renderSellingPlans(opt.value);
+        if (price && opt.dataset.price) price.textContent = opt.dataset.price;
+        if (priceCurrent && opt.dataset.price) priceCurrent.textContent = opt.dataset.price;
+        if (priceCompare && saveBadge) {
+          if (opt.dataset.compare) {
+            priceCompare.textContent = opt.dataset.compare;
+            priceCompare.hidden = false;
+            saveBadge.textContent = 'Save ' + opt.dataset.save + '%';
+            saveBadge.hidden = false;
+          } else {
+            priceCompare.hidden = true;
+            saveBadge.hidden = true;
+          }
+        }
+      });
+    }
+    var main = document.getElementById('sl-main-image');
+    document.querySelectorAll('.sl-thumb').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!main) return;
+        main.src = btn.dataset.full;
+        main.removeAttribute('srcset');
+        document.querySelectorAll('.sl-thumb').forEach(function (b) { b.classList.remove('is-active'); });
+        btn.classList.add('is-active');
+      });
+    });
+  })();
+</script>
+
+{% stylesheet %}
+/* ---- shared by both experiences ---- */
+.sl-product--pro {
+  align-items: start;
+}
+
+.sl-product-media { min-width: 0; }
+
+/* ---- gear / apparel ---- */
+.sl-main-product__flags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 18px;
+}
+
+.sl-main-product__price {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.sl-main-product__price .sl-price-compare {
+  margin-left: 0;
+}
+
+.sl-main-product__price .sl-badge-save {
+  align-self: center;
+}
+
+/* the author display on .sl-badge-save would defeat [hidden]; restore it */
+.sl-main-product__price [hidden] {
+  display: none !important;
+}
+
+.sl-main-product__qty .sl-qty {
+  display: block;
+}
+
+.sl-main-product__trust {
+  list-style: none;
+  width: 100%;
+  max-width: 440px;
+  margin: 6px 0 28px;
+  padding: 16px 0 0;
+  border-top: 1px solid var(--sl-border);
+  display: grid;
+  gap: 10px;
+}
+
+.sl-main-product__trust li {
+  position: relative;
+  padding-left: 20px;
+  font-family: var(--sl-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-ink-soft);
+  line-height: 1.6;
+}
+
+.sl-main-product__trust li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--sl-orange);
+}
+
+/* ---- Pro membership ---- */
+.sl-product-kicker {
+  max-width: 560px;
+  margin: 0 0 16px;
+  font-size: 18px;
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+}
+
+.sl-product-benefits {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+
+.sl-product-benefits li {
+  position: relative;
+  padding: 12px 14px 12px 38px;
+  border: 1px solid var(--sl-border);
+  border-radius: 8px;
+  background: rgba(255, 253, 249, 0.72);
+  color: var(--sl-ink-soft);
+  line-height: 1.4;
+}
+
+.sl-product-benefits li::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 17px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--sl-orange);
+}
+
+.sl-product-form {
+  width: 100%;
+}
+
+.sl-plan-set {
+  width: 100%;
+  max-width: 440px;
+  padding: 0;
+  margin: 4px 0 2px;
+  border: 0;
+}
+
+.sl-plan-option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 13px 14px;
+  margin-top: 10px;
+  border: 1.5px solid var(--sl-border);
+  border-radius: 8px;
+  background: var(--sl-bg-card);
+  cursor: pointer;
+}
+
+.sl-plan-option:has(input:checked) {
+  border-color: var(--sl-green-btn);
+  box-shadow: 0 0 0 1px var(--sl-green-btn);
+}
+
+.sl-plan-option input {
+  margin-top: 4px;
+  accent-color: var(--sl-green-btn);
+}
+
+.sl-plan-option strong,
+.sl-plan-option small {
+  display: block;
+}
+
+.sl-plan-option strong {
+  color: var(--sl-green);
+  font-size: 15px;
+}
+
+.sl-plan-option small {
+  margin-top: 3px;
+  color: var(--sl-ink-muted);
+  line-height: 1.35;
+}
+
+.sl-product-note {
+  max-width: 520px;
+  margin: 18px 0 24px;
+  padding: 18px;
+  border-left: 4px solid var(--sl-orange);
+  background: #fff8ed;
+  border-radius: 8px;
+}
+
+.sl-product-note strong {
+  color: var(--sl-green);
+}
+
+.sl-product-note p {
+  margin: 6px 0 8px;
+  color: var(--sl-ink-soft);
+  line-height: 1.55;
+}
+
+.sl-product-note a {
+  font-weight: 700;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Product page",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Gear and apparel products"
+    },
+    {
+      "type": "text",
+      "id": "flags_label",
+      "label": "Flag chips label",
+      "default": "Recommended when your report flags",
+      "info": "Shown before the swing-report flag chips parsed from swinglab: tags."
+    },
+    {
+      "type": "text",
+      "id": "trust_1",
+      "label": "Trust line 1",
+      "default": "Ships in 1-2 business days, tracked"
+    },
+    {
+      "type": "text",
+      "id": "trust_2",
+      "label": "Trust line 2",
+      "default": "30-day returns on unused gear"
+    },
+    {
+      "type": "text",
+      "id": "trust_3",
+      "label": "Trust line 3",
+      "default": "Tag-matched to your swing report"
+    }
+  ]
+}
+{% endschema %}

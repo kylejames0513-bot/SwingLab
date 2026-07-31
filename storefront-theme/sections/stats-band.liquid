@@ -1,0 +1,93 @@
+<section class="sl-stats" aria-label="{{ section.settings.aria_label | default: 'CaddieInsight in numbers' }}">
+  <div class="sl-wrap">
+    <ul class="sl-stats__grid sl-reveal">
+      {%- for block in section.blocks -%}
+        <li class="sl-stats__cell"{{ block.shopify_attributes }}>
+          <span class="sl-stats__value">{{ block.settings.value }}</span>
+          <span class="sl-stats__label sl-mono-label">{{ block.settings.label }}</span>
+        </li>
+      {%- endfor -%}
+    </ul>
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-stats {
+  border-top: 1px solid var(--sl-border);
+  border-bottom: 1px solid var(--sl-border);
+  background: var(--sl-bg-card);
+}
+.sl-stats__grid {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 0;
+}
+.sl-stats__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: clamp(24px, 4vw, 40px) clamp(14px, 2vw, 28px);
+}
+/* small calibration tick above each value */
+.sl-stats__cell::before {
+  content: "";
+  display: block;
+  width: 16px;
+  height: 2px;
+  background: var(--sl-orange);
+  margin-bottom: 4px;
+}
+.sl-stats__value {
+  font-family: var(--sl-font-mono);
+  font-size: clamp(24px, 2.8vw, 34px);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-green);
+  line-height: 1;
+}
+.sl-stats__label { color: var(--sl-ink-muted); }
+
+@media (min-width: 900px) {
+  .sl-stats__grid { grid-template-columns: repeat(4, 1fr); }
+  .sl-stats__cell + .sl-stats__cell { border-left: 1px solid var(--sl-border); }
+}
+@media (max-width: 899px) {
+  .sl-stats__cell:nth-child(even) { border-left: 1px solid var(--sl-border); }
+  .sl-stats__cell:nth-child(n+3) { border-top: 1px solid var(--sl-border); }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Stats band",
+  "settings": [
+    { "type": "text", "id": "aria_label", "label": "Accessibility label", "default": "CaddieInsight in numbers" }
+  ],
+  "blocks": [
+    {
+      "type": "stat",
+      "name": "Stat",
+      "settings": [
+        { "type": "text", "id": "value", "label": "Value", "default": "3.0:1" },
+        { "type": "text", "id": "label", "label": "Label", "default": "benchmark tempo ratio" }
+      ]
+    }
+  ],
+  "max_blocks": 6,
+  "presets": [
+    {
+      "name": "Stats band",
+      "blocks": [
+        { "type": "stat", "settings": { "value": "3.0:1", "label": "benchmark tempo ratio" } },
+        { "type": "stat", "settings": { "value": "4", "label": "key positions per swing" } },
+        { "type": "stat", "settings": { "value": "1/4x", "label": "motion-interpolated slow-mo" } },
+        { "type": "stat", "settings": { "value": "2", "label": "body-drift metrics per swing" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

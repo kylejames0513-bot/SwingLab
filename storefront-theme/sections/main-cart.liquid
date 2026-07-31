@@ -1,0 +1,91 @@
+<div class="sl-wrap sl-cartpage">
+  <h1 class="sl-h2">{{ 'layout.cart.title' | t }}</h1>
+
+  {%- if cart.item_count == 0 -%}
+    <p class="sl-empty">Your cart is empty.</p>
+    <a class="sl-btn sl-btn--primary" href="/collections/swinglab-gear">Browse the gear</a>
+  {%- else -%}
+    <form action="{{ routes.cart_url }}" method="post" id="cart">
+      <div class="sl-cart-lines" role="list">
+        {%- for item in cart.items -%}
+          {%- assign line_alt = item.image.alt | default: item.product.title -%}
+          <div class="sl-cart-line" role="listitem">
+            <a class="sl-cart-media" href="{{ item.url }}" tabindex="-1" aria-hidden="true">
+              {%- if item.image -%}
+                {{ item.image | image_url: width: 168 | image_tag: loading: 'lazy', alt: line_alt }}
+              {%- else -%}
+                <div class="sl-placeholder" aria-hidden="true"></div>
+              {%- endif -%}
+            </a>
+
+            <div>
+              <a class="sl-cart-title" href="{{ item.url }}">{{ item.product.title }}</a>
+              {%- unless item.variant.title == 'Default Title' -%}
+                <p class="sl-cart-variant">{{ item.variant.title }}</p>
+              {%- endunless -%}
+              {%- if item.selling_plan_allocation -%}
+                <p class="sl-cart-variant">{{ item.selling_plan_allocation.selling_plan.name }}</p>
+              {%- endif -%}
+              <a class="sl-cart-remove" href="{{ item.url_to_remove }}">Remove</a>
+            </div>
+
+            <label class="visually-hidden" for="sl-cart-qty-{{ forloop.index }}">Quantity for {{ item.product.title }}</label>
+            <input id="sl-cart-qty-{{ forloop.index }}" class="sl-qty" type="number"
+                   name="updates[]" value="{{ item.quantity }}" min="0" inputmode="numeric">
+
+            <div class="sl-cart-line-price">
+              {{ item.final_line_price | money }}
+              {%- if item.original_line_price > item.final_line_price -%}
+                <s class="sl-price-compare">{{ item.original_line_price | money }}</s>
+              {%- elsif item.variant.compare_at_price > item.variant.price -%}
+                {%- assign compare_line = item.variant.compare_at_price | times: item.quantity -%}
+                <s class="sl-price-compare">{{ compare_line | money }}</s>
+              {%- endif -%}
+            </div>
+          </div>
+        {%- endfor -%}
+      </div>
+
+      {%- if section.settings.promo_note != blank -%}
+        <p class="sl-note sl-main-cart__promo">{{ section.settings.promo_note }}</p>
+      {%- endif -%}
+
+      <div class="sl-cart-foot">
+        <p class="sl-cart-subtotal"><span class="sl-mono-label">Subtotal</span> <strong>{{ cart.total_price | money }}</strong></p>
+        <p class="sl-cart-hint">Taxes and shipping calculated at checkout.</p>
+        <div class="sl-cart-actions">
+          <a class="sl-btn sl-btn--outline" href="/collections/swinglab-gear">Continue shopping</a>
+          <button class="sl-btn sl-btn--outline" type="submit" name="update">Update cart</button>
+          <button class="sl-btn sl-btn--primary" type="submit" name="checkout">Check out</button>
+        </div>
+      </div>
+    </form>
+  {%- endif -%}
+</div>
+
+{% stylesheet %}
+.sl-main-cart__promo {
+  max-width: 520px;
+  margin: 24px 0 0;
+  font-size: 14px;
+}
+
+.sl-cart-subtotal .sl-mono-label {
+  margin-right: 8px;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Cart page",
+  "settings": [
+    {
+      "type": "text",
+      "id": "promo_note",
+      "label": "Promo note",
+      "default": "Launch code RANGE15 takes 15% off training aids at checkout.",
+      "info": "Quiet reminder above the subtotal. Clear the text to remove it."
+    }
+  ]
+}
+{% endschema %}

@@ -19,11 +19,32 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-web = ["fastapi>=0.110", "uvicorn>=0.29", "python-multipart>=0.0.9"]
+web = [
+    "fastapi>=0.110",
+    "uvicorn>=0.29",
+    "python-multipart>=0.0.9",
+    "itsdangerous>=2.1",   # signed login cookies (starlette SessionMiddleware)
+    "stripe>=9.0",         # Pro subscriptions
+]
+ops = [
+    # Optional error monitoring: the app initializes Sentry only when the
+    # SENTRY_DSN environment variable is set AND this package is installed
+    # (see swinglab.web.app.init_sentry). Never a base dependency — every
+    # error path works identically without it.
+    "sentry-sdk>=2.0",
+]
+backup = [
+    # Imported only by explicit backup upload/download commands. Base and web
+    # installs remain unchanged, so Stage 0B cannot contact object storage.
+    # 1.37.32+ models the conditional PutObject precondition used to enforce
+    # one writer and immutable completion markers.
+    "boto3>=1.37.32,<2",
+]
 dev = ["pytest>=8.0", "httpx>=0.27"]
 
 [project.scripts]
 swinglab = "swinglab.cli:main"
+caddieinsight-backup = "swinglab.backups.__main__:main"
 
 [tool.setuptools.packages.find]
 include = ["swinglab*"]

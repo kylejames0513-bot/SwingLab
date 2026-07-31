@@ -1,0 +1,19 @@
+{
+  "type": "footer",
+  "name": "Footer group",
+  "sections": {
+    "footer": {
+      "type": "footer",
+      "settings": {
+        "logo_text": "CADDIEINSIGHT",
+        "tagline": "One phone video in. Tour-grade swing data out.",
+        "app_url": "https://app.caddieinsight.com",
+        "menu": "swinglab-footer",
+        "newsletter_heading": "The practice letter",
+        "newsletter_text": "One drill a week. No noise.",
+        "disclaimer": "Automated estimates from a single camera. Not a substitute for instruction from a teaching professional."
+      }
+    }
+  },
+  "order": ["footer"]
+}

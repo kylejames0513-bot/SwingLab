@@ -1,0 +1,32 @@
+[
+  {
+    "name": "theme_info",
+    "theme_name": "CaddieInsight Storefront",
+    "theme_version": "1.1.0",
+    "theme_author": "CaddieInsight",
+    "theme_documentation_url": "https://app.caddieinsight.com",
+    "theme_support_url": "https://app.caddieinsight.com"
+  },
+  {
+    "name": "Colors",
+    "settings": [
+      {
+        "type": "header",
+        "content": "Brand palette",
+        "info": "The theme ships with the CaddieInsight palette baked into base.css design tokens. These settings are provided for future extension."
+      },
+      { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#f7f5f0" },
+      { "type": "color", "id": "color_green", "label": "Deep green", "default": "#14472c" },
+      { "type": "color", "id": "color_accent", "label": "Accent (orange)", "default": "#e8720c" }
+    ]
+  },
+  {
+    "name": "Typography",
+    "settings": [
+      {
+        "type": "paragraph",
+        "content": "The storefront uses Archivo for interface and headings and DM Mono for specimen labels and measured values. Both are loaded from Google Fonts in the layout."
+      }
+    ]
+  }
+]

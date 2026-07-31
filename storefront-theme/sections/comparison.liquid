@@ -1,0 +1,171 @@
+<section id="{{ section.settings.anchor | default: 'compare' }}" class="sl-compare">
+  <div class="sl-wrap sl-reveal">
+    <div class="sl-compare__head">
+      <h2 class="sl-h2">{{ section.settings.heading | default: 'Free gets you started. Pro keeps score.' }}</h2>
+      {%- if section.settings.sub != blank -%}
+        <p class="sl-compare__sub">{{ section.settings.sub }}</p>
+      {%- endif -%}
+    </div>
+
+    <div class="sl-compare__scroll">
+      <table class="sl-compare__table">
+        <thead>
+          <tr>
+            <th scope="col" class="sl-compare__feature-head"><span class="visually-hidden">Feature</span></th>
+            <th scope="col" class="sl-compare__col">{{ section.settings.free_label | default: 'Free' }}</th>
+            <th scope="col" class="sl-compare__col sl-compare__col--pro">{{ section.settings.pro_label | default: 'Pro' }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          {%- for block in section.blocks -%}
+          <tr {{ block.shopify_attributes }}>
+              <th scope="row">{{ block.settings.feature }}</th>
+              <td>{{ block.settings.free_value }}</td>
+              <td class="sl-compare__pro">{{ block.settings.pro_value }}</td>
+            </tr>
+          {%- endfor -%}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="sl-compare__actions">
+      {%- if section.settings.primary_label != blank -%}
+        <a href="{{ section.settings.primary_url | default: '/products/swinglab-pro' }}" class="sl-btn sl-btn--primary">{{ section.settings.primary_label }}</a>
+      {%- endif -%}
+      {%- if section.settings.secondary_label != blank -%}
+        <a href="{{ section.settings.secondary_url | default: '#' }}" class="sl-btn sl-btn--outline">{{ section.settings.secondary_label }}</a>
+      {%- endif -%}
+    </div>
+    {%- if section.settings.footnote != blank -%}
+      <p class="sl-compare__footnote">{{ section.settings.footnote }}</p>
+    {%- endif -%}
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-compare {
+  padding-top: clamp(32px, 4.5vw, 56px);
+  padding-bottom: clamp(32px, 4.5vw, 56px);
+}
+.sl-compare__head { max-width: 72ch; }
+.sl-compare__sub {
+  margin: 12px 0 0;
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+  max-width: 60ch;
+  text-wrap: pretty;
+}
+.sl-compare__scroll {
+  margin-top: 28px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.sl-compare__table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.sl-compare__table th,
+.sl-compare__table td {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--sl-border);
+  text-align: left;
+  vertical-align: top;
+}
+.sl-compare__table thead th {
+  font-family: var(--sl-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sl-ink-muted);
+}
+/* empty corner cell above the feature column; align with the row headers */
+.sl-compare__feature-head { padding-left: 0; }
+.sl-compare__col { text-align: center; width: 22%; }
+.sl-compare__col--pro {
+  background: var(--sl-orange-soft);
+  color: var(--sl-green);
+  border-radius: 10px 10px 0 0;
+}
+.sl-compare__table tbody th {
+  font-weight: 600;
+  font-size: 15.5px;
+  color: var(--sl-ink);
+  padding-left: 0;
+}
+.sl-compare__table tbody td {
+  font-family: var(--sl-font-mono);
+  font-size: 13.5px;
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-ink-soft);
+  text-align: center;
+}
+.sl-compare__table tbody td.sl-compare__pro {
+  background: rgba(232, 114, 12, 0.045);
+  color: var(--sl-ink);
+}
+.sl-compare__table tbody tr:last-child td.sl-compare__pro {
+  border-radius: 0 0 10px 10px;
+}
+.sl-compare__actions {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 30px;
+}
+.sl-compare__footnote {
+  margin: 16px 0 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--sl-ink-muted);
+  max-width: 62ch;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Free vs Pro",
+  "settings": [
+    { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "compare" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Free gets you started. Pro keeps score." },
+    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Both plans run the same analysis engine. Free is one full report a month; Pro is unlimited filming plus the annotated coach replay and the progress dashboard." },
+    { "type": "text", "id": "free_label", "label": "Free column label", "default": "Free" },
+    { "type": "text", "id": "pro_label", "label": "Pro column label", "default": "Pro" },
+    { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Get Pro" },
+    { "type": "url", "id": "primary_url", "label": "Primary button link" },
+    { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Start free" },
+    { "type": "url", "id": "secondary_url", "label": "Secondary button link" },
+    { "type": "textarea", "id": "footnote", "label": "Footnote", "default": "Already use CaddieInsight? Keep signing in with your current account email. New here? Create your account with the email used at Shopify checkout." }
+  ],
+  "blocks": [
+    {
+      "type": "row",
+      "name": "Feature row",
+      "settings": [
+        { "type": "text", "id": "feature", "label": "Feature", "default": "Swing analyses" },
+        { "type": "text", "id": "free_value", "label": "Free value", "default": "1 per month" },
+        { "type": "text", "id": "pro_value", "label": "Pro value", "default": "Unlimited" }
+      ]
+    }
+  ],
+  "max_blocks": 10,
+  "presets": [
+    {
+      "name": "Free vs Pro",
+      "blocks": [
+        { "type": "row", "settings": { "feature": "Swing analyses", "free_value": "1 per month", "pro_value": "Unlimited" } },
+        { "type": "row", "settings": { "feature": "Full report — strip, overlay, slow motion", "free_value": "Included", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Coaching notes + practice plan", "free_value": "Included", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Private, per-account session history", "free_value": "Included", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Matched training-aid recommendations", "free_value": "Included", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Annotated coach replay video", "free_value": "—", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Progress dashboard & trends", "free_value": "—", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Price", "free_value": "$0", "pro_value": "$4.99/mo · $39.99/yr · $79.99 lifetime" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

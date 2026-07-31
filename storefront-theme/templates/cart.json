@@ -1,0 +1,13 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-cart",
+      "settings": {
+        "promo_note": "Launch code RANGE15 takes 15% off training aids at checkout."
+      }
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

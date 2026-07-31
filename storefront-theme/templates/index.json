@@ -1,0 +1,438 @@
+{
+  "sections": {
+    "hero": {
+      "type": "hero",
+      "settings": {
+        "eyebrow": "SWING ANALYSIS FROM ONE PHONE VIDEO",
+        "heading": "Know your swing in minutes.",
+        "body": "Film a few swings at the range, upload the clip, and get tempo, sway and slide numbers, key-position frames, quarter-speed slow motion, and plain-English coaching notes.",
+        "primary_label": "Analyze a swing free",
+        "primary_url": "https://app.caddieinsight.com",
+        "secondary_label": "Get Pro",
+        "secondary_url": "shopify://products/swinglab-pro",
+        "chip1": "TEMPO 3.0:1",
+        "chip2": "SWAY +0.4 SW",
+        "chip3": "4 KEY FRAMES",
+        "fine_print": "Free plan includes 1 full analysis a month, forever — no card required.",
+        "image": "shopify://shop_images/swinglab-hero.png"
+      }
+    },
+    "stats": {
+      "type": "stats-band",
+      "blocks": {
+        "stat_tempo": {
+          "type": "stat",
+          "settings": {
+            "value": "3.0:1",
+            "label": "benchmark tempo ratio"
+          }
+        },
+        "stat_positions": {
+          "type": "stat",
+          "settings": {
+            "value": "4",
+            "label": "key positions per swing"
+          }
+        },
+        "stat_slowmo": {
+          "type": "stat",
+          "settings": {
+            "value": "1/4x",
+            "label": "motion-interpolated slow-mo"
+          }
+        },
+        "stat_drift": {
+          "type": "stat",
+          "settings": {
+            "value": "2",
+            "label": "body-drift metrics per swing"
+          }
+        }
+      },
+      "block_order": [
+        "stat_tempo",
+        "stat_positions",
+        "stat_slowmo",
+        "stat_drift"
+      ],
+      "settings": {
+        "aria_label": "CaddieInsight in numbers"
+      }
+    },
+    "how_it_works": {
+      "type": "how-it-works",
+      "blocks": {
+        "s1": {
+          "type": "step",
+          "settings": {
+            "number": "01",
+            "title": "Film a few swings",
+            "body": "Phone at hip height, face-on, ball on a tee. That's it. (Down-the-line clips get tempo & rhythm only for now.)",
+            "caption": "HIP HEIGHT · FACE-ON FOR THE FULL REPORT"
+          }
+        },
+        "s2": {
+          "type": "step",
+          "settings": {
+            "number": "02",
+            "title": "Upload the clip",
+            "body": "Straight from your camera roll — no trimming or editing. Every swing in the clip is found automatically.",
+            "caption": "STRIKES FOUND BY AUDIO"
+          }
+        },
+        "s3": {
+          "type": "step",
+          "settings": {
+            "number": "03",
+            "title": "Read your report",
+            "body": "Tempo, head sway and hip slide per swing, key-position frames, quarter-speed slow motion, and coaching notes in plain English.",
+            "caption": "TEMPO · SWAY · SLIDE"
+          }
+        }
+      },
+      "block_order": [
+        "s1",
+        "s2",
+        "s3"
+      ],
+      "settings": {
+        "anchor": "how",
+        "heading": "Film. Upload. Improve.",
+        "footer_note": "Average time from upload to report: a few minutes.",
+        "cta_label": "Try it on a clip",
+        "cta_url": "https://app.caddieinsight.com"
+      }
+    },
+    "report": {
+      "type": "report-feature",
+      "blocks": {
+        "p1": {
+          "type": "point",
+          "settings": {
+            "text": "Labeled key-position strip: address, top, impact, finish"
+          }
+        },
+        "p2": {
+          "type": "point",
+          "settings": {
+            "text": "Centerline overlay: your captured body in orange against the corrected line in green"
+          }
+        },
+        "p3": {
+          "type": "point",
+          "settings": {
+            "text": "Smooth quarter-speed slow motion of every swing"
+          }
+        },
+        "p4": {
+          "type": "point",
+          "settings": {
+            "text": "Coaching notes and a practice plan built from what the session flagged"
+          }
+        }
+      },
+      "block_order": [
+        "p1",
+        "p2",
+        "p3",
+        "p4"
+      ],
+      "settings": {
+        "heading": "Numbers you can act on",
+        "body": "Every report benchmarks your tempo against the tour-average 3.0 ratio and measures head sway and hip slide in shoulder widths — comparable across sessions, no matter where you set the camera.",
+        "caption": "FIG. 01 — EXAMPLE REPORT · KEY-POSITION STRIP + SESSION METRICS"
+      }
+    },
+    "gear": {
+      "type": "gear-showcase",
+      "settings": {
+        "anchor": "gear",
+        "heading": "Train what the report flagged",
+        "sub": "Every flag in your report maps to a drill — and a tool. Tag-matched gear shows up on your results page automatically.",
+        "collection": "swinglab-gear",
+        "max_products": 6,
+        "link_label": "Shop all gear"
+      }
+    },
+    "plans": {
+      "type": "product-grid",
+      "blocks": {
+        "pro": {
+          "type": "product_card",
+          "settings": {
+            "badge": "MEMBERSHIP",
+            "title": "CaddieInsight Pro",
+            "description": "Unlimited swing analyses, the annotated coach replay of every swing, and the progress dashboard. Checkout here unlocks Pro on the CaddieInsight account matching your email.",
+            "price_text": "",
+            "price_note": "Month $4.99 · Year $39.99 · Lifetime $79.99",
+            "product": "swinglab-pro",
+            "use_product_price": true,
+            "image": "shopify://shop_images/product-pro.png",
+            "placeholder_label": "pro membership art",
+            "warm_placeholder": false
+          }
+        },
+        "free": {
+          "type": "product_card",
+          "settings": {
+            "badge": "FREE PLAN",
+            "title": "Try CaddieInsight Free",
+            "description": "1 full swing analysis every month, free forever — the complete report each time.",
+            "price_text": "$0",
+            "price_note": "No card required",
+            "url": "https://app.caddieinsight.com",
+            "use_product_price": false,
+            "image": "shopify://shop_images/pro-report-strip.png",
+            "placeholder_label": "free plan report strip",
+            "warm_placeholder": false
+          }
+        }
+      },
+      "block_order": [
+        "pro",
+        "free"
+      ],
+      "settings": {
+        "anchor": "shop",
+        "heading": "Start with CaddieInsight",
+        "subheading": "Buy Pro here, then open CaddieInsight to use it"
+      }
+    },
+    "comparison": {
+      "type": "comparison",
+      "blocks": {
+        "r_analyses": {
+          "type": "row",
+          "settings": {
+            "feature": "Swing analyses",
+            "free_value": "1 per month",
+            "pro_value": "Unlimited"
+          }
+        },
+        "r_report": {
+          "type": "row",
+          "settings": {
+            "feature": "Full report — strip, overlay, slow motion",
+            "free_value": "Included",
+            "pro_value": "Included"
+          }
+        },
+        "r_notes": {
+          "type": "row",
+          "settings": {
+            "feature": "Coaching notes + practice plan",
+            "free_value": "Included",
+            "pro_value": "Included"
+          }
+        },
+        "r_history": {
+          "type": "row",
+          "settings": {
+            "feature": "Private, per-account session history",
+            "free_value": "Included",
+            "pro_value": "Included"
+          }
+        },
+        "r_gear": {
+          "type": "row",
+          "settings": {
+            "feature": "Matched training-aid recommendations",
+            "free_value": "Included",
+            "pro_value": "Included"
+          }
+        },
+        "r_replay": {
+          "type": "row",
+          "settings": {
+            "feature": "Annotated coach replay video",
+            "free_value": "—",
+            "pro_value": "Included"
+          }
+        },
+        "r_progress": {
+          "type": "row",
+          "settings": {
+            "feature": "Progress dashboard & trends",
+            "free_value": "—",
+            "pro_value": "Included"
+          }
+        },
+        "r_price": {
+          "type": "row",
+          "settings": {
+            "feature": "Price",
+            "free_value": "$0",
+            "pro_value": "$4.99/mo · $39.99/yr · $79.99 lifetime"
+          }
+        }
+      },
+      "block_order": [
+        "r_analyses",
+        "r_report",
+        "r_notes",
+        "r_history",
+        "r_gear",
+        "r_replay",
+        "r_progress",
+        "r_price"
+      ],
+      "settings": {
+        "anchor": "compare",
+        "heading": "Free gets you started. Pro keeps score.",
+        "sub": "Both plans run the same analysis engine. Free is one full report a month; Pro is unlimited filming plus the annotated coach replay and the progress dashboard.",
+        "free_label": "Free",
+        "pro_label": "Pro",
+        "primary_label": "Get Pro",
+        "primary_url": "shopify://products/swinglab-pro",
+        "secondary_label": "Start free",
+        "secondary_url": "https://app.caddieinsight.com",
+        "footnote": "Already use CaddieInsight? Keep signing in with your current account email. New here? Create your account with the email used at Shopify checkout."
+      }
+    },
+    "coach_notes": {
+      "type": "coach-notes",
+      "blocks": {
+        "n_tempo": {
+          "type": "note",
+          "settings": {
+            "label": "TEMPO 2.2:1",
+            "quote": "Tempo ratio 2.2:1 is quicker than the 2.4 threshold (tour average is about 3.0:1 with a downswing near 0.25 s). Let the backswing finish before starting down."
+          }
+        },
+        "n_sway": {
+          "type": "note",
+          "settings": {
+            "label": "SWAY 0.42 SW",
+            "quote": "Head sways 0.42 shoulder widths away from the target going back (flagged beyond 0.35). Feel like the head stays inside the trail foot at the top."
+          }
+        },
+        "n_consistency": {
+          "type": "note",
+          "settings": {
+            "label": "TEMPO SD 0.12",
+            "quote": "Tempo is impressively consistent across swings (std dev 0.12). Consistency like this is a real asset — low variance is itself a finding worth keeping."
+          }
+        }
+      },
+      "block_order": [
+        "n_tempo",
+        "n_sway",
+        "n_consistency"
+      ],
+      "settings": {
+        "heading": "Straight from the reports",
+        "sub": "CaddieInsight writes its coaching notes from your measured numbers, thresholds and all. These are the kinds of lines the engine produces.",
+        "footnote": "GENERATED BY THE ANALYSIS ENGINE — NOT WRITTEN FOR THIS PAGE"
+      }
+    },
+    "faq": {
+      "type": "faq",
+      "blocks": {
+        "q_filming": {
+          "type": "qa",
+          "settings": {
+            "question": "How should I film my swing?",
+            "answer": "Phone at hip height, face-on, ball on a tee — portrait clips straight off a phone work fine. Down-the-line clips get tempo & rhythm only for now; film face-on for the full report."
+          }
+        },
+        "q_trim": {
+          "type": "qa",
+          "settings": {
+            "question": "Do I need to trim the clip first?",
+            "answer": "No. Upload the whole clip — CaddieInsight finds every swing automatically from the sound of the strike and analyzes each one."
+          }
+        },
+        "q_free": {
+          "type": "qa",
+          "settings": {
+            "question": "What does the free plan include?",
+            "answer": "One full swing analysis per calendar month, free forever. It produces the complete report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes. Pro adds unlimited filming, the annotated coach replay, and the progress dashboard."
+          }
+        },
+        "q_pro_unlock": {
+          "type": "qa",
+          "settings": {
+            "question": "How does Pro unlock after I buy it here?",
+            "answer": "If you already use CaddieInsight, Pro connects to your linked account and you should keep signing in with its current email. If you are new, create your account with the email used at Shopify checkout."
+          }
+        },
+        "q_lefty": {
+          "type": "qa",
+          "settings": {
+            "question": "Does it work for left-handed golfers?",
+            "answer": "Yes. Choose your handedness when you upload, and every measurement, overlay, and coaching note is computed for a left-handed swing."
+          }
+        },
+        "q_shipping": {
+          "type": "qa",
+          "settings": {
+            "question": "How long does gear take to arrive?",
+            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and US delivery typically takes 6–12 business days, with tracking emailed at dispatch."
+          }
+        },
+        "q_returns": {
+          "type": "qa",
+          "settings": {
+            "question": "What if a training aid isn't right for me?",
+            "answer": "Unused gear can be returned within 30 days, no questions asked. See the Shipping & Returns page for the details."
+          }
+        },
+        "q_refund": {
+          "type": "qa",
+          "settings": {
+            "question": "Can I get a refund on Pro?",
+            "answer": "CaddieInsight Pro and other digital services are refundable within 14 days of purchase if unused."
+          }
+        }
+      },
+      "block_order": [
+        "q_filming",
+        "q_trim",
+        "q_free",
+        "q_pro_unlock",
+        "q_lefty",
+        "q_shipping",
+        "q_returns",
+        "q_refund"
+      ],
+      "settings": {
+        "anchor": "faq",
+        "heading": "Questions, answered"
+      }
+    },
+    "email": {
+      "type": "email-capture",
+      "settings": {
+        "heading": "One drill a week",
+        "sub": "A short, measurable practice plan in your inbox. Unsubscribe anytime.",
+        "placeholder": "you@example.com",
+        "button_label": "Sign up",
+        "success_text": "You're on the list. The first drill arrives with the next send."
+      }
+    },
+    "cta": {
+      "type": "cta-banner",
+      "settings": {
+        "heading": "Your next range session should count.",
+        "sub": "Film one clip. Get your numbers. Fix one thing at a time.",
+        "primary_label": "Analyze a swing free",
+        "primary_url": "https://app.caddieinsight.com",
+        "secondary_label": "Get Pro",
+        "secondary_url": "shopify://products/swinglab-pro"
+      }
+    }
+  },
+  "order": [
+    "hero",
+    "stats",
+    "how_it_works",
+    "report",
+    "gear",
+    "plans",
+    "comparison",
+    "coach_notes",
+    "faq",
+    "email",
+    "cta"
+  ]
+}

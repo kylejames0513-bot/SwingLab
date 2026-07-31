@@ -1,0 +1,126 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Account{% endblock %}
+{% block style %}
+  .row { display: flex; justify-content: space-between; align-items: baseline;
+         gap: 16px; padding: 12px 0; border-bottom: 1px solid #eee; }
+  .row:last-of-type { border-bottom: none; }
+  .row .k { color: #555; font-size: 0.9rem; white-space: nowrap; }
+  .row > span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
+  .plan { display: inline-block; padding: 2px 12px; border-radius: 999px;
+          font-weight: 700; font-size: 0.85rem; }
+  .plan.pro { background: var(--primary); color: white; }
+  .plan.free { background: #eee; color: #444; }
+  .good { background: #e5f3ea; border-left: 4px solid var(--primary);
+          padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; }
+  form { display: inline; }
+  .logout button { background: white; color: #b3261e; border: 1px solid #ddd; }
+  .quiet button { background: white; color: #444; border: 1px solid #ccc; }
+  form[action="/account/password"] { display: block; margin: 8px 0 20px; }
+  form[action="/account/password"] label { display: block; margin: 8px 0 4px; }
+  form[action="/account/password"] input { width: 100%; max-width: 320px;
+    padding: 10px; border: 1px solid #ccc; border-radius: 6px;
+    box-sizing: border-box; }
+{% endblock %}
+{% block main %}
+  {% if upgraded %}
+  <div class="good">Thanks — your payment went through! Your plan updates to
+    <strong>Pro</strong> the moment Stripe confirms it (usually seconds).
+    Refresh if you don't see it yet.</div>
+  {% endif %}
+  {% if password_added %}
+  <div class="good">Password added — you can now log in with it as well as
+    with an emailed code.</div>
+  {% endif %}
+  <div class="card">
+    <h2>Your account</h2>
+    <div class="row"><span class="k">Email</span><span>{{ user.email }}</span></div>
+    <div class="row"><span class="k">Plan</span>
+      <span class="plan {{ 'pro' if user.is_pro else 'free' }}">
+        {{ "Pro" if user.is_pro else "Free" }}</span></div>
+    <div class="row"><span class="k">Analyses this month</span>
+      <span>{{ usage }}{% if quota_left is not none %} — {{ quota_left }} left{% endif %}</span></div>
+    {% if pro_lifetime %}
+    {# "Never expires" is true regardless of any subscription the user
+       also holds — "no renewals" would not be. #}
+    <div class="row"><span class="k">Pro access</span>
+      <span>Lifetime — never expires</span></div>
+    {% elif pro_until_date %}
+    <div class="row"><span class="k">Pro access until</span>
+      <span>{{ pro_until_date }}</span></div>
+    {% endif %}
+    {% if user.shopify_customer_id %}
+    <div class="row"><span class="k">Store</span>
+      <span>Connected to the {{ brand.name }} store</span></div>
+    {% endif %}
+    <div class="row"><span class="k">Weekly drill email</span>
+      <span>{{ "On" if user.digest_opt_in else "Off" }}</span></div>
+
+    {% if not user.has_password %}
+    <h3>Add a password (optional)</h3>
+    <p class="hint">You sign in with a code emailed to
+      {{ user.email }}.{% if mail_enabled %} That keeps working — a password
+      is just a second way in.{% else %} Email isn't set up on this server
+      right now, so adding a password is the only way back in after you log
+      out.{% endif %}</p>
+    {% if password_error %}<p class="error">{{ password_error }}</p>{% endif %}
+    <form action="/account/password" method="post">
+      <label for="ap-password" class="k">New password</label>
+      <input id="ap-password" name="password" type="password" required
+             minlength="8" autocomplete="new-password">
+      <button type="submit">Add password</button>
+    </form>
+    {% elif mail_enabled %}
+    <h3>Password and sign-in</h3>
+    <p class="hint">You can keep using emailed codes, change your password,
+      or recover it if you forget it.</p>
+    <a class="button secondary" href="/reset">Change or reset password</a>
+    {% endif %}
+
+    {% if user.digest_opt_in %}
+    <form class="quiet" action="/account/digest" method="post">
+      <button type="submit">Turn off the weekly drill email</button>
+    </form>
+    {% if not mail_enabled %}
+    <p class="hint">Email isn't set up on this server yet — nothing sends
+      until it is, but your choice is saved.</p>
+    {% endif %}
+    {% else %}
+    <form action="/account/digest" method="post">
+      <input type="hidden" name="enabled" value="on">
+      <button type="submit">Email me one drill a week</button>
+    </form>
+    <p class="hint">One email a week: the drills for your latest session's
+      flags, with the pass marks. Unsubscribe any time.</p>
+    {% endif %}
+
+    {% if user.is_pro %}
+      {% if billing_enabled and user.stripe_customer_id %}
+      <form action="/billing/portal" method="post">
+        <button type="submit">Manage subscription</button>
+      </form>
+      {% elif pro_store_url and pro_until_date %}
+      {# A lifetime member has nothing to extend — no button for them. #}
+      <a class="button" href="{{ pro_store_url }}">Extend Pro on the store</a>
+      {% endif %}
+    {% elif pro_store_url %}
+      <a class="button" href="{{ pro_store_url }}">Upgrade to Pro</a>
+      <p class="hint">Pro is unlimited
+        analyses{% if replay_pro_only and progress_pro_only %}, the
+        annotated coach replay of every swing, and the progress
+        dashboard{% elif replay_pro_only %} and the annotated coach replay
+        of every swing{% elif progress_pro_only %} and the progress
+        dashboard{% endif %}. Check out with
+        <strong>{{ user.email }}</strong> — it unlocks on this account
+        automatically.</p>
+    {% elif billing_enabled %}
+      <form action="/billing/checkout" method="post">
+        <button type="submit">Upgrade to Pro — unlimited swings</button>
+      </form>
+    {% else %}
+      <p class="hint">Pro memberships are coming soon.</p>
+    {% endif %}
+    <form class="logout" action="/logout" method="post">
+      <button type="submit">Log out</button>
+    </form>
+  </div>
+{% endblock %}

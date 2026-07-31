@@ -1,0 +1,111 @@
+{%- liquid
+  # Related gear rail for the product template.
+  # Hidden on Membership products while "hide_for_membership" is on;
+  # switch it off (and reword the heading, e.g. "Put your report to work")
+  # to cross-sell gear from the Pro page too.
+  assign skip = false
+  if section.settings.hide_for_membership and product.type == 'Membership'
+    assign skip = true
+  endif
+
+  assign rel_collection = section.settings.collection
+  if rel_collection == blank
+    assign rel_collection = collections['swinglab-gear']
+  endif
+
+  assign max_products = section.settings.max_products | default: 4
+-%}
+
+{%- unless skip or rel_collection == blank -%}
+  {%- assign shown = 0 -%}
+  {%- capture rel_cards -%}
+    {%- for rel_product in rel_collection.products limit: 12 -%}
+      {%- if rel_product.id == product.id -%}{%- continue -%}{%- endif -%}
+      {%- if shown >= max_products -%}{%- break -%}{%- endif -%}
+      {% render 'product-card', product: rel_product %}
+      {%- assign shown = shown | plus: 1 -%}
+    {%- endfor -%}
+  {%- endcapture -%}
+
+  {%- if shown > 0 -%}
+    <section class="sl-wrap sl-related-products" aria-label="{{ section.settings.heading | default: 'Related products' | escape }}">
+      <div class="sl-related-products__inner">
+        <header class="sl-related-products__head">
+          <h2 class="sl-h2">{{ section.settings.heading | default: 'Pairs with your practice plan' }}</h2>
+          <a class="sl-related-products__all" href="{{ rel_collection.url }}">View all</a>
+        </header>
+        <div class="sl-grid">{{ rel_cards }}</div>
+      </div>
+    </section>
+  {%- endif -%}
+{%- endunless -%}
+
+{% stylesheet %}
+.sl-related-products {
+  padding-bottom: 80px;
+}
+
+.sl-related-products__inner {
+  border-top: 1px solid var(--sl-border);
+  padding-top: clamp(32px, 5vw, 56px);
+}
+
+.sl-related-products__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.sl-related-products__all {
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  text-decoration: none;
+  color: var(--sl-green-btn);
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Related products",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Pairs with your practice plan",
+      "info": "Used on every product. If you show this on the membership page, \"Put your report to work\" reads well."
+    },
+    {
+      "type": "collection",
+      "id": "collection",
+      "label": "Collection",
+      "info": "Defaults to CaddieInsight Gear when left unset."
+    },
+    {
+      "type": "range",
+      "id": "max_products",
+      "label": "Products to show",
+      "min": 2,
+      "max": 6,
+      "step": 1,
+      "default": 4
+    },
+    {
+      "type": "checkbox",
+      "id": "hide_for_membership",
+      "label": "Hide on membership products",
+      "default": true
+    }
+  ],
+  "presets": [
+    {
+      "name": "Related products"
+    }
+  ]
+}
+{% endschema %}

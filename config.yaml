@@ -1,15 +1,21 @@
-# SwingLab configuration. Every value here can be changed without touching code.
+# CaddieInsight configuration. Every value here can be changed without touching code.
 
 brand:
-  name: SwingLab
+  name: CaddieInsight
   logo_path: null            # path to a logo image shown in the report header, or null
+  logo_url: "https://caddieinsight.com/cdn/shop/files/swinglab-logo.png?width=480"
+                             # optional hosted wordmark for the web-app header
   primary_color: "#1a5c38"   # headers, table accents, skeleton "corrected" tint in legends
   accent_color: "#e8720c"    # highlights, warnings, "captured" tint in legends
-  footer_text: "SwingLab — swing analysis from a single phone video."
+  footer_text: "CaddieInsight — swing analysis from a single phone video."
   watermark: false           # stamp brand name onto generated images
   disclaimer: >-
     Automated estimates from a single camera. Not a substitute for instruction
     from a teaching professional.
+  support_text: null         # shown wherever a user needs the operator's help
+                             # (e.g. password reset while email is unconfigured),
+                             # e.g. "Email support@yourbrand.com." null = the
+                             # generic phrasing alone.
 
 detection:
   audio_height: 0.30         # normalized envelope height for a strike peak
@@ -18,22 +24,66 @@ detection:
   relative_height: 0.5       # a peak must be at least this fraction as loud as
                              # the loudest strike; filters out practice-swing
                              # thumps and handling noise. 0 disables.
+  max_strikes: 8             # analyze at most this many strikes per clip (the
+                             # first N, in clip order; 0 = no limit). Each
+                             # strike costs real CPU — pose tracking plus the
+                             # slow-mo/replay renders — so an unbounded range
+                             # session can hold a worker for hours. When the
+                             # cap trims a clip the report says so honestly:
+                             # "Clip had N strikes; analyzed the first M."
 
 coaching:
   sway_warn_sw: 0.35         # flag head sway (address->top) beyond this, in shoulder widths
   tempo_target: 3.0          # tour-average backswing:downswing ratio shown as benchmark
   tempo_warn_below: 2.4      # flag tempo ratios under this
   tempo_std_praise: 0.3      # praise consistency when tempo std dev across swings is under this
+  head_dip_warn_sw: 0.25     # flag when the head drops more than this between
+                             # address and impact, in shoulder widths. A small
+                             # squat is normal; 0.25 SW is roughly 9-10 cm on
+                             # an adult - a genuine dip, not noise.
+  lead_arm_warn_deg: 150     # flag a lead arm bent below this at impact
+                             # (shoulder-elbow-wrist angle as seen from the
+                             # camera; 180 = straight)
+  shoulder_tilt_impact_min_deg: 5.0
+                             # flag impact shoulder tilt below this (positive =
+                             # trail shoulder lower, measured face-on). Any
+                             # swing whose tilt decreases from address to
+                             # impact also fires the shoulder-tilt flag.
+  finish_balance_warn_sw: 0.15
+                             # flag when the ankle midpoint drifts more than
+                             # this (mean over the finish hold, in shoulder
+                             # widths) - a step or stumble, well above pose
+                             # jitter (~0.02 SW)
 
 analysis:
   window_pre_s: 1.8          # analysis window starts this long before the strike
   window_post_s: 0.8         # ...and ends this long after
-  fps: 30                    # analysis frame rate
+  fps: 30                    # analysis frame rate (the floor — see auto_fps)
+  max_video_s: 300           # refuse clips longer than this many seconds,
+                             # checked right after probe before any work is
+                             # done (0 = no limit). An hour-long clip means
+                             # hours of CPU and a multi-hundred-MB audio
+                             # track; five minutes fits a full range session
+                             # of swings with room to spare.
+  auto_fps: true             # when the source was filmed at >= 50 fps,
+                             # extract analysis windows at min(source_fps, 60)
+                             # instead of fps above. The downswing is only
+                             # 7-8 frames at 30 fps (~13% tempo quantization
+                             # error); 60 fps halves it. Sources below 50 fps
+                             # keep using analysis.fps. The rate actually used
+                             # is reported in metrics.json meta and the
+                             # report's session table.
   analysis_width: 480        # working frame width (scale=480:-2)
   fullres_height: 1000       # height of frames used in deliverables
   takeaway_threshold_sw: 0.25
   finish_offset_s: 0.55
   impact_behind_sw: 0.10     # ideal head position at impact: this far behind address, in shoulder widths
+  finish_hold_frames: 6      # frames after the finish event used for the
+                             # balance metric. Must fit the window:
+                             # finish_offset_s + finish_hold_frames/fps has to
+                             # stay inside window_post_s (0.55 + 6/30 = 0.75
+                             # <= 0.8 with defaults); if it doesn't, the
+                             # metric reads NaN rather than failing.
 
 slowmo:
   factor: 4                  # 4 => quarter speed
@@ -43,10 +93,181 @@ slowmo:
                              # scale with this — 720 fits small (1GB) servers,
                              # raise to 1280 on beefier machines
   crf: 20
+  annotated: true            # also render replay_sN.mp4 next to slowmo_sN.mp4:
+                             # the same slow-mo window with the skeleton, the
+                             # fading hand-path trace and metric chips burned
+                             # in. Never motion-interpolated (keeps text
+                             # crisp), so it stays fast even without --fast.
+  trail_fade_s: 0.9          # the hand-path trace fades out over this many
+                             # source-time seconds
 
 overlay:
   captured_color: "#ff8c1a"  # orange: the body as captured
   corrected_color: "#2ecc40" # green: where it should be
   arrow_min_px: 12           # draw the head-gap arrow only beyond this many pixels
+
+web:
+  workers: 2                 # analyses running at once; the rest wait in the queue.
+                             # Each worker keeps roughly one CPU core busy (ffmpeg
+                             # + pose tracking) — match this to the machine.
+  max_upload_mb: 500         # reject uploads larger than this (0 = unlimited)
+  max_active_jobs_per_ip: 3  # queued+running jobs one visitor may have (0 = unlimited)
+  trusted_proxies: "*"       # whose X-Forwarded-For header to believe for the
+                             # real client IP. "*" fits a PaaS (Railway,
+                             # Render, Fly): the app only ever hears from the
+                             # platform's proxy, and without this every
+                             # visitor shares the proxy's IP — so
+                             # max_active_jobs_per_ip silently caps the whole
+                             # site at 3 jobs. Honest trade-off: "*" trusts
+                             # ANY direct connection's header, so a client
+                             # that can bypass the proxy and reach the app
+                             # port directly could spoof its IP to dodge
+                             # per-IP limits (not an auth bypass — just the
+                             # limits). On a PaaS the app port isn't publicly
+                             # reachable, so that's moot; on a bare VM with
+                             # nginx/Caddy in front, list the proxy's IPs
+                             # instead (e.g. ["127.0.0.1"]); "" disables and
+                             # uses the socket peer address.
+  retention_days: 180        # delete finished sessions older than this
+                             # (0 = keep forever, which is the bare-code
+                             # default for white-label installs that manage
+                             # retention themselves). 180 is shipped because
+                             # sessions hold identifiable video of people:
+                             # storage-minimization (GDPR art. 5) says don't
+                             # keep it forever by accident — and full disks
+                             # are the most common first outage anyway.
+  delete_source_after_done: true
+                             # delete the original upload once an analysis is
+                             # DONE and its report exists. The deliverables —
+                             # report, media clips, metrics.json — are kept;
+                             # only the raw source video goes. Saves most of
+                             # each session's disk and stops holding raw
+                             # footage longer than needed. Trade-off (stated
+                             # honestly in the session log too): re-analyzing
+                             # an old session needs a fresh upload. Also fires
+                             # when an analysis FAILS — failed uploads don't
+                             # count against quota, so keeping them would let
+                             # refused clips fill the disk for free. The
+                             # bare-code default is false.
+  login_attempts_per_15min: 10
+                             # failed logins allowed per 15 minutes, counted
+                             # per client IP AND per email (0 = off). Over the
+                             # limit, login answers a generic "too many
+                             # attempts, wait" — the sliding window expires on
+                             # its own, so the legitimate owner is never
+                             # locked out beyond it.
+  signups_per_hour_per_ip: 5 # account creations per hour per client IP
+                             # (0 = off). Every signup costs a scrypt hash —
+                             # this keeps throwaway-email loops from burning
+                             # CPU for free.
+  require_account: true      # visitors must sign up before analyzing; false = open access
+                             # (set SWINGLAB_SECRET in the environment so logins
+                             # survive restarts)
+  passwordless_login: true   # "one account" email-code sign-in: the login page asks
+                             # for the email first, mails a six-digit code (stored
+                             # hashed, 10-minute expiry, single-use, burned after 5
+                             # wrong guesses, rate-limited per email and per IP with
+                             # the login limits above), and a correct code signs the
+                             # user in — into their existing account, into an
+                             # unclaimed store account (claimed on the spot, Pro and
+                             # purchases kept), or into a brand-new account, all
+                             # through the same step. Accounts with a password can
+                             # always use it instead ("Use your password instead" on
+                             # the login page), and passwordless accounts can add
+                             # one on /account. Self-disabling: without an email
+                             # transport (RESEND_API_KEY or SWINGLAB_SMTP_URL,
+                             # plus SWINGLAB_MAIL_FROM) the login
+                             # and signup pages keep the classic password flows
+                             # exactly, so this stays true safely on installs with
+                             # no email infrastructure. false forces password flows
+                             # even with email configured.
+  digest_enabled: true       # weekly practice-plan email ("one drill a week").
+                             # Even when true it only ever sends when email is
+                             # configured (RESEND_API_KEY or SWINGLAB_SMTP_URL,
+                             # plus SWINGLAB_MAIL_FROM)
+                             # AND the account ticked the opt-in — unchecked by
+                             # default at signup, toggleable on /account, one-click
+                             # unsubscribe link in every email. false switches the
+                             # scheduler off entirely. Set PUBLIC_BASE_URL so the
+                             # email's report/progress/unsubscribe links are absolute.
+
+billing:
+  free_per_month: 1          # analyses per calendar month on the free plan
+  pro_per_month: 0           # ...on Pro (0 = unlimited). Prices are set in Shopify or
+                             # Stripe, never here. Two ways to sell Pro:
+                             #   Shopify (preferred): set SHOPIFY_STORE_DOMAIN and
+                             #     SHOPIFY_WEBHOOK_SECRET — see shopify_billing.py.
+                             #   Stripe subscription: set STRIPE_SECRET_KEY,
+                             #     STRIPE_PRICE_ID and STRIPE_WEBHOOK_SECRET.
+                             # With neither, upgrading shows as coming soon.
+  replay_pro_only: true      # the annotated coach replay (replay_sN.mp4) is the
+                             # report's most shareable artifact and the one clean
+                             # quality line between free and Pro. true + accounts
+                             # on: the replay is rendered only when the job's
+                             # owner has Pro at analysis time; a free user's
+                             # report shows an honest locked note (with a
+                             # /pricing link) in the replay slot instead, and
+                             # the render is skipped entirely — the CPU is
+                             # saved too. Open instances (require_account:
+                             # false) and CLI runs are NEVER gated, and the
+                             # public sample report is unchanged. The bare-code
+                             # default is false (white-label installs stay
+                             # ungated until they opt in) — shipped on, the
+                             # same deliberate difference as retention_days.
+  progress_pro_only: true    # the /progress dashboard (trend charts across
+                             # sessions) is the other clean quality line.
+                             # true + accounts on: free users see an honest
+                             # locked teaser describing what the dashboard
+                             # tracks, with a /pricing link, instead of
+                             # their charts. Open instances (require_account:
+                             # false) are never gated, and no trend data is
+                             # computed for a locked view. Bare-code default
+                             # is false — same deliberate difference as
+                             # replay_pro_only.
+  shopify_pro_handle: swinglab-pro   # the Pro product's handle on the Shopify store
+                                     # (the /products/<handle> part of its URL)
+  shopify_skus:              # Shopify variant SKU -> days of Pro one unit grants;
+    SL-PRO-1MO: 31           # quantities multiply, so 2x the 1-month SKU = 62 days.
+    SL-PRO-12MO: 365         # Add a SKU here and in Shopify to add a plan length.
+    SL-PRO-LIFE: 36500       # lifetime = 100 years; the account page shows
+                             # anything >50 years out as "Lifetime", not a date.
+  pro_price_monthly_text: "$4.99/month"
+  pro_price_annual_text: "$39.99/year — $3.33/month"
+  pro_price_lifetime_text: "$79.99 once — Pro for good"
+  pro_annual_badge_text: "Best value — save 33%"
+                             # DISPLAY strings for /pricing only — the store or
+                             # Stripe stays the source of truth for what is
+                             # actually charged. Keep these matching the store;
+                             # the badge's savings math lives here (not in the
+                             # template) so changing prices can't strand a
+                             # stale claim. Empty badge = no badge.
+  store_subscriptions: true  # Shopify Subscriptions is installed with selling
+                             # plans on the monthly/yearly variants — the
+                             # pricing page describes auto-renewal from this
+                             # flag, and on a passes-only store that claim
+                             # would be false (a "subscription" that never
+                             # renews). Lifetime never gets a selling plan.
+
+shop:
+  enabled: true              # gear shop pages + per-analysis recommendations.
+                             # Also needs SHOPIFY_STORE_DOMAIN in the
+                             # environment — inert until set. The app reads
+                             # the public swinglab-gear collection without a
+                             # token. Products and prices live in Shopify.
+  cache_minutes: 10          # in-memory product list cache (per-process)
+  tag_prefix: "swinglab:"    # products tagged swinglab:tempo / swinglab:sway /
+                             # swinglab:hip-slide / swinglab:consistency /
+                             # swinglab:head-dip / swinglab:arm-extension /
+                             # swinglab:balance are recommended when an
+                             # analysis flags that issue (shoulder-tilt shares
+                             # the arm-extension drill family and gear tag);
+                             # swinglab:general pads out the list
+  max_recommendations: 3     # gear items shown on a finished analysis page
+  store_url: "https://caddieinsight.com"
+                             # public storefront for the quiet "Matched
+                             # training aids" link at the end of the report's
+                             # practice plan — the link points at
+                             # <store_url>/collections/swinglab-gear.
+                             # Empty ("") = the report renders no link.
 
 output_dir: results

@@ -1,0 +1,97 @@
+<section class="sl-cta">
+  <span class="sl-cta__arc" aria-hidden="true"></span>
+  <div class="sl-wrap">
+    <div class="sl-cta__inner sl-reveal">
+      <h2 class="sl-cta__title">{{ section.settings.heading | default: 'Your next range session should count.' }}</h2>
+      {%- if section.settings.sub != blank -%}
+        <p class="sl-cta__sub">{{ section.settings.sub }}</p>
+      {%- endif -%}
+      <div class="sl-cta__actions">
+        {%- if section.settings.primary_label != blank -%}
+          <a href="{{ section.settings.primary_url | default: '#' }}" class="sl-btn sl-btn--light">{{ section.settings.primary_label }}</a>
+        {%- endif -%}
+        {%- if section.settings.secondary_label != blank -%}
+          <a href="{{ section.settings.secondary_url | default: '/products/swinglab-pro' }}" class="sl-btn sl-cta__ghost">{{ section.settings.secondary_label }}</a>
+        {%- endif -%}
+      </div>
+    </div>
+  </div>
+</section>
+
+{% stylesheet %}
+.sl-cta {
+  position: relative;
+  overflow: clip;
+  background: var(--sl-green);
+  color: var(--sl-green-ink);
+  padding: clamp(44px, 6vw, 72px) 0;
+  text-align: center;
+}
+/* one faint quarter-sweep, the pendulum's ghost */
+.sl-cta__arc {
+  position: absolute;
+  left: -180px;
+  bottom: -320px;
+  width: 620px;
+  aspect-ratio: 1;
+  border: 1.5px solid transparent;
+  border-top-color: rgba(233, 242, 236, 0.16);
+  border-radius: 50%;
+  transform: rotate(18deg);
+  pointer-events: none;
+}
+.sl-cta__inner {
+  position: relative;
+  max-width: 720px;
+  margin: 0 auto;
+}
+.sl-cta__title {
+  margin: 0;
+  font-size: clamp(30px, 4.2vw, 46px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  color: #fdfcf9;
+  text-wrap: balance;
+}
+.sl-cta__sub {
+  margin: 16px auto 0;
+  font-size: var(--sl-text-lg);
+  line-height: 1.55;
+  color: rgba(233, 242, 236, 0.8);
+  max-width: 48ch;
+  text-wrap: pretty;
+}
+.sl-cta__actions {
+  display: flex;
+  justify-content: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 32px;
+}
+.sl-cta__ghost {
+  background: transparent;
+  color: var(--sl-green-ink);
+  border-color: rgba(233, 242, 236, 0.55);
+}
+.sl-cta__ghost:hover {
+  background: var(--sl-bg);
+  color: var(--sl-green);
+  border-color: var(--sl-bg);
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "CTA banner",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Your next range session should count." },
+    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Film one clip. Get your numbers. Fix one thing at a time." },
+    { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Analyze a swing free" },
+    { "type": "url", "id": "primary_url", "label": "Primary button link" },
+    { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Get Pro" },
+    { "type": "url", "id": "secondary_url", "label": "Secondary button link" }
+  ],
+  "presets": [{ "name": "CTA banner" }]
+}
+{% endschema %}

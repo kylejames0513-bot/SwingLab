@@ -1,0 +1,79 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # ffmpeg for the video pipeline tests; OpenGL ES libs for mediapipe's
+      # native library in CPU mode; DejaVu for image labels (see README).
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            ffmpeg libgles2 libegl1 libgl1 fonts-dejavu-core
+
+      - name: Install package
+        run: pip install -e ".[dev,web]"
+
+      - name: Verify package boundaries and web dependencies
+        run: |
+          python -c "import fastapi; from swinglab.analysis import analyze_video; from swinglab.api import create_app"
+          python -m swinglab.cli --help
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  container-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Build production container
+        run: docker build --tag "caddieinsight:${GITHUB_SHA}" .
+
+      - name: Verify production health contract
+        run: |
+          docker run --detach --name caddieinsight-smoke \
+            --env PORT=8000 --publish 8000:8000 \
+            "caddieinsight:${GITHUB_SHA}"
+          for attempt in {1..30}; do
+            if curl --fail --silent http://127.0.0.1:8000/healthz; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs caddieinsight-smoke
+          exit 1
+
+      - name: Stop smoke-test container
+        if: always()
+        run: docker rm --force caddieinsight-smoke || true

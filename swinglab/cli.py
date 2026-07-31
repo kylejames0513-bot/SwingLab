@@ -14,7 +14,7 @@ from .config import Config
 from .events import EventError
 from .ffmpeg import FFmpegError
 from .metrics import SwingMetrics
-from .pipeline import SessionResult, ZeroStrikesError, analyze_video
+from .pipeline import SessionResult, VideoTooLongError, ZeroStrikesError, analyze_video
 
 VIDEO_SUFFIXES = {".mov", ".mp4", ".m4v", ".avi", ".mkv"}
 
@@ -32,6 +32,14 @@ def build_parser() -> argparse.ArgumentParser:
         "--hand", choices=("right", "left"), default="right", help="Golfer handedness"
     )
     ana.add_argument(
+        "--angle",
+        choices=("face-on", "dtl"),
+        default="face-on",
+        help="Camera angle. face-on (default) gives the full report; dtl "
+        "(down the line) keeps tempo/rhythm and honestly leaves the "
+        "face-on-defined body-drift and angle numbers unmeasured",
+    )
+    ana.add_argument(
         "--batch", action="store_true", help="Analyze every video in a folder"
     )
     ana.add_argument(
@@ -45,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
     ana.add_argument(
         "--keep-work", action="store_true", help="Keep intermediate frames/audio"
     )
+    ana.add_argument(
+        "--fast",
+        action="store_true",
+        help="Skip motion-interpolated slow motion (the long step) — much "
+        "quicker, slightly less smooth clips",
+    )
 
     srv = sub.add_parser("serve", help="Run the web app (upload page + results).")
     srv.add_argument("--host", default="127.0.0.1")
@@ -54,6 +68,32 @@ def build_parser() -> argparse.ArgumentParser:
         help="Where uploads and results are stored",
     )
     srv.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
+
+    kp = sub.add_parser(
+        "kpis",
+        help="Print the five business KPIs (activation, W1 re-film, "
+        "free\N{RIGHTWARDS ARROW}Pro, weekly filmers, gear attach) from the "
+        "web app's database.",
+    )
+    kp.add_argument(
+        "--since", type=float, default=90.0, metavar="DAYS",
+        help="Trailing window in days (default 90)",
+    )
+    kp.add_argument(
+        "--json", action="store_true", dest="as_json",
+        help="Machine-readable output (same payload as GET /admin/kpis)",
+    )
+    kp.add_argument(
+        "--sessions-dir", type=Path, default=Path("sessions"),
+        help="The web app's sessions directory (its swinglab.db is read)",
+    )
+    kp.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
+
+    # Explicit operator tooling only. Merely installing the package or setting
+    # credentials starts no backup process and changes no web runtime behavior.
+    from .backups.cli import add_backup_subparser
+
+    add_backup_subparser(sub)
     return parser
 
 
@@ -101,14 +141,67 @@ def _analyze_one(path: Path, args: argparse.Namespace, cfg: Config) -> SessionRe
         manual_strikes=_parse_strikes(args.strikes),
         cfg=cfg,
         keep_work=args.keep_work,
+        fast=args.fast,
+        angle=args.angle,
     )
     print_summary(result)
     return result
 
 
+def print_kpis(results, since_days: float, db_path: Path) -> None:
+    """A clean table: value, numerator/denominator, and — for any metric
+    the data cannot support — the honest reason instead of a number."""
+    from .kpis import TARGETS, format_value
+
+    print(f"KPIs over the last {since_days:g} days ({db_path})\n")
+    header = f"{'KPI':<28} {'Value':>10}  {'n/d':>9}  Notes"
+    print(header)
+    print("-" * len(header))
+    for kpi in results:
+        if kpi.value is None:
+            nd = "\N{EM DASH}"
+            note = kpi.reason or ""
+        else:
+            den = kpi.denominator if kpi.denominator is not None else "\N{EM DASH}"
+            nd = f"{kpi.numerator}/{den}"
+            note = f"target {TARGETS[kpi.key]}" if kpi.key in TARGETS else ""
+        print(f"{kpi.key:<28} {format_value(kpi):>10}  {nd:>9}  {note}")
+
+
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    if args.command == "backup":
+        from .backups.cli import run_backup_command
+
+        return run_backup_command(args)
+
     cfg = Config.load(args.config)
+
+    if args.command == "kpis":
+        import json
+        import math
+
+        from .kpis import compute_kpis
+
+        # nan slips past a plain <= 0 (all nan comparisons are False), so
+        # require a finite positive window explicitly.
+        if not math.isfinite(args.since) or args.since <= 0:
+            print("--since must be a positive number of days", file=sys.stderr)
+            return 2
+        db_path = args.sessions_dir / "swinglab.db"
+        results = compute_kpis(db_path, cfg, since_days=args.since)
+        if args.as_json:
+            print(json.dumps(
+                {
+                    "window_days": args.since,
+                    "kpis": {k.key: k.as_dict() for k in results},
+                },
+                indent=2, ensure_ascii=False,
+            ))
+        else:
+            print_kpis(results, args.since, db_path)
+        return 0
 
     if args.command == "serve":
         try:
@@ -124,7 +217,12 @@ def main(argv: list[str] | None = None) -> int:
             return 2
         app = create_app(cfg, sessions_dir=args.sessions_dir)
         print(f"{cfg.brand['name']} web app on http://{args.host}:{args.port}")
-        uvicorn.run(app, host=args.host, port=args.port)
+        # X-Forwarded-For handling lives INSIDE the app (create_app adds
+        # ProxyHeadersMiddleware per web.trusted_proxies — "*" as shipped
+        # for PaaS proxies, a list of IPs, or "" to disable). uvicorn's own
+        # proxy_headers layer is switched off so there is exactly one place
+        # that decides which proxies to trust.
+        uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
         return 0
 
     try:
@@ -144,7 +242,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"\n=== {video.name} ===")
                 try:
                     _analyze_one(video, args, cfg)
-                except (ZeroStrikesError, EventError, FFmpegError) as exc:
+                except (
+                    ZeroStrikesError, VideoTooLongError, EventError, FFmpegError
+                ) as exc:
                     print(f"SKIPPED {video.name}: {exc}", file=sys.stderr)
                     failures += 1
             return 1 if failures == len(videos) else 0
@@ -155,7 +255,7 @@ def main(argv: list[str] | None = None) -> int:
         _analyze_one(args.path, args, cfg)
         return 0
 
-    except ZeroStrikesError as exc:
+    except (ZeroStrikesError, VideoTooLongError) as exc:
         print(f"\n{exc}", file=sys.stderr)
         return 1
     except FFmpegError as exc:

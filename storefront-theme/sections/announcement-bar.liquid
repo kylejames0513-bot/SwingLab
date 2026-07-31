@@ -1,0 +1,93 @@
+{%- if section.settings.show_announcement -%}
+  {%- assign primary = section.settings.text -%}
+  {%- assign secondary = section.settings.secondary_text -%}
+  {%- if primary != blank or secondary != blank -%}
+    <div class="sl-announcement" role="region" aria-label="Announcement">
+      {%- if primary != blank -%}
+        {%- if section.settings.link != blank -%}
+          <a class="sl-announcement__item sl-announcement__link" href="{{ section.settings.link }}">{{ primary }}</a>
+        {%- else -%}
+          <span class="sl-announcement__item">{{ primary }}</span>
+        {%- endif -%}
+      {%- endif -%}
+      {%- if primary != blank and secondary != blank -%}
+        <span class="sl-announcement__dot" aria-hidden="true">&middot;</span>
+      {%- endif -%}
+      {%- if secondary != blank -%}
+        <span class="sl-announcement__item sl-announcement__item--secondary">{{ secondary }}</span>
+      {%- endif -%}
+    </div>
+  {%- endif -%}
+{%- endif -%}
+
+{% stylesheet %}
+.sl-announcement {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--sl-green);
+  color: var(--sl-green-ink);
+  text-align: center;
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  padding: 9px var(--sl-pad-x);
+}
+.sl-announcement__item { margin: 0; }
+.sl-announcement__link {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-color: rgba(233, 242, 236, 0.5);
+}
+.sl-announcement__link:hover {
+  color: #ffffff;
+  text-decoration-color: var(--sl-orange);
+}
+.sl-announcement__item--secondary { color: rgba(233, 242, 236, 0.75); }
+.sl-announcement__dot { color: var(--sl-orange); font-weight: 700; }
+
+@media (max-width: 649px) {
+  .sl-announcement {
+    flex-direction: column;
+    gap: 2px;
+    padding-top: 8px;
+    padding-bottom: 9px;
+  }
+  .sl-announcement__dot { display: none; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Announcement bar",
+  "settings": [
+    {
+      "type": "checkbox",
+      "id": "show_announcement",
+      "label": "Show announcement bar",
+      "default": true
+    },
+    {
+      "type": "text",
+      "id": "text",
+      "label": "Text",
+      "default": "Launch: 15% off training aids with code RANGE15"
+    },
+    {
+      "type": "url",
+      "id": "link",
+      "label": "Link (optional)",
+      "info": "Wraps the main text in a link."
+    },
+    {
+      "type": "text",
+      "id": "secondary_text",
+      "label": "Secondary text",
+      "default": "Free plan: 1 full swing analysis a month — no card required",
+      "info": "Shown after a dot on desktop, stacked on mobile."
+    }
+  ],
+  "presets": [{ "name": "Announcement bar" }]
+}
+{% endschema %}

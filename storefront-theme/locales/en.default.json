@@ -1,0 +1,58 @@
+{
+  "general": {
+    "accessibility": {
+      "skip_to_content": "Skip to content"
+    }
+  },
+  "layout": {
+    "cart": {
+      "count_one": "Cart, 1 item",
+      "count_other": "Cart, {{ count }} items",
+      "title": "Cart"
+    },
+    "navigation": {
+      "analyze": "Analyze",
+      "analyze_a_swing": "Analyze a swing",
+      "account": "Account",
+      "app_sign_in": "App sign in",
+      "caddieinsight_home": "CaddieInsight home",
+      "caddieinsight_profile": "CaddieInsight profile",
+      "close_menu": "Close menu",
+      "create_free_account": "Create free account",
+      "drills": "Drills",
+      "gear": "Gear",
+      "history": "History",
+      "home": "Home",
+      "main": "Main navigation",
+      "menu": "Menu",
+      "menu_title": "Menu",
+      "my_game": "My Game",
+      "orders": "Orders",
+      "orders_subscriptions": "Orders & subscriptions",
+      "pro": "Pro",
+      "progress": "Progress",
+      "shop": "Shop",
+      "start_free": "Start free"
+    }
+  },
+  "products": {
+    "product": {
+      "add_to_cart": "Add to cart",
+      "benefit_report": "Tempo, sway, hip-slide, and consistency metrics",
+      "benefit_unlock": "Access connects to your existing linked account, or your checkout email if you are new",
+      "benefit_unlimited": "Unlimited swing analyses while Pro is active",
+      "benefit_video": "Key frames, centerline overlay, and slow-motion clips",
+      "includes": "CaddieInsight Pro includes",
+      "one_time_help": "Best for trying Pro or gifting a fixed access window.",
+      "one_time_purchase": "One-time purchase",
+      "open_app": "Open CaddieInsight app",
+      "plan": "Plan",
+      "pro_kicker": "For golfers who want every range session to produce measurable feedback, not just another bucket of balls.",
+      "purchase_options": "Purchase options",
+      "show_image": "Show image {{ number }}",
+      "sold_out": "Sold out",
+      "unlock_body": "Already use CaddieInsight? Sign in with your current CaddieInsight email. New here? Create your account with the email used at Shopify checkout. Pro connects automatically when the paid-order webhook arrives.",
+      "unlock_heading": "How Pro unlocks"
+    }
+  }
+}

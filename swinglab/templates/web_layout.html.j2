@@ -1,0 +1,614 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#14472c">
+<title>{% block title %}{{ brand.name }}{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary: {{ brand.primary_color }};
+    --accent: {{ brand.accent_color }};
+    --sl-bg: #f7f5f0;
+    --sl-bg-card: #fffdf9;
+    --sl-ink: #17201a;
+    --sl-ink-soft: #4a544c;
+    --sl-ink-muted: #7a8279;
+    --sl-green: #14472c;
+    --sl-green-btn: #1a5c38;
+    --sl-green-ink: #e9f2ec;
+    --sl-orange: #e8720c;
+    --sl-orange-soft: #fff3e4;
+    --sl-border: #e3ded3;
+    --sl-pad-x: clamp(20px, 5vw, 56px);
+    --sl-font-sans: "Archivo", Helvetica, Arial, sans-serif;
+    --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--sl-bg);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-sans);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+  a { color: var(--sl-green-btn); }
+  a:hover { color: var(--sl-orange); }
+  :focus-visible {
+    outline: 2px solid var(--sl-green-btn);
+    outline-offset: 3px;
+    border-radius: 3px;
+  }
+  .sl-skip {
+    position: absolute;
+    left: -9999px;
+    top: 0;
+    z-index: 100;
+    background: var(--sl-green);
+    color: var(--sl-green-ink);
+    padding: 10px 18px;
+    border-radius: 0 0 10px 0;
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .sl-skip:focus-visible { left: 0; outline-color: var(--sl-orange); outline-offset: -3px; }
+  html.sl-menu-open { overflow: hidden; }
+  .sl-header {
+    position: sticky;
+    top: 0;
+    z-index: 40;
+    min-height: 72px;
+    padding: 0 var(--sl-pad-x);
+    background: rgba(247, 245, 240, 0.94);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--sl-border);
+  }
+  .sl-header__inner {
+    width: 100%;
+    max-width: 1280px;
+    min-height: 72px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    gap: clamp(16px, 2.5vw, 28px);
+  }
+  .sl-header__logo {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    color: var(--sl-green);
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -0.02em;
+    text-decoration: none;
+  }
+  .sl-header__logo-img { display: block; width: auto; height: 38px; }
+  .sl-header__desktop-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .sl-header__link,
+  .sl-header__dropdown-trigger {
+    min-height: 38px;
+    padding: 9px 12px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    border-radius: 999px;
+    color: var(--sl-ink);
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+    cursor: pointer;
+  }
+  .sl-header__link:hover,
+  .sl-header__dropdown-trigger:hover,
+  .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
+    background: var(--sl-bg-card);
+    color: var(--sl-green-btn);
+  }
+  .sl-header__link.is-current,
+  .sl-header__dropdown-trigger.is-current {
+    background: var(--sl-orange-soft);
+    color: var(--sl-green);
+  }
+  .sl-header__dropdown { position: relative; }
+  .sl-header__dropdown summary { list-style: none; }
+  .sl-header__dropdown summary::-webkit-details-marker { display: none; }
+  .sl-header__chevron {
+    width: 7px;
+    height: 7px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform .18s ease;
+  }
+  .sl-header__dropdown[open] .sl-header__chevron { transform: translateY(2px) rotate(225deg); }
+  .sl-header__dropdown-menu {
+    position: absolute;
+    top: calc(100% + 10px);
+    left: 0;
+    z-index: 45;
+    width: max-content;
+    min-width: 210px;
+    padding: 8px;
+    display: grid;
+    gap: 2px;
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border);
+    border-radius: 14px;
+    box-shadow: 0 18px 42px -24px rgba(15, 42, 27, 0.42);
+  }
+  .sl-header__dropdown-menu--right { right: 0; left: auto; }
+  .sl-header__dropdown-menu a {
+    padding: 10px 12px;
+    border-radius: 9px;
+    color: var(--sl-ink);
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .sl-header__dropdown-menu a:hover {
+    background: var(--sl-orange-soft);
+    color: var(--sl-green);
+  }
+  .sl-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+  .sl-header__cta,
+  .sl-header__cart {
+    min-height: 40px;
+    padding: 7px 16px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1.5px solid var(--sl-green);
+    border-radius: 999px;
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .sl-header__cta { background: var(--sl-green); color: var(--sl-green-ink); }
+  .sl-header__cta:hover { background: var(--sl-green-btn); color: #fff; }
+  .sl-header__cart { background: transparent; color: var(--sl-green); }
+  .sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange); }
+  .sl-header__toggle {
+    display: none;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 10px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: center;
+    gap: 5px;
+    border: 1.5px solid var(--sl-green);
+    border-radius: 50%;
+    background: transparent;
+    color: var(--sl-green);
+    cursor: pointer;
+  }
+  .sl-header__toggle:hover { background: var(--sl-bg-card); color: var(--sl-green-btn); }
+  .sl-header__toggle span {
+    display: block;
+    width: 100%;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+  }
+  .sl-menu {
+    width: 100vw;
+    max-width: none;
+    height: 100dvh;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    overflow: hidden;
+  }
+  .sl-menu::backdrop { background: rgba(10, 28, 18, 0.46); }
+  .sl-menu__panel {
+    width: min(88vw, 360px);
+    height: 100dvh;
+    margin-left: auto;
+    padding: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    background: var(--sl-bg);
+    border-left: 1px solid var(--sl-border);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    box-shadow: -24px 0 60px -34px rgba(15, 42, 27, 0.55);
+  }
+  .sl-menu[open] .sl-menu__panel { animation: sl-menu-in .22s ease-out both; }
+  @keyframes sl-menu-in {
+    from { opacity: .85; transform: translateX(28px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  .sl-menu__head {
+    min-height: 44px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sl-menu__title {
+    margin: 0;
+    color: var(--sl-green);
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+  }
+  .sl-menu__close {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    margin: 0;
+    padding: 0;
+    border: 1.5px solid var(--sl-border);
+    border-radius: 50%;
+    background: var(--sl-bg-card);
+    color: var(--sl-ink);
+    cursor: pointer;
+  }
+  .sl-menu__close:hover { background: var(--sl-orange-soft); color: var(--sl-green); }
+  .sl-menu__close span {
+    position: absolute;
+    top: 20px;
+    left: 11px;
+    width: 20px;
+    height: 2px;
+    border-radius: 2px;
+    background: currentColor;
+  }
+  .sl-menu__close span:first-child { transform: rotate(45deg); }
+  .sl-menu__close span:last-child { transform: rotate(-45deg); }
+  .sl-menu__nav {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  .sl-menu__cta {
+    width: 100%;
+    min-height: 48px;
+    justify-content: center;
+  }
+  .sl-menu__group {
+    padding-top: 18px;
+    display: grid;
+    gap: 2px;
+    border-top: 1px solid var(--sl-border);
+  }
+  .sl-menu__eyebrow {
+    margin: 0 0 7px;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .sl-menu__link {
+    min-height: 46px;
+    padding: 10px 4px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    border-radius: 8px;
+    color: var(--sl-ink);
+    font-size: 17px;
+    font-weight: 650;
+    text-decoration: none;
+  }
+  .sl-menu__link:hover { color: var(--sl-green-btn); }
+  .sl-menu__link.is-current {
+    padding-inline: 10px;
+    background: var(--sl-orange-soft);
+    color: var(--sl-green);
+  }
+  main { max-width: 680px; margin: 48px auto; padding: 0 24px; }
+  .card {
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border);
+    border-radius: 16px;
+    padding: clamp(22px, 4vw, 32px);
+    box-shadow: 0 1px 2px rgba(15,42,27,.04), 0 16px 36px -24px rgba(15,42,27,.24);
+  }
+  button, a.button {
+    display: inline-block;
+    margin-top: 20px;
+    background: var(--sl-green-btn);
+    color: white;
+    border: 1.5px solid var(--sl-green-btn);
+    padding: 12px 24px;
+    font: inherit;
+    font-weight: 700;
+    border-radius: 8px;
+    cursor: pointer;
+    text-decoration: none;
+  }
+  button:hover, a.button:hover { background: var(--sl-green); color: white; }
+  button:disabled { background: #bbb; border-color: #bbb; cursor: default; }
+  a.button.secondary { background: transparent; color: var(--sl-green); border-color: var(--sl-green); }
+  a.button.secondary:hover { background: var(--sl-green); color: white; }
+  .hint { color: var(--sl-ink-soft); font-size: 0.88rem; margin-top: 4px; }
+  .bar { background: #e6e3dc; border-radius: 6px; height: 14px; margin: 14px 0 6px; }
+  .bar > div { background: var(--accent); border-radius: 6px; height: 100%;
+               transition: width 0.4s; min-width: 6px; }
+  .bar-label { color: var(--sl-ink-soft); font-size: 0.9rem; }
+  .error { color: #b3261e; white-space: pre-wrap; }
+  .disclaimer { color: var(--sl-ink-muted); font-style: italic; font-size: 0.85rem; margin-top: 24px; }
+  footer { text-align: center; color: var(--sl-ink-muted); font-size: 0.85rem; padding: 28px 24px; }
+  @media (max-width: 980px) {
+    .sl-header { min-height: 64px; }
+    .sl-header__inner { min-height: 64px; gap: 10px; }
+    .sl-header__desktop-nav,
+    .sl-header__account,
+    .sl-header__app { display: none; }
+    .sl-header__actions { margin-left: auto; gap: 8px; }
+    .sl-header__toggle { display: flex; }
+    .sl-header__logo { font-size: 18px; }
+    .sl-header__logo-img { height: 28px; max-width: 175px; object-fit: contain; }
+    .sl-header__cart { min-height: 38px; }
+    main { margin-top: 32px; padding: 0 18px; }
+  }
+  @media (max-width: 390px) {
+    .sl-header { padding-inline: 12px; }
+    .sl-header__logo-img { height: 24px; max-width: 142px; }
+    .sl-header__cart { padding: 5px 10px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sl-header__chevron { transition: none; }
+    .sl-menu[open] .sl-menu__panel { animation: none; }
+  }
+  {% block style %}{% endblock %}
+</style>
+</head>
+<body>
+<a class="sl-skip" href="#MainContent">Skip to content</a>
+<header class="sl-header" data-sl-header data-menu-id="sl-mobile-menu">
+  <div class="sl-header__inner">
+    <a class="sl-header__logo" href="{{ storefront_url or '/' }}" aria-label="{{ brand.name }} home">
+      {% if brand.logo_url %}
+        <img class="sl-header__logo-img" src="{{ brand.logo_url }}" alt="{{ brand.name }}">
+      {% else %}
+        {{ brand.name | upper }}
+      {% endif %}
+    </a>
+
+    <nav class="sl-header__desktop-nav" aria-label="Main navigation">
+      <details class="sl-header__dropdown" data-header-dropdown>
+        <summary class="sl-header__dropdown-trigger{% if current_path == '/sessions' or current_path == '/progress' or current_path == '/drills' %} is-current{% endif %}">
+          My Game
+          <span class="sl-header__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="sl-header__dropdown-menu">
+          <a href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
+          {% if require_account %}
+            <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>
+          {% endif %}
+          <a href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
+        </div>
+      </details>
+      {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
+      <a class="sl-header__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" {% if current_path == '/pricing' %}aria-current="page"{% endif %}>Pro</a>
+    </nav>
+
+    <div class="sl-header__actions">
+      {% if require_account or storefront_url %}
+      <details class="sl-header__dropdown sl-header__account" data-header-dropdown>
+        <summary class="sl-header__dropdown-trigger{% if current_path == '/account' or current_path == '/login' or current_path == '/signup' %} is-current{% endif %}">
+          Account
+          <span class="sl-header__chevron" aria-hidden="true"></span>
+        </summary>
+        <div class="sl-header__dropdown-menu sl-header__dropdown-menu--right">
+          {% if require_account and user %}
+            <a href="/account" {% if current_path == '/account' %}aria-current="page"{% endif %}>CaddieInsight profile</a>
+          {% elif require_account %}
+            <a href="/login" {% if current_path == '/login' %}aria-current="page"{% endif %}>Sign in</a>
+            <a href="/signup" {% if current_path == '/signup' %}aria-current="page"{% endif %}>Create free account</a>
+          {% endif %}
+          {% if storefront_url %}<a href="{{ storefront_url }}/account">Orders &amp; subscriptions</a>{% endif %}
+        </div>
+      </details>
+      {% endif %}
+
+      {% if storefront_url %}<a class="sl-header__cart" href="{{ storefront_url }}/cart">Cart</a>{% endif %}
+      <a class="sl-header__cta sl-header__app" href="/">Analyze a swing</a>
+      <button class="sl-header__toggle" type="button"
+              aria-label="Menu"
+              aria-expanded="false"
+              aria-haspopup="dialog"
+              aria-controls="sl-mobile-menu"
+              data-menu-open>
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+</header>
+
+<dialog class="sl-menu" id="sl-mobile-menu" aria-labelledby="sl-mobile-menu-title" data-sl-menu>
+  <div class="sl-menu__panel">
+    <div class="sl-menu__head">
+      <h2 class="sl-menu__title" id="sl-mobile-menu-title">Menu</h2>
+      <button class="sl-menu__close" type="button" aria-label="Close menu" data-menu-close>
+        <span aria-hidden="true"></span>
+        <span aria-hidden="true"></span>
+      </button>
+    </div>
+
+    <nav class="sl-menu__nav" aria-label="Main navigation">
+      <a class="sl-header__cta sl-menu__cta" href="/" data-menu-link>Analyze a swing</a>
+
+      <div class="sl-menu__group">
+        <p class="sl-menu__eyebrow">My Game</p>
+        <a class="sl-menu__link{% if current_path == '/sessions' %} is-current{% endif %}" href="/sessions" data-menu-link {% if current_path == '/sessions' %}aria-current="page"{% endif %}>
+          <span>History</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {% if require_account %}
+        <a class="sl-menu__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" data-menu-link {% if current_path == '/progress' %}aria-current="page"{% endif %}>
+          <span>Progress{% if user and progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {% endif %}
+        <a class="sl-menu__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" data-menu-link {% if current_path == '/drills' %}aria-current="page"{% endif %}>
+          <span>Drills</span><span aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+
+      <div class="sl-menu__group">
+        <p class="sl-menu__eyebrow">Shop</p>
+        {% if shop_enabled %}
+        <a class="sl-menu__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" data-menu-link {% if current_path == '/shop' %}aria-current="page"{% endif %}>
+          <span>Gear</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {% endif %}
+        <a class="sl-menu__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" data-menu-link {% if current_path == '/pricing' %}aria-current="page"{% endif %}>
+          <span>Pro</span><span aria-hidden="true">&rarr;</span>
+        </a>
+      </div>
+
+      {% if require_account or storefront_url %}
+      <div class="sl-menu__group">
+        <p class="sl-menu__eyebrow">Account</p>
+        {% if require_account and user %}
+        <a class="sl-menu__link{% if current_path == '/account' %} is-current{% endif %}" href="/account" data-menu-link {% if current_path == '/account' %}aria-current="page"{% endif %}>
+          <span>CaddieInsight profile</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {% elif require_account %}
+        <a class="sl-menu__link{% if current_path == '/login' %} is-current{% endif %}" href="/login" data-menu-link {% if current_path == '/login' %}aria-current="page"{% endif %}>
+          <span>Sign in</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        <a class="sl-menu__link{% if current_path == '/signup' %} is-current{% endif %}" href="/signup" data-menu-link {% if current_path == '/signup' %}aria-current="page"{% endif %}>
+          <span>Create free account</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {% endif %}
+        {% if storefront_url %}
+        <a class="sl-menu__link" href="{{ storefront_url }}/account" data-menu-link>
+          <span>Orders &amp; subscriptions</span><span aria-hidden="true">&rarr;</span>
+        </a>
+        {% endif %}
+      </div>
+      {% endif %}
+    </nav>
+  </div>
+</dialog>
+<main id="MainContent">
+{% block main %}{% endblock %}
+</main>
+<footer>{{ brand.footer_text }}</footer>
+<script>
+  (function () {
+    var header = document.querySelector('[data-sl-header]');
+    if (!header) return;
+
+    var menu = document.getElementById(header.getAttribute('data-menu-id'));
+    var openButton = header.querySelector('[data-menu-open]');
+    var closeButton = menu && menu.querySelector('[data-menu-close]');
+    var menuLinks = menu ? menu.querySelectorAll('[data-menu-link]') : [];
+    var desktopMenus = header.querySelectorAll('[data-header-dropdown]');
+    var restoreMenuFocus = false;
+
+    function finishMenuClose() {
+      openButton.setAttribute('aria-expanded', 'false');
+      document.documentElement.classList.remove('sl-menu-open');
+      if (restoreMenuFocus) openButton.focus();
+      restoreMenuFocus = false;
+    }
+
+    function closeMenu(restoreFocus) {
+      if (!menu || !menu.hasAttribute('open')) return;
+      restoreMenuFocus = restoreFocus;
+      if (typeof menu.close === 'function') {
+        menu.close();
+      } else {
+        menu.removeAttribute('open');
+        finishMenuClose();
+      }
+    }
+
+    function openMenu() {
+      if (!menu || menu.hasAttribute('open')) return;
+      if (typeof menu.showModal === 'function') {
+        menu.showModal();
+      } else {
+        menu.setAttribute('open', '');
+      }
+      openButton.setAttribute('aria-expanded', 'true');
+      document.documentElement.classList.add('sl-menu-open');
+      if (closeButton) closeButton.focus();
+    }
+
+    if (menu && openButton) {
+      openButton.addEventListener('click', openMenu);
+      if (closeButton) closeButton.addEventListener('click', function () { closeMenu(true); });
+      menu.addEventListener('cancel', function (event) {
+        event.preventDefault();
+        closeMenu(true);
+      });
+      menu.addEventListener('close', finishMenuClose);
+      menu.addEventListener('click', function (event) {
+        if (event.target === menu) closeMenu(true);
+      });
+      for (var i = 0; i < menuLinks.length; i++) {
+        menuLinks[i].addEventListener('click', function () { closeMenu(false); });
+      }
+      var desktopQuery = window.matchMedia('(min-width: 981px)');
+      var closeOnBreakpointChange = function (event) {
+        for (var i = 0; i < desktopMenus.length; i++) {
+          desktopMenus[i].removeAttribute('open');
+        }
+        if (event.matches) closeMenu(false);
+      };
+      if (desktopQuery.addEventListener) desktopQuery.addEventListener('change', closeOnBreakpointChange);
+    }
+
+    for (var j = 0; j < desktopMenus.length; j++) {
+      desktopMenus[j].addEventListener('toggle', function (event) {
+        if (!event.currentTarget.open) return;
+        for (var k = 0; k < desktopMenus.length; k++) {
+          if (desktopMenus[k] !== event.currentTarget) desktopMenus[k].removeAttribute('open');
+        }
+      });
+      desktopMenus[j].addEventListener('focusout', function (event) {
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          event.currentTarget.removeAttribute('open');
+        }
+      });
+    }
+    document.addEventListener('click', function (event) {
+      for (var i = 0; i < desktopMenus.length; i++) {
+        if (!desktopMenus[i].contains(event.target)) desktopMenus[i].removeAttribute('open');
+      }
+    });
+    document.addEventListener('keydown', function (event) {
+      if (event.key !== 'Escape') return;
+      for (var i = 0; i < desktopMenus.length; i++) {
+        if (!desktopMenus[i].hasAttribute('open')) continue;
+        desktopMenus[i].removeAttribute('open');
+        var summary = desktopMenus[i].querySelector('summary');
+        if (summary) summary.focus();
+      }
+    });
+  })();
+</script>
+{% block script %}{% endblock %}
+</body>
+</html>

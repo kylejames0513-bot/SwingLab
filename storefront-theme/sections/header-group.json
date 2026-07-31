@@ -1,0 +1,23 @@
+{
+  "type": "header",
+  "name": "Header group",
+  "sections": {
+    "announcement": {
+      "type": "announcement-bar",
+      "settings": {
+        "show_announcement": true,
+        "text": "Launch: 15% off training aids with code RANGE15",
+        "link": "shopify://collections/swinglab-gear",
+        "secondary_text": "Free plan: 1 full swing analysis a month — no card required"
+      }
+    },
+    "header": {
+      "type": "header",
+      "settings": {
+        "logo_text": "CADDIEINSIGHT",
+        "app_url": "https://app.caddieinsight.com"
+      }
+    }
+  },
+  "order": ["announcement", "header"]
+}

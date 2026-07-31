@@ -1,0 +1,39 @@
+<div class="sl-wrap sl-404">
+  <p class="sl-eyebrow">Error 404</p>
+  <h1 class="sl-main-404__title">{{ section.settings.heading | default: 'Out of bounds.' }}</h1>
+  <p class="sl-404-body">{{ section.settings.body | default: "This page isn't here. Take a drop and play on." }}</p>
+  <div class="sl-404-actions">
+    <a class="sl-btn sl-btn--primary" href="{{ routes.root_url }}">Back to the home page</a>
+    <a class="sl-btn sl-btn--outline" href="/collections/swinglab-gear">Browse the gear</a>
+  </div>
+</div>
+
+{% stylesheet %}
+.sl-main-404__title {
+  margin: 0;
+  font-size: var(--sl-text-4xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--sl-green);
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "404 page",
+  "settings": [
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "default": "Out of bounds."
+    },
+    {
+      "type": "text",
+      "id": "body",
+      "label": "Body",
+      "default": "This page isn't here. Take a drop and play on."
+    }
+  ]
+}
+{% endschema %}
