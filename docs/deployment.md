@@ -55,7 +55,7 @@ not initiate a production deployment as part of foundation work.
 ## Shopify customer-sync deployment gate
 
 Outbound Admin API customer sync ships with
-`shopify_customer_sync.enabled: false`. The Admin access token alone must not
+`shopify_customer_sync.enabled: false`. Admin credentials alone must not
 activate it, and deployment must not run the existing-user backfill.
 
 Before enabling the flag:
@@ -65,10 +65,17 @@ Before enabling the flag:
    unique constraint is present;
 3. confirm `read_customers`, `write_customers`, and protected email access for
    the installed Shopify app;
-4. test existing-customer reuse, new-customer creation, Shopify outage,
+4. configure the canonical Admin store, explicit stable API version, and
+   exactly one authentication mode: preferred client ID/client secret or
+   legacy static access token;
+5. run the read-only schema preflight, then use `--bind-only` with exact
+   canonical-store confirmation to persist the authenticated Shop GID without
+   reading or mutating customers;
+6. test existing-customer reuse, new-customer creation, Shopify outage,
    throttling, duplicate matches, and verified-email behavior in development;
-5. verify `GET /admin/shopify-sync` and protected manual retry;
-6. run `swinglab shopify-backfill --sessions-dir /data/sessions` without
+7. verify coarse public `/healthz`, exact protected
+   `GET /admin/shopify-sync`, and `user_ref`-based manual retry;
+8. run `swinglab shopify-backfill --sessions-dir /data/sessions` without
    `--apply`, review the dry-run summary, then use explicit small `--apply`
    batches only during a monitored stage.
 

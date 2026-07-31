@@ -202,6 +202,79 @@ def test_claim_code_signup_can_atomically_stamp_verified_email(tmp_path):
     assert created.shopify_sync_status == SHOPIFY_SYNC_PENDING
 
 
+def test_claim_code_signup_rolls_back_and_survives_restart(tmp_path):
+    """Intent, code, account, and Shopify outbox commit as one unit."""
+
+    db = tmp_path / "users.sqlite"
+    email = "restart-safe@example.com"
+    password = "longenough"
+    browser_nonce = "claiming-browser-nonce"
+    store = UserStore(db)
+    intent = store.issue_signup_intent(
+        email,
+        password,
+        session_nonce=browser_nonce,
+    )
+    code = store.issue_email_code(
+        email,
+        "claim",
+        session_nonce=browser_nonce,
+    )
+    assert code is not None
+    store._conn.execute(
+        "CREATE TRIGGER fail_claim_account BEFORE INSERT ON users"
+        " WHEN NEW.email = 'restart-safe@example.com'"
+        " BEGIN SELECT RAISE(ABORT, 'simulated process failure'); END"
+    )
+    store._conn.commit()
+
+    with pytest.raises(sqlite3.IntegrityError, match="simulated process failure"):
+        store.complete_signup_intent_with_code(
+            intent,
+            code,
+            shopify_sync_pending=True,
+            session_nonce=browser_nonce,
+        )
+
+    # The failed account insert rolled back both prior DELETE statements.
+    assert (
+        store.get_signup_intent(intent, session_nonce=browser_nonce)
+        is not None
+    )
+    assert store.get_by_email(email) is None
+    assert store._conn.execute(
+        "SELECT COUNT(*) FROM email_codes"
+        " WHERE email = ? AND purpose = 'claim'",
+        (email,),
+    ).fetchone()[0] == 1
+    store._conn.execute("DROP TRIGGER fail_claim_account")
+    store._conn.commit()
+    store._conn.close()
+
+    # A new process can consume the exact same durable pair successfully.
+    restarted = UserStore(db)
+    created = restarted.complete_signup_intent_with_code(
+        intent,
+        code,
+        shopify_sync_pending=True,
+        session_nonce=browser_nonce,
+    )
+    assert created.email_verified
+    assert created.has_password
+    assert created.shopify_sync_status == SHOPIFY_SYNC_PENDING
+    assert restarted.get_signup_intent(
+        intent, session_nonce=browser_nonce
+    ) is None
+    assert restarted._conn.execute(
+        "SELECT COUNT(*) FROM email_codes"
+        " WHERE email = ? AND purpose = 'claim'",
+        (email,),
+    ).fetchone()[0] == 0
+    assert [user.id for user in restarted.list_due_shopify_syncs()] == [
+        created.id
+    ]
+
+
 def test_attempt_tokens_reject_stale_results_and_store_numeric_identity(tmp_path):
     store = UserStore(tmp_path / "users.sqlite")
     user = store.create("sync@example.com", "longenough")

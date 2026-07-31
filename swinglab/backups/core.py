@@ -28,6 +28,12 @@ CRITICAL_TABLES = (
     "gear_orders",
     "email_codes",
     "auth_attempts",
+    "shopify_sync_control",
+    "shopify_privacy_event_fences",
+    "shopify_redacted_order_fences",
+    "shopify_privacy_requests",
+    "shopify_customer_tombstones",
+    "shopify_pending_customer_links",
 )
 
 _BACKUP_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")

@@ -19,12 +19,19 @@ below therefore means required for the stated production capability.
 
 ## Shopify purchase bridge
 
-Both variables are required to enable signed purchase and customer webhooks.
+Buyer-facing Shopify commerce requires `SHOPIFY_STORE_DOMAIN` plus the primary
+`SHOPIFY_WEBHOOK_SECRET`. That pair enables Pro purchase links, manual
+order/customer deliveries, and Shopify-connected inbox-proof signup semantics.
+The shared webhook endpoint itself stays available with the store domain plus
+either signing secret, so `SHOPIFY_PRIVACY_WEBHOOK_SECRET` alone can authenticate
+mandatory compliance deliveries. Privacy-only configuration does not expose a
+Pro checkout link or turn a local signup into a Shopify-connected claim.
 
 | Variable | Sensitivity | Purpose |
 | --- | --- | --- |
 | `SHOPIFY_STORE_DOMAIN` | Non-secret | Store hostname used for the Pro purchase link and shared with the Storefront client. |
-| `SHOPIFY_WEBHOOK_SECRET` | Secret | HMAC key used to validate the exact raw Shopify webhook body. |
+| `SHOPIFY_WEBHOOK_SECRET` | Secret | HMAC key for the existing Shopify Admin notification webhooks. |
+| `SHOPIFY_PRIVACY_WEBHOOK_SECRET` | Secret | Optional HMAC key for mandatory privacy topics delivered by the dedicated bridge app. It is that app's client secret, not its access token, and does not enable buyer-facing commerce by itself. |
 
 The preserved webhook URLs are `POST /webhooks/shopify` and
 `POST /webhooks/shopify/`. The product handle, SKUs, tags, and collection paths
@@ -49,14 +56,25 @@ even if every environment variable below is present.
 
 | Variable | Sensitivity | Purpose |
 | --- | --- | --- |
-| `SHOPIFY_ADMIN_STORE_DOMAIN` | Non-secret | Canonical `your-store.myshopify.com` Admin API host. Custom storefront domains are rejected so the Admin token cannot be sent to the wrong origin. |
-| `SHOPIFY_ADMIN_ACCESS_TOKEN` | Secret | Backend-only Admin GraphQL credential. It must never be rendered into HTML, returned by an API, placed in mobile/client code, or written to logs. |
+| `SHOPIFY_ADMIN_STORE_DOMAIN` | Non-secret | Canonical `your-store.myshopify.com` Admin API host. When outbound sync is enabled, it must exactly match the normalized `SHOPIFY_STORE_DOMAIN` used to validate inbound webhooks. |
+| `SHOPIFY_ADMIN_CLIENT_ID` | Non-secret identifier | Client ID of the dedicated Dev Dashboard app. Configure it only with `SHOPIFY_ADMIN_CLIENT_SECRET`. |
+| `SHOPIFY_ADMIN_CLIENT_SECRET` | Secret | Backend-only Dev Dashboard app credential. The server exchanges the pair for a short-lived Admin API token, caches it until shortly before expiry, and refreshes it once if Shopify rejects it early. |
+| `SHOPIFY_ADMIN_ACCESS_TOKEN` | Secret | Legacy static-token alternative. Configure this alone, never together with either client-credentials variable. |
 | `SHOPIFY_ADMIN_API_VERSION` | Non-secret | Explicit Admin GraphQL version. Review it against Shopify's stable-version schedule each quarter. |
+| `SHOPIFY_CUSTOMER_SYNC_COHORT_PERCENT` | Non-secret | Explicit second gate for automatic registration sync, from `0` through `100`. It defaults to `0`, so enabling the global feature flag alone syncs nobody. A nonzero value also requires a stable `SWINGLAB_SECRET`; selection is a deterministic keyed bucket and no email is logged or persisted for cohorting. |
 
-Keep `SHOPIFY_ADMIN_STORE_DOMAIN` and `SHOPIFY_ADMIN_API_VERSION` separate from
-the existing `SHOPIFY_STORE_DOMAIN` and `SHOPIFY_API_VERSION`: the latter pair
-belongs to storefront/webhook behavior, may use a custom storefront hostname,
-and must not silently retarget the Admin bridge.
+Keep the Admin and Storefront API-version variables separate. While outbound
+customer sync is enabled, however, normalized `SHOPIFY_STORE_DOMAIN` must be
+the same canonical `*.myshopify.com` hostname as
+`SHOPIFY_ADMIN_STORE_DOMAIN`. The persisted database binding must match that
+same domain and the authenticated exact Shop GID. A missing, custom, or
+different webhook domain hard-blocks outbound enrollment, worker startup, and
+customer calls while leaving the signed inbound bridge available. A custom
+storefront hostname remains supported only while outbound customer sync is
+disabled. Exactly one Admin authentication mode is valid: the complete
+client-ID/client-secret pair or the legacy static access token. Missing halves
+and mixed modes fail configuration validation before a worker can contact
+Shopify.
 
 The app installation needs the minimum `read_customers` and `write_customers`
 scopes. Customer email is protected customer data, so configure and, where
@@ -107,7 +125,7 @@ password flow.
 | Variable | Sensitivity | Purpose |
 | --- | --- | --- |
 | `SENTRY_DSN` | Secret-bearing | Enables Sentry only when the `ops` package extra is also installed; default PII, request bodies, and frame locals are disabled in code. |
-| `SWINGLAB_ADMIN_TOKEN` | Secret | Enables bearer-token access to `GET /admin/kpis`; the route returns 404 without a valid token. |
+| `SWINGLAB_ADMIN_TOKEN` | Secret | Enables bearer-token access to `GET /admin/kpis`, exact Shopify sync health, and opaque-reference retry; protected routes return 404 without a valid token. Privacy export delivery uses the host-level operator CLI and filesystem permissions instead. |
 
 ## Optional Litestream backup recipe
 

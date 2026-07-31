@@ -1,0 +1,28 @@
+# Learn more about configuring your app at https://shopify.dev/docs/apps/tools/cli/configuration
+
+client_id = "003f5e06c49ffe797a116b22d3f6dafc"
+name = "CaddieInsight Customer Bridge"
+application_url = "https://app.caddieinsight.com"
+embedded = false
+
+[access_scopes]
+# Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
+scopes = "read_customers,write_customers"
+optional_scopes = [ ]
+use_legacy_install_flow = false
+
+[auth]
+redirect_urls = [ ]
+
+[webhooks]
+api_version = "2026-07"
+
+# Release only after SHOPIFY_PRIVACY_WEBHOOK_SECRET and the matching endpoint
+# code are deployed together; config validation alone does not change Shopify.
+[[webhooks.subscriptions]]
+compliance_topics = [
+  "customers/data_request",
+  "customers/redact",
+  "shop/redact",
+]
+uri = "https://app.caddieinsight.com/webhooks/shopify"

@@ -5,11 +5,18 @@ Entirely environment-driven and safely inert until configured:
     SHOPIFY_STORE_DOMAIN     yourstore.myshopify.com (shared with shop.py)
     SHOPIFY_WEBHOOK_SECRET   webhook signing secret from Shopify admin
                              (Settings -> Notifications -> Webhooks)
+    SHOPIFY_PRIVACY_WEBHOOK_SECRET
+                             optional client secret for mandatory compliance
+                             topics delivered by a dedicated custom app
 
-With those unset, ``enabled()`` is False and Pro upgrades fall back to
-Stripe (billing.py) or "coming soon". When both Shopify and Stripe are
-configured, the pricing and account pages send buyers to the Shopify store
-— one checkout for gear and memberships alike.
+``SHOPIFY_STORE_DOMAIN`` plus the primary ``SHOPIFY_WEBHOOK_SECRET`` enables
+the commerce bridge: ``commerce_enabled()`` (and its compatibility alias
+``enabled()``) then exposes Pro purchase links and requires inbox proof for
+Shopify-connected signup semantics. A store plus either signing secret keeps
+``webhook_endpoint_enabled()`` available, so a privacy-only app can deliver
+mandatory compliance topics without advertising checkout. When neither
+commerce path is configured, Pro upgrades fall back to Stripe (billing.py) or
+"coming soon".
 
 Setup, on the Shopify side:
 
@@ -59,12 +66,13 @@ created on the store automatically exists in the app:
 
 - ``customers/create`` / ``customers/update`` upsert a "store account":
   no user for the (normalized) email -> a passwordless stub is created
-  with ``shopify_customer_id`` and ``source='shopify'``; a user exists ->
-  only the ``shopify_customer_id`` link is set/refreshed. The customer id
-  is the stable identity: an unclaimed store-only stub can follow a changed
-  Shopify email in place, while a claimed account keeps its verified app
-  login email rather than splitting into a second user or auto-merging
-  accounts. Replays are idempotent.
+  with ``shopify_customer_id`` and ``source='shopify'``; an inbox-verified
+  user may receive the stable link, while a pre-existing unverified local
+  account is quarantined in a pending identity row until successful email
+  proof. The customer id is the stable identity: an unclaimed store-only
+  stub can follow a changed Shopify email in place, while a claimed account
+  keeps its verified app login email rather than splitting into a second
+  user or auto-merging accounts. Replays are idempotent.
 - ``customers/delete`` deletes the user ONLY when it is an unclaimed stub
   (never claimed by password or code sign-in, and no analyses); any Pro
   days it still carried are parked in ``pro_grants`` so a later signup
@@ -77,9 +85,13 @@ created on the store automatically exists in the app:
   erases the shopify-sourced profile fields (link + source) on claimed
   accounts, drops any parked purchase for a deleted stub's email, and
   severs the former-account mapping.
-- ``customers/data_request`` and ``shop/redact`` (GDPR) are acknowledged
-  with a 200 and logged. A complete export/shop-wide erasure workflow is
-  not implemented here and remains separate privacy-compliance work.
+- ``customers/data_request`` atomically stores an integrity-checked export
+  snapshot for operator delivery. Exact delivery replays reuse the same
+  request. Snapshots expire after the explicit retention window.
+- ``shop/redact`` accepts only the exact configured store and transactionally
+  removes the single-store Shopify ledgers, pending grants, identities,
+  sync/backfill state, store-only stubs, signup intents, and privacy snapshots.
+  Independently claimed accounts and swing analyses remain.
 """
 
 from __future__ import annotations
@@ -93,7 +105,10 @@ import os
 from datetime import datetime
 
 from ..config import Config
-from ..integrations.shopify.identity import normalize_customer_id
+from ..integrations.shopify.identity import (
+    normalize_customer_id,
+    normalize_shop_domain,
+)
 from .users import UserStore
 
 logger = logging.getLogger("swinglab.web.shopify")
@@ -107,17 +122,48 @@ CUSTOMER_UPSERT_TOPICS = (
 )
 CUSTOMER_DELETE_TOPICS = ("customers/delete", "CUSTOMERS_DELETE")
 CUSTOMER_REDACT_TOPICS = ("customers/redact", "CUSTOMERS_REDACT")
-ACK_TOPICS = (
-    "customers/data_request", "CUSTOMERS_DATA_REQUEST",
-    "shop/redact", "SHOP_REDACT",
+DATA_REQUEST_TOPICS = (
+    "customers/data_request",
+    "CUSTOMERS_DATA_REQUEST",
+)
+SHOP_REDACT_TOPICS = ("shop/redact", "SHOP_REDACT")
+PRIVACY_TOPICS = (
+    *CUSTOMER_REDACT_TOPICS,
+    *DATA_REQUEST_TOPICS,
+    *SHOP_REDACT_TOPICS,
+)
+MUTATING_TOPICS = (
+    *PAID_TOPICS,
+    *CANCELLED_TOPICS,
+    *REFUND_TOPICS,
+    *CUSTOMER_UPSERT_TOPICS,
+    *CUSTOMER_DELETE_TOPICS,
+    *PRIVACY_TOPICS,
 )
 
 
-def enabled() -> bool:
+def commerce_enabled() -> bool:
+    """Whether buyer-facing Shopify commerce semantics are configured."""
     return bool(
-        os.environ.get("SHOPIFY_STORE_DOMAIN")
-        and os.environ.get("SHOPIFY_WEBHOOK_SECRET")
+        _configured_shop_domain()
+        and _signing_secret_present("SHOPIFY_WEBHOOK_SECRET")
     )
+
+
+def webhook_endpoint_enabled() -> bool:
+    """Whether at least one signed Shopify webhook source is configured."""
+    return bool(
+        _configured_shop_domain()
+        and (
+            _signing_secret_present("SHOPIFY_WEBHOOK_SECRET")
+            or _signing_secret_present("SHOPIFY_PRIVACY_WEBHOOK_SECRET")
+        )
+    )
+
+
+def enabled() -> bool:
+    """Compatibility alias for the historical commerce-readiness predicate."""
+    return commerce_enabled()
 
 
 def buy_url(cfg: Config) -> str:
@@ -134,20 +180,43 @@ def buy_url(cfg: Config) -> str:
 
 
 def handle_webhook(
-    payload: bytes, signature: str, topic: str, users: UserStore, cfg: Config
+    payload: bytes,
+    signature: str,
+    topic: str,
+    users: UserStore,
+    cfg: Config,
+    event_id: str | None = None,
+    shop_domain: str | None = None,
 ) -> None:
     """Verify the payload came from Shopify, then apply it. Raises
     ValueError on a bad signature (the route turns that into a 400)."""
     # .strip() the secret the way shop.py strips the Storefront token: a
     # trailing newline or space pasted into a PaaS variable UI would
     # otherwise silently change the key and reject every real delivery.
-    secret = os.environ["SHOPIFY_WEBHOOK_SECRET"].strip().encode()
-    expected = base64.b64encode(hmac.new(secret, payload, hashlib.sha256).digest())
     # Compare on bytes: the header is decoded latin-1 upstream, so a
     # malformed (non-ASCII) signature would make the str form of
     # compare_digest raise TypeError — a 500 instead of a clean reject.
     supplied = (signature or "").encode("latin-1", "replace")
-    if not hmac.compare_digest(expected, supplied):
+    secrets = []
+    primary_secret = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "").strip()
+    if primary_secret:
+        secrets.append(primary_secret.encode())
+    if topic in PRIVACY_TOPICS:
+        privacy_secret = os.environ.get(
+            "SHOPIFY_PRIVACY_WEBHOOK_SECRET", ""
+        ).strip()
+        if privacy_secret:
+            secrets.append(privacy_secret.encode())
+    # Every eligible secret is always evaluated. Do not return on the first
+    # match: the relative timing must not reveal which signing key accepted a
+    # mandatory compliance delivery.
+    matched = 0
+    for secret in secrets:
+        expected = base64.b64encode(
+            hmac.new(secret, payload, hashlib.sha256).digest()
+        )
+        matched |= int(hmac.compare_digest(expected, supplied))
+    if not matched:
         # Log the reject: without this a wrong/whitespaced secret is
         # invisible from the app side (just uvicorn 400s), and the only
         # other place to see it is Shopify's own delivery log.
@@ -158,10 +227,44 @@ def handle_webhook(
     except ValueError:
         logger.warning("Rejected Shopify webhook (bad JSON body): topic=%s", topic or "?")
         raise ValueError("Invalid Shopify webhook payload")
-    apply_webhook(topic, data, users, cfg)
+    if not isinstance(data, dict):
+        logger.warning(
+            "Rejected Shopify webhook (non-object JSON body): topic=%s",
+            topic or "?",
+        )
+        raise ValueError("Invalid Shopify webhook payload")
+    if topic in MUTATING_TOPICS:
+        supplied_shop = normalize_shop_domain(shop_domain)
+        configured_shop = _configured_shop_domain()
+        if not (
+            supplied_shop
+            and configured_shop
+            and hmac.compare_digest(supplied_shop, configured_shop)
+        ):
+            logger.warning(
+                "Rejected Shopify webhook for an unexpected store: topic=%s",
+                topic or "?",
+            )
+            raise ValueError("Invalid Shopify webhook store")
+    if topic in PRIVACY_TOPICS:
+        delivery_id = str(event_id or "").strip()
+        if not delivery_id or len(delivery_id) > 255:
+            logger.warning(
+                "Rejected Shopify privacy webhook without a valid "
+                "delivery id: topic=%s",
+                topic or "?",
+            )
+            raise ValueError("Invalid Shopify privacy webhook delivery id")
+    apply_webhook(topic, data, users, cfg, event_id=event_id)
 
 
-def apply_webhook(topic: str, data: dict, users: UserStore, cfg: Config) -> None:
+def apply_webhook(
+    topic: str,
+    data: dict,
+    users: UserStore,
+    cfg: Config,
+    event_id: str | None = None,
+) -> None:
     """Route a (verified) Shopify webhook by topic: orders change Pro
     access, customer events sync store accounts, GDPR events are
     acknowledged. Unknown topics are no-ops (still a 200 — Shopify retries
@@ -169,7 +272,7 @@ def apply_webhook(topic: str, data: dict, users: UserStore, cfg: Config) -> None
     if topic in PAID_TOPICS or topic in CANCELLED_TOPICS or topic in REFUND_TOPICS:
         apply_order(topic, data, users, cfg)
     else:
-        apply_customer(topic, data, users)
+        apply_customer(topic, data, users, event_id=event_id)
 
 
 def apply_order(topic: str, order: dict, users: UserStore, cfg: Config) -> None:
@@ -185,7 +288,12 @@ def apply_order(topic: str, order: dict, users: UserStore, cfg: Config) -> None:
         _apply_refund(order, users, cfg)
 
 
-def apply_customer(topic: str, data: dict, users: UserStore) -> None:
+def apply_customer(
+    topic: str,
+    data: dict,
+    users: UserStore,
+    event_id: str | None = None,
+) -> None:
     """Sync a (verified) Shopify customer webhook into the users table.
     See the module docstring for the exact semantics per topic."""
     if topic in CUSTOMER_UPSERT_TOPICS:
@@ -228,21 +336,93 @@ def apply_customer(topic: str, data: dict, users: UserStore) -> None:
     elif topic in CUSTOMER_DELETE_TOPICS:
         _detach_customer(data, users, redact=False)
     elif topic in CUSTOMER_REDACT_TOPICS:
-        _detach_customer(data.get("customer") or {}, users, redact=True)
-    elif topic in ACK_TOPICS:
-        logger.info(
-            "Shopify %s webhook acknowledged; privacy workflow pending.", topic
+        if not _privacy_shop_matches(data):
+            logger.warning(
+                "Ignored Shopify customer redaction for a different store."
+            )
+            return
+        _detach_customer(
+            data.get("customer") or {},
+            users,
+            redact=True,
+            event_id=event_id,
+            shop_domain=_configured_shop_domain(),
+            order_ids=data.get("orders_to_redact") or [],
         )
+    elif topic in DATA_REQUEST_TOPICS:
+        customer = data.get("customer")
+        if not isinstance(customer, dict):
+            customer = {}
+        request, replayed = users.capture_shopify_data_request(
+            shop_domain=str(data.get("shop_domain") or ""),
+            configured_shop_domain=_configured_shop_domain(),
+            customer_id=customer.get("id"),
+            order_ids=data.get("orders_requested") or [],
+            event_id=event_id,
+            include_replay_status=True,
+        )
+        if replayed:
+            logger.info(
+                "Shopify data request replay was already applied."
+            )
+        elif request is None:
+            logger.warning(
+                "Ignored Shopify data request for a different store."
+            )
+        else:
+            logger.info(
+                "Shopify customer data snapshot is ready: "
+                "request_ref=%s status=%s.",
+                request.request_id,
+                request.status,
+            )
+    elif topic in SHOP_REDACT_TOPICS:
+        result = users.redact_shopify_store(
+            str(data.get("shop_domain") or ""),
+            _configured_shop_domain(),
+            event_id=event_id,
+        )
+        if result.replayed:
+            logger.info(
+                "Shopify shop redaction replay was already applied."
+            )
+        elif not result.applied:
+            logger.warning(
+                "Ignored Shopify shop redaction for a different store."
+            )
+        else:
+            logger.info(
+                "Shopify shop redaction completed transactionally."
+            )
     else:
         # Reached only for a topic that is none of orders/*, customers/* or
-        # the GDPR acks — i.e. the operator subscribed the wrong topic in
-        # Shopify. Without this the route returns a green 200 and does
-        # nothing, so a mis-picked topic is invisible in Shopify's log.
+        # the mandatory privacy topics — i.e. the operator subscribed the
+        # wrong topic in Shopify. Without this the route returns a green 200
+        # and does nothing, so a mis-picked topic is invisible in Shopify's
+        # log.
         logger.warning(
             "Ignoring unrecognized Shopify webhook topic: %s "
             "(check the webhook is 'orders/paid', not e.g. 'orders/create').",
             topic or "?",
         )
+
+
+def _configured_shop_domain() -> str:
+    return normalize_shop_domain(os.environ.get("SHOPIFY_STORE_DOMAIN")) or ""
+
+
+def _signing_secret_present(name: str) -> bool:
+    return bool(os.environ.get(name, "").strip())
+
+
+def _privacy_shop_matches(data: dict) -> bool:
+    supplied = normalize_shop_domain(data.get("shop_domain"))
+    configured = _configured_shop_domain()
+    return bool(
+        supplied
+        and configured
+        and hmac.compare_digest(supplied, configured)
+    )
 
 
 def _customer_updated_at(data: dict) -> float | None:
@@ -259,7 +439,15 @@ def _customer_updated_at(data: dict) -> float | None:
         return None
 
 
-def _detach_customer(customer: dict, users: UserStore, redact: bool) -> None:
+def _detach_customer(
+    customer: dict,
+    users: UserStore,
+    redact: bool,
+    *,
+    event_id: str | None = None,
+    shop_domain: str | None = None,
+    order_ids: list[object] | None = None,
+) -> None:
     """customers/delete and customers/redact. An unclaimed stub (never
     claimed by password or code sign-in, no analyses) is deleted outright —
     on plain deletion any Pro days it still carried are parked so a later
@@ -270,7 +458,14 @@ def _detach_customer(customer: dict, users: UserStore, redact: bool) -> None:
     shopify-sourced ``source`` field."""
     customer_id = str(customer.get("id") or "") or None
     email = (customer.get("email") or "").strip().lower()
-    users.remove_shopify_customer(customer_id, email, redact=redact)
+    users.remove_shopify_customer(
+        customer_id,
+        email,
+        redact=redact,
+        privacy_event_id=(event_id if redact else None),
+        privacy_shop_domain=(shop_domain if redact else None),
+        order_ids=(order_ids if redact else None),
+    )
 
 
 def _order_days(order: dict, cfg: Config) -> float:

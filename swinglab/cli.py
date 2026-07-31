@@ -56,7 +56,7 @@ def build_parser() -> argparse.ArgumentParser:
     ana.add_argument(
         "--fast",
         action="store_true",
-        help="Skip motion-interpolated slow motion (the long step) — much "
+        help="Skip motion-interpolated slow motion (the long step) -- much "
         "quicker, slightly less smooth clips",
     )
 
@@ -72,7 +72,7 @@ def build_parser() -> argparse.ArgumentParser:
     kp = sub.add_parser(
         "kpis",
         help="Print the five business KPIs (activation, W1 re-film, "
-        "free\N{RIGHTWARDS ARROW}Pro, weekly filmers, gear attach) from the "
+        "free-to-Pro, weekly filmers, gear attach) from the "
         "web app's database.",
     )
     kp.add_argument(
@@ -111,6 +111,22 @@ def build_parser() -> argparse.ArgumentParser:
         metavar="CURSOR",
         help="Opaque next_cursor printed by the previous batch",
     )
+    shopify_backfill.add_argument(
+        "--all-batches",
+        action="store_true",
+        help="Process every remaining page and print one cumulative summary",
+    )
+    shopify_backfill.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Inspect schema/store binding read-only; do not contact Shopify",
+    )
+    shopify_backfill.add_argument(
+        "--confirm-store",
+        default=None,
+        metavar="STORE.myshopify.com",
+        help="Exact canonical store confirmation for an unbound database",
+    )
     apply_group = shopify_backfill.add_mutually_exclusive_group()
     apply_group.add_argument(
         "--dry-run",
@@ -123,7 +139,12 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Perform the idempotent customer upserts for this batch",
     )
-    shopify_backfill.set_defaults(apply=False)
+    apply_group.add_argument(
+        "--bind-only",
+        action="store_true",
+        help="Verify and bind this database/store identity; touch no customers",
+    )
+    shopify_backfill.set_defaults(apply=False, bind_only=False)
     shopify_backfill.add_argument(
         "--json",
         action="store_true",
@@ -133,6 +154,47 @@ def build_parser() -> argparse.ArgumentParser:
     shopify_backfill.add_argument(
         "--config", type=Path, default=None, help="Path to config.yaml"
     )
+
+    shopify_resolve = sub.add_parser(
+        "shopify-resolve-customer",
+        help="Verify and transactionally resolve one Shopify customer link.",
+    )
+    shopify_resolve.add_argument(
+        "--sessions-dir",
+        type=Path,
+        default=Path("sessions"),
+        help="The web app's sessions directory (contains swinglab.db)",
+    )
+    shopify_resolve.add_argument(
+        "--user-ref",
+        required=True,
+        help="Protected 12-character user_ref from the admin sync view",
+    )
+    resolve_customer = shopify_resolve.add_mutually_exclusive_group(
+        required=True
+    )
+    resolve_customer.add_argument(
+        "--customer-id",
+        help="Shopify customer id (never echoed; may remain in shell history)",
+    )
+    resolve_customer.add_argument(
+        "--customer-id-env",
+        metavar="ENV_VAR",
+        help="Read the Shopify customer id from this environment variable",
+    )
+    shopify_resolve.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="Print a PII-minimized result as JSON",
+    )
+    shopify_resolve.add_argument(
+        "--config", type=Path, default=None, help="Path to config.yaml"
+    )
+
+    from .integrations.shopify.privacy_cli import add_privacy_subparser
+
+    add_privacy_subparser(sub)
 
     # Explicit operator tooling only. Merely installing the package or setting
     # credentials starts no backup process and changes no web runtime behavior.
@@ -155,11 +217,32 @@ def _parse_strikes(raw: str | None) -> list[float] | None:
 
 
 def _fmt(value: float) -> str:
-    return f"{value:.2f}" if value == value else "—"  # NaN-safe
+    return f"{value:.2f}" if value == value else "-"  # NaN-safe
+
+
+def _shopify_store_domains_match(admin_store_domain: str) -> bool:
+    """Require the inbound webhook store and Admin target to be identical."""
+
+    import os
+
+    from .integrations.shopify.identity import normalize_shop_domain
+
+    inbound_store = normalize_shop_domain(
+        os.environ.get("SHOPIFY_STORE_DOMAIN")
+    )
+    outbound_store = normalize_shop_domain(admin_store_domain)
+    return bool(
+        inbound_store
+        and outbound_store
+        and inbound_store == outbound_store
+    )
 
 
 def print_summary(result: SessionResult) -> None:
-    header = f"{'Swing':>5} {'Strike':>8} {'Tempo':>7} {'Sway A→T':>9} {'Slide A→T':>10}"
+    header = (
+        f"{'Swing':>5} {'Strike':>8} {'Tempo':>7} "
+        f"{'Sway A->T':>9} {'Slide A->T':>10}"
+    )
     print()
     print(header)
     print("-" * len(header))
@@ -221,16 +304,29 @@ def main(argv: list[str] | None = None) -> int:
 
         return run_backup_command(args)
 
+    if args.command == "shopify-privacy":
+        from .integrations.shopify.privacy_cli import run_privacy_command
+
+        return run_privacy_command(args)
+
     cfg = Config.load(args.config)
 
     if args.command == "shopify-backfill":
         import json
 
         from .integrations.shopify.admin import (
+            ShopifyAdminError,
             ShopifyAdminClient,
-            ShopifyAdminConfigurationError,
         )
-        from .integrations.shopify.backfill import run_backfill_batch
+        from .integrations.shopify.backfill import (
+            BackfillSafetyError,
+            ReadOnlyBackfillStore,
+            authenticate_and_bind_backfill_database,
+            preflight_backfill_database,
+            require_matching_shopify_store_binding,
+            run_backfill_all,
+            run_backfill_batch,
+        )
         from .integrations.shopify.customer_sync import (
             validate_sync_settings,
         )
@@ -239,6 +335,22 @@ def main(argv: list[str] | None = None) -> int:
         if not 1 <= args.batch_size <= 1000:
             print(
                 "shopify-backfill: batch size must be between 1 and 1000",
+                file=sys.stderr,
+            )
+            return 2
+        if args.preflight_only and (
+            args.apply or args.bind_only or args.after or args.all_batches
+        ):
+            print(
+                "shopify-backfill: --preflight-only cannot be combined "
+                "with execution or continuation options",
+                file=sys.stderr,
+            )
+            return 2
+        if args.bind_only and (args.after or args.all_batches):
+            print(
+                "shopify-backfill: --bind-only cannot be combined with "
+                "--after or --all-batches",
                 file=sys.stderr,
             )
             return 2
@@ -251,21 +363,155 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 2
         try:
+            if args.preflight_only:
+                import os
+
+                preflight = preflight_backfill_database(
+                    db_path,
+                    os.environ.get("SHOPIFY_ADMIN_STORE_DOMAIN", ""),
+                )
+                if args.as_json:
+                    print(
+                        json.dumps(
+                            preflight.as_dict(),
+                            indent=2,
+                            ensure_ascii=False,
+                        )
+                    )
+                else:
+                    print(
+                        "Shopify customer backfill - READ-ONLY PREFLIGHT\n"
+                        f"database_ref={preflight.database_ref} "
+                        f"store_ref={preflight.store_ref} "
+                        f"schema_ready={str(preflight.schema_ready).lower()} "
+                        f"binding={preflight.binding_status}"
+                    )
+                    if preflight.missing_columns:
+                        print(
+                            "missing_sync_columns="
+                            f"{len(preflight.missing_columns)}"
+                        )
+                return (
+                    1
+                    if (
+                        not preflight.schema_ready
+                        or preflight.binding_status == "mismatch"
+                    )
+                    else 0
+                )
             settings = validate_sync_settings(cfg.shopify_customer_sync)
             client = ShopifyAdminClient.from_env(
                 timeout_seconds=settings["request_timeout_seconds"],
             )
-            users = UserStore(db_path)
-            summary = run_backfill_batch(
-                users,
-                client,
-                batch_size=args.batch_size,
-                after=args.after,
-                dry_run=not args.apply,
-                settings=settings,
+            if not _shopify_store_domains_match(client.store_domain):
+                raise BackfillSafetyError(
+                    "Inbound and outbound Shopify store configuration does "
+                    "not match."
+                )
+            preflight = preflight_backfill_database(
+                db_path,
+                client.store_domain,
             )
-        except ShopifyAdminConfigurationError as exc:
+            if preflight.binding_status == "mismatch":
+                raise BackfillSafetyError(
+                    "The selected database is bound to a different "
+                    "Shopify store."
+                )
+            if args.bind_only and not preflight.schema_ready:
+                raise BackfillSafetyError(
+                    "The database needs the additive Shopify sync migration "
+                    "before it can be bound."
+                )
+            if args.bind_only and (
+                preflight.binding_status in {"unbound", "incomplete"}
+                and str(args.confirm_store or "").strip().lower()
+                != client.store_domain
+            ):
+                raise BackfillSafetyError(
+                    "An unbound database requires an exact --confirm-store "
+                    "value before it can be bound."
+                )
+            if (
+                not preflight.schema_ready
+                and not args.apply
+                and not args.bind_only
+            ):
+                raise BackfillSafetyError(
+                    "The database needs the additive Shopify sync migration; "
+                    "run the application migration before a read-only dry run."
+                )
+            if (
+                not args.bind_only
+                and preflight.binding_status in {"unbound", "incomplete"}
+            ):
+                raise BackfillSafetyError(
+                    "Bind the database first with --bind-only and an exact "
+                    "--confirm-store value before any customer request."
+                )
+            # Authenticate the exact canonical endpoint before any customer
+            # read or before persisting the database-to-store binding. The
+            # returned Shop GID is protected operational evidence and is
+            # intentionally neither stored in output nor logged.
+            if args.bind_only:
+                preflight = authenticate_and_bind_backfill_database(
+                    db_path,
+                    client.store_domain,
+                    client.verify_store_access,
+                    confirmation=args.confirm_store,
+                )
+                payload = {
+                    "action": "bound",
+                    **preflight.as_dict(),
+                }
+                if args.as_json:
+                    print(
+                        json.dumps(payload, indent=2, ensure_ascii=False)
+                    )
+                else:
+                    print(
+                        "Shopify customer backfill - BIND ONLY\n"
+                        f"database_ref={preflight.database_ref} "
+                        f"store_ref={preflight.store_ref} "
+                        f"shop_ref={preflight.shop_ref} "
+                        f"binding={preflight.binding_status}"
+                    )
+                return 0
+            shop_gid = client.verify_store_access()
+            if preflight.binding_status == "matched":
+                preflight = require_matching_shopify_store_binding(
+                    db_path,
+                    client.store_domain,
+                    shop_gid,
+                )
+            if args.apply:
+                users = UserStore(db_path)
+            else:
+                users = ReadOnlyBackfillStore(db_path)
+            runner = (
+                run_backfill_all
+                if args.all_batches
+                else run_backfill_batch
+            )
+            try:
+                summary = runner(
+                    users,
+                    client,
+                    batch_size=args.batch_size,
+                    after=args.after,
+                    dry_run=not args.apply,
+                    settings=settings,
+                )
+            finally:
+                if isinstance(users, ReadOnlyBackfillStore):
+                    users.close()
+            summary.database_ref = preflight.database_ref
+            summary.store_ref = preflight.store_ref
+            summary.binding_status = preflight.binding_status
+        except (ShopifyAdminError, BackfillSafetyError) as exc:
             print(f"shopify-backfill: {exc.safe_summary}", file=sys.stderr)
+            return 2
+        except ValueError as exc:
+            print(f"shopify-backfill: {exc}", file=sys.stderr)
             return 2
 
         if args.as_json:
@@ -273,16 +519,136 @@ def main(argv: list[str] | None = None) -> int:
         else:
             mode = "APPLY" if args.apply else "DRY RUN"
             print(
-                f"Shopify customer backfill — {mode}\n"
+                f"Shopify customer backfill - {mode}\n"
                 f"scanned={summary.scanned} linked={summary.linked} "
                 f"would_link={summary.would_link} "
                 f"would_create={summary.would_create} "
                 f"requires_review={summary.requires_review} "
-                f"failed={summary.failed} skipped={summary.skipped}"
+                f"failed={summary.failed} skipped={summary.skipped} "
+                f"batches={summary.batches}\n"
+                f"database_ref={summary.database_ref} "
+                f"store_ref={summary.store_ref} "
+                f"binding={summary.binding_status}"
             )
             if summary.next_cursor:
                 print(f"next_cursor={summary.next_cursor}")
-        return 1 if summary.failed else 0
+        return 1 if (summary.failed or summary.requires_review) else 0
+
+    if args.command == "shopify-resolve-customer":
+        import json
+
+        from .integrations.shopify.admin import (
+            ShopifyAdminError,
+            ShopifyAdminClient,
+        )
+        from .integrations.shopify.backfill import (
+            BackfillSafetyError,
+            authenticate_and_require_backfill_binding,
+            preflight_backfill_database,
+        )
+        from .integrations.shopify.customer_sync import (
+            find_user_by_operator_ref,
+            validate_sync_settings,
+            verify_and_link_existing_shopify_customer,
+        )
+        from .web.users import SHOPIFY_SYNC_SYNCED, UserStore
+
+        db_path = args.sessions_dir / "swinglab.db"
+        if not db_path.is_file():
+            print(
+                "shopify-resolve-customer: database not found; pass the "
+                "existing sessions directory with --sessions-dir",
+                file=sys.stderr,
+            )
+            return 2
+        if args.customer_id_env:
+            import os
+
+            customer_id = os.environ.get(args.customer_id_env, "")
+            if not customer_id:
+                print(
+                    "shopify-resolve-customer: customer id environment "
+                    "variable is missing or empty",
+                    file=sys.stderr,
+                )
+                return 2
+        else:
+            customer_id = args.customer_id
+        try:
+            settings = validate_sync_settings(cfg.shopify_customer_sync)
+            client = ShopifyAdminClient.from_env(
+                timeout_seconds=settings["request_timeout_seconds"],
+            )
+            if not _shopify_store_domains_match(client.store_domain):
+                raise BackfillSafetyError(
+                    "Inbound and outbound Shopify store configuration does "
+                    "not match."
+                )
+            preflight = preflight_backfill_database(
+                db_path,
+                client.store_domain,
+            )
+            if not preflight.schema_ready:
+                raise BackfillSafetyError(
+                    "The database needs the additive Shopify sync migration "
+                    "before identity resolution."
+                )
+            if preflight.binding_status == "mismatch":
+                raise BackfillSafetyError(
+                    "The selected database is bound to a different "
+                    "Shopify store."
+                )
+            if preflight.binding_status in {"unbound", "incomplete"}:
+                raise BackfillSafetyError(
+                    "Bind the database first with shopify-backfill "
+                    "--bind-only before identity resolution."
+                )
+            preflight = authenticate_and_require_backfill_binding(
+                db_path,
+                client.store_domain,
+                client.verify_store_access,
+            )
+            users = UserStore(db_path)
+            user = find_user_by_operator_ref(users, args.user_ref)
+            if user is None:
+                raise BackfillSafetyError(
+                    "The protected user reference was invalid, ambiguous, "
+                    "or not found."
+                )
+            result = verify_and_link_existing_shopify_customer(
+                users,
+                user.id,
+                customer_id,
+                client,
+            )
+        except (ShopifyAdminError, BackfillSafetyError) as exc:
+            print(
+                f"shopify-resolve-customer: {exc.safe_summary}",
+                file=sys.stderr,
+            )
+            return 2
+
+        payload = {
+            "database_ref": preflight.database_ref,
+            "store_ref": preflight.store_ref,
+            "user_ref": args.user_ref.lower(),
+            "status": result.status,
+            "action": result.action,
+            "safe_error": result.safe_error,
+        }
+        if args.as_json:
+            print(json.dumps(payload, indent=2, ensure_ascii=False))
+        else:
+            print(
+                "Shopify customer resolution\n"
+                f"database_ref={payload['database_ref']} "
+                f"store_ref={payload['store_ref']} "
+                f"user_ref={payload['user_ref']} "
+                f"status={payload['status']} action={payload['action']}"
+            )
+            if payload["safe_error"]:
+                print(f"safe_error={payload['safe_error']}")
+        return 0 if result.status == SHOPIFY_SYNC_SYNCED else 1
 
     if args.command == "kpis":
         import json
@@ -314,6 +680,7 @@ def main(argv: list[str] | None = None) -> int:
             import uvicorn
 
             from .web.app import create_app
+            from .web.access_log import access_log_config
         except ImportError as exc:
             print(
                 f"Web dependencies missing ({exc.name}). Install them with: "
@@ -328,7 +695,13 @@ def main(argv: list[str] | None = None) -> int:
         # for PaaS proxies, a list of IPs, or "" to disable). uvicorn's own
         # proxy_headers layer is switched off so there is exactly one place
         # that decides which proxies to trust.
-        uvicorn.run(app, host=args.host, port=args.port, proxy_headers=False)
+        uvicorn.run(
+            app,
+            host=args.host,
+            port=args.port,
+            proxy_headers=False,
+            log_config=access_log_config(),
+        )
         return 0
 
     try:

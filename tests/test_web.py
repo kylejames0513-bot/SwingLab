@@ -130,6 +130,20 @@ def test_upload_returns_json_when_asked(client):
     wait_for(client, data["id"])
 
 
+def test_upload_rejects_cross_origin_before_creating_session(client):
+    assert client.app.state.jobs.sessions_count() == 0
+
+    response = client.post(
+        "/upload",
+        files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
+        headers={"Origin": "https://evil.example"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert client.app.state.jobs.sessions_count() == 0
+
+
 def test_failed_job_shows_error(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_no_strikes)
     client = TestClient(create_app(Config(), sessions_dir=tmp_path / "s"))

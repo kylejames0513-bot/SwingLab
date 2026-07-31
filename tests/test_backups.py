@@ -109,6 +109,48 @@ def synthetic_sessions(tmp_path):
         ("login", "synthetic-key", 6.0),
     )
     connection.execute(
+        "UPDATE shopify_sync_control SET order_fence_secret = ? WHERE id = 1",
+        ("ab" * 32,),
+    )
+    connection.execute(
+        "INSERT INTO shopify_redacted_order_fences"
+        " (order_key, redacted_at) VALUES (?, ?)",
+        ("cd" * 32, 7.0),
+    )
+    connection.execute(
+        "INSERT INTO shopify_customer_tombstones"
+        " (customer_id, redacted, deleted_at)"
+        " VALUES (?, 1, ?)",
+        ("customer-synthetic", 8.0),
+    )
+    connection.execute(
+        "INSERT INTO shopify_pending_customer_links"
+        " (customer_id, email, created_at)"
+        " VALUES (?, ?, ?)",
+        (
+            "pending-customer-synthetic",
+            "pending-link@example.invalid",
+            9.0,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO shopify_privacy_requests"
+        " (request_id, shop_domain, status, snapshot_json,"
+        "  snapshot_sha256, record_count, snapshot_bytes,"
+        "  created_at, completed_at, expires_at)"
+        " VALUES (?, ?, ?, ?, ?, 0, 2, ?, ?, ?)",
+        (
+            "spr_synthetic",
+            "synthetic.myshopify.com",
+            "ready",
+            "{}",
+            hashlib.sha256(b"{}").hexdigest(),
+            10.0,
+            10.0,
+            100.0,
+        ),
+    )
+    connection.execute(
         "INSERT INTO jobs "
         "(id, status, created_at, updated_at, report_rel, user_id) "
         "VALUES (?, ?, ?, ?, ?, ?)",
@@ -194,6 +236,12 @@ def test_wal_safe_snapshot_and_artifact_allowlist(tmp_path, synthetic_sessions):
         "gear_orders": 1,
         "email_codes": 1,
         "auth_attempts": 1,
+        "shopify_sync_control": 1,
+        "shopify_privacy_event_fences": 0,
+        "shopify_redacted_order_fences": 1,
+        "shopify_privacy_requests": 1,
+        "shopify_customer_tombstones": 1,
+        "shopify_pending_customer_links": 1,
     }
 
 
@@ -217,6 +265,21 @@ def test_restore_drill_uses_new_scratch_and_reconciles(tmp_path, synthetic_sessi
     restored = sqlite3.connect(restore_dir / DATABASE_BUNDLE_PATH)
     assert restored.execute("SELECT COUNT(*) FROM shopify_orders").fetchone()[0] == 1
     assert restored.execute("SELECT COUNT(*) FROM gear_orders").fetchone()[0] == 1
+    assert restored.execute(
+        "SELECT order_fence_secret FROM shopify_sync_control WHERE id = 1"
+    ).fetchone()[0] == "ab" * 32
+    assert restored.execute(
+        "SELECT COUNT(*) FROM shopify_redacted_order_fences"
+    ).fetchone()[0] == 1
+    assert restored.execute(
+        "SELECT COUNT(*) FROM shopify_privacy_requests"
+    ).fetchone()[0] == 1
+    assert restored.execute(
+        "SELECT COUNT(*) FROM shopify_customer_tombstones"
+    ).fetchone()[0] == 1
+    assert restored.execute(
+        "SELECT COUNT(*) FROM shopify_pending_customer_links"
+    ).fetchone()[0] == 1
     restored.close()
     assert (sessions / "swinglab.db").is_file()
 

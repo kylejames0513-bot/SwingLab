@@ -7,6 +7,7 @@ shaped like Shopify's to /webhooks/shopify, signed with the test secret.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import hashlib
 import hmac
@@ -18,15 +19,21 @@ import pytest
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
+from starlette.requests import Request
 
 from swinglab.config import Config
-from swinglab.web import jobs as jobs_module
-from swinglab.web.app import create_app
+from swinglab.web import jobs as jobs_module, shopify_billing
+from swinglab.web.app import (
+    SHOPIFY_WEBHOOK_MAX_BODY_BYTES,
+    _read_bounded_request_body,
+    create_app,
+)
 from swinglab.web.users import UserStore
 
 from tests.test_web import fake_analyze_ok
 
 SECRET = "shpss_test_secret"
+PRIVACY_SECRET = "shpss_test_privacy_secret"
 DAY = 86400
 
 
@@ -40,12 +47,36 @@ def app(tmp_path, monkeypatch):
     return create_app(cfg, sessions_dir=tmp_path / "sessions")
 
 
-def signup(client, email="kyle@example.com", password="longenough"):
+def signup(
+    client,
+    email="kyle@example.com",
+    password="longenough",
+    *,
+    verified=True,
+):
     resp = client.post(
         "/signup", data={"email": email, "password": password},
         follow_redirects=False,
     )
+    if resp.status_code == 503:
+        # Billing tests do not exercise mail delivery. Complete the required
+        # inbox-proof step through the same durable intent/code primitives.
+        users: UserStore = client.app.state.users
+        intent = users.issue_signup_intent(email, password)
+        code = users.issue_email_code(email, "claim")
+        assert code is not None
+        users.complete_signup_intent_with_code(intent, code)
+        resp = client.post(
+            "/login",
+            data={"email": email, "password": password},
+            follow_redirects=False,
+        )
     assert resp.status_code == 303
+    if verified:
+        users = client.app.state.users
+        current = users.get_by_email(email)
+        if current is not None and not current.email_verified:
+            users.verify_email_signin(email)
 
 
 def order_webhook(client, order, topic="orders/paid", secret=SECRET):
@@ -59,6 +90,8 @@ def order_webhook(client, order, topic="orders/paid", secret=SECRET):
         headers={
             "X-Shopify-Hmac-Sha256": signature,
             "X-Shopify-Topic": topic,
+            "X-Shopify-Shop-Domain": "teststore.myshopify.com",
+            "X-Shopify-Webhook-Id": "shopify-billing-test-delivery",
             "Content-Type": "application/json",
         },
     )
@@ -380,9 +413,153 @@ def test_late_cancellation_of_expired_order_keeps_newer_purchase(app):
 def test_webhook_unavailable_until_configured(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
     monkeypatch.delenv("SHOPIFY_WEBHOOK_SECRET", raising=False)
+    monkeypatch.delenv("SHOPIFY_PRIVACY_WEBHOOK_SECRET", raising=False)
     monkeypatch.delenv("SHOPIFY_STORE_DOMAIN", raising=False)
     client = TestClient(create_app(Config(), sessions_dir=tmp_path / "s"))
     assert client.post("/webhooks/shopify", content=b"{}").status_code == 503
+
+
+@pytest.mark.parametrize(
+    ("domain", "primary_secret", "privacy_secret"),
+    [
+        ("teststore.myshopify.com", " \t\r\n", "  "),
+        (" \t\r\n", SECRET, PRIVACY_SECRET),
+        ("teststore.myshopify.com/path", SECRET, PRIVACY_SECRET),
+    ],
+)
+def test_blank_or_invalid_webhook_values_do_not_enable_shopify(
+    monkeypatch,
+    domain,
+    primary_secret,
+    privacy_secret,
+):
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", domain)
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", primary_secret)
+    monkeypatch.setenv("SHOPIFY_PRIVACY_WEBHOOK_SECRET", privacy_secret)
+
+    assert not shopify_billing.commerce_enabled()
+    assert not shopify_billing.webhook_endpoint_enabled()
+    assert not shopify_billing.enabled()
+
+
+def test_privacy_only_webhook_does_not_enable_commerce(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.delenv("SHOPIFY_WEBHOOK_SECRET", raising=False)
+    monkeypatch.setenv("SHOPIFY_PRIVACY_WEBHOOK_SECRET", PRIVACY_SECRET)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
+    monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
+
+    cfg = Config()
+    cfg.web["require_account"] = True
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
+    pro_url = "https://teststore.myshopify.com/products/swinglab-pro"
+
+    assert shopify_billing.webhook_endpoint_enabled()
+    assert not shopify_billing.commerce_enabled()
+    assert not shopify_billing.enabled()
+    assert pro_url not in client.get("/pricing").text
+
+    # Privacy-only configuration must not impose commerce-connected inbox
+    # proof on an otherwise local password signup.
+    response = client.post(
+        "/signup",
+        data={"email": "local@example.com", "password": "longenough"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    assert pro_url not in client.get("/account").text
+
+    # The same configuration still accepts a correctly signed mandatory
+    # compliance delivery at the shared webhook endpoint.
+    response = order_webhook(
+        client,
+        {
+            "shop_domain": "teststore.myshopify.com",
+            "customer": {"id": 7001},
+            "orders_requested": [],
+        },
+        topic="customers/data_request",
+        secret=PRIVACY_SECRET,
+    )
+    assert response.status_code == 200
+
+
+def test_webhook_rejects_oversized_body_before_hmac_or_json(app):
+    client = TestClient(app)
+    payload = b"x" * (SHOPIFY_WEBHOOK_MAX_BODY_BYTES + 1)
+
+    response = client.post(
+        "/webhooks/shopify",
+        content=payload,
+        headers={
+            "X-Shopify-Hmac-Sha256": "not-even-checked",
+            "X-Shopify-Topic": "orders/paid",
+            "Content-Type": "application/json",
+        },
+    )
+
+    assert response.status_code == 413
+    assert "too large" in response.json()["detail"]
+
+
+def test_signed_non_object_webhook_payload_is_rejected(app):
+    client = TestClient(app)
+
+    response = order_webhook(
+        client,
+        [],
+        topic="orders/paid",
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "Invalid Shopify webhook payload"
+
+
+def test_bounded_webhook_reader_rejects_chunked_body_without_length():
+    chunks = [
+        {
+            "type": "http.request",
+            "body": b"x" * (SHOPIFY_WEBHOOK_MAX_BODY_BYTES // 2 + 1),
+            "more_body": True,
+        },
+        {
+            "type": "http.request",
+            "body": b"y" * (SHOPIFY_WEBHOOK_MAX_BODY_BYTES // 2 + 1),
+            "more_body": False,
+        },
+    ]
+
+    async def receive():
+        return chunks.pop(0)
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/webhooks/shopify",
+            "raw_path": b"/webhooks/shopify",
+            "query_string": b"",
+            "headers": [],
+            "client": ("127.0.0.1", 1),
+            "server": ("test", 443),
+        },
+        receive,
+    )
+
+    with pytest.raises(fastapi.HTTPException) as exc:
+        asyncio.run(
+            _read_bounded_request_body(
+                request, SHOPIFY_WEBHOOK_MAX_BODY_BYTES
+            )
+        )
+    assert exc.value.status_code == 413
 
 
 def test_pages_link_to_the_store(app):

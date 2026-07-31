@@ -91,6 +91,33 @@ def code_signin(client, outbox, email="kyle@example.com"):
     return ok
 
 
+def verified_password_signup(
+    client, outbox, email="kyle@example.com", password="longenough"
+):
+    pending = client.post(
+        "/signup",
+        data={"email": email, "password": password},
+        follow_redirects=False,
+    )
+    if pending.status_code == 303:
+        return pending
+    assert pending.status_code == 200
+    match = re.search(
+        r'name="signup_intent" value="([^"]+)"', pending.text
+    )
+    assert match is not None
+    completed = client.post(
+        "/signup",
+        data={
+            "signup_intent": match.group(1),
+            "code": last_code(outbox),
+        },
+        follow_redirects=False,
+    )
+    assert completed.status_code == 303
+    return completed
+
+
 # -- the unified login page --------------------------------------------------
 
 def test_login_page_leads_with_email_when_delivery_on(app, outbox):
@@ -137,6 +164,25 @@ def test_store_line_dropped_when_no_store_is_configured(
     assert "use on the store" not in page
 
 
+def test_https_public_base_marks_auth_session_cookie_secure(
+    tmp_path, monkeypatch, outbox
+):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example.test")
+    cfg = Config()
+    cfg.web["require_account"] = True
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
+
+    response = client.post(
+        "/login/email", data={"email": "secure@example.com"}
+    )
+
+    cookie = response.headers["set-cookie"].lower()
+    assert "secure" in cookie
+    assert "httponly" in cookie
+    assert "samesite=lax" in cookie
+
+
 def test_explicit_free_signup_keeps_intent_through_verification(app, outbox):
     client = TestClient(app)
     sent = client.post(
@@ -166,10 +212,7 @@ def test_explicit_free_signup_keeps_intent_through_verification(app, outbox):
 
 def test_code_signs_in_an_existing_password_account(app, outbox):
     client = TestClient(app)
-    client.post(
-        "/signup", data={"email": "kyle@example.com", "password": "longenough"},
-        follow_redirects=False,
-    )
+    verified_password_signup(client, outbox)
     client.post("/logout")
 
     code_signin(client, outbox)
@@ -184,7 +227,8 @@ def test_code_claims_a_store_stub_and_keeps_pro(app, outbox):
     webhook(client, customer(), "customers/create")
     webhook(client, pro_order(), "orders/paid")
     stub = get_user(client)
-    assert not stub.claimed and stub.pro_until > time.time()
+    assert not stub.claimed and stub.pro_until == 0
+    assert client.app.state.users.has_unclaimed_value("buyer@example.com")
 
     code_signin(client, outbox, "  BUYER@Example.COM ")  # normalization too
     user = get_user(client)
@@ -205,6 +249,123 @@ def test_code_creates_an_account_for_a_new_email(app, outbox):
     assert not user.has_password
     assert user.digest_opt_in is False  # no consent was ever asked for
     assert "Analyze your swing" in client.get("/").text
+
+
+def test_email_code_can_only_finish_in_the_initiating_session(app, outbox):
+    owner = TestClient(app)
+    second_client = TestClient(app)
+    email = "session-bound@example.com"
+
+    sent = owner.post("/login/email", data={"email": email})
+    assert sent.status_code == 200
+    code = last_code(outbox)
+
+    stolen = second_client.post(
+        "/login/code",
+        data={"email": email, "code": code},
+        follow_redirects=False,
+    )
+    assert stolen.status_code != 303
+    assert (
+        second_client.get("/account", follow_redirects=False).status_code
+        == 303
+    )
+
+    completed = owner.post(
+        "/login/code",
+        data={"email": email, "code": code},
+        follow_redirects=False,
+    )
+    assert completed.status_code == 303
+    assert owner.get("/account", follow_redirects=False).status_code == 200
+
+
+def test_inbox_owner_revokes_legacy_password_session_before_shopify_claim(
+    app, outbox
+):
+    """A pre-verification password must never capture later store value.
+
+    This exercises the complete browser boundary with two independent cookie
+    jars: an attacker already has a session for a legacy, unverified password
+    row; Shopify identity and value then arrive; only the browser that proves
+    inbox ownership may retain the account and claim that value.
+    """
+
+    email = "reverse-order@example.com"
+    attacker_password = "attacker-password"
+    users: UserStore = app.state.users
+    legacy = users.create(
+        email,
+        attacker_password,
+        email_verified=False,
+    )
+    starting_epoch = legacy.auth_epoch
+    attacker = TestClient(app)
+    victim = TestClient(app)
+
+    signed_in = attacker.post(
+        "/login",
+        data={"email": email, "password": attacker_password},
+        follow_redirects=False,
+    )
+    assert signed_in.status_code == 303
+    assert attacker.get("/account", follow_redirects=False).status_code == 200
+
+    assert (
+        webhook(
+            victim,
+            customer(customer_id=7001, email=email, updated_at=100),
+            "customers/create",
+        ).status_code
+        == 200
+    )
+    assert (
+        webhook(
+            victim,
+            pro_order(
+                order_id=9001,
+                email=email,
+                customer_id=7001,
+            ),
+            "orders/paid",
+        ).status_code
+        == 200
+    )
+    parked = users.get(legacy.id)
+    assert parked is not None
+    assert parked.shopify_customer_id is None
+    assert not parked.is_pro
+
+    requested = request_code(victim, email)
+    assert requested.status_code == 200
+    verified = enter_code(
+        victim,
+        last_code(outbox),
+        email,
+        follow_redirects=False,
+    )
+    assert verified.status_code == 303
+
+    owner = users.get_by_email(email)
+    assert owner is not None
+    assert owner.id == legacy.id
+    assert owner.email_verified
+    assert not owner.has_password
+    assert owner.auth_epoch == starting_epoch + 1
+    assert owner.shopify_customer_id == "7001"
+    assert owner.is_pro
+    assert victim.get("/account", follow_redirects=False).status_code == 200
+
+    # The old signed session is invalidated lazily at its next request, and
+    # the password that created it can no longer establish another session.
+    assert attacker.get("/account", follow_redirects=False).status_code == 303
+    replay = attacker.post(
+        "/login",
+        data={"email": email, "password": attacker_password},
+        follow_redirects=False,
+    )
+    assert replay.status_code != 303
+    assert attacker.get("/account", follow_redirects=False).status_code == 303
 
 
 def test_code_signin_attaches_a_parked_presignup_purchase(app, outbox):
@@ -231,9 +392,8 @@ def test_code_claimed_account_survives_store_side_deletion(app, outbox):
 
 def test_code_flow_is_identical_for_all_three_states(app, outbox):
     client = TestClient(app)
-    client.post(  # state 1: existing app account
-        "/signup", data={"email": "app@example.com", "password": "longenough"},
-        follow_redirects=False,
+    verified_password_signup(  # state 1: existing app account
+        client, outbox, "app@example.com"
     )
     client.post("/logout")
     webhook(client, customer(email="stub@example.com"), "customers/create")
@@ -423,11 +583,7 @@ def test_delivery_failure_does_not_reveal_login_account_state(
     app, outbox, monkeypatch
 ):
     client = TestClient(app)
-    client.post(
-        "/signup",
-        data={"email": "app@example.com", "password": "longenough"},
-        follow_redirects=False,
-    )
+    verified_password_signup(client, outbox, "app@example.com")
     client.post("/logout")
     webhook(client, customer(email="stub@example.com"), "customers/create")
 
@@ -488,6 +644,8 @@ def test_without_email_the_password_flows_are_exactly_as_before(app, monkeypatch
     monkeypatch.delenv("RESEND_API_KEY", raising=False)
     monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
     monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
+    monkeypatch.delenv("SHOPIFY_STORE_DOMAIN", raising=False)
+    monkeypatch.delenv("SHOPIFY_WEBHOOK_SECRET", raising=False)
     client = TestClient(app)
     landing = client.get("/").text
     assert "Create a free account" in landing and "Sign in" in landing
@@ -525,10 +683,7 @@ def test_config_flag_off_forces_password_flow_even_with_email(
 
 def test_password_holders_can_still_use_their_password(app, outbox):
     client = TestClient(app)
-    client.post(
-        "/signup", data={"email": "kyle@example.com", "password": "longenough"},
-        follow_redirects=False,
-    )
+    verified_password_signup(client, outbox)
     client.post("/logout")
     wrong = client.post(
         "/login", data={"email": "kyle@example.com", "password": "wrongwrong"}
@@ -595,12 +750,32 @@ def test_passwordless_account_can_add_a_password(app, outbox):
     code_signin(client, outbox, "kyle@example.com")
 
 
-def test_password_accounts_do_not_see_add_password(app, outbox):
+def test_passwordless_add_password_rejects_cross_origin_without_mutation(
+    app, outbox
+):
     client = TestClient(app)
-    client.post(
-        "/signup", data={"email": "kyle@example.com", "password": "longenough"},
+    code_signin(client, outbox, "kyle@example.com")
+    users: UserStore = app.state.users
+    assert not users.get_by_email("kyle@example.com").has_password
+
+    rejected = client.post(
+        "/account/password",
+        data={"password": "attacker-known-password"},
+        headers={"Origin": "https://evil.example"},
         follow_redirects=False,
     )
+
+    assert rejected.status_code == 403
+    assert not users.get_by_email("kyle@example.com").has_password
+    assert users.authenticate(
+        "kyle@example.com", "attacker-known-password"
+    ) is None
+    assert client.get("/account").status_code == 200
+
+
+def test_password_accounts_do_not_see_add_password(app, outbox):
+    client = TestClient(app)
+    verified_password_signup(client, outbox)
     account = client.get("/account").text
     assert "Add a password" not in account
     assert "Change or reset password" in account
@@ -629,8 +804,12 @@ def test_signup_with_passwordless_accounts_email_still_needs_the_code(
     form = {"email": "kyle@example.com", "password": "longenough"}
     resp = client.post("/signup", data=form, follow_redirects=False)
     assert resp.status_code == 200 and "6-digit code" in resp.text
+    intent = re.search(
+        r'name="signup_intent" value="([^"]+)"', resp.text
+    ).group(1)
     ok = client.post(
-        "/signup", data={**form, "code": last_code(outbox)},
+        "/signup",
+        data={"signup_intent": intent, "code": last_code(outbox)},
         follow_redirects=False,
     )
     assert ok.status_code == 303

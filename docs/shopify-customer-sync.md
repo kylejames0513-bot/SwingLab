@@ -14,7 +14,7 @@ CaddieInsight has two complementary Shopify identity paths:
    It is controlled by `shopify_customer_sync.enabled`, which is `false` in
    both code defaults and the shipped `config.yaml`.
 
-Merely deploying the code, adding an Admin token, or running ordinary tests
+Merely deploying the code, adding Admin credentials, or running ordinary tests
 must not contact Shopify or start a customer backfill. Production activation
 is a separate operator decision after the checklist below.
 
@@ -64,8 +64,13 @@ The local sync states are:
 ## Shopify Admin API contract
 
 All Admin API traffic originates in the backend through
-`swinglab.integrations.shopify.admin.ShopifyAdminClient`. The client uses the
-store domain, a backend-only access token, and an explicit stable API version.
+`swinglab.integrations.shopify.admin.ShopifyAdminClient`. The preferred
+authentication mode exchanges the dedicated Dev Dashboard app's client ID and
+client secret for a short-lived access token. The process caches that token
+until shortly before expiry and performs one bounded refresh/replay if Shopify
+rejects it early. A legacy static Admin token remains an alternative for older
+installations; mixed or incomplete modes are rejected. Every request uses the
+canonical store domain and an explicit stable API version.
 
 The installation needs:
 
@@ -89,7 +94,8 @@ Use the latest stable version verified by the project. Shopify releases stable
 versions quarterly and recommends explicitly versioning requests; review
 `SHOPIFY_ADMIN_API_VERSION` each quarter against the
 [versioning schedule](https://shopify.dev/docs/api/usage/versioning). Do not use
-`unstable` or a release candidate in production.
+`unstable` or a release candidate in production. This release and the
+version-controlled Shopify app configuration are verified against `2026-07`.
 
 ## Configuration
 
@@ -109,35 +115,59 @@ shopify_customer_sync:
 `auto_sync_new_users` has no effect unless `enabled` is true. Required backend
 environment variables are:
 
+- `SHOPIFY_STORE_DOMAIN` (the same canonical `your-store.myshopify.com`
+  hostname used to validate inbound webhook store headers)
 - `SHOPIFY_ADMIN_STORE_DOMAIN` (the canonical `your-store.myshopify.com`
-  hostname, never a custom storefront domain)
-- `SHOPIFY_ADMIN_ACCESS_TOKEN`
+  hostname; it must exactly match normalized `SHOPIFY_STORE_DOMAIN`)
+- `SHOPIFY_ADMIN_CLIENT_ID` and `SHOPIFY_ADMIN_CLIENT_SECRET` (preferred), or
+  the legacy `SHOPIFY_ADMIN_ACCESS_TOKEN`, but never both modes
 - `SHOPIFY_ADMIN_API_VERSION`
+- `SHOPIFY_CUSTOMER_SYNC_COHORT_PERCENT` (`0` by default; set explicitly from
+  `0` through `100`)
 
-The existing inbound webhook bridge separately requires
-`SHOPIFY_STORE_DOMAIN` and `SHOPIFY_WEBHOOK_SECRET`.
+The manual purchase/customer webhook bridge also requires
+`SHOPIFY_WEBHOOK_SECRET`. Mandatory privacy deliveries from the dedicated app use
+`SHOPIFY_PRIVACY_WEBHOOK_SECRET`; the handler validates the raw body against
+the correct eligible secret and also requires the exact
+`X-Shopify-Shop-Domain` for every recognized mutating topic. The privacy secret
+by itself keeps this shared endpoint available but does not enable Pro purchase
+links or commerce-connected signup semantics. When outbound sync is enabled,
+the worker rechecks the normalized webhook store against the
+Admin client before enrollment and every batch. A missing or split-store
+configuration reports a PII-free `mismatch`, starts no outbound worker, and
+makes no Admin customer request; inbound signed webhooks remain available.
 `SWINGLAB_ADMIN_TOKEN` protects the local operator routes. Keep all secret
 values in the deployment platform's secret manager; `.env.example` is an empty
 inventory, not a configuration file.
+
+The global flag and cohort percentage are independent gates. Enabling the flag
+while the percentage remains `0` synchronizes nobody. A nonzero cohort also
+requires a stable `SWINGLAB_SECRET`; the backend uses it to select a
+deterministic keyed bucket without logging or persisting a cohort identifier.
 
 ## Registration and retry behavior
 
 For an eligible verified registration:
 
 1. Validate signup input.
-2. Commit the CaddieInsight authentication account and user.
-3. Persist Shopify sync as `pending`.
-4. Queue backend sync without delaying the successful signup response.
+2. Store a ten-minute signup intent containing only the scrypt password hash,
+   never the plaintext password, and email a single-use verification code.
+3. After inbox proof, atomically consume the intent and commit the
+   CaddieInsight account as verified.
+4. Persist Shopify sync as `pending` and queue backend work without delaying
+   the successful signup response.
 5. Reuse the existing Shopify customer when the exact normalized email has one
    unambiguous match; otherwise use the supported idempotent customer upsert.
 6. Persist the canonical Shopify customer ID, mark `synced`, record the success
    time, and clear the prior safe error.
 
-Passwordless registration already proves the email with its sign-in code. When
-the outbound bridge and email delivery are both enabled, the classic password
-signup reuses the existing claim-code step before creating and queueing a new
-account. If email delivery is unavailable, local signup still succeeds, but an
-unverified row stops at `requires_review` without contacting Shopify.
+Passwordless registration already proves the email with its sign-in code. A
+Shopify-linked, passwordless, pre-purchase, or outbound-cohort identity cannot
+be claimed or linked while email delivery is unavailable. A deployment with a
+primary Shopify commerce bridge configured requires inbox proof before a
+password account can become an identity candidate. Without that primary
+bridge, an address with no linked, purchased, or outbound-cohort identity can
+retain the documented local no-mail fallback.
 
 Transport failures, Shopify 5xx responses, throttling, and explicitly retryable
 errors use bounded exponential backoff beginning at
@@ -157,29 +187,53 @@ tokens, full request headers, or unnecessary Shopify response bodies.
 
 The existing `SWINGLAB_ADMIN_TOKEN` bearer guard protects:
 
-- `GET /admin/shopify-sync` for linked state, sync status, last success, safe
-  error, attempt count, customer ID, matching backfill `user_ref`, scheduled
+- `GET /admin/shopify-sync` for exact sync counts/times, coarse binding state,
+  safe `user_ref` records, last success, safe error, attempt count, scheduled
   retry time, manual-retry availability, and manual-review state;
-- `POST /admin/shopify-sync/{user_id}/retry` for an explicit retry.
+- `GET /admin/shopify-sync/ref/{user_ref}` for an on-demand exact Shopify
+  customer ID and the same sync-health fields for one record;
+- `POST /admin/shopify-sync/ref/{user_ref}/retry` for an explicit retry.
 
 These routes must retain the current admin convention: absent or incorrect
 credentials receive the same 404 as an unknown route, and token comparison is
-constant-time. Regular account pages may say that the store is connected but
-must not expose sync errors, attempt history, or the Shopify customer ID.
+constant-time. Raw local user IDs and Shopify customer IDs are not pagination
+or URL tokens. The broad list remains PII-minimized; the exact Shopify ID is
+revealed only by the protected single-record detail route and every
+administrative response uses `Cache-Control: no-store`. Public `/healthz`
+exposes only coarse booleans, not customer counts, cohort size, or exact
+timestamps. Regular account pages may say that the store is connected but
+must not expose sync errors, attempt history, or the customer ID.
 
 ## Existing-user backfill
 
 Backfill is an explicit operator workflow:
 
-```text
-swinglab shopify-backfill --sessions-dir /data/sessions [--batch-size N] [--after CURSOR] [--json]
-swinglab shopify-backfill --sessions-dir /data/sessions --apply [--batch-size N] [--after CURSOR] [--json]
+```shell
+# Database/schema only; no Shopify request and no write.
+swinglab shopify-backfill --sessions-dir /data/sessions --preflight-only --json
+
+# Authenticate the canonical store and persist only its domain + exact Shop GID.
+swinglab shopify-backfill --sessions-dir /data/sessions --bind-only \
+  --confirm-store your-store.myshopify.com --json
+
+# Review one page or the complete restartable dry run.
+swinglab shopify-backfill --sessions-dir /data/sessions \
+  --batch-size 25 --json
+swinglab shopify-backfill --sessions-dir /data/sessions \
+  --all-batches --json
+
+# Apply only after review, still in controlled batches.
+swinglab shopify-backfill --sessions-dir /data/sessions --apply \
+  --batch-size 25 --json
 ```
 
 Those commands show the live Railway path; use the actual existing sessions
 directory in other environments. The CLI refuses a missing `swinglab.db`
-instead of creating a misleading empty database. Dry-run is the default.
-`--apply` is always explicit. The command must:
+instead of creating a misleading empty database. Dry-run is the default, and
+`--apply` is always explicit. An unbound or wrong-store database is refused
+before customer requests. `--bind-only` verifies the exact confirmation,
+authenticates the shop, persists the full private Shop GID, and exits without
+customer lookup or mutation. The command must:
 
 - process a deterministic, bounded batch;
 - skip already-linked users;
@@ -193,10 +247,19 @@ instead of creating a misleading empty database. Dry-run is the default.
 - return a final summary, with `--json` available for protected operator
   automation.
 
-Opening the database uses the application's normal `UserStore` initialization,
-so the additive sync columns/index may be installed before either mode runs.
-After that schema preflight, dry-run does not change customer links or per-user
-sync state and makes only read-only Shopify lookups.
+Manual resolution uses a protected environment variable for the target
+customer ID rather than placing it in shell history:
+
+```shell
+swinglab shopify-resolve-customer --sessions-dir /data/sessions \
+  --user-ref <safe-user-ref> --customer-id-env SHOPIFY_RESOLUTION_CUSTOMER_ID \
+  --json
+```
+
+Opening the database uses the application's normal `UserStore` initialization.
+After schema and binding preflight, dry-run does not change customer links or
+per-user sync state and makes only read-only Shopify lookups. A nonzero exit
+means the batch still contains a failure or review item; do not ignore it.
 
 Do not schedule this command and do not run `--apply` automatically during
 application startup, deployment, or production activation.
@@ -218,10 +281,70 @@ The operational topics currently used are:
 - `customers/delete`
 
 The same signed handler also recognizes the required privacy events
-`customers/data_request`, `customers/redact`, and `shop/redact`. Configure
-privacy webhooks as required for the app. The current bridge acknowledges data
-request and shop-redaction events but does not yet implement a complete export
-or shop-wide erasure workflow; do not describe it as full privacy compliance.
+`customers/data_request`, `customers/redact`, and `shop/redact`.
+`customers/data_request` atomically captures an integrity-checked, expiring
+export snapshot for protected operator delivery; event replays reuse the same
+request. Customer redaction deletes the subject's Shopify order and gear
+ledgers, parked value, pending links, and any stored privacy export containing
+that subject. It preserves only independently owned CaddieInsight credentials,
+analysis history, and the non-identifying entitlement end on a claimed
+account. One minimal tombstone retains the stable Shopify customer id,
+redaction flag, and event time—never email or local account id—solely to reject
+delayed deliveries that would otherwise recreate erased identity or value.
+This suppression record has no expiry because expiry would reopen that
+resurrection path. Explicit `orders_to_redact` values are retained only as
+keyed one-way order fences, using a per-database random key, so paid or
+cancellation replays without a customer id cannot restore order email, gear,
+or entitlement data. Exact-store `shop/redact` transactionally fences active
+workers and erases the local Shopify ledgers, bindings, pending links,
+store-only stubs, and sync state while preserving independently owned
+CaddieInsight credentials and golf analyses. Opaque composite delivery
+receipts for all three privacy topics survive shop erasure, so an exact replay
+cannot recapture or mutate state created after the original event. A distinct
+signed request or redaction still applies, and a new explicit authenticated
+store bind is required before outbound sync reopens.
+
+Provider calls and redaction share a dedicated per-database advisory lock.
+Fence validation uses only a brief SQLite transaction; the application
+database lock is released before network I/O, so a Shopify timeout does not
+block unrelated accounts or local writes. Redaction waits for an already
+authorized provider call, then invalidates its compare-and-set result. The
+webhook route runs synchronous application work in a worker thread so waiting
+for that ordering lock cannot block the ASGI event loop. Dry-run backfill uses
+a read-only SQLite connection and the same advisory ordering lock. Data-request
+rows come from one read transaction, while filesystem inventory and JSON
+encoding run without a SQLite or `UserStore` lock; a short final transaction
+atomically claims the delivery and publishes the ready snapshot.
+
+The repository's linked `shopify.app.toml` declares `2026-07`, only
+`read_customers,write_customers`, and all three compliance topics at the
+existing HTTPS endpoint. `shopify app config validate` is safe; do not run
+`shopify app deploy` until the endpoint code and the dedicated app's client
+secret are deployed together. Shopify configuration release and production app
+installation are separately monitored actions.
+
+### Privacy request operator handoff
+
+The privacy webhook stores an export; it never emails customer data. An
+authorized operator can inspect only PII-free request metadata, then write one
+integrity-checked export to an explicit new file:
+
+```text
+swinglab shopify-privacy --sessions-dir /data/sessions list
+swinglab shopify-privacy --sessions-dir /data/sessions export REQUEST_ID --output <new-private-file>
+```
+
+Export refuses to overwrite any existing path, creates the file with owner-only
+permissions where the platform supports them, removes a partial file on
+failure, and never prints customer data. Deliver that file through the approved
+privacy/support channel. Only after that external handoff succeeds, record it:
+
+```text
+swinglab shopify-privacy --sessions-dir /data/sessions mark-delivered REQUEST_ID --confirm-external-delivery
+swinglab shopify-privacy --sessions-dir /data/sessions purge-expired
+```
+
+Marking delivery does not extend the fixed retention deadline.
 
 Do not change webhook paths, HMAC handling, order idempotency, merchant SKUs,
 product handles, or entitlement behavior as part of enabling outbound customer
@@ -235,19 +358,23 @@ sync.
 - Run the full Python 3.11 suite and production-container smoke test.
 - Confirm ordinary signup, login, purchase webhooks, and `/healthz` are
   unchanged.
-- Confirm no Admin token appears in built assets, HTML, JSON, logs, or errors.
+- Confirm no Admin credential or exchanged token appears in built assets,
+  HTML, JSON, logs, or errors.
 
 ### Stage 1: development store
 
 - Install only the required customer scopes and protected email access.
-- Set the Admin variables in a development environment.
-- Enable the flag only there.
+- Set the preferred Admin client ID/client secret and explicit API version in
+  a development environment.
+- Set a stable `SWINGLAB_SECRET`, set the cohort percentage to `100`, and
+  enable the flag only there.
 - Test no-existing-customer, existing-customer, outage, throttle, invalid
   input, duplicate match, email change, and manual retry cases.
 
 ### Stage 2: internal accounts
 
-- Enable a small internal cohort.
+- Set a small nonzero `SHOPIFY_CUSTOMER_SYNC_COHORT_PERCENT`; keep the global
+  flag enabled only after development-store checks pass.
 - Verify the stored customer IDs in both systems.
 - Confirm existing Shopify customers and order history are reused, not
   duplicated.
@@ -262,7 +389,8 @@ sync.
 
 ### Stage 4: production activation
 
-- Enable automatic sync for new verified signups.
+- Raise the cohort percentage deliberately toward `100` for new verified
+  signups; do not treat the global flag alone as activation.
 - Keep manual retry available.
 - Monitor sync success/failure counts and Shopify throttling.
 - Do not activate unrelated order-import, apparel, fulfillment, or profile
@@ -300,9 +428,14 @@ rollback.
       constraint is present.
 - [ ] `read_customers`, `write_customers`, and protected email access are
       approved for this installation.
-- [ ] Admin token and API version exist only in the backend secret manager.
-- [ ] The canonical `SHOPIFY_ADMIN_STORE_DOMAIN` is configured separately
-      from any custom storefront domain.
+- [ ] Exactly one Admin authentication mode and the explicit API version exist
+      only in the backend secret manager.
+- [ ] Existing manual webhook HMAC and dedicated-app privacy HMAC have each
+      been verified against the deployed Railway values.
+- [ ] Normalized `SHOPIFY_STORE_DOMAIN`,
+      `SHOPIFY_ADMIN_STORE_DOMAIN`, and the persisted database binding all
+      identify the same canonical `*.myshopify.com` store; the protected
+      health view is not `mismatch`.
 - [ ] Email delivery/code verification is working for automatic new-user sync.
 - [ ] Registration succeeds with Shopify offline.
 - [ ] Existing-customer reuse and no-customer creation both pass in development.
@@ -325,7 +458,8 @@ rollback.
   or infer them during sync.
 - A claimed user's Shopify-side email change does not change the app login
   email automatically.
-- Complete `customers/data_request` export and `shop/redact` erasure remain
-  separate privacy-compliance work.
+- Privacy request snapshots still require an authorized operator to deliver
+  the export through the approved support/privacy channel before retention
+  expiry; the webhook does not email sensitive data automatically.
 - Disabling or reverting the bridge stops new work but does not erase customers
   already created in Shopify.

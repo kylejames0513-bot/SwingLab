@@ -14,11 +14,11 @@ when configured, one checkout for gear and memberships) or through a Stripe
 subscription (billing.py). Set SWINGLAB_SECRET so logins survive restarts.
 
 Accounts can also start on the store: Shopify customer webhooks provision
-passwordless "store accounts" that signing up with the same email claims in
-place — purchases and the Shopify link carry over (shopify_billing.py).
-With email delivery configured (mailer.py, inert otherwise), claims of pre-existing
-value are verified with an emailed one-time code, and password reset works
-the same way.
+passwordless "store accounts" that a verified signup with the same email
+claims in place — purchases and the Shopify link carry over
+(shopify_billing.py). Claims of pre-existing store identity or value always
+require an emailed one-time code; they fail closed when delivery is
+unavailable. Email delivery also supports password reset.
 
 One account (web.passwordless_login, on by default but self-disabling
 without email delivery): the login page asks for the email first and mails a
@@ -26,8 +26,9 @@ six-digit sign-in code — the same flow logs into an existing account,
 claims an unclaimed store account with everything bought intact, or
 creates a new account, so the store email IS the app identity and nobody
 sets a password unless they want one ("Add a password" on /account, "use
-your password instead" on the login page). Without email delivery the pages keep the
-classic password flows exactly.
+your password instead" on the login page). Without email delivery, independent
+local password flows remain available only where no pre-existing store
+identity or value requires inbox proof.
 
 The optional gear shop (a /shop page plus flag-matched training-aid
 recommendations on finished analyses) is likewise inert until the SHOPIFY_*
@@ -54,10 +55,12 @@ import shutil
 import threading
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from jinja2 import Environment, FileSystemLoader, select_autoescape
+from starlette.concurrency import run_in_threadpool
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import ClientDisconnect
 
@@ -96,6 +99,111 @@ EMAIL_DELIVERY_UNCERTAIN_MESSAGE = (
     "We couldn't confirm delivery. If a code arrives, it will still work; "
     "otherwise try again in a minute."
 )
+SHOPIFY_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024
+LOGIN_FLOW_SESSION_KEY = "email_login_flow_nonce"
+SIGNUP_FLOW_SESSION_KEY = "password_signup_flow_nonce"
+
+
+def _shopify_sync_cohort_percent(raw: str | None) -> float:
+    """Validate the explicit second gate for outbound customer creation."""
+
+    try:
+        value = float("0" if raw is None or not raw.strip() else raw)
+    except (TypeError, ValueError, OverflowError):
+        raise shopify_admin.ShopifyAdminConfigurationError(
+            "Shopify customer synchronization cohort percentage is invalid."
+        ) from None
+    if not math.isfinite(value) or not 0 <= value <= 100:
+        raise shopify_admin.ShopifyAdminConfigurationError(
+            "Shopify customer synchronization cohort percentage is invalid."
+        )
+    return value
+
+
+def _cohort_includes_email(email: str, percent: float, secret: str) -> bool:
+    """Select a stable cohort without logging or persisting customer PII."""
+
+    if percent <= 0:
+        return False
+    if percent >= 100:
+        return True
+    digest = hmac.new(
+        secret.encode("utf-8"),
+        email.strip().lower().encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    bucket = int.from_bytes(digest[:8], "big") / float(1 << 64)
+    return bucket < percent / 100.0
+
+
+async def _read_bounded_request_body(
+    request: Request, max_bytes: int
+) -> bytes:
+    """Read an unauthenticated webhook body without unbounded buffering."""
+
+    raw_length = request.headers.get("content-length")
+    if raw_length is not None:
+        try:
+            content_length = int(raw_length)
+        except ValueError:
+            raise HTTPException(400, "Invalid Content-Length header.") from None
+        if content_length < 0:
+            raise HTTPException(400, "Invalid Content-Length header.")
+        if content_length > max_bytes:
+            raise HTTPException(413, "Webhook payload is too large.")
+
+    payload = bytearray()
+    try:
+        async for chunk in request.stream():
+            if len(payload) + len(chunk) > max_bytes:
+                raise HTTPException(413, "Webhook payload is too large.")
+            payload.extend(chunk)
+    except ClientDisconnect:
+        raise HTTPException(400, "Webhook upload was interrupted.") from None
+    return bytes(payload)
+
+
+def _normalized_origin(value: str) -> tuple[str, str, int] | None:
+    """Reduce an HTTP(S) URL/origin to a comparable origin tuple."""
+
+    try:
+        parsed = urlsplit(str(value or "").strip())
+        scheme = parsed.scheme.lower()
+        hostname = (parsed.hostname or "").lower()
+        if scheme not in ("http", "https") or not hostname:
+            return None
+        port = parsed.port
+    except ValueError:
+        return None
+    if port is None:
+        port = 443 if scheme == "https" else 80
+    return scheme, hostname, port
+
+
+def _same_origin_form_post(request: Request) -> bool:
+    """Reject browser-declared cross-origin form posts.
+
+    SameSite=Lax already withholds the session cookie on ordinary cross-site
+    POSTs. Origin/Referer validation is a second guard while retaining
+    compatibility with non-browser clients that send neither header.
+    """
+
+    source = request.headers.get("origin")
+    if source is None:
+        source = request.headers.get("referer")
+    if source is None:
+        return True
+    expected = os.environ.get("PUBLIC_BASE_URL") or str(request.base_url)
+    source_origin = _normalized_origin(source)
+    expected_origin = _normalized_origin(expected)
+    return (
+        source_origin is not None
+        and expected_origin is not None
+        and hmac.compare_digest(
+            repr(source_origin).encode("utf-8"),
+            repr(expected_origin).encode("utf-8"),
+        )
+    )
 
 
 def init_sentry() -> bool:
@@ -181,6 +289,18 @@ def create_app(
         cfg.shopify_customer_sync
     )
     shopify_sync_enabled = shopify_sync_settings["enabled"]
+    shopify_sync_cohort_percent = _shopify_sync_cohort_percent(
+        os.environ.get("SHOPIFY_CUSTOMER_SYNC_COHORT_PERCENT")
+    )
+    configured_session_secret = os.environ.get("SWINGLAB_SECRET")
+    if (
+        shopify_sync_enabled
+        and shopify_sync_cohort_percent > 0
+        and not configured_session_secret
+    ):
+        raise shopify_admin.ShopifyAdminConfigurationError(
+            "A stable SWINGLAB_SECRET is required for Shopify sync cohorts."
+        )
     init_sentry()
     sessions_dir = Path(sessions_dir)
     sessions_dir.mkdir(parents=True, exist_ok=True)
@@ -200,23 +320,36 @@ def create_app(
 
     shopify_sync_coordinator = None
     if shopify_sync_enabled:
-        # Explicit startup validation: enabling the outbound bridge without
-        # its backend-only Admin credentials is an operator error.  The
-        # disabled default leaves every existing webhook/storefront path
-        # untouched.
-        shopify_admin_client = (
-            shopify_admin_client
-            or shopify_admin.ShopifyAdminClient.from_env(
-                timeout_seconds=float(
-                    shopify_sync_settings.get("request_timeout_seconds") or 10
-                ),
-            )
-        )
+        binding_status = None
+        binding_error = None
+        if shopify_admin_client is None:
+            try:
+                shopify_admin_client = (
+                    shopify_admin.ShopifyAdminClient.from_env(
+                        timeout_seconds=float(
+                            shopify_sync_settings.get(
+                                "request_timeout_seconds"
+                            )
+                            or 10
+                        ),
+                    )
+                )
+            except shopify_admin.ShopifyAdminError:
+                # Authentication/configuration drift blocks only outbound
+                # sync. The rest of the web app and inbound signed webhooks
+                # remain healthy and the PII-free state is visible below.
+                binding_status = "unverifiable"
+                binding_error = (
+                    "Shopify Admin API authentication is unavailable."
+                )
         shopify_sync_coordinator = (
             shopify_customer_sync.ShopifyCustomerSyncCoordinator(
                 users,
                 shopify_admin_client,
                 shopify_sync_settings,
+                binding_db_path=sessions_dir / "swinglab.db",
+                initial_binding_status=binding_status,
+                initial_binding_error=binding_error,
                 start=False,
             )
         )
@@ -231,7 +364,7 @@ def create_app(
             "shutdown", shopify_sync_coordinator.shutdown
         )
 
-    secret = os.environ.get("SWINGLAB_SECRET")
+    secret = configured_session_secret
     if not secret:
         secret = secrets.token_hex(32)
         if cfg.web.get("require_account"):
@@ -239,7 +372,16 @@ def create_app(
                 "SWINGLAB_SECRET is not set — logins will not survive "
                 "a restart. Set it to a long random string in the environment."
             )
-    app.add_middleware(SessionMiddleware, secret_key=secret, same_site="lax")
+    public_origin = _normalized_origin(os.environ.get("PUBLIC_BASE_URL"))
+    app.add_middleware(
+        SessionMiddleware,
+        secret_key=secret,
+        same_site="lax",
+        https_only=bool(
+            public_origin is not None
+            and public_origin[0] == "https"
+        ),
+    )
 
     # Real client IPs behind a proxy: trust X-Forwarded-For from
     # web.trusted_proxies ("*" = any hop, right for a PaaS whose proxy is
@@ -269,22 +411,73 @@ def create_app(
 
     def current_user(request: Request) -> User | None:
         user_id = request.session.get("user_id")
-        return users.get(user_id) if user_id else None
+        if not user_id:
+            return None
+        user = users.get(user_id)
+        try:
+            session_epoch = int(request.session.get("auth_epoch", 0))
+        except (TypeError, ValueError):
+            session_epoch = -1
+        if user is None or session_epoch != user.auth_epoch:
+            request.session.clear()
+            return None
+        return user
 
-    def queue_shopify_sync(user: User, *, identity_just_verified: bool = False) -> None:
+    def establish_session(request: Request, user: User) -> None:
+        """Bind a signed cookie to the user's current revocation epoch."""
+
+        request.session["user_id"] = user.id
+        request.session["auth_epoch"] = user.auth_epoch
+
+    def flow_session_nonce(
+        request: Request, key: str, *, create: bool = False
+    ) -> str | None:
+        """Read or mint an opaque nonce held only in the signed session."""
+
+        value = request.session.get(key)
+        if isinstance(value, str) and 20 <= len(value) <= 256:
+            return value
+        request.session.pop(key, None)
+        if not create:
+            return None
+        value = secrets.token_urlsafe(32)
+        request.session[key] = value
+        return value
+
+    def clear_flow_session_nonce(request: Request, key: str) -> None:
+        request.session.pop(key, None)
+
+    def shopify_sync_eligible(email: str) -> bool:
+        """Require both the feature flag and an explicit staged cohort."""
+
+        return bool(
+            shopify_sync_coordinator is not None
+            and shopify_sync_coordinator.enrollment_allowed
+            and shopify_sync_settings.get("auto_sync_new_users", True)
+            and _cohort_includes_email(
+                email, shopify_sync_cohort_percent, secret
+            )
+        )
+
+    def queue_shopify_sync(
+        user: User, *, identity_just_verified: bool = False
+    ) -> None:
         """Persist and wake outbound sync without delaying registration."""
 
         if (
             shopify_sync_coordinator is None
             or not shopify_sync_settings.get("auto_sync_new_users", True)
+            or not shopify_sync_eligible(user.email)
             or user.shopify_customer_id
         ):
             return
-        # New password signups are deliberately queued too: the worker
-        # records requires_review without contacting Shopify until the email
-        # is verified.  A later successful email-code sign-in wakes it again.
+        # Only inbox-verified cohort members reach the automatic bridge.
+        # Unverified or out-of-cohort users remain safe local accounts.
+        if not user.email_verified:
+            return
         if identity_just_verified or user.shopify_sync_status in (
             "not_started",
+            "pending",
             "requires_review",
         ):
             shopify_sync_coordinator.enqueue(user.id)
@@ -333,7 +526,7 @@ def create_app(
         users.claim_pending_grant(user.id, user.email)
 
     def render(template: str, request: Request, **context) -> HTMLResponse:
-        return HTMLResponse(
+        response = HTMLResponse(
             env.get_template(template).render(
                 brand=cfg.brand,
                 user=current_user(request),
@@ -341,7 +534,7 @@ def create_app(
                 billing_enabled=billing.enabled(),
                 pro_store_url=(
                     shopify_billing.buy_url(cfg)
-                    if shopify_billing.enabled()
+                    if shopify_billing.commerce_enabled()
                     else None
                 ),
                 free_per_month=int(cfg.billing["free_per_month"]),
@@ -370,6 +563,24 @@ def create_app(
                 **context,
             )
         )
+        if (
+            context.get("verify_email")
+            or context.get("code_email")
+            or context.get("reset_stage") == "confirm"
+        ):
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+        return response
+
+    def render_no_store(
+        template: str, request: Request, **context
+    ) -> HTMLResponse:
+        """Render verification/account-secret pages without cache retention."""
+
+        response = render(template, request, **context)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
 
     def get_job_or_404(job_id: str, request: Request) -> Job:
         """404 for unknown ids AND other people's sessions (don't reveal
@@ -499,7 +710,12 @@ def create_app(
         )
 
     # -- accounts ---------------------------------------------------------
-    def send_code_email(email: str, purpose: str) -> None:
+    def send_code_email(
+        email: str,
+        purpose: str,
+        *,
+        session_nonce: str | None = None,
+    ) -> None:
         """Issue + email a one-time code; a rate-limited (None) issue means
         a still-valid code is already in the inbox, so send nothing. The
         login message depends only on the purpose, never on whether the
@@ -508,7 +724,9 @@ def create_app(
         send_lock = acquire_code_send_lock(key)
         try:
             with send_lock:
-                code = users.issue_email_code(email, purpose)
+                code = users.issue_email_code(
+                    email, purpose, session_nonce=session_nonce
+                )
                 if code is None:
                     return
                 action = {
@@ -595,6 +813,8 @@ def create_app(
         response — and the email itself — is identical whether the address
         has an account, an unclaimed store account, or nothing at all, so
         the form can't be used to test which emails exist."""
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         if not passwordless_active():
             raise HTTPException(503, "Email sign-in requires email to be set up.")
         auth_view = "signup" if auth_intent == "signup" else "login"
@@ -623,9 +843,19 @@ def create_app(
             return page
         throttle.record("code-ip", ip)
         throttle.record("code-email", normalized)
+        login_flow_nonce = flow_session_nonce(
+            request, LOGIN_FLOW_SESSION_KEY, create=True
+        )
+        assert login_flow_nonce is not None
         try:
-            send_code_email(normalized, "login")
+            send_code_email(
+                normalized,
+                "login",
+                session_nonce=login_flow_nonce,
+            )
         except mailer.EmailDeliveryError as exc:
+            if isinstance(exc, mailer.EmailDeliveryRejected):
+                clear_flow_session_nonce(request, LOGIN_FLOW_SESSION_KEY)
             delivery_context = (
                 {"code_email": normalized, "auth_view": auth_view}
                 if isinstance(exc, mailer.EmailDeliveryUncertain)
@@ -654,6 +884,8 @@ def create_app(
         purchases kept), or a brand-new one. The code machinery enforces
         the 10-minute expiry, single use, and the 5-wrong-guess burn; the
         wrong-code message never depends on the account's state."""
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         if not passwordless_active():
             raise HTTPException(503, "Email sign-in requires email to be set up.")
         auth_view = "signup" if auth_intent == "signup" else "login"
@@ -670,7 +902,15 @@ def create_app(
             )
             page.status_code = 429
             return page
-        if not users.check_email_code(normalized, "login", code):
+        login_flow_nonce = flow_session_nonce(
+            request, LOGIN_FLOW_SESSION_KEY
+        )
+        if login_flow_nonce is None or not users.check_email_code(
+            normalized,
+            "login",
+            code,
+            session_nonce=login_flow_nonce,
+        ):
             # Only failures are recorded — entering the right code first
             # try never eats into anyone's budget.
             throttle.record("code-ip", ip)
@@ -687,10 +927,7 @@ def create_app(
             user = users.verify_email_signin(
                 normalized,
                 shopify_sync_pending=bool(
-                    shopify_sync_coordinator is not None
-                    and shopify_sync_settings.get(
-                        "auto_sync_new_users", True
-                    )
+                    shopify_sync_eligible(normalized)
                     and (
                         prior_user is None
                         or not prior_user.email_verified
@@ -709,11 +946,14 @@ def create_app(
                 prior_user is None or not prior_user.email_verified
             ),
         )
-        request.session["user_id"] = user.id
+        clear_flow_session_nonce(request, LOGIN_FLOW_SESSION_KEY)
+        establish_session(request, user)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/login")
     def login(request: Request, email: str = Form(""), password: str = Form("")):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         # Throttle check FIRST — before the (deliberately expensive) scrypt
         # verification, so a brute-forcer can't burn CPU either. Keyed per
         # client IP AND per target email: a distributed guess at one account
@@ -763,7 +1003,7 @@ def create_app(
                 auth_view="login",
             )
         claim_pending_pro(user)
-        request.session["user_id"] = user.id
+        establish_session(request, user)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/signup")
@@ -773,96 +1013,198 @@ def create_app(
         password: str = Form(""),
         code: str = Form(""),
         digest_opt: str = Form("", alias="digest"),
+        signup_intent: str = Form(""),
     ):
-        wants_digest = digest_opt.lower() in ("on", "true", "1", "yes")
-        # Signup throttle: per client IP, sliding hour window. Every signup
-        # costs a scrypt hash (and, with email on, an email) — this stops
-        # throwaway-email loops from getting that CPU for free.
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         ip = client_ip(request)
-        if not throttle.allow("signup-ip", ip, signup_limit, SIGNUP_WINDOW_S):
+        if (
+            not signup_intent.strip()
+            and not throttle.allow(
+                "signup-ip", ip, signup_limit, SIGNUP_WINDOW_S
+            )
+        ):
             page = render(
-                "web_login.html.j2", request, landing=False,
-                error=THROTTLED_MESSAGE, show_password=True,
+                "web_login.html.j2",
+                request,
+                landing=False,
+                error=THROTTLED_MESSAGE,
+                show_password=True,
                 auth_view="signup",
             )
             page.status_code = 429
             return page
+
+        # Verification continuations carry only an opaque, browser-bound
+        # token. The associated password exists solely as a scrypt hash in
+        # signup_intents and is consumed atomically after the email code.
+        if signup_intent.strip():
+            signup_flow_nonce = flow_session_nonce(
+                request, SIGNUP_FLOW_SESSION_KEY
+            )
+            intent = (
+                users.get_signup_intent(
+                    signup_intent,
+                    session_nonce=signup_flow_nonce,
+                )
+                if signup_flow_nonce is not None
+                else None
+            )
+            if intent is None:
+                page = render_no_store(
+                    "web_login.html.j2",
+                    request,
+                    landing=False,
+                    error="That signup verification expired — start again.",
+                    show_password=True,
+                    auth_view="signup",
+                )
+                page.status_code = 400
+                return page
+            if not code.strip():
+                return render_no_store(
+                    "web_login.html.j2",
+                    request,
+                    landing=False,
+                    verify_email=intent.email,
+                    verify_intent=signup_intent,
+                    auth_view="signup",
+                    error=(
+                        "That code didn't match (or expired) — check the "
+                        "email, or start again for a fresh code."
+                    ),
+                )
+            try:
+                user = users.complete_signup_intent_with_code(
+                    signup_intent,
+                    code,
+                    shopify_sync_pending=shopify_sync_eligible(
+                        intent.email
+                    ),
+                    session_nonce=signup_flow_nonce,
+                )
+            except ValueError as exc:
+                page = render_no_store(
+                    "web_login.html.j2",
+                    request,
+                    landing=False,
+                    error=str(exc),
+                    verify_email=intent.email,
+                    verify_intent=signup_intent,
+                    auth_view="signup",
+                )
+                page.status_code = 400
+                return page
+            claim_pending_pro(user)
+            queue_shopify_sync(user, identity_just_verified=True)
+            clear_flow_session_nonce(request, SIGNUP_FLOW_SESSION_KEY)
+            establish_session(request, user)
+            return RedirectResponse(
+                "/", status_code=303, headers={"Cache-Control": "no-store"}
+            )
+
+        wants_digest = digest_opt.lower() in ("on", "true", "1", "yes")
+        # Signup throttle: per client IP, sliding hour window. Every initial
+        # password signup costs a scrypt hash (and sometimes an email), so
+        # throwaway addresses cannot consume that CPU for free.
         try:
             normalized = users.validate_signup(email, password)
         except ValueError as exc:
             return render(
-                "web_login.html.j2", request, landing=False, error=str(exc),
-                show_password=True, auth_view="signup",
+                "web_login.html.j2", request, landing=False,
+                error=str(exc), show_password=True,
+                auth_view="signup",
             )
         # Record only attempts that clear validation — a typo'd password
         # doesn't cost the visitor one of their slots.
         throttle.record("signup-ip", ip)
-        # When email is configured, claiming an address that already has
-        # value attached (an unclaimed store account, or a Pro purchase
-        # made before signup) must prove control of the inbox first. When
-        # it isn't, signup proceeds exactly as before — see the README's
-        # security note.
-        email_just_verified = False
-        bridge_requires_verification = bool(
-            shopify_sync_coordinator is not None
-            and shopify_sync_settings.get("auto_sync_new_users", True)
+        # Every password signup in a Shopify-connected deployment must prove
+        # inbox ownership. Otherwise an attacker can pre-register a buyer's
+        # email, keep a live session, and wait for a later customer webhook.
+        # A deployment with no Shopify bridge keeps the historical local-only
+        # no-mail signup path.
+        existing_signup_user = users.get_by_email(normalized)
+        identity_requires_verification = bool(
+            shopify_billing.commerce_enabled()
+            or users.has_unclaimed_value(normalized)
+            or (
+                existing_signup_user is None
+                and shopify_sync_eligible(normalized)
+            )
         )
-        if mailer.enabled() and (
-            users.has_unclaimed_value(normalized)
-            or bridge_requires_verification
-        ):
-            if not code.strip():
-                try:
-                    send_code_email(normalized, "claim")
-                except mailer.EmailDeliveryError as exc:
-                    if isinstance(exc, mailer.EmailDeliveryUncertain):
-                        page = render(
-                            "web_login.html.j2", request, landing=False,
-                            error=delivery_error_message(exc),
-                            verify_email=normalized,
-                            verify_password=password,
-                            verify_digest="on" if wants_digest else "",
-                            auth_view="signup",
-                        )
-                    else:
-                        page = render(
-                            "web_login.html.j2", request, landing=False,
-                            error=delivery_error_message(exc),
-                            show_password=True,
-                            prefill_email=normalized,
-                            auth_view="signup",
-                        )
-                    page.status_code = 503
-                    return page
-                return render(
-                    "web_login.html.j2", request, landing=False, error=None,
-                    verify_email=normalized, verify_password=password,
-                    verify_digest="on" if wants_digest else "",
+        if identity_requires_verification:
+            if not mailer.enabled():
+                page = render_no_store(
+                    "web_login.html.j2",
+                    request,
+                    landing=False,
+                    error=(
+                        "Secure account setup for this address requires email "
+                        "verification, but email delivery is unavailable."
+                    ),
+                    show_password=True,
+                    prefill_email=normalized,
                     auth_view="signup",
                 )
-            if not users.check_email_code(normalized, "claim", code):
-                return render(
-                    "web_login.html.j2", request, landing=False,
-                    verify_email=normalized, verify_password=password,
-                    verify_digest="on" if wants_digest else "",
-                    auth_view="signup",
-                    error="That code didn't match (or expired) — check the "
-                          "email, or resubmit without a code for a new one.",
+                page.status_code = 503
+                return page
+            signup_flow_nonce = flow_session_nonce(
+                request, SIGNUP_FLOW_SESSION_KEY, create=True
+            )
+            assert signup_flow_nonce is not None
+            intent_token = users.issue_signup_intent(
+                normalized,
+                password,
+                digest_opt_in=wants_digest,
+                session_nonce=signup_flow_nonce,
+            )
+            try:
+                send_code_email(
+                    normalized,
+                    "claim",
+                    session_nonce=signup_flow_nonce,
                 )
-            email_just_verified = True
-        prior_user = users.get_by_email(normalized)
+            except mailer.EmailDeliveryError as exc:
+                if isinstance(exc, mailer.EmailDeliveryUncertain):
+                    page = render_no_store(
+                        "web_login.html.j2",
+                        request,
+                        landing=False,
+                        error=delivery_error_message(exc),
+                        verify_email=normalized,
+                        verify_intent=intent_token,
+                        auth_view="signup",
+                    )
+                else:
+                    users.discard_signup_intent(intent_token)
+                    clear_flow_session_nonce(
+                        request, SIGNUP_FLOW_SESSION_KEY
+                    )
+                    page = render_no_store(
+                        "web_login.html.j2",
+                        request,
+                        landing=False,
+                        error=delivery_error_message(exc),
+                        show_password=True,
+                        prefill_email=normalized,
+                        auth_view="signup",
+                    )
+                page.status_code = 503
+                return page
+            return render_no_store(
+                "web_login.html.j2",
+                request,
+                landing=False,
+                error=None,
+                verify_email=normalized,
+                verify_intent=intent_token,
+                auth_view="signup",
+            )
+
         try:
             user = users.create(
                 normalized,
                 password,
-                email_verified=email_just_verified,
-                shopify_sync_pending=bool(
-                    prior_user is None
-                    and shopify_sync_coordinator is not None
-                    and shopify_sync_settings.get(
-                        "auto_sync_new_users", True
-                    )
-                ),
             )
         except ValueError as exc:
             return render(
@@ -872,9 +1214,8 @@ def create_app(
         if wants_digest:  # the signup checkbox is UNCHECKED by default
             users.set_digest_opt_in(user.id, True)
         claim_pending_pro(user)
-        if prior_user is None:
-            queue_shopify_sync(user)
-        request.session["user_id"] = user.id
+        queue_shopify_sync(user)
+        establish_session(request, user)
         return RedirectResponse("/", status_code=303)
 
     # -- password reset (available once email delivery is configured) -----
@@ -889,6 +1230,8 @@ def create_app(
 
     @app.post("/reset/request")
     def reset_request(request: Request, email: str = Form("")):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         if not mailer.enabled():
             raise HTTPException(503, "Password reset requires email to be set up.")
         normalized = email.strip().lower()
@@ -915,6 +1258,8 @@ def create_app(
         code: str = Form(""),
         password: str = Form(""),
     ):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         if not mailer.enabled():
             raise HTTPException(503, "Password reset requires email to be set up.")
         normalized = email.strip().lower()
@@ -936,11 +1281,16 @@ def create_app(
             )
         users.set_password(user.id, password)
         claim_pending_pro(user)
-        request.session["user_id"] = user.id
+        updated_user = users.get(user.id)
+        if updated_user is None:
+            raise HTTPException(400, "Account is unavailable.")
+        establish_session(request, updated_user)
         return RedirectResponse("/", status_code=303)
 
     @app.post("/logout")
     def logout(request: Request):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         request.session.clear()
         return RedirectResponse("/", status_code=303)
 
@@ -982,6 +1332,8 @@ def create_app(
         Accounts that already have a password change it through the
         code-verified reset flow, never here — so a walked-away session
         can't quietly swap a password it doesn't know."""
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
@@ -991,10 +1343,17 @@ def create_app(
             users.set_password(user.id, password)
         except ValueError as exc:
             return account_page(request, user, password_error=str(exc))
+        updated_user = users.get(user.id)
+        if updated_user is None:
+            request.session.clear()
+            return RedirectResponse("/login", status_code=303)
+        establish_session(request, updated_user)
         return RedirectResponse("/account?password_added", status_code=303)
 
     @app.post("/account/digest")
     def account_digest(request: Request, enabled: str = Form("")):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
@@ -1129,6 +1488,8 @@ def create_app(
     # -- billing ----------------------------------------------------------
     @app.post("/billing/checkout")
     def checkout(request: Request):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
@@ -1140,6 +1501,8 @@ def create_app(
 
     @app.post("/billing/portal")
     def portal(request: Request):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
@@ -1170,16 +1533,21 @@ def create_app(
     @app.post("/webhooks/shopify")
     @app.post("/webhooks/shopify/")
     async def shopify_webhook(request: Request):
-        if not shopify_billing.enabled():
-            raise HTTPException(503, "Shopify billing isn't set up.")
-        payload = await request.body()
+        if not shopify_billing.webhook_endpoint_enabled():
+            raise HTTPException(503, "Shopify webhooks aren't set up.")
+        payload = await _read_bounded_request_body(
+            request, SHOPIFY_WEBHOOK_MAX_BODY_BYTES
+        )
         try:
-            shopify_billing.handle_webhook(
+            await run_in_threadpool(
+                shopify_billing.handle_webhook,
                 payload,
                 request.headers.get("x-shopify-hmac-sha256", ""),
                 request.headers.get("x-shopify-topic", ""),
                 users,
                 cfg,
+                event_id=request.headers.get("x-shopify-webhook-id"),
+                shop_domain=request.headers.get("x-shopify-shop-domain"),
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc))
@@ -1197,6 +1565,8 @@ def create_app(
         strikes: str = Form(""),
         fast: str = Form(""),
     ):
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
         user = current_user(request)
         ensure_user_can_analyze(user, manager, cfg)
         suffix = Path(video.filename or "clip.mov").suffix.lower()
@@ -1440,21 +1810,70 @@ def create_app(
             raise HTTPException(400, "limit must be an integer")
         if not 1 <= limit <= 200:
             raise HTTPException(400, "limit must be between 1 and 200")
-        rows, next_cursor = users.list_shopify_sync_health(
+        after_ref = request.query_params.get("after") or None
+        raw_after = None
+        if after_ref:
+            cursor_user = (
+                shopify_customer_sync.find_user_by_operator_ref(
+                    users,
+                    after_ref,
+                )
+            )
+            if cursor_user is None:
+                raise HTTPException(400, "invalid continuation cursor")
+            raw_after = cursor_user.id
+        rows, raw_next_cursor = users.list_shopify_sync_health(
             limit=limit,
-            after=request.query_params.get("after") or None,
+            after=raw_after,
+        )
+        sync_snapshot = (
+            shopify_sync_coordinator.health_snapshot()
+            if shopify_sync_coordinator is not None
+            else {
+                "binding_status": "disabled",
+                "binding_blocked": False,
+                "binding_safe_error": None,
+                "binding_last_checked_at": None,
+                "binding_last_verified_at": None,
+                "binding_store_ref": None,
+                "binding_shop_ref": None,
+            }
         )
         return JSONResponse(
             {
                 "enabled": shopify_sync_enabled,
+                "binding": {
+                    key: sync_snapshot.get(key)
+                    for key in (
+                        "binding_status",
+                        "binding_blocked",
+                        "binding_safe_error",
+                        "binding_last_checked_at",
+                        "binding_last_verified_at",
+                        "binding_store_ref",
+                        "binding_shop_ref",
+                    )
+                },
+                "health": {
+                    key: sync_snapshot.get(key)
+                    for key in (
+                        "worker_alive",
+                        "last_loop_at",
+                        "last_attempt_at",
+                        "pending",
+                        "failed",
+                        "requires_review",
+                        "due",
+                        "oldest_due_at",
+                        "total",
+                    )
+                },
                 "users": [
                     {
-                        "user_id": user.id,
-                        "user_ref": hashlib.sha256(
-                            user.id.encode("utf-8")
-                        ).hexdigest()[:12],
+                        "user_ref": (
+                            shopify_customer_sync.operator_user_ref(user.id)
+                        ),
                         "linked": bool(user.shopify_customer_id),
-                        "shopify_customer_id": user.shopify_customer_id,
                         "status": user.shopify_sync_status,
                         "last_synced_at": user.shopify_last_synced_at,
                         "safe_error": user.shopify_sync_error,
@@ -1467,24 +1886,80 @@ def create_app(
                     }
                     for user in rows
                 ],
-                "next_cursor": next_cursor,
+                "next_cursor": (
+                    shopify_customer_sync.operator_user_ref(rows[-1].id)
+                    if raw_next_cursor and rows
+                    else None
+                ),
             },
             headers={"Cache-Control": "no-store"},
         )
 
-    @app.post("/admin/shopify-sync/{user_id}/retry")
-    def admin_retry_shopify_sync(user_id: str, request: Request):
+    @app.get("/admin/shopify-sync/ref/{user_ref}")
+    def admin_shopify_sync_detail(user_ref: str, request: Request):
+        """Reveal one exact Shopify identity only to the protected operator."""
+
+        require_admin(request)
+        user = shopify_customer_sync.find_user_by_operator_ref(
+            users,
+            user_ref,
+        )
+        if user is None:
+            raise HTTPException(404, "User not found.")
+        return JSONResponse(
+            {
+                "user_ref": shopify_customer_sync.operator_user_ref(user.id),
+                "linked": bool(user.shopify_customer_id),
+                "shopify_customer_id": user.shopify_customer_id,
+                "status": user.shopify_sync_status,
+                "last_synced_at": user.shopify_last_synced_at,
+                "safe_error": user.shopify_sync_error,
+                "attempts": user.shopify_sync_attempts,
+                "manual_retry_available": user.shopify_sync_status
+                == "failed",
+                "manual_review_needed": user.shopify_sync_status
+                == "requires_review",
+                "auto_retry_at": user.shopify_sync_next_attempt_at,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.post("/admin/shopify-sync/ref/{user_ref}/retry")
+    def admin_retry_shopify_sync(user_ref: str, request: Request):
         require_admin(request)
         if shopify_sync_coordinator is None:
             raise HTTPException(
                 503, "Shopify customer synchronization is disabled."
             )
-        if users.get(user_id) is None:
+        if (
+            not shopify_sync_coordinator.binding_verified
+            and not shopify_sync_coordinator.verify_store_binding()
+        ):
+            raise HTTPException(
+                503,
+                "Shopify customer synchronization is blocked by its "
+                "store binding.",
+            )
+        if not shopify_sync_coordinator.worker_alive:
+            shopify_sync_coordinator.start()
+        if not shopify_sync_coordinator.worker_alive:
+            raise HTTPException(
+                503,
+                "Shopify customer synchronization worker is unavailable.",
+            )
+        user = shopify_customer_sync.find_user_by_operator_ref(
+            users,
+            user_ref,
+        )
+        if user is None:
             raise HTTPException(404, "User not found.")
-        if not shopify_sync_coordinator.enqueue(user_id):
+        if not shopify_sync_coordinator.enqueue(user.id):
             raise HTTPException(404, "User not found.")
         return JSONResponse(
-            {"queued": True, "user_id": user_id},
+            {
+                "queued": True,
+                "user_ref": shopify_customer_sync.operator_user_ref(user.id),
+            },
             status_code=202,
             headers={"Cache-Control": "no-store"},
         )
@@ -1493,12 +1968,67 @@ def create_app(
     def healthz():
         # disk_free_mb + sessions_count: disk-full is the most likely first
         # outage — this makes it visible to uptime monitors before it lands.
+        if shopify_sync_coordinator is not None:
+            sync_snapshot = shopify_sync_coordinator.health_snapshot()
+        else:
+            sync_snapshot = {
+                "worker_alive": False,
+                "last_loop_at": None,
+                "last_attempt_at": None,
+                "pending": 0,
+                "failed": 0,
+                "requires_review": 0,
+                "due": 0,
+                "oldest_due_at": None,
+                "total": 0,
+                "binding_status": "disabled",
+                "binding_blocked": False,
+                "binding_safe_error": None,
+                "binding_last_checked_at": None,
+                "binding_last_verified_at": None,
+                "binding_store_ref": None,
+                "binding_shop_ref": None,
+            }
+        now = time.time()
+        worker_expected = bool(
+            shopify_sync_enabled and start_shopify_sync_worker
+        )
+        worker_alive = bool(sync_snapshot.get("worker_alive"))
+        last_loop_at = sync_snapshot.get("last_loop_at")
+        pending = int(sync_snapshot.get("pending") or 0)
+        failed = int(sync_snapshot.get("failed") or 0)
+        binding_blocked = bool(sync_snapshot.get("binding_blocked"))
+        sync_health = {
+            "enabled": bool(shopify_sync_enabled),
+            "worker_expected": worker_expected,
+            "worker_alive": worker_alive,
+            "worker_stale": bool(
+                worker_expected
+                and last_loop_at is not None
+                and now - float(last_loop_at) > 300
+            ),
+            "backlog_present": bool(pending or failed),
+            "review_present": bool(
+                int(sync_snapshot.get("requires_review") or 0)
+            ),
+            "due_work_present": bool(
+                int(sync_snapshot.get("due") or 0)
+            ),
+            "binding_status": sync_snapshot.get("binding_status"),
+            "binding_blocked": binding_blocked,
+        }
         return JSONResponse(
             {
-                "status": "ok",
+                "status": (
+                    "degraded"
+                    if worker_expected
+                    and (not worker_alive or binding_blocked)
+                    else "ok"
+                ),
                 **manager.counts(),
                 "disk_free_mb": shutil.disk_usage(sessions_dir).free // (1024 * 1024),
                 "sessions_count": manager.sessions_count(),
+                "shopify_customer_sync": sync_health,
             }
         )
 
