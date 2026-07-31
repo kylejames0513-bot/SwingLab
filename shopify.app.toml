@@ -2,7 +2,7 @@
 
 client_id = "003f5e06c49ffe797a116b22d3f6dafc"
 name = "CaddieInsight Customer Bridge"
-application_url = "https://app.caddieinsight.com"
+application_url = "https://caddieinsight.com"
 embedded = false
 
 [access_scopes]
