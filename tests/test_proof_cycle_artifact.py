@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from swinglab.config import Config
 from swinglab.proof_cycle_artifact import (
     ARTIFACT_FILENAME,
+    active_proof_cycle_target_for_context,
     artifact_as_dict,
     build_proof_cycle_artifact,
     load_proof_cycle_artifact,
@@ -89,6 +91,18 @@ def build_and_write(job: FakeJob, prior: list[FakeJob], configured: Config):
     artifact = build_proof_cycle_artifact(job, prior, configured)
     write_proof_cycle_artifact(job, artifact)
     return artifact
+
+
+def refresh_target_fingerprint(data: dict) -> None:
+    data["target_fingerprint"] = hashlib.sha256(
+        json.dumps(
+            data["target"],
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+    ).hexdigest()
 
 
 def test_adapter_uses_job_context_not_metrics_metadata(tmp_path):
@@ -245,6 +259,156 @@ def test_history_excludes_mismatched_context_and_future_sessions(tmp_path):
     assert artifact.comparison is not None
     assert artifact.comparison.verdict == "early_signal"
     assert artifact.comparison.accepted_refilm_count == 1
+
+
+def test_prospective_transfer_target_uses_only_verified_exact_context(tmp_path):
+    configured = cfg()
+    baseline = make_job(
+        tmp_path, "baseline", 1.0, [row(head_sway=0.50) for _ in range(3)]
+    )
+    build_and_write(baseline, [], configured)
+
+    target = active_proof_cycle_target_for_context(
+        [baseline],
+        configured,
+        user_id="golfer-1",
+        club="Driver",
+        hand="right",
+        angle="face-on",
+        before=2.0,
+    )
+    wrong_angle = active_proof_cycle_target_for_context(
+        [baseline],
+        configured,
+        user_id="golfer-1",
+        club="Driver",
+        hand="right",
+        angle="dtl",
+        before=2.0,
+    )
+    proof_cycle_artifact_path(baseline).write_text("not json")
+    corrupt = active_proof_cycle_target_for_context(
+        [baseline],
+        configured,
+        user_id="golfer-1",
+        club="Driver",
+        hand="right",
+        angle="face-on",
+        before=2.0,
+    )
+
+    assert target is not None
+    assert target.baseline_context.session_id == "baseline"
+    assert wrong_angle is None
+    assert corrupt is None
+
+
+def test_sidecar_source_provenance_rejects_a_valid_tampered_baseline(tmp_path):
+    configured = cfg()
+    baseline = make_job(
+        tmp_path, "baseline", 1.0, [row(head_sway=0.50) for _ in range(3)]
+    )
+    build_and_write(baseline, [], configured)
+    refilm = make_job(
+        tmp_path, "refilm", 2.0, [row(head_sway=0.40) for _ in range(3)]
+    )
+    build_and_write(refilm, [baseline], configured)
+
+    path = proof_cycle_artifact_path(baseline)
+    data = json.loads(path.read_text())
+    # These fields remain schema-valid and retain the source metrics digest,
+    # but they are not the issue card actually derived from baseline metrics.
+    data["target"]["drill_ids"] = ["edited-drill"]
+    data["target"]["drill_names"] = ["Edited drill"]
+    refresh_target_fingerprint(data)
+    path.write_text(json.dumps(data))
+
+    target = active_proof_cycle_target_for_context(
+        [baseline],
+        configured,
+        user_id="golfer-1",
+        club="Driver",
+        hand="right",
+        angle="face-on",
+        before=3.0,
+    )
+    later = make_job(
+        tmp_path, "later", 3.0, [row(head_sway=0.30) for _ in range(3)]
+    )
+
+    assert load_proof_cycle_artifact(baseline) is not None
+    assert target is None
+    assert build_proof_cycle_artifact(
+        later, [baseline, refilm], configured
+    ).reason == "existing_cycle_unreadable"
+    assert verified_proof_cycle_artifact(refilm, [baseline], configured) is None
+
+
+def test_sidecar_source_provenance_rejects_a_valid_tampered_refilm(tmp_path):
+    configured = cfg()
+    baseline = make_job(
+        tmp_path, "baseline", 1.0, [row(head_sway=0.50) for _ in range(3)]
+    )
+    build_and_write(baseline, [], configured)
+    refilm = make_job(
+        tmp_path, "refilm", 2.0, [row(head_sway=0.40) for _ in range(3)]
+    )
+    build_and_write(refilm, [baseline], configured)
+
+    path = proof_cycle_artifact_path(refilm)
+    data = json.loads(path.read_text())
+    # Keep every provenance field valid while changing only the compact
+    # historical measurement a later comparison would otherwise consume.
+    data["refilm"]["measurement"]["value"] = 0.10
+    data["refilm"]["measurement"]["mean"] = 0.10
+    path.write_text(json.dumps(data))
+
+    later = make_job(
+        tmp_path, "later", 3.0, [row(head_sway=0.30) for _ in range(3)]
+    )
+    target = active_proof_cycle_target_for_context(
+        [baseline, refilm],
+        configured,
+        user_id="golfer-1",
+        club="Driver",
+        hand="right",
+        angle="face-on",
+        before=3.0,
+    )
+
+    assert load_proof_cycle_artifact(refilm) is not None
+    assert target is None
+    later_artifact = build_proof_cycle_artifact(
+        later, [baseline, refilm], configured
+    )
+    assert later_artifact.comparison is not None
+    assert later_artifact.comparison.verdict == "inconclusive"
+
+
+def test_active_target_resolves_an_out_of_window_baseline_safely(tmp_path):
+    configured = cfg()
+    baseline = make_job(
+        tmp_path, "baseline", 1.0, [row(head_sway=0.50) for _ in range(3)]
+    )
+    build_and_write(baseline, [], configured)
+    refilm = make_job(
+        tmp_path, "refilm", 2.0, [row(head_sway=0.40) for _ in range(3)]
+    )
+    build_and_write(refilm, [baseline], configured)
+
+    target = active_proof_cycle_target_for_context(
+        [refilm],
+        configured,
+        user_id="golfer-1",
+        club="Driver",
+        hand="right",
+        angle="face-on",
+        before=3.0,
+        baseline_job_for_id=lambda job_id: baseline if job_id == "baseline" else None,
+    )
+
+    assert target is not None
+    assert target.baseline_context.session_id == "baseline"
 
 
 def test_out_of_order_worker_completion_keeps_the_newer_active_baseline(tmp_path):

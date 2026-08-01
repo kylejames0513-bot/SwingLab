@@ -7,6 +7,10 @@
   .practice-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
   .practice-option { border: 1px solid #dce2dd; border-radius: 8px; padding: 13px; }
   .practice-option.selected { border: 2px solid var(--primary); background: #f2f8f4; }
+  .structured-practice .practice-option { display: flex; gap: 9px; cursor: pointer; }
+  .structured-practice .practice-option input { margin-top: 4px; }
+  .structured-practice label[for="practice-outcome"] { display: block; font-weight: 700; margin: 12px 0 5px; }
+  .structured-practice select { width: 100%; max-width: 340px; padding: 9px; border: 1px solid #c6d1c8; border-radius: 6px; background: white; }
   .practice-option h4 { margin: 0 0 6px; color: var(--primary); }
   .practice-option p { font-size: .9rem; margin: 7px 0; color: #4d554f; }
   .success { background: #e5f3ea; border-left: 4px solid var(--primary); padding: 12px 16px; border-radius: 4px; }
@@ -37,6 +41,37 @@
       <h2>{{ caddie_brief.focus_name }}</h2>
       <p><strong>Why it matters:</strong> {{ caddie_brief.why }}</p>
       <p><strong>Your cue:</strong> {{ caddie_brief.fix }}</p>
+      {% if proof_cycle_practice_assignment %}
+      <h3>Continue {{ proof_cycle_practice_assignment.drill_name }}</h3>
+      <p><strong>Matched target:</strong> {{ proof_cycle_practice_assignment.target_name }}.
+        This receipt is self-reported practice context, not proof of a result.</p>
+      <form action="/practice/checkins" method="post" class="structured-practice">
+        <input type="hidden" name="session_id" value="{{ latest_job.id }}">
+        <div class="practice-options">
+          {% for choice in practice_choices %}
+          <label class="practice-option{% if (proof_cycle_practice_receipt and proof_cycle_practice_receipt.minutes == choice.minutes) or (not proof_cycle_practice_receipt and choice.selected) %} selected{% endif %}">
+            <input type="radio" name="practice_minutes" value="{{ choice.minutes }}" {% if (proof_cycle_practice_receipt and proof_cycle_practice_receipt.minutes == choice.minutes) or (not proof_cycle_practice_receipt and choice.selected) %}checked{% endif %} required>
+            <span><h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
+            <p>{{ choice.detail }}</p>
+            <p><strong>Drill:</strong> {{ choice.dosage }}</p>
+            <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p></span>
+          </label>
+          {% endfor %}
+        </div>
+        <label for="practice-outcome">How did this block go?</label>
+        <select id="practice-outcome" name="practice_outcome" required>
+          <option value="completed" {% if not proof_cycle_practice_receipt or proof_cycle_practice_receipt.outcome == 'completed' %}selected{% endif %}>Completed the planned block</option>
+          <option value="still_working" {% if proof_cycle_practice_receipt and proof_cycle_practice_receipt.outcome == 'still_working' %}selected{% endif %}>Still working on the cue</option>
+        </select>
+        <p class="hint">One receipt is kept per target each day, so you can update it after another focused block without double-counting.</p>
+        <div class="today-actions">
+          <button type="submit">{{ "Update today's practice receipt" if proof_cycle_practice_receipt else "Save practice receipt" }}</button>
+          {% if proof_cycle_practice_receipt %}<span class="success">Today's practice receipt is saved</span>{% endif %}
+          <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
+          <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
+        </div>
+      </form>
+      {% else %}
       <h3>Practice {{ caddie_brief.drill.name }}</h3>
       <p>{{ caddie_brief.drill.aim }}</p>
       <div class="practice-options">
@@ -54,6 +89,7 @@
         <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
         <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
       </div>
+      {% endif %}
     {% else %}
       <h2>Review your latest session</h2>
       <p>Your report is ready. Open it to see the evidence and choose your next practice step.</p>

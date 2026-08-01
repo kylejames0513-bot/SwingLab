@@ -483,7 +483,12 @@ class JobManager:
                     through=job.created_at,
                     limit=proof_cycle_history_scan_limit(self.cfg),
                 )
-            artifact = build_proof_cycle_artifact(job, prior_jobs, self.cfg)
+            artifact = build_proof_cycle_artifact(
+                job,
+                prior_jobs,
+                self.cfg,
+                baseline_job_for_id=self.get,
+            )
             write_proof_cycle_artifact(job, artifact)
         except Exception:
             # A comparison is an enhancement.  Never turn a finished report

@@ -67,6 +67,11 @@ DEFAULTS: dict[str, Any] = {
         # re-film has moved enough to say so.  Bare-code installs keep the
         # feature off until an operator has reviewed the copy and rollout.
         "enabled": False,
+        # A separate second-stage gate for self-reported practice receipts
+        # and normal-swing transfer declarations.  This lets operators first
+        # observe the read-only result surface before collecting new practice
+        # context; practice never changes a measurement verdict either way.
+        "practice_evidence_enabled": False,
         # Keep one active target's retained evidence bounded.  The worker
         # scans a slightly wider set of candidate jobs because it must reject
         # other camera angles/handedness before this cap is applied.

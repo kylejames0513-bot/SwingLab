@@ -102,6 +102,27 @@ def test_data_request_is_durable_idempotent_and_pii_free_in_logs(app, caplog):
     (job.session_dir / "report.html").write_text(
         "private report", encoding="utf-8"
     )
+    practice = users.record_proof_cycle_practice_evidence(
+        user.id,
+        baseline_session_id="private-baseline",
+        target_fingerprint="a" * 64,
+        drill_id="wall-turn",
+        minutes=20,
+        outcome="completed",
+        now=100.0,
+    )
+    transfer = users.record_proof_cycle_transfer_check(
+        user.id,
+        session_id=job.id,
+        baseline_session_id=practice.baseline_session_id,
+        target_fingerprint=practice.target_fingerprint,
+        drill_id=practice.drill_id,
+        club="driver",
+        hand="right",
+        angle="face-on",
+        normal_swings=True,
+        now=101.0,
+    )
     code = users.issue_email_code(email, "reset")
     assert code is not None
     payload = {
@@ -142,6 +163,32 @@ def test_data_request_is_durable_idempotent_and_pii_free_in_logs(app, caplog):
     assert snapshot["session_artifacts"][0]["files"][0]["path"] == (
         "report.html"
     )
+    assert snapshot["proof_cycle_practice_evidence"] == [
+        {
+            "user_id": user.id,
+            "baseline_session_id": practice.baseline_session_id,
+            "target_fingerprint": practice.target_fingerprint,
+            "drill_id": practice.drill_id,
+            "minutes": 20,
+            "outcome": "completed",
+            "completed_at": 100.0,
+            "completed_day": 0,
+        }
+    ]
+    assert snapshot["proof_cycle_transfer_checks"] == [
+        {
+            "session_id": transfer.session_id,
+            "user_id": user.id,
+            "baseline_session_id": transfer.baseline_session_id,
+            "target_fingerprint": transfer.target_fingerprint,
+            "drill_id": transfer.drill_id,
+            "club": "driver",
+            "hand": "right",
+            "angle": "face-on",
+            "normal_swings": 1,
+            "declared_at": 101.0,
+        }
+    ]
     encoded = json.dumps(snapshot)
     assert "password_hash" not in encoded
     assert "code_hash" not in encoded
@@ -162,6 +209,38 @@ def test_data_request_is_durable_idempotent_and_pii_free_in_logs(app, caplog):
         now=request.expires_at + 1
     ) == 1
     assert users.get_shopify_privacy_request(request.request_id) is None
+
+
+def test_customer_redaction_erases_structured_proof_cycle_context(app):
+    users: UserStore = app.state.users
+    email = "proof-redact@example.com"
+    customer_id = "7001999"
+    user = users.create(email, "private-password", email_verified=True)
+    linked = users.upsert_store_customer(email, customer_id)
+    assert linked is not None and linked.id == user.id
+    fields = {
+        "baseline_session_id": "baseline",
+        "target_fingerprint": "b" * 64,
+        "drill_id": "wall-turn",
+    }
+    users.record_proof_cycle_practice_evidence(
+        user.id, minutes=20, outcome="completed", **fields
+    )
+    users.record_proof_cycle_transfer_check(
+        user.id,
+        session_id="refilm",
+        club="driver",
+        hand="right",
+        angle="face-on",
+        normal_swings=True,
+        **fields,
+    )
+
+    result = users.remove_shopify_customer(customer_id, email, redact=True)
+
+    assert result == "unlinked"
+    assert users.list_proof_cycle_practice_evidence(user.id) == []
+    assert users.get_proof_cycle_transfer_check(user.id, "refilm") is None
 
 
 def test_privacy_key_is_topic_limited_and_every_mutation_is_store_bound(app):
