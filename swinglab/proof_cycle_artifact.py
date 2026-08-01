@@ -19,7 +19,7 @@ import os
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Literal, Protocol
+from typing import Callable, Iterable, Literal, Protocol
 
 from .caddie_brief import (
     metrics_from_payload,
@@ -178,10 +178,76 @@ def proof_target_from_job(job: JobLike, cfg: Config) -> ProofTarget | None:
     return _target_from_prepared(prepared, cfg)
 
 
+def proof_cycle_target_fingerprint(target: ProofTarget) -> str:
+    """Return the stable, owner-free identity of a persisted Proof target.
+
+    The fingerprint is deliberately a public accessor instead of making web
+    callers reach into this module's private JSON helper. It can link a
+    first-party practice receipt to the exact baseline/metric/drill snapshot,
+    but it is never a substitute for the authenticated job-owner check.
+    """
+
+    return _target_fingerprint(target)
+
+
+def active_proof_cycle_target_for_context(
+    prior_jobs: Iterable[JobLike],
+    cfg: Config,
+    *,
+    user_id: object,
+    club: object,
+    hand: object,
+    angle: object,
+    before: object,
+    baseline_job_for_id: Callable[[str], JobLike | None] | None = None,
+) -> ProofTarget | None:
+    """Return a verified active target for a prospective matched upload.
+
+    A transfer declaration is made before its new video has metrics, so this
+    adapter deliberately works from the persisted, validated history alone.
+    It uses the exact owner/club/hand/angle context and fails closed on any
+    unreadable active-sidecar history rather than attaching a declaration to a
+    guessed target.
+    """
+
+    normalized_user = _text(user_id)
+    normalized_club = _text(club)
+    normalized_hand = _normalised_hand(hand)
+    normalized_angle = _normalised_angle(angle)
+    timestamp = finite_float(before)
+    if (
+        not normalized_user
+        or not normalized_club
+        or normalized_hand is None
+        or normalized_angle is None
+        or timestamp is None
+    ):
+        return None
+    context = SessionContext(
+        # This is intentionally synthetic: prospective target selection uses
+        # capture context only and never serializes this placeholder.
+        session_id="prospective-transfer-check",
+        user_id=normalized_user,
+        club=normalized_club,
+        hand=normalized_hand,
+        angle=normalized_angle,
+    )
+    target, _history, unsafe_history = _active_cycle_from_prior_jobs(
+        prior_jobs,
+        context,
+        timestamp,
+        cfg,
+        baseline_job_for_id=baseline_job_for_id,
+    )
+    return None if unsafe_history else target
+
+
 def build_proof_cycle_artifact(
     job: JobLike,
     prior_jobs: Iterable[JobLike],
     cfg: Config,
+    *,
+    baseline_job_for_id: Callable[[str], JobLike | None] | None = None,
 ) -> ProofCycleArtifact:
     """Build a baseline or matched comparison without changing report output.
 
@@ -206,7 +272,11 @@ def build_proof_cycle_artifact(
         )
 
     target, history, unsafe_history = _active_cycle_from_prior_jobs(
-        job, prior_jobs, prepared.session, cfg
+        prior_jobs,
+        prepared.session.context,
+        _created_at(job),
+        cfg,
+        baseline_job_for_id=baseline_job_for_id,
     )
     if target is None:
         if unsafe_history:
@@ -338,6 +408,8 @@ def verified_proof_cycle_artifact(
     job: JobLike,
     prior_jobs: Iterable[JobLike],
     cfg: Config,
+    *,
+    baseline_job_for_id: Callable[[str], JobLike | None] | None = None,
 ) -> ProofCycleArtifact | None:
     """Rebuild a result before rendering it, so a sidecar cannot self-attest.
 
@@ -351,7 +423,12 @@ def verified_proof_cycle_artifact(
     stored = load_proof_cycle_artifact(job)
     if stored is None or stored.target is None:
         return None
-    rebuilt = build_proof_cycle_artifact(job, prior_jobs, cfg)
+    rebuilt = build_proof_cycle_artifact(
+        job,
+        prior_jobs,
+        cfg,
+        baseline_job_for_id=baseline_job_for_id,
+    )
     if artifact_as_dict(stored) != artifact_as_dict(rebuilt):
         return None
     return stored
@@ -584,20 +661,42 @@ def _target_from_prepared(
 
 
 def _active_cycle_from_prior_jobs(
-    job: JobLike,
     prior_jobs: Iterable[JobLike],
-    current: ProofSession,
+    current: SessionContext,
+    before: float,
     cfg: Config,
+    *,
+    baseline_job_for_id: Callable[[str], JobLike | None] | None = None,
 ) -> tuple[ProofTarget | None, tuple[ProofRefilm, ...], bool]:
-    """Find one active exact-context target and its bounded safe history."""
+    """Find one active exact-context target and its bounded safe history.
+
+    A sidecar is a durable cache, not its own proof.  Before it can contribute
+    a target or re-film measurement, the target is re-derived from its raw
+    baseline and the re-film snapshot is re-derived from its raw source.  A
+    caller may supply the exact baseline lookup so a long-running cycle stays
+    verifiable even when the bounded recent-history scan no longer includes
+    its original baseline.
+    """
 
     candidates = [
         candidate
         for candidate in prior_jobs
-        if _is_strictly_prior(candidate, job)
-        and _job_context_matches_session(candidate, current)
+        if _created_at(candidate) < before
+        and _job_context_matches_context(candidate, current)
     ]
     candidates.sort(key=_created_at, reverse=True)
+    candidates_by_id: dict[str, JobLike] = {}
+    duplicate_ids: set[str] = set()
+    for candidate in candidates:
+        candidate_id = _job_id(candidate)
+        if not candidate_id:
+            continue
+        if candidate_id in candidates_by_id:
+            candidates_by_id.pop(candidate_id)
+            duplicate_ids.add(candidate_id)
+        elif candidate_id not in duplicate_ids:
+            candidates_by_id[candidate_id] = candidate
+    baseline_cache: dict[str, tuple[JobLike, ProofTarget] | None] = {}
 
     valid: list[tuple[JobLike, ProofCycleArtifact]] = []
     unreadable_created_at: list[float] = []
@@ -613,7 +712,18 @@ def _active_cycle_from_prior_jobs(
             continue
         if artifact.target is None:
             continue
-        if not _target_matches_session(artifact.target, current):
+        if not _artifact_sources_are_verified(
+            artifact,
+            candidate,
+            cfg,
+            candidates_by_id=candidates_by_id,
+            duplicate_ids=duplicate_ids,
+            baseline_job_for_id=baseline_job_for_id,
+            baseline_cache=baseline_cache,
+        ):
+            unreadable_created_at.append(_created_at(candidate))
+            continue
+        if not _target_matches_context(artifact.target, current):
             unreadable_created_at.append(_created_at(candidate))
             continue
         valid.append((candidate, artifact))
@@ -652,6 +762,82 @@ def _active_cycle_from_prior_jobs(
     return target, tuple(history), unsafe_history
 
 
+def _artifact_sources_are_verified(
+    artifact: ProofCycleArtifact,
+    candidate: JobLike,
+    cfg: Config,
+    *,
+    candidates_by_id: dict[str, JobLike],
+    duplicate_ids: set[str],
+    baseline_job_for_id: Callable[[str], JobLike | None] | None,
+    baseline_cache: dict[str, tuple[JobLike, ProofTarget] | None],
+) -> bool:
+    """Re-derive the source facts a prior sidecar is allowed to carry.
+
+    This intentionally stops short of recursively replaying every historical
+    comparison: the only facts a later comparison consumes are the target and
+    accepted re-film measurement. Both are tied here to their immutable
+    metrics source, so a structurally valid edited sidecar cannot manufacture
+    a target or history value detached from an authentic source session.
+    """
+
+    target = artifact.target
+    if target is None:
+        return False
+    baseline_id = _text(target.baseline_context.session_id)
+    if not baseline_id or baseline_id in duplicate_ids:
+        return False
+    cached = baseline_cache.get(baseline_id)
+    if baseline_id not in baseline_cache:
+        baseline_job = candidates_by_id.get(baseline_id)
+        if baseline_job is None and baseline_job_for_id is not None:
+            try:
+                baseline_job = baseline_job_for_id(baseline_id)
+            except Exception:
+                baseline_job = None
+        expected_target = (
+            proof_target_from_job(baseline_job, cfg)
+            if baseline_job is not None and _job_id(baseline_job) == baseline_id
+            else None
+        )
+        baseline_artifact = (
+            load_proof_cycle_artifact(baseline_job)
+            if baseline_job is not None
+            else None
+        )
+        if (
+            expected_target is None
+            or baseline_artifact is None
+            or baseline_artifact.stage != "baseline"
+            or baseline_artifact.target != expected_target
+        ):
+            cached = None
+        else:
+            cached = (baseline_job, expected_target)
+        baseline_cache[baseline_id] = cached
+    if cached is None:
+        return False
+    baseline_job, expected_target = cached
+    if target != expected_target:
+        return False
+    baseline_created_at = _created_at(baseline_job)
+    candidate_created_at = _created_at(candidate)
+    if baseline_created_at > candidate_created_at:
+        return False
+    if (
+        baseline_created_at == candidate_created_at
+        and _job_id(baseline_job) != _job_id(candidate)
+    ):
+        return False
+    if artifact.refilm is None:
+        return True
+    prepared, _reason = _prepare_session(candidate, cfg)
+    return (
+        prepared is not None
+        and artifact.refilm == ProofRefilm.from_session(target, prepared.session)
+    )
+
+
 def _baseline_created_at(
     target: ProofTarget, artifacts: Iterable[tuple[JobLike, ProofCycleArtifact]]
 ) -> float:
@@ -664,15 +850,6 @@ def _baseline_created_at(
     return float("-inf")
 
 
-def _is_strictly_prior(candidate: JobLike, current: JobLike) -> bool:
-    if _job_id(candidate) == _job_id(current):
-        return False
-    try:
-        return float(candidate.created_at) < float(current.created_at)
-    except (TypeError, ValueError):
-        return False
-
-
 def _created_at(job: JobLike) -> float:
     try:
         return float(job.created_at)
@@ -680,23 +857,23 @@ def _created_at(job: JobLike) -> float:
         return float("-inf")
 
 
-def _job_context_matches_session(job: JobLike, session: ProofSession) -> bool:
+def _job_context_matches_context(job: JobLike, context: SessionContext) -> bool:
     return (
-        _text(getattr(job, "user_id", None)) == session.context.user_id
-        and _text(getattr(job, "club", None)) == session.context.club
-        and _normalised_hand(getattr(job, "hand", None)) == session.context.hand
-        and _normalised_angle(getattr(job, "angle", None)) == session.context.angle
+        _text(getattr(job, "user_id", None)) == context.user_id
+        and _text(getattr(job, "club", None)) == context.club
+        and _normalised_hand(getattr(job, "hand", None)) == context.hand
+        and _normalised_angle(getattr(job, "angle", None)) == context.angle
     )
 
 
-def _target_matches_session(target: ProofTarget, session: ProofSession) -> bool:
+def _target_matches_context(target: ProofTarget, context: SessionContext) -> bool:
     baseline = target.baseline_context
     return (
-        _text(baseline.user_id) == _text(session.context.user_id)
-        and _text(baseline.club) == _text(session.context.club)
-        and _normalised_hand(baseline.hand) == _normalised_hand(session.context.hand)
+        _text(baseline.user_id) == _text(context.user_id)
+        and _text(baseline.club) == _text(context.club)
+        and _normalised_hand(baseline.hand) == _normalised_hand(context.hand)
         and _normalised_angle(baseline.angle)
-        == _normalised_angle(session.context.angle)
+        == _normalised_angle(context.angle)
     )
 
 

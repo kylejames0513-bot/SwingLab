@@ -56,6 +56,12 @@ proof_cycle:
   enabled: false             # staged rollout: the code and tests ship first;
                              # enable only after a controlled new-analysis
                              # check confirms the live result surface.
+  practice_evidence_enabled: false
+                             # second-stage rollout: first observe the
+                             # read-only result surface, then enable
+                             # self-reported practice receipts and declared
+                             # normal-swing transfer checks. These never
+                             # change the measurement verdict.
   history_limit: 6           # retained matched re-films per active target
   minimum_readable_swings: 3 # never compare a shorter target measurement
   minimum_refilms_for_improved: 2

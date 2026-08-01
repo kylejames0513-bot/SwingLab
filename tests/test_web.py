@@ -201,6 +201,116 @@ def test_proof_cycle_sidecar_is_private_and_result_surface_is_additive(
     assert "improvement confirmed" not in refilm_html
 
 
+def test_structured_practice_and_normal_swing_transfer_are_additive(
+    tmp_path, monkeypatch
+):
+    calls = 0
+
+    def fake_transfer_analysis(video_path, **kwargs):
+        nonlocal calls
+        calls += 1
+        result = fake_analyze_ok(video_path, **kwargs)
+        sway = 0.50 if calls == 1 else 0.40
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {
+                                "tempo_ratio": 3.0,
+                                "head_sway_backswing_sw": sway,
+                                "hip_slide_backswing_sw": 0.10,
+                            }
+                        }
+                        for _ in range(3)
+                    ],
+                    "session_stats": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_transfer_analysis)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.web["passwordless_login"] = False
+    cfg.billing["free_per_month"] = 3
+    cfg.proof_cycle["enabled"] = True
+    cfg.proof_cycle["practice_evidence_enabled"] = True
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    users = app.state.users
+    user = users.create("transfer@example.com", "longenough")
+    users.upsert_golfer_profile(
+        user.id,
+        experience_mode="improve",
+        handicap_range="20_to_29",
+        primary_goal="consistency",
+        practice_minutes=20,
+        sessions_per_week=2,
+        handedness="right",
+        camera_angle="face-on",
+        preferred_club="driver",
+    )
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "transfer@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
+
+    baseline_id = upload(client, extra={"club": "driver"})
+    assert wait_for(client, baseline_id)["status"] == "done"
+    today = client.get("/today").text
+    assert "Save practice receipt" in today
+    assert "Matched target:" in today
+    receipt = client.post(
+        "/practice/checkins",
+        data={
+            "session_id": baseline_id,
+            "practice_minutes": "20",
+            "practice_outcome": "completed",
+        },
+        follow_redirects=False,
+    )
+    assert receipt.status_code == 303
+    assert len(users.list_proof_cycle_practice_evidence(user.id)) == 1
+
+    # A prior daily receipt is still useful result context, but it must not
+    # pre-fill or be labelled as today's receipt after the UTC day rolls over.
+    original_time = app_module.time.time
+    monkeypatch.setattr(
+        app_module.time, "time", lambda: original_time() + 24 * 60 * 60
+    )
+    next_day_today = client.get("/today").text
+    assert "Save practice receipt" in next_day_today
+    assert "Update today's practice receipt" not in next_day_today
+    assert "Today's practice receipt is saved" not in next_day_today
+
+    upload_html = client.get("/").text
+    assert 'name="transfer_check"' in upload_html
+    mismatch = client.post(
+        "/upload",
+        files={"video": ("wrong-club.mov", b"fake", "video/quicktime")},
+        data={"club": "iron", "transfer_check": "on"},
+    )
+    assert mismatch.status_code == 409
+
+    refilm_id = upload(
+        client,
+        extra={"club": "driver", "transfer_check": "on"},
+    )
+    assert wait_for(client, refilm_id)["status"] == "done"
+    refilm_html = client.get(f"/session/{refilm_id}").text
+    assert "Early signal — keep testing" in refilm_html
+    assert "Practice-to-re-film evidence" in refilm_html
+    assert "consistent with transfer after logged practice" in refilm_html
+    assert "improvement confirmed" not in refilm_html
+    # The established private sidecar/API boundary remains intact even when
+    # structured practice context is enabled.
+    assert "proof_cycle" not in client.get(f"/api/session/{refilm_id}").text
+
+
 def test_proof_cycle_sidecar_failure_never_fails_the_report(tmp_path, monkeypatch):
     def fake_proof_cycle_analysis(video_path, **kwargs):
         result = fake_analyze_ok(video_path, **kwargs)

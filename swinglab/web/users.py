@@ -56,6 +56,13 @@ from pathlib import Path
 from typing import Iterator
 
 from ..integrations.shopify.identity import customer_gid, normalize_customer_id
+from ..proof_cycle_practice import (
+    PRACTICE_OUTCOMES,
+    ProofCyclePracticeEvidence,
+    ProofCycleTransferCheck,
+    normalize_practice_minutes,
+    normalize_practice_outcome,
+)
 
 FREE = "free"
 PRO = "pro"
@@ -324,6 +331,37 @@ CREATE TABLE IF NOT EXISTS practice_checkins (
 );
 CREATE INDEX IF NOT EXISTS practice_checkins_user_completed
     ON practice_checkins(user_id, completed_at DESC);
+CREATE TABLE IF NOT EXISTS proof_cycle_practice_evidence (
+    user_id             TEXT NOT NULL,
+    baseline_session_id TEXT NOT NULL,
+    target_fingerprint  TEXT NOT NULL,
+    drill_id            TEXT NOT NULL,
+    minutes             INTEGER NOT NULL CHECK (minutes IN (10, 20, 45)),
+    outcome             TEXT NOT NULL CHECK (outcome IN ('completed', 'still_working')),
+    completed_at        REAL NOT NULL,
+    completed_day       INTEGER NOT NULL,
+    PRIMARY KEY (user_id, baseline_session_id, target_fingerprint, completed_day)
+);
+CREATE INDEX IF NOT EXISTS proof_cycle_practice_evidence_lookup
+    ON proof_cycle_practice_evidence(
+        user_id, baseline_session_id, target_fingerprint, completed_at DESC
+    );
+CREATE TABLE IF NOT EXISTS proof_cycle_transfer_checks (
+    session_id          TEXT PRIMARY KEY,
+    user_id             TEXT NOT NULL,
+    baseline_session_id TEXT NOT NULL,
+    target_fingerprint  TEXT NOT NULL,
+    drill_id            TEXT NOT NULL,
+    club                TEXT NOT NULL,
+    hand                TEXT NOT NULL CHECK (hand IN ('left', 'right')),
+    angle               TEXT NOT NULL CHECK (angle IN ('face-on', 'dtl')),
+    normal_swings       INTEGER NOT NULL CHECK (normal_swings IN (0, 1)),
+    declared_at         REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS proof_cycle_transfer_checks_lookup
+    ON proof_cycle_transfer_checks(
+        user_id, baseline_session_id, target_fingerprint, declared_at DESC
+    );
 CREATE TABLE IF NOT EXISTS product_events (
     id            TEXT PRIMARY KEY,
     event_name    TEXT NOT NULL,
@@ -1450,6 +1488,8 @@ class UserStore:
             "analyses": ("user_id",),
             "golfer_profiles": ("user_id",),
             "practice_checkins": ("user_id",),
+            "proof_cycle_practice_evidence": ("user_id",),
+            "proof_cycle_transfer_checks": ("user_id",),
             "product_events": ("user_id",),
         }
         for collection, fields in collection_fields.items():
@@ -1673,6 +1713,16 @@ class UserStore:
             )
             self._conn.execute(
                 f"DELETE FROM practice_checkins WHERE user_id IN ({placeholders})",
+                identifiers,
+            )
+            self._conn.execute(
+                "DELETE FROM proof_cycle_practice_evidence"
+                f" WHERE user_id IN ({placeholders})",
+                identifiers,
+            )
+            self._conn.execute(
+                "DELETE FROM proof_cycle_transfer_checks"
+                f" WHERE user_id IN ({placeholders})",
                 identifiers,
             )
             self._conn.execute(
@@ -1965,6 +2015,8 @@ class UserStore:
         jobs: list[sqlite3.Row],
         golfer_profiles: list[sqlite3.Row],
         practice_checkins: list[sqlite3.Row],
+        proof_cycle_practice_evidence: list[sqlite3.Row],
+        proof_cycle_transfer_checks: list[sqlite3.Row],
         product_events: list[sqlite3.Row],
         email_codes: list[sqlite3.Row],
         signup_intents: list[sqlite3.Row],
@@ -2011,6 +2063,12 @@ class UserStore:
             "analyses": [dict(row) for row in jobs],
             "golfer_profiles": [dict(row) for row in golfer_profiles],
             "practice_checkins": [dict(row) for row in practice_checkins],
+            "proof_cycle_practice_evidence": [
+                dict(row) for row in proof_cycle_practice_evidence
+            ],
+            "proof_cycle_transfer_checks": [
+                dict(row) for row in proof_cycle_transfer_checks
+            ],
             "product_events": [dict(row) for row in product_events],
             "session_artifacts": artifact_inventory,
             # Credential hashes and one-time secrets are never copied into a
@@ -2039,6 +2097,8 @@ class UserStore:
                 jobs,
                 golfer_profiles,
                 practice_checkins,
+                proof_cycle_practice_evidence,
+                proof_cycle_transfer_checks,
                 product_events,
                 email_codes,
                 signup_intents,
@@ -2312,6 +2372,8 @@ class UserStore:
                 jobs: list[sqlite3.Row] = []
                 golfer_profiles: list[sqlite3.Row] = []
                 practice_checkins: list[sqlite3.Row] = []
+                proof_cycle_practice_evidence: list[sqlite3.Row] = []
+                proof_cycle_transfer_checks: list[sqlite3.Row] = []
                 product_events: list[sqlite3.Row] = []
                 jobs_table = self._conn.execute(
                     "SELECT 1 FROM sqlite_master"
@@ -2335,6 +2397,18 @@ class UserStore:
                     practice_checkins = self._conn.execute(
                         f"SELECT * FROM practice_checkins WHERE user_id IN ({placeholders})"
                         " ORDER BY completed_at, session_id",
+                        identifiers,
+                    ).fetchall()
+                    proof_cycle_practice_evidence = self._conn.execute(
+                        "SELECT * FROM proof_cycle_practice_evidence"
+                        f" WHERE user_id IN ({placeholders})"
+                        " ORDER BY completed_at, baseline_session_id",
+                        identifiers,
+                    ).fetchall()
+                    proof_cycle_transfer_checks = self._conn.execute(
+                        "SELECT * FROM proof_cycle_transfer_checks"
+                        f" WHERE user_id IN ({placeholders})"
+                        " ORDER BY declared_at, session_id",
                         identifiers,
                     ).fetchall()
                     product_events = self._conn.execute(
@@ -2365,6 +2439,8 @@ class UserStore:
                         jobs=jobs,
                         golfer_profiles=golfer_profiles,
                         practice_checkins=practice_checkins,
+                        proof_cycle_practice_evidence=proof_cycle_practice_evidence,
+                        proof_cycle_transfer_checks=proof_cycle_transfer_checks,
                         product_events=product_events,
                         email_codes=email_codes,
                         signup_intents=signup_intents,
@@ -4838,6 +4914,14 @@ class UserStore:
                 "DELETE FROM practice_checkins WHERE user_id = ?", (user_id,)
             )
             self._conn.execute(
+                "DELETE FROM proof_cycle_practice_evidence WHERE user_id = ?",
+                (user_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM proof_cycle_transfer_checks WHERE user_id = ?",
+                (user_id,),
+            )
+            self._conn.execute(
                 "DELETE FROM product_events WHERE user_id = ?", (user_id,)
             )
             self._conn.execute(
@@ -5108,6 +5192,273 @@ class UserStore:
             )
             for row in rows
         ]
+
+    # The existing ``practice_checkins`` table is intentionally left as a
+    # small, replay-safe compatibility surface.  Proof Cycle practice receipts
+    # live separately because they need an immutable target context and must
+    # never change what the legacy API means.
+    @staticmethod
+    def _proof_cycle_token(
+        value: object,
+        label: str,
+        *,
+        maximum: int = 128,
+    ) -> str:
+        token = str(value or "").strip()
+        if (
+            not token
+            or len(token) > maximum
+            or any(not (char.isalnum() or char in "._:-") for char in token)
+        ):
+            raise ValueError(f"Invalid Proof Cycle {label}.")
+        return token
+
+    @staticmethod
+    def _proof_cycle_target_fingerprint(value: object) -> str:
+        fingerprint = str(value or "").strip()
+        if (
+            len(fingerprint) != 64
+            or any(character not in "0123456789abcdef" for character in fingerprint)
+        ):
+            raise ValueError("Invalid Proof Cycle target.")
+        return fingerprint
+
+    @staticmethod
+    def _proof_cycle_timestamp(value: float | None, label: str) -> float:
+        try:
+            timestamp = time.time() if value is None else float(value)
+        except (TypeError, ValueError):
+            raise ValueError(f"Invalid Proof Cycle {label}.") from None
+        if timestamp != timestamp or timestamp in (float("inf"), float("-inf")):
+            raise ValueError(f"Invalid Proof Cycle {label}.")
+        return timestamp
+
+    @staticmethod
+    def _proof_cycle_evidence_from_row(
+        row: sqlite3.Row,
+    ) -> ProofCyclePracticeEvidence:
+        outcome = str(row["outcome"])
+        if outcome not in PRACTICE_OUTCOMES:
+            raise ValueError("Stored Proof Cycle practice outcome is invalid.")
+        minutes = normalize_practice_minutes(row["minutes"])
+        return ProofCyclePracticeEvidence(
+            user_id=str(row["user_id"]),
+            baseline_session_id=str(row["baseline_session_id"]),
+            target_fingerprint=str(row["target_fingerprint"]),
+            drill_id=str(row["drill_id"]),
+            minutes=minutes,
+            outcome=outcome,  # type: ignore[arg-type]
+            completed_at=float(row["completed_at"]),
+            completed_day=int(row["completed_day"]),
+        )
+
+    @staticmethod
+    def _proof_cycle_transfer_from_row(
+        row: sqlite3.Row,
+    ) -> ProofCycleTransferCheck:
+        if row["normal_swings"] != 1:
+            raise ValueError("Stored Proof Cycle transfer check is invalid.")
+        return ProofCycleTransferCheck(
+            session_id=str(row["session_id"]),
+            user_id=str(row["user_id"]),
+            baseline_session_id=str(row["baseline_session_id"]),
+            target_fingerprint=str(row["target_fingerprint"]),
+            drill_id=str(row["drill_id"]),
+            club=str(row["club"]),
+            hand=str(row["hand"]),
+            angle=str(row["angle"]),
+            normal_swings=True,
+            declared_at=float(row["declared_at"]),
+        )
+
+    def record_proof_cycle_practice_evidence(
+        self,
+        user_id: str,
+        *,
+        baseline_session_id: object,
+        target_fingerprint: object,
+        drill_id: object,
+        minutes: object,
+        outcome: object,
+        now: float | None = None,
+    ) -> ProofCyclePracticeEvidence:
+        """Upsert one structured, self-reported receipt per target per day.
+
+        Updating the day's receipt makes a double-submit harmless while still
+        allowing a golfer to correct the duration/outcome after finishing the
+        selected block.  It does not update a Proof Cycle sidecar or verdict.
+        """
+
+        normalized_user = self._proof_cycle_token(user_id, "user")
+        baseline = self._proof_cycle_token(
+            baseline_session_id, "baseline session"
+        )
+        fingerprint = self._proof_cycle_target_fingerprint(target_fingerprint)
+        drill = self._proof_cycle_token(drill_id, "drill")
+        duration = normalize_practice_minutes(minutes)
+        normalized_outcome = normalize_practice_outcome(outcome)
+        completed_at = self._proof_cycle_timestamp(now, "practice time")
+        completed_day = int(completed_at // 86400)
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO proof_cycle_practice_evidence"
+                " (user_id, baseline_session_id, target_fingerprint, drill_id,"
+                "  minutes, outcome, completed_at, completed_day)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(user_id, baseline_session_id, target_fingerprint,"
+                "             completed_day) DO UPDATE SET"
+                " drill_id = excluded.drill_id, minutes = excluded.minutes,"
+                " outcome = excluded.outcome, completed_at = excluded.completed_at",
+                (
+                    normalized_user,
+                    baseline,
+                    fingerprint,
+                    drill,
+                    duration,
+                    normalized_outcome,
+                    completed_at,
+                    completed_day,
+                ),
+            )
+            row = self._conn.execute(
+                "SELECT * FROM proof_cycle_practice_evidence"
+                " WHERE user_id = ? AND baseline_session_id = ?"
+                " AND target_fingerprint = ? AND completed_day = ?",
+                (normalized_user, baseline, fingerprint, completed_day),
+            ).fetchone()
+            self._conn.commit()
+        assert row is not None
+        return self._proof_cycle_evidence_from_row(row)
+
+    def list_proof_cycle_practice_evidence(
+        self,
+        user_id: str,
+        *,
+        baseline_session_id: object | None = None,
+        target_fingerprint: object | None = None,
+        limit: int = 100,
+    ) -> list[ProofCyclePracticeEvidence]:
+        """Read only the authenticated user's bounded structured receipts."""
+
+        normalized_user = self._proof_cycle_token(user_id, "user")
+        try:
+            bounded_limit = max(1, min(int(limit), 365))
+        except (TypeError, ValueError):
+            raise ValueError("Invalid Proof Cycle practice limit.") from None
+        clauses = ["user_id = ?"]
+        params: list[object] = [normalized_user]
+        if baseline_session_id is not None:
+            clauses.append("baseline_session_id = ?")
+            params.append(
+                self._proof_cycle_token(
+                    baseline_session_id, "baseline session"
+                )
+            )
+        if target_fingerprint is not None:
+            clauses.append("target_fingerprint = ?")
+            params.append(
+                self._proof_cycle_target_fingerprint(target_fingerprint)
+            )
+        params.append(bounded_limit)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM proof_cycle_practice_evidence WHERE "
+                + " AND ".join(clauses)
+                + " ORDER BY completed_at DESC LIMIT ?",
+                tuple(params),
+            ).fetchall()
+        return [self._proof_cycle_evidence_from_row(row) for row in rows]
+
+    def record_proof_cycle_transfer_check(
+        self,
+        user_id: str,
+        *,
+        session_id: object,
+        baseline_session_id: object,
+        target_fingerprint: object,
+        drill_id: object,
+        club: object,
+        hand: object,
+        angle: object,
+        normal_swings: object,
+        now: float | None = None,
+    ) -> ProofCycleTransferCheck:
+        """Persist one server-validated normal-swing declaration per upload."""
+
+        normalized_user = self._proof_cycle_token(user_id, "user")
+        session = self._proof_cycle_token(session_id, "session")
+        baseline = self._proof_cycle_token(
+            baseline_session_id, "baseline session"
+        )
+        fingerprint = self._proof_cycle_target_fingerprint(target_fingerprint)
+        drill = self._proof_cycle_token(drill_id, "drill")
+        normalized_club = self._proof_cycle_token(club, "club")
+        normalized_hand = str(hand or "").strip().lower()
+        normalized_angle = str(angle or "").strip().lower()
+        if normalized_hand not in {"left", "right"}:
+            raise ValueError("Invalid Proof Cycle handedness.")
+        if normalized_angle not in {"face-on", "dtl"}:
+            raise ValueError("Invalid Proof Cycle camera angle.")
+        if normal_swings is not True:
+            raise ValueError("A normal-swing declaration is required.")
+        declared_at = self._proof_cycle_timestamp(now, "transfer declaration time")
+        values = (
+            session,
+            normalized_user,
+            baseline,
+            fingerprint,
+            drill,
+            normalized_club,
+            normalized_hand,
+            normalized_angle,
+            1,
+            declared_at,
+        )
+        with self._lock:
+            self._conn.execute(
+                "INSERT INTO proof_cycle_transfer_checks"
+                " (session_id, user_id, baseline_session_id, target_fingerprint,"
+                "  drill_id, club, hand, angle, normal_swings, declared_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(session_id) DO NOTHING",
+                values,
+            )
+            row = self._conn.execute(
+                "SELECT * FROM proof_cycle_transfer_checks WHERE session_id = ?",
+                (session,),
+            ).fetchone()
+            self._conn.commit()
+        assert row is not None
+        stored = self._proof_cycle_transfer_from_row(row)
+        if stored != ProofCycleTransferCheck(
+            session_id=session,
+            user_id=normalized_user,
+            baseline_session_id=baseline,
+            target_fingerprint=fingerprint,
+            drill_id=drill,
+            club=normalized_club,
+            hand=normalized_hand,
+            angle=normalized_angle,
+            normal_swings=True,
+            declared_at=stored.declared_at,
+        ):
+            raise ValueError("This upload already has a different transfer check.")
+        return stored
+
+    def get_proof_cycle_transfer_check(
+        self, user_id: str, session_id: object
+    ) -> ProofCycleTransferCheck | None:
+        """Return a transfer declaration only within the authenticated owner."""
+
+        normalized_user = self._proof_cycle_token(user_id, "user")
+        session = self._proof_cycle_token(session_id, "session")
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM proof_cycle_transfer_checks"
+                " WHERE user_id = ? AND session_id = ?",
+                (normalized_user, session),
+            ).fetchone()
+        return self._proof_cycle_transfer_from_row(row) if row else None
 
     @staticmethod
     def _product_event_token(value: object, label: str, *, optional: bool) -> str | None:

@@ -84,10 +84,15 @@ from ..explainers import build_explainers
 from ..metrics import ANGLES
 from ..proof_cycle_artifact import (
     ARTIFACT_FILENAME,
+    active_proof_cycle_target_for_context,
     proof_cycle_enabled,
     proof_cycle_history_scan_limit,
     proof_cycle_view,
     verified_proof_cycle_artifact,
+)
+from ..proof_cycle_practice import (
+    practice_assignment_from_target,
+    practice_transfer_view,
 )
 from ..report import (
     REPORT_OUTCOME_CAPTURE,
@@ -907,6 +912,9 @@ def create_app(
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
         user = current_user(request)
+        golfer_profile = (
+            users.get_golfer_profile(user.id) if user is not None else None
+        )
         record_product_event(request, "landing_view", user=user)
         if cfg.web.get("require_account") and user is None:
             return render(
@@ -943,12 +951,17 @@ def create_app(
             if left == 0 and user is not None and not user.is_pro
             else None
         )
+        upload_transfer_assignment = active_proof_cycle_practice_assignment(
+            user,
+            club=(golfer_profile.preferred_club if golfer_profile else None),
+            hand=(golfer_profile.handedness if golfer_profile else "right"),
+            angle=(golfer_profile.camera_angle if golfer_profile else "face-on"),
+            before=time.time(),
+        )
         return render(
             "web_upload.html.j2",
             request,
-            golfer_profile=(
-                users.get_golfer_profile(user.id) if user is not None else None
-            ),
+            golfer_profile=golfer_profile,
             max_upload_mb=float(cfg.web.get("max_upload_mb") or 0),
             quota_left=left,
             trend_line=trend_line,
@@ -962,6 +975,7 @@ def create_app(
             baseline_blocked=baseline_blocked,
             refilm_rejections=refilm_rejections,
             charged_refilm_attempts=charged_refilm_attempts,
+            upload_transfer_assignment=upload_transfer_assignment,
         )
 
     # -- public sample report (no auth — the wow-moment, un-walled) --------
@@ -1908,14 +1922,10 @@ def create_app(
             )
         return RedirectResponse("/today?setup_saved", status_code=303)
 
-    def current_practice_plan(brief, profile: GolferProfile | None) -> list[dict]:
-        """Turn the measured brief into 10/20/45 minute choices.
+    def practice_choices_for_drill(drill, profile: GolferProfile | None) -> list[dict]:
+        """Turn one measured drill into deliberately bounded time choices."""
 
-        The drill and pass mark remain the source of truth.  Durations merely
-        control how much of that one prescription someone takes on today.
-        """
-
-        if brief is None or brief.drill is None or brief.refilm_required:
+        if drill is None:
             return []
         preferred = profile.practice_minutes if profile else 20
         choices = (
@@ -1929,11 +1939,33 @@ def create_app(
                 "title": title,
                 "detail": detail,
                 "selected": minutes == preferred,
-                "dosage": brief.drill.dosage,
-                "pass_mark": brief.drill.success_metric,
+                "drill_name": drill.name,
+                "aim": drill.aim,
+                "dosage": drill.dosage,
+                "pass_mark": drill.success_metric,
             }
             for minutes, title, detail in choices
         ]
+
+    def current_practice_plan(brief, profile: GolferProfile | None) -> list[dict]:
+        """Turn the current Caddie Brief into 10/20/45 minute choices."""
+
+        if brief is None or brief.drill is None or brief.refilm_required:
+            return []
+        return practice_choices_for_drill(brief.drill, profile)
+
+    def proof_cycle_practice_choices(assignment, profile: GolferProfile | None) -> list[dict]:
+        """Reload only the exact drill ID the active target originally chose."""
+
+        if assignment is None:
+            return []
+        for drills in build_drills(cfg.coaching).values():
+            for drill in drills:
+                if drill.id == assignment.drill_id:
+                    return practice_choices_for_drill(drill, profile)
+        # A future operator may remove a library drill. Keep the target and
+        # its measurement valid, but do not silently substitute a new drill.
+        return []
 
     @app.get("/today", response_class=HTMLResponse)
     def today_page(request: Request):
@@ -1948,13 +1980,56 @@ def create_app(
         brief = caddie_brief_for(latest_job) if latest_job is not None else None
         checkins = users.list_practice_checkins(user.id, limit=20)
         checked_session_ids = {checkin.session_id for checkin in checkins}
+        proof_cycle_practice_assignment = (
+            proof_cycle_practice_assignment_for_job(latest_job)
+            if latest_job is not None
+            else None
+        )
+        structured_practice_choices = proof_cycle_practice_choices(
+            proof_cycle_practice_assignment,
+            profile,
+        )
+        if not structured_practice_choices:
+            # Avoid a form that would log a target after its source drill was
+            # intentionally removed or retuned out of the active library.
+            proof_cycle_practice_assignment = None
+        structured_practice_receipts = []
+        current_practice_day = int(time.time() // 86400)
+        if proof_cycle_practice_assignment is not None:
+            try:
+                structured_practice_receipts = users.list_proof_cycle_practice_evidence(
+                    user.id,
+                    baseline_session_id=(
+                        proof_cycle_practice_assignment.baseline_session_id
+                    ),
+                    target_fingerprint=(
+                        proof_cycle_practice_assignment.target_fingerprint
+                    ),
+                )
+            except Exception:
+                logger.exception("Proof Cycle practice receipt lookup failed")
         return render(
             "web_today.html.j2",
             request,
             profile=profile,
             latest_job=latest_job,
             caddie_brief=brief,
-            practice_choices=current_practice_plan(brief, profile),
+            practice_choices=(
+                structured_practice_choices
+                if proof_cycle_practice_assignment is not None
+                else current_practice_plan(brief, profile)
+            ),
+            proof_cycle_practice_assignment=proof_cycle_practice_assignment,
+            proof_cycle_practice_receipt=(
+                next(
+                    (
+                        receipt
+                        for receipt in structured_practice_receipts
+                        if receipt.completed_day == current_practice_day
+                    ),
+                    None,
+                )
+            ),
             latest_practiced=(
                 latest_job is not None and latest_job.id in checked_session_ids
             ),
@@ -1963,7 +2038,12 @@ def create_app(
         )
 
     @app.post("/practice/checkins")
-    def practice_checkin(request: Request, session_id: str = Form("")):
+    def practice_checkin(
+        request: Request,
+        session_id: str = Form(""),
+        practice_minutes: str = Form(""),
+        practice_outcome: str = Form(""),
+    ):
         if not _same_origin_form_post(request):
             raise HTTPException(403, "Invalid request origin.")
         user = current_user(request)
@@ -1976,6 +2056,24 @@ def create_app(
             or caddie_brief_for(job) is None
         ):
             raise HTTPException(400, "This session is not ready for a practice check-in.")
+        if practice_minutes or practice_outcome:
+            assignment = proof_cycle_practice_assignment_for_job(job)
+            if assignment is None:
+                raise HTTPException(
+                    409,
+                    "This practice receipt no longer matches an active Proof Cycle target.",
+                )
+            try:
+                users.record_proof_cycle_practice_evidence(
+                    user.id,
+                    baseline_session_id=assignment.baseline_session_id,
+                    target_fingerprint=assignment.target_fingerprint,
+                    drill_id=assignment.drill_id,
+                    minutes=practice_minutes,
+                    outcome=practice_outcome,
+                )
+            except ValueError as exc:
+                raise HTTPException(400, str(exc)) from None
         users.record_practice_checkin(user.id, job.id)
         return RedirectResponse("/today?practice_done", status_code=303)
 
@@ -2186,6 +2284,7 @@ def create_app(
         level: str = Form(""),
         strikes: str = Form(""),
         fast: str = Form(""),
+        transfer_check: str = Form(""),
     ):
         if not _same_origin_form_post(request):
             raise HTTPException(403, "Invalid request origin.")
@@ -2231,6 +2330,28 @@ def create_app(
                 400,
                 "level must be one of: " + ", ".join(sorted(LEVEL_LABELS)),
             )
+        normalized_transfer_check = transfer_check.strip().lower()
+        if normalized_transfer_check not in {"", "on"}:
+            raise HTTPException(400, "Invalid normal-swing transfer declaration.")
+        upload_transfer_assignment = None
+        if normalized_transfer_check == "on":
+            upload_transfer_assignment = active_proof_cycle_practice_assignment(
+                user,
+                club=club or None,
+                hand=hand,
+                angle=angle,
+                before=time.time(),
+            )
+            if upload_transfer_assignment is None:
+                # The checkbox is intentionally advisory, never an authority:
+                # changing club, hand, or angle after loading the form creates
+                # an ordinary upload rather than a falsely linked transfer.
+                raise HTTPException(
+                    409,
+                    "This upload no longer matches the active Proof Cycle target. "
+                    "Use the same club, handedness, and camera angle or upload "
+                    "it as a regular analysis.",
+                )
 
         ip = client_ip(request)
         per_ip = int(cfg.web.get("max_active_jobs_per_ip") or 0)
@@ -2312,6 +2433,26 @@ def create_app(
             # cancellation itself must keep propagating.
             manager.discard(job)
             raise
+        if upload_transfer_assignment is not None:
+            try:
+                users.record_proof_cycle_transfer_check(
+                    user.id,
+                    session_id=job.id,
+                    baseline_session_id=(
+                        upload_transfer_assignment.baseline_session_id
+                    ),
+                    target_fingerprint=(
+                        upload_transfer_assignment.target_fingerprint
+                    ),
+                    drill_id=upload_transfer_assignment.drill_id,
+                    club=job.club,
+                    hand=job.hand,
+                    angle=job.angle,
+                    normal_swings=True,
+                )
+            except ValueError as exc:
+                manager.discard(job)
+                raise HTTPException(409, str(exc)) from None
         manager.submit(job, dest)
         if _wants_json(request):
             return JSONResponse({"id": job.id, "url": f"/session/{job.id}"})
@@ -2375,7 +2516,15 @@ def create_app(
             return None
         return brief
 
-    def proof_cycle_for(job: Job):
+    def proof_cycle_practice_enabled() -> bool:
+        """Require an explicit second gate before collecting practice context."""
+
+        return (
+            proof_cycle_enabled(cfg)
+            and cfg.proof_cycle.get("practice_evidence_enabled") is True
+        )
+
+    def proof_cycle_artifact_for(job: Job):
         """Verify a completed sidecar without ever writing during a GET."""
 
         if not proof_cycle_enabled(cfg) or job.status != DONE:
@@ -2389,13 +2538,96 @@ def create_app(
                     through=job.created_at,
                     limit=proof_cycle_history_scan_limit(cfg),
                 )
-            artifact = verified_proof_cycle_artifact(job, prior_jobs, cfg)
+            return verified_proof_cycle_artifact(
+                job,
+                prior_jobs,
+                cfg,
+                baseline_job_for_id=manager.get,
+            )
         except Exception:
-            # Sidecar validation is an optional result enhancement.  A stale
+            # Sidecar validation is an optional result enhancement. A stale
             # disk artifact must never prevent a completed report from loading.
             logger.exception("Proof Cycle result validation failed for job %s", job.id)
             return None
-        return proof_cycle_view(artifact)
+
+    def active_proof_cycle_practice_assignment(
+        user: User | None,
+        *,
+        club: object,
+        hand: object,
+        angle: object,
+        before: float,
+    ):
+        """Find a target for a prospective upload, never trusting the form."""
+
+        if not proof_cycle_practice_enabled() or user is None or not club:
+            return None
+        try:
+            prior_jobs = manager.list_comparable(
+                user_id=user.id,
+                club=str(club),
+                through=before,
+                limit=proof_cycle_history_scan_limit(cfg),
+            )
+            target = active_proof_cycle_target_for_context(
+                prior_jobs,
+                cfg,
+                user_id=user.id,
+                club=club,
+                hand=hand,
+                angle=angle,
+                before=before,
+                baseline_job_for_id=manager.get,
+            )
+            return practice_assignment_from_target(target)
+        except Exception:
+            logger.exception("Proof Cycle practice target lookup failed")
+            return None
+
+    def proof_cycle_practice_assignment_for_job(job: Job, artifact=None):
+        if not proof_cycle_practice_enabled() or not job.user_id:
+            return None
+        trusted = artifact if artifact is not None else proof_cycle_artifact_for(job)
+        return practice_assignment_from_target(
+            trusted.target if trusted is not None else None
+        )
+
+    def proof_cycle_practice_for(job: Job, artifact=None):
+        """Render practice context only after the result sidecar re-verifies."""
+
+        if not proof_cycle_practice_enabled() or not job.user_id:
+            return None
+        trusted = artifact if artifact is not None else proof_cycle_artifact_for(job)
+        assignment = proof_cycle_practice_assignment_for_job(job, trusted)
+        if trusted is None or assignment is None:
+            return None
+        baseline = manager.get(assignment.baseline_session_id)
+        if baseline is None:
+            return None
+        try:
+            evidence = users.list_proof_cycle_practice_evidence(
+                job.user_id,
+                baseline_session_id=assignment.baseline_session_id,
+                target_fingerprint=assignment.target_fingerprint,
+            )
+            transfer_check = users.get_proof_cycle_transfer_check(job.user_id, job.id)
+            return practice_transfer_view(
+                trusted,
+                evidence,
+                transfer_check,
+                user_id=job.user_id,
+                refilm_session_id=job.id,
+                club=job.club,
+                hand=job.hand,
+                angle=job.angle,
+                baseline_created_at=baseline.created_at,
+                refilm_created_at=job.created_at,
+            )
+        except Exception:
+            # This card is additive context. Its data must never stop access
+            # to the completed report or the already-verified Proof result.
+            logger.exception("Proof Cycle practice result validation failed for job %s", job.id)
+            return None
 
     def gear_for(job: Job, brief) -> list[dict]:
         """At most one optional aid tied to the brief's measured priority."""
@@ -2429,7 +2661,15 @@ def create_app(
         failed = job.status == FAILED
         report_path = resolved_report(job)
         brief = caddie_brief_for(job) if report_path is not None else None
-        proof_cycle = proof_cycle_for(job) if report_path is not None else None
+        proof_cycle_artifact = (
+            proof_cycle_artifact_for(job) if report_path is not None else None
+        )
+        proof_cycle = proof_cycle_view(proof_cycle_artifact)
+        proof_cycle_practice = (
+            proof_cycle_practice_for(job, proof_cycle_artifact)
+            if report_path is not None
+            else None
+        )
         if job.status == DONE:
             record_product_event(
                 request,
@@ -2465,6 +2705,7 @@ def create_app(
             queue_position=manager.queue_position(job),
             caddie_brief=brief,
             proof_cycle=proof_cycle,
+            proof_cycle_practice=proof_cycle_practice,
             refilm_needed=job.status == DONE and not coaching_eligible,
             legacy_report=report_only,
             current_report_only=current_report_only,

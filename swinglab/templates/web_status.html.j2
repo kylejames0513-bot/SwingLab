@@ -132,6 +132,19 @@
         </section>
         {% endif %}
 
+        {% if proof_cycle_practice %}
+        <section class="proof-cycle {{ proof_cycle_practice.tone }}" data-proof-cycle-practice>
+          <p class="proof-cycle-kicker">Practice-to-re-film context</p>
+          <h3>{{ proof_cycle_practice.heading }}</h3>
+          <p><strong>{{ proof_cycle_practice.summary }}</strong></p>
+          <p>{{ proof_cycle_practice.detail }}</p>
+          <p><strong>Next:</strong> {{ proof_cycle_practice.next_step }}</p>
+          {% if proof_cycle_practice.practice_session_count %}
+          <p class="hint">{{ proof_cycle_practice.practice_session_count }} self-reported practice receipt{{ "s" if proof_cycle_practice.practice_session_count != 1 }} · {{ proof_cycle_practice.practice_minutes }} minutes total.</p>
+          {% endif %}
+        </section>
+        {% endif %}
+
         {% if caddie_brief.trend %}
         <p class="coach-trend"><strong>Your journal:</strong>
           {{ caddie_brief.trend }}.</p>

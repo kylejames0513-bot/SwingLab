@@ -52,11 +52,11 @@
     {% elif first_analysis %}
     <h2>Build your swing baseline.</h2>
     <p>Your first clip gives your caddie something real to coach: one strength,
-      one priority, one drill, and a re-film target that proves the change.</p>
+      one priority, one drill, and a re-film target that tests the change.</p>
     {% else %}
     <h2>Your next coaching check-in.</h2>
     <p>One phone, honest numbers, one clear next step, and a re-film that
-      proves whether the work is helping.</p>
+      tests whether the matched measurement is moving.</p>
     {% endif %}
     <div class="steps">
       <div><strong>1. Film</strong> Phone at hip height, face-on (down the line: tempo &amp; rhythm only for now).</div>
@@ -191,6 +191,19 @@
       </select>
       <p class="hint">Shown on the report and history so sessions compare
         cleanly — it doesn't change any thresholds yet.</p>
+
+      {% if upload_transfer_assignment %}
+      <div class="check">
+        <input id="transfer-check" name="transfer_check" type="checkbox" value="on">
+        <label for="transfer-check"><strong>Normal-swing transfer check</strong> —
+          I practiced {{ upload_transfer_assignment.drill_name }} for
+          {{ upload_transfer_assignment.target_name }}, and this clip is normal
+          swings rather than drill rehearsals.</label>
+      </div>
+      <p class="hint">CaddieInsight will re-check the same club, handedness,
+        and camera angle when you upload. This declaration adds context; it
+        never changes the measurement result or proves that practice caused it.</p>
+      {% endif %}
 
       <label>Where's your game? (optional)</label>
       <div class="radio-row">
