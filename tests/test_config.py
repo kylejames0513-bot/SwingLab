@@ -68,3 +68,4 @@ def test_shipped_proof_cycle_activation_keeps_practice_collection_off():
 
     assert cfg.proof_cycle["enabled"] is True
     assert cfg.proof_cycle["practice_evidence_enabled"] is False
+    assert cfg.web["history_reset_enabled"] is True

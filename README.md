@@ -355,9 +355,10 @@ current month's allowance. Monthly usage is archived to a pseudonymous receipt
 before job rows disappear, so starting over cannot create free analyses. A
 journaled same-volume quarantine makes the filesystem/database change
 recoverable after interruption; see [Swing-history reset](docs/history-reset.md).
-The compatibility-floor release intentionally ships that flag `false`; the
-next release turns it on only after this version is verified live as the safe
-rollback target.
+The checked-in CaddieInsight deployment config activates the surface only after
+its disabled compatibility floor was verified live. Bare-code defaults remain
+`false` for other operators. Production rollback must stop at that floor or a
+later release, never at a receipt-unaware binary.
 
 Pro can be sold two ways, both **inert until configured** — the pricing page
 shows Pro as "coming soon" until one is set up. When both are configured,
