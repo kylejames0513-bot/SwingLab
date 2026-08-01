@@ -9,6 +9,7 @@ def test_defaults_without_file():
     cfg = Config()
     assert cfg.brand["name"] == "CaddieInsight"
     assert cfg.detection["audio_height"] == 0.30
+    assert cfg.detection["relative_height"] == 0.0
     assert cfg.coaching["tempo_target"] == 3.0
     assert cfg.shopify_customer_sync == {
         "enabled": False,

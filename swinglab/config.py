@@ -36,6 +36,10 @@ DEFAULTS: dict[str, Any] = {
         "audio_height": 0.30,
         "audio_prominence": 0.25,
         "min_gap_s": 4.0,
+        # Optional post-peak noise gate.  0 keeps the established detector
+        # behavior; an operator may later require candidates to be at least
+        # this fraction of the loudest eligible transient (0.0..1.0).
+        "relative_height": 0.0,
         # Analyze at most this many strikes per clip (the first N, in clip
         # order); 0 = no limit. Every strike costs real CPU (pose tracking +
         # renders), so an unbounded range session can occupy a worker for

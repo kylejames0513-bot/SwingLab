@@ -710,7 +710,10 @@ inert-until-configured rule as every other integration.
    (that would double-rotate).
 2. **Strike detection** — ball strikes are sharp audio transients. The mono
    16 kHz track is enveloped in 10 ms hops and peaks are found with
-   configurable height / prominence / minimum-gap thresholds.
+   configurable height / prominence / minimum-gap thresholds. An optional,
+   off-by-default relative-loudness gate can then reject quieter candidates;
+   it must be calibrated on labeled clips and cannot recover a strike already
+   suppressed by the minimum-gap rule.
 3. **Frame extraction** — for each strike `t`, the window `t−1.8s … t+0.8s`
    at 30 fps, 480 px wide. Sources filmed at 50 fps or better are analyzed
    at `min(source_fps, 60)` instead (`analysis.auto_fps`, on by default):
@@ -752,7 +755,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | Section | What it controls |
 | --- | --- |
 | `brand` | name, logo, colors, footer, watermark on/off, disclaimer, `support_text` (shown where users need the operator, e.g. password reset while email is unconfigured) |
-| `detection` | audio peak height / prominence / minimum gap between swings, per-clip strike cap (`max_strikes`, shipped 8 — first N analyzed, honestly noted) |
+| `detection` | audio peak height / prominence / minimum gap between swings, optional calibrated relative-loudness noise gate (`relative_height`, shipped off), per-clip strike cap (`max_strikes`, shipped 8 — first N analyzed, honestly noted) |
 | `coaching` | flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |

@@ -21,6 +21,12 @@ detection:
   audio_height: 0.30         # normalized envelope height for a strike peak
   audio_prominence: 0.25     # peak prominence
   min_gap_s: 4.0             # minimum seconds between detected swings
+  relative_height: 0.0       # 0 = off (shipped behavior). A positive value
+                             # keeps only candidates at least this fraction
+                             # of the loudest eligible transient (0.0–1.0).
+                             # Calibrate it on labeled clips before enabling:
+                             # it is a post-peak noise filter, not ball-strike
+                             # classification, and may reject softer swings.
   max_strikes: 8             # analyze at most this many strikes per clip (the
                              # first N, in clip order; 0 = no limit). Each
                              # strike costs real CPU — pose tracking plus the
