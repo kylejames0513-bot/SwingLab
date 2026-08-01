@@ -8,10 +8,11 @@ It is intentionally narrower than account deletion or a Shopify privacy
 redaction.
 
 The customer surface is independently gated by
-`web.history_reset_enabled`. Release the schema, quota receipts, recovery
-journal, and epoch-aware writers with this gate `false`; only a later release
-may turn it on. Once activated, rollback must stop at that compatibility-floor
-release and must never target a binary that ignores these receipts and epochs.
+`web.history_reset_enabled`. The checked-in CaddieInsight deployment config is
+`true` only after the schema, quota receipts, recovery journal, and epoch-aware
+writers shipped behind `false` and were verified live. Bare-code defaults stay
+off. Rollback must stop at that compatibility-floor release or later and must
+never target a binary that ignores these receipts and epochs.
 
 Deleted:
 

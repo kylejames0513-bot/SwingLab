@@ -96,10 +96,10 @@ The current SQLite database and in-process job queue require a single
 application replica. Horizontal scaling must wait until durable state and job
 coordination are externalized.
 
-The reset protocol also depends on that single-replica contract. Its customer
-surface remains hidden while `web.history_reset_enabled` is `false`; this
-compatibility-floor release must be verified live before a following release
-activates it. The protocol serializes the Shopify privacy lock,
+The reset protocol also depends on that single-replica contract. The checked-in
+CaddieInsight config activates its customer surface only after the disabled
+compatibility floor was verified live; bare-code defaults remain off. Rollback
+must stop at that floor or later. The protocol serializes the Shopify privacy lock,
 history-delivery guard, and job-manager lock, rejects active work, renames
 validated regular session directories into a same-volume quarantine, commits
 quota archival plus related-row/job deletion in one `BEGIN IMMEDIATE`

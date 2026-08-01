@@ -10,6 +10,7 @@ import sqlite3
 import threading
 import time
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -102,6 +103,38 @@ def test_reset_surface_is_inert_until_the_compatibility_floor_is_live(
     assert "/account/history/delete" not in account.text
     assert client.get("/account/history/delete").status_code == 404
     assert client.post("/account/history/delete").status_code == 404
+
+
+def test_shipped_config_activates_account_and_history_reset_links(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    for name in (
+        "RESEND_API_KEY",
+        "SWINGLAB_SMTP_URL",
+        "SWINGLAB_MAIL_FROM",
+        "SHOPIFY_STORE_DOMAIN",
+        "SHOPIFY_WEBHOOK_SECRET",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    shipped = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+    assert shipped.web["history_reset_enabled"] is True
+    activated_app = create_app(
+        shipped, sessions_dir=tmp_path / "activated-sessions"
+    )
+    client = TestClient(activated_app)
+    signup(client, "activated@example.com")
+
+    account = client.get("/account")
+    history = client.get("/sessions")
+    reset = client.get("/account/history/delete")
+
+    assert account.status_code == 200
+    assert history.status_code == 200
+    assert '/account/history/delete' in account.text
+    assert '/account/history/delete' in history.text
+    assert reset.status_code == 200
+    assert "Delete swing history and start over" in reset.text
 
 
 def test_restored_pre_feature_database_migrates_on_web_boot(tmp_path):
