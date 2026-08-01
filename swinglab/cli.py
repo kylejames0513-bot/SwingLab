@@ -60,6 +60,47 @@ def build_parser() -> argparse.ArgumentParser:
         "quicker, slightly less smooth clips",
     )
 
+    batch = sub.add_parser(
+        "batch",
+        help="Analyze a validated JSONL manifest sequentially and resumably.",
+    )
+    batch.add_argument(
+        "manifest", type=Path,
+        help="JSONL rows with id, path, and optional per-clip context",
+    )
+    batch.add_argument("--out", type=Path, default=None, help="Output directory")
+    batch.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate every row and print the plan without analyzing or writing state",
+    )
+    batch.add_argument(
+        "--resume",
+        action="store_true",
+        help="Skip completed rows whose manifest instruction and report still match",
+    )
+    batch.add_argument(
+        "--state",
+        type=Path,
+        default=None,
+        help="Resume-state JSON path (default: <manifest>.state.json)",
+    )
+    batch.add_argument(
+        "--json",
+        action="store_true",
+        dest="as_json",
+        help="Print one machine-readable summary to stdout",
+    )
+    batch.add_argument("--config", type=Path, default=None, help="Path to config.yaml")
+    batch.add_argument(
+        "--keep-work", action="store_true", help="Keep intermediate frames/audio"
+    )
+    batch.add_argument(
+        "--fast",
+        action="store_true",
+        help="Skip motion-interpolated slow motion for every manifest row",
+    )
+
     srv = sub.add_parser("serve", help="Run the web app (upload page + results).")
     srv.add_argument("--host", default="127.0.0.1")
     srv.add_argument("--port", type=int, default=8000)
@@ -310,6 +351,49 @@ def main(argv: list[str] | None = None) -> int:
         return run_privacy_command(args)
 
     cfg = Config.load(args.config)
+
+    if args.command == "batch":
+        import json
+
+        from .batch_v2 import BatchManifestError, run_manifest_batch
+
+        def batch_log(message: str) -> None:
+            print(message, file=sys.stderr if args.as_json else sys.stdout)
+
+        try:
+            exit_code, summary = run_manifest_batch(
+                args.manifest,
+                cfg=cfg,
+                out_dir=args.out,
+                keep_work=args.keep_work,
+                fast=args.fast,
+                dry_run=args.dry_run,
+                resume=args.resume,
+                state_path=args.state,
+                analyze=analyze_video,
+                on_result=None if args.as_json else print_summary,
+                log=batch_log,
+                error=lambda message: print(message, file=sys.stderr),
+            )
+        except BatchManifestError as exc:
+            print(f"batch: {exc}", file=sys.stderr)
+            return 2
+
+        if args.as_json:
+            print(json.dumps(summary, indent=2, ensure_ascii=False))
+        else:
+            for item in summary["items"]:
+                if item["status"] == "planned":
+                    print(f"PLAN {item['id']}: {item['path']}")
+            print(
+                "\nBatch summary: "
+                f"{summary['completed']} completed, {summary['resumed']} resumed, "
+                f"{summary['planned']} planned, {summary['failed']} failed "
+                f"({summary['total']} total)"
+            )
+            if not args.dry_run:
+                print(f"State: {summary['state']}")
+        return exit_code
 
     if args.command == "shopify-backfill":
         import json
