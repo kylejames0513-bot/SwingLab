@@ -105,7 +105,32 @@ def test_cli_report_stays_offline_and_has_no_broken_app_links(
     assert "fonts.gstatic.com" not in html
     assert 'href="/"' not in html
     assert 'href="/sessions"' not in html
+    assert 'onclick="window.print()"' in html
+    assert "Print / Save PDF" in html
     assert 'aria-label="Report navigation"' not in html
+
+
+def test_report_has_a_native_print_pdf_control_and_print_layout(tmp_path):
+    cfg = branded_cfg()
+    swing = fake_swing(1)
+    out = write_report_html(
+        tmp_path / "report.html",
+        fake_video(),
+        [swing],
+        session_stats([swing["metrics"]]),
+        [],
+        "right",
+        cfg,
+    )
+    html = out.read_text(encoding="utf-8")
+    assert 'class="print-report" type="button" onclick="window.print()"' in html
+    assert "Print this swing report or save it as a PDF" in html
+    assert "@media print" in html
+    assert ".report-actions, .video-row, .replay-locked-note" in html
+    # Detailed measurements and deferred issue/drill sections stay in a saved
+    # PDF even when the reader left their browser disclosure controls closed.
+    assert "details.measurements:not([open]) > *:not(summary)" in html
+    assert "details.more-issues:not([open]) > *:not(summary)" in html
 
 
 def test_report_leads_with_coaching_and_collapses_raw_measurements(tmp_path):
@@ -219,6 +244,10 @@ def test_report_with_no_coachable_fields_is_capture_only(tmp_path):
     assert "media/overlay_s1.png" not in html
     assert "media/replay_s1.mp4" not in html
     assert "media/slowmo_s1.mp4" in html
+    # Export is a local browser action on this already-permitted report; it
+    # does not turn a capture-only result into coaching output.
+    assert "Print / Save PDF" in html
+    assert 'onclick="window.print()"' in html
 
 
 def test_clean_dtl_report_uses_only_rhythm_maintenance(tmp_path):
