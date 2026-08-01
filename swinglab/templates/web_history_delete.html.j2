@@ -1,0 +1,72 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Start over{% endblock %}
+{% block style %}
+  .reset-card { max-width: 720px; margin-inline: auto; }
+  .warning { border-left: 4px solid #a42b22; background: #fff7f5;
+             padding: 14px 16px; border-radius: 6px; }
+  .warning h2 { color: #7d211a; margin-top: 0; }
+  .keep { background: #f2f8f4; border: 1px solid #d6e9dc;
+          padding: 14px 18px; border-radius: 8px; margin: 18px 0; }
+  .keep h3 { margin-top: 0; }
+  ul { padding-left: 22px; }
+  li + li { margin-top: 5px; }
+  label { display: block; font-weight: 700; margin: 16px 0 6px; }
+  input { width: 100%; max-width: 420px; padding: 11px 12px;
+          box-sizing: border-box; border: 1px solid #aaa; border-radius: 6px; }
+  .danger-button { background: #9b2c23; border-color: #9b2c23;
+                   margin-top: 18px; }
+  .danger-button:hover { background: #7d211a; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center;
+             gap: 14px; margin-top: 18px; }
+  .actions form { margin: 0; }
+  code { font-weight: 800; color: #662018; }
+{% endblock %}
+{% block main %}
+  <div class="card reset-card">
+    <div class="warning">
+      <h2>Delete swing history and start over</h2>
+      <p>This permanently removes your uploaded swing sessions, generated
+        reports, practice check-ins, and Proof Cycle evidence. It cannot be
+        undone.</p>
+    </div>
+
+    <div class="keep">
+      <h3>What stays</h3>
+      <ul>
+        <li>Your account and golfer profile</li>
+        <li>Your Free or Pro membership and purchases</li>
+        <li>Shopify connection and connected-device sign-ins</li>
+        <li>This month's analysis allowance and security records</li>
+      </ul>
+    </div>
+
+    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
+
+    {% if recent_auth_required %}
+      <p>To protect a signed-in browser that may have been left open,
+        authenticate again before deleting its history.</p>
+      <div class="actions">
+        <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
+          <button type="submit">Sign out to authenticate again</button>
+        </form>
+        <a href="/account">Cancel</a>
+      </div>
+    {% else %}
+      <form action="/account/history/delete" method="post">
+        <input type="hidden" name="nonce" value="{{ nonce }}">
+        <label for="history-confirmation">Type <code>{{ confirmation_phrase }}</code> exactly</label>
+        <input id="history-confirmation" name="confirmation" type="text"
+               required autocomplete="off" spellcheck="false">
+        {% if user.has_password %}
+        <label for="history-password">Current password</label>
+        <input id="history-password" name="password" type="password"
+               required autocomplete="current-password">
+        {% endif %}
+        <div class="actions">
+          <button class="danger-button" type="submit">Delete swing history</button>
+          <a href="/account">Cancel</a>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+{% endblock %}

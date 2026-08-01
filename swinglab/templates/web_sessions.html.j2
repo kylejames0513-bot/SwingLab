@@ -45,6 +45,9 @@
     {% if user and require_account %}
     <p style="margin-bottom: 0"><a href="/progress">See your progress across
       sessions &rarr;</a></p>
+    {% if history_reset_enabled %}
+    <p class="hint"><a href="/account/history/delete">Delete swing history / Start over</a></p>
+    {% endif %}
     {% endif %}
   </div>
 {% endblock %}

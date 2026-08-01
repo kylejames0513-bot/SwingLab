@@ -36,6 +36,16 @@ CRITICAL_TABLES = (
     "shopify_pending_customer_links",
 )
 
+# Added after the original v1 bundle format shipped.  A current database must
+# contain both tables (quota receipts and the crash-recovery journal) and they
+# receive the same count/digest protection as every critical ledger.  A legacy
+# v1 snapshot with neither table remains restorable so upgrades do not strand
+# an otherwise valid backup; a partial pair fails closed.
+HISTORY_STATE_TABLES = (
+    "analysis_usage_monthly",
+    "history_reset_operations",
+)
+
 _BACKUP_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")
 
 
@@ -176,12 +186,44 @@ def database_summary(db_path: Path, captured_at_epoch: float) -> dict[str, Any]:
                 "The SQLite snapshot is missing required application tables."
             )
 
+        history_tables_present = set(HISTORY_STATE_TABLES) & existing_tables
+        user_columns = {
+            row["name"]
+            for row in connection.execute('PRAGMA table_info("users")')
+        }
+        history_epoch_present = "history_epoch" in user_columns
+        history_tables_complete = history_tables_present == set(
+            HISTORY_STATE_TABLES
+        )
+        # The epoch column and both tables were introduced as one logical
+        # migration. All absent is a genuine legacy v1 database; every mixed
+        # state signals schema/data loss and must not be blessed as a backup.
+        if (
+            bool(history_tables_present) and not history_tables_complete
+        ) or history_tables_complete != history_epoch_present:
+            raise BackupError(
+                "The SQLite snapshot has incomplete history-reset state."
+            )
         counts = {
             table: int(_one(connection, f'SELECT COUNT(*) FROM "{table}"'))
             for table in CRITICAL_TABLES
         }
+        history_counts = {
+            table: int(_one(connection, f'SELECT COUNT(*) FROM "{table}"'))
+            for table in HISTORY_STATE_TABLES
+            if table in history_tables_present
+        }
+        if history_counts.get("history_reset_operations", 0):
+            raise BackupError(
+                "History cleanup is pending; finish recovery before backing up."
+            )
         digests = {
             table: _table_digest(connection, table) for table in CRITICAL_TABLES
+        }
+        history_digests = {
+            table: _table_digest(connection, table)
+            for table in HISTORY_STATE_TABLES
+            if table in history_tables_present
         }
 
         violations = {
@@ -198,7 +240,16 @@ def database_summary(db_path: Path, captured_at_epoch: float) -> dict[str, Any]:
                 _one(connection, "SELECT COUNT(*) FROM gear_orders WHERE quantity <= 0")
             ),
         }
-        if any(violations.values()):
+        history_violations: dict[str, int] = {}
+        if "analysis_usage_monthly" in history_tables_present:
+            history_violations["negative_analysis_usage"] = int(
+                _one(
+                    connection,
+                    "SELECT COUNT(*) FROM analysis_usage_monthly"
+                    " WHERE coaching_eligible < 0 OR refilm_rejections < 0",
+                )
+            )
+        if any(violations.values()) or any(history_violations.values()):
             raise BackupError("Entitlement or purchase-ledger invariants failed.")
 
         reconciliation = {
@@ -270,7 +321,7 @@ def database_summary(db_path: Path, captured_at_epoch: float) -> dict[str, Any]:
         ).fetchall()
         if foreign_key_violations:
             raise BackupError("SQLite foreign_key_check reported violations.")
-        return {
+        summary = {
             "integrity_check": "ok",
             "user_version": int(connection.execute("PRAGMA user_version").fetchone()[0]),
             "critical_table_counts": counts,
@@ -278,6 +329,18 @@ def database_summary(db_path: Path, captured_at_epoch: float) -> dict[str, Any]:
             "reconciliation": reconciliation,
             "invariant_violations": violations,
         }
+        if history_tables_present:
+            # Keep the original v1 fields byte-for-byte compatible with older
+            # restore readers. They ignore these additive extension fields;
+            # current readers verify them when present.
+            summary.update(
+                {
+                    "history_state_table_counts": history_counts,
+                    "history_state_table_sha256": history_digests,
+                    "history_state_invariant_violations": history_violations,
+                }
+            )
+        return summary
     except sqlite3.Error as exc:
         raise BackupError("SQLite verification failed.") from exc
     finally:
@@ -686,6 +749,26 @@ def restore_backup(bundle_dir: Path, scratch_root: Path) -> dict[str, Any]:
                 raise BackupError(
                     "Restored database reconciliation did not match the manifest."
                 )
+        extension_fields = (
+            "history_state_table_counts",
+            "history_state_table_sha256",
+            "history_state_invariant_violations",
+        )
+        expected_has_history_state = any(
+            field in expected_summary for field in extension_fields
+        )
+        # An old v1 writer can snapshot a database that already contains the
+        # additive history tables while omitting the extension fields. The
+        # database hash still attests those bytes, so a missing extension means
+        # "legacy writer" and is intentionally ignored. Once any extension
+        # field is present, current readers require the complete exact state.
+        if expected_has_history_state and any(
+            restored_summary.get(field) != expected_summary.get(field)
+            for field in extension_fields
+        ):
+            raise BackupError(
+                "Restored history state did not match the manifest."
+            )
 
         report = {
             "format": FORMAT,
@@ -693,6 +776,9 @@ def restore_backup(bundle_dir: Path, scratch_root: Path) -> dict[str, Any]:
             "verified_at": _utc_now().isoformat().replace("+00:00", "Z"),
             "sqlite_integrity_check": "ok",
             "critical_table_counts": restored_summary["critical_table_counts"],
+            "history_state_table_counts": restored_summary.get(
+                "history_state_table_counts", {}
+            ),
             "entitlement_and_purchase_reconciliation": "matched",
             "artifact_checksums_verified": manifest["artifacts"]["count"],
         }

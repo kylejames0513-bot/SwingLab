@@ -40,6 +40,13 @@ surface:
   `wedge`. A missing, blank, or unsupported value returns HTTP `400` with
   `{"detail":"club must be one of: driver, fairway-wood, hybrid, iron, wedge"}`.
 
+`GET /api/v1/me` includes an additive `identity.history_epoch`. Native clients
+should discard cached session/report/practice state and refetch owned resources
+when that number changes. A browser **Delete swing history / Start over** action
+advances the epoch, but intentionally does not revoke device tokens or advance
+`auth_epoch`; the account owner can keep using the same connected device after
+clearing its stale local history.
+
 An invalid or malformed `Authorization` header fails with `401`; it never
 falls back to an accompanying browser cookie. Cookie-authenticated mutations
 keep the existing Origin/Referer CSRF validation. No CORS policy is added or
@@ -51,6 +58,9 @@ cross-origin credential.
 Shopify customer-data exports include device lifecycle metadata, while the
 device-record portion omits token digests, secrets, and epoch values. User
 deletion and Shopify customer redaction erase associated device-token records.
+Deleting swing history is narrower than account deletion or Shopify redaction:
+it preserves device tokens, membership, purchases, identity links, and the
+golfer profile while removing swing/report/practice history.
 If a token may have been exposed, revoke it from the same browser management
 route; if account ownership is in question, use the established
 password/ownership recovery flow to advance the auth epoch and invalidate all

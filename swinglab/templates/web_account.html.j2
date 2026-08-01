@@ -12,6 +12,11 @@
   .plan.free { background: #eee; color: #444; }
   .good { background: #e5f3ea; border-left: 4px solid var(--primary);
           padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; }
+  .danger-zone { margin-top: 28px; padding-top: 20px;
+                 border-top: 1px solid #ead7d4; }
+  .danger-zone h3 { color: #7d211a; margin-bottom: 6px; }
+  .danger-link { display: inline-block; color: #8f241c; font-weight: 700;
+                 margin-top: 4px; }
   form { display: inline; }
   .logout button { background: white; color: #b3261e; border: 1px solid #ddd; }
   .quiet button { background: white; color: #444; border: 1px solid #ccc; }
@@ -33,6 +38,19 @@
   {% endif %}
   {% if shopify_connected %}
   <div class="good">Shopify sign-in is connected. Your Shopify customer identity is linked without copying a password.</div>
+  {% endif %}
+  {% if history_reset_flash %}
+  <div class="good" role="status">
+    Your swing history has been deleted. Removed
+    {{ history_reset_flash.deleted_jobs }} swing
+    {{ "session" if history_reset_flash.deleted_jobs == 1 else "sessions" }},
+    including their reports and linked practice evidence. Your account,
+    golfer setup, Pro access, purchases, connected devices, and this month's
+    allowance are unchanged.
+    {% if history_reset_flash.cleanup_pending %}
+    Secure file cleanup is pending and will retry when the app restarts.
+    {% endif %}
+  </div>
   {% endif %}
   <div class="card">
     <h2>Your account</h2>
@@ -141,6 +159,18 @@
     <p class="hint">Connect the Shopify account you control. We use its verified customer identity—not an email guess—and never copy a password.</p>
     <a class="button secondary" href="/auth/shopify/start">Connect Shopify sign-in</a>
     {% endif %}
+
+    {% if history_reset_enabled %}
+    <section class="danger-zone" aria-labelledby="history-controls-heading">
+      <h3 id="history-controls-heading">Swing history controls</h3>
+      <p class="hint">Want a clean coaching baseline? Delete your swing
+        sessions, reports, practice check-ins, and Proof Cycle evidence while
+        keeping your account, golfer setup, membership, purchases, connected
+        devices, and monthly allowance.</p>
+      <a class="danger-link" href="/account/history/delete">Delete swing history / Start over</a>
+    </section>
+    {% endif %}
+
     <form class="logout" action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
       <button type="submit">Log out</button>
     </form>

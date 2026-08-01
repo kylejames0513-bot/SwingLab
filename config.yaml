@@ -197,6 +197,11 @@ web:
   require_account: true      # visitors must sign up before analyzing; false = open access
                              # (set SWINGLAB_SECRET in the environment so logins
                              # survive restarts)
+  history_reset_enabled: false
+                             # compatibility floor: keep the customer Start over
+                             # surface hidden until this release is live. The
+                             # following activation release changes this to true,
+                             # making this version the safe rollback floor.
   passwordless_login: true   # "one account" email-code sign-in: the login page asks
                              # for the email first, mails a six-digit code (stored
                              # hashed, 10-minute expiry, single-use, burned after 5

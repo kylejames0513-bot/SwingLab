@@ -85,12 +85,26 @@ rollout, and rollback contract.
 The root `Dockerfile` is the live Railway build and runtime contract. The
 console command is `swinglab`, Railway supplies `PORT`, and persistent state is
 rooted at `/data/sessions`. `swinglab.db` contains accounts, purchases, and job
-history, including durable customer-sync status. Platform settings, secrets,
-volumes, DNS, and production deployment state live outside this repository.
+history, including durable customer-sync status. Swing-history resets retain
+pseudonymous `analysis_usage_monthly` quota receipts and use
+`history_reset_operations` as a crash-recovery journal. A per-account
+`history_epoch` fences practice, evidence, transfer, and product-event writes
+that began before a reset. Platform settings, secrets, volumes, DNS, and
+production deployment state live outside this repository.
 
 The current SQLite database and in-process job queue require a single
 application replica. Horizontal scaling must wait until durable state and job
 coordination are externalized.
+
+The reset protocol also depends on that single-replica contract. Its customer
+surface remains hidden while `web.history_reset_enabled` is `false`; this
+compatibility-floor release must be verified live before a following release
+activates it. The protocol serializes the Shopify privacy lock,
+history-delivery guard, and job-manager lock, rejects active work, renames
+validated regular session directories into a same-volume quarantine, commits
+quota archival plus related-row/job deletion in one `BEGIN IMMEDIATE`
+transaction, then purges quarantine. Startup restores prepared operations and
+finishes committed cleanup. See [Swing-history reset](history-reset.md).
 
 ## Dependency direction
 

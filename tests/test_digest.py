@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
 import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -354,6 +356,70 @@ def test_failed_send_is_claimed_not_retried(store, outbox, monkeypatch):
     )
     assert digest.run_once(users, manager, cfg, SECRET, now=now + 60) == 0
     assert outbox == []  # this week stays skipped — never a double-send
+
+
+def test_reset_cannot_commit_between_digest_composition_and_delivery(
+    store, outbox, monkeypatch
+):
+    cfg, manager, users = store
+    user = users.create("linearized@example.com", "longenough")
+    users.set_digest_opt_in(user.id, True)
+    job = finished_session(manager, user.id)
+    compose_started = threading.Event()
+    release_compose = threading.Event()
+    reset_started = threading.Event()
+    reset_done = threading.Event()
+    order: list[str] = []
+    original_compose = digest.compose_digest
+
+    def paused_compose(*args, **kwargs):
+        composed = original_compose(*args, **kwargs)
+        compose_started.set()
+        assert release_compose.wait(5)
+        return composed
+
+    monkeypatch.setattr(digest, "compose_digest", paused_compose)
+    monkeypatch.setattr(
+        mailer,
+        "send",
+        lambda to, subject, body, html=False: (
+            outbox.append((to, subject, body, html)),
+            order.append("send"),
+        ),
+    )
+
+    def reset_history():
+        reset_started.set()
+        manager.reset_user_history(
+            user.id,
+            delete_related=lambda connection, user_id: (
+                users.delete_swing_history_related(
+                    connection,
+                    user_id,
+                    expected_auth_epoch=user.auth_epoch,
+                    expected_history_epoch=user.history_epoch,
+                )
+            ),
+        )
+        order.append("reset")
+        reset_done.set()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        digest_future = pool.submit(
+            digest.run_once, users, manager, cfg, SECRET, 1_000_000.0
+        )
+        assert compose_started.wait(5)
+        reset_future = pool.submit(reset_history)
+        assert reset_started.wait(5)
+        assert not reset_done.wait(0.2)
+        release_compose.set()
+        assert digest_future.result(timeout=5) == 1
+        reset_future.result(timeout=5)
+
+    assert order == ["send", "reset"]
+    assert len(outbox) == 1
+    assert manager.get(job.id) is None
+    assert not job.session_dir.exists()
 
 
 # -- app surfaces ------------------------------------------------------------
