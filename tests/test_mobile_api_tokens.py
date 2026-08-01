@@ -184,6 +184,7 @@ def test_bearer_is_limited_to_owned_mobile_session_report_and_upload_routes(app)
     job_id = uploaded.json()["id"]
     completed = wait_for_mobile_session(mobile, token, job_id)
     assert completed["status"] == "done"
+    assert completed["club"] == "driver"
 
     assert mobile.get(
         f"/session/{job_id}", headers=bearer(token)
@@ -213,6 +214,33 @@ def test_bearer_is_limited_to_owned_mobile_session_report_and_upload_routes(app)
     ).status_code == 401
 
 
+def test_bearer_upload_requires_canonical_club_without_reserving_quota(app):
+    browser = TestClient(app)
+    signup(browser)
+    token = issue_token(browser, "Range phone")["token"]
+    user = app.state.users.get_by_email("golfer@example.com")
+    mobile = TestClient(app)
+
+    invalid_payloads = (
+        {},
+        {"club": ""},
+        {"club": "   "},
+        {"club": "fairway_wood"},
+    )
+    for payload in invalid_payloads:
+        response = mobile.post(
+            "/upload",
+            files={"video": ("range.mov", b"fake", "video/quicktime")},
+            data=payload,
+            headers={**bearer(token), "Accept": "application/json"},
+        )
+        assert response.status_code == 400
+        assert response.json()["detail"].startswith("club must be one of:")
+
+    assert app.state.jobs.sessions_count() == 0
+    assert app.state.jobs.usage_this_month(user.id) == 0
+
+
 def test_bad_authorization_never_falls_back_and_cookie_csrf_stays_enabled(app):
     browser = TestClient(app)
     signup(browser)
@@ -227,11 +255,21 @@ def test_bad_authorization_never_falls_back_and_cookie_csrf_stays_enabled(app):
     assert browser.post(
         "/api/v1/mobile-tokens", json={"label": "Attack device"}, headers=bad_headers
     ).status_code == 401
-    assert browser.post(
+    bad_upload = browser.post(
         "/upload",
         files={"video": ("nope.mov", b"x", "video/quicktime")},
         headers=bad_headers,
-    ).status_code == 401
+    )
+    assert bad_upload.status_code == 401
+    assert bad_upload.json()["detail"] == "Invalid mobile access token."
+
+    csrf_upload = browser.post(
+        "/upload",
+        files={"video": ("nope.mov", b"x", "video/quicktime")},
+        headers={"Origin": "https://attacker.example"},
+    )
+    assert csrf_upload.status_code == 403
+    assert csrf_upload.json()["detail"] == "Invalid request origin."
     assert app.state.jobs.sessions_count() == 0
 
     assert browser.post(

@@ -202,7 +202,7 @@ def test_upload_angle_flows_through_to_pipeline(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake", "video/quicktime")},
-        data={"angle": "dtl"},
+        data={"angle": "dtl", "club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -234,7 +234,7 @@ def test_upload_rejects_unknown_angle(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake", "video/quicktime")},
-        data={"angle": "overhead-drone"},
+        data={"angle": "overhead-drone", "club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 400

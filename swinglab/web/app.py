@@ -2495,7 +2495,7 @@ def create_app(
             raise HTTPException(
                 400, 'angle must be "face-on" or "dtl" (down the line)'
             )
-        if club and club not in CLUB_LABELS:
+        if club not in CLUB_LABELS:
             raise HTTPException(
                 400,
                 "club must be one of: " + ", ".join(sorted(CLUB_LABELS)),
@@ -2512,7 +2512,7 @@ def create_app(
         if normalized_transfer_check == "on":
             upload_transfer_assignment = active_proof_cycle_practice_assignment(
                 user,
-                club=club or None,
+                club=club,
                 hand=hand,
                 angle=angle,
                 before=time.time(),
@@ -2541,7 +2541,7 @@ def create_app(
             source_name=video.filename,
             hand=hand,
             angle=angle,
-            club=club or None,
+            club=club,
             level=level or None,
             strikes=manual_strikes,
             fast=fast.lower() in ("on", "true", "1", "yes"),
@@ -3670,6 +3670,37 @@ def create_app(
                 },
             }
         )
+
+    # FastAPI must keep ``club`` as ``Form("")`` above so authentication,
+    # same-origin CSRF, and quota failures retain precedence over input
+    # validation.  That runtime choice would otherwise advertise club as
+    # optional in OpenAPI, so tighten the generated multipart contract after
+    # FastAPI builds it.  This lets generated clients require a canonical club
+    # without changing the handler's security ordering.
+    default_openapi = app.openapi
+
+    def openapi_with_required_upload_club():
+        schema = default_openapi()
+        multipart_schema = (
+            schema["paths"]["/upload"]["post"]["requestBody"]["content"]
+            ["multipart/form-data"]["schema"]
+        )
+        reference = multipart_schema.get("$ref")
+        if reference:
+            target = schema
+            for segment in reference.removeprefix("#/").split("/"):
+                target = target[segment]
+        else:
+            target = multipart_schema
+        required = target.setdefault("required", [])
+        if "club" not in required:
+            required.append("club")
+        club_schema = target["properties"]["club"]
+        club_schema.pop("default", None)
+        club_schema["enum"] = sorted(CLUB_LABELS)
+        return schema
+
+    app.openapi = openapi_with_required_upload_club
 
     # Weekly practice-plan digest: hourly daemon thread, started ONLY when
     # Email is configured AND web.digest_enabled is on — otherwise None and

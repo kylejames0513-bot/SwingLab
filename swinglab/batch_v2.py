@@ -53,7 +53,7 @@ class BatchItem:
     path: Path
     hand: str
     angle: str
-    club: str | None
+    club: str
     level: str | None
     strikes: tuple[float, ...] | None
     source_size: int
@@ -113,6 +113,20 @@ def _optional_choice(
     return text
 
 
+def _required_choice(
+    value: Any,
+    *,
+    line: int,
+    field: str,
+    allowed: dict[str, str],
+) -> str:
+    text = _require_string(value, line=line, field=field)
+    if text not in allowed:
+        choices = ", ".join(sorted(allowed))
+        raise _line_error(line, f'"{field}" must be one of: {choices}')
+    return text
+
+
 def _parse_strikes(value: Any, *, line: int) -> tuple[float, ...] | None:
     if value is None:
         return None
@@ -144,7 +158,7 @@ def _item_fingerprint(
     path: Path,
     hand: str,
     angle: str,
-    club: str | None,
+    club: str,
     level: str | None,
     strikes: tuple[float, ...] | None,
     source_size: int,
@@ -178,7 +192,7 @@ def _parse_item(raw: Any, *, line: int, manifest_dir: Path) -> BatchItem:
     unknown = sorted(set(raw) - allowed)
     if unknown:
         raise _line_error(line, "unknown field(s): " + ", ".join(unknown))
-    missing = sorted({"id", "path"} - set(raw))
+    missing = sorted({"id", "path", "club"} - set(raw))
     if missing:
         raise _line_error(line, "missing required field(s): " + ", ".join(missing))
 
@@ -204,8 +218,8 @@ def _parse_item(raw: Any, *, line: int, manifest_dir: Path) -> BatchItem:
     angle = raw.get("angle", "face-on")
     if not isinstance(angle, str) or angle not in ANGLES:
         raise _line_error(line, '"angle" must be "face-on" or "dtl"')
-    club = _optional_choice(
-        raw.get("club"), line=line, field="club", allowed=CLUB_LABELS
+    club = _required_choice(
+        raw["club"], line=line, field="club", allowed=CLUB_LABELS
     )
     level = _optional_choice(
         raw.get("level"), line=line, field="level", allowed=LEVEL_LABELS

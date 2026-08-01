@@ -180,9 +180,9 @@
           honestly left out.</span></label>
       </div>
 
-      <label for="club">Club (optional)</label>
-      <select id="club" name="club">
-        <option value="" {% if not golfer_profile or not golfer_profile.preferred_club %}selected{% endif %}>Not set</option>
+      <label for="club">Club</label>
+      <select id="club" name="club" required>
+        <option value="" disabled{% if not golfer_profile or not golfer_profile.preferred_club %} selected{% endif %}>Choose a club</option>
         <option value="driver" {% if golfer_profile and golfer_profile.preferred_club == 'driver' %}selected{% endif %}>Driver</option>
         <option value="fairway-wood" {% if golfer_profile and golfer_profile.preferred_club == 'fairway-wood' %}selected{% endif %}>Fairway wood</option>
         <option value="hybrid" {% if golfer_profile and golfer_profile.preferred_club == 'hybrid' %}selected{% endif %}>Hybrid</option>

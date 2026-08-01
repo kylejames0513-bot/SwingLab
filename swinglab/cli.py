@@ -1,7 +1,7 @@
 """Command line interface.
 
-    swinglab analyze path/to/video.mov --out results/ --hand right
-    swinglab analyze path/to/folder --batch
+    swinglab analyze path/to/video.mov --out results/ --hand right --club iron
+    swinglab analyze path/to/folder --batch --club iron
 """
 
 from __future__ import annotations
@@ -10,6 +10,7 @@ import argparse
 import sys
 from pathlib import Path
 
+from .clubs import CLUB_LABELS
 from .config import Config
 from .events import EventError
 from .ffmpeg import FFmpegError
@@ -40,6 +41,14 @@ def build_parser() -> argparse.ArgumentParser:
         "face-on-defined body-drift and angle numbers unmeasured",
     )
     ana.add_argument(
+        "--club",
+        choices=tuple(CLUB_LABELS),
+        required=True,
+        help=(
+            "Club used for this video; with --batch, one value applies to the folder"
+        ),
+    )
+    ana.add_argument(
         "--batch", action="store_true", help="Analyze every video in a folder"
     )
     ana.add_argument(
@@ -66,7 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     batch.add_argument(
         "manifest", type=Path,
-        help="JSONL rows with id, path, and optional per-clip context",
+        help="JSONL rows with required id, path, club, and optional per-clip context",
     )
     batch.add_argument("--out", type=Path, default=None, help="Output directory")
     batch.add_argument(
@@ -312,6 +321,7 @@ def _analyze_one(path: Path, args: argparse.Namespace, cfg: Config) -> SessionRe
         keep_work=args.keep_work,
         fast=args.fast,
         angle=args.angle,
+        club=args.club,
     )
     print_summary(result)
     return result

@@ -212,6 +212,7 @@ def test_gear_attach_kpi_measures_the_ledger(app):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
+        data={"club": "iron"},
         follow_redirects=False,
     )
     wait_for(client, resp.headers["location"].rsplit("/", 1)[-1])

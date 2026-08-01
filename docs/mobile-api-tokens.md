@@ -35,7 +35,10 @@ surface:
   check-ins;
 - owned legacy `/api/session/{id}` and `/api/sessions` resources;
 - owned `/session/{id}`, report, and permitted report-file routes; and
-- `POST /upload` for multipart mobile uploads.
+- `POST /upload` for multipart mobile uploads. The `club` form field is
+  required and must be exactly `driver`, `fairway-wood`, `hybrid`, `iron`, or
+  `wedge`. A missing, blank, or unsupported value returns HTTP `400` with
+  `{"detail":"club must be one of: driver, fairway-wood, hybrid, iron, wedge"}`.
 
 An invalid or malformed `Authorization` header fails with `401`; it never
 falls back to an accompanying browser cookie. Cookie-authenticated mutations

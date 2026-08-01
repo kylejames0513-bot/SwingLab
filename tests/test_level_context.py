@@ -86,7 +86,7 @@ def test_upload_forwards_level_to_the_pipeline(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake", "video/quicktime")},
-        data={"level": "new"},
+        data={"level": "new", "club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -102,7 +102,7 @@ def test_upload_rejects_unknown_level_and_allows_unset(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake", "video/quicktime")},
-        data={"level": "tour-card-holder"},
+        data={"level": "tour-card-holder", "club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 400
@@ -110,7 +110,7 @@ def test_upload_rejects_unknown_level_and_allows_unset(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake", "video/quicktime")},
-        data={"level": ""},
+        data={"level": "", "club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 303
