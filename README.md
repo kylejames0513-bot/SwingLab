@@ -636,11 +636,13 @@ what the store-claim rests on.
 
 Passwords stay a first-class fallback, never a dead end: accounts that have
 one can always use it, and password recovery is linked directly from the
-primary sign-in screen. Passwordless accounts can add one from the Account
-page ("Add a password (optional)"); accounts that already have one get a
-visible change/reset link there. Setting a password by signing up with a
-passwordless account's email also works, and requires the emailed code first
-while email is on.
+primary sign-in screen. A newly claimed account receives a local golfer-profile
+shell and continues to guided setup; passwordless users see an optional backup
+password form there as well as on the Account page. Accounts that already have
+a password get a visible change/reset link. Setting a password by signing up
+with a passwordless account's email also works, and requires the emailed code
+first while email is on. Webhook-created Shopify stubs never receive a golfer
+profile until their owner proves the account.
 
 The whole feature is inert without a complete transport:
 `SWINGLAB_MAIL_FROM` plus either `RESEND_API_KEY` or `SWINGLAB_SMTP_URL`.

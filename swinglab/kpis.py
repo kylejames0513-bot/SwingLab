@@ -69,6 +69,7 @@ DEFAULT_SINCE_DAYS = 90.0
 # layer (same pattern as trends.py's DONE).
 _DONE = "done"
 _PRO_OK_STATUSES = ("active", "trialing", "past_due")
+_SHOPIFY_ACCOUNT_AUTHENTICATED = "shopify_authenticated"
 
 # Analysis targets, quoted in the CLI/README so the numbers always travel
 # with what "good" means: >50% activation, >25% W1 re-film, 2%+ conversion.
@@ -249,24 +250,27 @@ def compute_kpis(
             # Claimed accounts only: an unclaimed store stub (no password,
             # never signed in with a code) cannot act, so counting it would
             # deflate every rate with users who never had the chance to. A
-            # password OR a verified email (code sign-in) counts as claimed;
-            # databases predating the email_verified_at column (this
-            # connection is read-only, so no migration ran) fall back to
-            # the password test alone.
+            # password, a verified email (code sign-in), OR an authenticated
+            # Shopify Customer Account counts as claimed. Databases predating
+            # either additive column are read-only here, so the query uses
+            # only the ownership proofs their schema can represent.
             user_columns = {
                 r["name"] for r in conn.execute("PRAGMA table_info(users)")
             }
-            claimed_sql = (
-                "(password_hash != '' OR email_verified_at IS NOT NULL)"
-                if "email_verified_at" in user_columns
-                else "password_hash != ''"
-            )
+            claimed_parts = ["password_hash != ''"]
+            claimed_parameters: list[object] = []
+            if "email_verified_at" in user_columns:
+                claimed_parts.append("email_verified_at IS NOT NULL")
+            if "shopify_account_migration_state" in user_columns:
+                claimed_parts.append("shopify_account_migration_state = ?")
+                claimed_parameters.append(_SHOPIFY_ACCOUNT_AUTHENTICATED)
+            claimed_sql = "(" + " OR ".join(claimed_parts) + ")"
             cohort = [
                 row
                 for row in conn.execute(
                     "SELECT id, email, created_at, plan, subscription_status"
                     f" FROM users WHERE {claimed_sql} AND created_at >= ?",
-                    (cutoff,),
+                    (*claimed_parameters, cutoff),
                 )
             ]
 

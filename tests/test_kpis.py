@@ -163,6 +163,29 @@ def test_unclaimed_store_stubs_do_not_deflate_activation(tmp_path):
     assert (kpi.numerator, kpi.denominator) == (1, 1)
 
 
+def test_authenticated_shopify_account_is_in_claimed_kpi_cohort(tmp_path):
+    db, store = make_db(tmp_path)
+    stub = store.upsert_store_customer("authenticated@x.co", "7001")
+    account = store.link_shopify_customer_account(
+        stub.id,
+        subject="gid://shopify/Customer/7001",
+        customer_id="7001",
+        authenticated=True,
+    )
+    assert account.claimed
+    assert not account.has_password
+    assert account.email_verified_at is None
+    with store._lock:
+        store._conn.execute(
+            "UPDATE users SET created_at = ? WHERE id = ?",
+            (NOW - 5 * DAY, account.id),
+        )
+        store._conn.commit()
+
+    kpi = by_key(compute_kpis(db, accounts_cfg(), now=NOW))["activation_rate"]
+    assert (kpi.value, kpi.numerator, kpi.denominator) == (0.0, 0, 1)
+
+
 # -- W1 re-film ---------------------------------------------------------------
 
 def test_w1_refilm_math_and_edge(tmp_path):

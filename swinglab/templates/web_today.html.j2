@@ -2,6 +2,10 @@
 {% block title %}{{ brand.name }} — Today{% endblock %}
 {% block style %}
   .today-hero { border-left: 5px solid var(--accent); background: #fff8ed; }
+  .pro-welcome { margin-bottom: 18px; padding: 20px 24px; border: 1px solid #b9cdbf; border-radius: 16px; background: linear-gradient(135deg, #123f28, #1a5c38); color: #fff; box-shadow: 0 18px 36px -28px rgba(15,42,27,.7); }
+  .pro-welcome .today-kicker { color: #ffd39f; }
+  .pro-welcome h1 { margin: 2px 0 4px; font-size: clamp(1.55rem, 5vw, 2.15rem); line-height: 1.15; }
+  .pro-welcome p:last-child { margin: 0; color: #e7f0e9; }
   .today-kicker { color: var(--primary); font-weight: 700; font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 5px; }
   .today-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
   .practice-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
@@ -19,6 +23,13 @@
 {% block main %}
   {% if setup_saved %}<p class="success">Your setup is saved. Your caddie will use it to keep the next step clear and practical.</p>{% endif %}
   {% if practice_done %}<p class="success">Practice check-in saved. When you re-film, we’ll compare the next session to this focus.</p>{% endif %}
+  {% if user and user.is_pro %}
+  <section class="pro-welcome" aria-labelledby="pro-welcome-title">
+    <p class="today-kicker">CaddieInsight Pro member</p>
+    <h1 id="pro-welcome-title">Welcome back{% if header_profile and header_profile.display_name %}, {{ header_profile.display_name }}{% endif %}.</h1>
+    <p>Let’s work on your swing—one clear next move at a time.</p>
+  </section>
+  {% endif %}
   <div class="card today-hero">
     <p class="today-kicker">Today’s next move</p>
     {% if not profile or not profile.is_complete %}

@@ -94,6 +94,7 @@ def wait_for_mobile_session(
 
 def profile_payload() -> dict:
     return {
+        "display_name": "Mobile Golfer",
         "experience_mode": "improve",
         "handicap_range": "20_to_29",
         "primary_goal": "consistency",

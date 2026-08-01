@@ -133,6 +133,38 @@ def test_lifetime_bought_before_signup_is_parked_and_claimed(app):
     assert abs(user.pro_until - (time.time() + 36500 * DAY)) < 60
 
 
+def test_pro_header_replaces_generic_upgrade_with_personalized_member_state(app):
+    client = TestClient(app)
+    signup(client)
+    user = get_user(client)
+    app.state.users.upsert_golfer_profile(
+        user.id,
+        display_name="Kyle",
+        experience_mode="improve",
+        handicap_range=None,
+        primary_goal="consistency",
+        practice_minutes=20,
+        sessions_per_week=2,
+        handedness="right",
+        camera_angle="face-on",
+        preferred_club="iron",
+    )
+
+    free_header = client.get("/today").text
+    assert 'href="/pricing"' in free_header
+    assert "data-pro-member-nav" not in free_header
+
+    order_webhook(client, pro_order(sku="SL-PRO-1MO"))
+    pro_page = client.get("/today")
+
+    assert pro_page.status_code == 200
+    assert pro_page.headers["cache-control"] == "private, no-store"
+    assert pro_page.text.count("data-pro-member-nav") == 2
+    assert "Welcome back, Kyle" in pro_page.text
+    assert "CaddieInsight Pro member" in pro_page.text
+    assert 'href="/pricing"' not in pro_page.text
+
+
 # -- account page: "Lifetime", not a date in 2126 -----------------------------
 
 def test_account_shows_lifetime_instead_of_a_date(app):

@@ -128,6 +128,31 @@
     background: var(--sl-orange-soft);
     color: var(--sl-green);
   }
+  .sl-header__member {
+    min-height: 40px;
+    padding: 7px 13px 7px 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
+    border: 1px solid #b9cdbf;
+    border-radius: 999px;
+    background: #edf6ef;
+    color: var(--sl-green);
+    font-size: 13px;
+    font-weight: 700;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+  .sl-header__member:hover { border-color: var(--sl-green-btn); background: #e3f1e7; color: var(--sl-green); }
+  .sl-header__member-badge {
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: var(--sl-green);
+    color: #fff;
+    font-family: var(--sl-font-mono);
+    font-size: 10px;
+    letter-spacing: .08em;
+  }
   .sl-header__dropdown { position: relative; }
   .sl-header__dropdown summary { list-style: none; }
   .sl-header__dropdown summary::-webkit-details-marker { display: none; }
@@ -360,6 +385,18 @@
                transition: width 0.4s; min-width: 6px; }
   .bar-label { color: var(--sl-ink-soft); font-size: 0.9rem; }
   .error { color: #b3261e; white-space: pre-wrap; }
+  .sl-profile-reminder {
+    padding: 10px var(--sl-pad-x);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    background: #fff3e4;
+    border-bottom: 1px solid #efd3b3;
+    color: var(--sl-ink-soft);
+    font-size: .9rem;
+  }
+  .sl-profile-reminder a { font-weight: 750; white-space: nowrap; }
   .disclaimer { color: var(--sl-ink-muted); font-style: italic; font-size: 0.85rem; margin-top: 24px; }
   footer { text-align: center; color: var(--sl-ink-muted); font-size: 0.85rem; padding: 28px 24px; }
   @media (max-width: 980px) {
@@ -379,6 +416,7 @@
     .sl-header { padding-inline: 12px; }
     .sl-header__logo-img { height: 24px; max-width: 142px; }
     .sl-header__cart { padding: 5px 10px; }
+    .sl-profile-reminder { align-items: flex-start; flex-direction: column; gap: 3px; }
   }
   @media (prefers-reduced-motion: reduce) {
     .sl-header__chevron { transition: none; }
@@ -388,6 +426,7 @@
 </style>
 </head>
 <body>
+{% set member_name = header_profile.display_name if header_profile and header_profile.display_name else '' %}
 <a class="sl-skip" href="#MainContent">Skip to content</a>
 <header class="sl-header" data-sl-header data-menu-id="sl-mobile-menu">
   <div class="sl-header__inner">
@@ -415,7 +454,14 @@
         </div>
       </details>
       {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
+      {% if user and user.is_pro %}
+      <a class="sl-header__member" href="/today" data-pro-member-nav>
+        <span class="sl-header__member-badge">PRO</span>
+        <span>{{ "Welcome back, " ~ member_name if member_name else "Your Pro game plan" }}</span>
+      </a>
+      {% else %}
       <a class="sl-header__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" {% if current_path == '/pricing' %}aria-current="page"{% endif %}>Pro</a>
+      {% endif %}
     </nav>
 
     <div class="sl-header__actions">
@@ -450,6 +496,12 @@
     </div>
   </div>
 </header>
+{% if require_account and user and (not header_profile or not header_profile.is_complete) and current_path != '/onboarding' %}
+<aside class="sl-profile-reminder" aria-label="Profile setup reminder">
+  <span><strong>Make CaddieInsight yours.</strong> Add your name and goal{% if not user.has_password %}, and choose whether to add a backup password{% endif %}.</span>
+  <a href="/onboarding">Finish golfer profile</a>
+</aside>
+{% endif %}
 
 <dialog class="sl-menu" id="sl-mobile-menu" aria-labelledby="sl-mobile-menu-title" data-sl-menu>
   <div class="sl-menu__panel">
@@ -482,8 +534,14 @@
         <a class="sl-menu__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" data-menu-link {% if current_path == '/drills' %}aria-current="page"{% endif %}>
           <span>Drills</span><span aria-hidden="true">&rarr;</span>
         </a>
+        {% if user and user.is_pro %}
+        <a class="sl-menu__link" href="/today" data-menu-link data-pro-member-nav>
+          <span>{{ "Welcome back, " ~ member_name if member_name else "Your Pro game plan" }}</span><span class="sl-header__member-badge">PRO</span>
+        </a>
+        {% endif %}
       </div>
 
+      {% if shop_enabled or not (user and user.is_pro) %}
       <div class="sl-menu__group">
         <p class="sl-menu__eyebrow">Shop</p>
         {% if shop_enabled %}
@@ -491,10 +549,13 @@
           <span>Gear</span><span aria-hidden="true">&rarr;</span>
         </a>
         {% endif %}
+        {% if not (user and user.is_pro) %}
         <a class="sl-menu__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" data-menu-link {% if current_path == '/pricing' %}aria-current="page"{% endif %}>
           <span>Pro</span><span aria-hidden="true">&rarr;</span>
         </a>
+        {% endif %}
       </div>
+      {% endif %}
 
       {% if require_account or storefront_url %}
       <div class="sl-menu__group">

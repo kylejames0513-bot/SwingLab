@@ -924,6 +924,66 @@ def test_shop_redact_erases_store_state_but_preserves_independent_account(app):
     assert users.get(claimed.id) is not None
 
 
+def test_shop_redact_preserves_authenticated_passwordless_profile_without_jobs(
+    app,
+):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    stub = users.upsert_store_customer(
+        "authenticated@example.com", "7001", updated_at=time.time()
+    )
+    assert stub is not None
+    account = users.link_shopify_customer_account(
+        stub.id,
+        subject="gid://shopify/Customer/7001",
+        customer_id="7001",
+        authenticated=True,
+    )
+    assert account.claimed
+    assert not account.has_password
+    assert account.email_verified_at is None
+    profile = users.upsert_golfer_profile(
+        account.id,
+        display_name="Authenticated Golfer",
+        experience_mode="improve",
+        handicap_range="",
+        primary_goal="tempo",
+        practice_minutes=20,
+        sessions_per_week=2,
+        handedness="right",
+        camera_angle="face-on",
+        preferred_club="",
+    )
+    browser_session = users.issue_shopify_customer_account_browser_session(
+        account.id,
+        "provider-id-token",
+        expires_at=time.time() + 3600,
+    )
+    assert browser_session
+    assert client.app.state.jobs.list_recent(user_id=account.id) == []
+
+    response = signed_webhook(
+        client,
+        {"shop_domain": STORE, "shop_id": 42},
+        "shop/redact",
+        secret=PRIVACY_SECRET,
+        webhook_id="shop-redact-authenticated-passwordless",
+    )
+
+    assert response.status_code == 200
+    kept = users.get(account.id)
+    assert kept is not None
+    assert kept.shopify_customer_id is None
+    assert kept.shopify_account_subject is None
+    assert kept.shopify_account_migration_state == "redacted"
+    assert users.get_golfer_profile(account.id) == profile
+    assert users._conn.execute(
+        "SELECT 1 FROM shopify_customer_account_browser_sessions"
+        " WHERE user_id = ?",
+        (account.id,),
+    ).fetchone() is None
+
+
 def test_shop_redact_replay_fence_survives_rebind_and_new_store_state(app):
     client = TestClient(app)
     users: UserStore = client.app.state.users

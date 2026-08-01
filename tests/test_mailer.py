@@ -11,6 +11,7 @@ import io
 import json
 import re
 import types
+from html import unescape
 
 import pytest
 
@@ -460,7 +461,7 @@ def test_claiming_a_stub_requires_the_emailed_code(app, outbox):
         "/signup",
         data={"signup_intent": intent, "code": "000000"},
     )
-    assert "didn't match" in wrong.text
+    assert "didn't match" in unescape(wrong.text)
     assert not get_user(client).has_password
 
     ok = client.post(
@@ -729,7 +730,7 @@ def test_password_reset_flow(app, outbox):
         data={"email": "kyle@example.com", "code": "000000",
               "password": "newpassword"},
     )
-    assert "didn't match" in wrong.text
+    assert "didn't match" in unescape(wrong.text)
 
     ok = client.post(
         "/reset/confirm",
