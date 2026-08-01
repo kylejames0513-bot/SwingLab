@@ -11,8 +11,10 @@ CaddieInsight has two complementary Shopify identity paths:
    stubs, preserves the Shopify customer ID as the durable identity, and keeps
    purchases attached through account claim and email-change edge cases.
 2. The outbound Admin GraphQL bridge links app-first registrations to Shopify.
-   It is controlled by `shopify_customer_sync.enabled`, which is `false` in
-   both code defaults and the shipped `config.yaml`.
+   It is controlled by `shopify_customer_sync.enabled`. Bare-code defaults
+   remain `false`; the checked-in CaddieInsight `config.yaml` is `true` after
+   the verified production binding and worker rollout. Do not copy that
+   enabled value into another environment without completing this runbook.
 3. The separately gated Customer Account authorization-code/PKCE path provides
    Shopify-owned sign-in and recovery after durable identity reconciliation.
    It is disabled by default and is documented in
@@ -106,11 +108,11 @@ version-controlled Shopify app configuration are verified against `2026-07`.
 
 ## Configuration
 
-The non-secret behavior lives in `config.yaml`:
+The checked-in CaddieInsight deployment behavior lives in `config.yaml`:
 
 ```yaml
 shopify_customer_sync:
-  enabled: false
+  enabled: true
   auto_sync_new_users: true
   request_timeout_seconds: 10
   max_attempts: 5
