@@ -360,6 +360,9 @@ def _artifact_sources(
         metrics = deliverable_root / "metrics.json"
         if metrics.exists():
             selected.append(metrics)
+        proof_cycle = deliverable_root / "proof-cycle.json"
+        if proof_cycle.exists():
+            selected.append(proof_cycle)
         media = deliverable_root / "media"
         if media.exists():
             if media.is_symlink() or not media.is_dir():
@@ -456,6 +459,7 @@ def create_backup(
                     "WAL-safe SQLite snapshot",
                     "completed-job report.html",
                     "completed-job metrics.json when present",
+                    "completed-job proof-cycle.json when present",
                     "completed-job media files",
                 ],
                 "excluded": [
@@ -602,12 +606,13 @@ def _verify_artifact_database_mapping(
             raise BackupError("An artifact is not associated with a completed job.")
         report, deliverable_root = jobs[path.parts[0]]
         metrics = deliverable_root / "metrics.json"
+        proof_cycle = deliverable_root / "proof-cycle.json"
         media_root = deliverable_root / "media"
         is_media = (
             len(path.parts) > len(media_root.parts)
             and path.parts[: len(media_root.parts)] == media_root.parts
         )
-        if path != report and path != metrics and not is_media:
+        if path != report and path != metrics and path != proof_cycle and not is_media:
             raise BackupError("An artifact is outside the retained deliverable allowlist.")
 
 

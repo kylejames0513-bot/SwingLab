@@ -128,6 +128,127 @@ def test_open_mode_first_analysis_state_is_per_browser(tmp_path, monkeypatch):
     assert 'id="fast" name="fast" type="checkbox" checked' in fresh_html
 
 
+def test_proof_cycle_sidecar_is_private_and_result_surface_is_additive(
+    tmp_path, monkeypatch
+):
+    calls = 0
+
+    def fake_proof_cycle_analysis(video_path, **kwargs):
+        nonlocal calls
+        calls += 1
+        result = fake_analyze_ok(video_path, **kwargs)
+        sway = 0.50 if calls == 1 else 0.40
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {
+                                "tempo_ratio": 3.0,
+                                "head_sway_backswing_sw": sway,
+                                "hip_slide_backswing_sw": 0.10,
+                            }
+                        }
+                        for _ in range(3)
+                    ],
+                    "session_stats": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_proof_cycle_analysis)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.web["passwordless_login"] = False
+    cfg.billing["free_per_month"] = 3
+    cfg.proof_cycle["enabled"] = True
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    app.state.users.create("proof@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "proof@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
+
+    baseline_id = upload(client, extra={"club": "driver"})
+    assert wait_for(client, baseline_id)["status"] == "done"
+    baseline = client.app.state.jobs.get(baseline_id)
+    deliverables = baseline.session_dir / Path(baseline.report_rel).parent
+    report_before = (deliverables / "report.html").read_bytes()
+    metrics_before = (deliverables / "metrics.json").read_bytes()
+    sidecar = deliverables / "proof-cycle.json"
+    assert sidecar.is_file()
+
+    baseline_html = client.get(f"/session/{baseline_id}").text
+    assert "Proof Cycle" in baseline_html
+    assert "Proof target set" in baseline_html
+    assert (deliverables / "report.html").read_bytes() == report_before
+    assert (deliverables / "metrics.json").read_bytes() == metrics_before
+    assert client.get(
+        f"/session/{baseline_id}/files/"
+        f"{Path(baseline.report_rel).parent.as_posix()}/proof-cycle.json",
+        follow_redirects=False,
+    ).status_code == 404
+    assert "proof_cycle" not in client.get(f"/api/session/{baseline_id}").text
+
+    refilm_id = upload(client, extra={"club": "driver"})
+    assert wait_for(client, refilm_id)["status"] == "done"
+    refilm_html = client.get(f"/session/{refilm_id}").text
+    assert "Early signal — keep testing" in refilm_html
+    assert "improvement confirmed" not in refilm_html
+
+
+def test_proof_cycle_sidecar_failure_never_fails_the_report(tmp_path, monkeypatch):
+    def fake_proof_cycle_analysis(video_path, **kwargs):
+        result = fake_analyze_ok(video_path, **kwargs)
+        result.metrics_path.write_text(
+            json.dumps(
+                {
+                    "swings": [
+                        {
+                            "metrics": {
+                                "tempo_ratio": 3.0,
+                                "head_sway_backswing_sw": 0.50,
+                            }
+                        }
+                        for _ in range(3)
+                    ],
+                    "session_stats": {},
+                }
+            ),
+            encoding="utf-8",
+        )
+        return result
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_proof_cycle_analysis)
+    monkeypatch.setattr(
+        jobs_module,
+        "write_proof_cycle_artifact",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.web["passwordless_login"] = False
+    cfg.proof_cycle["enabled"] = True
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    app.state.users.create("safe@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "safe@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
+
+    job_id = upload(client, extra={"club": "driver"})
+    assert wait_for(client, job_id)["status"] == "done"
+    job = client.app.state.jobs.get(job_id)
+    assert (job.session_dir / job.report_rel).is_file()
+    assert "Proof Cycle check was unavailable" in "\n".join(job.log)
+
+
 def test_failed_open_analysis_does_not_consume_first_baseline(tmp_path, monkeypatch):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_no_strikes)
     client = TestClient(

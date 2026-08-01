@@ -181,6 +181,7 @@ def synthetic_sessions(tmp_path):
     (deliverables / "work").mkdir()
     (deliverables / "report.html").write_text("<h1>Synthetic report</h1>")
     (deliverables / "metrics.json").write_text('{"synthetic":true}')
+    (deliverables / "proof-cycle.json").write_text('{"synthetic":true}')
     (deliverables / "media" / "strip_s1.png").write_bytes(b"synthetic-png")
     (deliverables / "media" / "replay_s1.mp4").write_bytes(b"synthetic-mp4")
     (deliverables / "work" / "frame.png").write_bytes(b"temporary")
@@ -221,6 +222,7 @@ def test_wal_safe_snapshot_and_artifact_allowlist(tmp_path, synthetic_sessions):
         "jobdone/out/source/media/replay_s1.mp4",
         "jobdone/out/source/media/strip_s1.png",
         "jobdone/out/source/metrics.json",
+        "jobdone/out/source/proof-cycle.json",
         "jobdone/out/source/report.html",
     ]
     serialized = (bundle / MANIFEST_FILE).read_text()

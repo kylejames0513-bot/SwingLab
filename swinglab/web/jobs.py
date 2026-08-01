@@ -36,6 +36,12 @@ from ..config import Config
 from ..events import EventError
 from ..ffmpeg import FFmpegError
 from ..pipeline import VideoTooLongError, ZeroStrikesError, analyze_video
+from ..proof_cycle_artifact import (
+    build_proof_cycle_artifact,
+    proof_cycle_enabled,
+    proof_cycle_history_scan_limit,
+    write_proof_cycle_artifact,
+)
 from ..report import (
     REPORT_OUTCOME_CAPTURE,
     REPORT_OUTCOME_COACHING,
@@ -439,6 +445,7 @@ class JobManager:
             )
             job.report_rel = str(result.report_path.relative_to(job.session_dir))
             job.status = DONE
+            self._write_proof_cycle_artifact(job)
             self._delete_source_if_configured(job)
         except (ZeroStrikesError, VideoTooLongError, EventError, FFmpegError) as exc:
             job.status = FAILED
@@ -455,6 +462,36 @@ class JobManager:
             self._delete_failed_source_if_configured(job)
         self._save(job)
         self._cleanup_expired()
+
+    def _write_proof_cycle_artifact(self, job: Job) -> None:
+        """Persist an additive Proof Cycle sidecar without risking the report.
+
+        This runs only after the pipeline has written its immutable report and
+        metrics artifacts, while the current job is still absent from the
+        manager's ``done`` query.  That means history contains only genuine
+        previous sessions; a re-run can never count itself as evidence.
+        """
+
+        if not proof_cycle_enabled(self.cfg):
+            return
+        try:
+            prior_jobs: list[Job] = []
+            if job.user_id and job.club:
+                prior_jobs = self.list_comparable(
+                    user_id=job.user_id,
+                    club=job.club,
+                    through=job.created_at,
+                    limit=proof_cycle_history_scan_limit(self.cfg),
+                )
+            artifact = build_proof_cycle_artifact(job, prior_jobs, self.cfg)
+            write_proof_cycle_artifact(job, artifact)
+        except Exception:
+            # A comparison is an enhancement.  Never turn a finished report
+            # into a failed analysis because its optional sidecar did not write.
+            logger.exception("Proof Cycle sidecar failed for job %s", job.id)
+            job.log.append(
+                "Proof Cycle check was unavailable; your report is still ready."
+            )
 
     def _delete_source_if_configured(self, job: Job) -> None:
         """web.delete_source_after_done: drop the original upload once the

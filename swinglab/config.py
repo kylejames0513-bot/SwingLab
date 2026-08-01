@@ -61,6 +61,36 @@ DEFAULTS: dict[str, Any] = {
         # "balance" (in shoulder widths; a step, well above pose jitter).
         "finish_balance_warn_sw": 0.15,
     },
+    "proof_cycle": {
+        # A deliberately separate product policy from the coaching thresholds:
+        # coaching decides what to work on; Proof Cycle decides when a matched
+        # re-film has moved enough to say so.  Bare-code installs keep the
+        # feature off until an operator has reviewed the copy and rollout.
+        "enabled": False,
+        # Keep one active target's retained evidence bounded.  The worker
+        # scans a slightly wider set of candidate jobs because it must reject
+        # other camera angles/handedness before this cap is applied.
+        "history_limit": 6,
+        "minimum_readable_swings": 3,
+        "minimum_refilms_for_improved": 2,
+        # None means the domain engine uses the minimum detectable effect as
+        # the maximum permitted spread between confirming re-films.
+        "maximum_refilm_spread": None,
+        # These are measurement-noise floors, not coaching thresholds.  They
+        # deliberately remain conservative even if the coaching lines move.
+        "metric_noise_floors": {
+            "tempo_ratio": 0.10,
+            "head_sway_backswing_sw": 0.03,
+            "head_sway_downswing_sw": 0.03,
+            "hip_slide_backswing_sw": 0.03,
+            "hip_slide_downswing_sw": 0.03,
+            "head_dip_sw": 0.03,
+            "lead_arm_angle_deg": 3.0,
+            "shoulder_tilt_impact_deg": 3.0,
+            "shoulder_tilt_delta_deg": 3.0,
+            "finish_balance_sw": 0.03,
+        },
+    },
     "analysis": {
         "window_pre_s": 1.8,
         "window_post_s": 0.8,
@@ -272,6 +302,10 @@ class Config:
     @property
     def coaching(self) -> dict[str, Any]:
         return self.data["coaching"]
+
+    @property
+    def proof_cycle(self) -> dict[str, Any]:
+        return self.data["proof_cycle"]
 
     @property
     def analysis(self) -> dict[str, Any]:

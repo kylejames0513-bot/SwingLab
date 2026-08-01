@@ -52,6 +52,31 @@ coaching:
                              # widths) - a step or stumble, well above pose
                              # jitter (~0.02 SW)
 
+proof_cycle:
+  enabled: false             # staged rollout: the code and tests ship first;
+                             # enable only after a controlled new-analysis
+                             # check confirms the live result surface.
+  history_limit: 6           # retained matched re-films per active target
+  minimum_readable_swings: 3 # never compare a shorter target measurement
+  minimum_refilms_for_improved: 2
+                             # one matched follow-up is only an early signal;
+                             # two are required before CaddieInsight calls it
+                             # improved.
+  maximum_refilm_spread: null
+                             # null = the minimum detectable effect also caps
+                             # disagreement between confirming re-films.
+  metric_noise_floors:       # measurement noise floors, not coaching lines
+    tempo_ratio: 0.10
+    head_sway_backswing_sw: 0.03
+    head_sway_downswing_sw: 0.03
+    hip_slide_backswing_sw: 0.03
+    hip_slide_downswing_sw: 0.03
+    head_dip_sw: 0.03
+    lead_arm_angle_deg: 3.0
+    shoulder_tilt_impact_deg: 3.0
+    shoulder_tilt_delta_deg: 3.0
+    finish_balance_sw: 0.03
+
 analysis:
   window_pre_s: 1.8          # analysis window starts this long before the strike
   window_post_s: 0.8         # ...and ends this long after
