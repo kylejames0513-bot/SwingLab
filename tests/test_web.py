@@ -91,7 +91,7 @@ def upload(client, filename="swing.mov", extra=None):
     resp = client.post(
         "/upload",
         files={"video": (filename, b"fake video bytes", "video/quicktime")},
-        data={"hand": "right", "strikes": "", **(extra or {})},
+        data={"hand": "right", "strikes": "", "club": "iron", **(extra or {})},
         follow_redirects=False,
     )
     assert resp.status_code == 303
@@ -753,6 +753,7 @@ def test_upload_returns_json_when_asked(client):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
+        data={"club": "iron"},
         headers={"Accept": "application/json"},
     )
     assert resp.status_code == 200
@@ -826,6 +827,7 @@ def test_bad_uploads_rejected(client):
     resp = client.post(
         "/upload",
         files={"video": ("notes.txt", b"hello", "text/plain")},
+        data={"club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 400
@@ -833,7 +835,7 @@ def test_bad_uploads_rejected(client):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"x", "video/quicktime")},
-        data={"strikes": "abc"},
+        data={"strikes": "abc", "club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 400
@@ -1042,6 +1044,7 @@ def test_per_ip_active_job_limit(tmp_path, monkeypatch):
         resp = client.post(
             "/upload",
             files={"video": ("swing.mov", b"x", "video/quicktime")},
+            data={"club": "iron"},
             follow_redirects=False,
         )
         assert resp.status_code == 429
@@ -1076,6 +1079,7 @@ def test_oversized_upload_rejected_and_discarded(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"way more than ten bytes", "video/quicktime")},
+        data={"club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 413

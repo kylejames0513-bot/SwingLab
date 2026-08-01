@@ -115,7 +115,7 @@ def finish_upload(client) -> str:
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
-        data={"hand": "right", "strikes": ""},
+        data={"hand": "right", "strikes": "", "club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 303

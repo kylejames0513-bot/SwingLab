@@ -6,7 +6,10 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 import swinglab.cli as cli_module
+from swinglab.batch_v2 import _item_fingerprint
 from swinglab.cli import main
 
 
@@ -34,6 +37,25 @@ def _fake_analyzer(calls: list[tuple[Path, dict]]):
         return SimpleNamespace(report_path=report, swings=[], stats={}, skipped=[])
 
     return fake
+
+
+def test_existing_canonical_club_fingerprint_stays_compatible():
+    """Requiring club must not invalidate v1 state that already included it."""
+
+    fingerprint = _item_fingerprint(
+        item_id="baseline",
+        path=Path("clip.mov"),
+        hand="right",
+        angle="face-on",
+        club="driver",
+        level=None,
+        strikes=None,
+        source_size=5678,
+        source_mtime_ns=1234,
+    )
+    assert fingerprint == (
+        "c1f047fcfb703d232c95fcefca4533e9d5424be16247124b888e60bfff6eba21"
+    )
 
 
 def test_manifest_dry_run_is_json_and_does_not_analyze_or_write_state(
@@ -79,6 +101,40 @@ def test_manifest_dry_run_is_json_and_does_not_analyze_or_write_state(
             "status": "planned",
         }
     ]
+    assert not (tmp_path / "clips.jsonl.state.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("club_fields", "message"),
+    [
+        ({}, "missing required field(s): club"),
+        ({"club": None}, '"club" must be a non-empty string'),
+        ({"club": ""}, '"club" must be a non-empty string'),
+        ({"club": "Driver"}, '"club" must be one of:'),
+        ({"club": "fairway_wood"}, '"club" must be one of:'),
+    ],
+)
+def test_manifest_requires_a_canonical_club_before_analysis_or_state_write(
+    tmp_path, monkeypatch, capsys, club_fields, message
+):
+    _video(tmp_path / "clips" / "first.mov")
+    _video(tmp_path / "clips" / "second.mov")
+    manifest = _manifest(
+        tmp_path / "clips.jsonl",
+        [
+            {"id": "first", "path": "clips/first.mov", "club": "driver"},
+            {"id": "second", "path": "clips/second.mov", **club_fields},
+        ],
+    )
+    calls: list[tuple[Path, dict]] = []
+    monkeypatch.setattr(cli_module, "analyze_video", _fake_analyzer(calls))
+
+    assert main(["batch", str(manifest), "--json"]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert f"manifest line 2: {message}" in captured.err
+    assert calls == []
     assert not (tmp_path / "clips.jsonl.state.json").exists()
 
 
@@ -133,19 +189,24 @@ def test_manifest_passes_context_writes_state_and_resumes(
     assert second["items"][0]["status"] == "resumed"
 
 
-def test_resume_fails_closed_when_a_completed_instruction_changes(
+def test_resume_fails_closed_when_a_completed_club_changes(
     tmp_path, monkeypatch, capsys
 ):
     _video(tmp_path / "clips" / "baseline.mov")
     manifest = tmp_path / "clips.jsonl"
-    original = {"id": "baseline", "path": "clips/baseline.mov", "hand": "right"}
+    original = {
+        "id": "baseline",
+        "path": "clips/baseline.mov",
+        "hand": "right",
+        "club": "driver",
+    }
     _manifest(manifest, [original])
     calls: list[tuple[Path, dict]] = []
     monkeypatch.setattr(cli_module, "analyze_video", _fake_analyzer(calls))
 
     assert main(["batch", str(manifest), "--out", str(tmp_path / "results"), "--json"]) == 0
     capsys.readouterr()
-    _manifest(manifest, [{**original, "hand": "left"}])
+    _manifest(manifest, [{**original, "club": "iron"}])
 
     assert main(["batch", str(manifest), "--resume", "--json"]) == 2
     captured = capsys.readouterr()
@@ -162,8 +223,13 @@ def test_resume_preflights_every_saved_instruction_before_any_rerun(
     manifest = _manifest(
         tmp_path / "clips.jsonl",
         [
-            {"id": "first", "path": str(first)},
-            {"id": "second", "path": str(second), "hand": "right"},
+            {"id": "first", "path": str(first), "club": "driver"},
+            {
+                "id": "second",
+                "path": str(second),
+                "hand": "right",
+                "club": "wedge",
+            },
         ],
     )
     calls: list[tuple[Path, dict]] = []
@@ -177,8 +243,13 @@ def test_resume_preflights_every_saved_instruction_before_any_rerun(
     _manifest(
         manifest,
         [
-            {"id": "first", "path": str(first)},
-            {"id": "second", "path": str(second), "hand": "left"},
+            {"id": "first", "path": str(first), "club": "driver"},
+            {
+                "id": "second",
+                "path": str(second),
+                "hand": "right",
+                "club": "iron",
+            },
         ],
     )
 
@@ -198,8 +269,13 @@ def test_manifest_is_fully_validated_before_the_first_clip_runs(
     manifest = _manifest(
         tmp_path / "clips.jsonl",
         [
-            {"id": "first", "path": "clips/first.mov"},
-            {"id": "second", "path": "clips/second.mov", "surprise": True},
+            {"id": "first", "path": "clips/first.mov", "club": "driver"},
+            {
+                "id": "second",
+                "path": "clips/second.mov",
+                "club": "wedge",
+                "surprise": True,
+            },
         ],
     )
     calls: list[tuple[Path, dict]] = []
@@ -218,7 +294,8 @@ def test_state_target_is_checked_before_the_first_clip_runs(
 ):
     _video(tmp_path / "clips" / "first.mov")
     manifest = _manifest(
-        tmp_path / "clips.jsonl", [{"id": "first", "path": "clips/first.mov"}]
+        tmp_path / "clips.jsonl",
+        [{"id": "first", "path": "clips/first.mov", "club": "driver"}],
     )
     calls: list[tuple[Path, dict]] = []
     monkeypatch.setattr(cli_module, "analyze_video", _fake_analyzer(calls))
@@ -239,10 +316,52 @@ def test_existing_folder_batch_command_still_uses_its_original_path(
 ):
     folder = tmp_path / "quick-batch"
     _video(folder / "one.mov")
+    _video(folder / "two.mp4")
     calls: list[tuple[Path, dict]] = []
     monkeypatch.setattr(cli_module, "analyze_video", _fake_analyzer(calls))
 
-    assert main(["analyze", str(folder), "--batch", "--out", str(tmp_path / "out")]) == 0
+    assert main(
+        [
+            "analyze", str(folder), "--batch", "--club", "wedge",
+            "--out", str(tmp_path / "out"),
+        ]
+    ) == 0
 
+    assert [call[0] for call in calls] == [folder / "one.mov", folder / "two.mp4"]
+    assert all(kwargs["club"] == "wedge" for _, kwargs in calls)
+
+
+def test_single_analyze_passes_the_required_canonical_club(
+    tmp_path, monkeypatch, capsys
+):
+    video = _video(tmp_path / "one.mov")
+    calls: list[tuple[Path, dict]] = []
+    monkeypatch.setattr(cli_module, "analyze_video", _fake_analyzer(calls))
+
+    assert main(
+        [
+            "analyze", str(video), "--club", "hybrid",
+            "--out", str(tmp_path / "out"),
+        ]
+    ) == 0
+
+    capsys.readouterr()
     assert len(calls) == 1
-    assert calls[0][0] == (folder / "one.mov")
+    assert calls[0][0] == video
+    assert calls[0][1]["club"] == "hybrid"
+
+
+@pytest.mark.parametrize("club_args", [[], ["--club", ""], ["--club", "putter"]])
+def test_analyze_cli_rejects_missing_blank_or_unsupported_club_before_analysis(
+    tmp_path, monkeypatch, capsys, club_args
+):
+    video = _video(tmp_path / "one.mov")
+    calls: list[tuple[Path, dict]] = []
+    monkeypatch.setattr(cli_module, "analyze_video", _fake_analyzer(calls))
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["analyze", str(video), *club_args])
+
+    assert exc_info.value.code == 2
+    assert calls == []
+    assert "--club" in capsys.readouterr().err

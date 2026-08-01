@@ -56,6 +56,7 @@ def test_disconnect_mid_upload_leaks_nothing(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
+        data={"club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 400
@@ -92,6 +93,7 @@ def test_disconnect_does_not_count_against_monthly_quota(tmp_path, monkeypatch):
     resp = client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
+        data={"club": "iron"},
         follow_redirects=False,
     )
     assert resp.status_code == 400
@@ -127,6 +129,7 @@ def test_cancellation_mid_upload_cleans_up_and_propagates(tmp_path, monkeypatch)
         client.post(
             "/upload",
             files={"video": ("swing.mov", b"x", "video/quicktime")},
+            data={"club": "iron"},
             follow_redirects=False,
         )
     assert session_dirs(sessions) == []

@@ -54,8 +54,8 @@ first run and cached inside the package under `swinglab/models/`.
 ## Usage
 
 ```bash
-swinglab analyze path/to/video.mov --out results/ --hand right
-swinglab analyze path/to/folder --batch
+swinglab analyze path/to/video.mov --out results/ --hand right --club iron
+swinglab analyze path/to/folder --batch --club iron
 swinglab batch path/to/clips.jsonl --out results/ --dry-run --json
 ```
 
@@ -65,6 +65,9 @@ Useful flags:
   detection when it misses (or when the clip has no audio track)
 - `--hand right|left` — golfer handedness (default right); also overrides the
   target-direction inference
+- `--club driver|fairway-wood|hybrid|iron|wedge` — required club context;
+  with `analyze folder --batch`, the chosen value applies to every video in
+  that folder
 - `--angle face-on|dtl` — camera angle (default face-on). Every body-drift
   and angle metric is defined face-on; `dtl` (down the line) keeps tempo,
   durations and consistency and honestly reports the rest as not measured
@@ -90,9 +93,10 @@ results/<video-name>/
 
 ### Repeatable manifest batches
 
-`swinglab analyze folder --batch` remains the quick way to process every video
-currently in one folder. For a named, reviewable set of clips with its own
-camera and golfer context, use the sequential JSONL batch command instead:
+`swinglab analyze folder --batch --club iron` remains the quick way to process
+every video currently in one folder, using that one club value for the full
+folder. For a named, reviewable set of clips with its own camera and golfer
+context, use the sequential JSONL batch command instead:
 
 ```bash
 # Validate every row and print one machine-readable plan. Nothing is analyzed
@@ -105,20 +109,22 @@ swinglab batch clips.jsonl --out results/
 swinglab batch clips.jsonl --out results/ --resume
 ```
 
-Each non-blank line is one JSON object. `id` and `path` are required; relative
-paths resolve from the manifest's directory. `hand`, `angle`, `club`, `level`,
-and manual `strikes` are per-clip context and are written through to that
-clip's report and `metrics.json`.
+Each non-blank line is one JSON object. `id`, `path`, and `club` are required;
+relative paths resolve from the manifest's directory. `club` must be one of
+`driver`, `fairway-wood`, `hybrid`, `iron`, or `wedge`. Optional `hand`,
+`angle`, `level`, and manual `strikes` are per-clip context. All context is
+written through to that clip's report and `metrics.json`.
 
 ```json
 {"id":"driver-baseline","path":"clips/driver-baseline.mov","hand":"right","angle":"face-on","club":"driver","level":"improving","strikes":[12.5,31.0]}
 {"id":"wedge-dtl","path":"clips/wedge-dtl.mp4","hand":"left","angle":"dtl","club":"wedge","level":"new"}
 ```
 
-The manifest is fully validated before analysis starts: IDs must be unique,
-video paths must exist, context values must be supported, and supplied strike
-times must be finite and strictly increasing. `--json` reserves stdout for one
-summary object; progress and failures go to stderr. `--resume` skips only a
+The manifest is fully validated before analysis or resume-state writes start:
+IDs must be unique, video paths must exist, every row must have a canonical
+club, context values must be supported, and supplied strike times must be
+finite and strictly increasing. `--json` reserves stdout for one summary
+object; progress and failures go to stderr. `--resume` skips only a
 completed ID whose normalized instruction still matches and whose report still
 exists. The saved instruction also includes the source file's size and modified
 time, so a re-exported clip is not silently treated as an old report. If an
@@ -250,7 +256,7 @@ sections are simply absent). No login required — it's linked from the
 landing page ("See a sample report first") so visitors can see the product
 before the signup wall.
 
-**Club context (display only)** — the upload form's optional club select
+**Club context (display only)** — the upload form's required club select
 (Driver / Fairway wood / Hybrid / Iron / Wedge) is stored on the job and in
 metrics.json's `meta` block and shown as a chip on the report header, the
 session list, and `/progress` (which gains a club filter once more than one
@@ -302,9 +308,9 @@ Built to take real traffic on one machine:
 
 The JSON API under `/api` is the surface a future mobile app talks to:
 
-- `POST /upload` — multipart upload (`video`, `hand`, optional `strikes`,
-  optional `fast`); redirects to the session page, or returns
-  `{"id", "url"}` when called with `Accept: application/json`
+- `POST /upload` — multipart upload (`video`, required canonical `club`, `hand`,
+  optional `strikes`, optional `fast`); redirects to the session page, or
+  returns `{"id", "url"}` when called with `Accept: application/json`
 - `GET /api/session/{id}` — status, queue position, progress log, and, when
   done, additive `coaching_eligible` + `outcome` fields. Coaching-ready
   results include `report_url` + `metrics_url`; a current capture-only

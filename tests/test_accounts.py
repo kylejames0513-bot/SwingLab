@@ -46,6 +46,7 @@ def upload(client, filename="swing.mov"):
     resp = client.post(
         "/upload",
         files={"video": (filename, b"fake video bytes", "video/quicktime")},
+        data={"club": "iron"},
         follow_redirects=False,
     )
     return resp

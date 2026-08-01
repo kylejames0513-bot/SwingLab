@@ -191,7 +191,10 @@ def test_zero_strikes_is_graceful(tmp_path, fast_cfg):
 
 def test_cli_zero_strikes_message_and_exit_code(tmp_path, capsys):
     video = generate_test_video(tmp_path / "silent.mov", [], silent=True)
-    code = cli_main(["analyze", str(video), "--out", str(tmp_path / "results")])
+    code = cli_main([
+        "analyze", str(video), "--club", "driver",
+        "--out", str(tmp_path / "results"),
+    ])
     assert code == 1
     err = capsys.readouterr().err
     assert "No ball strikes detected" in err and "--strikes" in err
@@ -203,9 +206,11 @@ def test_cli_summary_output(tmp_path, capsys, monkeypatch):
     cfg_file.write_text("slowmo:\n  factor: 2\n  height: 240\n")
     code = cli_main(
         ["analyze", str(video), "--out", str(tmp_path / "results"),
-         "--config", str(cfg_file)]
+         "--config", str(cfg_file), "--club", "hybrid"]
     )
     assert code == 0
     out = capsys.readouterr().out
     assert "Report:" in out and "report.html" in out
     assert re.search(r"Swing\s+Strike\s+Tempo", out)
+    data = json.loads((tmp_path / "results" / "one" / "metrics.json").read_text())
+    assert data["meta"]["club"] == "hybrid"

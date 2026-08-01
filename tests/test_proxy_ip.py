@@ -25,6 +25,7 @@ def upload_as(client, forwarded_for=None):
     return client.post(
         "/upload",
         files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
+        data={"club": "iron"},
         headers=headers,
         follow_redirects=False,
     )
