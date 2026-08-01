@@ -1,115 +1,376 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Today{% endblock %}
 {% block style %}
-  .today-hero { border-left: 5px solid var(--accent); background: #fff8ed; }
-  .pro-welcome { margin-bottom: 18px; padding: 20px 24px; border: 1px solid #b9cdbf; border-radius: 16px; background: linear-gradient(135deg, #123f28, #1a5c38); color: #fff; box-shadow: 0 18px 36px -28px rgba(15,42,27,.7); }
-  .pro-welcome .today-kicker { color: #ffd39f; }
-  .pro-welcome h1 { margin: 2px 0 4px; font-size: clamp(1.55rem, 5vw, 2.15rem); line-height: 1.15; }
-  .pro-welcome p:last-child { margin: 0; color: #e7f0e9; }
-  .today-kicker { color: var(--primary); font-weight: 700; font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; margin: 0 0 5px; }
-  .today-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .practice-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
-  .practice-option { border: 1px solid #dce2dd; border-radius: 8px; padding: 13px; }
-  .practice-option.selected { border: 2px solid var(--primary); background: #f2f8f4; }
+  main { max-width: 1160px; }
+  .today-shell { display: grid; gap: 22px; }
+  .today-intro {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(26px, 5vw, 48px);
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: var(--sl-radius-xl);
+    background:
+      radial-gradient(circle at 88% 14%, rgba(255, 204, 142, .2), transparent 17rem),
+      linear-gradient(135deg, #0d3422 0%, #185838 100%);
+    color: #fff;
+    box-shadow: var(--sl-shadow-lg);
+  }
+  .today-intro::after {
+    content: "";
+    position: absolute;
+    right: -74px;
+    bottom: -122px;
+    width: 270px;
+    height: 270px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 50%;
+  }
+  .today-intro__copy { position: relative; z-index: 1; max-width: 730px; }
+  .today-kicker {
+    margin: 0 0 7px;
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: .75rem;
+    font-weight: 500;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .today-intro .today-kicker { color: #ffd09d; }
+  .today-intro h1 {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(2.45rem, 8vw, 5rem);
+    line-height: .98;
+    letter-spacing: -.055em;
+  }
+  .today-welcome { margin: 17px 0 3px; color: #fff; font-size: clamp(1.15rem, 3vw, 1.5rem); font-weight: 700; }
+  .today-intro__detail { margin: 0; max-width: 630px; color: #dcebe1; }
+  .today-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .today-metric {
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+    background: rgba(255, 254, 250, .88);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  .today-metric__label { margin: 0 0 7px; color: var(--sl-ink-muted); font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+  .today-metric__value { margin: 0; color: var(--sl-green); font-size: clamp(1.05rem, 2vw, 1.3rem); font-weight: 800; }
+  .today-metric__detail { margin: 4px 0 0; color: var(--sl-ink-soft); font-size: .84rem; }
+  .next-move {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: clamp(20px, 4vw, 46px);
+    align-items: center;
+    padding: clamp(24px, 4vw, 38px);
+    border: 1px solid #d9c8b2;
+    border-radius: var(--sl-radius-lg);
+    background: linear-gradient(135deg, #fffdfa, #fff4e5);
+    box-shadow: var(--sl-shadow-md);
+  }
+  .next-move h2 { margin: 5px 0 9px; color: var(--sl-green); font-size: clamp(1.55rem, 4vw, 2.45rem); line-height: 1.08; letter-spacing: -.035em; }
+  .next-move p { margin: 8px 0; color: var(--sl-ink-soft); }
+  .next-move__actions { min-width: min(100%, 215px); display: grid; gap: 10px; justify-items: stretch; }
+  .next-move__actions .button { margin: 0; text-align: center; }
+  .next-move__secondary { font-size: .84rem; font-weight: 700; text-align: center; }
+  .state-pill {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: #e7efe9;
+    color: var(--sl-green);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 500;
+    letter-spacing: .045em;
+    text-transform: uppercase;
+  }
+  .state-pill--queued, .state-pill--processing { background: #e9eff5; color: #285170; }
+  .state-pill--failed, .state-pill--refilm { background: #fff0e4; color: #8d3b10; }
+  .state-pill--coaching_ready { background: #e1f1e5; color: #155d35; }
+  .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, .85fr); gap: 22px; align-items: start; }
+  .dashboard-panel {
+    min-width: 0;
+    padding: clamp(21px, 3.5vw, 32px);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  .dashboard-panel__header { display: flex; justify-content: space-between; gap: 18px; align-items: baseline; margin-bottom: 17px; }
+  .dashboard-panel__header h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.35rem, 3vw, 1.85rem); letter-spacing: -.025em; }
+  .dashboard-panel__header a { font-size: .85rem; font-weight: 700; white-space: nowrap; }
+  .practice-lead { margin: -5px 0 18px; color: var(--sl-ink-soft); }
+  .practice-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; margin: 17px 0; }
+  .practice-option { min-width: 0; padding: 14px; border: 1px solid var(--sl-border-strong); border-radius: 11px; background: #fff; }
+  .practice-option.selected { border: 2px solid var(--sl-green-btn); background: #f0f7f2; }
   .structured-practice .practice-option { display: flex; gap: 9px; cursor: pointer; }
-  .structured-practice .practice-option input { margin-top: 4px; }
-  .structured-practice label[for="practice-outcome"] { display: block; font-weight: 700; margin: 12px 0 5px; }
-  .structured-practice select { width: 100%; max-width: 340px; padding: 9px; border: 1px solid #c6d1c8; border-radius: 6px; background: white; }
-  .practice-option h4 { margin: 0 0 6px; color: var(--primary); }
-  .practice-option p { font-size: .9rem; margin: 7px 0; color: #4d554f; }
-  .success { background: #e5f3ea; border-left: 4px solid var(--primary); padding: 12px 16px; border-radius: 4px; }
-  @media (max-width: 720px) { .practice-options { grid-template-columns: 1fr; } }
+  .structured-practice .practice-option input { flex: 0 0 auto; margin-top: 5px; }
+  .structured-practice label[for="practice-outcome"] { display: block; margin: 15px 0 6px; font-weight: 700; }
+  .structured-practice select { width: 100%; max-width: 360px; min-height: 44px; padding: 9px; border: 1px solid var(--sl-control-border); border-radius: 8px; background: #fff; color: var(--sl-ink); }
+  .practice-option h3, .practice-option h4 { margin: 0 0 7px; color: var(--sl-green); font-size: .96rem; line-height: 1.35; }
+  .practice-option p { margin: 7px 0; color: var(--sl-ink-soft); font-size: .84rem; }
+  .today-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 17px; }
+  .today-actions form { margin: 0; }
+  .proof-note { margin: 0 0 20px; padding: 17px 18px; border: 1px solid #c9d9cd; border-radius: 13px; background: #f1f7f2; }
+  .proof-note[data-proof-state="attention"] { border-color: #e5c5ad; background: #fff5eb; }
+  .proof-note h3 { margin: 2px 0 7px; color: var(--sl-green); }
+  .proof-note p { margin: 6px 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .recent-list { margin: 0; padding: 0; display: grid; gap: 10px; list-style: none; }
+  .recent-session { padding: 14px; border: 1px solid var(--sl-border); border-radius: 12px; background: #fff; }
+  .recent-session__top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+  .recent-session__link { color: var(--sl-green); font-weight: 800; text-decoration: none; }
+  .recent-session__meta { margin: 3px 0 0; color: var(--sl-ink-muted); font-size: .79rem; }
+  .recent-session__detail { margin: 9px 0 0; color: var(--sl-ink-soft); font-size: .85rem; }
+  .empty-note { margin: 0; padding: 17px; border: 1px dashed var(--sl-border-strong); border-radius: 12px; color: var(--sl-ink-soft); background: #fafaf6; }
+  .success { margin: 0; padding: 12px 16px; border-left: 4px solid var(--sl-green-btn); border-radius: 7px; background: #e5f3ea; color: #124529; }
+  .loop-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 9px; padding: 5px 0 2px; color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; }
+  .loop-strip strong { color: var(--sl-green); }
+  .loop-strip__arrow { color: var(--sl-orange); }
+  @media (max-width: 850px) {
+    .dashboard-grid { grid-template-columns: 1fr; }
+    .next-move { grid-template-columns: 1fr; }
+    .next-move__actions { width: 100%; }
+  }
+  @media (max-width: 720px) {
+    main { padding-left: 14px; padding-right: 14px; }
+    .today-shell { gap: 16px; }
+    .today-intro { border-radius: 22px; }
+    .today-metrics, .practice-options { grid-template-columns: 1fr; }
+    .today-metric { padding: 15px; }
+    .next-move, .dashboard-panel { border-radius: 17px; }
+    .dashboard-panel__header { align-items: flex-start; }
+    .today-actions { align-items: stretch; }
+    .today-actions > *, .today-actions .button, .today-actions button { width: 100%; text-align: center; }
+  }
 {% endblock %}
 {% block main %}
-  {% if setup_saved %}<p class="success">Your setup is saved. Your caddie will use it to keep the next step clear and practical.</p>{% endif %}
-  {% if practice_done %}<p class="success">Practice check-in saved. When you re-film, we’ll compare the next session to this focus.</p>{% endif %}
-  {% if user and user.is_pro %}
-  <section class="pro-welcome" aria-labelledby="pro-welcome-title">
-    <p class="today-kicker">CaddieInsight Pro member</p>
-    <h1 id="pro-welcome-title">Welcome back{% if header_profile and header_profile.display_name %}, {{ header_profile.display_name }}{% endif %}.</h1>
-    <p>Let’s work on your swing—one clear next move at a time.</p>
-  </section>
-  {% endif %}
-  <div class="card today-hero">
-    <p class="today-kicker">Today’s next move</p>
-    {% if not profile or not profile.is_complete %}
-      <h2>Set up your first coaching loop</h2>
-      <p>Tell your caddie how you learn and what you have time for. It takes about a minute and never changes what gets measured.</p>
-      <div class="today-actions"><a class="button" href="/onboarding">Finish golfer setup</a><a class="button secondary" href="/">Analyze a swing</a></div>
-    {% elif not latest_job %}
-      <h2>Film a baseline</h2>
-      <p>Use one phone clip. Your first Caddie Brief will give you one priority, one drill, a pass mark, and a re-film target.</p>
-      <a class="button" href="/#upload-form">Analyze my swing free</a>
-    {% elif latest_job.status != 'done' %}
-      <h2>Your swing is being analyzed</h2>
-      <p>Keep this simple: when the result is ready, your caddie will show one next step—not a wall of numbers.</p>
-      <a class="button" href="/session/{{ latest_job.id }}">See analysis status</a>
-    {% elif caddie_brief and caddie_brief.refilm_required %}
-      <h2>Re-film before practicing a change</h2>
-      <p>{{ caddie_brief.warning or caddie_brief.why }}</p>
-      <div class="today-actions"><a class="button" href="/#upload-form">Re-film with the checklist</a><a class="button secondary" href="/session/{{ latest_job.id }}">See capture guidance</a></div>
-    {% elif caddie_brief and caddie_brief.drill %}
-      <h2>{{ caddie_brief.focus_name }}</h2>
-      <p><strong>Why it matters:</strong> {{ caddie_brief.why }}</p>
-      <p><strong>Your cue:</strong> {{ caddie_brief.fix }}</p>
-      {% if proof_cycle_practice_assignment %}
-      <h3>Continue {{ proof_cycle_practice_assignment.drill_name }}</h3>
-      <p><strong>Matched target:</strong> {{ proof_cycle_practice_assignment.target_name }}.
-        This receipt is self-reported practice context, not proof of a result.</p>
-      <form action="/practice/checkins" method="post" class="structured-practice">
-        <input type="hidden" name="session_id" value="{{ latest_job.id }}">
-        <div class="practice-options">
-          {% for choice in practice_choices %}
-          <label class="practice-option{% if (proof_cycle_practice_receipt and proof_cycle_practice_receipt.minutes == choice.minutes) or (not proof_cycle_practice_receipt and choice.selected) %} selected{% endif %}">
-            <input type="radio" name="practice_minutes" value="{{ choice.minutes }}" {% if (proof_cycle_practice_receipt and proof_cycle_practice_receipt.minutes == choice.minutes) or (not proof_cycle_practice_receipt and choice.selected) %}checked{% endif %} required>
-            <span><h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
-            <p>{{ choice.detail }}</p>
-            <p><strong>Drill:</strong> {{ choice.dosage }}</p>
-            <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p></span>
-          </label>
-          {% endfor %}
-        </div>
-        <label for="practice-outcome">How did this block go?</label>
-        <select id="practice-outcome" name="practice_outcome" required>
-          <option value="completed" {% if not proof_cycle_practice_receipt or proof_cycle_practice_receipt.outcome == 'completed' %}selected{% endif %}>Completed the planned block</option>
-          <option value="still_working" {% if proof_cycle_practice_receipt and proof_cycle_practice_receipt.outcome == 'still_working' %}selected{% endif %}>Still working on the cue</option>
-        </select>
-        <p class="hint">One receipt is kept per target each day, so you can update it after another focused block without double-counting.</p>
-        <div class="today-actions">
-          <button type="submit">{{ "Update today's practice receipt" if proof_cycle_practice_receipt else "Save practice receipt" }}</button>
-          {% if proof_cycle_practice_receipt %}<span class="success">Today's practice receipt is saved</span>{% endif %}
-          <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
-          <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
-        </div>
-      </form>
-      {% else %}
-      <h3>Practice {{ caddie_brief.drill.name }}</h3>
-      <p>{{ caddie_brief.drill.aim }}</p>
-      <div class="practice-options">
-        {% for choice in practice_choices %}
-        <div class="practice-option{% if choice.selected %} selected{% endif %}">
-          <h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
-          <p>{{ choice.detail }}</p>
-          <p><strong>Drill:</strong> {{ choice.dosage }}</p>
-          <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
-        </div>
-        {% endfor %}
+  <div class="today-shell">
+    {% if setup_saved %}<p class="success" role="status">Your setup is saved. Your caddie will use it to keep the next step clear and practical.</p>{% endif %}
+    {% if practice_done %}<p class="success" role="status">Practice check-in saved. When you re-film, we’ll compare the next session to this focus.</p>{% endif %}
+
+    <header class="today-intro" aria-labelledby="today-title">
+      <div class="today-intro__copy">
+        <p class="today-kicker">{% if user and user.is_pro %}CaddieInsight Pro member{% else %}Personal coaching dashboard{% endif %}</p>
+        <h1 id="today-title">Today</h1>
+        {% if user and user.is_pro %}
+          <p class="today-welcome">Welcome back{% if header_profile and header_profile.display_name %}, {{ header_profile.display_name }}{% endif %}.</p>
+          <p class="today-intro__detail">Let’s work on your swing—one clear next move, one focused practice block, and evidence you can revisit.</p>
+        {% else %}
+          <p class="today-welcome">Your clearest next move, ready when you are.</p>
+          <p class="today-intro__detail">Turn one swing into a focused practice decision without digging through a wall of numbers.</p>
+        {% endif %}
       </div>
-      <div class="today-actions">
-        {% if latest_practiced %}<span class="success">Practice logged</span>{% else %}<form action="/practice/checkins" method="post"><input type="hidden" name="session_id" value="{{ latest_job.id }}"><button type="submit">I practiced this</button></form>{% endif %}
-        <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
-        <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
+    </header>
+
+    <section class="today-metrics" aria-label="Golfer setup and plan">
+      {% for tile in today_tiles %}
+        <article class="today-metric">
+          <p class="today-metric__label">{{ tile.label }}</p>
+          <p class="today-metric__value">{{ tile.value }}</p>
+          <p class="today-metric__detail">{{ tile.detail }}</p>
+        </article>
+      {% endfor %}
+    </section>
+
+    <section class="next-move" data-today-state="{{ today_state }}" aria-labelledby="next-move-title">
+      <div>
+        <p class="today-kicker">Today’s next move</p>
+        {% if today_state == 'setup' %}
+          <span class="state-pill state-pill--setup">Setup needed</span>
+          <h2 id="next-move-title">Set up your first coaching loop</h2>
+          <p>Choose your club, goal, and realistic practice block so your guidance starts with the right context.</p>
+        {% elif today_state == 'empty' %}
+          <span class="state-pill state-pill--empty">Ready to start</span>
+          <h2 id="next-move-title">Film a baseline</h2>
+          <p>Use one phone clip. Your first Caddie Brief will identify one priority, one drill, a pass mark, and a re-film target.</p>
+        {% elif today_state == 'queued' %}
+          <span class="state-pill state-pill--queued">Queued</span>
+          <h2 id="next-move-title">Your swing is queued</h2>
+          <p>It is safely in line for analysis. You can leave this page and return when the coaching result is ready.</p>
+        {% elif today_state == 'processing' %}
+          <span class="state-pill state-pill--processing">Analyzing</span>
+          <h2 id="next-move-title">Analysis in progress</h2>
+          <p>{% if latest_job.swings_total %}{{ latest_job.swings_done }} of {{ latest_job.swings_total }} swings analyzed so far.{% else %}CaddieInsight is reading your uploaded swing now.{% endif %} Your coaching card will appear after the evidence is processed.</p>
+        {% elif today_state == 'failed' %}
+          <span class="state-pill state-pill--failed">Needs attention</span>
+          <h2 id="next-move-title">Let’s get you back on track</h2>
+          <p>This analysis did not finish. Try a fresh upload; the private technical details are intentionally kept out of your dashboard.</p>
+        {% elif today_state == 'refilm' %}
+          <span class="state-pill state-pill--refilm">Re-film needed</span>
+          <h2 id="next-move-title">Re-film before practicing a change</h2>
+          <p>{% if caddie_brief %}{{ caddie_brief.warning or caddie_brief.why }}{% else %}This capture is available for review, but it could not support a trustworthy coaching card. Use the session guidance and film again before changing your swing.{% endif %}</p>
+        {% elif today_state == 'coaching_ready' %}
+          <span class="state-pill state-pill--coaching_ready">Coaching ready</span>
+          <h2 id="next-move-title">{{ caddie_brief.focus_name }}</h2>
+          <p><strong>Why it matters:</strong> {{ caddie_brief.why }}</p>
+          <p><strong>Your cue:</strong> {{ caddie_brief.fix }}</p>
+        {% elif latest_report_available %}
+          <span class="state-pill state-pill--legacy">Saved session</span>
+          <h2 id="next-move-title">Review your saved session</h2>
+          <p>The report is preserved, but its structured coaching card is unavailable here. Open the session to review what can still be shown.</p>
+        {% else %}
+          <span class="state-pill state-pill--legacy">Needs review</span>
+          <h2 id="next-move-title">Start with a fresh coaching card</h2>
+          <p>This session does not have a current coaching card or a preserved report. A new analysis is the honest next step.</p>
+        {% endif %}
       </div>
-      {% endif %}
-    {% else %}
-      <h2>Review your latest session</h2>
-      <p>Your report is ready. Open it to see the evidence and choose your next practice step.</p>
-      <a class="button" href="/session/{{ latest_job.id }}">Open results</a>
-    {% endif %}
-  </div>
-  <div class="card">
-    <h3>Your loop</h3>
-    <p><strong>Film</strong> → Caddie Brief → <strong>one drill</strong> → re-film target → visible progress.</p>
-    <p class="hint">{{ "Start" if profile and profile.experience_mode == 'start' else "Improve" if profile and profile.experience_mode == 'improve' else "Compete" if profile else "Improve" }} mode is selected. <a href="/onboarding">Adjust your golfer setup</a> any time.</p>
+      <div class="next-move__actions">
+        {% if today_state == 'setup' %}
+          <a class="button" data-primary-next-move href="/onboarding">Finish golfer setup</a>
+          <a class="next-move__secondary" href="/">Go to swing analysis</a>
+        {% elif today_state == 'empty' %}
+          <a class="button" data-primary-next-move href="/#upload-form">Analyze my swing free</a>
+        {% elif today_state in ('queued', 'processing') %}
+          <a class="button" data-primary-next-move href="/session/{{ latest_job.id }}">See analysis status</a>
+        {% elif today_state == 'failed' %}
+          <a class="button" data-primary-next-move href="/#upload-form">Try a fresh upload</a>
+          <a class="next-move__secondary" href="/session/{{ latest_job.id }}">Open session</a>
+        {% elif today_state == 'refilm' %}
+          <a class="button" data-primary-next-move href="/#upload-form">Re-film with the checklist</a>
+          <a class="next-move__secondary" href="/session/{{ latest_job.id }}">See capture guidance</a>
+        {% elif today_state == 'coaching_ready' %}
+          <a class="button" data-primary-next-move href="#practice-plan">Start today’s practice</a>
+          <a class="next-move__secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
+        {% elif latest_report_available %}
+          <a class="button" data-primary-next-move href="/session/{{ latest_job.id }}">Open saved result</a>
+        {% else %}
+          <a class="button" data-primary-next-move href="/#upload-form">Analyze a new swing</a>
+        {% endif %}
+      </div>
+    </section>
+
+    <div class="dashboard-grid">
+      <section class="dashboard-panel" id="practice-plan" aria-labelledby="practice-title">
+        <div class="dashboard-panel__header">
+          <h2 id="practice-title">Practice</h2>
+          {% if profile %}<a href="/onboarding">Adjust setup</a>{% endif %}
+        </div>
+
+        {% if today_proof %}
+          <aside class="proof-note" data-proof-state="{{ today_proof.tone }}" aria-labelledby="proof-title">
+            <p class="today-kicker">Proof cycle · {{ today_proof.target_name }}</p>
+            <h3 id="proof-title">{{ today_proof.heading }}</h3>
+            <p><strong>{{ today_proof.summary }}</strong></p>
+            <p>{{ today_proof.detail }}</p>
+            <p><strong>Next:</strong> {{ today_proof.next_step }}</p>
+          </aside>
+        {% endif %}
+
+        {% if today_state == 'coaching_ready' %}
+          {% if proof_cycle_practice_assignment %}
+            <h3>Continue {{ proof_cycle_practice_assignment.drill_name }}</h3>
+            <p class="practice-lead"><strong>Matched target:</strong> {{ proof_cycle_practice_assignment.target_name }}. This receipt is self-reported practice context, not proof of a result.</p>
+            <form action="/practice/checkins" method="post" class="structured-practice">
+              <input type="hidden" name="session_id" value="{{ latest_job.id }}">
+              <div class="practice-options">
+                {% for choice in practice_choices %}
+                  <label class="practice-option{% if (proof_cycle_practice_receipt and proof_cycle_practice_receipt.minutes == choice.minutes) or (not proof_cycle_practice_receipt and choice.selected) %} selected{% endif %}">
+                    <input type="radio" name="practice_minutes" value="{{ choice.minutes }}" {% if (proof_cycle_practice_receipt and proof_cycle_practice_receipt.minutes == choice.minutes) or (not proof_cycle_practice_receipt and choice.selected) %}checked{% endif %} required>
+                    <div>
+                      <h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
+                      <p>{{ choice.detail }}</p>
+                      <p><strong>Drill:</strong> {{ choice.dosage }}</p>
+                      <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
+                    </div>
+                  </label>
+                {% endfor %}
+              </div>
+              <label for="practice-outcome">How did this block go?</label>
+              <select id="practice-outcome" name="practice_outcome" required>
+                <option value="completed" {% if not proof_cycle_practice_receipt or proof_cycle_practice_receipt.outcome == 'completed' %}selected{% endif %}>Completed the planned block</option>
+                <option value="still_working" {% if proof_cycle_practice_receipt and proof_cycle_practice_receipt.outcome == 'still_working' %}selected{% endif %}>Still working on the cue</option>
+              </select>
+              <p class="hint">One receipt is kept per target each day, so you can update it after another focused block without double-counting.</p>
+              <div class="today-actions">
+                <button type="submit">{{ "Update today's practice receipt" if proof_cycle_practice_receipt else "Save practice receipt" }}</button>
+                {% if proof_cycle_practice_receipt %}<span class="success" role="status">Today's practice receipt is saved</span>{% endif %}
+                <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
+                <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
+              </div>
+            </form>
+          {% else %}
+            <h3>Practice {{ caddie_brief.drill.name }}</h3>
+            <p class="practice-lead">{{ caddie_brief.drill.aim }}</p>
+            <div class="practice-options">
+              {% for choice in practice_choices %}
+                <article class="practice-option{% if choice.selected %} selected{% endif %}">
+                  <h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
+                  <p>{{ choice.detail }}</p>
+                  <p><strong>Drill:</strong> {{ choice.dosage }}</p>
+                  <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
+                </article>
+              {% endfor %}
+            </div>
+            <div class="today-actions">
+              {% if latest_practiced %}<span class="success" role="status">Practice logged</span>{% else %}<form action="/practice/checkins" method="post"><input type="hidden" name="session_id" value="{{ latest_job.id }}"><button type="submit">I practiced this</button></form>{% endif %}
+              <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
+              <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
+            </div>
+          {% endif %}
+        {% elif today_state == 'refilm' %}
+          <h3>Protect the signal</h3>
+          <p class="practice-lead">Practice waits for a trustworthy capture. Re-film with the guidance above before changing your swing.</p>
+          <a class="button secondary" href="/#upload-form">Re-film this swing</a>
+        {% elif today_state in ('queued', 'processing') %}
+          <h3>Your practice card is on the way</h3>
+          <p class="practice-lead">The drill and pass mark will appear here after this analysis finishes.</p>
+          <a href="/session/{{ latest_job.id }}">Check analysis status</a>
+        {% elif today_state == 'failed' %}
+          <h3>No guesswork after a failed analysis</h3>
+          <p class="practice-lead">Upload a fresh clip before choosing a swing change.</p>
+          <a href="/#upload-form">Start a fresh analysis</a>
+        {% elif today_state == 'setup' %}
+          <h3>Set your practice context first</h3>
+          <p class="practice-lead">A required club and realistic practice block help shape advice you can actually use.</p>
+          <a href="/onboarding">Finish golfer setup</a>
+        {% elif today_state == 'empty' %}
+          <h3>Your first plan starts with a baseline</h3>
+          <p class="practice-lead">Film one swing to unlock a focused drill and pass mark.</p>
+          <a href="/#upload-form">Film a baseline</a>
+        {% else %}
+          <h3>{% if latest_report_available %}Open the preserved result{% else %}Build a new practice plan{% endif %}</h3>
+          <p class="practice-lead">{% if latest_report_available %}The report remains available, but its structured practice card cannot be shown here. Review it or begin a new analysis.{% else %}There is no trustworthy practice card attached to this session. Begin a new analysis before changing your swing.{% endif %}</p>
+          <div class="today-actions">
+            {% if latest_report_available %}<a class="button secondary" href="/session/{{ latest_job.id }}">Open saved result</a>{% endif %}
+            <a href="/#upload-form">Analyze a new swing</a>
+          </div>
+        {% endif %}
+      </section>
+
+      <section class="dashboard-panel" aria-labelledby="recent-title">
+        <div class="dashboard-panel__header">
+          <h2 id="recent-title">Recent sessions</h2>
+          <a href="/sessions">View history</a>
+        </div>
+        {% if recent_sessions %}
+          <ol class="recent-list">
+            {% for session in recent_sessions %}
+              <li class="recent-session" data-session-state="{{ session.state }}">
+                <div class="recent-session__top">
+                  <div>
+                    <a class="recent-session__link" href="/session/{{ session.id }}">{{ session.position }} swing</a>
+                    <p class="recent-session__meta">{{ session.club }}{% if session.when %} · {{ session.when }}{% endif %}</p>
+                  </div>
+                  <span class="state-pill state-pill--{{ session.state }}">{{ session.label }}</span>
+                </div>
+                <p class="recent-session__detail">{{ session.detail }}</p>
+              </li>
+            {% endfor %}
+          </ol>
+        {% else %}
+          <p class="empty-note">No sessions yet. Your first analysis will appear here without exposing upload details.</p>
+        {% endif %}
+      </section>
+    </div>
+
+    <div class="loop-strip" aria-label="CaddieInsight coaching loop">
+      <strong>Film</strong><span class="loop-strip__arrow" aria-hidden="true">→</span>
+      <span>Caddie Brief</span><span class="loop-strip__arrow" aria-hidden="true">→</span>
+      <strong>One drill</strong><span class="loop-strip__arrow" aria-hidden="true">→</span>
+      <span>Matched re-film</span>
+    </div>
   </div>
 {% endblock %}
