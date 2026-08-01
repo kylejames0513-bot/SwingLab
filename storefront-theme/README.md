@@ -24,7 +24,7 @@ orange kinetic accent, Archivo display type with DM Mono specimen labels.
 ## Conventions
 
 - Shopify template/group JSON is pure JSON (no comment banners).
-- Section-specific styles live in that section's `{% stylesheet %}` block
+- Section-specific styles live in that section's <code>&#123;% stylesheet %&#125;</code> block
   with `sl-<section>__` prefixed classes; shared patterns live in
   `assets/base.css` only.
 - `url`-type settings carry no `default` (this store's validator rejects
