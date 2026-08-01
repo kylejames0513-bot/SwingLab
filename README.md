@@ -316,6 +316,13 @@ The JSON API under `/api` is the surface a future mobile app talks to:
   results gate raw metrics and derived coaching visuals; current capture-only
   reports and their slow-motion capture reference remain available.
 
+Native devices can use a personal, revocable bearer credential after the
+account owner issues it from their same-origin browser session. The credential
+is hashed in SQLite, expires after 90 days, is tied to the account auth epoch,
+and is scoped only to owned mobile/session/report/upload routes. See
+[mobile API tokens](docs/mobile-api-tokens.md) for the issuance, revocation,
+and native-client contract.
+
 ### Accounts and Pro memberships
 
 With `web.require_account: true` (the shipped default), visitors sign up with
