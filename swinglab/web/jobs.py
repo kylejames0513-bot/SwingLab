@@ -13,18 +13,24 @@ startup, so an upgrade in place keeps its history.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
+import os
+import re
 import shutil
 import sqlite3
+import stat
 import threading
 import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Callable, Iterable, Iterator
 
 from ..caddie_brief import (
     payload_has_coachable_data,
@@ -56,6 +62,17 @@ DONE = "done"
 FAILED = "failed"
 ACTIVE = (QUEUED, PROCESSING)
 _FREE_REFILM_CREDITS_PER_MONTH = 1
+_HISTORY_TRASH_NAME = ".history-trash"
+_HISTORY_OPERATION_ID_RE = re.compile(r"[0-9a-f]{32}")
+_SAFE_JOB_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
+_WINDOWS_RESERVED_NAMES = {
+    "CON",
+    "PRN",
+    "AUX",
+    "NUL",
+    *(f"COM{number}" for number in range(1, 10)),
+    *(f"LPT{number}" for number in range(1, 10)),
+}
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -79,7 +96,69 @@ CREATE TABLE IF NOT EXISTS jobs (
     log          TEXT NOT NULL DEFAULT '[]'
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
+
+CREATE TABLE IF NOT EXISTS analysis_usage_monthly (
+    user_hash          TEXT NOT NULL,
+    month_start        INTEGER NOT NULL,
+    coaching_eligible  INTEGER NOT NULL DEFAULT 0,
+    refilm_rejections  INTEGER NOT NULL DEFAULT 0,
+    expires_at         REAL NOT NULL,
+    updated_at         REAL NOT NULL,
+    PRIMARY KEY (user_hash, month_start)
+);
+CREATE INDEX IF NOT EXISTS analysis_usage_monthly_expiry
+    ON analysis_usage_monthly(expires_at);
+
+CREATE TABLE IF NOT EXISTS history_reset_operations (
+    operation_id  TEXT PRIMARY KEY,
+    kind          TEXT NOT NULL,
+    subject_hash  TEXT,
+    state         TEXT NOT NULL CHECK (state IN ('prepared', 'committed')),
+    job_ids_json  TEXT NOT NULL,
+    artifact_job_ids_json TEXT NOT NULL DEFAULT '[]',
+    created_at    REAL NOT NULL,
+    updated_at    REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS history_reset_operations_state
+    ON history_reset_operations(state);
 """
+
+
+class HistoryResetError(RuntimeError):
+    """Base error for a user-history reset that did not commit."""
+
+
+class HistoryResetConflict(HistoryResetError):
+    """The account has active work, or its owned-job set changed mid-reset."""
+
+    def __init__(self, message: str, active_job_ids: Iterable[str] = ()):
+        self.active_job_ids = tuple(active_job_ids)
+        super().__init__(message)
+
+
+class HistoryResetSafetyError(HistoryResetError):
+    """A persisted id or filesystem entry cannot be deleted safely."""
+
+
+@dataclass(frozen=True)
+class HistoryResetSummary:
+    """Logical reset result; cleanup may finish on the next startup."""
+
+    operation_id: str | None
+    deleted_jobs: int
+    cleanup_pending: bool
+
+    @property
+    def jobs_deleted(self) -> int:
+        """Compatibility-friendly wording for callers rendering a count."""
+        return self.deleted_jobs
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "operation_id": self.operation_id,
+            "deleted_jobs": self.deleted_jobs,
+            "cleanup_pending": self.cleanup_pending,
+        }
 
 
 @dataclass
@@ -134,12 +213,21 @@ class JobManager:
         self.cfg = cfg
         self._users = user_store
         sessions_dir.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
+        # One re-entrant lock serializes the single-replica job state machine,
+        # including the short filesystem/SQLite two-phase history reset.  The
+        # re-entrancy lets ordinary helpers such as ``_save`` keep their
+        # lower-level locking contract when called by a larger operation.
+        self._lock = threading.RLock()
+        # Serialize any externally delivered view of swing history with a
+        # customer reset. A weekly digest holds this only while composing,
+        # claiming, and sending; ordinary uploads and reads remain concurrent.
+        self._history_delivery_lock = threading.RLock()
         self._conn = sqlite3.connect(
             sessions_dir / "swinglab.db", check_same_thread=False
         )
         self._conn.row_factory = sqlite3.Row
         with self._lock:
+            self._conn.execute("PRAGMA busy_timeout = 5000")
             self._conn.execute("PRAGMA journal_mode=WAL")
             self._conn.executescript(_SCHEMA)
             # migrate older databases in place (pre-accounts, pre-angle/club)
@@ -157,11 +245,23 @@ class JobManager:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN club TEXT")
             if "level" not in columns:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN level TEXT")
+            history_columns = {
+                row[1]
+                for row in self._conn.execute(
+                    "PRAGMA table_info(history_reset_operations)"
+                )
+            }
+            if "artifact_job_ids_json" not in history_columns:
+                self._conn.execute(
+                    "ALTER TABLE history_reset_operations"
+                    " ADD COLUMN artifact_job_ids_json TEXT NOT NULL DEFAULT '[]'"
+                )
             self._conn.commit()
         workers = max(1, int(cfg.web.get("workers", 2)))
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="swinglab-worker"
         )
+        self._recover_history_operations()
         self._import_legacy_sessions()
         self._cleanup_expired()
         self._requeue_interrupted()
@@ -236,23 +336,33 @@ class JobManager:
         Queued/processing jobs reserve an allowance. Failed uploads do not
         count. One finished clip that requires a re-film gets a courtesy retry
         each month; further rejected clips count so the AI workers cannot be
-        occupied indefinitely with deliberately unusable footage.
+        occupied indefinitely with deliberately unusable footage. Durable,
+        pseudonymous monthly receipts keep both facts after history deletion.
         """
         now = datetime.now(timezone.utc)
-        month_start = now.replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        ).timestamp()
+        month_start, month_end, _expires_at = self._month_window(now.timestamp())
         with self._lock:
+            self._purge_usage_receipts_locked()
+            self._conn.commit()
             rows = self._conn.execute(
                 "SELECT * FROM jobs WHERE user_id = ? AND created_at >= ?"
-                " AND status != ?",
-                (user_id, month_start, FAILED),
+                " AND created_at < ? AND status != ?",
+                (user_id, month_start, month_end, FAILED),
             ).fetchall()
-        jobs = [self._from_row(row) for row in rows]
-        active = sum(job.status in ACTIVE for job in jobs)
-        finished = [job for job in jobs if job.status == DONE]
-        eligible = sum(self.coaching_eligible(job) for job in finished)
-        rejected = len(finished) - eligible
+            receipt = self._conn.execute(
+                "SELECT coaching_eligible, refilm_rejections"
+                " FROM analysis_usage_monthly"
+                " WHERE user_hash = ? AND month_start = ? AND expires_at > ?",
+                (self._user_hash(user_id), month_start, now.timestamp()),
+            ).fetchone()
+            jobs = [self._from_row(row) for row in rows]
+            active = sum(job.status in ACTIVE for job in jobs)
+            finished = [job for job in jobs if job.status == DONE]
+            eligible = sum(self.coaching_eligible(job) for job in finished)
+            rejected = len(finished) - eligible
+        if receipt is not None:
+            eligible += int(receipt["coaching_eligible"])
+            rejected += int(receipt["refilm_rejections"])
         charged_rejected = max(
             0, rejected - _FREE_REFILM_CREDITS_PER_MONTH
         )
@@ -298,18 +408,24 @@ class JobManager:
     def refilm_rejections_this_month(self, user_id: str) -> int:
         """Finished coaching-ineligible clips for one account this month."""
         now = datetime.now(timezone.utc)
-        month_start = now.replace(
-            day=1, hour=0, minute=0, second=0, microsecond=0
-        ).timestamp()
+        month_start, month_end, _expires_at = self._month_window(now.timestamp())
         with self._lock:
+            self._purge_usage_receipts_locked()
+            self._conn.commit()
             rows = self._conn.execute(
                 "SELECT * FROM jobs WHERE user_id = ? AND created_at >= ?"
-                " AND status = ?",
-                (user_id, month_start, DONE),
+                " AND created_at < ? AND status = ?",
+                (user_id, month_start, month_end, DONE),
             ).fetchall()
-        return sum(
-            not self.coaching_eligible(self._from_row(row)) for row in rows
-        )
+            receipt = self._conn.execute(
+                "SELECT refilm_rejections FROM analysis_usage_monthly"
+                " WHERE user_hash = ? AND month_start = ? AND expires_at > ?",
+                (self._user_hash(user_id), month_start, now.timestamp()),
+            ).fetchone()
+            live = sum(
+                not self.coaching_eligible(self._from_row(row)) for row in rows
+            )
+        return live + (int(receipt["refilm_rejections"]) if receipt else 0)
 
     def queue_position(self, job: Job) -> int | None:
         """1-based place in line while queued, else None."""
@@ -346,6 +462,160 @@ class JobManager:
         with self._lock:
             return self._conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
 
+    def history_cleanup_pending_count(self) -> int:
+        """History operations still needing filesystem cleanup or recovery."""
+        with self._lock:
+            return self._history_operations_pending_locked()
+
+    @contextmanager
+    def history_delivery_guard(self) -> Iterator[None]:
+        """Linearize an external history delivery with account reset."""
+
+        with self._history_delivery_lock:
+            yield
+
+    def reset_user_history(
+        self,
+        user_id: str,
+        *,
+        delete_related: Callable[[sqlite3.Connection, str], None] | None = None,
+    ) -> HistoryResetSummary:
+        """Delete every terminal job owned by ``user_id`` without resetting quota.
+
+        ``delete_related`` runs on this manager's SQLite connection inside the
+        same ``BEGIN IMMEDIATE`` transaction, while the selected job rows still
+        exist.  It must use the supplied connection and must not commit or roll
+        back.  This lets the account store derive exact session ids, erase its
+        own golf-history rows, and advance an account history epoch atomically.
+
+        Active work makes the entire operation a conflict. Session directories
+        are first atomically renamed into the same-volume ``.history-trash``.
+        A prepared journal entry restores those names after any pre-commit
+        failure; a committed entry retries physical cleanup after a crash.
+        """
+        if not isinstance(user_id, str) or not user_id:
+            raise ValueError("user_id must be a non-empty string")
+
+        with self._history_delivery_lock, self._lock:
+            self._recover_history_operations_locked()
+            if self._history_operations_pending_locked():
+                raise HistoryResetError(
+                    "Earlier history cleanup must recover before another reset."
+                )
+            rows = self._conn.execute(
+                "SELECT * FROM jobs WHERE user_id = ? ORDER BY id", (user_id,)
+            ).fetchall()
+            active_ids = [row["id"] for row in rows if row["status"] in ACTIVE]
+            if active_ids:
+                raise HistoryResetConflict(
+                    "History cannot be reset while an analysis is queued or processing.",
+                    active_ids,
+                )
+
+            # The callback still runs when there are no jobs: related rows can
+            # outlive retention, and an auth/history epoch may still need to be
+            # advanced. Existing pseudonymous quota receipts remain untouched.
+            if not rows:
+                self._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    current = self._conn.execute(
+                        "SELECT id, status FROM jobs WHERE user_id = ?",
+                        (user_id,),
+                    ).fetchall()
+                    if current:
+                        raise HistoryResetConflict(
+                            "Account history changed while the reset was starting.",
+                            [
+                                row["id"]
+                                for row in current
+                                if row["status"] in ACTIVE
+                            ],
+                        )
+                    if delete_related is not None:
+                        delete_related(self._conn, user_id)
+                    self._conn.commit()
+                except Exception as exc:
+                    self._conn.rollback()
+                    if isinstance(exc, HistoryResetError):
+                        raise
+                    raise HistoryResetError(
+                        "Related history could not be deleted safely."
+                    ) from exc
+                return HistoryResetSummary(None, 0, False)
+
+            try:
+                usage = self._usage_contributions(rows)
+                operation_id = self._prepare_history_operation_locked(
+                    rows,
+                    kind="user_reset",
+                    subject_hash=self._user_hash(user_id),
+                )
+            except HistoryResetError:
+                raise
+            except Exception as exc:
+                raise HistoryResetError(
+                    "Session artifacts could not be prepared for deletion."
+                ) from exc
+            expected_ids = tuple(row["id"] for row in rows)
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                current = self._conn.execute(
+                    "SELECT * FROM jobs WHERE user_id = ? ORDER BY id", (user_id,)
+                ).fetchall()
+                current_ids = tuple(row["id"] for row in current)
+                active_ids = [
+                    row["id"] for row in current if row["status"] in ACTIVE
+                ]
+                if active_ids or current_ids != expected_ids:
+                    raise HistoryResetConflict(
+                        "Account history changed while the reset was being prepared.",
+                        active_ids,
+                    )
+                if delete_related is not None:
+                    delete_related(self._conn, user_id)
+                self._archive_usage_locked(usage)
+                deleted = self._conn.execute(
+                    "DELETE FROM jobs WHERE user_id = ?", (user_id,)
+                ).rowcount
+                if deleted != len(expected_ids):
+                    raise HistoryResetConflict(
+                        "Account history changed while the reset was committing."
+                    )
+                updated = self._conn.execute(
+                    "UPDATE history_reset_operations"
+                    " SET state = 'committed', updated_at = ?"
+                    " WHERE operation_id = ? AND state = 'prepared'",
+                    (time.time(), operation_id),
+                ).rowcount
+                if updated != 1:
+                    raise HistoryResetError(
+                        "The history reset journal could not be committed."
+                    )
+                self._conn.commit()
+            except Exception as exc:
+                self._conn.rollback()
+                try:
+                    self._abort_prepared_operation_locked(operation_id)
+                except Exception:
+                    logger.exception(
+                        "Prepared history reset %s still needs recovery",
+                        operation_id,
+                    )
+                if isinstance(exc, HistoryResetError):
+                    raise
+                raise HistoryResetError(
+                    "History deletion could not be committed safely."
+                ) from exc
+
+            cleanup_pending = not self._finish_committed_operation_locked(
+                operation_id
+            )
+            return HistoryResetSummary(
+                operation_id=operation_id,
+                deleted_jobs=len(expected_ids),
+                cleanup_pending=cleanup_pending,
+            )
+
     # -- submission -------------------------------------------------------
     def create_session(
         self,
@@ -358,24 +628,48 @@ class JobManager:
         angle: str = "face-on",
         club: str | None = None,
         level: str | None = None,
+        expected_history_epoch: int | None = None,
     ) -> Job:
-        job_id = uuid.uuid4().hex[:12]
-        job = Job(
-            id=job_id,
-            session_dir=self.sessions_dir / job_id,
-            created_at=time.time(),
-            source_name=source_name,
-            hand=hand,
-            angle=angle,
-            club=club,
-            level=level,
-            strikes=strikes,
-            fast=fast,
-            client_ip=client_ip,
-            user_id=user_id,
-        )
-        job.session_dir.mkdir(parents=True)
-        self._save(job)
+        # Enter the manager lock before creating the directory so a concurrent
+        # account reset cannot miss a half-created, not-yet-persisted session.
+        with self._lock:
+            if expected_history_epoch is not None:
+                if not user_id:
+                    raise ValueError(
+                        "expected_history_epoch requires an owned session"
+                    )
+                owner = self._conn.execute(
+                    "SELECT history_epoch FROM users WHERE id = ?", (user_id,)
+                ).fetchone()
+                try:
+                    current_epoch = (
+                        int(owner["history_epoch"]) if owner is not None else None
+                    )
+                    expected_epoch = int(expected_history_epoch)
+                except (TypeError, ValueError, OverflowError):
+                    current_epoch = None
+                    expected_epoch = -1
+                if current_epoch is None or current_epoch != expected_epoch:
+                    raise HistoryResetConflict(
+                        "Swing history changed before the upload session was created."
+                    )
+            job_id = uuid.uuid4().hex[:12]
+            job = Job(
+                id=job_id,
+                session_dir=self.sessions_dir / job_id,
+                created_at=time.time(),
+                source_name=source_name,
+                hand=hand,
+                angle=angle,
+                club=club,
+                level=level,
+                strikes=strikes,
+                fast=fast,
+                client_ip=client_ip,
+                user_id=user_id,
+            )
+            job.session_dir.mkdir(parents=True)
+            self._save(job)
         return job
 
     def submit(self, job: Job, video_path: Path) -> None:
@@ -383,8 +677,8 @@ class JobManager:
 
     def discard(self, job: Job) -> None:
         """Drop a session whose upload never completed."""
-        shutil.rmtree(job.session_dir, ignore_errors=True)
         with self._lock:
+            shutil.rmtree(job.session_dir, ignore_errors=True)
             self._conn.execute("DELETE FROM jobs WHERE id = ?", (job.id,))
             self._conn.commit()
 
@@ -592,6 +886,547 @@ class JobManager:
             swings_total=row["swings_total"],
         )
 
+    # -- history deletion and quota receipts -----------------------------
+    @staticmethod
+    def _user_hash(user_id: str) -> str:
+        """Stable pseudonymous key; never persist account ids in receipts."""
+        return hashlib.sha256(
+            b"caddieinsight-analysis-usage-v1\0" + user_id.encode("utf-8")
+        ).hexdigest()
+
+    @staticmethod
+    def _month_window(timestamp: float) -> tuple[int, int, float]:
+        current = datetime.fromtimestamp(timestamp, timezone.utc)
+        start = current.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        if start.month == 12:
+            following = start.replace(year=start.year + 1, month=1)
+        else:
+            following = start.replace(month=start.month + 1)
+        month_start = int(start.timestamp())
+        month_end = int(following.timestamp())
+        return month_start, month_end, float(month_end)
+
+    def _usage_contributions(
+        self, rows: Iterable[sqlite3.Row]
+    ) -> dict[tuple[str, int, float], list[int]]:
+        """Group terminal usage as [eligible, rejected] monthly receipts."""
+        usage: dict[tuple[str, int, float], list[int]] = {}
+        for row in rows:
+            if row["status"] != DONE or not row["user_id"]:
+                continue
+            # Never read report/metrics files until their immediate path and
+            # full tree have passed the reset's containment/link preflight.
+            self._validate_session_dir_locked(row["id"])
+            month_start, _month_end, expires_at = self._month_window(
+                float(row["created_at"])
+            )
+            key = (
+                self._user_hash(str(row["user_id"])),
+                month_start,
+                expires_at,
+            )
+            counts = usage.setdefault(key, [0, 0])
+            if self.coaching_eligible(self._from_row(row)):
+                counts[0] += 1
+            else:
+                counts[1] += 1
+        return usage
+
+    def _archive_usage_locked(
+        self, usage: dict[tuple[str, int, float], list[int]]
+    ) -> None:
+        now = time.time()
+        for (user_hash, month_start, expires_at), counts in usage.items():
+            if expires_at <= now:
+                continue
+            self._conn.execute(
+                "INSERT INTO analysis_usage_monthly"
+                " (user_hash, month_start, coaching_eligible,"
+                " refilm_rejections, expires_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?)"
+                " ON CONFLICT(user_hash, month_start) DO UPDATE SET"
+                " coaching_eligible = coaching_eligible"
+                " + excluded.coaching_eligible,"
+                " refilm_rejections = refilm_rejections"
+                " + excluded.refilm_rejections,"
+                " expires_at = MAX(expires_at, excluded.expires_at),"
+                " updated_at = excluded.updated_at",
+                (
+                    user_hash,
+                    month_start,
+                    counts[0],
+                    counts[1],
+                    expires_at,
+                    now,
+                ),
+            )
+
+    def _purge_usage_receipts_locked(self) -> None:
+        self._conn.execute(
+            "DELETE FROM analysis_usage_monthly WHERE expires_at <= ?",
+            (time.time(),),
+        )
+
+    @staticmethod
+    def _is_link_or_junction(path: Path) -> bool:
+        if path.is_symlink():
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        if is_junction and is_junction():
+            return True
+        # Python 3.11 has no Path.is_junction(). On Windows, junctions and
+        # other directory reparse points expose this file attribute through
+        # lstat; reject all of them rather than trusting os.walk not to follow.
+        try:
+            attributes = getattr(os.lstat(path), "st_file_attributes", 0)
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise HistoryResetSafetyError(
+                f"Filesystem entry could not be inspected safely: {path}"
+            ) from exc
+        reparse = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)
+        return bool(reparse and attributes & reparse)
+
+    @staticmethod
+    def _path_exists_safely(path: Path) -> bool:
+        try:
+            os.lstat(path)
+        except FileNotFoundError:
+            return False
+        except OSError as exc:
+            raise HistoryResetSafetyError(
+                f"Filesystem entry could not be inspected safely: {path}"
+            ) from exc
+        return True
+
+    def _validate_job_id(self, job_id: object) -> str:
+        value = str(job_id)
+        if (
+            not _SAFE_JOB_ID_RE.fullmatch(value)
+            or value.endswith(".")
+            or value.split(".", 1)[0].upper() in _WINDOWS_RESERVED_NAMES
+        ):
+            raise HistoryResetSafetyError(
+                f"Unsafe persisted session id cannot be deleted: {value!r}"
+            )
+        return value
+
+    def _validate_tree_no_links(self, path: Path, root: Path) -> None:
+        def walk_error(error: OSError) -> None:
+            raise error
+
+        for current, directories, files in os.walk(
+            path, topdown=True, followlinks=False, onerror=walk_error
+        ):
+            current_path = Path(current)
+            try:
+                current_resolved = current_path.resolve(strict=True)
+            except OSError as exc:
+                raise HistoryResetSafetyError(
+                    f"Session path could not be resolved safely: {current_path}"
+                ) from exc
+            if not current_resolved.is_relative_to(root):
+                raise HistoryResetSafetyError(
+                    f"Session path escapes the sessions directory: {current_path}"
+                )
+            for name in (*directories, *files):
+                child = current_path / name
+                if self._is_link_or_junction(child):
+                    raise HistoryResetSafetyError(
+                        f"Session contains a link that cannot be deleted safely: {child}"
+                    )
+
+    def _validate_session_dir_locked(self, job_id: object) -> tuple[str, Path, bool]:
+        safe_id = self._validate_job_id(job_id)
+        root = self.sessions_dir.resolve(strict=True)
+        path = self.sessions_dir / safe_id
+        present = self._path_exists_safely(path)
+        if present and self._is_link_or_junction(path):
+            raise HistoryResetSafetyError(
+                f"Session directory is a link and cannot be deleted safely: {safe_id}"
+            )
+        if not present:
+            return safe_id, path, False
+        if not path.is_dir():
+            raise HistoryResetSafetyError(
+                f"Session path is not a directory: {safe_id}"
+            )
+        try:
+            resolved = path.resolve(strict=True)
+        except OSError as exc:
+            raise HistoryResetSafetyError(
+                f"Session directory could not be resolved safely: {safe_id}"
+            ) from exc
+        if resolved.parent != root:
+            raise HistoryResetSafetyError(
+                f"Session directory escapes the sessions root: {safe_id}"
+            )
+        self._validate_tree_no_links(path, resolved)
+        return safe_id, path, True
+
+    def _history_trash_root_locked(self, *, create: bool) -> Path:
+        root = self.sessions_dir.resolve(strict=True)
+        trash = self.sessions_dir / _HISTORY_TRASH_NAME
+        present = self._path_exists_safely(trash)
+        if present and self._is_link_or_junction(trash):
+            raise HistoryResetSafetyError(
+                "The history trash path is a link; cleanup was refused."
+            )
+        if create and not present:
+            trash.mkdir(exist_ok=True)
+            present = True
+        if not present:
+            return trash
+        if not trash.is_dir() or trash.resolve(strict=True).parent != root:
+            raise HistoryResetSafetyError(
+                "The history trash path is not contained in the sessions root."
+            )
+        return trash
+
+    def _history_operation_dir_locked(
+        self, operation_id: object, *, create_trash: bool
+    ) -> Path:
+        value = str(operation_id)
+        if not _HISTORY_OPERATION_ID_RE.fullmatch(value):
+            raise HistoryResetSafetyError(
+                f"Unsafe history operation id: {value!r}"
+            )
+        trash = self._history_trash_root_locked(create=create_trash)
+        operation_dir = trash / value
+        present = self._path_exists_safely(operation_dir)
+        if present and self._is_link_or_junction(operation_dir):
+            raise HistoryResetSafetyError(
+                "A history operation path is a link; cleanup was refused."
+            )
+        if present:
+            if not operation_dir.is_dir():
+                raise HistoryResetSafetyError(
+                    "A history operation path is not a directory."
+                )
+            resolved = operation_dir.resolve(strict=True)
+            if not self._path_exists_safely(trash) or (
+                resolved.parent != trash.resolve(strict=True)
+            ):
+                raise HistoryResetSafetyError(
+                    "A history operation path escapes the history trash."
+                )
+        return operation_dir
+
+    @staticmethod
+    def _parse_history_ids(raw: object, *, label: str) -> tuple[str, ...]:
+        try:
+            values = json.loads(str(raw))
+        except (TypeError, ValueError) as exc:
+            raise HistoryResetSafetyError(
+                f"Invalid {label} in the history operation journal."
+            ) from exc
+        if not isinstance(values, list) or not all(
+            isinstance(value, str) for value in values
+        ):
+            raise HistoryResetSafetyError(
+                f"Invalid {label} in the history operation journal."
+            )
+        if len(values) != len(set(values)):
+            raise HistoryResetSafetyError(
+                f"Duplicate {label} in the history operation journal."
+            )
+        return tuple(values)
+
+    def _prepare_history_operation_locked(
+        self,
+        rows: Iterable[sqlite3.Row],
+        *,
+        kind: str,
+        subject_hash: str | None,
+    ) -> str:
+        if self._history_operations_pending_locked():
+            raise HistoryResetError(
+                "A history operation is already pending recovery."
+            )
+        selected_rows = tuple(rows)
+        checked = [
+            self._validate_session_dir_locked(row["id"]) for row in selected_rows
+        ]
+        job_ids = [item[0] for item in checked]
+        selected_ids = set(job_ids)
+        selected_folded = {job_id.casefold() for job_id in job_ids}
+        aliases = [
+            str(row["id"])
+            for row in self._conn.execute("SELECT id FROM jobs").fetchall()
+            if str(row["id"]) not in selected_ids
+            and str(row["id"]).casefold() in selected_folded
+        ]
+        if aliases or len(selected_folded) != len(job_ids):
+            raise HistoryResetSafetyError(
+                "Case-insensitive session-id aliases make deletion unsafe."
+            )
+        artifact_ids = [item[0] for item in checked if item[2]]
+        operation_id = uuid.uuid4().hex
+        now = time.time()
+        try:
+            self._conn.execute(
+                "INSERT INTO history_reset_operations"
+                " (operation_id, kind, subject_hash, state, job_ids_json,"
+                " artifact_job_ids_json, created_at, updated_at)"
+                " VALUES (?, ?, ?, 'prepared', ?, ?, ?, ?)",
+                (
+                    operation_id,
+                    kind,
+                    subject_hash,
+                    json.dumps(job_ids, separators=(",", ":")),
+                    json.dumps(artifact_ids, separators=(",", ":")),
+                    now,
+                    now,
+                ),
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+
+        try:
+            operation_dir = self._history_operation_dir_locked(
+                operation_id, create_trash=True
+            )
+            operation_dir.mkdir()
+            for safe_id, source, had_artifacts in checked:
+                if not had_artifacts:
+                    continue
+                # Revalidate immediately before each rename. The manager lock
+                # closes application races; this second check also refuses a
+                # filesystem swap between preflight and staging.
+                _validated_id, source, exists = self._validate_session_dir_locked(
+                    safe_id
+                )
+                if not exists:
+                    raise HistoryResetSafetyError(
+                        f"Session artifacts disappeared while preparing: {safe_id}"
+                    )
+                destination = operation_dir / safe_id
+                if self._path_exists_safely(destination):
+                    raise HistoryResetSafetyError(
+                        f"History trash destination already exists: {safe_id}"
+                    )
+                source.replace(destination)
+        except Exception:
+            try:
+                self._abort_prepared_operation_locked(operation_id)
+            except Exception:
+                logger.exception(
+                    "Could not roll back prepared history operation %s",
+                    operation_id,
+                )
+            raise
+        return operation_id
+
+    def _operation_row_locked(self, operation_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM history_reset_operations WHERE operation_id = ?",
+            (operation_id,),
+        ).fetchone()
+
+    def _history_operations_pending_locked(self) -> int:
+        return int(
+            self._conn.execute(
+                "SELECT COUNT(*) FROM history_reset_operations"
+            ).fetchone()[0]
+        )
+
+    def _restore_prepared_artifacts_locked(self, row: sqlite3.Row) -> None:
+        operation_id = str(row["operation_id"])
+        job_ids = self._parse_history_ids(row["job_ids_json"], label="job ids")
+        artifact_ids = self._parse_history_ids(
+            row["artifact_job_ids_json"], label="artifact job ids"
+        )
+        if not set(artifact_ids).issubset(job_ids):
+            raise HistoryResetSafetyError(
+                "Artifact ids are not a subset of the journaled jobs."
+            )
+        persisted_ids = {
+            str(persisted[0])
+            for persisted in self._conn.execute("SELECT id FROM jobs").fetchall()
+        }
+        if not set(job_ids).issubset(persisted_ids):
+            raise HistoryResetSafetyError(
+                "A prepared history operation is missing its job rows."
+            )
+        operation_dir = self._history_operation_dir_locked(
+            operation_id, create_trash=False
+        )
+        for job_id in reversed(artifact_ids):
+            safe_id = self._validate_job_id(job_id)
+            source = self.sessions_dir / safe_id
+            staged = operation_dir / safe_id
+            source_present = self._path_exists_safely(source)
+            staged_present = self._path_exists_safely(staged)
+            if source_present and self._is_link_or_junction(source):
+                raise HistoryResetSafetyError(
+                    f"Restored session path is a link: {safe_id}"
+                )
+            if source_present and staged_present:
+                raise HistoryResetSafetyError(
+                    f"Both live and staged session paths exist: {safe_id}"
+                )
+            if staged_present:
+                if self._is_link_or_junction(staged):
+                    raise HistoryResetSafetyError(
+                        f"Staged session path is a link: {safe_id}"
+                    )
+                if not self._path_exists_safely(operation_dir) or (
+                    staged.resolve(strict=True).parent
+                    != operation_dir.resolve(strict=True)
+                ):
+                    raise HistoryResetSafetyError(
+                        f"Staged session path escapes history trash: {safe_id}"
+                    )
+                staged.replace(source)
+            elif not source_present:
+                raise HistoryResetSafetyError(
+                    f"Journaled session artifacts are missing: {safe_id}"
+                )
+        if self._path_exists_safely(operation_dir):
+            operation_dir.rmdir()
+
+    def _abort_prepared_operation_locked(self, operation_id: str) -> None:
+        row = self._operation_row_locked(operation_id)
+        if row is None:
+            return
+        if row["state"] != "prepared":
+            raise HistoryResetSafetyError(
+                "Only a prepared history operation can be rolled back."
+            )
+        self._restore_prepared_artifacts_locked(row)
+        try:
+            deleted = self._conn.execute(
+                "DELETE FROM history_reset_operations"
+                " WHERE operation_id = ? AND state = 'prepared'",
+                (operation_id,),
+            ).rowcount
+            if deleted != 1:
+                raise HistoryResetError(
+                    "The prepared history journal changed during rollback."
+                )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+        self._remove_empty_history_trash_locked()
+
+    def _remove_empty_history_trash_locked(self) -> None:
+        try:
+            trash = self._history_trash_root_locked(create=False)
+            if self._path_exists_safely(trash):
+                trash.rmdir()
+        except (OSError, HistoryResetSafetyError):
+            pass
+
+    def _finish_committed_operation_locked(self, operation_id: str) -> bool:
+        row = self._operation_row_locked(operation_id)
+        if row is None:
+            return True
+        if row["state"] != "committed":
+            return False
+        try:
+            job_ids = self._parse_history_ids(
+                row["job_ids_json"], label="job ids"
+            )
+            artifact_ids = self._parse_history_ids(
+                row["artifact_job_ids_json"], label="artifact job ids"
+            )
+            if not set(artifact_ids).issubset(job_ids):
+                raise HistoryResetSafetyError(
+                    "Artifact ids are not a subset of the journaled jobs."
+                )
+            persisted_ids = {
+                str(persisted[0])
+                for persisted in self._conn.execute(
+                    "SELECT id FROM jobs"
+                ).fetchall()
+            }
+            if set(job_ids) & persisted_ids:
+                raise HistoryResetSafetyError(
+                    "A committed history operation still has job rows."
+                )
+            # SQLite can durably recover the commit even if a power loss made
+            # one or more preceding directory renames disappear. Validate all
+            # journaled live paths before deleting anything, then purge both
+            # possible locations. The committed journal remains until neither
+            # location contains owned artifacts.
+            live_artifact_dirs: list[Path] = []
+            for job_id in artifact_ids:
+                _safe_id, live_path, live_present = (
+                    self._validate_session_dir_locked(job_id)
+                )
+                if live_present:
+                    live_artifact_dirs.append(live_path)
+            operation_dir = self._history_operation_dir_locked(
+                operation_id, create_trash=False
+            )
+            if self._path_exists_safely(operation_dir):
+                self._validate_tree_no_links(
+                    operation_dir, operation_dir.resolve(strict=True)
+                )
+            for live_path in live_artifact_dirs:
+                shutil.rmtree(live_path)
+            if self._path_exists_safely(operation_dir):
+                shutil.rmtree(operation_dir)
+        except (OSError, HistoryResetSafetyError):
+            logger.exception(
+                "History cleanup remains pending for operation %s", operation_id
+            )
+            return False
+        try:
+            deleted = self._conn.execute(
+                "DELETE FROM history_reset_operations"
+                " WHERE operation_id = ? AND state = 'committed'",
+                (operation_id,),
+            ).rowcount
+            if deleted != 1:
+                raise HistoryResetError(
+                    "The committed history journal changed during cleanup."
+                )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            logger.exception(
+                "Cleaned history journal remains pending for operation %s",
+                operation_id,
+            )
+            return False
+        self._remove_empty_history_trash_locked()
+        return True
+
+    def _recover_history_operations(self) -> None:
+        """Restore prepared operations and finish committed trash deletion."""
+        with self._lock:
+            self._recover_history_operations_locked()
+
+    def _recover_history_operations_locked(self) -> None:
+        rows = self._conn.execute(
+            "SELECT * FROM history_reset_operations ORDER BY created_at"
+        ).fetchall()
+        for row in rows:
+            operation_id = str(row["operation_id"])
+            try:
+                if row["state"] == "prepared":
+                    self._abort_prepared_operation_locked(operation_id)
+                elif row["state"] == "committed":
+                    self._finish_committed_operation_locked(operation_id)
+                else:
+                    logger.error(
+                        "Unknown history operation state %r for %s",
+                        row["state"],
+                        operation_id,
+                    )
+            except Exception:
+                # Leave the durable row in place for health visibility and a
+                # later retry; never guess at an unsafe filesystem path.
+                logger.exception(
+                    "History operation recovery remains pending for %s",
+                    operation_id,
+                )
+
     # -- startup passes ---------------------------------------------------
     def _source_path(self, job: Job) -> Path | None:
         """The uploaded video (saved as source.<ext> by the web layer)."""
@@ -648,18 +1483,89 @@ class JobManager:
             self._save(job)
 
     def _cleanup_expired(self) -> None:
-        """Delete finished sessions older than web.retention_days (0 = never)."""
+        """Delete expired terminal sessions after archiving monthly usage."""
         days = float(self.cfg.web.get("retention_days") or 0)
-        if days <= 0:
-            return
-        cutoff = time.time() - days * 86400
         with self._lock:
+            self._recover_history_operations_locked()
+            if self._history_operations_pending_locked():
+                logger.error(
+                    "Retention cleanup skipped while history recovery is pending."
+                )
+                return
+            self._purge_usage_receipts_locked()
+            self._conn.commit()
+            if days <= 0:
+                return
+            cutoff = time.time() - days * 86400
             rows = self._conn.execute(
-                "SELECT id FROM jobs WHERE status IN (?, ?) AND updated_at < ?",
+                "SELECT * FROM jobs WHERE status IN (?, ?) AND updated_at < ?"
+                " ORDER BY updated_at, id",
                 (DONE, FAILED, cutoff),
             ).fetchall()
-        for row in rows:
-            shutil.rmtree(self.sessions_dir / row["id"], ignore_errors=True)
-            with self._lock:
-                self._conn.execute("DELETE FROM jobs WHERE id = ?", (row["id"],))
-                self._conn.commit()
+            for row in rows:
+                operation_id: str | None = None
+                try:
+                    usage = self._usage_contributions((row,))
+                    operation_id = self._prepare_history_operation_locked(
+                        (row,), kind="retention", subject_hash=None
+                    )
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    current = self._conn.execute(
+                        "SELECT * FROM jobs WHERE id = ?", (row["id"],)
+                    ).fetchone()
+                    if current is None or any(
+                        current[column] != row[column]
+                        for column in (
+                            "status",
+                            "created_at",
+                            "updated_at",
+                            "user_id",
+                        )
+                    ):
+                        raise HistoryResetConflict(
+                            "An expired session changed while cleanup was prepared."
+                        )
+                    self._archive_usage_locked(usage)
+                    deleted = self._conn.execute(
+                        "DELETE FROM jobs WHERE id = ? AND status = ?"
+                        " AND updated_at = ? AND user_id IS ?",
+                        (
+                            row["id"],
+                            row["status"],
+                            row["updated_at"],
+                            row["user_id"],
+                        ),
+                    ).rowcount
+                    if deleted != 1:
+                        raise HistoryResetConflict(
+                            "An expired session changed while cleanup was committing."
+                        )
+                    updated = self._conn.execute(
+                        "UPDATE history_reset_operations"
+                        " SET state = 'committed', updated_at = ?"
+                        " WHERE operation_id = ? AND state = 'prepared'",
+                        (time.time(), operation_id),
+                    ).rowcount
+                    if updated != 1:
+                        raise HistoryResetError(
+                            "The retention cleanup journal could not be committed."
+                        )
+                    self._conn.commit()
+                except Exception:
+                    self._conn.rollback()
+                    if operation_id is not None:
+                        try:
+                            self._abort_prepared_operation_locked(operation_id)
+                        except Exception:
+                            logger.exception(
+                                "Expired session %s could not be restored",
+                                row["id"],
+                            )
+                    logger.exception(
+                        "Expired session %s cleanup was deferred", row["id"]
+                    )
+                    if self._history_operations_pending_locked():
+                        return
+                    continue
+                if not self._finish_committed_operation_locked(operation_id):
+                    return

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -11,7 +12,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
+from swinglab.backups import core as core_module
 from swinglab.backups import store as store_module
 from swinglab.backups.core import (
     COMPLETE_FILE,
@@ -23,6 +26,8 @@ from swinglab.backups.core import (
 )
 from swinglab.backups.store import S3Settings, download_bundle, upload_bundle
 from swinglab.cli import main
+from swinglab.config import Config
+from swinglab.web.app import create_app
 from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
 from swinglab.web.throttle import _SCHEMA as THROTTLE_SCHEMA
 from swinglab.web.users import _SCHEMA as USERS_SCHEMA
@@ -107,6 +112,12 @@ def synthetic_sessions(tmp_path):
     connection.execute(
         "INSERT INTO auth_attempts (bucket, key, ts) VALUES (?, ?, ?)",
         ("login", "synthetic-key", 6.0),
+    )
+    connection.execute(
+        "INSERT INTO analysis_usage_monthly"
+        " (user_hash, month_start, coaching_eligible, refilm_rejections,"
+        "  expires_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+        ("ef" * 32, 1782864000, 1, 1, 1785542400.0, 10.0),
     )
     connection.execute(
         "UPDATE shopify_sync_control SET order_fence_secret = ? WHERE id = 1",
@@ -245,6 +256,10 @@ def test_wal_safe_snapshot_and_artifact_allowlist(tmp_path, synthetic_sessions):
         "shopify_customer_tombstones": 1,
         "shopify_pending_customer_links": 1,
     }
+    assert manifest["database"]["sqlite"]["history_state_table_counts"] == {
+        "analysis_usage_monthly": 1,
+        "history_reset_operations": 0,
+    }
 
 
 def test_restore_drill_uses_new_scratch_and_reconciles(tmp_path, synthetic_sessions):
@@ -282,8 +297,158 @@ def test_restore_drill_uses_new_scratch_and_reconciles(tmp_path, synthetic_sessi
     assert restored.execute(
         "SELECT COUNT(*) FROM shopify_pending_customer_links"
     ).fetchone()[0] == 1
+    assert restored.execute(
+        "SELECT coaching_eligible, refilm_rejections"
+        " FROM analysis_usage_monthly WHERE user_hash = ?",
+        ("ef" * 32,),
+    ).fetchone() == (1, 1)
     restored.close()
     assert (sessions / "swinglab.db").is_file()
+
+
+def test_legacy_v1_database_without_history_tables_remains_restorable(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    connection.execute("DROP TABLE analysis_usage_monthly")
+    connection.execute("DROP TABLE history_reset_operations")
+    connection.execute("ALTER TABLE users DROP COLUMN history_epoch")
+    connection.commit()
+
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    assert "analysis_usage_monthly" not in manifest["database"]["sqlite"][
+        "critical_table_counts"
+    ]
+    scratch = tmp_path / "scratch-legacy"
+    scratch.mkdir()
+    restored = restore_backup(bundle, scratch)
+
+    assert restored["report"]["sqlite_integrity_check"] == "ok"
+    # A restored pre-feature database must be directly bootable by the current
+    # application. Startup performs the additive migrations without losing the
+    # legacy account or job rows.
+    boot_sessions = tmp_path / "boot-restored-legacy"
+    boot_sessions.mkdir()
+    restored_db = restored["restore_dir"] / DATABASE_BUNDLE_PATH
+    shutil.copy2(restored_db, boot_sessions / "swinglab.db")
+    app = create_app(Config(), sessions_dir=boot_sessions)
+    with TestClient(app) as client:
+        health = client.get("/healthz")
+        assert health.status_code == 200
+        assert health.json()["history_cleanup_pending"] == 0
+        assert app.state.users.get("user-synthetic") is not None
+        assert app.state.jobs.get("jobdone") is not None
+        assert app.state.users.get("user-synthetic").history_epoch == 0
+    migrated = sqlite3.connect(boot_sessions / "swinglab.db")
+    assert "history_epoch" in {
+        row[1] for row in migrated.execute("PRAGMA table_info(users)")
+    }
+    assert {
+        "analysis_usage_monthly",
+        "history_reset_operations",
+    }.issubset(
+        {
+            row[0]
+            for row in migrated.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    )
+    migrated.close()
+
+
+def test_new_bundle_preserves_the_original_v1_reader_contract(
+    tmp_path, synthetic_sessions, monkeypatch
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    monkeypatch.setattr(core_module, "HISTORY_STATE_TABLES", ())
+
+    legacy_summary = core_module.database_summary(
+        bundle / DATABASE_BUNDLE_PATH,
+        CAPTURED_AT.timestamp(),
+    )
+
+    for field in (
+        "integrity_check",
+        "user_version",
+        "critical_table_counts",
+        "critical_table_sha256",
+        "reconciliation",
+        "invariant_violations",
+    ):
+        assert legacy_summary[field] == manifest["database"]["sqlite"][field]
+    assert "history_state_table_counts" not in legacy_summary
+
+
+def test_current_reader_accepts_old_writer_manifest_over_new_schema(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    for field in (
+        "history_state_table_counts",
+        "history_state_table_sha256",
+        "history_state_invariant_violations",
+    ):
+        manifest["database"]["sqlite"].pop(field)
+    _rewrite_completion(bundle, manifest)
+    scratch = tmp_path / "scratch-old-writer-new-schema"
+    scratch.mkdir()
+
+    restored = restore_backup(bundle, scratch)
+
+    assert restored["report"]["sqlite_integrity_check"] == "ok"
+
+
+def test_partial_history_state_schema_and_pending_cleanup_block_backup(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    connection.execute("DROP TABLE history_reset_operations")
+    connection.commit()
+    with pytest.raises(BackupError, match="incomplete history-reset state"):
+        create_backup(sessions, tmp_path / "partial", now=CAPTURED_AT)
+
+    connection.executescript(
+        "CREATE TABLE history_reset_operations ("
+        " operation_id TEXT PRIMARY KEY, kind TEXT NOT NULL, subject_hash TEXT,"
+        " state TEXT NOT NULL, job_ids_json TEXT NOT NULL, created_at REAL NOT NULL,"
+        " updated_at REAL NOT NULL);"
+    )
+    connection.execute(
+        "INSERT INTO history_reset_operations VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("a" * 32, "user_reset", "b" * 64, "committed", "[]", 1.0, 2.0),
+    )
+    connection.commit()
+    with pytest.raises(BackupError, match="History cleanup is pending"):
+        create_backup(sessions, tmp_path / "pending", now=CAPTURED_AT)
+
+
+def test_history_epoch_marker_blocks_backup_after_both_state_tables_are_lost(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    connection.execute(
+        "UPDATE users SET history_epoch = 1 WHERE id = 'user-synthetic'"
+    )
+    connection.execute("DROP TABLE analysis_usage_monthly")
+    connection.execute("DROP TABLE history_reset_operations")
+    connection.commit()
+
+    with pytest.raises(BackupError, match="incomplete history-reset state"):
+        create_backup(sessions, tmp_path / "lost-history-state", now=CAPTURED_AT)
+
+
+def test_history_tables_without_epoch_marker_are_not_treated_as_legacy(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    connection.execute("ALTER TABLE users DROP COLUMN history_epoch")
+    connection.commit()
+
+    with pytest.raises(BackupError, match="incomplete history-reset state"):
+        create_backup(sessions, tmp_path / "missing-history-marker", now=CAPTURED_AT)
 
 
 def test_artifact_corruption_blocks_restore(tmp_path, synthetic_sessions):

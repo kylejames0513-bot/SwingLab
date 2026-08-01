@@ -172,6 +172,11 @@ DEFAULTS: dict[str, Any] = {
         # Bare-code default is an open, no-login instance; the shipped
         # config.yaml turns accounts on.
         "require_account": False,
+        # Customer-triggered swing-history deletion. Keep this off in the
+        # compatibility-floor release; activate only after that release is
+        # live so rollback never targets a binary that ignores reset quota
+        # receipts or history epochs.
+        "history_reset_enabled": False,
         # Email-code sign-in ("one account": the store email is the app
         # identity, nobody needs a password). Safe to default on — it only
         # activates when SMTP is configured (SWINGLAB_SMTP_URL +

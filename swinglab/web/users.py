@@ -237,6 +237,7 @@ CREATE TABLE IF NOT EXISTS users (
     digest_last_sent_at REAL,
     email_verified_at   REAL,
     auth_epoch          INTEGER NOT NULL DEFAULT 0,
+    history_epoch       INTEGER NOT NULL DEFAULT 0,
     shopify_sync_status TEXT NOT NULL DEFAULT 'not_started',
     shopify_last_synced_at REAL,
     shopify_sync_error  TEXT,
@@ -649,6 +650,8 @@ class User:
     shopify_account_migration_state: str = SHOPIFY_ACCOUNT_LOCAL_ONLY
     shopify_account_linked_at: float | None = None
     shopify_account_last_login_at: float | None = None
+    # Appended to preserve the positional order of the pre-reset User API.
+    history_epoch: int = 0  # rejects writes started before a history reset
 
     @property
     def is_pro(self) -> bool:
@@ -801,6 +804,22 @@ class MobileAPITokenAuthEpochError(RuntimeError):
     """The browser session changed before a device token could be issued."""
 
 
+class HistoryEpochError(RuntimeError):
+    """A history write started before the account's latest reset."""
+
+
+class HistoryAuthEpochError(HistoryEpochError):
+    """Account recovery revoked the session before history deletion."""
+
+
+class HistoryPrivacyExportConflict(HistoryEpochError):
+    """An undelivered compliance export still contains swing history."""
+
+
+class PasswordAddConflict(RuntimeError):
+    """The account changed before an optional password could be added."""
+
+
 class UserStore:
     def __init__(self, db_path: str | Path):
         self._lock = threading.Lock()
@@ -945,6 +964,10 @@ class UserStore:
                     # pre-passwordless files lack the verified stamp
                     ("email_verified_at", "email_verified_at REAL"),
                     ("auth_epoch", "auth_epoch INTEGER NOT NULL DEFAULT 0"),
+                    (
+                        "history_epoch",
+                        "history_epoch INTEGER NOT NULL DEFAULT 0",
+                    ),
                     (
                         "shopify_sync_status",
                         "shopify_sync_status TEXT NOT NULL DEFAULT 'not_started'",
@@ -3463,6 +3486,74 @@ class UserStore:
             )
             self._conn.commit()
 
+    def add_password(
+        self,
+        user_id: str,
+        password: str,
+        *,
+        expected_auth_epoch: int,
+        expected_history_epoch: int,
+    ) -> User:
+        """Add the first password with auth/history compare-and-set guards.
+
+        Passwordless browser ownership was proved earlier, but hashing leaves
+        a race window. The final credential mutation therefore shares one
+        ``BEGIN IMMEDIATE`` transaction with both epoch checks and the
+        no-existing-password condition. A reset or ownership change wins in
+        full; it can never race with creation of a persistent credential.
+        """
+
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters.")
+        password_hash = hash_password(password)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT password_hash, auth_epoch, history_epoch"
+                    " FROM users WHERE id = ?",
+                    (user_id,),
+                ).fetchone()
+                if (
+                    row is None
+                    or bool(row["password_hash"])
+                    or int(row["auth_epoch"] or 0) != int(expected_auth_epoch)
+                    or int(row["history_epoch"] or 0)
+                    != int(expected_history_epoch)
+                ):
+                    raise PasswordAddConflict(
+                        "The account changed before the password was added."
+                    )
+                changed = self._conn.execute(
+                    "UPDATE users SET password_hash = ?,"
+                    " auth_epoch = auth_epoch + 1"
+                    " WHERE id = ? AND password_hash = ''"
+                    " AND auth_epoch = ? AND history_epoch = ?",
+                    (
+                        password_hash,
+                        user_id,
+                        int(expected_auth_epoch),
+                        int(expected_history_epoch),
+                    ),
+                ).rowcount
+                if changed != 1:
+                    raise PasswordAddConflict(
+                        "The account changed before the password was added."
+                    )
+                updated = self._conn.execute(
+                    "SELECT * FROM users WHERE id = ?", (user_id,)
+                ).fetchone()
+                if updated is None:
+                    raise PasswordAddConflict(
+                        "The account changed before the password was added."
+                    )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return self._from_row(updated)
+
     def authenticate(self, email: str, password: str) -> User | None:
         with self._lock:
             row = self._conn.execute(
@@ -5725,11 +5816,155 @@ class UserStore:
         assert row is not None
         return self._profile_from_row(row)
 
+    def _assert_history_epoch_locked(
+        self,
+        user_id: str,
+        expected_history_epoch: int,
+        *,
+        session_ids: Iterable[str] = (),
+    ) -> None:
+        """Fence a write against a concurrent history reset.
+
+        Callers start ``BEGIN IMMEDIATE`` before this check.  That ordering
+        makes the epoch read and the related write one serialized operation
+        with :meth:`delete_swing_history_related`, even though the job manager
+        and user store use separate SQLite connections.
+        """
+
+        row = self._conn.execute(
+            "SELECT history_epoch FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if row is None or int(row["history_epoch"] or 0) != int(
+            expected_history_epoch
+        ):
+            raise HistoryEpochError(
+                "Swing history changed while this request was in progress."
+            )
+        for session_id in dict.fromkeys(session_ids):
+            owner = self._conn.execute(
+                "SELECT user_id FROM jobs WHERE id = ?", (session_id,)
+            ).fetchone()
+            if owner is None or str(owner["user_id"] or "") != user_id:
+                raise HistoryEpochError(
+                    "Swing history changed while this request was in progress."
+                )
+
+    @staticmethod
+    def delete_swing_history_related(
+        connection: sqlite3.Connection,
+        user_id: str,
+        *,
+        expected_auth_epoch: int | None = None,
+        expected_history_epoch: int | None = None,
+    ) -> int:
+        """Delete non-job swing history inside a JobManager reset transaction.
+
+        The manager invokes this callback after it has frozen and validated
+        the user's owned-job set but before deleting those job rows.  Keeping
+        the work on the manager's connection gives the reset one atomic SQLite
+        commit while deliberately preserving the account, golfer profile,
+        entitlements, purchases, credentials, device tokens, and quota
+        receipts.
+        """
+
+        row = connection.execute(
+            "SELECT auth_epoch, history_epoch FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if row is None:
+            raise HistoryEpochError("The account is no longer available.")
+        if expected_auth_epoch is not None and int(
+            row["auth_epoch"] or 0
+        ) != int(expected_auth_epoch):
+            raise HistoryAuthEpochError(
+                "Account authentication changed while this request was in progress."
+            )
+        if expected_history_epoch is not None and int(
+            row["history_epoch"] or 0
+        ) != int(expected_history_epoch):
+            raise HistoryEpochError(
+                "Swing history changed after reset confirmation."
+            )
+
+        for table in (
+            "practice_checkins",
+            "proof_cycle_practice_evidence",
+            "proof_cycle_transfer_checks",
+        ):
+            connection.execute(
+                f'DELETE FROM "{table}" WHERE user_id = ?', (user_id,)
+            )
+        connection.execute(
+            "DELETE FROM product_events WHERE user_id = ?"
+            " AND session_id IS NOT NULL",
+            (user_id,),
+        )
+
+        # A cached Shopify privacy export may contain the reports or practice
+        # rows being reset. Block while a matching/unreadable export is still
+        # awaiting delivery; after delivery, purge stale matching cache so a
+        # later download cannot resurrect old swing history.
+        request_ids: list[str] = []
+        for privacy_row in connection.execute(
+            "SELECT request_id, snapshot_json, delivered_at"
+            " FROM shopify_privacy_requests"
+        ).fetchall():
+            delivered = privacy_row["delivered_at"] is not None
+            try:
+                snapshot = json.loads(str(privacy_row["snapshot_json"]))
+            except (TypeError, ValueError):
+                if not delivered:
+                    raise HistoryPrivacyExportConflict(
+                        "An undelivered privacy export requires operator review."
+                    )
+                request_ids.append(str(privacy_row["request_id"]))
+                continue
+            if not isinstance(snapshot, dict) or snapshot.get(
+                "schema_version"
+            ) != 1:
+                if not delivered:
+                    raise HistoryPrivacyExportConflict(
+                        "An undelivered privacy export requires operator review."
+                    )
+                request_ids.append(str(privacy_row["request_id"]))
+                continue
+            if UserStore._privacy_snapshot_matches_customer(
+                snapshot,
+                customer_id=None,
+                order_ids=set(),
+                emails=set(),
+                user_ids={user_id},
+            ):
+                if not delivered:
+                    raise HistoryPrivacyExportConflict(
+                        "Deliver the pending privacy export before resetting history."
+                    )
+                request_ids.append(str(privacy_row["request_id"]))
+        if request_ids:
+            placeholders = ", ".join("?" for _ in request_ids)
+            connection.execute(
+                f"DELETE FROM shopify_privacy_requests"
+                f" WHERE request_id IN ({placeholders})",
+                tuple(request_ids),
+            )
+
+        connection.execute(
+            "UPDATE users SET history_epoch = history_epoch + 1 WHERE id = ?",
+            (user_id,),
+        )
+        updated = connection.execute(
+            "SELECT history_epoch FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if updated is None:
+            raise HistoryEpochError("The account is no longer available.")
+        return int(updated["history_epoch"] or 0)
+
     def record_practice_checkin(
         self,
         user_id: str,
         session_id: str,
         *,
+        expected_history_epoch: int | None = None,
         now: float | None = None,
     ) -> PracticeCheckin:
         """Mark one prescribed session practiced, replay-safely."""
@@ -5739,14 +5974,26 @@ class UserStore:
             raise ValueError("Invalid practice session.")
         completed_at = time.time() if now is None else float(now)
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO practice_checkins (user_id, session_id, completed_at)"
-                " VALUES (?, ?, ?)"
-                " ON CONFLICT(user_id, session_id) DO UPDATE SET"
-                " completed_at = excluded.completed_at",
-                (user_id, normalized_session_id, completed_at),
-            )
-            self._conn.commit()
+            try:
+                if expected_history_epoch is not None:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    self._assert_history_epoch_locked(
+                        user_id,
+                        expected_history_epoch,
+                        session_ids=(normalized_session_id,),
+                    )
+                self._conn.execute(
+                    "INSERT INTO practice_checkins"
+                    " (user_id, session_id, completed_at) VALUES (?, ?, ?)"
+                    " ON CONFLICT(user_id, session_id) DO UPDATE SET"
+                    " completed_at = excluded.completed_at",
+                    (user_id, normalized_session_id, completed_at),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
         return PracticeCheckin(
             user_id=user_id,
             session_id=normalized_session_id,
@@ -5863,6 +6110,7 @@ class UserStore:
         drill_id: object,
         minutes: object,
         outcome: object,
+        expected_history_epoch: int | None = None,
         now: float | None = None,
     ) -> ProofCyclePracticeEvidence:
         """Upsert one structured, self-reported receipt per target per day.
@@ -5883,33 +6131,45 @@ class UserStore:
         completed_at = self._proof_cycle_timestamp(now, "practice time")
         completed_day = int(completed_at // 86400)
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO proof_cycle_practice_evidence"
-                " (user_id, baseline_session_id, target_fingerprint, drill_id,"
-                "  minutes, outcome, completed_at, completed_day)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(user_id, baseline_session_id, target_fingerprint,"
-                "             completed_day) DO UPDATE SET"
-                " drill_id = excluded.drill_id, minutes = excluded.minutes,"
-                " outcome = excluded.outcome, completed_at = excluded.completed_at",
-                (
-                    normalized_user,
-                    baseline,
-                    fingerprint,
-                    drill,
-                    duration,
-                    normalized_outcome,
-                    completed_at,
-                    completed_day,
-                ),
-            )
-            row = self._conn.execute(
-                "SELECT * FROM proof_cycle_practice_evidence"
-                " WHERE user_id = ? AND baseline_session_id = ?"
-                " AND target_fingerprint = ? AND completed_day = ?",
-                (normalized_user, baseline, fingerprint, completed_day),
-            ).fetchone()
-            self._conn.commit()
+            try:
+                if expected_history_epoch is not None:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    self._assert_history_epoch_locked(
+                        normalized_user,
+                        expected_history_epoch,
+                        session_ids=(baseline,),
+                    )
+                self._conn.execute(
+                    "INSERT INTO proof_cycle_practice_evidence"
+                    " (user_id, baseline_session_id, target_fingerprint, drill_id,"
+                    "  minutes, outcome, completed_at, completed_day)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT(user_id, baseline_session_id, target_fingerprint,"
+                    "             completed_day) DO UPDATE SET"
+                    " drill_id = excluded.drill_id, minutes = excluded.minutes,"
+                    " outcome = excluded.outcome, completed_at = excluded.completed_at",
+                    (
+                        normalized_user,
+                        baseline,
+                        fingerprint,
+                        drill,
+                        duration,
+                        normalized_outcome,
+                        completed_at,
+                        completed_day,
+                    ),
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM proof_cycle_practice_evidence"
+                    " WHERE user_id = ? AND baseline_session_id = ?"
+                    " AND target_fingerprint = ? AND completed_day = ?",
+                    (normalized_user, baseline, fingerprint, completed_day),
+                ).fetchone()
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
         assert row is not None
         return self._proof_cycle_evidence_from_row(row)
 
@@ -5964,6 +6224,7 @@ class UserStore:
         hand: object,
         angle: object,
         normal_swings: object,
+        expected_history_epoch: int | None = None,
         now: float | None = None,
     ) -> ProofCycleTransferCheck:
         """Persist one server-validated normal-swing declaration per upload."""
@@ -5998,19 +6259,31 @@ class UserStore:
             declared_at,
         )
         with self._lock:
-            self._conn.execute(
-                "INSERT INTO proof_cycle_transfer_checks"
-                " (session_id, user_id, baseline_session_id, target_fingerprint,"
-                "  drill_id, club, hand, angle, normal_swings, declared_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                " ON CONFLICT(session_id) DO NOTHING",
-                values,
-            )
-            row = self._conn.execute(
-                "SELECT * FROM proof_cycle_transfer_checks WHERE session_id = ?",
-                (session,),
-            ).fetchone()
-            self._conn.commit()
+            try:
+                if expected_history_epoch is not None:
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    self._assert_history_epoch_locked(
+                        normalized_user,
+                        expected_history_epoch,
+                        session_ids=(session, baseline),
+                    )
+                self._conn.execute(
+                    "INSERT INTO proof_cycle_transfer_checks"
+                    " (session_id, user_id, baseline_session_id, target_fingerprint,"
+                    "  drill_id, club, hand, angle, normal_swings, declared_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    " ON CONFLICT(session_id) DO NOTHING",
+                    values,
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM proof_cycle_transfer_checks WHERE session_id = ?",
+                    (session,),
+                ).fetchone()
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
         assert row is not None
         stored = self._proof_cycle_transfer_from_row(row)
         if stored != ProofCycleTransferCheck(
@@ -6065,6 +6338,7 @@ class UserStore:
         anonymous_id: str | None = None,
         metadata: dict[str, str] | None = None,
         dedupe_key: str | None = None,
+        expected_history_epoch: int | None = None,
         now: float | None = None,
     ) -> bool:
         """Append a minimal, first-party product event.
@@ -6113,23 +6387,39 @@ class UserStore:
         event_id = uuid.uuid4().hex
         created_at = time.time() if now is None else float(now)
         with self._lock:
-            cursor = self._conn.execute(
-                "INSERT OR IGNORE INTO product_events"
-                " (id, event_name, user_id, session_id, anonymous_id,"
-                "  metadata_json, created_at, dedupe_key)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    event_id,
-                    normalized_name,
-                    user_id,
-                    session,
-                    anonymous,
-                    metadata_json,
-                    created_at,
-                    key,
-                ),
-            )
-            self._conn.commit()
+            try:
+                if expected_history_epoch is not None:
+                    if user_id is None:
+                        raise HistoryEpochError(
+                            "History fencing requires an account."
+                        )
+                    self._conn.execute("BEGIN IMMEDIATE")
+                    self._assert_history_epoch_locked(
+                        user_id,
+                        expected_history_epoch,
+                        session_ids=((session,) if session is not None else ()),
+                    )
+                cursor = self._conn.execute(
+                    "INSERT OR IGNORE INTO product_events"
+                    " (id, event_name, user_id, session_id, anonymous_id,"
+                    "  metadata_json, created_at, dedupe_key)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        event_id,
+                        normalized_name,
+                        user_id,
+                        session,
+                        anonymous,
+                        metadata_json,
+                        created_at,
+                        key,
+                    ),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
         return cursor.rowcount == 1
 
     def product_event_counts(self, *, since: float | None = None) -> dict[str, int]:
@@ -7573,6 +7863,7 @@ class UserStore:
             digest_last_sent_at=row["digest_last_sent_at"],
             email_verified_at=row["email_verified_at"],
             auth_epoch=int(row["auth_epoch"] or 0),
+            history_epoch=int(row["history_epoch"] or 0),
             shopify_sync_status=row["shopify_sync_status"],
             shopify_last_synced_at=row["shopify_last_synced_at"],
             shopify_sync_error=row["shopify_sync_error"],

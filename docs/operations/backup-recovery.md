@@ -4,7 +4,7 @@
 
 **Stage:** 0B foundation only
 
-**Last reviewed:** 2026-07-27
+**Last reviewed:** 2026-08-01
 
 **Activation status:** Inactive. No storage account, credentials, schedule,
 Railway setting, production backup, or automatic restore is configured by this
@@ -78,6 +78,9 @@ Every database snapshot and artifact has a SHA-256 digest and byte size in
 - exact counts and deterministic whole-table digests for `jobs`, `users`,
   `pro_grants`, `shopify_orders`, `gear_orders`, `email_codes`, and
   `auth_attempts`;
+- on current databases, exact counts and deterministic digests for the
+  pseudonymous monthly-usage receipts in `analysis_usage_monthly` and the
+  reset recovery journal schema in `history_reset_operations`;
 - aggregate entitlement state at the capture timestamp;
 - active and voided Shopify-order counts and remaining recorded days;
 - gear order, quantity, and cancellation totals;
@@ -92,6 +95,17 @@ No database rows, emails, names, order identifiers, source filenames,
 credentials, or signed URLs appear in the manifest or normal command output.
 `COMPLETE.json` contains the manifest digest and is written and uploaded last.
 A partial object prefix without this marker is not a completed backup.
+
+Backup creation fails while `history_reset_operations` contains any pending
+entry. The reset's quarantined directories are intentionally outside the
+artifact allowlist, so capturing a half-cleaned operation would not be a
+self-contained recovery point. Investigate `history_cleanup_pending` on
+`/healthz`, restart once to run recovery, and resolve any unsafe/symlinked path
+before retrying the backup. Never copy `.history-trash` into a bundle manually.
+
+The two history-reset tables were added without changing the bundle's v1 format.
+New bundles protect both tables. A legacy v1 SQLite snapshot with neither table
+remains verifiable and restorable; a partial schema with only one is rejected.
 Remote database and artifact object keys are opaque ordinals; logical job paths
 exist only inside the encrypted/private manifest body, not in provider-visible
 object names or metadata.

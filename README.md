@@ -297,8 +297,9 @@ Built to take real traffic on one machine:
   forever for white-label installs that manage retention themselves —
   turning retention off is a choice you should be able to defend
   (GDPR storage minimization).
-- **`/healthz`** — queue depth plus `disk_free_mb` and `sessions_count`
-  for load balancers and uptime monitors; alert on disk before it's full.
+- **`/healthz`** — queue depth plus `disk_free_mb`, `sessions_count`, and
+  `history_cleanup_pending` for load balancers and uptime monitors; alert on
+  disk before it's full and investigate reset cleanup that remains pending.
 - **Ops extras** — optional Sentry error monitoring: `pip install
   "swinglab[ops]"` and set `SENTRY_DSN`; with either missing it is
   completely inert. The inactive Stage 0B backup foundation creates WAL-safe
@@ -342,6 +343,21 @@ it also needs re-filming. Each
 account sees only its own history, and results are private to their owner
 (sessions from before accounts stay reachable by link). Set
 `require_account: false` for an open, no-login instance.
+
+With `web.history_reset_enabled: true`, an authenticated account can choose
+**Delete swing history / Start over** from Account or History. The confirmation
+requires the exact phrase `START OVER`
+and either the current password or a fresh email/Shopify sign-in. It removes
+the account's swing sessions, reports, practice check-ins, Proof Cycle evidence,
+and session-linked product events. It deliberately keeps the account, golfer
+profile, Pro access, purchases, Shopify link, connected device tokens, and the
+current month's allowance. Monthly usage is archived to a pseudonymous receipt
+before job rows disappear, so starting over cannot create free analyses. A
+journaled same-volume quarantine makes the filesystem/database change
+recoverable after interruption; see [Swing-history reset](docs/history-reset.md).
+The compatibility-floor release intentionally ships that flag `false`; the
+next release turns it on only after this version is verified live as the safe
+rollback target.
 
 Pro can be sold two ways, both **inert until configured** — the pricing page
 shows Pro as "coming soon" until one is set up. When both are configured,
@@ -816,7 +832,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
-| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, email-code sign-in (`passwordless_login`, shipped on — self-disables without email delivery), weekly digest on/off (`digest_enabled`) |
+| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, staged history-reset activation (`history_reset_enabled`), email-code sign-in (`passwordless_login`, shipped on — self-disables without email delivery), weekly digest on/off (`digest_enabled`) |
 | `billing` | free/Pro analyses per month, the coach-replay and progress-dashboard Pro gates (`replay_pro_only` / `progress_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 

@@ -104,7 +104,14 @@ from ..integrations.shopify import admin as shopify_admin
 from ..integrations.shopify import customer_accounts as shopify_customer_accounts
 from ..integrations.shopify import customer_sync as shopify_customer_sync
 from . import billing, digest, humanize, mailer, shop, shopify_billing
-from .jobs import DONE, FAILED, Job, JobManager
+from .jobs import (
+    DONE,
+    FAILED,
+    HistoryResetConflict,
+    HistoryResetError,
+    Job,
+    JobManager,
+)
 from .throttle import Throttle
 from .users import (
     MobileAPIToken,
@@ -112,8 +119,13 @@ from .users import (
     MobileAPITokenLimitError,
     PRODUCT_EVENT_NAMES,
     GolferProfile,
+    HistoryAuthEpochError,
+    HistoryEpochError,
+    HistoryPrivacyExportConflict,
+    PasswordAddConflict,
     User,
     UserStore,
+    shopify_remote_privacy_lock,
 )
 
 logger = logging.getLogger("swinglab.web")
@@ -140,6 +152,13 @@ SIGNUP_FLOW_SESSION_KEY = "password_signup_flow_nonce"
 PRODUCT_ANON_SESSION_KEY = "product_anon_id"
 PRODUCT_EVENT_MAX_BODY_BYTES = 8 * 1024
 SHOPIFY_ACCOUNT_BROWSER_SESSION_KEY = "shopify_customer_account_session"
+HISTORY_RESET_SESSION_KEY = "history_reset_confirmation"
+HISTORY_RESET_FLASH_KEY = "history_reset_flash"
+HISTORY_SESSION_EPOCH_KEY = "history_epoch"
+HISTORY_RESET_CONFIRMATION = "START OVER"
+HISTORY_RESET_NONCE_TTL_S = 10 * 60
+HISTORY_RESET_RECENT_AUTH_S = 15 * 60
+PASSWORD_ADDED_REAUTH_SESSION_KEY = "password_added_requires_reauth"
 
 
 def _shopify_sync_cohort_percent(raw: str | None) -> float:
@@ -575,11 +594,20 @@ def create_app(
             raise HTTPException(401, "Log in first.")
         return user
 
-    def establish_session(request: Request, user: User) -> None:
-        """Bind a signed cookie to the user's current revocation epoch."""
+    def establish_session(
+        request: Request,
+        user: User,
+        *,
+        fresh_auth: bool = True,
+    ) -> None:
+        """Bind a signed cookie and remember genuine authentication recency."""
 
         request.session["user_id"] = user.id
         request.session["auth_epoch"] = user.auth_epoch
+        if fresh_auth:
+            request.session[HISTORY_SESSION_EPOCH_KEY] = user.history_epoch
+            request.session["authenticated_at"] = time.time()
+            request.session.pop(PASSWORD_ADDED_REAUTH_SESSION_KEY, None)
 
     def flow_session_nonce(
         request: Request, key: str, *, create: bool = False
@@ -637,6 +665,11 @@ def create_app(
                 ),
                 metadata=metadata,
                 dedupe_key=dedupe_key,
+                expected_history_epoch=(
+                    resolved_user.history_epoch
+                    if resolved_user is not None
+                    else None
+                ),
             )
         except Exception:
             logger.warning("Product event write unavailable (event=%s).", event_name)
@@ -806,6 +839,12 @@ def create_app(
                 user=render_user,
                 header_profile=header_profile,
                 require_account=bool(cfg.web.get("require_account")),
+                # Destructive controls fail closed: only the YAML boolean
+                # true activates them. Strings such as "false" must not be
+                # treated as truthy configuration.
+                history_reset_enabled=(
+                    cfg.web.get("history_reset_enabled") is True
+                ),
                 billing_enabled=stripe_enabled,
                 pro_store_url=pro_store_url,
                 pro_available=stripe_enabled or bool(pro_store_url),
@@ -1926,6 +1965,20 @@ def create_app(
         # displayed as "Lifetime" — a dated row for the year 2126 would be
         # technically true and practically silly.
         pro_lifetime = user.pro_until - time.time() > LIFETIME_DISPLAY_MIN_S
+        raw_history_flash = request.session.pop(HISTORY_RESET_FLASH_KEY, None)
+        history_reset_flash = None
+        if isinstance(raw_history_flash, dict):
+            try:
+                deleted_jobs = max(0, int(raw_history_flash["deleted_jobs"]))
+            except (KeyError, TypeError, ValueError):
+                deleted_jobs = -1
+            if deleted_jobs >= 0:
+                history_reset_flash = {
+                    "deleted_jobs": deleted_jobs,
+                    "cleanup_pending": bool(
+                        raw_history_flash.get("cleanup_pending")
+                    ),
+                }
         return render(
             "web_account.html.j2",
             request,
@@ -1935,6 +1988,7 @@ def create_app(
             shopify_connected="shopify_connected" in request.query_params,
             password_added="password_added" in request.query_params,
             password_error=password_error,
+            history_reset_flash=history_reset_flash,
             golfer_profile=users.get_golfer_profile(user.id),
             pro_lifetime=pro_lifetime,
             pro_until_date=(
@@ -1970,6 +2024,275 @@ def create_app(
             return RedirectResponse("/login", status_code=303)
         return account_page(request, user)
 
+    def history_reset_recent_auth(request: Request) -> bool:
+        authenticated_at = request.session.get("authenticated_at")
+        if isinstance(authenticated_at, bool) or not isinstance(
+            authenticated_at, (int, float)
+        ):
+            return False
+        age = time.time() - float(authenticated_at)
+        return 0 <= age <= HISTORY_RESET_RECENT_AUTH_S
+
+    def history_reset_session_is_current(
+        request: Request, user: User
+    ) -> bool:
+        """Reject a pre-reset signed browser cookie at this destructive gate.
+
+        Missing values map to generation zero so sessions issued before the
+        compatibility floor continue to work until the account's first reset.
+        """
+
+        try:
+            session_history_epoch = int(
+                request.session.get(HISTORY_SESSION_EPOCH_KEY, 0)
+            )
+        except (TypeError, ValueError, OverflowError):
+            return False
+        return session_history_epoch == user.history_epoch
+
+    def reset_requires_fresh_session(request: Request, user: User):
+        if history_reset_session_is_current(request, user):
+            return None
+        request.session.clear()
+        response = RedirectResponse("/login", status_code=303)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
+    def history_delete_page(
+        request: Request,
+        user: User,
+        *,
+        error: str | None = None,
+        status_code: int = 200,
+    ) -> HTMLResponse:
+        nonce = secrets.token_urlsafe(32)
+        request.session[HISTORY_RESET_SESSION_KEY] = {
+            "nonce": nonce,
+            "expires_at": time.time() + HISTORY_RESET_NONCE_TTL_S,
+            # The signed cookie is replayable by design. Binding its nonce to
+            # the current history generation makes an old cookie harmless
+            # after the first committed reset or any intervening reset.
+            "history_epoch": user.history_epoch,
+        }
+        response = render_no_store(
+            "web_history_delete.html.j2",
+            request,
+            nonce=nonce,
+            confirmation_phrase=HISTORY_RESET_CONFIRMATION,
+            error=error,
+            recent_auth_required=(
+                bool(request.session.get(PASSWORD_ADDED_REAUTH_SESSION_KEY))
+                or (
+                    not user.has_password
+                    and not history_reset_recent_auth(request)
+                )
+            ),
+        )
+        response.status_code = status_code
+        return response
+
+    @app.get("/account/history/delete", response_class=HTMLResponse)
+    def account_history_delete(request: Request):
+        if request.headers.get("authorization") is not None:
+            raise mobile_bearer_unauthorized()
+        if not cfg.web.get("require_account") or cfg.web.get(
+            "history_reset_enabled"
+        ) is not True:
+            raise HTTPException(404, "Account history is unavailable.")
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        stale_session = reset_requires_fresh_session(request, user)
+        if stale_session is not None:
+            return stale_session
+        return history_delete_page(request, user)
+
+    @app.post("/account/history/delete", response_class=HTMLResponse)
+    def account_history_delete_confirm(
+        request: Request,
+        nonce: str = Form(""),
+        confirmation: str = Form(""),
+        password: str = Form(""),
+    ):
+        if request.headers.get("authorization") is not None:
+            raise mobile_bearer_unauthorized()
+        if not cfg.web.get("require_account") or cfg.web.get(
+            "history_reset_enabled"
+        ) is not True:
+            raise HTTPException(404, "Account history is unavailable.")
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        user = current_user(request)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        stale_session = reset_requires_fresh_session(request, user)
+        if stale_session is not None:
+            return stale_session
+
+        confirmation_state = request.session.pop(
+            HISTORY_RESET_SESSION_KEY, None
+        )
+        nonce_valid = False
+        confirmation_history_epoch: int | None = None
+        if isinstance(confirmation_state, dict):
+            stored_nonce = confirmation_state.get("nonce")
+            expires_at = confirmation_state.get("expires_at")
+            stored_history_epoch = confirmation_state.get("history_epoch")
+            if (
+                isinstance(stored_nonce, str)
+                and isinstance(expires_at, (int, float))
+                and not isinstance(expires_at, bool)
+                and isinstance(stored_history_epoch, int)
+                and not isinstance(stored_history_epoch, bool)
+                and stored_history_epoch >= 0
+                and time.time() <= float(expires_at)
+                and len(nonce) <= 256
+            ):
+                nonce_valid = hmac.compare_digest(stored_nonce, nonce)
+                confirmation_history_epoch = stored_history_epoch
+        if not nonce_valid:
+            return history_delete_page(
+                request,
+                user,
+                error="That confirmation expired. Review the details and try again.",
+                status_code=400,
+            )
+        if confirmation != HISTORY_RESET_CONFIRMATION:
+            return history_delete_page(
+                request,
+                user,
+                error=f'Type "{HISTORY_RESET_CONFIRMATION}" exactly to continue.',
+                status_code=400,
+            )
+
+        if request.session.get(PASSWORD_ADDED_REAUTH_SESSION_KEY):
+            return history_delete_page(
+                request,
+                user,
+                error=(
+                    "For your security, sign out and sign back in before "
+                    "starting over."
+                ),
+                status_code=403,
+            )
+        if user.has_password:
+            ip = client_ip(request)
+            if not (
+                throttle.allow(
+                    "history-reset-ip", ip, login_limit, LOGIN_WINDOW_S
+                )
+                and throttle.allow(
+                    "history-reset-user", user.id, login_limit, LOGIN_WINDOW_S
+                )
+            ):
+                return history_delete_page(
+                    request,
+                    user,
+                    error=THROTTLED_MESSAGE,
+                    status_code=429,
+                )
+            authenticated = users.authenticate(user.email, password)
+            if authenticated is None or authenticated.id != user.id:
+                throttle.record("history-reset-ip", ip)
+                throttle.record("history-reset-user", user.id)
+                return history_delete_page(
+                    request,
+                    user,
+                    error="That password did not match. Your history was not changed.",
+                    status_code=400,
+                )
+        elif not history_reset_recent_auth(request):
+            return history_delete_page(
+                request,
+                user,
+                error=(
+                    "For your security, sign out and sign back in before "
+                    "starting over."
+                ),
+                status_code=403,
+            )
+
+        try:
+            with shopify_remote_privacy_lock(sessions_dir / "swinglab.db"):
+                summary = manager.reset_user_history(
+                    user.id,
+                    delete_related=lambda connection, user_id: (
+                        users.delete_swing_history_related(
+                            connection,
+                            user_id,
+                            expected_auth_epoch=user.auth_epoch,
+                            expected_history_epoch=(
+                                confirmation_history_epoch
+                            ),
+                        )
+                    ),
+                )
+        except HistoryResetConflict:
+            return history_delete_page(
+                request,
+                user,
+                error=(
+                    "An analysis is still uploading or processing. Wait for it "
+                    "to finish, then try again."
+                ),
+                status_code=409,
+            )
+        except HistoryResetError as exc:
+            if isinstance(exc.__cause__, HistoryAuthEpochError):
+                request.session.clear()
+                response = RedirectResponse("/login", status_code=303)
+                response.headers["Cache-Control"] = "no-store"
+                response.headers["Pragma"] = "no-cache"
+                return response
+            if isinstance(exc.__cause__, HistoryPrivacyExportConflict):
+                return history_delete_page(
+                    request,
+                    user,
+                    error=(
+                        "A requested privacy export still contains this history. "
+                        "Finish delivering it, then try again."
+                    ),
+                    status_code=409,
+                )
+            if isinstance(exc.__cause__, HistoryEpochError):
+                return history_delete_page(
+                    request,
+                    user,
+                    error=(
+                        "Your swing history changed after this confirmation "
+                        "was opened. Review the current history and try again."
+                    ),
+                    status_code=409,
+                )
+            logger.exception("Swing-history reset failed before a safe commit.")
+            return history_delete_page(
+                request,
+                user,
+                error=(
+                    "We could not safely commit the reset. Your account and "
+                    "allowance were not reset; please try again after recovery."
+                ),
+                status_code=503,
+            )
+
+        request.session[HISTORY_RESET_FLASH_KEY] = {
+            "deleted_jobs": summary.deleted_jobs,
+            "cleanup_pending": summary.cleanup_pending,
+        }
+        updated_user = users.get(user.id)
+        if updated_user is None:
+            request.session.clear()
+            return RedirectResponse("/login", status_code=303)
+        request.session[HISTORY_SESSION_EPOCH_KEY] = (
+            updated_user.history_epoch
+        )
+        response = RedirectResponse("/account", status_code=303)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Clear-Site-Data"] = '"cache"'
+        return response
+
     @app.post("/account/password")
     def account_password(
         request: Request,
@@ -1986,21 +2309,36 @@ def create_app(
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
+        stale_session = reset_requires_fresh_session(request, user)
+        if stale_session is not None:
+            return stale_session
         if user.has_password:
             return RedirectResponse("/account", status_code=303)
         try:
-            users.set_password(user.id, password)
+            updated_user = users.add_password(
+                user.id,
+                password,
+                expected_auth_epoch=user.auth_epoch,
+                expected_history_epoch=user.history_epoch,
+            )
+        except PasswordAddConflict:
+            request.session.clear()
+            response = RedirectResponse("/login", status_code=303)
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+            return response
         except ValueError as exc:
             if return_to == "onboarding":
                 return onboarding_response(
                     request, user, password_error=str(exc)
                 )
             return account_page(request, user, password_error=str(exc))
-        updated_user = users.get(user.id)
-        if updated_user is None:
-            request.session.clear()
-            return RedirectResponse("/login", status_code=303)
-        establish_session(request, updated_user)
+        # Setting an optional password is not a new proof that the person at a
+        # walked-away browser is still the account owner.  Preserve the prior
+        # authentication timestamp instead of refreshing it here.
+        establish_session(request, updated_user, fresh_auth=False)
+        if not history_reset_recent_auth(request):
+            request.session[PASSWORD_ADDED_REAUTH_SESSION_KEY] = True
         if return_to == "onboarding":
             return RedirectResponse(
                 "/onboarding?password_added=1",
@@ -2241,10 +2579,26 @@ def create_app(
                     drill_id=assignment.drill_id,
                     minutes=practice_minutes,
                     outcome=practice_outcome,
+                    expected_history_epoch=user.history_epoch,
                 )
+            except HistoryEpochError:
+                raise HTTPException(
+                    409,
+                    "Swing history changed while this request was in progress.",
+                ) from None
             except ValueError as exc:
                 raise HTTPException(400, str(exc)) from None
-        users.record_practice_checkin(user.id, job.id)
+        try:
+            users.record_practice_checkin(
+                user.id,
+                job.id,
+                expected_history_epoch=user.history_epoch,
+            )
+        except HistoryEpochError:
+            raise HTTPException(
+                409,
+                "Swing history changed while this request was in progress.",
+            ) from None
         return RedirectResponse("/today?practice_done", status_code=303)
 
     @app.get("/email/unsubscribe", response_class=HTMLResponse)
@@ -2537,17 +2891,26 @@ def create_app(
                 "wait for one to finish before uploading another clip.",
             )
 
-        job = manager.create_session(
-            source_name=video.filename,
-            hand=hand,
-            angle=angle,
-            club=club,
-            level=level or None,
-            strikes=manual_strikes,
-            fast=fast.lower() in ("on", "true", "1", "yes"),
-            client_ip=ip,
-            user_id=user.id if user else None,
-        )
+        try:
+            job = manager.create_session(
+                source_name=video.filename,
+                hand=hand,
+                angle=angle,
+                club=club,
+                level=level or None,
+                strikes=manual_strikes,
+                fast=fast.lower() in ("on", "true", "1", "yes"),
+                client_ip=ip,
+                user_id=user.id if user else None,
+                expected_history_epoch=(
+                    user.history_epoch if user is not None else None
+                ),
+            )
+        except HistoryResetConflict:
+            raise HTTPException(
+                409,
+                "Swing history changed while this upload was starting. Try again.",
+            ) from None
         if user is not None:
             record_product_event(
                 request,
@@ -2624,7 +2987,14 @@ def create_app(
                     hand=job.hand,
                     angle=job.angle,
                     normal_swings=True,
+                    expected_history_epoch=user.history_epoch,
                 )
+            except HistoryEpochError:
+                manager.discard(job)
+                raise HTTPException(
+                    409,
+                    "Swing history changed while this upload was in progress.",
+                ) from None
             except ValueError as exc:
                 manager.discard(job)
                 raise HTTPException(409, str(exc)) from None
@@ -2871,7 +3241,7 @@ def create_app(
             and persisted_report_outcome(report_path)
             == REPORT_OUTCOME_COACHING
         )
-        return render(
+        response = render(
             "web_status.html.j2",
             request,
             job=job,
@@ -2894,6 +3264,12 @@ def create_app(
             ),
             gear=gear_for(job, brief),
         )
+        if job.user_id is not None:
+            # A mobile bearer may own this page without also having a browser
+            # cookie, so render() cannot infer personalization on its own.
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["Pragma"] = "no-cache"
+        return response
 
     @app.get("/sessions", response_class=HTMLResponse)
     def sessions_page(request: Request):
@@ -3016,7 +3392,11 @@ def create_app(
                 return RedirectResponse(
                     f"/session/{job_id}", status_code=303
                 )
-        return FileResponse(target)
+        response = FileResponse(target)
+        if job.user_id is not None:
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["Pragma"] = "no-cache"
+        return response
 
     # -- JSON API (what a future mobile app talks to) ----------------------
     @app.get("/api/session/{job_id}")
@@ -3031,7 +3411,11 @@ def create_app(
             and manager.coaching_eligible(job)
         ):
             request.session["has_analysis"] = True
-        return JSONResponse(api_payload(job))
+        response = JSONResponse(api_payload(job))
+        if job.user_id is not None:
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["Pragma"] = "no-cache"
+        return response
 
     @app.get("/api/sessions")
     def api_sessions(request: Request):
@@ -3062,11 +3446,15 @@ def create_app(
                 )
             return payload
 
-        return JSONResponse(
+        response = JSONResponse(
             {
                 "sessions": [index_payload(job) for job in listed]
             }
         )
+        if cfg.web.get("require_account"):
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["Pragma"] = "no-cache"
+        return response
 
     # -- /api/v1: stable PWA/native resources ----------------------------
     def mobile_token_payload(token: MobileAPIToken) -> dict:
@@ -3096,13 +3484,14 @@ def create_app(
     @app.get("/api/v1/me")
     def api_v1_me(request: Request):
         user, _ = api_v1_auth(request)
-        return JSONResponse(
+        return no_store_json(
             {
                 "resource_version": 1,
                 "identity": {
                     "id": user.id,
                     "email": user.email,
                     "email_verified": user.email_verified,
+                    "history_epoch": user.history_epoch,
                     "shopify_customer_linked": bool(user.shopify_customer_id),
                     "shopify_account_state": user.shopify_account_migration_state,
                 },
@@ -3169,7 +3558,7 @@ def create_app(
     @app.get("/api/v1/profile")
     def api_v1_profile(request: Request):
         user, _ = api_v1_auth(request)
-        return JSONResponse(
+        return no_store_json(
             {
                 "resource_version": 1,
                 "profile": profile_payload(users.get_golfer_profile(user.id)),
@@ -3222,7 +3611,7 @@ def create_app(
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None
-        return JSONResponse(
+        return no_store_json(
             {"resource_version": 1, "profile": profile_payload(profile)}
         )
 
@@ -3237,7 +3626,7 @@ def create_app(
             checkin.session_id
             for checkin in users.list_practice_checkins(user.id, limit=20)
         }
-        return JSONResponse(
+        return no_store_json(
             {
                 "resource_version": 1,
                 "profile": profile_payload(profile),
@@ -3253,7 +3642,7 @@ def create_app(
     @app.get("/api/v1/sessions")
     def api_v1_sessions(request: Request):
         user, _ = api_v1_auth(request)
-        return JSONResponse(
+        return no_store_json(
             {
                 "resource_version": 1,
                 "sessions": [
@@ -3266,7 +3655,7 @@ def create_app(
     @app.get("/api/v1/sessions/{job_id}")
     def api_v1_session(job_id: str, request: Request):
         user, _ = api_v1_auth(request)
-        return JSONResponse(
+        return no_store_json(
             api_v1_session_payload(
                 get_job_or_404(job_id, request, authenticated_user=user)
             )
@@ -3281,14 +3670,14 @@ def create_app(
         brief = caddie_brief_for(job)
         if brief is None:
             raise HTTPException(404, "No Caddie Brief is available for this session.")
-        return JSONResponse(
+        return no_store_json(
             {"resource_version": 1, "caddie_brief": caddie_brief_payload(brief)}
         )
 
     @app.get("/api/v1/practice-checkins")
     def api_v1_practice_checkins(request: Request):
         user, _ = api_v1_auth(request)
-        return JSONResponse(
+        return no_store_json(
             {
                 "resource_version": 1,
                 "checkins": [
@@ -3320,8 +3709,18 @@ def create_app(
             or caddie_brief_for(job) is None
         ):
             raise HTTPException(400, "This session is not ready for a practice check-in.")
-        checkin = users.record_practice_checkin(user.id, job.id)
-        return JSONResponse(
+        try:
+            checkin = users.record_practice_checkin(
+                user.id,
+                job.id,
+                expected_history_epoch=user.history_epoch,
+            )
+        except HistoryEpochError:
+            raise HTTPException(
+                409,
+                "Swing history changed while this request was in progress.",
+            ) from None
+        return no_store_json(
             {
                 "resource_version": 1,
                 "checkin": {
@@ -3659,6 +4058,9 @@ def create_app(
                 **manager.counts(),
                 "disk_free_mb": shutil.disk_usage(sessions_dir).free // (1024 * 1024),
                 "sessions_count": manager.sessions_count(),
+                "history_cleanup_pending": (
+                    manager.history_cleanup_pending_count()
+                ),
                 "shopify_customer_sync": sync_health,
                 # Feature-state only: this supports a safe rollout check
                 # without exposing a golfer, report, or comparison outcome.

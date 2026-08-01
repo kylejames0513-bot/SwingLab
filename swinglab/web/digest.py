@@ -300,23 +300,27 @@ def run_once(users, manager, cfg: Config, secret: str, now: float | None = None)
     for user in users.digest_optins():
         if not eligible(user, now):
             continue
-        composed = compose_digest(
-            user, cfg, manager.list_recent(user_id=user.id),
-            base_url=base_url, secret=secret,
-        )
-        if composed is None:
-            continue  # nothing finished yet — stays eligible for a later tick
-        if not users.claim_digest_send(user.id, now, DIGEST_INTERVAL_S):
-            continue  # another worker claimed this week's send
-        subject, body = composed
-        try:
-            mailer.send(user.email, subject, body, html=True)
-            sent += 1
-            logger.info("digest: sent weekly practice plan")
-        except Exception:
-            # The claim above stands: a failed send waits for next week
-            # rather than risking a double-send on retry.
-            logger.error("digest: weekly practice-plan delivery failed")
+        # Compose, claim, and deliver as one history-visibility interval. A
+        # reset either commits after this send or commits before composition;
+        # it can never delete the source history between compose and SMTP.
+        with manager.history_delivery_guard():
+            composed = compose_digest(
+                user, cfg, manager.list_recent(user_id=user.id),
+                base_url=base_url, secret=secret,
+            )
+            if composed is None:
+                continue  # no finished history — keep eligibility
+            if not users.claim_digest_send(user.id, now, DIGEST_INTERVAL_S):
+                continue  # another worker claimed this week's send
+            subject, body = composed
+            try:
+                mailer.send(user.email, subject, body, html=True)
+                sent += 1
+                logger.info("digest: sent weekly practice plan")
+            except Exception:
+                # The claim above stands: a failed send waits for next week
+                # rather than risking a double-send on retry.
+                logger.error("digest: weekly practice-plan delivery failed")
     return sent
 
 
