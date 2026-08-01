@@ -53,9 +53,9 @@ coaching:
                              # jitter (~0.02 SW)
 
 proof_cycle:
-  enabled: false             # staged rollout: the code and tests ship first;
-                             # enable only after a controlled new-analysis
-                             # check confirms the live result surface.
+  enabled: true              # controlled first-stage rollout: write and show
+                             # private result sidecars for new analyses only.
+                             # Practice-data collection remains separately off.
   practice_evidence_enabled: false
                              # second-stage rollout: first observe the
                              # read-only result surface, then enable

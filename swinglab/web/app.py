@@ -3385,6 +3385,14 @@ def create_app(
                 "disk_free_mb": shutil.disk_usage(sessions_dir).free // (1024 * 1024),
                 "sessions_count": manager.sessions_count(),
                 "shopify_customer_sync": sync_health,
+                # Feature-state only: this supports a safe rollout check
+                # without exposing a golfer, report, or comparison outcome.
+                "proof_cycle": {
+                    "enabled": proof_cycle_enabled(cfg),
+                    "practice_evidence_enabled": (
+                        cfg.proof_cycle.get("practice_evidence_enabled") is True
+                    ),
+                },
             }
         )
 
