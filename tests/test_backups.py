@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import shutil
 import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -12,7 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
 
 from swinglab.backups import core as core_module
 from swinglab.backups import store as store_module
@@ -26,8 +24,6 @@ from swinglab.backups.core import (
 )
 from swinglab.backups.store import S3Settings, download_bundle, upload_bundle
 from swinglab.cli import main
-from swinglab.config import Config
-from swinglab.web.app import create_app
 from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
 from swinglab.web.throttle import _SCHEMA as THROTTLE_SCHEMA
 from swinglab.web.users import _SCHEMA as USERS_SCHEMA
@@ -324,37 +320,6 @@ def test_legacy_v1_database_without_history_tables_remains_restorable(
     restored = restore_backup(bundle, scratch)
 
     assert restored["report"]["sqlite_integrity_check"] == "ok"
-    # A restored pre-feature database must be directly bootable by the current
-    # application. Startup performs the additive migrations without losing the
-    # legacy account or job rows.
-    boot_sessions = tmp_path / "boot-restored-legacy"
-    boot_sessions.mkdir()
-    restored_db = restored["restore_dir"] / DATABASE_BUNDLE_PATH
-    shutil.copy2(restored_db, boot_sessions / "swinglab.db")
-    app = create_app(Config(), sessions_dir=boot_sessions)
-    with TestClient(app) as client:
-        health = client.get("/healthz")
-        assert health.status_code == 200
-        assert health.json()["history_cleanup_pending"] == 0
-        assert app.state.users.get("user-synthetic") is not None
-        assert app.state.jobs.get("jobdone") is not None
-        assert app.state.users.get("user-synthetic").history_epoch == 0
-    migrated = sqlite3.connect(boot_sessions / "swinglab.db")
-    assert "history_epoch" in {
-        row[1] for row in migrated.execute("PRAGMA table_info(users)")
-    }
-    assert {
-        "analysis_usage_monthly",
-        "history_reset_operations",
-    }.issubset(
-        {
-            row[0]
-            for row in migrated.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
-    )
-    migrated.close()
 
 
 def test_new_bundle_preserves_the_original_v1_reader_contract(

@@ -5,8 +5,11 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+import shutil
+import sqlite3
 import threading
 import time
+from datetime import datetime, timezone
 
 import pytest
 
@@ -14,10 +17,18 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from swinglab.config import Config
+from swinglab.backups.core import (
+    DATABASE_BUNDLE_PATH,
+    create_backup,
+    restore_backup,
+)
 from swinglab.web import app as app_module
 from swinglab.web import jobs as jobs_module
 from swinglab.web import mailer
 from swinglab.web.app import create_app
+from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
+from swinglab.web.throttle import _SCHEMA as THROTTLE_SCHEMA
+from swinglab.web.users import _SCHEMA as USERS_SCHEMA
 from swinglab.web.users import HistoryEpochError, PasswordAddConflict
 from tests.test_web import fake_analyze_ok, wait_for
 
@@ -91,6 +102,75 @@ def test_reset_surface_is_inert_until_the_compatibility_floor_is_live(
     assert "/account/history/delete" not in account.text
     assert client.get("/account/history/delete").status_code == 404
     assert client.post("/account/history/delete").status_code == 404
+
+
+def test_restored_pre_feature_database_migrates_on_web_boot(tmp_path):
+    sessions = tmp_path / "legacy-sessions"
+    sessions.mkdir()
+    database = sessions / "swinglab.db"
+    connection = sqlite3.connect(database)
+    connection.executescript(USERS_SCHEMA + JOBS_SCHEMA + THROTTLE_SCHEMA)
+    connection.execute("DROP TABLE analysis_usage_monthly")
+    connection.execute("DROP TABLE history_reset_operations")
+    connection.execute("ALTER TABLE users DROP COLUMN history_epoch")
+    connection.execute(
+        "INSERT INTO users"
+        " (id, email, password_hash, created_at, plan, subscription_status)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (
+            "legacy-user",
+            "legacy@example.invalid",
+            "legacy-hash",
+            1.0,
+            "free",
+            "none",
+        ),
+    )
+    connection.execute(
+        "INSERT INTO jobs"
+        " (id, status, created_at, updated_at, user_id)"
+        " VALUES (?, ?, ?, ?, ?)",
+        ("legacyjob", "failed", 1.0, 2.0, "legacy-user"),
+    )
+    connection.commit()
+    connection.close()
+    captured_at = datetime(2026, 8, 1, 12, 0, tzinfo=timezone.utc)
+    bundle = tmp_path / "legacy-bundle"
+    create_backup(sessions, bundle, now=captured_at)
+    scratch = tmp_path / "legacy-restore"
+    scratch.mkdir()
+    restored = restore_backup(bundle, scratch)
+    boot_sessions = tmp_path / "boot-restored-legacy"
+    boot_sessions.mkdir()
+    shutil.copy2(
+        restored["restore_dir"] / DATABASE_BUNDLE_PATH,
+        boot_sessions / "swinglab.db",
+    )
+
+    restored_app = create_app(Config(), sessions_dir=boot_sessions)
+    with TestClient(restored_app) as client:
+        health = client.get("/healthz")
+        assert health.status_code == 200
+        assert health.json()["history_cleanup_pending"] == 0
+        restored_user = restored_app.state.users.get("legacy-user")
+        assert restored_user is not None and restored_user.history_epoch == 0
+        assert restored_app.state.jobs.get("legacyjob") is not None
+    migrated = sqlite3.connect(boot_sessions / "swinglab.db")
+    assert "history_epoch" in {
+        row[1] for row in migrated.execute("PRAGMA table_info(users)")
+    }
+    assert {
+        "analysis_usage_monthly",
+        "history_reset_operations",
+    }.issubset(
+        {
+            row[0]
+            for row in migrated.execute(
+                "SELECT name FROM sqlite_master WHERE type = 'table'"
+            )
+        }
+    )
+    migrated.close()
 
 
 def test_reset_page_is_private_cookie_only_and_explains_scope(app):
