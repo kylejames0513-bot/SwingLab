@@ -56,6 +56,7 @@ first run and cached inside the package under `swinglab/models/`.
 ```bash
 swinglab analyze path/to/video.mov --out results/ --hand right
 swinglab analyze path/to/folder --batch
+swinglab batch path/to/clips.jsonl --out results/ --dry-run --json
 ```
 
 Useful flags:
@@ -86,6 +87,44 @@ results/<video-name>/
     ├── replay_s1.mp4     # annotated coach replay
     └── ... one set per swing
 ```
+
+### Repeatable manifest batches
+
+`swinglab analyze folder --batch` remains the quick way to process every video
+currently in one folder. For a named, reviewable set of clips with its own
+camera and golfer context, use the sequential JSONL batch command instead:
+
+```bash
+# Validate every row and print one machine-readable plan. Nothing is analyzed
+# and no resume state is written in dry-run mode.
+swinglab batch clips.jsonl --out results/ --dry-run --json
+
+# Run serially. A state file named clips.jsonl.state.json is atomically updated
+# after each completed report, so an interrupted run can be resumed.
+swinglab batch clips.jsonl --out results/
+swinglab batch clips.jsonl --out results/ --resume
+```
+
+Each non-blank line is one JSON object. `id` and `path` are required; relative
+paths resolve from the manifest's directory. `hand`, `angle`, `club`, `level`,
+and manual `strikes` are per-clip context and are written through to that
+clip's report and `metrics.json`.
+
+```json
+{"id":"driver-baseline","path":"clips/driver-baseline.mov","hand":"right","angle":"face-on","club":"driver","level":"improving","strikes":[12.5,31.0]}
+{"id":"wedge-dtl","path":"clips/wedge-dtl.mp4","hand":"left","angle":"dtl","club":"wedge","level":"new"}
+```
+
+The manifest is fully validated before analysis starts: IDs must be unique,
+video paths must exist, context values must be supported, and supplied strike
+times must be finite and strictly increasing. `--json` reserves stdout for one
+summary object; progress and failures go to stderr. `--resume` skips only a
+completed ID whose normalized instruction still matches and whose report still
+exists. The saved instruction also includes the source file's size and modified
+time, so a re-exported clip is not silently treated as an old report. If an
+instruction or source changed, choose a new `--state` path after reviewing the
+change; this fails closed instead of silently mixing reports from two plans. The
+runner is intentionally serial—there is no hidden parallel queue.
 
 ### What the report measures — honestly
 
