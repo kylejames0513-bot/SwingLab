@@ -14,6 +14,7 @@ from fastapi.testclient import TestClient
 
 from swinglab.config import Config
 from swinglab.integrations.shopify.customer_accounts import (
+    CustomerAccountIdentity,
     CustomerAccountSettings,
     ShopifyCustomerAccountClient,
 )
@@ -42,6 +43,7 @@ def account_client(tmp_path, monkeypatch):
 
 def _profile_payload():
     return {
+        "display_name": "Kyle",
         "experience_mode": "improve",
         "handicap_range": "20_to_29",
         "primary_goal": "consistency",
@@ -137,6 +139,69 @@ def test_customer_account_state_is_one_use_and_never_email_linked(tmp_path):
             customer_id="77",
             authenticated=True,
         )
+
+
+def test_customer_account_login_claims_store_stub_before_session(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    monkeypatch.setenv("SHOPIFY_CUSTOMER_ACCOUNTS_ENABLED", "true")
+    monkeypatch.setenv(
+        "SHOPIFY_CUSTOMER_ACCOUNT_STOREFRONT_DOMAIN", "store.example.test"
+    )
+    monkeypatch.setenv("SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_ID", "customer-client")
+    monkeypatch.setenv(
+        "SHOPIFY_CUSTOMER_ACCOUNT_CLIENT_SECRET", "customer-secret"
+    )
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example.test")
+    monkeypatch.setenv(
+        "SHOPIFY_CUSTOMER_ACCOUNT_REDIRECT_URI",
+        "https://app.example.test/auth/shopify/callback",
+    )
+    cfg = Config()
+    cfg.web["require_account"] = True
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    users = app.state.users
+    stub = users.upsert_store_customer(
+        "shopify-only@example.com", "77", updated_at=100
+    )
+    assert stub is not None and not stub.claimed
+    state = "s" * 43
+    users.issue_shopify_customer_account_oauth_state(
+        state=state,
+        verifier="v" * 43,
+        nonce="n" * 43,
+        user_id=None,
+        mode="login",
+    )
+    identity = CustomerAccountIdentity(
+        subject="gid://shopify/Customer/77",
+        customer_id="77",
+        email="shopify-only@example.com",
+        id_token="provider-id-token",
+        expires_at=10**12,
+    )
+    monkeypatch.setattr(
+        app.state.shopify_customer_accounts,
+        "authenticate_callback",
+        lambda **_kwargs: identity,
+    )
+    client = TestClient(app, base_url="https://app.example.test")
+
+    callback = client.get(
+        "/auth/shopify/callback",
+        params={"state": state, "code": "provider-code"},
+        follow_redirects=False,
+    )
+
+    assert callback.status_code == 303
+    assert callback.headers["location"] == "/onboarding?welcome=1"
+    linked = users.get(stub.id)
+    assert linked is not None and linked.claimed
+    assert linked.shopify_account_migration_state == "shopify_authenticated"
+    profile = users.get_golfer_profile(stub.id)
+    assert profile is not None and not profile.is_complete
+    assert client.get("/account").status_code == 200
 
 
 class _Response:

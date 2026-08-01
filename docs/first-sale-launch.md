@@ -8,10 +8,14 @@ CaddieInsight’s customer promise is intentionally narrow:
 
 The mobile/PWA experience now provides:
 
-- a short golfer setup: Start, Improve, or Compete explanation mode; optional
-  handicap range; goal; 10/20/45-minute practice preference; handedness;
-  camera angle; club; reduced motion; and a separate unchecked marketing
+- a guided golfer profile after the first verified account claim: required
+  display name and goal; Start, Improve, or Compete explanation mode; optional
+  handicap range; 10/20/45-minute practice preference; handedness; camera
+  angle; preferred club; reduced motion; and a separate unchecked marketing
   opt-in;
+- an optional backup-password prompt inside that setup for email-code users;
+  the profile shell is created only after the account is claimed, never from
+  a Shopify customer webhook;
 - a `/today` screen that answers what to do next before exposing a full metric
   wall;
 - one evidence-backed Caddie Brief, a pass mark, and three time-boxed versions
@@ -26,6 +30,10 @@ Existing upload/session/report routes remain unchanged for compatibility.
 The annual Pro offer remains first in pricing; gear stays optional and appears
 only after a relevant measured result. The app must never say that a product
 fixes a swing issue—only that it can support the prescribed drill.
+
+The signed-in header follows live app entitlement. Free members see the Pro
+offer; active Pro members see a personalized member link instead. Shopify
+storefront login state is not treated as proof of CaddieInsight entitlement.
 
 ## First-party funnel measurement
 

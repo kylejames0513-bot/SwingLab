@@ -243,6 +243,7 @@ def test_structured_practice_and_normal_swing_transfer_are_additive(
     user = users.create("transfer@example.com", "longenough")
     users.upsert_golfer_profile(
         user.id,
+        display_name="Transfer Golfer",
         experience_mode="improve",
         handicap_range="20_to_29",
         primary_goal="consistency",

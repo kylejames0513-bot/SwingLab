@@ -16,6 +16,7 @@ email are untouched. Passwordless accounts can add an optional password on
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+from html import unescape
 import re
 import threading
 import time
@@ -423,7 +424,7 @@ def test_wrong_code_does_not_sign_in(app, outbox):
     client = TestClient(app)
     request_code(client, "new@example.com")
     resp = enter_code(client, "000000", "new@example.com")
-    assert resp.status_code == 200 and "didn't match" in resp.text
+    assert resp.status_code == 200 and "didn't match" in unescape(resp.text)
     assert get_user(client, "new@example.com") is None  # nothing created
     assert "Create a free account" in client.get("/").text  # logged out
 
@@ -436,7 +437,7 @@ def test_code_cannot_be_replayed_after_success(app, outbox):
                       follow_redirects=False).status_code == 303
     client.post("/logout")
     replay = enter_code(client, code, "new@example.com")
-    assert replay.status_code == 200 and "didn't match" in replay.text
+    assert replay.status_code == 200 and "didn't match" in unescape(replay.text)
 
 
 def test_fifth_wrong_attempt_burns_the_code(app, outbox):
@@ -444,10 +445,12 @@ def test_fifth_wrong_attempt_burns_the_code(app, outbox):
     request_code(client, "new@example.com")
     code = last_code(outbox)
     for _ in range(users_module.CODE_MAX_ATTEMPTS):
-        assert "didn't match" in enter_code(client, "000000", "new@example.com").text
+        assert "didn't match" in unescape(
+            enter_code(client, "000000", "new@example.com").text
+        )
     # 6th attempt with the CORRECT code: burned, must be re-requested.
     resp = enter_code(client, code, "new@example.com")
-    assert resp.status_code == 200 and "didn't match" in resp.text
+    assert resp.status_code == 200 and "didn't match" in unescape(resp.text)
 
 
 def test_login_codes_expire_and_are_purpose_scoped(tmp_path, monkeypatch):
@@ -619,7 +622,7 @@ def test_code_requests_and_wrong_entries_share_the_login_budget(
     client = TestClient(tight_app)
     request_code(client, "kyle@example.com")  # 1 of 3
     for _ in range(2):  # 2 wrong guesses -> 3 of 3
-        assert "didn't match" in enter_code(client, "000000").text
+        assert "didn't match" in unescape(enter_code(client, "000000").text)
     blocked = enter_code(client, "000000")
     assert blocked.status_code == 429
     assert "Too many attempts" in blocked.text
@@ -719,6 +722,40 @@ def test_invalid_email_gets_an_error_not_a_code(app, outbox):
 
 
 # -- the optional password ----------------------------------------------------
+
+
+def test_new_code_account_starts_profile_and_prompts_backup_password(app, outbox):
+    client = TestClient(app)
+
+    signed_in = code_signin(client, outbox, "new-profile@example.com")
+
+    assert signed_in.headers["location"] == "/onboarding?welcome=1"
+    user = app.state.users.get_by_email("new-profile@example.com")
+    assert user is not None
+    profile = app.state.users.get_golfer_profile(user.id)
+    assert profile is not None and profile.display_name is None
+    setup = client.get(signed_in.headers["location"])
+    assert "Create your golfer profile" in setup.text
+    assert "Add a backup password" in setup.text
+    assert setup.headers["cache-control"] == "private, no-store"
+
+    short = client.post(
+        "/account/password",
+        data={"password": "short", "return_to": "onboarding"},
+    )
+    assert short.status_code == 200
+    assert "Add a backup password" in short.text
+    assert "at least 8 characters" in short.text
+
+    added = client.post(
+        "/account/password",
+        data={"password": "longenough", "return_to": "onboarding"},
+        follow_redirects=False,
+    )
+    assert added.status_code == 303
+    assert added.headers["location"] == "/onboarding?password_added=1"
+    assert "Backup password added" in client.get(added.headers["location"]).text
+
 
 def test_passwordless_account_can_add_a_password(app, outbox):
     client = TestClient(app)

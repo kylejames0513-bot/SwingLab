@@ -61,6 +61,8 @@
     {% endif %}
     <div class="row"><span class="k">Weekly drill email</span>
       <span>{{ "On" if user.digest_opt_in else "Off" }}</span></div>
+    <div class="row"><span class="k">Caddie name</span>
+      <span>{{ golfer_profile.display_name if golfer_profile and golfer_profile.display_name else "Not set" }} · <a href="/onboarding">Edit</a></span></div>
     <div class="row"><span class="k">Golfer setup</span>
       <span>{% if golfer_profile and golfer_profile.is_complete %}Ready{% else %}Needs a few choices{% endif %} · <a href="/onboarding">Edit</a></span></div>
     <div class="row"><span class="k">Product updates</span>

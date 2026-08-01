@@ -865,6 +865,45 @@ def test_customers_delete_only_unlinks_claimed_accounts(app):
     assert resp.status_code == 303
 
 
+def test_customers_delete_preserves_authenticated_passwordless_profile(app):
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    webhook(client, customer(), "customers/create")
+    account = get_user(client)
+    account = users.link_shopify_customer_account(
+        account.id,
+        subject="gid://shopify/Customer/7001",
+        customer_id="7001",
+        authenticated=True,
+    )
+    assert account.claimed
+    assert not account.has_password
+    assert account.email_verified_at is None
+    profile = users.upsert_golfer_profile(
+        account.id,
+        display_name="Shopify Golfer",
+        experience_mode="improve",
+        handicap_range="",
+        primary_goal="consistency",
+        practice_minutes=20,
+        sessions_per_week=2,
+        handedness="right",
+        camera_angle="face-on",
+        preferred_club="",
+    )
+    assert client.app.state.jobs.list_recent(user_id=account.id) == []
+
+    assert webhook(
+        client, {"id": 7001}, "customers/delete"
+    ).status_code == 200
+
+    kept = users.get(account.id)
+    assert kept is not None
+    assert kept.shopify_customer_id is None
+    assert kept.claimed
+    assert users.get_golfer_profile(account.id) == profile
+
+
 def test_deleted_link_cannot_infer_another_customer_from_shared_email(app):
     client = TestClient(app)
     users: UserStore = client.app.state.users

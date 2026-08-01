@@ -140,7 +140,7 @@ def write_report_html(
     exactly what exists and never mentions the gate."""
     env = Environment(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
-        autoescape=select_autoescape(["html"]),
+        autoescape=select_autoescape(["html", "j2"]),
     )
     all_metrics = scope_metrics_for_angle(
         [s["metrics"] for s in swings], angle

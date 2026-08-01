@@ -464,7 +464,10 @@ def create_app(
 
     env = Environment(
         loader=FileSystemLoader(Path(__file__).parent.parent / "templates"),
-        autoescape=select_autoescape(["html"]),
+        # Templates use the compound ``.html.j2`` suffix, so ``html`` alone
+        # does not match. Escape every Jinja HTML template by default; only
+        # the audited SVG/animation fragments marked ``|safe`` opt out.
+        autoescape=select_autoescape(["html", "j2"]),
     )
 
     # The public sample report: generated once at startup if absent (synthetic
@@ -661,6 +664,7 @@ def create_app(
         if profile is None:
             return None
         return {
+            "display_name": profile.display_name,
             "experience_mode": profile.experience_mode,
             "handicap_range": profile.handicap_range,
             "primary_goal": profile.primary_goal,
@@ -785,6 +789,12 @@ def create_app(
 
     def render(template: str, request: Request, **context) -> HTMLResponse:
         stripe_enabled = billing.enabled()
+        render_user = current_user(request)
+        header_profile = (
+            users.get_golfer_profile(render_user.id)
+            if render_user is not None and cfg.web.get("require_account")
+            else None
+        )
         pro_store_url = (
             shopify_billing.buy_url(cfg)
             if shopify_billing.commerce_enabled()
@@ -793,7 +803,8 @@ def create_app(
         response = HTMLResponse(
             env.get_template(template).render(
                 brand=cfg.brand,
-                user=current_user(request),
+                user=render_user,
+                header_profile=header_profile,
                 require_account=bool(cfg.web.get("require_account")),
                 billing_enabled=stripe_enabled,
                 pro_store_url=pro_store_url,
@@ -834,7 +845,13 @@ def create_app(
                 **context,
             )
         )
-        if (
+        if render_user is not None:
+            # Membership, profile, and owned-session pages are personalized.
+            # Never let a shared/browser cache preserve an old entitlement or
+            # a name/history state the member has since changed.
+            response.headers["Cache-Control"] = "private, no-store"
+            response.headers["Pragma"] = "no-cache"
+        elif (
             context.get("verify_email")
             or context.get("code_email")
             or context.get("reset_stage") == "confirm"
@@ -1228,12 +1245,18 @@ def create_app(
                     ),
                 )
         try:
+            profile_was_missing = (
+                flow.mode == "login"
+                and users.get_golfer_profile(user.id) is None
+            )
             linked = users.link_shopify_customer_account(
                 user.id,
                 subject=identity.subject,
                 customer_id=identity.customer_id,
                 authenticated=True,
             )
+            if flow.mode == "login":
+                users.ensure_golfer_profile(linked.id)
             establish_customer_account_session(request, linked, identity)
         except ValueError as exc:
             return render_no_store(
@@ -1243,7 +1266,13 @@ def create_app(
                 auth_view="login",
                 error=str(exc),
             )
-        destination = "/account?shopify_connected" if flow.mode == "link" else "/today"
+        destination = (
+            "/account?shopify_connected"
+            if flow.mode == "link"
+            else "/onboarding?welcome=1"
+            if profile_was_missing
+            else "/today"
+        )
         return RedirectResponse(
             destination,
             status_code=303,
@@ -1489,14 +1518,16 @@ def create_app(
                       "email, or send yourself a fresh code.",
             )
         prior_user = users.get_by_email(normalized)
+        identity_just_verified = (
+            prior_user is None or not prior_user.email_verified
+        )
         try:
             user = users.verify_email_signin(
                 normalized,
                 shopify_sync_pending=bool(
                     shopify_sync_eligible(normalized)
                     and (
-                        prior_user is None
-                        or not prior_user.email_verified
+                        identity_just_verified
                     )
                 ),
             )
@@ -1508,11 +1539,10 @@ def create_app(
         claim_pending_pro(user)
         queue_shopify_sync(
             user,
-            identity_just_verified=(
-                prior_user is None or not prior_user.email_verified
-            ),
+            identity_just_verified=identity_just_verified,
         )
-        if prior_user is None or not prior_user.email_verified:
+        if identity_just_verified:
+            users.ensure_golfer_profile(user.id)
             record_product_event(
                 request,
                 "account_verified",
@@ -1521,7 +1551,12 @@ def create_app(
             )
         clear_flow_session_nonce(request, LOGIN_FLOW_SESSION_KEY)
         establish_session(request, user)
-        return RedirectResponse("/", status_code=303)
+        destination = "/onboarding?welcome=1" if identity_just_verified else "/"
+        return RedirectResponse(
+            destination,
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
 
     @app.post("/login")
     def login(request: Request, email: str = Form(""), password: str = Form("")):
@@ -1668,6 +1703,8 @@ def create_app(
                 )
                 page.status_code = 400
                 return page
+            profile_was_missing = users.get_golfer_profile(user.id) is None
+            users.ensure_golfer_profile(user.id)
             claim_pending_pro(user)
             queue_shopify_sync(user, identity_just_verified=True)
             record_product_event(
@@ -1679,7 +1716,9 @@ def create_app(
             clear_flow_session_nonce(request, SIGNUP_FLOW_SESSION_KEY)
             establish_session(request, user)
             return RedirectResponse(
-                "/", status_code=303, headers={"Cache-Control": "no-store"}
+                "/onboarding?welcome=1" if profile_was_missing else "/",
+                status_code=303,
+                headers={"Cache-Control": "no-store"},
             )
 
         wants_digest = digest_opt.lower() in ("on", "true", "1", "yes")
@@ -1792,10 +1831,16 @@ def create_app(
             )
         if wants_digest:  # the signup checkbox is UNCHECKED by default
             users.set_digest_opt_in(user.id, True)
+        profile_was_missing = users.get_golfer_profile(user.id) is None
+        users.ensure_golfer_profile(user.id)
         claim_pending_pro(user)
         queue_shopify_sync(user)
         establish_session(request, user)
-        return RedirectResponse("/", status_code=303)
+        return RedirectResponse(
+            "/onboarding?welcome=1" if profile_was_missing else "/",
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
 
     # -- password reset (available once email delivery is configured) -----
     @app.get("/reset", response_class=HTMLResponse)
@@ -1899,6 +1944,25 @@ def create_app(
             ),
         )
 
+    def onboarding_response(
+        request: Request,
+        user: User,
+        *,
+        error: str | None = None,
+        password_error: str | None = None,
+        submitted: dict | None = None,
+    ) -> HTMLResponse:
+        context = {
+            "profile": users.get_golfer_profile(user.id),
+            "error": error,
+            "password_error": password_error,
+            "welcome": "welcome" in request.query_params,
+            "password_added": "password_added" in request.query_params,
+        }
+        if submitted is not None:
+            context["submitted"] = submitted
+        return render("web_onboarding.html.j2", request, **context)
+
     @app.get("/account", response_class=HTMLResponse)
     def account(request: Request):
         user = current_user(request)
@@ -1907,7 +1971,11 @@ def create_app(
         return account_page(request, user)
 
     @app.post("/account/password")
-    def account_password(request: Request, password: str = Form("")):
+    def account_password(
+        request: Request,
+        password: str = Form(""),
+        return_to: str = Form(""),
+    ):
         """ "Add a password (optional)" for accounts that sign in by code.
         Being logged in (which took a code) is the proof of ownership.
         Accounts that already have a password change it through the
@@ -1923,12 +1991,22 @@ def create_app(
         try:
             users.set_password(user.id, password)
         except ValueError as exc:
+            if return_to == "onboarding":
+                return onboarding_response(
+                    request, user, password_error=str(exc)
+                )
             return account_page(request, user, password_error=str(exc))
         updated_user = users.get(user.id)
         if updated_user is None:
             request.session.clear()
             return RedirectResponse("/login", status_code=303)
         establish_session(request, updated_user)
+        if return_to == "onboarding":
+            return RedirectResponse(
+                "/onboarding?password_added=1",
+                status_code=303,
+                headers={"Cache-Control": "no-store"},
+            )
         return RedirectResponse("/account?password_added", status_code=303)
 
     @app.post("/account/digest")
@@ -1950,16 +2028,12 @@ def create_app(
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
-        return render(
-            "web_onboarding.html.j2",
-            request,
-            profile=users.get_golfer_profile(user.id),
-            error=None,
-        )
+        return onboarding_response(request, user)
 
     @app.post("/onboarding")
     def onboarding_save(
         request: Request,
+        display_name: str = Form(""),
         experience_mode: str = Form("improve"),
         handicap_range: str = Form(""),
         primary_goal: str = Form(""),
@@ -1979,8 +2053,11 @@ def create_app(
         if user is None:
             return RedirectResponse("/login", status_code=303)
         try:
+            if not primary_goal.strip():
+                raise ValueError("Choose a main goal for your golfer profile.")
             users.upsert_golfer_profile(
                 user.id,
+                display_name=display_name,
                 experience_mode=experience_mode,
                 handicap_range=handicap_range,
                 primary_goal=primary_goal,
@@ -1995,12 +2072,12 @@ def create_app(
                 ),
             )
         except ValueError as exc:
-            return render(
-                "web_onboarding.html.j2",
+            return onboarding_response(
                 request,
-                profile=users.get_golfer_profile(user.id),
+                user,
                 error=str(exc),
                 submitted={
+                    "display_name": display_name,
                     "experience_mode": experience_mode,
                     "handicap_range": handicap_range,
                     "primary_goal": primary_goal,
@@ -3105,7 +3182,7 @@ def create_app(
         if not via_bearer and not _same_origin_form_post(request):
             raise HTTPException(403, "Invalid request origin.")
         payload = await bounded_json_object(request)
-        expected = {
+        required = {
             "experience_mode",
             "handicap_range",
             "primary_goal",
@@ -3117,25 +3194,31 @@ def create_app(
             "reduced_motion",
             "marketing_email_opt_in",
         }
-        if set(payload) != expected:
+        allowed = required | {"display_name"}
+        if not required.issubset(payload) or set(payload) - allowed:
             raise HTTPException(400, "A complete golfer profile is required.")
         if not isinstance(payload["reduced_motion"], bool) or not isinstance(
             payload["marketing_email_opt_in"], bool
         ):
             raise HTTPException(400, "Accessibility and marketing values must be boolean.")
+        profile_update = {
+            "experience_mode": payload["experience_mode"],
+            "handicap_range": payload["handicap_range"],
+            "primary_goal": payload["primary_goal"],
+            "practice_minutes": payload["practice_minutes"],
+            "sessions_per_week": payload["sessions_per_week"],
+            "handedness": payload["handedness"],
+            "camera_angle": payload["camera_angle"],
+            "preferred_club": payload["preferred_club"],
+            "reduced_motion": payload["reduced_motion"],
+            "marketing_email_opt_in": payload["marketing_email_opt_in"],
+        }
+        if "display_name" in payload:
+            profile_update["display_name"] = payload["display_name"]
         try:
             profile = users.upsert_golfer_profile(
                 user.id,
-                experience_mode=payload["experience_mode"],
-                handicap_range=payload["handicap_range"],
-                primary_goal=payload["primary_goal"],
-                practice_minutes=payload["practice_minutes"],
-                sessions_per_week=payload["sessions_per_week"],
-                handedness=payload["handedness"],
-                camera_angle=payload["camera_angle"],
-                preferred_club=payload["preferred_club"],
-                reduced_motion=payload["reduced_motion"],
-                marketing_email_opt_in=payload["marketing_email_opt_in"],
+                **profile_update,
             )
         except ValueError as exc:
             raise HTTPException(400, str(exc)) from None

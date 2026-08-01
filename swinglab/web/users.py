@@ -23,7 +23,8 @@ inbox. Verified password signup consumes its server-side signup intent and
 sets the password on the SAME row; verified email-code sign-in marks the
 same row's email verified. Both paths preserve the Shopify link and any Pro
 time without creating a duplicate user. An account is *claimed* once it has
-a password OR a verified email; only rows with neither are unclaimed stubs.
+a password, a verified email, or a provider-authenticated Shopify Customer
+Account; rows with none of those proofs remain unclaimed stubs.
 Emails are normalized (trimmed + lowercased) everywhere. Shopify's customer
 id remains the durable cross-system link: an unclaimed store-only stub may
 follow a changed Shopify email in place, while a claimed account keeps its
@@ -49,11 +50,12 @@ import secrets
 import sqlite3
 import threading
 import time
+import unicodedata
 import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterator
+from typing import Iterable, Iterator
 
 from ..integrations.shopify.identity import customer_gid, normalize_customer_id
 from ..proof_cycle_practice import (
@@ -142,6 +144,20 @@ SHOPIFY_ACCOUNT_MIGRATION_STATES = (
     SHOPIFY_ACCOUNT_REDACTED,
 )
 
+
+def _account_is_claimed(
+    password_hash: object,
+    email_verified_at: object,
+    shopify_account_migration_state: object,
+) -> bool:
+    """Return whether persisted authentication proves account ownership."""
+
+    return bool(
+        password_hash
+        or email_verified_at is not None
+        or shopify_account_migration_state == SHOPIFY_ACCOUNT_AUTHENTICATED
+    )
+
 GOLFER_EXPERIENCE_MODES = ("start", "improve", "compete")
 GOLFER_HANDICAP_RANGES = (
     "new_to_golf",
@@ -162,6 +178,8 @@ GOLFER_PRIMARY_GOALS = (
 )
 GOLFER_PRACTICE_MINUTES = (10, 20, 45)
 GOLFER_SESSIONS_PER_WEEK = (1, 2, 3)
+_GOLFER_DISPLAY_NAME_MAX = 50
+_GOLFER_DISPLAY_NAME_OMITTED = object()
 PRODUCT_EVENT_NAMES = (
     "landing_view",
     "account_verified",
@@ -327,6 +345,7 @@ CREATE TABLE IF NOT EXISTS shopify_redacted_order_fences (
 );
 CREATE TABLE IF NOT EXISTS golfer_profiles (
     user_id                     TEXT PRIMARY KEY,
+    display_name                TEXT,
     experience_mode             TEXT NOT NULL DEFAULT 'improve',
     handicap_range              TEXT,
     primary_goal                TEXT,
@@ -644,9 +663,14 @@ class User:
     @property
     def claimed(self) -> bool:
         """Someone has proven this account is theirs — by setting a password
-        or by signing in with an emailed code. False = an untouched store
-        stub (provisioned by a webhook, never used by its owner)."""
-        return self.has_password or self.email_verified
+        or by signing in with an emailed code / linked Shopify Customer
+        Account. False = an untouched store stub (provisioned by a webhook,
+        never used by its owner)."""
+        return _account_is_claimed(
+            self.has_password,
+            self.email_verified_at,
+            self.shopify_account_migration_state,
+        )
 
 
 @dataclass(frozen=True)
@@ -659,6 +683,7 @@ class GolferProfile:
     """
 
     user_id: str
+    display_name: str | None = None
     experience_mode: str = "improve"
     handicap_range: str | None = None
     primary_goal: str | None = None
@@ -674,7 +699,7 @@ class GolferProfile:
 
     @property
     def is_complete(self) -> bool:
-        return bool(self.handicap_range and self.primary_goal)
+        return bool(self.display_name and self.primary_goal)
 
 
 @dataclass(frozen=True)
@@ -970,6 +995,17 @@ class UserStore:
                     initialize_statuses=sync_status_added
                 )
                 self._prepare_shopify_customer_account_schema()
+                profile_columns = {
+                    row["name"]
+                    for row in self._conn.execute(
+                        "PRAGMA table_info(golfer_profiles)"
+                    )
+                }
+                if "display_name" not in profile_columns:
+                    self._conn.execute(
+                        "ALTER TABLE golfer_profiles"
+                        " ADD COLUMN display_name TEXT"
+                    )
                 mobile_token_columns = {
                     row["name"]
                     for row in self._conn.execute(
@@ -1616,6 +1652,38 @@ class UserStore:
                     return True
         return False
 
+    def _delete_user_children_locked(
+        self, user_ids: Iterable[object]
+    ) -> None:
+        """Delete non-job rows owned by users while a write lock is held."""
+
+        identifiers = tuple(
+            sorted(
+                {
+                    str(user_id)
+                    for user_id in user_ids
+                    if str(user_id or "").strip()
+                }
+            )
+        )
+        if not identifiers:
+            return
+        placeholders = ", ".join("?" for _ in identifiers)
+        for table in (
+            "golfer_profiles",
+            "practice_checkins",
+            "proof_cycle_practice_evidence",
+            "proof_cycle_transfer_checks",
+            "product_events",
+            "mobile_api_tokens",
+            "shopify_customer_account_oauth_states",
+            "shopify_customer_account_browser_sessions",
+        ):
+            self._conn.execute(
+                f"DELETE FROM {table} WHERE user_id IN ({placeholders})",
+                identifiers,
+            )
+
     def _erase_customer_shopify_data(
         self,
         customer_id: str | None,
@@ -1791,45 +1859,7 @@ class UserStore:
                 f" WHERE request_id IN ({placeholders})",
                 tuple(privacy_request_ids),
             )
-        if matched_user_ids:
-            placeholders = ", ".join("?" for _ in matched_user_ids)
-            identifiers = tuple(sorted(matched_user_ids))
-            self._conn.execute(
-                f"DELETE FROM golfer_profiles WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
-            self._conn.execute(
-                f"DELETE FROM practice_checkins WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
-            self._conn.execute(
-                "DELETE FROM proof_cycle_practice_evidence"
-                f" WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
-            self._conn.execute(
-                "DELETE FROM proof_cycle_transfer_checks"
-                f" WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
-            self._conn.execute(
-                f"DELETE FROM product_events WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
-            self._conn.execute(
-                f"DELETE FROM mobile_api_tokens WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
-            self._conn.execute(
-                "DELETE FROM shopify_customer_account_oauth_states"
-                f" WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
-            self._conn.execute(
-                "DELETE FROM shopify_customer_account_browser_sessions"
-                f" WHERE user_id IN ({placeholders})",
-                identifiers,
-            )
+        self._delete_user_children_locked(matched_user_ids)
 
     # -- Shopify mandatory privacy workflows -----------------------------
     @staticmethod
@@ -2815,11 +2845,16 @@ class UserStore:
                     "SELECT 1 FROM sqlite_master"
                     " WHERE type = 'table' AND name = 'jobs'"
                 ).fetchone()
-                activity_clause = (
-                    "NOT EXISTS (SELECT 1 FROM jobs"
-                    " WHERE jobs.user_id = users.id)"
+                active_user_ids = (
+                    {
+                        str(row["user_id"])
+                        for row in self._conn.execute(
+                            "SELECT DISTINCT user_id FROM jobs"
+                            " WHERE user_id IS NOT NULL"
+                        ).fetchall()
+                    }
                     if jobs_table is not None
-                    else "1 = 1"
+                    else set()
                 )
                 store_state = (
                     "(source = 'shopify'"
@@ -2833,22 +2868,20 @@ class UserStore:
                     "  WHERE shopify_pending_customer_links.email"
                     "        = users.email))"
                 )
-                store_only_rows = self._conn.execute(
-                    "SELECT id, email FROM users WHERE "
-                    + store_state
-                    + " AND password_hash = ''"
-                    " AND email_verified_at IS NULL AND "
-                    + activity_clause,
+                store_rows = self._conn.execute(
+                    "SELECT * FROM users WHERE " + store_state
                 ).fetchall()
+                store_only_rows = [
+                    row
+                    for row in store_rows
+                    if not self._user_row_is_claimed(row)
+                    and str(row["id"]) not in active_user_ids
+                ]
                 store_only_ids = [str(row["id"]) for row in store_only_rows]
                 store_only_emails = [
                     str(row["email"]) for row in store_only_rows
                 ]
-                preserved_accounts = int(
-                    self._conn.execute(
-                        "SELECT COUNT(*) FROM users WHERE " + store_state
-                    ).fetchone()[0]
-                ) - len(store_only_ids)
+                preserved_accounts = len(store_rows) - len(store_only_ids)
                 if store_only_emails:
                     placeholders = ", ".join("?" for _ in store_only_emails)
                     self._conn.execute(
@@ -2858,11 +2891,7 @@ class UserStore:
                     )
                 if store_only_ids:
                     placeholders = ", ".join("?" for _ in store_only_ids)
-                    self._conn.execute(
-                        f"DELETE FROM mobile_api_tokens"
-                        f" WHERE user_id IN ({placeholders})",
-                        tuple(store_only_ids),
-                    )
+                    self._delete_user_children_locked(store_only_ids)
                     self._conn.execute(
                         f"DELETE FROM users WHERE id IN ({placeholders})",
                         tuple(store_only_ids),
@@ -2882,8 +2911,19 @@ class UserStore:
                     " shopify_sync_error = NULL,"
                     " shopify_sync_attempts = 0,"
                     " shopify_sync_next_attempt_at = NULL,"
-                    " shopify_sync_attempt_token = NULL",
-                    (SHOPIFY_SYNC_NOT_STARTED,),
+                    " shopify_sync_attempt_token = NULL,"
+                    " shopify_account_migration_state = CASE"
+                    "   WHEN shopify_account_subject IS NOT NULL"
+                    "     OR shopify_account_migration_state != ?"
+                    "   THEN ? ELSE shopify_account_migration_state END,"
+                    " shopify_account_subject = NULL,"
+                    " shopify_account_linked_at = NULL,"
+                    " shopify_account_last_login_at = NULL",
+                    (
+                        SHOPIFY_SYNC_NOT_STARTED,
+                        SHOPIFY_ACCOUNT_LOCAL_ONLY,
+                        SHOPIFY_ACCOUNT_REDACTED,
+                    ),
                 )
                 removed_orders = int(
                     self._conn.execute(
@@ -2925,6 +2965,12 @@ class UserStore:
                 )
                 self._conn.execute("DELETE FROM signup_intents")
                 self._conn.execute("DELETE FROM shopify_privacy_requests")
+                self._conn.execute(
+                    "DELETE FROM shopify_customer_account_oauth_states"
+                )
+                self._conn.execute(
+                    "DELETE FROM shopify_customer_account_browser_sessions"
+                )
                 binding_table = self._conn.execute(
                     "SELECT 1 FROM sqlite_master"
                     " WHERE type = 'table'"
@@ -4695,10 +4741,7 @@ class UserStore:
                             target = self._conn.execute(
                                 "SELECT id FROM users WHERE email = ?", (email,)
                             ).fetchone()
-                            claimed = bool(
-                                linked["password_hash"]
-                                or linked["email_verified_at"] is not None
-                            )
+                            claimed = self._user_row_is_claimed(linked)
                             if not claimed and target is None:
                                 old_email = linked["email"]
                                 self._conn.execute(
@@ -5181,9 +5224,7 @@ class UserStore:
                     self._conn.commit()
                     return "unknown"
 
-                claimed = bool(
-                    user["password_hash"] or user["email_verified_at"] is not None
-                )
+                claimed = self._user_row_is_claimed(user)
                 jobs_table = self._conn.execute(
                     "SELECT 1 FROM sqlite_master"
                     " WHERE type = 'table' AND name = 'jobs'"
@@ -5261,9 +5302,6 @@ class UserStore:
                             ),
                         )
                         attributable = max(0.0, attributable - contribution)
-                    self._conn.execute(
-                        "DELETE FROM users WHERE id = ?", (user["id"],)
-                    )
                     if redact:
                         self._erase_customer_shopify_data(
                             customer_id,
@@ -5279,13 +5317,19 @@ class UserStore:
                             "DELETE FROM signup_intents WHERE email = ?",
                             (user["email"],),
                         )
-                    elif remaining > 0:
-                        self._conn.execute(
-                            "INSERT INTO pro_grants (email, days) VALUES (?, ?)"
-                            " ON CONFLICT(email) DO UPDATE"
-                            " SET days = days + excluded.days",
-                            (user["email"], remaining),
-                        )
+                    else:
+                        self._delete_user_children_locked((user["id"],))
+                        if remaining > 0:
+                            self._conn.execute(
+                                "INSERT INTO pro_grants (email, days)"
+                                " VALUES (?, ?)"
+                                " ON CONFLICT(email) DO UPDATE"
+                                " SET days = days + excluded.days",
+                                (user["email"], remaining),
+                            )
+                    self._conn.execute(
+                        "DELETE FROM users WHERE id = ?", (user["id"],)
+                    )
                     self._conn.commit()
                     return "deleted"
 
@@ -5358,36 +5402,7 @@ class UserStore:
         """Remove a user row outright. Callers must only do this for
         unclaimed stubs — see shopify_billing for the guard rails."""
         with self._lock:
-            self._conn.execute(
-                "DELETE FROM golfer_profiles WHERE user_id = ?", (user_id,)
-            )
-            self._conn.execute(
-                "DELETE FROM practice_checkins WHERE user_id = ?", (user_id,)
-            )
-            self._conn.execute(
-                "DELETE FROM proof_cycle_practice_evidence WHERE user_id = ?",
-                (user_id,),
-            )
-            self._conn.execute(
-                "DELETE FROM proof_cycle_transfer_checks WHERE user_id = ?",
-                (user_id,),
-            )
-            self._conn.execute(
-                "DELETE FROM product_events WHERE user_id = ?", (user_id,)
-            )
-            self._conn.execute(
-                "DELETE FROM mobile_api_tokens WHERE user_id = ?", (user_id,)
-            )
-            self._conn.execute(
-                "DELETE FROM shopify_customer_account_oauth_states"
-                " WHERE user_id = ?",
-                (user_id,),
-            )
-            self._conn.execute(
-                "DELETE FROM shopify_customer_account_browser_sessions"
-                " WHERE user_id = ?",
-                (user_id,),
-            )
+            self._delete_user_children_locked((user_id,))
             self._conn.execute("DELETE FROM users WHERE id = ?", (user_id,))
             self._conn.commit()
 
@@ -5465,9 +5480,45 @@ class UserStore:
         return normalized
 
     @staticmethod
+    def _user_row_is_claimed(row: sqlite3.Row) -> bool:
+        return _account_is_claimed(
+            row["password_hash"],
+            row["email_verified_at"],
+            row["shopify_account_migration_state"],
+        )
+
+    @staticmethod
+    def _profile_display_name(value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("Enter the name you want CaddieInsight to use.")
+        if any(
+            character in "\r\n"
+            or unicodedata.category(character).startswith("C")
+            or unicodedata.category(character) in {"Zl", "Zp"}
+            for character in value
+        ):
+            raise ValueError("Your display name contains invalid characters.")
+        normalized = " ".join(unicodedata.normalize("NFKC", value).split())
+        if not normalized:
+            raise ValueError("Enter the name you want CaddieInsight to use.")
+        if len(normalized) > _GOLFER_DISPLAY_NAME_MAX:
+            raise ValueError(
+                "Your display name must be 50 characters or fewer."
+            )
+        if any(
+            character in "\r\n"
+            or unicodedata.category(character).startswith("C")
+            or unicodedata.category(character) in {"Zl", "Zp"}
+            for character in normalized
+        ):
+            raise ValueError("Your display name contains invalid characters.")
+        return normalized
+
+    @staticmethod
     def _profile_from_row(row: sqlite3.Row) -> GolferProfile:
         return GolferProfile(
             user_id=str(row["user_id"]),
+            display_name=row["display_name"],
             experience_mode=str(row["experience_mode"]),
             handicap_range=row["handicap_range"],
             primary_goal=row["primary_goal"],
@@ -5489,10 +5540,58 @@ class UserStore:
             ).fetchone()
         return self._profile_from_row(row) if row is not None else None
 
+    def ensure_golfer_profile(
+        self,
+        user_id: str,
+        *,
+        now: float | None = None,
+    ) -> GolferProfile:
+        """Create one incomplete profile shell for a claimed account.
+
+        Shopify customer webhooks create unclaimed local stubs. Those rows
+        must not gain CaddieInsight-owned profile data until the customer has
+        proved account ownership with a password or verified email code.
+        """
+
+        timestamp = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                user_row = self._conn.execute(
+                    "SELECT password_hash, email_verified_at,"
+                    " shopify_account_migration_state"
+                    " FROM users WHERE id = ?",
+                    (user_id,),
+                ).fetchone()
+                if user_row is None:
+                    raise ValueError("Your account is no longer available.")
+                if not self._user_row_is_claimed(user_row):
+                    raise ValueError(
+                        "Verify your account before creating a golfer profile."
+                    )
+                self._conn.execute(
+                    "INSERT INTO golfer_profiles"
+                    " (user_id, created_at, updated_at) VALUES (?, ?, ?)"
+                    " ON CONFLICT(user_id) DO NOTHING",
+                    (user_id, timestamp, timestamp),
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM golfer_profiles WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        assert row is not None
+        return self._profile_from_row(row)
+
     def upsert_golfer_profile(
         self,
         user_id: str,
         *,
+        display_name: object = _GOLFER_DISPLAY_NAME_OMITTED,
         experience_mode: object,
         handicap_range: object,
         primary_goal: object,
@@ -5507,13 +5606,18 @@ class UserStore:
     ) -> GolferProfile:
         """Validate and atomically save Caddie-owned preferences.
 
-        The caller has to provide every product-facing preference.  This
-        avoids a broad, arbitrary JSON patch surface and makes the API safe
-        to keep stable for a future PWA/native client.
+        The caller has to provide every established product-facing
+        preference. ``display_name`` is optional only for compatibility with
+        older clients; omitting it preserves a previously saved name.
         """
 
         mode = self._profile_choice(
             experience_mode, GOLFER_EXPERIENCE_MODES, "experience mode"
+        )
+        normalized_display_name = (
+            _GOLFER_DISPLAY_NAME_OMITTED
+            if display_name is _GOLFER_DISPLAY_NAME_OMITTED
+            else self._profile_display_name(display_name)
         )
         handicap = self._profile_choice(
             handicap_range,
@@ -5546,18 +5650,42 @@ class UserStore:
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                if self._conn.execute(
-                    "SELECT 1 FROM users WHERE id = ?", (user_id,)
-                ).fetchone() is None:
+                owner = self._conn.execute(
+                    "SELECT password_hash, email_verified_at,"
+                    " shopify_account_migration_state"
+                    " FROM users WHERE id = ?",
+                    (user_id,),
+                ).fetchone()
+                if owner is None:
                     raise ValueError("Your account is no longer available.")
+                if not self._user_row_is_claimed(owner):
+                    raise ValueError(
+                        "Verify your account before creating a golfer profile."
+                    )
+                existing_profile = self._conn.execute(
+                    "SELECT display_name FROM golfer_profiles"
+                    " WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                stored_display_name = (
+                    (
+                        existing_profile["display_name"]
+                        if existing_profile is not None
+                        else None
+                    )
+                    if normalized_display_name is _GOLFER_DISPLAY_NAME_OMITTED
+                    else normalized_display_name
+                )
                 self._conn.execute(
                     "INSERT INTO golfer_profiles"
-                    " (user_id, experience_mode, handicap_range, primary_goal,"
+                    " (user_id, display_name, experience_mode, handicap_range,"
+                    "  primary_goal,"
                     "  practice_minutes, sessions_per_week, handedness,"
                     "  camera_angle, preferred_club, reduced_motion,"
                     "  marketing_email_opt_in, created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                     " ON CONFLICT(user_id) DO UPDATE SET"
+                    " display_name = excluded.display_name,"
                     " experience_mode = excluded.experience_mode,"
                     " handicap_range = excluded.handicap_range,"
                     " primary_goal = excluded.primary_goal,"
@@ -5571,6 +5699,7 @@ class UserStore:
                     " updated_at = excluded.updated_at",
                     (
                         user_id,
+                        stored_display_name,
                         mode,
                         handicap,
                         goal,
