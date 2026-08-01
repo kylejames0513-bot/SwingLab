@@ -304,9 +304,19 @@ class ProofTarget:
     baseline_warning: str | None
     rule_version: int = 1
 
+    def __post_init__(self) -> None:
+        if type(self.rule_version) is not int or self.rule_version not in (1, 2):
+            raise ValueError(
+                f"Unsupported coaching priority rule: {self.rule_version!r}"
+            )
+
     @classmethod
     def from_issue_card(
-        cls, baseline_session: ProofSession, card: IssueCard
+        cls,
+        baseline_session: ProofSession,
+        card: IssueCard,
+        *,
+        rule_version: int = 1,
     ) -> "ProofTarget":
         """Snapshot the exact metric Caddie Brief selected for the baseline."""
 
@@ -344,6 +354,7 @@ class ProofTarget:
             baseline_completed=baseline_session.completed,
             baseline_coaching_eligible=baseline_session.coaching_eligible,
             baseline_warning=baseline_session.warning,
+            rule_version=rule_version,
         )
 
 

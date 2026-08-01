@@ -29,7 +29,11 @@ from .caddie_brief import (
     quality_warning_from_payload,
     scope_metrics_for_angle,
 )
-from .coaching import issue_cards
+from .coaching import (
+    issue_cards,
+    priority_rule_version,
+    validate_priority_rule_version,
+)
 from .config import Config
 from .metrics import (
     ANGLE_DTL,
@@ -169,13 +173,18 @@ def proof_session_from_job(job: JobLike, cfg: Config) -> ProofSession | None:
     return prepared.session if prepared is not None else None
 
 
-def proof_target_from_job(job: JobLike, cfg: Config) -> ProofTarget | None:
+def proof_target_from_job(
+    job: JobLike,
+    cfg: Config,
+    *,
+    rule_version: int | None = None,
+) -> ProofTarget | None:
     """Snapshot the exact structured IssueCard chosen by the current report."""
 
     prepared, _ = _prepare_session(job, cfg)
     if prepared is None:
         return None
-    return _target_from_prepared(prepared, cfg)
+    return _target_from_prepared(prepared, cfg, rule_version=rule_version)
 
 
 def proof_cycle_target_fingerprint(target: ProofTarget) -> str:
@@ -249,6 +258,25 @@ def build_proof_cycle_artifact(
     *,
     baseline_job_for_id: Callable[[str], JobLike | None] | None = None,
 ) -> ProofCycleArtifact:
+    """Build using the priority rule selected by the current exact-bool gate."""
+
+    return _build_proof_cycle_artifact(
+        job,
+        prior_jobs,
+        cfg,
+        baseline_job_for_id=baseline_job_for_id,
+        target_rule_version=None,
+    )
+
+
+def _build_proof_cycle_artifact(
+    job: JobLike,
+    prior_jobs: Iterable[JobLike],
+    cfg: Config,
+    *,
+    baseline_job_for_id: Callable[[str], JobLike | None] | None = None,
+    target_rule_version: int | None,
+) -> ProofCycleArtifact:
     """Build a baseline or matched comparison without changing report output.
 
     ``prior_jobs`` comes from the job manager's same-owner, same-club query,
@@ -285,7 +313,9 @@ def build_proof_cycle_artifact(
                 prepared.metrics_sha256,
                 "existing_cycle_unreadable",
             )
-        target = _target_from_prepared(prepared, cfg)
+        target = _target_from_prepared(
+            prepared, cfg, rule_version=target_rule_version
+        )
         if target is None:
             return _unavailable_artifact(
                 job,
@@ -423,11 +453,12 @@ def verified_proof_cycle_artifact(
     stored = load_proof_cycle_artifact(job)
     if stored is None or stored.target is None:
         return None
-    rebuilt = build_proof_cycle_artifact(
+    rebuilt = _build_proof_cycle_artifact(
         job,
         prior_jobs,
         cfg,
         baseline_job_for_id=baseline_job_for_id,
+        target_rule_version=stored.target.rule_version,
     )
     if artifact_as_dict(stored) != artifact_as_dict(rebuilt):
         return None
@@ -613,7 +644,9 @@ def _prepare_session(
         return None, reason
     if payload_requires_refilm(payload, angle=angle):
         return None, "refilm_required"
-    if not payload_is_coaching_eligible(payload, cfg, angle=angle):
+    if not payload_is_coaching_eligible(
+        payload, cfg, angle=angle, club=club
+    ):
         return None, "coaching_unavailable"
     rows = tuple(scope_metrics_for_angle(metrics_from_payload(payload), angle))
     if not rows:
@@ -640,13 +673,31 @@ def _prepare_session(
 
 
 def _target_from_prepared(
-    prepared: _PreparedSession, cfg: Config
+    prepared: _PreparedSession,
+    cfg: Config,
+    *,
+    rule_version: int | None = None,
 ) -> ProofTarget | None:
-    cards = issue_cards(list(prepared.rows), session_stats(list(prepared.rows)), cfg)
-    if not cards:
-        return None
     try:
-        target = ProofTarget.from_issue_card(prepared.session, cards[0])
+        selected_rule = (
+            priority_rule_version(cfg)
+            if rule_version is None
+            else validate_priority_rule_version(rule_version)
+        )
+        cards = issue_cards(
+            list(prepared.rows),
+            session_stats(list(prepared.rows)),
+            cfg,
+            club=prepared.session.context.club,
+            rule_version=selected_rule,
+        )
+        if not cards:
+            return None
+        target = ProofTarget.from_issue_card(
+            prepared.session,
+            cards[0],
+            rule_version=selected_rule,
+        )
         policy = _policy_for_metric(cfg, target.metric)
     except ValueError:
         return None
@@ -796,7 +847,11 @@ def _artifact_sources_are_verified(
             except Exception:
                 baseline_job = None
         expected_target = (
-            proof_target_from_job(baseline_job, cfg)
+            proof_target_from_job(
+                baseline_job,
+                cfg,
+                rule_version=target.rule_version,
+            )
             if baseline_job is not None and _job_id(baseline_job) == baseline_id
             else None
         )
@@ -1195,6 +1250,8 @@ def _artifact_from_dict(data: object, *, user_id: str) -> ProofCycleArtifact:
 
 def _target_from_dict(data: dict, *, user_id: str) -> ProofTarget:
     rule_version = _positive_int(data.get("rule_version"), "rule_version")
+    if rule_version not in (1, 2):
+        raise ValueError("unsupported coaching priority rule")
     metric = _required_text(data.get("metric"))
     if metric not in NUMERIC_FIELDS:
         raise ValueError("unsupported target metric")

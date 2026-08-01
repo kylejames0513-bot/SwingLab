@@ -40,6 +40,8 @@ _COACH_FIELDS = (
     "finish_balance_sw",
 )
 
+_CLUB_CONTEXT_UNSET = object()
+
 
 @dataclass(frozen=True)
 class CaddieBrief:
@@ -70,14 +72,16 @@ def build_caddie_brief(
     trend: str | None = None,
     warning: str | None = None,
     angle: str | None = None,
+    club: str | None = None,
+    rule_version: int | None = None,
 ) -> CaddieBrief | None:
     """Build one honest next step from already-measured session data.
 
-    The existing report priority is preserved so the results page and static
-    report can never contradict each other.  Comparable history adds recurrence
-    and trend context, but does not silently change the current session's first
-    action.  No measurable coaching fields means no brief rather than a
-    fabricated clean bill of health.
+    The configured, versioned report priority is preserved so the results page
+    and static report can never contradict each other. Comparable history adds
+    recurrence and trend context, but does not silently change the current
+    session's first action. No measurable coaching fields means no brief rather
+    than a fabricated clean bill of health.
     """
 
     if warning_requires_refilm(warning):
@@ -97,7 +101,13 @@ def build_caddie_brief(
             "a swing change."
         )
 
-    cards = issue_cards(all_metrics, stats, cfg)
+    cards = issue_cards(
+        all_metrics,
+        stats,
+        cfg,
+        club=club,
+        rule_version=rule_version,
+    )
     strengths = praise_notes(all_metrics, cfg, stats)
     prior = previous_flag_counts or {}
 
@@ -208,6 +218,8 @@ def build_caddie_brief_from_payload(
     previous_flag_counts: Mapping[str, int] | None = None,
     trend: str | None = None,
     angle: str | None = None,
+    club: object = _CLUB_CONTEXT_UNSET,
+    rule_version: int | None = None,
 ) -> CaddieBrief | None:
     """Build a brief from an existing ``metrics.json`` payload.
 
@@ -216,6 +228,7 @@ def build_caddie_brief_from_payload(
     """
 
     resolved_angle = _camera_angle(payload, angle)
+    resolved_club = _club_context(payload, club)
     warning = quality_warning_from_payload(payload, resolved_angle)
     metrics = metrics_from_payload(payload)
     brief = build_caddie_brief(
@@ -226,6 +239,8 @@ def build_caddie_brief_from_payload(
         trend=trend,
         warning=warning,
         angle=resolved_angle,
+        club=resolved_club,
+        rule_version=rule_version,
     )
     return brief
 
@@ -336,6 +351,22 @@ def _camera_angle(
         return None
     angle = meta.get("angle") or meta.get("camera_angle")
     return angle if isinstance(angle, str) else None
+
+
+def _club_context(payload: dict, authoritative: object) -> str | None:
+    """Use explicit job context verbatim; only absent callers trust metadata."""
+
+    if authoritative is not _CLUB_CONTEXT_UNSET:
+        return (
+            authoritative
+            if isinstance(authoritative, str) and authoritative
+            else None
+        )
+    meta = payload.get("meta") or {}
+    if not isinstance(meta, dict):
+        return None
+    club = meta.get("club")
+    return club if isinstance(club, str) and club else None
 
 
 def rhythm_maintenance_drill(cfg: Config) -> Drill:
@@ -451,10 +482,21 @@ def payload_requires_refilm(
 
 
 def payload_is_coaching_eligible(
-    payload: dict, cfg: Config, *, angle: str | None = None
+    payload: dict,
+    cfg: Config,
+    *,
+    angle: str | None = None,
+    club: object = _CLUB_CONTEXT_UNSET,
+    rule_version: int | None = None,
 ) -> bool:
     """True only when a persisted result can honestly power coaching."""
-    brief = build_caddie_brief_from_payload(payload, cfg, angle=angle)
+    brief = build_caddie_brief_from_payload(
+        payload,
+        cfg,
+        angle=angle,
+        club=club,
+        rule_version=rule_version,
+    )
     return brief is not None and not brief.refilm_required
 
 

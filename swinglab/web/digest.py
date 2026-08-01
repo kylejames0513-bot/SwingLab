@@ -36,12 +36,16 @@ import logging
 import os
 import threading
 import time
+from pathlib import Path
 
 from ..caddie_brief import (
     build_caddie_brief_from_payload,
 )
+from ..clubs import CLUB_LABELS
 from ..config import Config
 from ..drills import CLEAN
+from ..metrics import ANGLES
+from ..report import persisted_priority_rule_version
 from ..trends import (
     FLAG_LABELS,
     build_trends,
@@ -109,6 +113,33 @@ def eligible(user, now: float) -> bool:
 
 # -- composing ---------------------------------------------------------------
 
+def _club_aware_enabled(cfg: Config) -> bool:
+    return cfg.coaching.get("club_aware_enabled") is True
+
+
+def _exact_job_context(job) -> tuple[str, str, str] | None:
+    club = getattr(job, "club", None)
+    hand = getattr(job, "hand", None)
+    angle = getattr(job, "angle", None)
+    if (
+        club not in CLUB_LABELS
+        or hand not in ("right", "left")
+        or angle not in ANGLES
+    ):
+        return None
+    return club, hand, angle
+
+
+def _context_label(context: tuple[str, str, str]) -> str:
+    club, hand, angle = context
+    return " · ".join(
+        (
+            CLUB_LABELS[club],
+            "right-handed" if hand == "right" else "left-handed",
+            "face-on" if angle == "face-on" else "down-the-line",
+        )
+    )
+
 def compose_digest(
     user, cfg: Config, jobs, base_url: str = "", secret: str = ""
 ) -> tuple[str, str] | None:
@@ -132,15 +163,71 @@ def compose_digest(
     metrics_path = metrics_json_path(latest_job)
     if metrics_path is None:
         return None
+    report_path = metrics_path.parent / Path(str(latest_job.report_rel)).name
+    report_rule = persisted_priority_rule_version(report_path)
+    if report_rule is None:
+        return None
+
+    exact_context = None
+    if _club_aware_enabled(cfg) or report_rule == 2:
+        # The active gate applies exact context globally. A persisted rule-2
+        # report keeps that same promise during rollback, so its digest also
+        # replays the report's exact club + hand + angle boundary.
+        exact_context = _exact_job_context(latest_job)
+        if exact_context is None:
+            return None
+        club, hand, angle = exact_context
+        exact_jobs = [
+            job
+            for job in jobs
+            if (
+                getattr(job, "club", None) == club
+                and getattr(job, "hand", None) == hand
+                and getattr(job, "angle", None) == angle
+                and float(getattr(job, "created_at", 0.0) or 0.0)
+                <= float(latest_job.created_at)
+            )
+        ]
+        trends = build_trends(exact_jobs, cfg)
+        latest = next(
+            (
+                sample
+                for sample in reversed(trends.samples)
+                if sample.job_id == latest_job.id
+            ),
+            None,
+        )
+        if latest is None:
+            return None
     try:
         payload = json.loads(metrics_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    brief = build_caddie_brief_from_payload(
-        payload,
-        cfg,
-        angle=getattr(latest_job, "angle", None),
-    )
+    sentence = trend_sentence(trends)
+    if exact_context is not None:
+        previous_counts: dict[str, int] = {}
+        for sample in trends.samples:
+            if sample.job_id == latest_job.id:
+                continue
+            for flag in sample.flags:
+                previous_counts[flag] = previous_counts.get(flag, 0) + 1
+        brief = build_caddie_brief_from_payload(
+            payload,
+            cfg,
+            previous_flag_counts=previous_counts,
+            trend=sentence,
+            angle=getattr(latest_job, "angle", None),
+            club=getattr(latest_job, "club", None),
+            rule_version=report_rule,
+        )
+    else:
+        brief = build_caddie_brief_from_payload(
+            payload,
+            cfg,
+            angle=getattr(latest_job, "angle", None),
+            club=getattr(latest_job, "club", None),
+            rule_version=report_rule,
+        )
     if brief is None or brief.refilm_required or brief.drill is None:
         return None
     full_baseline = all(
@@ -174,7 +261,6 @@ def compose_digest(
     primary = esc(str(cfg.brand["primary_color"]))
     accent = esc(str(cfg.brand["accent_color"]))
     name = esc(str(cfg.brand["name"]))
-    sentence = trend_sentence(trends)
     report_url = esc(f"{base_url}/session/{latest.job_id}/report")
     # The progress dashboard can be Pro-gated (billing.progress_pro_only,
     # effective only with accounts on). Don't send a free subscriber a
@@ -224,6 +310,15 @@ def compose_digest(
             )
         )
 
+    exact_context_line = ""
+    if exact_context is not None:
+        exact_context_line = (
+            '<p style="margin:0 0 12px;font-size:13px;color:#555;">'
+            "<strong>Comparison context:</strong> "
+            f"{esc(_context_label(exact_context))}. "
+            "This plan and trend use only matching swings.</p>"
+        )
+
     mono = "font-family:ui-monospace,Menlo,Consolas,monospace;"
     drill_cards = "".join(
         '<div style="border:1px solid #e0e0e0;border-radius:8px;'
@@ -269,6 +364,7 @@ def compose_digest(
         '<div style="border:1px solid #e0e0e0;border-top:none;'
         'border-radius:0 0 8px 8px;padding:20px;">'
         f'<p style="margin:0 0 12px;">{context_line}</p>'
+        f"{exact_context_line}"
         f"{progress_line}"
         f"{drill_cards}"
         f"{also}"

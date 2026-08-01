@@ -61,6 +61,41 @@ FLAG_BALANCE = "balance"
 FLAG_CONSISTENCY = "consistency"
 
 
+PRIORITY_RULE_LEGACY = 1
+PRIORITY_RULE_CLUB_AWARE = 2
+SUPPORTED_PRIORITY_RULE_VERSIONS = frozenset(
+    {PRIORITY_RULE_LEGACY, PRIORITY_RULE_CLUB_AWARE}
+)
+
+# Rule 2 changes only the stable order inside a severity band.  It does not
+# alter thresholds, measurements, card copy, or the ordering of severity
+# bands themselves.  Clubs absent from this map deliberately retain rule 1.
+_CLUB_TIE_PRIORITIES: dict[str, tuple[str, ...]] = {
+    "driver": (FLAG_BALANCE,),
+    "fairway-wood": (FLAG_HEAD_DIP,),
+    "hybrid": (FLAG_HEAD_DIP,),
+    "iron": (FLAG_SWAY, FLAG_HIP_SLIDE),
+}
+
+
+def priority_rule_version(cfg: Config) -> int:
+    """Select the immutable coaching priority rule with an exact bool gate."""
+
+    return (
+        PRIORITY_RULE_CLUB_AWARE
+        if cfg.coaching.get("club_aware_enabled") is True
+        else PRIORITY_RULE_LEGACY
+    )
+
+
+def validate_priority_rule_version(value: object) -> int:
+    """Accept only priority rules this release can faithfully replay."""
+
+    if type(value) is not int or value not in SUPPORTED_PRIORITY_RULE_VERSIONS:
+        raise ValueError(f"Unsupported coaching priority rule: {value!r}")
+    return value
+
+
 def swing_notes(m: SwingMetrics, cfg: Config) -> list[str]:
     coach = cfg.coaching
     notes: list[str] = []
@@ -487,13 +522,22 @@ def issue_cards(
     all_metrics: list[SwingMetrics],
     stats: dict[str, dict[str, float]],
     cfg: Config,
+    *,
+    club: str | None = None,
+    rule_version: int | None = None,
 ) -> list[IssueCard]:
     """One card per fired session flag (old and new alike), sorted 'major'
-    first (stable within severity, preserving session_flags order)."""
+    first. Rule 1 preserves the legacy order; rule 2 may change only ties
+    within the same severity for a supported, authoritative club."""
     # Function-local import: drills.py imports the FLAG_* constants from this
     # module, so a module-level import here would be circular.
     from . import drills
 
+    selected_rule = (
+        priority_rule_version(cfg)
+        if rule_version is None
+        else validate_priority_rule_version(rule_version)
+    )
     coach = cfg.coaching
     deg = "\N{DEGREE SIGN}"
     library = drills.build_drills(cfg.coaching)
@@ -673,7 +717,21 @@ def issue_cards(
             )
         )
 
-    cards.sort(key=lambda c: 0 if c.severity == "major" else 1)  # stable
+    preferred = (
+        _CLUB_TIE_PRIORITIES.get(club, ())
+        if selected_rule == PRIORITY_RULE_CLUB_AWARE
+        else ()
+    )
+    preferred_rank = {flag: rank for rank, flag in enumerate(preferred)}
+    neutral_rank = len(preferred)
+    legacy_rank = {flag: rank for rank, flag in enumerate(specs)}
+    cards.sort(
+        key=lambda card: (
+            0 if card.severity == "major" else 1,
+            preferred_rank.get(card.flag, neutral_rank),
+            legacy_rank[card.flag],
+        )
+    )
     return cards
 
 

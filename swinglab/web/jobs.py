@@ -296,32 +296,40 @@ class JobManager:
         club: str | None,
         through: float,
         limit: int = 50,
+        hand: str | None = None,
+        angle: str | None = None,
     ) -> list[Job]:
-        """Finished same-user, same-club sessions up to one session.
+        """Finished same-user, same-context sessions up to one session.
 
-        Filtering happens in SQLite before the limit, so a sparse club history
-        is not lost behind newer sessions made with other clubs.  This is the
-        bounded history used by the Caddie Brief; it never crosses accounts or
-        lets a later session rewrite an older session's journal context. The
-        eligibility scan is capped at five database rows per requested result
-        (500 rows maximum) so a long account history cannot create unbounded
-        report/JSON I/O on a results request.
+        Club filtering is the established compatibility contract. Optional
+        ``hand`` and ``angle`` filters let club-aware callers require the full
+        capture context without changing any legacy caller. Filtering happens
+        in SQLite before the limit, so a sparse context is not lost behind
+        newer sessions made in another context. This bounded history never
+        crosses accounts or lets a later session rewrite an older session's
+        journal context. The eligibility scan is capped at five database rows
+        per requested result (500 rows maximum) so a long account history
+        cannot create unbounded report/JSON I/O on a results request.
         """
         wanted = min(max(int(limit), 1), 100)
         scan_limit = min(wanted * 5, 500)
-        club_clause = "club IS NULL" if club is None else "club = ?"
-        params: tuple = (
-            (user_id, DONE, through)
-            if club is None
-            else (user_id, DONE, through, club)
-        )
+        context_clauses = ["club IS NULL" if club is None else "club = ?"]
+        params: list[object] = [user_id, DONE, through]
+        if club is not None:
+            params.append(club)
+        if hand is not None:
+            context_clauses.append("hand = ?")
+            params.append(hand)
+        if angle is not None:
+            context_clauses.append("angle = ?")
+            params.append(angle)
         with self._lock:
             rows = self._conn.execute(
                 "SELECT * FROM jobs WHERE user_id = ? AND status = ?"
                 " AND created_at <= ? AND "
-                + club_clause
+                + " AND ".join(context_clauses)
                 + " ORDER BY created_at DESC LIMIT ?",
-                params + (scan_limit,),
+                (*params, scan_limit),
             ).fetchall()
         eligible = [
             job
