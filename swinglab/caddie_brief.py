@@ -216,8 +216,8 @@ def build_caddie_brief_from_payload(
     """
 
     resolved_angle = _camera_angle(payload, angle)
-    warning = _quality_warning(payload, resolved_angle)
-    metrics = _metrics_from_payload(payload)
+    warning = quality_warning_from_payload(payload, resolved_angle)
+    metrics = metrics_from_payload(payload)
     brief = build_caddie_brief(
         metrics,
         session_stats(metrics),
@@ -230,7 +230,13 @@ def build_caddie_brief_from_payload(
     return brief
 
 
-def _metrics_from_payload(payload: dict) -> list[SwingMetrics]:
+def metrics_from_payload(payload: dict) -> list[SwingMetrics]:
+    """Return the readable per-swing metrics stored in ``metrics.json``.
+
+    This is intentionally public because the result surface, trends, and
+    Proof Cycle must all adapt the persisted measurements identically.  It
+    does not invent values for partial or legacy payloads.
+    """
     rows: list[SwingMetrics] = []
     swings = payload.get("swings") or []
     if not isinstance(swings, list):
@@ -296,7 +302,7 @@ def scope_metrics_for_angle(
     return [replace(metric, **unavailable) for metric in all_metrics]
 
 
-def _quality_warning(
+def quality_warning_from_payload(
     payload: dict, angle: str | None = None
 ) -> str | None:
     angle = _camera_angle(payload, angle)
@@ -441,7 +447,7 @@ def payload_requires_refilm(
     payload: dict, *, angle: str | None = None
 ) -> bool:
     """Apply the same re-film decision to any persisted metrics payload."""
-    return warning_requires_refilm(_quality_warning(payload, angle))
+    return warning_requires_refilm(quality_warning_from_payload(payload, angle))
 
 
 def payload_is_coaching_eligible(
@@ -473,7 +479,7 @@ def payload_has_coachable_data(
     payload: dict, *, angle: str | None = None
 ) -> bool:
     """Whether at least one field supported by the chosen angle is readable."""
-    metrics = _metrics_from_payload(payload)
+    metrics = metrics_from_payload(payload)
     if _camera_angle(payload, angle) == ANGLE_DTL:
         return any(
             not math.isnan(metric.tempo_ratio) for metric in metrics

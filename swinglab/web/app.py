@@ -82,6 +82,13 @@ from ..diagrams import drill_animation, drill_diagram, trend_chart
 from ..drills import PLAN_TITLES, build_drills, gear_shop_url
 from ..explainers import build_explainers
 from ..metrics import ANGLES
+from ..proof_cycle_artifact import (
+    ARTIFACT_FILENAME,
+    proof_cycle_enabled,
+    proof_cycle_history_scan_limit,
+    proof_cycle_view,
+    verified_proof_cycle_artifact,
+)
 from ..report import (
     REPORT_OUTCOME_CAPTURE,
     REPORT_OUTCOME_COACHING,
@@ -2368,6 +2375,28 @@ def create_app(
             return None
         return brief
 
+    def proof_cycle_for(job: Job):
+        """Verify a completed sidecar without ever writing during a GET."""
+
+        if not proof_cycle_enabled(cfg) or job.status != DONE:
+            return None
+        try:
+            prior_jobs: list[Job] = []
+            if job.user_id and job.club:
+                prior_jobs = manager.list_comparable(
+                    user_id=job.user_id,
+                    club=job.club,
+                    through=job.created_at,
+                    limit=proof_cycle_history_scan_limit(cfg),
+                )
+            artifact = verified_proof_cycle_artifact(job, prior_jobs, cfg)
+        except Exception:
+            # Sidecar validation is an optional result enhancement.  A stale
+            # disk artifact must never prevent a completed report from loading.
+            logger.exception("Proof Cycle result validation failed for job %s", job.id)
+            return None
+        return proof_cycle_view(artifact)
+
     def gear_for(job: Job, brief) -> list[dict]:
         """At most one optional aid tied to the brief's measured priority."""
         if (
@@ -2400,6 +2429,7 @@ def create_app(
         failed = job.status == FAILED
         report_path = resolved_report(job)
         brief = caddie_brief_for(job) if report_path is not None else None
+        proof_cycle = proof_cycle_for(job) if report_path is not None else None
         if job.status == DONE:
             record_product_event(
                 request,
@@ -2434,6 +2464,7 @@ def create_app(
             error_help=humanize.friendly_error(job.error) if failed else None,
             queue_position=manager.queue_position(job),
             caddie_brief=brief,
+            proof_cycle=proof_cycle,
             refilm_needed=job.status == DONE and not coaching_eligible,
             legacy_report=report_only,
             current_report_only=current_report_only,
@@ -2507,6 +2538,20 @@ def create_app(
             if declared_report is not None
             else None
         )
+        declared_proof_cycle = (
+            declared_report.parent / ARTIFACT_FILENAME
+            if declared_report is not None
+            else None
+        )
+        requested_proof_cycle = (
+            target_name == ARTIFACT_FILENAME
+            or same_file(target, declared_proof_cycle)
+        )
+        if requested_proof_cycle:
+            # The sidecar is an internal, versioned enhancement rather than a
+            # public artifact/API contract.  It contains no raw video or owner
+            # identity, but it must stay behind the rendered customer surface.
+            raise HTTPException(404, "Not found")
         requested_metrics = (
             target_name == "metrics.json"
             or same_file(target, declared_metrics)
