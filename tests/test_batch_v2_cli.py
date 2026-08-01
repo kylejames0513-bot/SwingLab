@@ -154,6 +154,42 @@ def test_resume_fails_closed_when_a_completed_instruction_changes(
     assert len(calls) == 1
 
 
+def test_resume_preflights_every_saved_instruction_before_any_rerun(
+    tmp_path, monkeypatch, capsys
+):
+    first = _video(tmp_path / "clips" / "first.mov")
+    second = _video(tmp_path / "clips" / "second.mov")
+    manifest = _manifest(
+        tmp_path / "clips.jsonl",
+        [
+            {"id": "first", "path": str(first)},
+            {"id": "second", "path": str(second), "hand": "right"},
+        ],
+    )
+    calls: list[tuple[Path, dict]] = []
+    monkeypatch.setattr(cli_module, "analyze_video", _fake_analyzer(calls))
+
+    assert main(["batch", str(manifest), "--out", str(tmp_path / "results")]) == 0
+    capsys.readouterr()
+    assert len(calls) == 2
+    first_report = tmp_path / "results" / "first-1" / "report.html"
+    first_report.unlink()
+    _manifest(
+        manifest,
+        [
+            {"id": "first", "path": str(first)},
+            {"id": "second", "path": str(second), "hand": "left"},
+        ],
+    )
+
+    assert main(["batch", str(manifest), "--resume", "--json"]) == 2
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "no longer matches this manifest" in captured.err
+    assert len(calls) == 2
+
+
 def test_manifest_is_fully_validated_before_the_first_clip_runs(
     tmp_path, monkeypatch, capsys
 ):

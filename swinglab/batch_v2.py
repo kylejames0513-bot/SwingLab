@@ -427,6 +427,13 @@ def run_manifest_batch(
     summary = _empty_summary(
         manifest, resolved_state_path, dry_run=dry_run, resume=resume
     )
+    # A changed completed instruction is a safety error, not a per-clip
+    # failure.  Check every saved record before writing state or re-running a
+    # missing report so resume never completes an earlier row and then learns
+    # that a later row belongs to a different manifest.
+    if resume:
+        for item in manifest.items:
+            _state_allows_resume(item, state)
     # Prove the local state target is writable before a potentially expensive
     # analysis begins.  This also creates an explicit empty checkpoint for a
     # first run; dry-run remains genuinely read-only.
