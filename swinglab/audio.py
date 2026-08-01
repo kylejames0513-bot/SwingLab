@@ -15,6 +15,8 @@ float is monotone).
 
 from __future__ import annotations
 
+import math
+from numbers import Real
 from pathlib import Path
 
 import numpy as np
@@ -92,16 +94,40 @@ def compute_envelope(wav_path: str | Path) -> tuple[np.ndarray, int]:
     return env, sr
 
 
+def _relative_height(det: dict[str, object]) -> float:
+    """Return a strict optional loudness gate, or explain unsafe config."""
+
+    raw = det.get("relative_height", 0.0)
+    if isinstance(raw, bool) or not isinstance(raw, Real):
+        raise ValueError(
+            "detection.relative_height must be a number from 0.0 through 1.0."
+        )
+    value = float(raw)
+    if not math.isfinite(value) or not 0.0 <= value <= 1.0:
+        raise ValueError(
+            "detection.relative_height must be a finite number from 0.0 through 1.0."
+        )
+    return value
+
+
 def detect_strikes(wav_path: str | Path, cfg: Config) -> list[float]:
-    """Return strike times in seconds, or [] when nothing clears the thresholds."""
+    """Return strikes clearing the configured absolute and optional relative gates."""
+
     det = cfg.detection
+    relative_height = _relative_height(det)
     env, _sr = compute_envelope(wav_path)
     if not len(env):
         return []
-    peaks, _ = find_peaks(
+    peaks, properties = find_peaks(
         env,
         height=det["audio_height"],
         distance=int(det["min_gap_s"] * ENV_RATE),
         prominence=det["audio_prominence"],
     )
+    # This intentionally happens AFTER scipy's height/prominence/distance
+    # selection.  It is a conservative noise filter, not a classifier, and
+    # cannot restore a real strike already suppressed by the minimum gap.
+    if relative_height and len(peaks):
+        heights = properties["peak_heights"]
+        peaks = peaks[heights >= heights.max() * relative_height]
     return (peaks / ENV_RATE).tolist()

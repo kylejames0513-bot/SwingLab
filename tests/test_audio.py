@@ -16,6 +16,16 @@ from tests.conftest import write_click_wav
 CLICKS = [3.0, 9.5, 16.25]
 
 
+def write_weighted_click_wav(path, clicks: list[tuple[float, float]]) -> None:
+    """One-hop transients with deliberate relative loudness values."""
+
+    sr = 16000
+    samples = np.zeros(sr * 20, dtype=np.int16)
+    for time_s, amplitude in clicks:
+        samples[int(time_s * sr)] = int(32767 * amplitude)
+    wavfile.write(str(path), sr, samples)
+
+
 def reference_envelope(wav_path) -> np.ndarray:
     """The original full-load implementation, kept verbatim as the
     bit-exactness oracle for the streaming version."""
@@ -60,6 +70,34 @@ def test_min_gap_merges_close_transients(tmp_path, cfg):
     # two clicks 1s apart are within min_gap_s=4.0 -> only one strike reported
     wav = write_click_wav(tmp_path / "close.wav", [5.0, 6.0])
     assert len(detect_strikes(wav, cfg)) == 1
+
+
+def test_relative_height_zero_preserves_existing_candidates(tmp_path, cfg):
+    wav = tmp_path / "weighted.wav"
+    expected = [2.0, 8.0, 14.0]
+    write_weighted_click_wav(wav, list(zip(expected, [1.0, 0.68, 0.42])))
+    cfg.detection["relative_height"] = 0.0
+
+    assert detect_strikes(wav, cfg) == expected
+
+
+def test_relative_height_filters_quiet_transients_but_keeps_uneven_strikes(
+    tmp_path, cfg
+):
+    wav = tmp_path / "weighted.wav"
+    write_weighted_click_wav(wav, [(2.0, 1.0), (8.0, 0.68), (14.0, 0.42)])
+    cfg.detection["relative_height"] = 0.5
+
+    assert detect_strikes(wav, cfg) == [2.0, 8.0]
+
+
+@pytest.mark.parametrize("value", (-0.1, 1.1, True, "0.5", float("nan"), float("inf")))
+def test_relative_height_rejects_invalid_config(tmp_path, cfg, value):
+    wav = write_click_wav(tmp_path / "click.wav", [3.0])
+    cfg.detection["relative_height"] = value
+
+    with pytest.raises(ValueError, match="detection\\.relative_height"):
+        detect_strikes(wav, cfg)
 
 
 # -- streaming envelope: bounded memory, identical numbers -------------------
@@ -108,3 +146,14 @@ def test_streaming_detection_matches_reference_peaks(tmp_path, cfg, monkeypatch)
         assert abs(got - expected) <= 0.05
     monkeypatch.setattr(audio_module, "CHUNK_HOPS", 4096)
     assert detect_strikes(wav, cfg) == detected
+
+
+def test_relative_height_detection_is_chunk_invariant(tmp_path, cfg, monkeypatch):
+    wav = tmp_path / "weighted.wav"
+    write_weighted_click_wav(wav, [(2.0, 1.0), (8.0, 0.68), (14.0, 0.42)])
+    cfg.detection["relative_height"] = 0.5
+
+    monkeypatch.setattr(audio_module, "CHUNK_HOPS", 13)
+    chunked = detect_strikes(wav, cfg)
+    monkeypatch.setattr(audio_module, "CHUNK_HOPS", 4096)
+    assert detect_strikes(wav, cfg) == chunked == [2.0, 8.0]
