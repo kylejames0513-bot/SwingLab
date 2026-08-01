@@ -1,38 +1,202 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — {% if landing %}Swing analysis from your phone{% elif auth_view == "signup" %}Create a free account{% else %}Sign in{% endif %}{% endblock %}
 {% block style %}
-  main { max-width: 780px; }
-  .hero { text-align: center; margin: 0 auto 30px; max-width: 660px; }
-  .hero .eyebrow { color: var(--sl-orange); font-family: var(--sl-font-mono);
-                   font-size: 0.75rem; font-weight: 500; letter-spacing: .16em;
-                   margin: 0 0 12px; text-transform: uppercase; }
-  .hero h2 { color: var(--sl-green); font-size: clamp(2rem, 6vw, 3.4rem);
-             letter-spacing: -.035em; line-height: 1.04; margin: 0 0 14px; }
-  .hero p { color: var(--sl-ink-soft); font-size: 1.05rem; margin: 0 auto; max-width: 590px; }
-  .steps { display: flex; gap: 12px; margin: 24px 0 0; flex-wrap: wrap; }
-  .steps div { flex: 1 1 150px; background: var(--sl-bg-card); border: 1px solid var(--sl-border);
-               border-radius: 12px; padding: 16px; font-size: 0.9rem; color: var(--sl-ink-soft); }
-  .steps strong { display: block; color: var(--sl-green); margin-bottom: 4px; }
-  .choice-grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr));
-                 margin: 28px auto 0; max-width: 700px; }
-  .choice { display: flex; flex-direction: column; align-items: flex-start; text-align: left; }
-  .choice h3 { color: var(--sl-green); font-size: 1.25rem; margin: 0 0 8px; }
-  .choice p { color: var(--sl-ink-soft); margin: 0; }
-  .choice .button { margin-top: auto; width: 100%; text-align: center; }
-  .choice--primary { border-top: 4px solid var(--sl-orange); }
+  main { max-width: 1180px; margin-top: clamp(34px, 6vw, 76px); }
+  .landing { display: grid; gap: clamp(52px, 8vw, 94px); }
+  .landing-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(390px, .92fr);
+    align-items: center;
+    gap: clamp(38px, 7vw, 88px);
+  }
+  .hero-copy { max-width: 650px; }
+  .hero-copy h1 {
+    max-width: 720px;
+    margin: 0;
+    color: var(--sl-green);
+    font-size: clamp(2.75rem, 6.4vw, 5.6rem);
+    font-weight: 850;
+    letter-spacing: -.058em;
+    line-height: .97;
+    text-wrap: balance;
+  }
+  .hero-lead {
+    max-width: 610px;
+    margin: 24px 0 0;
+    color: var(--sl-ink-soft);
+    font-size: clamp(1.02rem, 1.5vw, 1.18rem);
+  }
+  .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
+  .hero-ctas a.button { margin: 0; }
+  .landing-primary { min-width: 212px; }
+  .hero-signin-note { margin: 13px 0 0; color: var(--sl-ink-muted); font-size: .83rem; }
+  .hero-proof-points {
+    margin: 22px 0 0;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 18px;
+    color: var(--sl-ink-muted);
+    font-size: .83rem;
+    list-style: none;
+  }
+  .hero-proof-points li { position: relative; padding-left: 16px; }
+  .hero-proof-points li::before {
+    position: absolute;
+    top: .54em;
+    left: 0;
+    width: 7px;
+    height: 7px;
+    background: var(--sl-orange);
+    border-radius: 50%;
+    content: "";
+  }
+  .preview-figure { margin: 0; }
+  .preview-shell {
+    overflow: hidden;
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-xl);
+    box-shadow: var(--sl-shadow-lg);
+  }
+  .preview-topbar {
+    min-height: 52px;
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    background: #f1f1eb;
+    border-bottom: 1px solid var(--sl-border);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .preview-dots { display: inline-flex; gap: 5px; }
+  .preview-dots span { width: 7px; height: 7px; background: #bdc6be; border-radius: 50%; }
+  .preview-dots span:first-child { background: var(--sl-orange); }
+  .preview-media {
+    display: block;
+    padding: clamp(12px, 2.4vw, 20px);
+    background: var(--sl-surface-dark);
+  }
+  .preview-media:hover { background: #0c3421; }
+  .preview-media img {
+    width: 100%;
+    aspect-ratio: 16 / 8;
+    display: block;
+    object-fit: contain;
+    background: #071f15;
+    border-radius: var(--sl-radius-md);
+  }
+  .preview-read {
+    padding: 20px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .preview-read div {
+    min-width: 0;
+    padding: 13px 14px;
+    background: var(--sl-surface-soft);
+    border-radius: var(--sl-radius-md);
+  }
+  .preview-read span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: .64rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .preview-read strong { color: var(--sl-green); font-size: .88rem; }
+  .preview-caption {
+    margin: 14px 4px 0;
+    color: var(--sl-ink-muted);
+    font-size: .77rem;
+    line-height: 1.5;
+  }
+  .preview-caption a { font-weight: 700; }
+  .landing-section-head { max-width: 690px; }
+  .landing-section-head h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-size: clamp(2rem, 4vw, 3.25rem);
+    letter-spacing: -.045em;
+    line-height: 1.04;
+    text-wrap: balance;
+  }
+  .landing-section-head p:last-child { margin: 16px 0 0; color: var(--sl-ink-soft); }
+  .flow-list {
+    margin: 30px 0 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+    list-style: none;
+    counter-reset: journey;
+  }
+  .flow-list li {
+    min-height: 218px;
+    padding: 22px;
+    position: relative;
+    overflow: hidden;
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    box-shadow: var(--sl-shadow-sm);
+    counter-increment: journey;
+  }
+  .flow-list li::before {
+    display: block;
+    margin-bottom: 26px;
+    color: var(--sl-orange-text);
+    content: "0" counter(journey);
+    font-family: var(--sl-font-mono);
+    font-size: .72rem;
+    letter-spacing: .12em;
+  }
+  .flow-list li:not(:last-child)::after {
+    position: absolute;
+    top: 27px;
+    right: 18px;
+    color: var(--sl-border-strong);
+    content: "\2192";
+    font-size: 1.15rem;
+  }
+  .flow-list h3 { margin: 0; color: var(--sl-green); font-size: 1.18rem; }
+  .flow-list p { margin: 10px 0 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .scope-panel {
+    padding: clamp(26px, 5vw, 48px);
+    display: grid;
+    grid-template-columns: .86fr 1.14fr;
+    gap: clamp(28px, 6vw, 68px);
+    color: var(--sl-green-ink);
+    background: var(--sl-surface-dark);
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: var(--sl-radius-xl);
+    box-shadow: var(--sl-shadow-lg);
+  }
+  .scope-panel .sl-eyebrow { color: #ffad72; }
+  .scope-panel h2 { margin: 0; font-size: clamp(1.8rem, 3.8vw, 3rem); line-height: 1.05; letter-spacing: -.04em; }
+  .scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .scope-grid div { padding: 18px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .11); border-radius: var(--sl-radius-md); }
+  .scope-grid h3 { margin: 0; color: #fff; font-size: .95rem; }
+  .scope-grid p { margin: 9px 0 0; color: #cbdad0; font-size: .86rem; }
   .auth-shell { max-width: 470px; margin: 0 auto; }
   .auth-shell h2 { color: var(--sl-green); font-size: 1.8rem; margin: 0 0 8px; }
   .auth-shell .lead { color: var(--sl-ink-soft); margin: 0 0 20px; }
   label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 0.9rem; }
   input[type=email], input[type=password], input[type=text] {
-    width: 100%; padding: 12px 13px; border: 1.5px solid var(--sl-border); border-radius: 8px;
+    width: 100%; padding: 12px 13px; border: 1.5px solid var(--sl-control-border); border-radius: 8px;
     background: #fff; color: var(--sl-ink); font: inherit;
     box-sizing: border-box; }
   input:focus { border-color: var(--sl-green-btn); outline: 2px solid rgba(26,92,56,.18); }
   .card button { width: 100%; }
   .free-note { color: var(--sl-ink-muted); font-size: 0.86rem; margin-top: 12px; text-align: center; }
-  .hero-ctas { margin-top: 16px; }
-  .hero-ctas a.button { margin-top: 0; }
   .opt { display: flex; gap: 8px; align-items: flex-start; font-weight: 400;
          font-size: 0.85rem; color: var(--sl-ink-soft); margin: 14px 0 0; }
   .opt input { margin-top: 2px; }
@@ -42,45 +206,122 @@
                justify-content: center; margin-top: 16px; }
   .aux-link { color: var(--sl-ink-soft); font-size: 0.86rem; text-align: center; }
   .back-home { display: block; margin: 20px auto 0; text-align: center; }
-  .resend button { background: white; color: var(--sl-ink); border: 1px solid var(--sl-border);
+  .resend button { background: white; color: var(--sl-ink); border: 1px solid var(--sl-control-border);
                    margin-top: 12px; }
   .account-note { background: var(--sl-orange-soft); border-radius: 10px;
                   color: var(--sl-ink-soft); font-size: .88rem; margin-top: 18px;
                   padding: 12px 14px; }
-  @media (max-width: 640px) {
-    .choice-grid { grid-template-columns: 1fr; }
-    .steps { display: none; }
+  @media (max-width: 980px) {
+    main { margin-top: 36px; }
+    .landing-hero { grid-template-columns: 1fr; }
+    .hero-copy { max-width: 760px; }
+    .preview-figure { max-width: 680px; }
+    .flow-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 680px) {
+    .hero-copy h1 { font-size: clamp(2.55rem, 13vw, 4rem); }
+    .hero-ctas { align-items: stretch; flex-direction: column; }
+    .hero-ctas a.button { width: 100%; }
+    .preview-read, .scope-grid, .scope-panel { grid-template-columns: 1fr; }
+    .flow-list { grid-template-columns: 1fr; }
+    .flow-list li { min-height: 0; }
+    .flow-list li:not(:last-child)::after { content: "\2193"; }
   }
 {% endblock %}
 {% block main %}
   {% if landing %}
-  <div class="hero">
-    <p class="eyebrow">Swing analysis from one phone video</p>
-    <h2>Make every range session count.</h2>
-    <p>Create a free {{ brand.name }} account for {{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month,
-       or sign in to continue where you left off.</p>
-    <div class="steps">
-      <div><strong>1. Film</strong> Phone at hip height, face-on (down the line: tempo &amp; rhythm only for now).</div>
-      <div><strong>2. Upload</strong> Straight from your camera roll — no editing.</div>
-      <div><strong>3. Improve</strong> A full visual report for every swing in the clip.</div>
-    </div>
-  </div>
-  <div class="choice-grid">
-    <section class="card choice choice--primary">
-      <h3>Create a free account</h3>
-      <p>{{ free_per_month }} full swing analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month — no card required,
-         no purchase, and no Shopify account needed.</p>
-      <a class="button" href="/signup">Start free</a>
+  <div class="landing">
+    <section class="landing-hero" aria-labelledby="landing-title">
+      <div class="hero-copy">
+        <p class="sl-eyebrow">Your swing feedback loop</p>
+        <h1 id="landing-title">One swing priority. One practice plan. Proof when you re-film.</h1>
+        <p class="hero-lead">Create a free {{ brand.name }} account for {% if free_per_month <= 0 %}unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month{% endif %}. Film with your phone, get one measured place to
+          start, and return with the same setup to see what changed — no card required.</p>
+        <div class="hero-ctas" aria-label="Get started">
+          <a class="button landing-primary" href="/signup">Create a free account</a>
+          <a class="button secondary" href="/login">Sign in</a>
+        </div>
+        <p class="hero-signin-note">Already have an account? Sign in to continue your coaching loop.</p>
+        <ul class="hero-proof-points" aria-label="Account benefits">
+          <li>No purchase required</li>
+          <li>Your selected club stays with the report</li>
+          <li>Private account history</li>
+        </ul>
+      </div>
+
+      <figure class="preview-figure" aria-labelledby="preview-title">
+        <div class="preview-shell">
+          <div class="preview-topbar">
+            <span class="preview-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+            <span id="preview-title">Illustrated swing report</span>
+          </div>
+          <a class="preview-media" href="/sample-report/"
+             aria-label="Open the full illustrated sample report">
+            <img src="/sample-report/media/strip_s1.png"
+                 alt="Illustrated key-position strip from the synthetic sample swing report"
+                 width="960" height="480" decoding="async">
+          </a>
+          <div class="preview-read" aria-label="Report structure">
+            <div><span>Coach</span><strong>One priority first</strong></div>
+            <div><span>Practice</span><strong>One plan with a pass mark</strong></div>
+          </div>
+        </div>
+        <figcaption class="preview-caption">Illustrated sample generated from
+          synthetic measurements through the same report engine. It is not a
+          customer result or testimonial. <a href="/sample-report/">See a sample report first</a>.</figcaption>
+      </figure>
     </section>
-    <section class="card choice">
-      <h3>Already have an account?</h3>
-      <p>Sign in with an emailed code, or use the password you added
-         previously.</p>
-      <a class="button secondary" href="/login">Sign in</a>
+
+    <section aria-labelledby="journey-title">
+      <div class="landing-section-head">
+        <p class="sl-eyebrow">A repeatable practice system</p>
+        <h2 id="journey-title">From a phone clip to your next measurable check.</h2>
+        <p>The report narrows the session to one action, then keeps the capture
+          context attached so a later re-film can be compared honestly.</p>
+      </div>
+      <ol class="flow-list" aria-label="Film, Coach, Practice, Re-film">
+        <li>
+          <h3>Film</h3>
+          <p>Choose your club and record the full body from hip height. Face-on
+            supports body-motion coaching; down the line supports timing and
+            rhythm only.</p>
+        </li>
+        <li>
+          <h3>Coach</h3>
+          <p>See one priority from the supported measurements, with the
+            evidence and coaching line visible in the report.</p>
+        </li>
+        <li>
+          <h3>Practice</h3>
+          <p>Follow one focused drill, a clear dosage, and a measurable pass
+            mark instead of collecting disconnected swing tips.</p>
+        </li>
+        <li>
+          <h3>Re-film</h3>
+          <p>Use the same club, handedness, and camera angle. Comparable clips
+            can show whether the measured pattern moved against your baseline.</p>
+        </li>
+      </ol>
     </section>
-  </div>
-  <div class="hero-ctas" style="text-align:center">
-    <a class="button secondary" href="/sample-report/">See a sample report first</a>
+
+    <section class="scope-panel" aria-labelledby="scope-title">
+      <div>
+        <p class="sl-eyebrow">Trust the scope</p>
+        <h2 id="scope-title">Useful because it is specific about what it can see.</h2>
+      </div>
+      <div class="scope-grid">
+        <div>
+          <h3>Supported measurements</h3>
+          <p>Phone-video timing plus 2D body movement in the camera view from
+            supported face-on footage.</p>
+        </div>
+        <div>
+          <h3>Not measured</h3>
+          <p>Club path, face angle, attack angle, dynamic loft, launch, spin,
+            carry, strike location, and ball flight.</p>
+        </div>
+      </div>
+    </section>
   </div>
 
   {% else %}
@@ -184,7 +425,7 @@
     <h2>Create your free account</h2>
     <p class="lead">We’ll send a six-digit verification code. Entering it
       creates your {{ brand.name }} account with
-      {{ free_per_month }} free analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month.</p>
+      {% if free_per_month <= 0 %}unlimited free analyses{% else %}{{ free_per_month }} free analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month{% endif %}.</p>
     {% else %}
     <h2>Welcome back</h2>
     <p class="lead">Enter your {{ brand.name }} email and we’ll send a secure
@@ -221,7 +462,7 @@
   <div class="card auth-shell">
     {% if auth_view == "signup" %}
       <h2>Create your free account</h2>
-      <p class="lead">{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month. No card required.</p>
+      <p class="lead">{% if free_per_month <= 0 %}Unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month{% endif %}. No card required.</p>
       <form action="/signup" method="post">
         <label for="su-email">Email</label>
         <input id="su-email" name="email" type="email" required

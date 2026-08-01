@@ -2553,13 +2553,177 @@ def create_app(
         if user is None:
             return RedirectResponse("/login", status_code=303)
         profile = users.get_golfer_profile(user.id)
-        latest = manager.list_recent(limit=1, user_id=user.id)
-        latest_job = latest[0] if latest else None
+        recent_jobs = manager.list_recent(limit=4, user_id=user.id)
+        latest_job = recent_jobs[0] if recent_jobs else None
         brief = caddie_brief_for(latest_job) if latest_job is not None else None
+
+        def today_report_available(job: Job | None) -> bool:
+            """Match the established report route's customer-visible gate."""
+
+            return bool(
+                job is not None
+                and resolved_report(job) is not None
+                and (
+                    manager.coaching_eligible(job)
+                    or current_safe_report(job)
+                )
+            )
+
+        latest_report_available = today_report_available(latest_job)
+        latest_capture_report = bool(
+            latest_job is not None and current_safe_report(latest_job)
+        )
+        if profile is None or not profile.is_complete:
+            today_state = "setup"
+        elif latest_job is None:
+            today_state = "empty"
+        elif latest_job.status == "queued":
+            today_state = "queued"
+        elif latest_job.status == "processing":
+            today_state = "processing"
+        elif latest_job.status == FAILED:
+            today_state = "failed"
+        elif (
+            brief is not None and brief.refilm_required
+        ) or latest_capture_report:
+            today_state = "refilm"
+        elif brief is not None and brief.drill is not None:
+            today_state = "coaching_ready"
+        else:
+            # An accessible report can remain useful even when a structured
+            # coaching card cannot be reconstructed from its sidecars.
+            today_state = "legacy"
+
+        preferred_club = (
+            CLUB_LABELS.get(profile.preferred_club)
+            if profile is not None and profile.is_complete
+            else None
+        )
+        practice_minutes = (
+            profile.practice_minutes
+            if profile is not None
+            and profile.is_complete
+            and profile.practice_minutes in (10, 20, 45)
+            else None
+        )
+        analyses_left = quota_left(user)
+        allowance_text = (
+            "Unlimited analyses"
+            if analyses_left is None
+            else (
+                f"{analyses_left} analysis left this month"
+                if analyses_left == 1
+                else f"{analyses_left} analyses left this month"
+            )
+        )
+        today_tiles = (
+            {
+                "label": "Preferred club",
+                "value": preferred_club or "Not set",
+                "detail": (
+                    "Your saved starting context"
+                    if preferred_club
+                    else "Choose one in golfer setup"
+                ),
+            },
+            {
+                "label": "Practice block",
+                "value": (
+                    f"{practice_minutes} minutes"
+                    if practice_minutes is not None
+                    else "Not set"
+                ),
+                "detail": (
+                    "Your saved focused-session length"
+                    if practice_minutes is not None
+                    else "Choose a realistic block in setup"
+                ),
+            },
+            {
+                "label": "Plan & allowance",
+                "value": "Pro member" if user.is_pro else "Free plan",
+                "detail": allowance_text,
+            },
+        )
+
+        recent_sessions = []
+        for index, recent_job in enumerate(recent_jobs):
+            recent_report_available = today_report_available(recent_job)
+            recent_capture_report = current_safe_report(recent_job)
+            recent_brief = (
+                brief
+                if recent_job.id == getattr(latest_job, "id", None)
+                else (
+                    caddie_brief_for(recent_job)
+                    if recent_job.status == DONE
+                    else None
+                )
+            )
+            if recent_job.status == "queued":
+                result_state = "queued"
+                result_label = "Queued"
+                result_detail = "Waiting for an analysis slot"
+            elif recent_job.status == "processing":
+                result_state = "processing"
+                result_label = "Analyzing"
+                result_detail = (
+                    f"{recent_job.swings_done} of {recent_job.swings_total} swings analyzed"
+                    if recent_job.swings_total
+                    else "Reading the uploaded swing"
+                )
+            elif recent_job.status == FAILED:
+                result_state = "failed"
+                result_label = "Needs attention"
+                result_detail = "Open for recovery guidance"
+            elif (
+                recent_brief is not None and recent_brief.refilm_required
+            ) or recent_capture_report:
+                result_state = "refilm"
+                result_label = "Re-film needed"
+                result_detail = "Capture needs another pass"
+            elif recent_brief is not None:
+                result_state = "coaching_ready"
+                result_label = "Coaching ready"
+                result_detail = recent_brief.focus_name
+            elif recent_job.status == DONE and recent_report_available:
+                result_state = "legacy"
+                result_label = "Saved report"
+                result_detail = "Open the preserved result"
+            else:
+                result_state = "complete"
+                result_label = "Completed"
+                result_detail = "No current coaching card is available"
+            recent_sessions.append(
+                {
+                    "id": recent_job.id,
+                    "position": "Latest" if index == 0 else "Earlier",
+                    "when": (
+                        time.strftime(
+                            "%b %d", time.localtime(recent_job.created_at)
+                        )
+                        if recent_job.created_at
+                        else None
+                    ),
+                    "club": CLUB_LABELS.get(recent_job.club)
+                    or "Club not recorded",
+                    "state": result_state,
+                    "label": result_label,
+                    "detail": result_detail,
+                }
+            )
+
         checkins = users.list_practice_checkins(user.id, limit=20)
         checked_session_ids = {checkin.session_id for checkin in checkins}
+        latest_proof_artifact = (
+            proof_cycle_artifact_for(latest_job)
+            if latest_job is not None and latest_job.status == DONE
+            else None
+        )
+        today_proof = proof_cycle_view(latest_proof_artifact)
         proof_cycle_practice_assignment = (
-            proof_cycle_practice_assignment_for_job(latest_job)
+            proof_cycle_practice_assignment_for_job(
+                latest_job, latest_proof_artifact
+            )
             if latest_job is not None
             else None
         )
@@ -2591,6 +2755,11 @@ def create_app(
             request,
             profile=profile,
             latest_job=latest_job,
+            latest_report_available=latest_report_available,
+            today_state=today_state,
+            today_tiles=today_tiles,
+            recent_sessions=recent_sessions,
+            today_proof=today_proof,
             caddie_brief=brief,
             practice_choices=(
                 structured_practice_choices

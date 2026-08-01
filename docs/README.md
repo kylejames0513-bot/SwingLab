@@ -8,6 +8,8 @@
   constraints, and rollback procedure.
 - [First-sale launch](first-sale-launch.md) records the proof-driven product
   loop, measurement boundary, catalog gate, and paid-traffic release checks.
+- [Product interface](product-interface.md) records the primary customer loop,
+  measurement and trust boundaries, shared visual system, and release slices.
 - [Swing-history reset](history-reset.md) records the customer-facing scope,
   transaction/recovery protocol, quota preservation, and operational checks.
 - [Shopify Customer Account migration](shopify-customer-accounts.md) records

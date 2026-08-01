@@ -1,278 +1,725 @@
 {% extends "web_layout.html.j2" %}
+{% set allowance_used = quota_left is defined and quota_left is not none and quota_left <= 0 %}
 {% block title %}{{ brand.name }} — Analyze your swing{% endblock %}
 {% block style %}
-  .hero { text-align: center; margin: 0 0 18px; }
-  .hero h2 { font-size: 1.7rem; margin: 0 0 6px; }
-  .hero p { color: #555; margin: 0 auto; max-width: 470px; }
-  .steps { display: flex; gap: 10px; margin: 18px 0 8px; flex-wrap: wrap; }
-  .steps div { flex: 1 1 130px; background: white; border: 1px solid #e0e0e0;
-               border-radius: 8px; padding: 10px 12px; font-size: 0.85rem;
-               color: #444; text-align: left; }
-  .steps strong { display: block; color: var(--primary); margin-bottom: 2px; }
-  .free-note { text-align: center; color: #666; font-size: 0.85rem;
-               margin: 0 0 20px; }
-  .hero-ctas { margin-top: 14px; }
-  .hero-ctas a.button { margin-top: 0; }
-  label { display: block; margin: 16px 0 6px; font-weight: 600; }
-  .radio-row { display: flex; flex-direction: column; gap: 6px; margin-top: 4px; }
-  .radio-row label { display: flex; gap: 8px; align-items: flex-start;
-                     margin: 0; font-weight: 400; }
-  .radio-row input { margin-top: 3px; }
-  details.advanced { margin-top: 18px; }
-  details.advanced > summary { cursor: pointer; color: var(--primary);
-                               font-weight: 600; padding: 4px 0; }
+  main#MainContent {
+    width: min(1180px, calc(100% - 48px));
+    max-width: none;
+    margin: 42px auto 64px;
+    padding: 0;
+  }
+  .upload-page {
+    --upload-panel: #fffdf9;
+    --upload-wash: #eef5ef;
+    --upload-warm: #fff4e7;
+    --upload-line: #ddd8cd;
+    color: var(--sl-ink);
+  }
+  .upload-hero {
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 290px);
+    gap: clamp(28px, 6vw, 76px);
+    align-items: end;
+    margin-bottom: 24px;
+    padding: clamp(28px, 5vw, 54px);
+    border: 1px solid rgba(20, 71, 44, .18);
+    border-radius: 24px;
+    background:
+      radial-gradient(circle at 88% 14%, rgba(232, 114, 12, .18), transparent 30%),
+      linear-gradient(135deg, #123e2a 0%, #174d34 58%, #0f3424 100%);
+    box-shadow: 0 28px 70px -45px rgba(8, 38, 24, .75);
+    color: #f8fbf8;
+  }
+  .upload-hero::after {
+    content: "";
+    position: absolute;
+    right: -64px;
+    bottom: -108px;
+    width: 280px;
+    height: 280px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 50%;
+    box-shadow: 0 0 0 38px rgba(255, 255, 255, .035),
+                0 0 0 78px rgba(255, 255, 255, .025);
+    pointer-events: none;
+  }
+  .upload-hero__copy,
+  .upload-status { position: relative; z-index: 1; }
+  .upload-eyebrow {
+    margin: 0 0 10px;
+    color: #f4a95e;
+    font-family: var(--sl-font-mono);
+    font-size: .72rem;
+    font-weight: 500;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .upload-hero h1 {
+    max-width: 680px;
+    margin: 0;
+    color: white;
+    font-size: clamp(2rem, 5vw, 3.85rem);
+    line-height: .98;
+    letter-spacing: -.045em;
+  }
+  .upload-hero__lede {
+    max-width: 650px;
+    margin: 18px 0 0;
+    color: rgba(248, 251, 248, .82);
+    font-size: clamp(.98rem, 1.7vw, 1.12rem);
+    line-height: 1.65;
+  }
+  .journey {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin-top: 24px;
+  }
+  .journey span {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 11px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, .07);
+    color: rgba(255, 255, 255, .9);
+    font-size: .78rem;
+    font-weight: 600;
+  }
+  .journey b {
+    color: #f4a95e;
+    font-family: var(--sl-font-mono);
+    font-size: .67rem;
+  }
+  .upload-status {
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, .09);
+    backdrop-filter: blur(10px);
+  }
+  .upload-status__label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    color: #f4a95e;
+    font-family: var(--sl-font-mono);
+    font-size: .7rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .upload-status__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f4a95e;
+    box-shadow: 0 0 0 4px rgba(244, 169, 94, .15);
+  }
+  .upload-status strong { display: block; color: white; font-size: 1.05rem; }
+  .upload-status p { margin: 6px 0 0; color: rgba(255, 255, 255, .72); font-size: .84rem; }
+  .upload-status a { color: white; font-weight: 700; }
+  .upload-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
+    gap: 24px;
+    align-items: start;
+  }
+  .analysis-card {
+    overflow: hidden;
+    padding: 0;
+    border-radius: 20px;
+  }
+  .analysis-card__head {
+    padding: clamp(24px, 4vw, 36px);
+    border-bottom: 1px solid var(--upload-line);
+    background: linear-gradient(180deg, #fffdf9, #fbf8f2);
+  }
+  .analysis-card__head h2 {
+    margin: 3px 0 8px;
+    color: var(--sl-green);
+    font-size: clamp(1.55rem, 3vw, 2.15rem);
+    letter-spacing: -.03em;
+  }
+  .analysis-card__head p:last-child {
+    max-width: 610px;
+    margin: 0;
+    color: var(--sl-ink-soft);
+    line-height: 1.55;
+  }
+  .section-kicker {
+    margin: 0;
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: .7rem;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .usage-panel {
+    margin: 0;
+    padding: 16px clamp(24px, 4vw, 36px);
+    border-bottom: 1px solid var(--upload-line);
+    background: var(--upload-warm);
+  }
+  .usage-panel p,
+  .usage-panel .hint { margin: 0; }
+  .usage-panel p + p { margin-top: 8px; }
+  .usage-panel .error { font-weight: 700; }
+  .trend-note {
+    padding: 10px 13px;
+    border-left: 3px solid var(--sl-orange);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, .62);
+    color: var(--sl-ink-soft);
+  }
+  #upload-form { padding: 0 clamp(24px, 4vw, 36px) clamp(28px, 4vw, 38px); }
+  .flow-section {
+    padding: clamp(26px, 4vw, 36px) 0;
+    border-bottom: 1px solid var(--upload-line);
+  }
+  .flow-section:last-of-type { border-bottom: 0; }
+  .flow-section__head { margin-bottom: 22px; }
+  .flow-section__head h3 { margin: 3px 0 5px; color: var(--sl-green); font-size: 1.18rem; }
+  .flow-section__head p:last-child { margin: 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .field-block + .field-block { margin-top: 24px; }
+  .field-label,
+  .angle-group legend {
+    width: 100%;
+    margin: 0 0 8px;
+    padding: 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--sl-ink);
+    font-size: .98rem;
+    font-weight: 750;
+  }
+  .field-number {
+    width: 27px;
+    height: 27px;
+    flex: 0 0 27px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: var(--sl-green);
+    color: white;
+    font-family: var(--sl-font-mono);
+    font-size: .7rem;
+  }
+  .required-badge {
+    margin-left: auto;
+    padding: 4px 7px;
+    border-radius: 999px;
+    background: #fce9dc;
+    color: #8b3b08;
+    font-family: var(--sl-font-mono);
+    font-size: .62rem;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
   input[type=text], select {
-    width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 6px;
-    box-sizing: border-box; background: white; }
-  .drop { border: 2px dashed #bbb; border-radius: 8px; padding: 28px 16px;
-          text-align: center; color: #555; cursor: pointer; margin-top: 6px;
-          transition: border-color 0.15s, background 0.15s; }
-  .drop.dragover { border-color: var(--accent); background: #fff7ef; }
-  .drop.has-file { border-style: solid; border-color: var(--primary);
-                   background: #f2f8f4; color: #1c1c1c; }
+    width: 100%;
+    min-height: 50px;
+    padding: 11px 13px;
+    box-sizing: border-box;
+    border: 1.5px solid var(--sl-control-border);
+    border-radius: 10px;
+    background: white;
+    color: var(--sl-ink);
+    font: inherit;
+  }
+  input[type=text]:focus,
+  select:focus {
+    border-color: var(--sl-green-btn);
+    outline: 3px solid rgba(26, 92, 56, .14);
+    outline-offset: 1px;
+  }
+  .club-block {
+    padding: 18px;
+    border: 1.5px solid rgba(20, 71, 44, .28);
+    border-radius: 14px;
+    background: var(--upload-wash);
+  }
+  .field-help { margin: 8px 0 0; color: var(--sl-ink-soft); font-size: .84rem; line-height: 1.5; }
+  .angle-group { min-width: 0; margin: 24px 0 0; padding: 0; border: 0; }
+  .radio-row { display: grid; gap: 10px; margin-top: 9px; }
+  .radio-row label {
+    min-height: 48px;
+    margin: 0;
+    padding: 13px 14px;
+    display: flex;
+    gap: 11px;
+    align-items: flex-start;
+    border: 1px solid var(--upload-line);
+    border-radius: 11px;
+    background: white;
+    font-weight: 400;
+    line-height: 1.45;
+    cursor: pointer;
+  }
+  .radio-row label:hover { border-color: rgba(20, 71, 44, .5); background: #fbfdfb; }
+  .radio-row input { margin: 4px 0 0; accent-color: var(--sl-green-btn); }
+  .radio-row label:has(input:checked) {
+    border-color: var(--sl-green-btn);
+    background: var(--upload-wash);
+    box-shadow: inset 3px 0 0 var(--sl-green-btn);
+  }
+  .drop {
+    min-height: 150px;
+    margin-top: 7px;
+    padding: 28px 18px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    box-sizing: border-box;
+    border: 2px dashed var(--sl-control-border);
+    border-radius: 16px;
+    background: #faf8f3;
+    color: var(--sl-ink-soft);
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .15s ease, background .15s ease, transform .15s ease;
+  }
+  .drop::before {
+    content: "\2191";
+    width: 38px;
+    height: 38px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--sl-green);
+    color: white;
+    font-size: 1.2rem;
+    font-weight: 800;
+  }
+  .drop:hover,
+  .drop:focus-visible { border-color: var(--sl-orange); background: var(--upload-warm); outline: none; }
+  .drop.dragover { border-color: var(--sl-orange); background: var(--upload-warm); transform: translateY(-2px); }
+  .drop.has-file { border-style: solid; border-color: var(--sl-green-btn); background: var(--upload-wash); color: var(--sl-ink); }
   .drop input[type=file] { display: none; }
-  .drop .filename { font-weight: 600; }
+  .drop .filename { font-weight: 750; }
+  .transfer-option {
+    margin-top: 20px;
+    padding: 16px;
+    border: 1px solid #dbd2c4;
+    border-radius: 13px;
+    background: var(--upload-warm);
+  }
   .check { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; }
-  .check input { margin-top: 3px; }
-  .check label { margin: 0; }
-  .tips { background: #eef6f0; border-left: 4px solid var(--primary);
-          padding: 12px 16px; border-radius: 4px; margin-top: 28px; }
-  .trend-note { background: #fff7ef; border-left: 4px solid var(--accent);
-                padding: 10px 14px; border-radius: 4px; font-size: 0.92rem;
-                color: #444; }
-  #upload-progress { display: none; }
+  .transfer-option .check { margin-top: 0; }
+  .check input { margin-top: 4px; accent-color: var(--sl-green-btn); }
+  .check label { margin: 0; line-height: 1.48; }
+  details.advanced {
+    margin-top: 20px;
+    border: 1px solid var(--upload-line);
+    border-radius: 13px;
+    background: white;
+  }
+  details.advanced > summary {
+    padding: 15px 17px;
+    color: var(--sl-green);
+    font-weight: 750;
+    cursor: pointer;
+  }
+  details.advanced[open] > summary { border-bottom: 1px solid var(--upload-line); }
+  .advanced__body { padding: 4px 17px 20px; }
+  .advanced__body > label { display: block; margin: 18px 0 7px; font-weight: 700; }
+  .submit-zone { padding-top: 28px; }
+  #submit {
+    width: 100%;
+    min-height: 54px;
+    margin: 0;
+    border-radius: 11px;
+    box-shadow: 0 12px 28px -18px rgba(20, 71, 44, .85);
+    font-size: 1rem;
+  }
+  .submit-note { margin: 10px 0 0; text-align: center; }
+  #upload-progress { display: none; margin-top: 18px; }
+  #upload-error:empty { display: none; }
+  #upload-error { margin: 14px 0 0; }
+  .upload-sidebar { display: grid; gap: 18px; }
+  .sidebar-card {
+    padding: 22px;
+    border: 1px solid var(--upload-line);
+    border-radius: 18px;
+    background: var(--upload-panel);
+    box-shadow: 0 16px 38px -32px rgba(15, 42, 27, .55);
+  }
+  .sidebar-card h2,
+  .sidebar-card h3 { margin: 4px 0 11px; color: var(--sl-green); font-size: 1.08rem; }
+  .sidebar-card p { color: var(--sl-ink-soft); font-size: .88rem; line-height: 1.55; }
+  .sidebar-card ul { margin: 14px 0 0; padding-left: 20px; color: var(--sl-ink-soft); }
+  .sidebar-card li { padding-left: 3px; line-height: 1.5; }
+  .sidebar-card li + li { margin-top: 9px; }
+  .sidebar-card--dark { border-color: var(--sl-green); background: var(--sl-green); color: white; }
+  .sidebar-card--dark .section-kicker { color: #f4a95e; }
+  .sidebar-card--dark h3 { color: white; }
+  .sidebar-card--dark p,
+  .sidebar-card--dark ul { color: rgba(255, 255, 255, .78); }
+  .sidebar-card--dark strong { color: white; }
+  .first-run {
+    margin: 0 0 24px;
+    padding: 17px 20px;
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 14px;
+    align-items: start;
+    border: 1px solid #e8c59f;
+    border-radius: 16px;
+    background: var(--upload-warm);
+  }
+  .first-run__mark {
+    width: 34px;
+    height: 34px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--sl-orange);
+    color: white;
+    font-weight: 800;
+  }
+  .first-run strong { color: var(--sl-green); }
+  .first-run p { margin: 3px 0 0; color: var(--sl-ink-soft); font-size: .9rem; line-height: 1.5; }
+  .disclaimer { max-width: 760px; margin: 26px auto 0; text-align: center; }
+  @media (min-width: 901px) {
+    .upload-sidebar { position: sticky; top: 88px; }
+  }
+  @media (max-width: 900px) {
+    main#MainContent { width: min(100% - 36px, 760px); margin-top: 28px; }
+    .upload-hero { grid-template-columns: 1fr; gap: 24px; }
+    .upload-status { max-width: 420px; }
+    .upload-layout { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    main#MainContent { width: min(100% - 24px, 760px); margin-top: 18px; }
+    .upload-hero { padding: 26px 22px; border-radius: 18px; }
+    .upload-hero h1 { font-size: 2.15rem; }
+    .journey { display: grid; }
+    .journey span { width: fit-content; }
+    .analysis-card { border-radius: 16px; }
+    .analysis-card__head,
+    .usage-panel,
+    #upload-form { padding-inline: 20px; }
+    .club-block { padding: 15px; }
+    .required-badge { font-size: .58rem; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .drop { transition: none; }
+    .drop.dragover { transform: none; }
+    .bar > div { transition: none; }
+  }
 {% endblock %}
 {% block main %}
-  <div class="hero">
-    {% if first_analysis and charged_refilm_attempts %}
-    <h2>Your baseline still needs a clear clip.</h2>
-    <p>Your first rejected clip did not use an analysis. Later uploads use
-      the normal monthly allowance, even when the footage still cannot
-      produce trustworthy coaching.</p>
-    {% elif first_analysis %}
-    <h2>Build your swing baseline.</h2>
-    <p>Your first clip gives your caddie something real to coach: one strength,
-      one priority, one drill, and a re-film target that tests the change.</p>
-    {% else %}
-    <h2>Your next coaching check-in.</h2>
-    <p>One phone, honest numbers, one clear next step, and a re-film that
-      tests whether the matched measurement is moving.</p>
-    {% endif %}
-    <div class="steps">
-      <div><strong>1. Film</strong> Phone at hip height, face-on (down the line: tempo &amp; rhythm only for now).</div>
-      <div><strong>2. Upload</strong> Straight off the camera roll — every swing in the clip gets measured.</div>
-      <div><strong>3. Retrain</strong> Each flag comes with drills and a number that says when it's fixed.</div>
-    </div>
-    {% if not user %}
-    <div class="hero-ctas">
-      <a class="button secondary" href="/sample-report/">See a sample report first</a>
-    </div>
-    {% endif %}
-  </div>
-  {% if require_account and (not user or not user.is_pro) %}
-  <p class="free-note">{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} a month, free —
-    no card required.</p>
-  {% elif user and user.is_pro %}
-  {# The just-signed-in store customer's proof their purchase landed —
-     without it, nothing on this page says Pro until they find /account. #}
-  <p class="free-note"><strong>Pro</strong> is active on this
-    account{% if quota_left is none %} — unlimited analyses{% else %} —
-    {{ quota_left }} left this month{% endif %}.</p>
-  {% endif %}
-
-  {% if first_run %}
-  <div class="tips" id="first-run">
-    <strong>Your first swing check — three steps</strong>
-    <ul>
-      <li><strong>Film</strong> a few swings with the
-        <a href="#filming-checklist">filming checklist</a> below — phone at
-        hip height, face-on, sound on.</li>
-      <li><strong>Upload</strong> the clip straight off your camera roll.
-        Every strike in it becomes its own analyzed swing.</li>
-      <li><strong>Read the "Start here" box first.</strong> Your report
-        measures a lot; that box is the one thing worth working on this
-        week. Not sure what a report looks like?
-        <a href="/sample-report/">See a sample first</a>.</li>
-    </ul>
-  </div>
-  {% endif %}
-
-  <div class="card">
-    <h2>Analyze your swing</h2>
-    {% if quota_left is defined and quota_left is not none %}
-      {% if quota_left > 0 %}
-      <p class="hint">{{ quota_left }} analys{{ "es" if quota_left != 1 else "is" }} left
-        this month{% if user and not user.is_pro and pro_available %} —
-        <a href="/pricing">{% if pro_per_month <= 0 %}go unlimited with Pro{% else %}go Pro for up to {{ pro_per_month }} analyses a month{% endif %}</a>{% endif %}.</p>
-      {% if refilm_rejections %}
-      <p class="hint">Your first rejected clip this month did not use an
-        analysis. Your next upload uses the normal allowance whether it
-        produces coaching or needs another re-film.</p>
-      {% endif %}
-      {% if charged_refilm_attempts %}
-      <p class="hint">{{ charged_refilm_attempts }} additional unusable
-        re-film{{ "s have" if charged_refilm_attempts != 1 else " has" }}
-        counted toward this month's allowance. The first rejected clip did
-        not.</p>
-      {% endif %}
-      {% elif baseline_blocked %}
-      <p class="error">Your baseline still needs a clear clip, and this
-        month's allowance has been used.</p>
-      <p class="hint">The first rejected clip did not use an analysis.
-        Every later upload uses the normal allowance, whether it produces
-        coaching or needs another re-film. Review the filming checklist,
-        then try again after the reset on the 1st{% if user and not user.is_pro and pro_available %}
-        or <a href="/pricing">see Pro options</a>{% endif %}.</p>
-      {% elif trend_line %}
-      {# The conversion moment: their own numbers, never invented ones.
-         Only free users reach this branch (trend_line is computed for
-         non-Pro users), so "free" is the right label here. #}
-      <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.</p>
-      <p class="trend-note">{{ trend_line }}.</p>
-      {% if pro_available %}
-      <a class="button" href="/pricing">Keep the film rolling —
-        {% if pro_per_month <= 0 %}unlimited analyses{% else %}up to
-        {{ pro_per_month }} analyses a month{% endif %}</a>
-      {% else %}
-      <p class="hint">They reset on the 1st.</p>
-      {% endif %}
-      {% else %}
-      {# A Pro account only lands here when the operator capped Pro too
-         (billing.pro_per_month > 0) — its allowance isn't "free". #}
-      {% if user and user.is_pro %}
-      <p class="error">You've used this month's analyses. They reset on
-        the 1st.</p>
-      {% else %}
-      <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.
-        {% if user and not user.is_pro and pro_available %}
-        <a href="/pricing">Upgrade to Pro</a> for
-        {% if pro_per_month <= 0 %}unlimited swings{% else %}up to
-        {{ pro_per_month }} analyses a month{% endif %}, or come back
-        on the 1st.{% else %}They reset on the 1st.{% endif %}</p>
-      {% endif %}
-      {% endif %}
-    {% endif %}
-    <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
-      <label for="video">Swing video</label>
-      <div class="drop" id="drop" tabindex="0" role="button"
-           aria-label="Choose or drop a swing video">
-        <input id="video" name="video" type="file"
-               accept="video/*,.mov,.mp4,.m4v,.avi,.mkv" required>
-        <span id="drop-text">Drop a clip here, or tap to choose one</span>
-      </div>
-      <p class="hint">.mov, .mp4, .m4v, .avi, or .mkv — straight off your phone is fine{% if max_upload_mb %},
-        up to {{ max_upload_mb | int }} MB{% endif %}.</p>
-
-      <label for="hand">Handedness</label>
-      <select id="hand" name="hand">
-        <option value="right" {% if not golfer_profile or golfer_profile.handedness == 'right' %}selected{% endif %}>Right-handed</option>
-        <option value="left" {% if golfer_profile and golfer_profile.handedness == 'left' %}selected{% endif %}>Left-handed</option>
-      </select>
-
-      <label>Camera angle</label>
-      <div class="radio-row">
-        <label><input type="radio" name="angle" value="face-on" {% if not golfer_profile or golfer_profile.camera_angle == 'face-on' %}checked{% endif %} required>
-          <span><strong>Face-on</strong> (recommended — full report). Camera
-          in front of you, chest toward the lens.</span></label>
-        <label><input type="radio" name="angle" value="dtl" {% if golfer_profile and golfer_profile.camera_angle == 'dtl' %}checked{% endif %} required>
-          <span><strong>Down the line</strong> — tempo &amp; rhythm only for
-          now. Body-drift and angle numbers are measured face-on, so they're
-          honestly left out.</span></label>
-      </div>
-
-      <label for="club">Club</label>
-      <select id="club" name="club" required>
-        <option value="" disabled{% if not golfer_profile or not golfer_profile.preferred_club %} selected{% endif %}>Choose a club</option>
-        <option value="driver" {% if golfer_profile and golfer_profile.preferred_club == 'driver' %}selected{% endif %}>Driver</option>
-        <option value="fairway-wood" {% if golfer_profile and golfer_profile.preferred_club == 'fairway-wood' %}selected{% endif %}>Fairway wood</option>
-        <option value="hybrid" {% if golfer_profile and golfer_profile.preferred_club == 'hybrid' %}selected{% endif %}>Hybrid</option>
-        <option value="iron" {% if golfer_profile and golfer_profile.preferred_club == 'iron' %}selected{% endif %}>Iron</option>
-        <option value="wedge" {% if golfer_profile and golfer_profile.preferred_club == 'wedge' %}selected{% endif %}>Wedge</option>
-      </select>
-      <p class="hint">Shown on the report and history so sessions compare
-        cleanly — it doesn't change any thresholds yet.</p>
-
-      {% if upload_transfer_assignment %}
-      <div class="check">
-        <input id="transfer-check" name="transfer_check" type="checkbox" value="on">
-        <label for="transfer-check"><strong>Normal-swing transfer check</strong> —
-          I practiced {{ upload_transfer_assignment.drill_name }} for
-          {{ upload_transfer_assignment.target_name }}, and this clip is normal
-          swings rather than drill rehearsals.</label>
-      </div>
-      <p class="hint">CaddieInsight will re-check the same club, handedness,
-        and camera angle when you upload. This declaration adds context; it
-        never changes the measurement result or proves that practice caused it.</p>
-      {% endif %}
-
-      <label>Where's your game? (optional)</label>
-      <div class="radio-row">
-        {# "Not set" mirrors the club select's blank first option — a radio
-           group can't be un-picked, so unset needs its own button. #}
-        <label><input type="radio" name="level" value="" {% if not golfer_profile %}checked{% endif %}>
-          <span><strong>Not set</strong> — no framing either way.</span></label>
-        <label><input type="radio" name="level" value="new" {% if golfer_profile and golfer_profile.experience_mode == 'start' %}checked{% endif %}>
-          <span><strong>New to golf</strong> — the report frames benchmarks
-          as references to move toward, not day-one targets.</span></label>
-        <label><input type="radio" name="level" value="improving" {% if golfer_profile and golfer_profile.experience_mode == 'improve' %}checked{% endif %}>
-          <span><strong>Improving</strong> — the standard report
-          voice.</span></label>
-        <label><input type="radio" name="level" value="experienced" {% if golfer_profile and golfer_profile.experience_mode == 'compete' %}checked{% endif %}>
-          <span><strong>Experienced</strong> — benchmarks stated plainly,
-          numbers first.</span></label>
-      </div>
-      <p class="hint">Framing only — the same metrics get measured either
-        way, and no threshold moves.</p>
-
-      <details class="advanced">
-        <summary>Advanced options</summary>
-        <div class="check">
-          <input id="fast" name="fast" type="checkbox"{% if first_analysis %} checked{% endif %}>
-          <label for="fast">Fast mode — results in a fraction of the time; the
-            slow-motion clips are slightly less smooth.</label>
+  <div class="upload-page">
+    <section class="upload-hero" aria-labelledby="upload-title">
+      <div class="upload-hero__copy">
+        <p class="upload-eyebrow">Club-aware swing analysis</p>
+        {% if first_analysis and charged_refilm_attempts %}
+        <h1 id="upload-title">Your baseline still needs a clear clip.</h1>
+        <p class="upload-hero__lede">Your first rejected clip did not use an
+          analysis. Later uploads use the normal monthly allowance, even when
+          the footage still cannot produce trustworthy coaching.</p>
+        {% elif first_analysis %}
+        <h1 id="upload-title">Build your swing baseline.</h1>
+        <p class="upload-hero__lede">Your first clip gives your caddie
+          something real to coach: one strength, one priority, one drill, and
+          a re-film target that tests the change.</p>
+        {% else %}
+        <h1 id="upload-title">Your next coaching check-in.</h1>
+        <p class="upload-hero__lede">One phone, honest numbers, one clear next
+          step, and a re-film that tests whether the matched measurement is
+          moving.</p>
+        {% endif %}
+        <div class="journey" aria-label="Analysis journey">
+          <span><b>01</b> Set club and setup</span>
+          <span><b>02</b> Add your clip</span>
+          <span><b>03</b> Get one clear priority</span>
         </div>
-
-        <label for="strikes">Strike times (optional)</label>
-        <input id="strikes" name="strikes" type="text" placeholder='e.g. 12.5, 31.0'>
-        <p class="hint">Only needed if automatic detection misses — seconds into the video,
-          comma separated.</p>
-      </details>
-
-      <button id="submit" type="submit">Upload &amp; analyze</button>
-      <p class="hint">Most clips take a few minutes to analyze; fast mode is
-        usually under a minute. You can leave the page — the link keeps
-        working.</p>
-      <div id="upload-progress">
-        <div class="bar"><div id="upload-bar" style="width: 0%"></div></div>
-        <p class="bar-label" id="upload-label">Uploading…</p>
       </div>
-      <p class="error" id="upload-error"></p>
-    </form>
-  </div>
+      <aside class="upload-status" aria-label="Account analysis status">
+        <p class="upload-status__label"><span class="upload-status__dot" aria-hidden="true"></span> {{ "Allowance used" if allowance_used else "Ready to analyze" }}</p>
+        {% if allowance_used %}
+        <strong>No analyses left this month</strong>
+        <p>Your allowance resets on the 1st.</p>
+        {% elif require_account and (not user or not user.is_pro) %}
+        <strong>{% if free_per_month <= 0 %}Unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} each month{% endif %}</strong>
+        <p>Free, no card required.</p>
+        {% elif user and user.is_pro %}
+        <strong>Pro is active</strong>
+        <p>{% if quota_left is none %}Unlimited analyses on this account.{% else %}{{ quota_left }} left this month.{% endif %}</p>
+        {% else %}
+        <strong>Your swing, in context</strong>
+        <p>Choose the club and camera setup before adding a clip.</p>
+        {% endif %}
+        {% if not user %}
+        <p><a href="/sample-report/">See a sample report first</a></p>
+        {% endif %}
+      </aside>
+    </section>
 
-  <div class="tips" id="filming-checklist">
-    <strong>Filming checklist — this is what makes the numbers good</strong>
-    <ul>
-      <li><strong>Sound ON.</strong> Swings are found by the crack of impact —
-        a muted clip can't be analyzed.</li>
-      <li><strong>Whole body in frame</strong>, head to feet, from setup
-        through the finish.</li>
-      <li><strong>Phone at hip height</strong>, a few steps back.</li>
-      <li><strong>Ball on a tee</strong> (or a clean strike off a mat) so the
-        strike is clearly audible.</li>
-      <li><strong>Don't trim the clip</strong> — dead time between swings is
-        fine, and every strike becomes its own swing.</li>
-      <li><strong>Film face-on</strong> for the full report. Down-the-line
-        clips get tempo &amp; rhythm only for now.</li>
-    </ul>
-  </div>
+    {% if first_run %}
+    <aside class="first-run" id="first-run">
+      <span class="first-run__mark" aria-hidden="true">1</span>
+      <div>
+        <strong>Your first swing check</strong>
+        <p>Use the <a href="#filming-checklist">filming checklist</a>, upload
+          straight from your camera roll, then start with the single priority
+          at the top of your report. <a href="/sample-report/">See a sample first</a>.</p>
+      </div>
+    </aside>
+    {% endif %}
 
-  <p class="disclaimer">{{ brand.disclaimer }}</p>
+    <div class="upload-layout">
+      <section class="card analysis-card" aria-labelledby="analysis-heading">
+        <header class="analysis-card__head">
+          <p class="section-kicker">New analysis</p>
+          <h2 id="analysis-heading">Analyze your swing</h2>
+          <p>Set the golf context first, then add the clip. That keeps the
+            coaching recommendation and your future comparisons grounded in
+            the swing you actually filmed.</p>
+        </header>
+
+        {% if quota_left is defined and quota_left is not none %}
+        <div class="usage-panel" role="status">
+          {% if quota_left > 0 %}
+          <p class="hint"><strong>{{ quota_left }} analys{{ "es" if quota_left != 1 else "is" }} left</strong>
+            this month{% if user and not user.is_pro and pro_available %} —
+            <a href="/pricing">{% if pro_per_month <= 0 %}go unlimited with Pro{% else %}go Pro for up to {{ pro_per_month }} analyses a month{% endif %}</a>{% endif %}.</p>
+          {% if refilm_rejections %}
+          <p class="hint">Your first rejected clip this month did not use an
+            analysis. Your next upload uses the normal allowance whether it
+            produces coaching or needs another re-film.</p>
+          {% endif %}
+          {% if charged_refilm_attempts %}
+          <p class="hint">{{ charged_refilm_attempts }} additional unusable
+            re-film{{ "s have" if charged_refilm_attempts != 1 else " has" }}
+            counted toward this month's allowance. The first rejected clip did
+            not.</p>
+          {% endif %}
+          {% elif baseline_blocked %}
+          <p class="error">Your baseline still needs a clear clip, and this
+            month's allowance has been used.</p>
+          <p class="hint">The first rejected clip did not use an analysis.
+            Every later upload uses the normal allowance, whether it produces
+            coaching or needs another re-film. Review the filming checklist,
+            then try again after the reset on the 1st{% if user and not user.is_pro and pro_available %}
+            or <a href="/pricing">see Pro options</a>{% endif %}.</p>
+          {% elif trend_line %}
+          {# This line is computed from the golfer's own sessions. #}
+          <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.</p>
+          <p class="trend-note">{{ trend_line }}.</p>
+          {% if pro_available %}
+          <a class="button" href="/pricing">Keep the film rolling —
+            {% if pro_per_month <= 0 %}unlimited analyses{% else %}up to
+            {{ pro_per_month }} analyses a month{% endif %}</a>
+          {% else %}
+          <p class="hint">They reset on the 1st.</p>
+          {% endif %}
+          {% else %}
+          {% if user and user.is_pro %}
+          <p class="error">You've used this month's analyses. They reset on
+            the 1st.</p>
+          {% else %}
+          <p class="error">You've used this month's free analys{% if free_per_month == 1 %}is{% else %}es{% endif %}.
+            {% if user and not user.is_pro and pro_available %}
+            <a href="/pricing">Upgrade to Pro</a> for
+            {% if pro_per_month <= 0 %}unlimited swings{% else %}up to
+            {{ pro_per_month }} analyses a month{% endif %}, or come back
+            on the 1st.{% else %}They reset on the 1st.{% endif %}</p>
+          {% endif %}
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+          <section class="flow-section" aria-labelledby="context-heading">
+            <header class="flow-section__head">
+              <p class="section-kicker">First · Swing context</p>
+              <h3 id="context-heading">Tell us what you filmed</h3>
+              <p>These three choices establish the right coaching and comparison context.</p>
+            </header>
+
+            <div class="field-block club-block">
+              <label class="field-label" for="club">
+                <span class="field-number" aria-hidden="true">1</span>
+                Golf club
+                <span class="required-badge">Required</span>
+              </label>
+              <select id="club" name="club" required>
+                <option value="" disabled{% if not golfer_profile or not golfer_profile.preferred_club %} selected{% endif %}>Choose a club</option>
+                <option value="driver" {% if golfer_profile and golfer_profile.preferred_club == 'driver' %}selected{% endif %}>Driver</option>
+                <option value="fairway-wood" {% if golfer_profile and golfer_profile.preferred_club == 'fairway-wood' %}selected{% endif %}>Fairway wood</option>
+                <option value="hybrid" {% if golfer_profile and golfer_profile.preferred_club == 'hybrid' %}selected{% endif %}>Hybrid</option>
+                <option value="iron" {% if golfer_profile and golfer_profile.preferred_club == 'iron' %}selected{% endif %}>Iron</option>
+                <option value="wedge" {% if golfer_profile and golfer_profile.preferred_club == 'wedge' %}selected{% endif %}>Wedge</option>
+              </select>
+              <p class="field-help" id="club-help"><strong>Golf club is required</strong>
+                because coaching recommendations depend on the club you choose.
+                It also keeps history and re-films comparable.</p>
+            </div>
+
+            <div class="field-block">
+              <label class="field-label" for="hand">
+                <span class="field-number" aria-hidden="true">2</span>
+                Handedness
+              </label>
+              <select id="hand" name="hand">
+                <option value="right" {% if not golfer_profile or golfer_profile.handedness == 'right' %}selected{% endif %}>Right-handed</option>
+                <option value="left" {% if golfer_profile and golfer_profile.handedness == 'left' %}selected{% endif %}>Left-handed</option>
+              </select>
+            </div>
+
+            <fieldset class="angle-group">
+              <legend>
+                <span class="field-number" aria-hidden="true">3</span>
+                Camera angle
+              </legend>
+              <div class="radio-row">
+                <label><input type="radio" name="angle" value="face-on" {% if not golfer_profile or golfer_profile.camera_angle == 'face-on' %}checked{% endif %} required>
+                  <span><strong>Face-on</strong> (recommended — full report).
+                    Camera in front of you, chest toward the lens.</span></label>
+                <label><input type="radio" name="angle" value="dtl" {% if golfer_profile and golfer_profile.camera_angle == 'dtl' %}checked{% endif %} required>
+                  <span><strong>Down the line</strong> — tempo &amp; rhythm only
+                    for now. Body-drift and angle numbers are measured face-on,
+                    so they're honestly left out.</span></label>
+              </div>
+            </fieldset>
+          </section>
+
+          <section class="flow-section" aria-labelledby="video-heading">
+            <header class="flow-section__head">
+              <p class="section-kicker">Next · Video</p>
+              <h3 id="video-heading">Add your swing clip</h3>
+              <p>Use the original camera file when possible and keep every swing in frame.</p>
+            </header>
+            <label class="field-label" for="video">
+              <span class="field-number" aria-hidden="true">4</span>
+              Swing video
+              <span class="required-badge">Required</span>
+            </label>
+            <div class="drop" id="drop" tabindex="0" role="button"
+                 aria-label="Choose or drop a swing video" aria-describedby="video-help">
+              <input id="video" name="video" type="file"
+                     accept="video/*,.mov,.mp4,.m4v,.avi,.mkv" required>
+              <span id="drop-text">Drop a clip here, or tap to choose one</span>
+            </div>
+            <p class="field-help" id="video-help">.mov, .mp4, .m4v, .avi, or
+              .mkv — straight off your phone is fine{% if max_upload_mb %}, up to
+              {{ max_upload_mb | int }} MB{% endif %}.</p>
+
+            {% if upload_transfer_assignment %}
+            <div class="transfer-option">
+              <div class="check">
+                <input id="transfer-check" name="transfer_check" type="checkbox" value="on">
+                <label for="transfer-check"><strong>Normal-swing transfer check</strong> —
+                  I practiced {{ upload_transfer_assignment.drill_name }} for
+                  {{ upload_transfer_assignment.target_name }}, and this clip is
+                  normal swings rather than drill rehearsals.</label>
+              </div>
+              <p class="field-help">CaddieInsight will re-check the same club,
+                handedness, and camera angle when you upload. This declaration
+                adds context; it never changes the measurement result or proves
+                that practice caused it.</p>
+            </div>
+            {% endif %}
+
+            <details class="advanced">
+              <summary>Advanced options</summary>
+              <div class="advanced__body">
+                <fieldset class="angle-group">
+                  <legend>Where's your game? (optional)</legend>
+                  <div class="radio-row">
+                    {# An explicit blank keeps this optional radio group reversible. #}
+                    <label><input type="radio" name="level" value="" {% if not golfer_profile %}checked{% endif %}>
+                      <span><strong>Not set</strong> — no framing either way.</span></label>
+                    <label><input type="radio" name="level" value="new" {% if golfer_profile and golfer_profile.experience_mode == 'start' %}checked{% endif %}>
+                      <span><strong>New to golf</strong> — the report frames
+                        benchmarks as references to move toward, not day-one targets.</span></label>
+                    <label><input type="radio" name="level" value="improving" {% if golfer_profile and golfer_profile.experience_mode == 'improve' %}checked{% endif %}>
+                      <span><strong>Improving</strong> — the standard report voice.</span></label>
+                    <label><input type="radio" name="level" value="experienced" {% if golfer_profile and golfer_profile.experience_mode == 'compete' %}checked{% endif %}>
+                      <span><strong>Experienced</strong> — benchmarks stated
+                        plainly, numbers first.</span></label>
+                  </div>
+                </fieldset>
+                <p class="field-help">Framing only — the same metrics get
+                  measured either way, and no threshold moves.</p>
+
+                <div class="check">
+                  <input id="fast" name="fast" type="checkbox"{% if first_analysis %} checked{% endif %}>
+                  <label for="fast"><strong>Fast mode</strong> — prioritizes
+                    quicker processing; slow-motion clips may look less smooth.</label>
+                </div>
+
+                <label for="strikes">Strike times (optional)</label>
+                <input id="strikes" name="strikes" type="text" placeholder='e.g. 12.5, 31.0'>
+                <p class="field-help">Only needed if automatic detection misses —
+                  seconds into the video, comma separated.</p>
+              </div>
+            </details>
+          </section>
+
+          <div class="submit-zone">
+            <button id="submit" type="submit"{% if allowance_used %} disabled aria-disabled="true" aria-describedby="allowance-blocked-note"{% endif %}>{{ "Allowance used" if allowance_used else "Upload & analyze" }}</button>
+            {% if allowance_used %}
+            <p class="hint submit-note" id="allowance-blocked-note">A new upload cannot start until your allowance resets on the 1st{% if user and not user.is_pro and pro_available %}, or <a href="/pricing">you activate Pro</a>{% endif %}.</p>
+            {% else %}
+            <p class="hint submit-note">Analysis time varies with clip length.
+              You can leave the page while it runs — the result link keeps working.</p>
+            {% endif %}
+            <div id="upload-progress" aria-live="polite">
+              <div class="bar"><div id="upload-bar" style="width: 0%"></div></div>
+              <p class="bar-label" id="upload-label">Uploading…</p>
+            </div>
+            <p class="error" id="upload-error" role="alert"></p>
+          </div>
+        </form>
+      </section>
+
+      <aside class="upload-sidebar" aria-label="Filming and report guidance">
+        <section class="sidebar-card sidebar-card--dark">
+          <p class="section-kicker">Coaching-ready result</p>
+          <h3>Know what to work on next</h3>
+          <p>A usable clip gives you a focused starting point instead of a wall
+            of disconnected swing data.</p>
+          <ul>
+            <li><strong>One priority</strong> selected from the measured swing</li>
+            <li><strong>One practice drill</strong> tied to that priority</li>
+            <li><strong>One re-film target</strong> for a comparable follow-up</li>
+          </ul>
+        </section>
+
+        <section class="sidebar-card" id="filming-checklist">
+          <p class="section-kicker">Before you upload</p>
+          <h2>Filming checklist</h2>
+          <ul>
+            <li><strong>Sound on.</strong> Swings are found by the crack of impact.</li>
+            <li><strong>Whole body in frame</strong>, head to feet, through the finish.</li>
+            <li><strong>Phone at hip height</strong>, a few steps back.</li>
+            <li><strong>Use a tee or clean mat strike</strong> so impact is audible.</li>
+            <li><strong>Keep the full clip.</strong> Dead time between swings is fine.</li>
+            <li><strong>Film face-on</strong> for the full report. Down-the-line
+              clips receive tempo and rhythm only for now.</li>
+          </ul>
+        </section>
+      </aside>
+    </div>
+
+    <p class="disclaimer">{{ brand.disclaimer }}</p>
+  </div>
 {% endblock %}
 {% block script %}
 <script>
 (function () {
   var maxMB = {{ max_upload_mb or 0 }};
+  var uploadAllowed = {{ 'false' if allowance_used else 'true' }};
   var okExt = [".mov", ".mp4", ".m4v", ".avi", ".mkv"];
   var form = document.getElementById("upload-form");
   var drop = document.getElementById("drop");
@@ -288,7 +735,7 @@
 
   function setError(message) {
     errorEl.textContent = message || "";
-    submit.disabled = false;
+    submit.disabled = !uploadAllowed;
     progress.style.display = "none";
   }
 
@@ -344,6 +791,12 @@
 
   form.addEventListener("submit", function (e) {
     e.preventDefault();
+    if (!uploadAllowed) {
+      errorEl.textContent = "Your monthly allowance is used. Refresh after it resets on the 1st.";
+      submit.disabled = true;
+      progress.style.display = "none";
+      return;
+    }
     var file = input.files[0];
     if (!file) { setError("Choose a swing video first."); return; }
     if (!checkFile(file)) return;
