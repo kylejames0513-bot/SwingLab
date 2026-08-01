@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from swinglab.config import DEFAULTS, Config
 
 
@@ -58,3 +60,10 @@ def test_missing_explicit_defaults(tmp_path):
     empty.write_text("")
     cfg = Config.load(empty)
     assert cfg.data == DEFAULTS
+
+
+def test_shipped_proof_cycle_activation_keeps_practice_collection_off():
+    cfg = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+
+    assert cfg.proof_cycle["enabled"] is True
+    assert cfg.proof_cycle["practice_evidence_enabled"] is False

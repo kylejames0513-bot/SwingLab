@@ -51,7 +51,12 @@ def test_app_creation_works_in_every_sentry_state(tmp_path, monkeypatch):
     monkeypatch.setenv("SENTRY_DSN", "https://key@sentry.example/1")
     monkeypatch.setitem(sys.modules, "sentry_sdk", None)
     client = TestClient(create_app(Config(), sessions_dir=tmp_path / "s"))
-    assert client.get("/healthz").json()["status"] == "ok"
+    health = client.get("/healthz").json()
+    assert health["status"] == "ok"
+    assert health["proof_cycle"] == {
+        "enabled": False,
+        "practice_evidence_enabled": False,
+    }
 
 
 def test_missing_secret_warning_goes_through_logging(tmp_path, monkeypatch, caplog):
