@@ -47,6 +47,11 @@ DEFAULTS: dict[str, Any] = {
         "max_strikes": 8,
     },
     "coaching": {
+        # Compatibility floor for the versioned club-aware priority policy.
+        # Only the literal boolean True selects rule 2; missing, false, and
+        # malformed values keep the legacy rule-1 order.  Thresholds and
+        # measured values are identical under both rules.
+        "club_aware_enabled": False,
         "sway_warn_sw": 0.35,
         "tempo_target": 3.0,
         "tempo_warn_below": 2.4,

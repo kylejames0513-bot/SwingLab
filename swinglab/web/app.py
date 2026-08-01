@@ -97,9 +97,17 @@ from ..proof_cycle_practice import (
 from ..report import (
     REPORT_OUTCOME_CAPTURE,
     REPORT_OUTCOME_COACHING,
+    persisted_priority_rule_version,
     persisted_report_outcome,
 )
-from ..trends import FLAG_LABELS, build_trends, format_delta, format_value, trend_sentence
+from ..trends import (
+    FLAG_LABELS,
+    build_trends,
+    format_delta,
+    format_value,
+    session_sample,
+    trend_sentence,
+)
 from ..integrations.shopify import admin as shopify_admin
 from ..integrations.shopify import customer_accounts as shopify_customer_accounts
 from ..integrations.shopify import customer_sync as shopify_customer_sync
@@ -820,6 +828,55 @@ def create_app(
         account existed (or while logged out). Runs at signup and login."""
         users.claim_pending_grant(user.id, user.email)
 
+    def club_aware_enabled() -> bool:
+        """Only the literal boolean true activates context aggregation."""
+
+        return cfg.coaching.get("club_aware_enabled") is True
+
+    def exact_job_context(job: Job | None) -> tuple[str, str, str] | None:
+        """Authoritative club, hand, and angle, or no comparable context."""
+
+        if job is None:
+            return None
+        club = getattr(job, "club", None)
+        hand = getattr(job, "hand", None)
+        angle = getattr(job, "angle", None)
+        if (
+            club not in CLUB_LABELS
+            or hand not in ("right", "left")
+            or angle not in ANGLES
+        ):
+            return None
+        return club, hand, angle
+
+    def latest_readable_job(jobs) -> Job | None:
+        """Latest stored session that can honestly contribute one sample."""
+
+        ordered = sorted(
+            jobs,
+            key=lambda job: (
+                float(getattr(job, "created_at", 0.0) or 0.0),
+                str(getattr(job, "id", "")),
+            ),
+            reverse=True,
+        )
+        for job in ordered:
+            if session_sample(job, cfg) is not None:
+                return job
+        return None
+
+    def context_label(context: tuple[str, str, str] | None) -> str | None:
+        if context is None:
+            return None
+        club, hand, angle = context
+        return " · ".join(
+            (
+                CLUB_LABELS[club],
+                "Right-handed" if hand == "right" else "Left-handed",
+                "Face-on" if angle == "face-on" else "Down-the-line",
+            )
+        )
+
     def render(template: str, request: Request, **context) -> HTMLResponse:
         stripe_enabled = billing.enabled()
         render_user = current_user(request)
@@ -845,6 +902,7 @@ def create_app(
                 history_reset_enabled=(
                     cfg.web.get("history_reset_enabled") is True
                 ),
+                club_aware_enabled=club_aware_enabled(),
                 billing_enabled=stripe_enabled,
                 pro_store_url=pro_store_url,
                 pro_available=stripe_enabled or bool(pro_store_url),
@@ -1013,9 +1071,21 @@ def create_app(
         if user is None:
             return None
         try:
-            return trend_sentence(
-                build_trends(manager.list_recent(user_id=user.id), cfg)
-            )
+            jobs = manager.list_recent(user_id=user.id)
+            if club_aware_enabled():
+                latest = latest_readable_job(jobs)
+                context = exact_job_context(latest)
+                if latest is None or context is None:
+                    return None
+                club, hand, angle = context
+                jobs = manager.list_comparable(
+                    user_id=user.id,
+                    club=club,
+                    hand=hand,
+                    angle=angle,
+                    through=latest.created_at,
+                )
+            return trend_sentence(build_trends(jobs, cfg))
         except Exception:
             return None
 
@@ -2629,13 +2699,58 @@ def create_app(
         if cfg.billing.get("progress_pro_only") and not user.is_pro:
             return render("web_progress.html.j2", request, locked=True)
         listed = manager.list_recent(user_id=user.id)
-        # Club filter — display context only, shown once >1 club is present.
-        clubs_present = sorted({j.club for j in listed if j.club})
-        club_selected = request.query_params.get("club") or ""
-        if club_selected not in clubs_present:
-            club_selected = ""
-        if club_selected:
-            listed = [j for j in listed if j.club == club_selected]
+        selected_context = None
+        if club_aware_enabled():
+            # Every chip resolves to the latest readable hand/angle context
+            # for that club. The default is the latest readable session
+            # overall. We never offer an "all clubs" aggregate because club,
+            # hand, and camera angle are one comparison boundary.
+            context_by_club: dict[
+                str, tuple[Job, tuple[str, str, str]]
+            ] = {}
+            for club in sorted(CLUB_LABELS):
+                latest_for_club = latest_readable_job(
+                    job for job in listed if job.club == club
+                )
+                context = exact_job_context(latest_for_club)
+                if latest_for_club is not None and context is not None:
+                    context_by_club[club] = (latest_for_club, context)
+
+            requested_club = request.query_params.get("club") or ""
+            if requested_club in context_by_club:
+                selected_job, selected_context = context_by_club[
+                    requested_club
+                ]
+            else:
+                selected_job = latest_readable_job(listed)
+                selected_context = exact_job_context(selected_job)
+
+            clubs_present = sorted(context_by_club)
+            club_selected = (
+                selected_context[0] if selected_context is not None else ""
+            )
+            if selected_job is None or selected_context is None:
+                # A readable row without complete authoritative context must
+                # not silently fall back to a mixed or inferred aggregate.
+                listed = []
+            else:
+                club, hand, angle = selected_context
+                listed = manager.list_comparable(
+                    user_id=user.id,
+                    club=club,
+                    hand=hand,
+                    angle=angle,
+                    through=selected_job.created_at,
+                )
+        else:
+            # Compatibility path: preserve the established optional club-only
+            # filter exactly until the explicit activation flag is boolean true.
+            clubs_present = sorted({j.club for j in listed if j.club})
+            club_selected = request.query_params.get("club") or ""
+            if club_selected not in clubs_present:
+                club_selected = ""
+            if club_selected:
+                listed = [j for j in listed if j.club == club_selected]
         trends = build_trends(listed, cfg)
         explainers = build_explainers(cfg.coaching)
         cards = []
@@ -2695,6 +2810,7 @@ def create_app(
             ),
             clubs_present=clubs_present,
             club_selected=club_selected,
+            context_label=context_label(selected_context),
         )
 
     @app.get("/pricing", response_class=HTMLResponse)
@@ -3007,7 +3123,17 @@ def create_app(
         """One concise coaching decision from this job and comparable history."""
         if job.status != DONE or not job.report_rel:
             return None
-        if resolved_report(job) is None:
+        report_path = resolved_report(job)
+        if report_path is None:
+            return None
+        report_rule = persisted_priority_rule_version(report_path)
+        if report_rule is None:
+            return None
+        exact_context_required = club_aware_enabled() or report_rule == 2
+        context = exact_job_context(job) if exact_context_required else None
+        if exact_context_required and context is None:
+            # Never let mutable metrics metadata stand in for the authoritative
+            # job row when rule 2 or the global exact-context policy applies.
             return None
         metrics = job.session_dir / Path(job.report_rel).parent / "metrics.json"
         try:
@@ -3020,7 +3146,11 @@ def create_app(
                 and payload_requires_refilm(payload, angle=job.angle)
             ):
                 return build_caddie_brief_from_payload(
-                    payload, cfg, angle=job.angle
+                    payload,
+                    cfg,
+                    angle=job.angle,
+                    club=job.club,
+                    rule_version=report_rule,
                 )
             return None
         if (
@@ -3039,6 +3169,8 @@ def create_app(
                 user_id=job.user_id,
                 club=job.club,
                 through=job.created_at,
+                hand=(context[1] if context is not None else None),
+                angle=(context[2] if context is not None else None),
             )
             all_trends = build_trends(comparable, cfg)
             personal_trend = trend_sentence(all_trends)
@@ -3054,6 +3186,8 @@ def create_app(
             previous_flag_counts=previous_counts,
             trend=personal_trend,
             angle=job.angle,
+            club=job.club,
+            rule_version=report_rule,
         )
         if brief is None:
             return None

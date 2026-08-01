@@ -238,8 +238,8 @@ swinglab serve --host 127.0.0.1 --port 8000
 
 Open http://127.0.0.1:8000 for a branded upload page: drag a clip in (upload
 progress shown), choose handedness and **camera angle** (face-on = full
-report; down the line = tempo & rhythm only, stated up front), optionally a
-**club** and — under Advanced — **Fast mode** or manual strike times. Then
+report; down the line = tempo & rhythm only, stated up front), choose the
+required **club**, and — under Advanced — **Fast mode** or manual strike times. Then
 watch a live status page — queue position while waiting, then per-swing
 progress — while the analysis runs in the background (the exact same
 `pipeline` module the CLI uses — nothing is duplicated in the web layer).
@@ -256,12 +256,17 @@ sections are simply absent). No login required — it's linked from the
 landing page ("See a sample report first") so visitors can see the product
 before the signup wall.
 
-**Club context (display only)** — the upload form's required club select
-(Driver / Fairway wood / Hybrid / Iron / Wedge) is stored on the job and in
-metrics.json's `meta` block and shown as a chip on the report header, the
-session list, and `/progress` (which gains a club filter once more than one
-club is present). There are **no per-club thresholds yet** — the club
-changes no numbers and no flags; it exists so sessions compare cleanly.
+**Versioned club context** — the upload form's required club select (Driver /
+Fairway wood / Hybrid / Iron / Wedge) is stored on the job and in
+metrics.json's `meta` block. The compatibility floor understands two immutable
+priority rules: rule 1 preserves the original report order; rule 2 can use the
+club to break ties between equally severe measured body-motion issues. It does
+not change flags, values, severity, or thresholds. Proof Cycle targets retain
+the rule that selected them, so an existing baseline never changes focus after
+an upgrade or rollback. Each generated report carries the same additive rule
+marker, keeping its dynamic result card, gear match, and weekly plan aligned.
+The shipped floor keeps rule 2 disabled until the separate activation release;
+see `docs/club-aware-coaching.md`.
 
 Built to take real traffic on one machine:
 
@@ -466,6 +471,11 @@ fewer than two measured sessions the page says so honestly instead of
 charting a single dot. Requires `web.require_account: true` (there is no
 per-user history to chart in open mode — the route 404s).
 
+When the club-aware policy is activated, progress and the weekly plan use the
+latest exact comparison context — club, handedness, and camera angle — rather
+than mixing unlike sessions. Club chips move between each club's latest
+readable context; the selected context is named on the page.
+
 **Weekly practice-plan email** — the "one drill a week" promise, made real,
 and strictly opt-in. It only ever sends when ALL of these hold:
 
@@ -480,7 +490,8 @@ and strictly opt-in. It only ever sends when ALL of these hold:
 Each email is self-contained HTML (inline styles, brand colors, no images or
 external assets): exactly one drill selected by the same Caddie Brief priority
 as the results page — name, dosage, and the same pass-mark numbers the report
-prints — plus one honest progress line once two sessions exist, and links to
+prints — plus one honest, exact-context progress line once two comparable
+sessions exist, and links to
 the latest report and `/progress`. An hourly scheduler thread sends at most
 one email per user per
 ~week (6.5 days), only to accounts with at least one finished session, and
@@ -829,7 +840,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | --- | --- |
 | `brand` | name, logo, colors, footer, watermark on/off, disclaimer, `support_text` (shown where users need the operator, e.g. password reset while email is unconfigured) |
 | `detection` | audio peak height / prominence / minimum gap between swings, optional calibrated relative-loudness noise gate (`relative_height`, shipped off), per-clip strike cap (`max_strikes`, shipped 8 — first N analyzed, honestly noted) |
-| `coaching` | flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
+| `coaching` | exact-boolean club-aware priority activation (`club_aware_enabled`; compatibility floor shipped off), plus unchanged flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |

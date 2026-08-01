@@ -33,6 +33,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="caddieinsight-report-format" content="{{ report_format_version }}">
 <meta name="caddieinsight-report-outcome" content="{{ report_outcome }}">
+<meta name="caddieinsight-coaching-priority-rule" content="{{ priority_rule_version }}">
 <title>{{ brand.name }} — Swing Report</title>
 <style>
   :root {
@@ -175,6 +176,9 @@
   .gear-link a { color: var(--primary); }
   .disclaimer { color: #666; font-style: italic; margin-top: 32px;
                 border-top: 1px solid #ddd; padding-top: 12px; }
+  .trust-note { background: #f4f8f5; border: 1px solid #d4e2d8;
+                border-radius: 8px; color: #30443a; margin: 0 0 18px;
+                padding: 12px 14px; }
   footer { text-align: center; color: #777; font-size: 0.85rem; padding: 16px; }
   @media (max-width: 640px) {
     .report-header { align-items: flex-start; flex-direction: column;
@@ -239,6 +243,25 @@
   </div>
 </header>
 <main>
+
+{% if club_aware_enabled %}
+<p class="trust-note" aria-label="Club-aware measurement scope">
+  <strong>Club-aware scope.</strong>
+  {% if dtl %}
+  This down-the-line report remains tempo-and-rhythm only; club does not
+  change its priority.
+  {% elif club_priority_changes_ties %}
+  The selected {{ club_label }} is used only to order issues with the same
+  severity; measurements and thresholds do not change.
+  {% else %}
+  Club context does not change the legacy tie order for this report.
+  {% endif %}
+  Supported measurements are phone-video timing and, from supported face-on
+  clips, 2D body movement in the camera view. {{ brand.name }} does not measure
+  club path, face angle, attack angle, dynamic loft, launch, spin, carry,
+  strike location, or ball flight.
+</p>
+{% endif %}
 
 {% if caddie_brief %}
 <section class="brief">

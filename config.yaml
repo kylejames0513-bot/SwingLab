@@ -36,6 +36,11 @@ detection:
                              # "Clip had N strikes; analyzed the first M."
 
 coaching:
+  club_aware_enabled: false # compatibility floor only. A separate activation
+                            # release will set this to true after rule-1 Proof
+                            # Cycles are verified on the deployed reader. Club
+                            # context only reorders equally severe issues; it
+                            # never changes a measurement or threshold.
   sway_warn_sw: 0.35         # flag head sway (address->top) beyond this, in shoulder widths
   tempo_target: 3.0          # tour-average backswing:downswing ratio shown as benchmark
   tempo_warn_below: 2.4      # flag tempo ratios under this

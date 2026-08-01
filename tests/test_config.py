@@ -11,6 +11,7 @@ def test_defaults_without_file():
     assert cfg.detection["audio_height"] == 0.30
     assert cfg.detection["relative_height"] == 0.0
     assert cfg.coaching["tempo_target"] == 3.0
+    assert cfg.coaching["club_aware_enabled"] is False
     assert cfg.shopify_customer_sync == {
         "enabled": False,
         "auto_sync_new_users": True,
@@ -69,3 +70,4 @@ def test_shipped_proof_cycle_activation_keeps_practice_collection_off():
     assert cfg.proof_cycle["enabled"] is True
     assert cfg.proof_cycle["practice_evidence_enabled"] is False
     assert cfg.web["history_reset_enabled"] is True
+    assert cfg.coaching["club_aware_enabled"] is False

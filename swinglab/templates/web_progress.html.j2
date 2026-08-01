@@ -6,6 +6,8 @@
   .lead .hint { max-width: 480px; margin: 0 auto; }
   .sentence { text-align: center; color: #333; font-size: 0.95rem;
               margin: 10px auto 0; max-width: 480px; }
+  .context { text-align: center; color: #555; font-size: 0.86rem;
+             margin: 6px auto 0; max-width: 540px; }
   .metric-card { background: white; border: 1px solid #e0e0e0;
                  border-radius: 8px; padding: 18px 20px; margin-bottom: 16px; }
   .metric-head { display: flex; justify-content: space-between;
@@ -68,9 +70,13 @@
   {% else %}
   <div class="lead">
     <h2>Progress</h2>
+    {% if club_aware_enabled and context_label %}
+    <p class="context"><strong>Tracking context:</strong> {{ context_label }}.
+      Every point and recurrence count below uses only this exact context.</p>
+    {% endif %}
     {% if session_count >= 2 %}
     <p class="hint">{{ session_count }} measured sessions{% if span %} ·
-      {{ span }}{% endif %}{% if club_selected %} ·
+      {{ span }}{% endif %}{% if club_selected and not club_aware_enabled %} ·
       {{ club_labels.get(club_selected, club_selected) }} only{% endif %}.
       Each dot is one session's mean, oldest to newest;
       the dashed line is the flag threshold, and the tinted side of it is the
@@ -79,7 +85,13 @@
     {% endif %}
   </div>
 
-  {% if clubs_present and clubs_present|length > 1 %}
+  {% if club_aware_enabled and clubs_present %}
+  <div class="club-filter">
+    {% for c in clubs_present %}
+    <a href="/progress?club={{ c }}" {% if club_selected == c %}class="active"{% endif %}>{{ club_labels.get(c, c) }}</a>
+    {% endfor %}
+  </div>
+  {% elif clubs_present and clubs_present|length > 1 %}
   <div class="club-filter">
     <a href="/progress" {% if not club_selected %}class="active"{% endif %}>All clubs</a>
     {% for c in clubs_present %}

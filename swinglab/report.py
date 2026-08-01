@@ -20,6 +20,7 @@ from .caddie_brief import (
 from .clubs import club_label
 from .levels import level_label, level_note
 from .coaching import issue_cards as make_issue_cards
+from .coaching import priority_rule_version
 from .coaching import praise_notes as make_praise_notes
 from .coaching import session_flags
 from .config import Config
@@ -32,6 +33,7 @@ from .metrics import ANGLE_DTL, ANGLE_FACE_ON, session_stats
 REPORT_FORMAT_VERSION = "caddie-brief-v1"
 REPORT_OUTCOME_COACHING = "coaching_ready"
 REPORT_OUTCOME_CAPTURE = "capture_only"
+PRIORITY_RULE_META_NAME = "caddieinsight-coaching-priority-rule"
 
 
 def persisted_report_outcome(path: Path) -> str | None:
@@ -54,6 +56,32 @@ def persisted_report_outcome(path: Path) -> str | None:
         )
         if marker in header:
             return outcome
+    return None
+
+
+def persisted_priority_rule_version(path: Path) -> int | None:
+    """Read the immutable report-priority rule, defaulting old reports to v1.
+
+    The additive marker lets dynamic result cards and weekly plans replay the
+    same selection as the static report across activation and rollback. An
+    explicit malformed, duplicated, or unsupported marker fails closed.
+    """
+
+    try:
+        with path.open("r", encoding="utf-8", errors="replace") as report:
+            header = report.read(8192)
+    except OSError:
+        return None
+    name_marker = f'name="{PRIORITY_RULE_META_NAME}"'
+    marker_count = header.count(name_marker)
+    if marker_count == 0:
+        return 1
+    if marker_count != 1:
+        return None
+    for version in (1, 2):
+        marker = f'<meta {name_marker} content="{version}">'
+        if marker in header:
+            return version
     return None
 
 
@@ -152,7 +180,6 @@ def write_report_html(
         {**swing, "metrics": metric}
         for swing, metric in zip(swings, all_metrics)
     ]
-    flags = session_flags(all_metrics, coaching_stats, cfg)
     quality_notes = [
         note for note in session_notes if isinstance(note, str)
     ]
@@ -162,27 +189,44 @@ def write_report_html(
         for note in (swing.get("notes") or [])
         if isinstance(note, str)
     )
+    selected_priority_rule = priority_rule_version(cfg)
     caddie_brief = build_caddie_brief(
         all_metrics,
         coaching_stats,
         cfg,
         warning=quality_warning(angle, quality_notes),
         angle=angle,
+        club=club,
+        rule_version=selected_priority_rule,
     )
     coaching_allowed = bool(
         caddie_brief is not None and not caddie_brief.refilm_required
     )
-    if not coaching_allowed:
-        flags = []
     # Issue cards: one per fired flag, each with an inline-SVG sparkline of
     # the per-swing values against the flag's benchmark (self-contained HTML,
     # no external assets). Already sorted highest-severity first — the report
     # renders the first one full-size as "Start here" and defers the rest.
     cards = (
-        make_issue_cards(all_metrics, coaching_stats, cfg)
+        make_issue_cards(
+            all_metrics,
+            coaching_stats,
+            cfg,
+            club=club,
+            rule_version=selected_priority_rule,
+        )
         if coaching_allowed
         else []
     )
+    if not coaching_allowed:
+        flags = []
+    elif selected_priority_rule == 2:
+        # Rule 2 intentionally aligns the brief, report cards, practice plan,
+        # gear match, and Proof target on one club-aware priority.
+        flags = [card.flag for card in cards]
+    else:
+        # The compatibility floor must remain inert: rule 1 preserves the
+        # established raw flag order used by historical practice plans.
+        flags = session_flags(all_metrics, coaching_stats, cfg)
     issue_ctx = [
         {**dataclasses.asdict(c),
          "sparkline": diagrams.sparkline(
@@ -216,9 +260,17 @@ def write_report_html(
                "animation": diagrams.drill_animation(d.id, cfg.brand)}
         for block in plan for d in block["drills"]
     }
+    selected_club_label = club_label(club)
+    club_aware_enabled = selected_priority_rule == 2
+    club_priority_changes_ties = bool(
+        club_aware_enabled
+        and angle != ANGLE_DTL
+        and club in {"driver", "fairway-wood", "hybrid", "iron"}
+    )
     html = env.get_template("report.html.j2").render(
         brand=cfg.brand,
         report_format_version=REPORT_FORMAT_VERSION,
+        priority_rule_version=selected_priority_rule,
         report_outcome=(
             REPORT_OUTCOME_COACHING
             if coaching_allowed
@@ -239,7 +291,9 @@ def write_report_html(
         hand=hand,
         angle=angle,
         dtl=(angle == ANGLE_DTL),
-        club_label=club_label(club),
+        club_label=selected_club_label,
+        club_aware_enabled=club_aware_enabled,
+        club_priority_changes_ties=club_priority_changes_ties,
         # Experience-level framing (swinglab.levels): a chip plus one line
         # above the metrics — reframing only, never a threshold change.
         level_label=level_label(level),
