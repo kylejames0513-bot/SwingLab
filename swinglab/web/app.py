@@ -107,6 +107,9 @@ from . import billing, digest, humanize, mailer, shop, shopify_billing
 from .jobs import DONE, FAILED, Job, JobManager
 from .throttle import Throttle
 from .users import (
+    MobileAPIToken,
+    MobileAPITokenAuthEpochError,
+    MobileAPITokenLimitError,
     PRODUCT_EVENT_NAMES,
     GolferProfile,
     User,
@@ -484,6 +487,91 @@ def create_app(
             return None
         return user
 
+    def mobile_bearer_unauthorized() -> HTTPException:
+        """Return one non-enumerating error for every bad device credential."""
+
+        return HTTPException(
+            401,
+            "Invalid mobile access token.",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    def mobile_bearer_token(request: Request) -> str | None:
+        """Read one strict Bearer token without accepting cookie fallback.
+
+        The helper is called only from routes that intentionally support a
+        native-client credential.  If any Authorization header is present,
+        malformed values are failures rather than an excuse to silently use a
+        browser session that happened to accompany the request.
+        """
+
+        authorization = request.headers.get("authorization")
+        if authorization is None:
+            return None
+        scheme, separator, token = authorization.partition(" ")
+        if (
+            separator != " "
+            or scheme.lower() != "bearer"
+            or not token
+            or " " in token
+        ):
+            raise mobile_bearer_unauthorized()
+        return token
+
+    def api_v1_auth(request: Request) -> tuple[User, bool]:
+        """Authenticate an owned mobile API call by bearer or cookie.
+
+        ``True`` means a non-ambient Authorization header authenticated the
+        request; those calls do not need browser Origin/Referer CSRF checks.
+        Cookie-authenticated mutations keep their existing same-origin guard.
+        """
+
+        if not cfg.web.get("require_account"):
+            raise HTTPException(404, "Account API is not enabled.")
+        bearer = mobile_bearer_token(request)
+        if bearer is not None:
+            user = users.authenticate_mobile_api_token(bearer)
+            if user is None:
+                raise mobile_bearer_unauthorized()
+            return user, True
+        user = current_user(request)
+        if user is None:
+            raise HTTPException(401, "Log in first.")
+        return user, False
+
+    def session_access_user(request: Request) -> User | None:
+        """Resolve a session/report owner, rejecting bad bearer credentials.
+
+        Legacy ownerless sessions remain link-accessible in open mode.  A
+        bearer header opts into the account-only mobile auth path, so it never
+        broadens that legacy behavior.
+        """
+
+        if request.headers.get("authorization") is not None:
+            user, _ = api_v1_auth(request)
+            return user
+        return current_user(request)
+
+    def mobile_token_management_user(request: Request) -> User:
+        """Require a same-origin browser session for device-token lifecycle.
+
+        A device token cannot mint, enumerate, or revoke other device tokens.
+        This is a deliberate cookie-only recovery/manage surface; an
+        Authorization header is rejected even when the browser cookie is also
+        present so invalid bearer input cannot fall back to that cookie.
+        """
+
+        if request.headers.get("authorization") is not None:
+            raise mobile_bearer_unauthorized()
+        if not _same_origin_form_post(request):
+            raise HTTPException(403, "Invalid request origin.")
+        if not cfg.web.get("require_account"):
+            raise HTTPException(404, "Account API is not enabled.")
+        user = current_user(request)
+        if user is None:
+            raise HTTPException(401, "Log in first.")
+        return user
+
     def establish_session(request: Request, user: User) -> None:
         """Bind a signed cookie to the user's current revocation epoch."""
 
@@ -765,7 +853,12 @@ def create_app(
         response.headers["Pragma"] = "no-cache"
         return response
 
-    def get_job_or_404(job_id: str, request: Request) -> Job:
+    def get_job_or_404(
+        job_id: str,
+        request: Request,
+        *,
+        authenticated_user: User | None = None,
+    ) -> Job:
         """404 for unknown ids AND other people's sessions (don't reveal
         which). Jobs with no owner (pre-accounts era, or open mode) stay
         reachable by link."""
@@ -773,7 +866,7 @@ def create_app(
         if job is None:
             raise HTTPException(404, "Unknown session")
         if job.user_id is not None:
-            user = current_user(request)
+            user = authenticated_user or current_user(request)
             if user is None or user.id != job.user_id:
                 raise HTTPException(404, "Unknown session")
         return job
@@ -2286,9 +2379,14 @@ def create_app(
         fast: str = Form(""),
         transfer_check: str = Form(""),
     ):
-        if not _same_origin_form_post(request):
-            raise HTTPException(403, "Invalid request origin.")
-        user = current_user(request)
+        if request.headers.get("authorization") is not None:
+            # A device credential is explicit/non-ambient, while the browser
+            # cookie path below retains its Origin/Referer CSRF boundary.
+            user, _ = api_v1_auth(request)
+        else:
+            if not _same_origin_form_post(request):
+                raise HTTPException(403, "Invalid request origin.")
+            user = current_user(request)
         ensure_user_can_analyze(user, manager, cfg)
         had_completed_analysis = bool(
             user is not None
@@ -2650,7 +2748,10 @@ def create_app(
 
     @app.get("/session/{job_id}", response_class=HTMLResponse)
     def status_page(job_id: str, request: Request):
-        job = get_job_or_404(job_id, request)
+        access_user = session_access_user(request)
+        job = get_job_or_404(
+            job_id, request, authenticated_user=access_user
+        )
         coaching_eligible = manager.coaching_eligible(job)
         safe_report_available = current_safe_report(job)
         if (
@@ -2674,7 +2775,7 @@ def create_app(
             record_product_event(
                 request,
                 "upload_completed",
-                user=current_user(request),
+                user=access_user,
                 session_id=job.id,
                 dedupe_key=f"upload_completed:{job.id}",
             )
@@ -2682,7 +2783,7 @@ def create_app(
                 record_product_event(
                     request,
                     "brief_viewed",
-                    user=current_user(request),
+                    user=access_user,
                     session_id=job.id,
                     dedupe_key=f"brief_viewed:{job.id}",
                 )
@@ -2740,7 +2841,11 @@ def create_app(
 
     @app.get("/session/{job_id}/report")
     def report(job_id: str, request: Request):
-        job = get_job_or_404(job_id, request)
+        job = get_job_or_404(
+            job_id,
+            request,
+            authenticated_user=session_access_user(request),
+        )
         if job.status != DONE or not job.report_rel:
             return RedirectResponse(f"/session/{job_id}")
         if (
@@ -2752,7 +2857,11 @@ def create_app(
 
     @app.get("/session/{job_id}/files/{file_path:path}")
     def session_file(job_id: str, file_path: str, request: Request):
-        job = get_job_or_404(job_id, request)
+        job = get_job_or_404(
+            job_id,
+            request,
+            authenticated_user=session_access_user(request),
+        )
         root = job.session_dir.resolve()
         target = (root / file_path).resolve()
         if not target.is_relative_to(root):  # block path traversal
@@ -2835,7 +2944,11 @@ def create_app(
     # -- JSON API (what a future mobile app talks to) ----------------------
     @app.get("/api/session/{job_id}")
     def api_status(job_id: str, request: Request):
-        job = get_job_or_404(job_id, request)
+        job = get_job_or_404(
+            job_id,
+            request,
+            authenticated_user=session_access_user(request),
+        )
         if (
             not cfg.web.get("require_account")
             and manager.coaching_eligible(job)
@@ -2845,7 +2958,7 @@ def create_app(
 
     @app.get("/api/sessions")
     def api_sessions(request: Request):
-        user = current_user(request)
+        user = session_access_user(request)
         if cfg.web.get("require_account"):
             if user is None:
                 raise HTTPException(401, "Log in first.")
@@ -2879,13 +2992,24 @@ def create_app(
         )
 
     # -- /api/v1: stable PWA/native resources ----------------------------
-    def api_v1_user(request: Request) -> User:
-        if not cfg.web.get("require_account"):
-            raise HTTPException(404, "Account API is not enabled.")
-        user = current_user(request)
-        if user is None:
-            raise HTTPException(401, "Log in first.")
-        return user
+    def mobile_token_payload(token: MobileAPIToken) -> dict:
+        """Serialize management/export-safe device lifecycle metadata only."""
+
+        return {
+            "selector": token.selector,
+            "label": token.label,
+            "created_at": token.created_at,
+            "last_used_at": token.last_used_at,
+            "expires_at": token.expires_at,
+            "revoked_at": token.revoked_at,
+            "active": token.active,
+        }
+
+    def no_store_json(payload: object, *, status_code: int = 200) -> JSONResponse:
+        response = JSONResponse(payload, status_code=status_code)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
 
     def api_v1_session_payload(job: Job) -> dict:
         payload = api_payload(job)
@@ -2894,7 +3018,7 @@ def create_app(
 
     @app.get("/api/v1/me")
     def api_v1_me(request: Request):
-        user = api_v1_user(request)
+        user, _ = api_v1_auth(request)
         return JSONResponse(
             {
                 "resource_version": 1,
@@ -2909,9 +3033,65 @@ def create_app(
             }
         )
 
+    @app.get("/api/v1/mobile-tokens")
+    def api_v1_mobile_tokens(request: Request):
+        """List a browser owner's non-secret device token metadata."""
+
+        user = mobile_token_management_user(request)
+        return no_store_json(
+            {
+                "resource_version": 1,
+                "tokens": [
+                    mobile_token_payload(token)
+                    for token in users.list_mobile_api_tokens(user.id)
+                ],
+            }
+        )
+
+    @app.post("/api/v1/mobile-tokens")
+    async def api_v1_issue_mobile_token(request: Request):
+        """Issue a device token once to an authenticated same-origin browser."""
+
+        user = mobile_token_management_user(request)
+        payload = await bounded_json_object(request)
+        if set(payload) != {"label"}:
+            raise HTTPException(400, "A mobile device name is required.")
+        try:
+            raw_token, token = users.issue_mobile_api_token(
+                user.id,
+                payload["label"],
+                expected_auth_epoch=user.auth_epoch,
+            )
+        except MobileAPITokenAuthEpochError:
+            request.session.clear()
+            raise HTTPException(401, "Log in again before adding a device.") from None
+        except MobileAPITokenLimitError as exc:
+            raise HTTPException(409, str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(400, str(exc)) from None
+        # The raw credential is deliberately absent from every later list or
+        # export response.  This no-store response is the sole issue moment.
+        return no_store_json(
+            {
+                "resource_version": 1,
+                "token": raw_token,
+                "device": mobile_token_payload(token),
+            },
+            status_code=201,
+        )
+
+    @app.delete("/api/v1/mobile-tokens/{selector}")
+    def api_v1_revoke_mobile_token(selector: str, request: Request):
+        user = mobile_token_management_user(request)
+        if not users.revoke_mobile_api_token(user.id, selector):
+            # Do not distinguish a malformed selector from a different
+            # account's device record.
+            raise HTTPException(404, "Mobile device not found.")
+        return no_store_json({"resource_version": 1, "revoked": True})
+
     @app.get("/api/v1/profile")
     def api_v1_profile(request: Request):
-        user = api_v1_user(request)
+        user, _ = api_v1_auth(request)
         return JSONResponse(
             {
                 "resource_version": 1,
@@ -2921,9 +3101,9 @@ def create_app(
 
     @app.put("/api/v1/profile")
     async def api_v1_update_profile(request: Request):
-        if not _same_origin_form_post(request):
+        user, via_bearer = api_v1_auth(request)
+        if not via_bearer and not _same_origin_form_post(request):
             raise HTTPException(403, "Invalid request origin.")
-        user = api_v1_user(request)
         payload = await bounded_json_object(request)
         expected = {
             "experience_mode",
@@ -2965,7 +3145,7 @@ def create_app(
 
     @app.get("/api/v1/today")
     def api_v1_today(request: Request):
-        user = api_v1_user(request)
+        user, _ = api_v1_auth(request)
         profile = users.get_golfer_profile(user.id)
         recent = manager.list_recent(limit=1, user_id=user.id)
         latest = recent[0] if recent else None
@@ -2989,7 +3169,7 @@ def create_app(
 
     @app.get("/api/v1/sessions")
     def api_v1_sessions(request: Request):
-        user = api_v1_user(request)
+        user, _ = api_v1_auth(request)
         return JSONResponse(
             {
                 "resource_version": 1,
@@ -3002,13 +3182,17 @@ def create_app(
 
     @app.get("/api/v1/sessions/{job_id}")
     def api_v1_session(job_id: str, request: Request):
-        api_v1_user(request)
-        return JSONResponse(api_v1_session_payload(get_job_or_404(job_id, request)))
+        user, _ = api_v1_auth(request)
+        return JSONResponse(
+            api_v1_session_payload(
+                get_job_or_404(job_id, request, authenticated_user=user)
+            )
+        )
 
     @app.get("/api/v1/sessions/{job_id}/brief")
     def api_v1_session_brief(job_id: str, request: Request):
-        api_v1_user(request)
-        job = get_job_or_404(job_id, request)
+        user, _ = api_v1_auth(request)
+        job = get_job_or_404(job_id, request, authenticated_user=user)
         if job.status != DONE:
             raise HTTPException(409, "This analysis is not complete.")
         brief = caddie_brief_for(job)
@@ -3020,7 +3204,7 @@ def create_app(
 
     @app.get("/api/v1/practice-checkins")
     def api_v1_practice_checkins(request: Request):
-        user = api_v1_user(request)
+        user, _ = api_v1_auth(request)
         return JSONResponse(
             {
                 "resource_version": 1,
@@ -3036,15 +3220,17 @@ def create_app(
 
     @app.post("/api/v1/practice-checkins")
     async def api_v1_practice_checkin(request: Request):
-        if not _same_origin_form_post(request):
+        user, via_bearer = api_v1_auth(request)
+        if not via_bearer and not _same_origin_form_post(request):
             raise HTTPException(403, "Invalid request origin.")
-        user = api_v1_user(request)
         payload = await bounded_json_object(request)
         if set(payload) != {"session_id"} or not isinstance(
             payload["session_id"], str
         ):
             raise HTTPException(400, "A session id is required.")
-        job = get_job_or_404(payload["session_id"], request)
+        job = get_job_or_404(
+            payload["session_id"], request, authenticated_user=user
+        )
         if (
             job.status != DONE
             or not manager.coaching_eligible(job)
@@ -3064,6 +3250,12 @@ def create_app(
 
     @app.post("/api/v1/events")
     async def api_v1_product_event(request: Request):
+        # Event capture is intentionally not a bearer-token capability: it is
+        # a browser telemetry surface with its existing same-origin guard.
+        # Rejecting Authorization avoids cookie fallback if a client sends a
+        # malformed or stale device token here.
+        if request.headers.get("authorization") is not None:
+            raise mobile_bearer_unauthorized()
         if not _same_origin_form_post(request):
             raise HTTPException(403, "Invalid request origin.")
         payload = await product_event_json(request)

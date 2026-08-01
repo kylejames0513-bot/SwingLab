@@ -181,6 +181,23 @@ _PRODUCT_EVENT_METADATA_MAX = 512
 SHOPIFY_ACCOUNT_OAUTH_TTL_S = 10 * 60
 _SHOPIFY_ACCOUNT_OAUTH_MODES = ("login", "link")
 
+# Native clients receive a personal device credential rather than a browser
+# session cookie.  The token is selector.secret: the selector makes lookup
+# indexable while the 256-bit secret is stored only as a SHA-256 digest.  A
+# password reset / ownership recovery advances ``users.auth_epoch`` and
+# invalidates every token issued under the former epoch.
+MOBILE_API_TOKEN_PREFIX = "ciat_"
+MOBILE_API_TOKEN_SELECTOR_BYTES = 18
+MOBILE_API_TOKEN_SECRET_BYTES = 32
+MOBILE_API_TOKEN_TTL_S = 90 * 86400
+MOBILE_API_TOKEN_ACTIVE_LIMIT = 5
+_MOBILE_API_TOKEN_LABEL_MAX = 80
+_MOBILE_API_TOKEN_MAX_LENGTH = 256
+_MOBILE_API_TOKEN_LAST_USED_WRITE_INTERVAL_S = 60
+_MOBILE_API_TOKEN_DUMMY_HASH = hashlib.sha256(
+    b"caddieinsight-mobile-token-dummy"
+).hexdigest()
+
 _SHOPIFY_PRIVACY_LOCKS_GUARD = threading.Lock()
 _SHOPIFY_PRIVACY_LOCKS: dict[str, threading.Lock] = {}
 
@@ -376,6 +393,19 @@ CREATE INDEX IF NOT EXISTS product_events_name_created
     ON product_events(event_name, created_at DESC);
 CREATE INDEX IF NOT EXISTS product_events_user_created
     ON product_events(user_id, created_at DESC);
+CREATE TABLE IF NOT EXISTS mobile_api_tokens (
+    selector    TEXT PRIMARY KEY,
+    token_hash  TEXT NOT NULL,
+    user_id     TEXT NOT NULL,
+    auth_epoch  INTEGER NOT NULL,
+    label       TEXT NOT NULL,
+    created_at  REAL NOT NULL,
+    last_used_at REAL,
+    expires_at  REAL NOT NULL,
+    revoked_at  REAL
+);
+CREATE INDEX IF NOT EXISTS mobile_api_tokens_user_active
+    ON mobile_api_tokens(user_id, auth_epoch, expires_at, revoked_at);
 CREATE TABLE IF NOT EXISTS shopify_customer_account_oauth_states (
     state_hash  TEXT PRIMARY KEY,
     verifier    TEXT NOT NULL,
@@ -655,6 +685,25 @@ class PracticeCheckin:
 
 
 @dataclass(frozen=True)
+class MobileAPIToken:
+    """Safe lifecycle metadata for one personal mobile credential.
+
+    The selector is an opaque revocation handle, not a bearer secret.  The
+    raw credential and its hash deliberately never appear in this object so
+    callers can list and export device records without accidentally leaking
+    a reusable token.
+    """
+
+    selector: str
+    label: str
+    created_at: float
+    last_used_at: float | None
+    expires_at: float
+    revoked_at: float | None
+    active: bool
+
+
+@dataclass(frozen=True)
 class ShopifyCustomerAccountOAuthState:
     """One short-lived, server-side authorization-code transaction."""
 
@@ -717,6 +766,14 @@ class ShopifyShopRedaction:
 
 class ShopifySyncFencedError(RuntimeError):
     """An outbound attempt was invalidated or blocked by privacy state."""
+
+
+class MobileAPITokenLimitError(ValueError):
+    """The account already has its bounded set of active device tokens."""
+
+
+class MobileAPITokenAuthEpochError(RuntimeError):
+    """The browser session changed before a device token could be issued."""
 
 
 class UserStore:
@@ -913,6 +970,35 @@ class UserStore:
                     initialize_statuses=sync_status_added
                 )
                 self._prepare_shopify_customer_account_schema()
+                mobile_token_columns = {
+                    row["name"]
+                    for row in self._conn.execute(
+                        "PRAGMA table_info(mobile_api_tokens)"
+                    )
+                }
+                required_mobile_token_columns = {
+                    "selector",
+                    "token_hash",
+                    "user_id",
+                    "auth_epoch",
+                    "label",
+                    "created_at",
+                    "last_used_at",
+                    "expires_at",
+                    "revoked_at",
+                }
+                if not required_mobile_token_columns.issubset(
+                    mobile_token_columns
+                ):
+                    # A partial credential table could make a migration look
+                    # successful while silently weakening authentication.
+                    # Refuse it rather than guessing how to repair it.
+                    raise RuntimeError("Incompatible mobile token schema.")
+                self._conn.execute(
+                    "CREATE INDEX IF NOT EXISTS mobile_api_tokens_user_active"
+                    " ON mobile_api_tokens(user_id, auth_epoch, expires_at,"
+                    " revoked_at)"
+                )
                 order_columns = {
                     row["name"]
                     for row in self._conn.execute(
@@ -1491,6 +1577,7 @@ class UserStore:
             "proof_cycle_practice_evidence": ("user_id",),
             "proof_cycle_transfer_checks": ("user_id",),
             "product_events": ("user_id",),
+            "mobile_api_tokens": ("user_id",),
         }
         for collection, fields in collection_fields.items():
             rows = snapshot.get(collection)
@@ -1727,6 +1814,10 @@ class UserStore:
             )
             self._conn.execute(
                 f"DELETE FROM product_events WHERE user_id IN ({placeholders})",
+                identifiers,
+            )
+            self._conn.execute(
+                f"DELETE FROM mobile_api_tokens WHERE user_id IN ({placeholders})",
                 identifiers,
             )
             self._conn.execute(
@@ -2018,6 +2109,7 @@ class UserStore:
         proof_cycle_practice_evidence: list[sqlite3.Row],
         proof_cycle_transfer_checks: list[sqlite3.Row],
         product_events: list[sqlite3.Row],
+        mobile_api_tokens: list[sqlite3.Row],
         email_codes: list[sqlite3.Row],
         signup_intents: list[sqlite3.Row],
     ) -> tuple[str, str, int, int]:
@@ -2070,6 +2162,22 @@ class UserStore:
                 dict(row) for row in proof_cycle_transfer_checks
             ],
             "product_events": [dict(row) for row in product_events],
+            # The exported device inventory intentionally omits both the
+            # credential digest and auth epoch.  It is enough for a customer
+            # to identify a device record without turning a privacy archive
+            # into an authentication or correlation dataset.
+            "mobile_api_tokens": [
+                {
+                    "selector": row["selector"],
+                    "user_id": row["user_id"],
+                    "label": row["label"],
+                    "created_at": row["created_at"],
+                    "last_used_at": row["last_used_at"],
+                    "expires_at": row["expires_at"],
+                    "revoked_at": row["revoked_at"],
+                }
+                for row in mobile_api_tokens
+            ],
             "session_artifacts": artifact_inventory,
             # Credential hashes and one-time secrets are never copied into a
             # customer-facing export. Lifecycle metadata is sufficient.
@@ -2100,6 +2208,7 @@ class UserStore:
                 proof_cycle_practice_evidence,
                 proof_cycle_transfer_checks,
                 product_events,
+                mobile_api_tokens,
                 email_codes,
                 signup_intents,
             )
@@ -2375,6 +2484,7 @@ class UserStore:
                 proof_cycle_practice_evidence: list[sqlite3.Row] = []
                 proof_cycle_transfer_checks: list[sqlite3.Row] = []
                 product_events: list[sqlite3.Row] = []
+                mobile_api_tokens: list[sqlite3.Row] = []
                 jobs_table = self._conn.execute(
                     "SELECT 1 FROM sqlite_master"
                     " WHERE type = 'table' AND name = 'jobs'"
@@ -2416,6 +2526,13 @@ class UserStore:
                         " ORDER BY created_at, id",
                         identifiers,
                     ).fetchall()
+                    mobile_api_tokens = self._conn.execute(
+                        "SELECT selector, user_id, label, created_at,"
+                        " last_used_at, expires_at, revoked_at"
+                        f" FROM mobile_api_tokens WHERE user_id IN ({placeholders})"
+                        " ORDER BY created_at, selector",
+                        identifiers,
+                    ).fetchall()
 
                 self._conn.commit()
                 self._lock.release()
@@ -2442,6 +2559,7 @@ class UserStore:
                         proof_cycle_practice_evidence=proof_cycle_practice_evidence,
                         proof_cycle_transfer_checks=proof_cycle_transfer_checks,
                         product_events=product_events,
+                        mobile_api_tokens=mobile_api_tokens,
                         email_codes=email_codes,
                         signup_intents=signup_intents,
                     )
@@ -2740,6 +2858,11 @@ class UserStore:
                     )
                 if store_only_ids:
                     placeholders = ", ".join("?" for _ in store_only_ids)
+                    self._conn.execute(
+                        f"DELETE FROM mobile_api_tokens"
+                        f" WHERE user_id IN ({placeholders})",
+                        tuple(store_only_ids),
+                    )
                     self._conn.execute(
                         f"DELETE FROM users WHERE id IN ({placeholders})",
                         tuple(store_only_ids),
@@ -3587,6 +3710,334 @@ class UserStore:
                 f"SELECT * FROM users WHERE {column} = ?", (value,)
             ).fetchone()
         return self._from_row(row) if row else None
+
+    # -- personal mobile API tokens -------------------------------------
+    @staticmethod
+    def _normalize_mobile_api_token_label(value: object) -> str:
+        """Validate a short, display-only device label.
+
+        Labels are never used as an authentication factor.  Keeping them
+        bounded and control-character-free prevents a future management UI or
+        privacy export from becoming a generic unbounded metadata sink.
+        """
+
+        if not isinstance(value, str):
+            raise ValueError("A mobile device name is required.")
+        label = " ".join(value.split())
+        if not label or len(label) > _MOBILE_API_TOKEN_LABEL_MAX:
+            raise ValueError(
+                "A mobile device name must be 1 to "
+                f"{_MOBILE_API_TOKEN_LABEL_MAX} characters."
+            )
+        if any(ord(character) < 32 for character in label):
+            raise ValueError("A mobile device name contains invalid characters.")
+        return label
+
+    @staticmethod
+    def _valid_mobile_api_token_component(
+        value: object, *, minimum: int, maximum: int
+    ) -> bool:
+        return (
+            isinstance(value, str)
+            and minimum <= len(value) <= maximum
+            and value.isascii()
+            and all(character.isalnum() or character in "-_" for character in value)
+        )
+
+    @classmethod
+    def _parse_mobile_api_token(cls, value: object) -> tuple[str, str] | None:
+        """Parse one canonical selector.secret credential without normalizing it."""
+
+        if (
+            not isinstance(value, str)
+            or len(value) > _MOBILE_API_TOKEN_MAX_LENGTH
+            or not value.startswith(MOBILE_API_TOKEN_PREFIX)
+        ):
+            return None
+        selector, separator, secret = value[
+            len(MOBILE_API_TOKEN_PREFIX):
+        ].partition(".")
+        if (
+            separator != "."
+            or "." in secret
+            or not cls._valid_mobile_api_token_component(
+                selector, minimum=16, maximum=64
+            )
+            or not cls._valid_mobile_api_token_component(
+                secret, minimum=43, maximum=128
+            )
+        ):
+            return None
+        return selector, secret
+
+    @classmethod
+    def _mobile_api_token_hash(cls, selector: str, secret: str) -> str:
+        """Hash the complete opaque credential before it reaches SQLite."""
+
+        return hashlib.sha256(
+            f"{MOBILE_API_TOKEN_PREFIX}{selector}.{secret}".encode("utf-8")
+        ).hexdigest()
+
+    @classmethod
+    def _mobile_api_token_metadata_from_row(
+        cls,
+        row: sqlite3.Row,
+        *,
+        current_auth_epoch: int,
+        now: float,
+    ) -> MobileAPIToken:
+        revoked_at = row["revoked_at"]
+        return MobileAPIToken(
+            selector=str(row["selector"]),
+            label=str(row["label"]),
+            created_at=float(row["created_at"]),
+            last_used_at=(
+                float(row["last_used_at"])
+                if row["last_used_at"] is not None
+                else None
+            ),
+            expires_at=float(row["expires_at"]),
+            revoked_at=float(revoked_at) if revoked_at is not None else None,
+            active=(
+                revoked_at is None
+                and float(row["expires_at"]) > now
+                and int(row["auth_epoch"]) == current_auth_epoch
+            ),
+        )
+
+    def issue_mobile_api_token(
+        self,
+        user_id: str,
+        label: object,
+        *,
+        expected_auth_epoch: int,
+        now: float | None = None,
+    ) -> tuple[str, MobileAPIToken]:
+        """Issue one personal token and return its raw value exactly once.
+
+        The caller must present the returned raw token to the device at issue
+        time.  Only a selector, digest, lifecycle timestamps, and the user
+        epoch are durable.  The transaction holds a SQLite write lock across
+        the active-token count and insert so concurrent browser tabs cannot
+        exceed the cap.
+        """
+
+        normalized_label = self._normalize_mobile_api_token_label(label)
+        issued_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                user = self._conn.execute(
+                    "SELECT id, auth_epoch FROM users WHERE id = ?", (user_id,)
+                ).fetchone()
+                if user is None:
+                    raise ValueError("Account is unavailable.")
+                current_auth_epoch = int(user["auth_epoch"] or 0)
+                if current_auth_epoch != int(expected_auth_epoch):
+                    # Session authentication happens before the request body is
+                    # consumed. Re-check the captured epoch inside this write
+                    # transaction so a password reset or ownership recovery
+                    # cannot race a slow token-issuance request.
+                    raise MobileAPITokenAuthEpochError(
+                        "The authenticated account session changed."
+                    )
+                active_count = int(
+                    self._conn.execute(
+                        "SELECT COUNT(*) FROM mobile_api_tokens"
+                        " WHERE user_id = ? AND auth_epoch = ?"
+                        " AND revoked_at IS NULL AND expires_at > ?",
+                        (user_id, current_auth_epoch, issued_at),
+                    ).fetchone()[0]
+                )
+                if active_count >= MOBILE_API_TOKEN_ACTIVE_LIMIT:
+                    raise MobileAPITokenLimitError(
+                        "You already have "
+                        f"{MOBILE_API_TOKEN_ACTIVE_LIMIT} active mobile devices. "
+                        "Revoke one before adding another."
+                    )
+
+                # token_urlsafe returns URL/header-safe values; selector
+                # collisions are astronomically unlikely, but a bounded retry
+                # preserves the database primary-key guarantee without ever
+                # accepting a caller-selected selector.
+                token = ""
+                metadata = None
+                for _ in range(5):
+                    selector = secrets.token_urlsafe(MOBILE_API_TOKEN_SELECTOR_BYTES)
+                    secret = secrets.token_urlsafe(MOBILE_API_TOKEN_SECRET_BYTES)
+                    if self._conn.execute(
+                        "SELECT 1 FROM mobile_api_tokens WHERE selector = ?",
+                        (selector,),
+                    ).fetchone() is not None:
+                        continue
+                    token_hash = self._mobile_api_token_hash(selector, secret)
+                    expires_at = issued_at + MOBILE_API_TOKEN_TTL_S
+                    self._conn.execute(
+                        "INSERT INTO mobile_api_tokens"
+                        " (selector, token_hash, user_id, auth_epoch, label,"
+                        "  created_at, last_used_at, expires_at, revoked_at)"
+                        " VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL)",
+                        (
+                            selector,
+                            token_hash,
+                            user_id,
+                            current_auth_epoch,
+                            normalized_label,
+                            issued_at,
+                            expires_at,
+                        ),
+                    )
+                    token = f"{MOBILE_API_TOKEN_PREFIX}{selector}.{secret}"
+                    metadata = MobileAPIToken(
+                        selector=selector,
+                        label=normalized_label,
+                        created_at=issued_at,
+                        last_used_at=None,
+                        expires_at=expires_at,
+                        revoked_at=None,
+                        active=True,
+                    )
+                    break
+                if metadata is None:
+                    raise RuntimeError("Could not allocate a mobile token selector.")
+                self._conn.commit()
+            except Exception:
+                self._conn.rollback()
+                raise
+        return token, metadata
+
+    def list_mobile_api_tokens(
+        self, user_id: str, *, now: float | None = None
+    ) -> list[MobileAPIToken]:
+        """List non-secret lifecycle metadata for one account's devices."""
+
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            user = self._conn.execute(
+                "SELECT auth_epoch FROM users WHERE id = ?", (user_id,)
+            ).fetchone()
+            if user is None:
+                return []
+            rows = self._conn.execute(
+                "SELECT selector, user_id, auth_epoch, label, created_at,"
+                " last_used_at, expires_at, revoked_at"
+                " FROM mobile_api_tokens WHERE user_id = ?"
+                " ORDER BY created_at DESC, selector",
+                (user_id,),
+            ).fetchall()
+        return [
+            self._mobile_api_token_metadata_from_row(
+                row,
+                current_auth_epoch=int(user["auth_epoch"] or 0),
+                now=observed_at,
+            )
+            for row in rows
+        ]
+
+    def revoke_mobile_api_token(
+        self,
+        user_id: str,
+        selector: object,
+        *,
+        now: float | None = None,
+    ) -> bool:
+        """Revoke one owned device token without exposing its secret."""
+
+        if not self._valid_mobile_api_token_component(
+            selector, minimum=16, maximum=64
+        ):
+            return False
+        revoked_at = time.time() if now is None else float(now)
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE mobile_api_tokens"
+                " SET revoked_at = COALESCE(revoked_at, ?)"
+                " WHERE selector = ? AND user_id = ?",
+                (revoked_at, selector, user_id),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def authenticate_mobile_api_token(
+        self, token: object, *, now: float | None = None
+    ) -> User | None:
+        """Authenticate a valid, unrevoked device token and record its use.
+
+        A malformed, unknown, expired, revoked, or epoch-stale credential has
+        one intentionally indistinguishable ``None`` outcome.  The candidate
+        digest is compared even for an unknown selector, avoiding a simple
+        selector-existence timing branch.
+        """
+
+        parsed = self._parse_mobile_api_token(token)
+        if parsed is None:
+            return None
+        selector, secret = parsed
+        candidate_hash = self._mobile_api_token_hash(selector, secret)
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            # Unknown or invalid credentials stay read-only. A random bearer
+            # flood must not reserve SQLite's single writer before a secret has
+            # even authenticated.
+            token_row = self._conn.execute(
+                "SELECT * FROM mobile_api_tokens WHERE selector = ?",
+                (selector,),
+            ).fetchone()
+            expected_hash = (
+                str(token_row["token_hash"])
+                if token_row is not None
+                else _MOBILE_API_TOKEN_DUMMY_HASH
+            )
+            if not hmac.compare_digest(candidate_hash, expected_hash):
+                return None
+            if token_row is None:
+                return None
+            user = self._conn.execute(
+                "SELECT * FROM users WHERE id = ?",
+                (token_row["user_id"],),
+            ).fetchone()
+            if (
+                user is None
+                or token_row["revoked_at"] is not None
+                or float(token_row["expires_at"]) <= observed_at
+                or int(token_row["auth_epoch"]) != int(user["auth_epoch"] or 0)
+            ):
+                return None
+
+            last_used_at = token_row["last_used_at"]
+            touch_before = (
+                observed_at - _MOBILE_API_TOKEN_LAST_USED_WRITE_INTERVAL_S
+            )
+            if last_used_at is None or float(last_used_at) <= touch_before:
+                try:
+                    # Device-management timestamps are operational metadata,
+                    # not an audit log. Sample them at most once per minute so
+                    # polling does not turn every authenticated read into a
+                    # SQLite write.
+                    self._conn.execute(
+                        "UPDATE mobile_api_tokens SET last_used_at = ?"
+                        " WHERE selector = ? AND user_id = ?"
+                        " AND revoked_at IS NULL AND expires_at > ?"
+                        " AND auth_epoch = ?"
+                        " AND EXISTS (SELECT 1 FROM users AS current_user"
+                        " WHERE current_user.id = mobile_api_tokens.user_id"
+                        " AND COALESCE(current_user.auth_epoch, 0) = ?)"
+                        " AND (last_used_at IS NULL OR last_used_at <= ?)",
+                        (
+                            observed_at,
+                            selector,
+                            user["id"],
+                            observed_at,
+                            int(user["auth_epoch"] or 0),
+                            int(user["auth_epoch"] or 0),
+                            touch_before,
+                        ),
+                    )
+                    self._conn.commit()
+                except Exception:
+                    self._conn.rollback()
+                    raise
+        return self._from_row(user)
 
     def _shopify_identity_rows(
         self,
@@ -4923,6 +5374,9 @@ class UserStore:
             )
             self._conn.execute(
                 "DELETE FROM product_events WHERE user_id = ?", (user_id,)
+            )
+            self._conn.execute(
+                "DELETE FROM mobile_api_tokens WHERE user_id = ?", (user_id,)
             )
             self._conn.execute(
                 "DELETE FROM shopify_customer_account_oauth_states"
