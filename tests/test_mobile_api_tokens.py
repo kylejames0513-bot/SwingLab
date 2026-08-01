@@ -59,6 +59,23 @@ def bearer(token: str) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
+def issue_store_token(
+    users: UserStore,
+    user_id: str,
+    label: str,
+    *,
+    now: float,
+):
+    user = users.get(user_id)
+    assert user is not None
+    return users.issue_mobile_api_token(
+        user_id,
+        label,
+        expected_auth_epoch=user.auth_epoch,
+        now=now,
+    )
+
+
 def wait_for_mobile_session(
     client: TestClient, token: str, job_id: str, timeout: float = 5.0
 ) -> dict:
@@ -238,31 +255,90 @@ def test_bad_authorization_never_falls_back_and_cookie_csrf_stays_enabled(app):
     assert "access-control-allow-origin" not in bearer_update.headers
 
 
+def test_issue_refuses_auth_epoch_change_while_request_body_is_read(
+    app, monkeypatch
+):
+    browser = TestClient(app)
+    signup(browser)
+    users: UserStore = app.state.users
+    user = users.get_by_email("golfer@example.com")
+    assert user is not None
+
+    original_issue = users.issue_mobile_api_token
+
+    def reset_password_before_issue(*args, **kwargs):
+        users.set_password(user.id, "replacement-password")
+        return original_issue(*args, **kwargs)
+
+    monkeypatch.setattr(
+        users,
+        "issue_mobile_api_token",
+        reset_password_before_issue,
+    )
+    response = browser.post(
+        "/api/v1/mobile-tokens", json={"label": "Delayed phone"}
+    )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "Log in again before adding a device."
+    assert users._conn.execute(
+        "SELECT COUNT(*) FROM mobile_api_tokens WHERE user_id = ?", (user.id,)
+    ).fetchone()[0] == 0
+    assert browser.get("/api/v1/me").status_code == 401
+
+
 def test_store_lifecycle_enforces_expiry_revocation_epoch_and_active_cap(tmp_path):
     users = UserStore(tmp_path / "tokens.sqlite")
     user = users.create("token-owner@example.com", "longenough")
 
-    expired_raw, expired = users.issue_mobile_api_token(
-        user.id, "Expired phone", now=-MOBILE_API_TOKEN_TTL_S
+    expired_raw, expired = issue_store_token(
+        users, user.id, "Expired phone", now=-MOBILE_API_TOKEN_TTL_S
     )
     assert users.authenticate_mobile_api_token(expired_raw, now=0) is None
     assert users.list_mobile_api_tokens(user.id, now=0)[0].active is False
 
     raw_tokens = []
     for number in range(MOBILE_API_TOKEN_ACTIVE_LIMIT):
-        raw, metadata = users.issue_mobile_api_token(
-            user.id, f"Device {number}", now=100.0
+        raw, metadata = issue_store_token(
+            users, user.id, f"Device {number}", now=100.0
         )
         raw_tokens.append((raw, metadata))
     with pytest.raises(MobileAPITokenLimitError):
-        users.issue_mobile_api_token(user.id, "One too many", now=101.0)
+        issue_store_token(users, user.id, "One too many", now=101.0)
+
+    statements = []
+    users._conn.set_trace_callback(statements.append)
+    try:
+        invalid = f"ciat_{'A' * 24}.{'B' * 43}"
+        assert users.authenticate_mobile_api_token(invalid, now=101.0) is None
+    finally:
+        users._conn.set_trace_callback(None)
+    assert not any("BEGIN IMMEDIATE" in statement for statement in statements)
 
     assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=101.0).id == user.id
+    first_used = users._conn.execute(
+        "SELECT last_used_at FROM mobile_api_tokens WHERE selector = ?",
+        (raw_tokens[0][1].selector,),
+    ).fetchone()["last_used_at"]
+    assert first_used == 101.0
+    assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=120.0).id == user.id
+    sampled_used = users._conn.execute(
+        "SELECT last_used_at FROM mobile_api_tokens WHERE selector = ?",
+        (raw_tokens[0][1].selector,),
+    ).fetchone()["last_used_at"]
+    assert sampled_used == first_used
+    assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=162.0).id == user.id
+    refreshed_used = users._conn.execute(
+        "SELECT last_used_at FROM mobile_api_tokens WHERE selector = ?",
+        (raw_tokens[0][1].selector,),
+    ).fetchone()["last_used_at"]
+    assert refreshed_used == 162.0
+
     users.set_password(user.id, "replacement-password")
     assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=102.0) is None
 
-    replacement_raw, replacement = users.issue_mobile_api_token(
-        user.id, "Replacement phone", now=102.0
+    replacement_raw, replacement = issue_store_token(
+        users, user.id, "Replacement phone", now=102.0
     )
     assert users.authenticate_mobile_api_token(replacement_raw, now=103.0).id == user.id
     assert users.revoke_mobile_api_token(user.id, replacement.selector, now=104.0)
@@ -281,7 +357,9 @@ def test_privacy_export_contains_only_device_metadata_and_redaction_cleans_token
     user = users.create(email, "longenough", email_verified=True)
     linked = users.upsert_store_customer(email, customer_id)
     assert linked is not None and linked.id == user.id
-    raw_token, device = users.issue_mobile_api_token(user.id, "Privacy phone", now=10.0)
+    raw_token, device = issue_store_token(
+        users, user.id, "Privacy phone", now=10.0
+    )
 
     request = users.capture_shopify_data_request(
         shop_domain=STORE,
@@ -324,7 +402,7 @@ def test_privacy_export_contains_only_device_metadata_and_redaction_cleans_token
     assert users.export_shopify_privacy_request(request.request_id, now=22.0) is None
 
     direct = users.create("deleted-owner@example.com", "longenough")
-    users.issue_mobile_api_token(direct.id, "Deleted phone", now=30.0)
+    issue_store_token(users, direct.id, "Deleted phone", now=30.0)
     users.delete_user(direct.id)
     assert users._conn.execute(
         "SELECT COUNT(*) FROM mobile_api_tokens WHERE user_id = ?", (direct.id,)

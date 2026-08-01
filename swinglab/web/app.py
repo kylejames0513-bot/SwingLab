@@ -108,6 +108,7 @@ from .jobs import DONE, FAILED, Job, JobManager
 from .throttle import Throttle
 from .users import (
     MobileAPIToken,
+    MobileAPITokenAuthEpochError,
     MobileAPITokenLimitError,
     PRODUCT_EVENT_NAMES,
     GolferProfile,
@@ -3057,8 +3058,13 @@ def create_app(
             raise HTTPException(400, "A mobile device name is required.")
         try:
             raw_token, token = users.issue_mobile_api_token(
-                user.id, payload["label"]
+                user.id,
+                payload["label"],
+                expected_auth_epoch=user.auth_epoch,
             )
+        except MobileAPITokenAuthEpochError:
+            request.session.clear()
+            raise HTTPException(401, "Log in again before adding a device.") from None
         except MobileAPITokenLimitError as exc:
             raise HTTPException(409, str(exc)) from None
         except ValueError as exc:

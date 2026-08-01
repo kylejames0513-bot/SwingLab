@@ -193,6 +193,7 @@ MOBILE_API_TOKEN_TTL_S = 90 * 86400
 MOBILE_API_TOKEN_ACTIVE_LIMIT = 5
 _MOBILE_API_TOKEN_LABEL_MAX = 80
 _MOBILE_API_TOKEN_MAX_LENGTH = 256
+_MOBILE_API_TOKEN_LAST_USED_WRITE_INTERVAL_S = 60
 _MOBILE_API_TOKEN_DUMMY_HASH = hashlib.sha256(
     b"caddieinsight-mobile-token-dummy"
 ).hexdigest()
@@ -769,6 +770,10 @@ class ShopifySyncFencedError(RuntimeError):
 
 class MobileAPITokenLimitError(ValueError):
     """The account already has its bounded set of active device tokens."""
+
+
+class MobileAPITokenAuthEpochError(RuntimeError):
+    """The browser session changed before a device token could be issued."""
 
 
 class UserStore:
@@ -3805,6 +3810,7 @@ class UserStore:
         user_id: str,
         label: object,
         *,
+        expected_auth_epoch: int,
         now: float | None = None,
     ) -> tuple[str, MobileAPIToken]:
         """Issue one personal token and return its raw value exactly once.
@@ -3826,12 +3832,21 @@ class UserStore:
                 ).fetchone()
                 if user is None:
                     raise ValueError("Account is unavailable.")
+                current_auth_epoch = int(user["auth_epoch"] or 0)
+                if current_auth_epoch != int(expected_auth_epoch):
+                    # Session authentication happens before the request body is
+                    # consumed. Re-check the captured epoch inside this write
+                    # transaction so a password reset or ownership recovery
+                    # cannot race a slow token-issuance request.
+                    raise MobileAPITokenAuthEpochError(
+                        "The authenticated account session changed."
+                    )
                 active_count = int(
                     self._conn.execute(
                         "SELECT COUNT(*) FROM mobile_api_tokens"
                         " WHERE user_id = ? AND auth_epoch = ?"
                         " AND revoked_at IS NULL AND expires_at > ?",
-                        (user_id, int(user["auth_epoch"] or 0), issued_at),
+                        (user_id, current_auth_epoch, issued_at),
                     ).fetchone()[0]
                 )
                 if active_count >= MOBILE_API_TOKEN_ACTIVE_LIMIT:
@@ -3866,7 +3881,7 @@ class UserStore:
                             selector,
                             token_hash,
                             user_id,
-                            int(user["auth_epoch"] or 0),
+                            current_auth_epoch,
                             normalized_label,
                             issued_at,
                             expires_at,
@@ -3961,52 +3976,67 @@ class UserStore:
         candidate_hash = self._mobile_api_token_hash(selector, secret)
         observed_at = time.time() if now is None else float(now)
         with self._lock:
-            try:
-                self._conn.execute("BEGIN IMMEDIATE")
-                token_row = self._conn.execute(
-                    "SELECT * FROM mobile_api_tokens WHERE selector = ?",
-                    (selector,),
-                ).fetchone()
-                expected_hash = (
-                    str(token_row["token_hash"])
-                    if token_row is not None
-                    else _MOBILE_API_TOKEN_DUMMY_HASH
-                )
-                if not hmac.compare_digest(candidate_hash, expected_hash):
+            # Unknown or invalid credentials stay read-only. A random bearer
+            # flood must not reserve SQLite's single writer before a secret has
+            # even authenticated.
+            token_row = self._conn.execute(
+                "SELECT * FROM mobile_api_tokens WHERE selector = ?",
+                (selector,),
+            ).fetchone()
+            expected_hash = (
+                str(token_row["token_hash"])
+                if token_row is not None
+                else _MOBILE_API_TOKEN_DUMMY_HASH
+            )
+            if not hmac.compare_digest(candidate_hash, expected_hash):
+                return None
+            if token_row is None:
+                return None
+            user = self._conn.execute(
+                "SELECT * FROM users WHERE id = ?",
+                (token_row["user_id"],),
+            ).fetchone()
+            if (
+                user is None
+                or token_row["revoked_at"] is not None
+                or float(token_row["expires_at"]) <= observed_at
+                or int(token_row["auth_epoch"]) != int(user["auth_epoch"] or 0)
+            ):
+                return None
+
+            last_used_at = token_row["last_used_at"]
+            touch_before = (
+                observed_at - _MOBILE_API_TOKEN_LAST_USED_WRITE_INTERVAL_S
+            )
+            if last_used_at is None or float(last_used_at) <= touch_before:
+                try:
+                    # Device-management timestamps are operational metadata,
+                    # not an audit log. Sample them at most once per minute so
+                    # polling does not turn every authenticated read into a
+                    # SQLite write.
+                    self._conn.execute(
+                        "UPDATE mobile_api_tokens SET last_used_at = ?"
+                        " WHERE selector = ? AND user_id = ?"
+                        " AND revoked_at IS NULL AND expires_at > ?"
+                        " AND auth_epoch = ?"
+                        " AND EXISTS (SELECT 1 FROM users AS current_user"
+                        " WHERE current_user.id = mobile_api_tokens.user_id"
+                        " AND COALESCE(current_user.auth_epoch, 0) = ?)"
+                        " AND (last_used_at IS NULL OR last_used_at <= ?)",
+                        (
+                            observed_at,
+                            selector,
+                            user["id"],
+                            observed_at,
+                            int(user["auth_epoch"] or 0),
+                            int(user["auth_epoch"] or 0),
+                            touch_before,
+                        ),
+                    )
+                    self._conn.commit()
+                except Exception:
                     self._conn.rollback()
-                    return None
-                if token_row is None:
-                    self._conn.rollback()
-                    return None
-                user = self._conn.execute(
-                    "SELECT * FROM users WHERE id = ?",
-                    (token_row["user_id"],),
-                ).fetchone()
-                if (
-                    user is None
-                    or token_row["revoked_at"] is not None
-                    or float(token_row["expires_at"]) <= observed_at
-                    or int(token_row["auth_epoch"]) != int(user["auth_epoch"] or 0)
-                ):
-                    self._conn.rollback()
-                    return None
-                self._conn.execute(
-                    "UPDATE mobile_api_tokens SET last_used_at = ?"
-                    " WHERE selector = ? AND user_id = ?"
-                    " AND revoked_at IS NULL AND expires_at > ?"
-                    " AND auth_epoch = ?",
-                    (
-                        observed_at,
-                        selector,
-                        user["id"],
-                        observed_at,
-                        int(user["auth_epoch"] or 0),
-                    ),
-                )
-                self._conn.commit()
-            except Exception:
-                self._conn.rollback()
-                raise
+                    raise
         return self._from_row(user)
 
     def _shopify_identity_rows(
