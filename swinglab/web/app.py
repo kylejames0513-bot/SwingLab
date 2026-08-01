@@ -75,7 +75,7 @@ from ..caddie_brief import (
     payload_structure_is_valid,
 )
 from ..clubs import CLUB_LABELS
-from ..coaching import flag_keys
+from ..coaching import flag_keys, priority_rule_version
 from ..levels import LEVEL_LABELS
 from ..config import Config
 from ..diagrams import drill_animation, drill_diagram, trend_chart
@@ -4203,6 +4203,12 @@ def create_app(
                     "practice_evidence_enabled": (
                         cfg.proof_cycle.get("practice_evidence_enabled") is True
                     ),
+                },
+                # Non-sensitive feature state for an unambiguous activation
+                # and rollback check. No golfer, report, or result data leaks.
+                "club_aware_coaching": {
+                    "enabled": club_aware_enabled(),
+                    "priority_rule_version": priority_rule_version(cfg),
                 },
             }
         )

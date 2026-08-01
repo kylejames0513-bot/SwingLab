@@ -1,4 +1,4 @@
-# Club-aware coaching compatibility floor
+# Club-aware coaching release and compatibility floor
 
 CaddieInsight requires a canonical club for every analysis. This release makes
 that context safe to use in coaching while preserving every existing report
@@ -41,11 +41,13 @@ measured change.
 
 ## Release and rollback
 
-The compatibility-floor release ships `coaching.club_aware_enabled: false`.
-Only the literal YAML boolean `true` selects rule 2; strings, numbers, null, or
-missing values remain on rule 1. After the floor is deployed and legacy rule-1
-sidecars verify, a separate activation release may set the flag to `true`.
+The compatibility floor was merged at `7de2d5f` and verified on Railway as
+deployment `5708586587` with `coaching.club_aware_enabled: false`. The shipped
+configuration now sets the literal YAML boolean to `true`. Strings, numbers,
+null, or missing values still remain on rule 1.
 
-Rollback after activation returns the flag to `false` on this compatibility
-floor. Rule-2 targets remain readable and verifiable even while new baselines
-use rule 1.
+Rollback returns to `7de2d5f`. That floor understands both rule versions:
+rule-2 reports, dynamic cards, digests, and Proof targets remain readable and
+verifiable while new baselines return to rule 1. `/healthz` exposes only the
+non-sensitive enabled state and selected rule version so activation and
+rollback can be verified without creating or reading a golfer's session.

@@ -265,8 +265,9 @@ not change flags, values, severity, or thresholds. Proof Cycle targets retain
 the rule that selected them, so an existing baseline never changes focus after
 an upgrade or rollback. Each generated report carries the same additive rule
 marker, keeping its dynamic result card, gear match, and weekly plan aligned.
-The shipped floor keeps rule 2 disabled until the separate activation release;
-see `docs/club-aware-coaching.md`.
+The shipped configuration activates rule 2 after its compatibility floor was
+verified live; bare `Config()` defaults remain on rule 1 for safe embedding and
+tests. See `docs/club-aware-coaching.md`.
 
 Built to take real traffic on one machine:
 
@@ -840,7 +841,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | --- | --- |
 | `brand` | name, logo, colors, footer, watermark on/off, disclaimer, `support_text` (shown where users need the operator, e.g. password reset while email is unconfigured) |
 | `detection` | audio peak height / prominence / minimum gap between swings, optional calibrated relative-loudness noise gate (`relative_height`, shipped off), per-clip strike cap (`max_strikes`, shipped 8 — first N analyzed, honestly noted) |
-| `coaching` | exact-boolean club-aware priority activation (`club_aware_enabled`; compatibility floor shipped off), plus unchanged flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
+| `coaching` | exact-boolean club-aware priority activation (`club_aware_enabled`; shipped on after the compatibility floor, bare-code default off), plus unchanged flag thresholds: sway warning, tempo target/warning, consistency praise, head dip (`head_dip_warn_sw`), lead-arm angle (`lead_arm_warn_deg`), shoulder tilt (`shoulder_tilt_impact_min_deg`), finish balance (`finish_balance_warn_sw`) |
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
