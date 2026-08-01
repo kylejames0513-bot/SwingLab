@@ -410,6 +410,25 @@ def test_malformed_activation_value_preserves_legacy_digest(tmp_path):
     ) is not None
 
 
+@pytest.mark.parametrize(
+    ("configured_value", "enabled", "rule_version"),
+    [(True, True, 2), (False, False, 1), ("true", False, 1), (1, False, 1)],
+)
+def test_health_reports_exact_boolean_club_aware_state(
+    tmp_path, configured_value, enabled, rule_version
+):
+    cfg = Config()
+    cfg.coaching["club_aware_enabled"] = configured_value
+    app = create_app(cfg, sessions_dir=tmp_path / str(rule_version))
+
+    health = TestClient(app).get("/healthz").json()
+
+    assert health["club_aware_coaching"] == {
+        "enabled": enabled,
+        "priority_rule_version": rule_version,
+    }
+
+
 def test_digest_replays_rule_two_exact_context_after_rollback(tmp_path):
     cfg = Config()
     cfg.coaching["club_aware_enabled"] = False
