@@ -54,9 +54,10 @@ not initiate a production deployment as part of foundation work.
 
 ## Shopify customer-sync deployment gate
 
-Outbound Admin API customer sync ships with
-`shopify_customer_sync.enabled: false`. Admin credentials alone must not
-activate it, and deployment must not run the existing-user backfill.
+Bare-code installs keep outbound Admin API customer sync disabled. The
+checked-in CaddieInsight configuration enables it only after the verified
+binding and worker rollout; Admin credentials alone must never authorize a
+new activation or run the existing-user backfill.
 
 Before enabling the flag:
 

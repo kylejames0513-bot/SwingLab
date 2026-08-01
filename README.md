@@ -540,11 +540,13 @@ automatically by the webhook.
 #### App-first Shopify customer sync
 
 The complementary outbound bridge links verified CaddieInsight registrations
-through Shopify Admin GraphQL. It is disabled by default:
+through Shopify Admin GraphQL. Bare-code defaults stay disabled, while the
+checked-in CaddieInsight deployment configuration is enabled after verified
+binding and worker health:
 
 ```yaml
 shopify_customer_sync:
-  enabled: false
+  enabled: true
   auto_sync_new_users: true
 ```
 
