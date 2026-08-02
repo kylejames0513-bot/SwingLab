@@ -26,6 +26,8 @@
       "create_free_account": "Create free account",
       "drills": "Drills",
       "explore": "Explore",
+      "free_plan": "Free plan",
+      "game_plan_ready": "Your game plan is ready.",
       "gear": "Gear",
       "history": "History",
       "home": "Home",
@@ -33,6 +35,7 @@
       "main": "Main navigation",
       "menu": "Menu",
       "menu_title": "Menu",
+      "membership_status": "Membership status",
       "method": "Method",
       "my_game": "My Game",
       "orders": "Orders",
@@ -45,7 +48,8 @@
       "shop": "Shop",
       "signed_in": "Signed in to CaddieInsight",
       "start_free": "Start free",
-      "welcome_back": "Welcome back"
+      "welcome_back": "Welcome back",
+      "work_on_your_swing": "Let's work on your swing"
     }
   },
   "homepage": {

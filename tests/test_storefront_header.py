@@ -26,6 +26,8 @@ def test_storefront_header_has_one_state_aware_app_action():
     assert "app_session_url = app_url | append: '/auth/storefront/session'" in HEADER
     assert "'layout.navigation.analyze' | t" not in HEADER
     assert HEADER.count("'layout.navigation.analyze_a_swing' | t") == 2
+    assert "assign app_action_url = app_signup_url" in HEADER
+    assert HEADER.count(" data-app-primary-cta data-app-signed-out-label=") == 2
     assert "app_url | append: '/drills'" in HEADER
 
 
@@ -43,6 +45,26 @@ def test_storefront_account_menu_hydrates_from_the_app_session_safely():
     assert "node.textContent = authenticated ? welcomeText : '';" in HEADER
     assert "innerHTML" not in HEADER
     assert "data-app-auth-summary" in HEADER
+
+
+def test_storefront_homepage_prominently_welcomes_signed_in_members():
+    assert "request.page_type == 'index' and app_url != blank" in HEADER
+    assert 'class="sl-member-rail" data-app-member-rail' in HEADER
+    assert 'role="status"' in HEADER
+    assert "'layout.navigation.membership_status' | t" in HEADER
+    assert HEADER.count('aria-live="polite"') == 1
+    assert "data-app-member-tier" in HEADER
+    assert "data-app-member-greeting" in HEADER
+    assert "data-app-member-action" in HEADER
+    assert HEADER.count(" data-app-pro-sales-link") == 4
+    assert "node.hidden = isPro;" in HEADER
+    assert 'body:has(.sl-header[data-app-authenticated="true"]' in HEADER
+    assert "announcement.hidden = authenticated;" not in HEADER
+    assert "summary.textContent = authenticated ? welcomeText : accountLabel;" in HEADER
+    assert "node.dataset.appPro = isPro ? 'true' : 'false';" in HEADER
+    assert "isPro ? proActionLabel : analyzeLabel" in HEADER
+    assert ".sl-member-rail__greeting" in HEADER
+    assert "min-height: 44px" in HEADER
 
 
 def test_premium_header_is_scoped_to_home_and_the_pro_product():
@@ -88,10 +110,8 @@ def test_premium_header_is_scoped_to_home_and_the_pro_product():
     assert "'layout.navigation.explore' | t" in mobile_nav
     for label in ("method", "sample_report", "plans", "gear"):
         assert f"'layout.navigation.{label}' | t" in mobile_nav
-    assert (
-        "{% if premium_header %}{{ 'layout.navigation.analyze_free' | t }}"
-        in mobile_nav
-    )
+    assert "data-app-primary-cta" in mobile_nav
+    assert "{{ app_action_label }}" in mobile_nav
     assert ".sl-premium-chrome .sl-menu" in HEADER
 
 
@@ -138,6 +158,9 @@ def test_header_labels_describe_destinations():
     assert navigation["analyze_a_swing"] == "Analyze a swing"
     assert navigation["drills"] == "Drills"
     assert navigation["explore"] == "Explore"
+    assert navigation["free_plan"] == "Free plan"
+    assert navigation["game_plan_ready"] == "Your game plan is ready."
+    assert navigation["membership_status"] == "Membership status"
     assert navigation["my_game"] == "My Game"
     assert navigation["account"] == "Account"
     assert navigation["app_sign_in"] == "Sign in"
@@ -150,4 +173,5 @@ def test_header_labels_describe_destinations():
     assert navigation["pro_member"] == "Pro member"
     assert navigation["signed_in"] == "Signed in to CaddieInsight"
     assert navigation["welcome_back"] == "Welcome back"
+    assert navigation["work_on_your_swing"] == "Let's work on your swing"
     assert navigation["close_menu"] == "Close menu"

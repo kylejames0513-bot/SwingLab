@@ -16,6 +16,12 @@
   elsif request.page_type == 'product' and product.handle == 'swinglab-pro'
     assign premium_header = true
   endif
+  assign app_action_label = 'layout.navigation.analyze_a_swing' | t
+  assign app_action_url = app_url
+  if premium_header
+    assign app_action_label = 'layout.navigation.analyze_free' | t
+    assign app_action_url = app_signup_url
+  endif
   assign method_url = routes.root_url | append: '#how'
   assign sample_url = routes.root_url | append: '#report'
   assign plans_url = routes.root_url | append: '#plans'
@@ -36,10 +42,25 @@
         data-sl-header
         data-menu-id="{{ menu_id }}"
         {% if app_url != blank %}data-app-session-url="{{ app_session_url }}"
+        data-app-url="{{ app_url }}"
         data-app-account-label="{{ 'layout.navigation.account' | t | escape }}"
         data-app-welcome-label="{{ 'layout.navigation.welcome_back' | t | escape }}"
         data-app-signed-in-label="{{ 'layout.navigation.signed_in' | t | escape }}"
-        data-app-pro-label="{{ 'layout.navigation.pro_member' | t | escape }}"{% endif %}>
+        data-app-pro-label="{{ 'layout.navigation.pro_member' | t | escape }}"
+        data-app-free-label="{{ 'layout.navigation.free_plan' | t | escape }}"
+        data-app-ready-label="{{ 'layout.navigation.game_plan_ready' | t | escape }}"
+        data-app-analyze-label="{{ 'layout.navigation.analyze_a_swing' | t | escape }}"
+        data-app-pro-action-label="{{ 'layout.navigation.work_on_your_swing' | t | escape }}"{% endif %}>
+  {%- if request.page_type == 'index' and app_url != blank -%}
+    <aside class="sl-member-rail" data-app-member-rail data-app-pro="false" role="status" aria-label="{{ 'layout.navigation.membership_status' | t }}" aria-live="polite" aria-atomic="true" hidden>
+      <div class="sl-member-rail__inner">
+        <span class="sl-member-rail__dot" aria-hidden="true"></span>
+        <span class="sl-member-rail__tier" data-app-member-tier></span>
+        <span class="sl-member-rail__greeting" data-app-member-greeting></span>
+        <a class="sl-member-rail__action" href="{{ app_url }}" data-app-member-action></a>
+      </div>
+    </aside>
+  {%- endif -%}
   <div class="sl-header__inner">
     <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
       {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
@@ -54,7 +75,7 @@
       {%- if premium_header -%}
         <a href="{{ method_url }}" class="sl-header__link">{{ 'layout.navigation.method' | t }}</a>
         <a href="{{ sample_url }}" class="sl-header__link">{{ 'layout.navigation.sample_report' | t }}</a>
-        <a href="{{ plans_link_url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.plans' | t }}</a>
+        <a href="{{ plans_link_url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.plans' | t }}</a>
         <a href="{{ gear_url }}" class="sl-header__link">{{ 'layout.navigation.gear' | t }}</a>
       {%- else -%}
         {%- if app_url != blank -%}
@@ -72,7 +93,7 @@
         {%- endif -%}
         <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
         {%- if pro_product != blank -%}
-          <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
+          <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
         {%- endif -%}
       {%- endif -%}
     </nav>
@@ -90,7 +111,7 @@
               <a href="{{ app_signup_url }}">{{ 'layout.navigation.create_free_account' | t }}</a>
             </div>
             <div class="sl-app-auth__state" data-app-auth-signed-in hidden>
-              <span class="sl-app-auth__welcome" data-app-auth-welcome aria-live="polite"></span>
+              <span class="sl-app-auth__welcome" data-app-auth-welcome></span>
               <a href="{{ app_account_url }}">{{ 'layout.navigation.caddieinsight_profile' | t }}</a>
               {%- if premium_header -%}
                 <a href="{{ app_history_url }}">{{ 'layout.navigation.history' | t }}</a>
@@ -115,7 +136,7 @@
       </a>
 
       {%- if app_url != blank -%}
-        <a href="{{ app_url }}" class="sl-header__cta sl-header__app">{% if premium_header %}{{ 'layout.navigation.analyze_free' | t }}{% else %}{{ 'layout.navigation.analyze_a_swing' | t }}{% endif %}</a>
+        <a href="{{ app_action_url }}" class="sl-header__cta sl-header__app" data-app-primary-cta data-app-signed-out-label="{{ app_action_label | escape }}" data-app-signed-out-url="{{ app_action_url }}">{{ app_action_label }}</a>
       {%- endif -%}
 
       <button class="sl-header__toggle" type="button"
@@ -142,7 +163,7 @@
 
     <nav class="sl-menu__nav" aria-label="{{ 'layout.navigation.main' | t }}">
       {%- if app_url != blank -%}
-        <a href="{{ app_url }}" class="sl-header__cta sl-menu__cta" data-menu-link>{% if premium_header %}{{ 'layout.navigation.analyze_free' | t }}{% else %}{{ 'layout.navigation.analyze_a_swing' | t }}{% endif %}</a>
+        <a href="{{ app_action_url }}" class="sl-header__cta sl-menu__cta" data-app-primary-cta data-app-signed-out-label="{{ app_action_label | escape }}" data-app-signed-out-url="{{ app_action_url }}" data-menu-link>{{ app_action_label }}</a>
       {%- endif -%}
 
       {%- if premium_header -%}
@@ -154,7 +175,7 @@
           <a href="{{ sample_url }}" class="sl-menu__link" data-menu-link>
             <span>{{ 'layout.navigation.sample_report' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
-          <a href="{{ plans_link_url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
+          <a href="{{ plans_link_url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
             <span>{{ 'layout.navigation.plans' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
           <a href="{{ gear_url }}" class="sl-menu__link" data-menu-link>
@@ -185,7 +206,7 @@
             <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
           {%- if pro_product != blank -%}
-            <a href="{{ pro_product.url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
+            <a href="{{ pro_product.url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
               <span>{{ 'layout.navigation.pro' | t }}</span><span aria-hidden="true">&rarr;</span>
             </a>
           {%- endif -%}
@@ -204,7 +225,7 @@
           </a>
         </div>
         <div class="sl-app-auth__state" data-app-auth-signed-in hidden>
-          <span class="sl-app-auth__welcome" data-app-auth-welcome aria-live="polite"></span>
+          <span class="sl-app-auth__welcome" data-app-auth-welcome></span>
           <a href="{{ app_account_url }}" class="sl-menu__link" data-menu-link>
             <span>{{ 'layout.navigation.caddieinsight_profile' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
@@ -225,6 +246,79 @@
 
 {% stylesheet %}
 html.sl-menu-open { overflow: hidden; }
+.sl-announcement[hidden],
+.sl-member-rail[hidden],
+[data-app-pro-sales-link][hidden] { display: none; }
+body:has(.sl-header[data-app-authenticated="true"] [data-app-member-rail]) .sl-announcement { display: none; }
+.sl-member-rail {
+  width: calc(100% + var(--sl-pad-x) + var(--sl-pad-x));
+  min-height: 38px;
+  margin-inline: calc(var(--sl-pad-x) * -1);
+  padding: 7px var(--sl-pad-x);
+  background: #050d09;
+  border-bottom: 1px solid rgba(245, 242, 233, .1);
+  color: rgba(245, 242, 233, .72);
+  font-size: 12.5px;
+}
+.sl-member-rail[data-app-pro="true"] {
+  background: linear-gradient(90deg, #050d09 0%, #0b2116 50%, #050d09 100%);
+  border-bottom-color: rgba(117, 213, 155, .24);
+}
+.sl-member-rail__inner {
+  width: 100%;
+  max-width: 1280px;
+  min-height: 24px;
+  margin: 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  text-align: center;
+}
+.sl-member-rail__dot {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #75d59b;
+  box-shadow: 0 0 0 5px rgba(117, 213, 155, .1);
+}
+.sl-member-rail__tier {
+  flex: 0 0 auto;
+  color: #ffad62;
+  font-family: var(--sl-font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: .13em;
+  text-transform: uppercase;
+}
+.sl-member-rail[data-app-pro="true"] .sl-member-rail__tier { color: #75d59b; }
+.sl-member-rail__greeting {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(245, 242, 233, .78);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-member-rail__action {
+  min-height: 32px;
+  padding: 6px 10px;
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  border-radius: 999px;
+  color: #f5f2e9;
+  font-weight: 700;
+  text-decoration: underline;
+  text-decoration-color: rgba(245, 242, 233, .36);
+  text-underline-offset: 3px;
+  white-space: nowrap;
+}
+.sl-member-rail__action:hover {
+  background: rgba(255, 255, 255, .07);
+  color: #ffad62;
+  text-decoration-color: currentColor;
+}
 .sl-header {
   position: sticky;
   top: 0;
@@ -681,6 +775,36 @@ html.sl-menu-open { overflow: hidden; }
   .sl-header__cart { padding: 5px 8px 5px 10px; }
   .sl-header__cart-count { min-width: 20px; }
 }
+@media (max-width: 560px) {
+  .sl-member-rail {
+    width: calc(100% + 28px);
+    margin-inline: -14px;
+    padding: 7px 14px 8px;
+  }
+  .sl-member-rail__inner {
+    min-height: 44px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 3px 8px;
+    text-align: left;
+  }
+  .sl-member-rail__greeting {
+    order: 3;
+    width: 100%;
+    padding-left: 14px;
+  }
+  .sl-member-rail__action {
+    min-height: 44px;
+    margin-left: auto;
+  }
+}
+@media (max-width: 390px) {
+  .sl-member-rail {
+    width: calc(100% + 24px);
+    margin-inline: -12px;
+    padding-inline: 12px;
+  }
+}
 @media (prefers-reduced-motion: reduce) {
   .sl-header__chevron { transition: none; }
   .sl-menu[open] .sl-menu__panel { animation: none; }
@@ -791,17 +915,25 @@ html.sl-menu-open { overflow: hidden; }
 
       function setAppAuthState(payload) {
         var authenticated = Boolean(payload && payload.authenticated === true);
+        var isPro = authenticated && payload.is_pro === true;
         var displayName = authenticated && typeof payload.display_name === 'string'
           ? payload.display_name.trim()
           : '';
         var summary = header.querySelector('[data-app-auth-summary]');
+        var memberRail = header.querySelector('[data-app-member-rail]');
+        var appUrl = header.getAttribute('data-app-url') || '';
         var accountLabel = header.getAttribute('data-app-account-label')
           || (summary ? summary.textContent.trim() : '');
         var welcomeLabel = header.getAttribute('data-app-welcome-label') || accountLabel;
         var signedInLabel = header.getAttribute('data-app-signed-in-label') || accountLabel;
         var proLabel = header.getAttribute('data-app-pro-label') || '';
+        var freeLabel = header.getAttribute('data-app-free-label') || signedInLabel;
+        var readyLabel = header.getAttribute('data-app-ready-label') || signedInLabel;
+        var analyzeLabel = header.getAttribute('data-app-analyze-label') || signedInLabel;
+        var proActionLabel = header.getAttribute('data-app-pro-action-label') || analyzeLabel;
         var welcomeText = displayName ? welcomeLabel + ', ' + displayName : signedInLabel;
-        if (authenticated && payload.is_pro === true && proLabel) {
+        var memberGreeting = displayName ? welcomeLabel + ', ' + displayName + '.' : readyLabel;
+        if (isPro && proLabel) {
           welcomeText += ' · ' + proLabel;
         }
 
@@ -814,13 +946,36 @@ html.sl-menu-open { overflow: hidden; }
         eachAppAuthNode('[data-app-auth-welcome]', function (node) {
           node.textContent = authenticated ? welcomeText : '';
         });
+        eachAppAuthNode('[data-app-member-rail]', function (node) {
+          node.hidden = !authenticated;
+          node.dataset.appPro = isPro ? 'true' : 'false';
+        });
+        eachAppAuthNode('[data-app-member-tier]', function (node) {
+          node.textContent = authenticated ? (isPro ? proLabel : freeLabel) : '';
+        });
+        eachAppAuthNode('[data-app-member-greeting]', function (node) {
+          node.textContent = authenticated ? memberGreeting : '';
+        });
+        eachAppAuthNode('[data-app-member-action]', function (node) {
+          node.textContent = authenticated ? (isPro ? proActionLabel : analyzeLabel) + ' \u2192' : '';
+        });
+        eachAppAuthNode('[data-app-pro-sales-link]', function (node) {
+          node.hidden = isPro;
+        });
+        eachAppAuthNode('[data-app-primary-cta]', function (node) {
+          var signedOutLabel = node.getAttribute('data-app-signed-out-label') || analyzeLabel;
+          var signedOutUrl = node.getAttribute('data-app-signed-out-url') || appUrl;
+          node.textContent = authenticated
+            ? (isPro ? proActionLabel : analyzeLabel)
+            : signedOutLabel;
+          node.setAttribute('href', authenticated ? appUrl : signedOutUrl);
+        });
 
         if (summary) {
-          summary.textContent = authenticated
-            ? (displayName ? welcomeLabel + ', ' + displayName : signedInLabel)
-            : accountLabel;
+          summary.textContent = authenticated ? welcomeText : accountLabel;
         }
         header.dataset.appAuthenticated = authenticated ? 'true' : 'false';
+        header.dataset.appPro = isPro ? 'true' : 'false';
       }
 
       function refreshAppSession() {
