@@ -11,12 +11,12 @@
     border-radius: var(--sl-radius-xl);
     background:
       radial-gradient(circle at 87% 12%, rgba(255, 203, 138, .18), transparent 17rem),
-      linear-gradient(135deg, #0d3422, #185838);
+      var(--sl-premium-gradient);
     color: #fff;
     box-shadow: var(--sl-shadow-lg);
   }
   .account-header__copy { position: relative; z-index: 1; max-width: 760px; }
-  .account-header .sl-eyebrow { margin-bottom: 8px; color: #ffd09d; }
+  .account-header .sl-eyebrow { margin-bottom: 8px; color: var(--sl-premium-accent); }
   .account-header h1 {
     margin: 0;
     color: #fff;
@@ -40,10 +40,13 @@
   .account-header .account-plan--free { background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255, 255, 255, .24); }
   .account-notice { padding: 15px 18px; border: 1px solid #bcd7c5; border-left: 4px solid var(--sl-green-btn); border-radius: 11px; background: #e9f5ec; color: #124529; }
   .account-notice strong { color: var(--sl-green); }
-  .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+  .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: stretch; }
   .account-card {
     min-width: 0;
+    height: 100%;
     padding: clamp(21px, 3.5vw, 30px);
+    display: flex;
+    flex-direction: column;
     border: 1px solid var(--sl-border);
     border-radius: var(--sl-radius-lg);
     background: var(--sl-bg-card);
@@ -107,7 +110,6 @@
     .danger-link { white-space: normal; }
   }
   @media (max-width: 540px) {
-    main { padding-inline: 14px; }
     .account-shell { gap: 16px; }
     .account-header, .account-card { border-radius: 19px; }
     .account-row { grid-template-columns: 1fr; gap: 3px; }

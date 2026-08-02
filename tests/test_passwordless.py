@@ -124,7 +124,7 @@ def verified_password_signup(
 def test_login_page_leads_with_email_when_delivery_on(app, outbox):
     client = TestClient(app)
     landing = client.get("/").text
-    assert "Create a free account" in landing
+    assert "Analyze a swing free" in landing
     assert "Already have an account?" in landing
     assert 'href="/signup"' in landing and 'href="/login"' in landing
 
@@ -426,7 +426,7 @@ def test_wrong_code_does_not_sign_in(app, outbox):
     resp = enter_code(client, "000000", "new@example.com")
     assert resp.status_code == 200 and "didn't match" in unescape(resp.text)
     assert get_user(client, "new@example.com") is None  # nothing created
-    assert "Create a free account" in client.get("/").text  # logged out
+    assert "Analyze a swing free" in client.get("/").text  # logged out
 
 
 def test_code_cannot_be_replayed_after_success(app, outbox):
@@ -651,7 +651,7 @@ def test_without_email_the_password_flows_are_exactly_as_before(app, monkeypatch
     monkeypatch.delenv("SHOPIFY_WEBHOOK_SECRET", raising=False)
     client = TestClient(app)
     landing = client.get("/").text
-    assert "Create a free account" in landing and "Sign in" in landing
+    assert "Analyze a swing free" in landing and "Sign in" in landing
     login = client.get("/login").text
     signup = client.get("/signup").text
     assert "Sign in with your password" in login

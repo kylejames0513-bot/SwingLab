@@ -55,9 +55,9 @@ def upload(client, filename="swing.mov"):
 def test_logged_out_visitors_see_landing_and_cannot_analyze(app):
     client = TestClient(app)
     html = client.get("/").text
-    assert "Create a free account" in html and "Sign in" in html
-    assert "2 full analyses every month" in html
-    assert "Automated estimates from a single camera" in html
+    assert "Analyze a swing free" in html and "Sign in" in html
+    assert "2 reports / month" in html
+    assert "Supported 2D movement and timing estimates from phone video" in html
     assert upload(client).status_code == 401
     assert client.get("/sessions", follow_redirects=False).status_code == 303
     assert client.get("/api/sessions").status_code == 401
@@ -83,7 +83,8 @@ def test_header_connects_store_app_and_account_paths(tmp_path, monkeypatch):
     assert 'src="https://cdn.example.test/caddieinsight-logo.png"' in page
     assert "Analyze a swing" in page
     assert "App sign in" not in page
-    assert "Start free" not in page
+    assert 'aria-label="Membership status"' in page
+    assert "Start free" in page
     assert ">Analyze</a>" not in page
     assert 'aria-controls="sl-mobile-menu"' in page
     assert 'aria-haspopup="dialog"' in page
@@ -122,7 +123,8 @@ def test_free_account_landing_uses_configured_brand_and_allowance(tmp_path):
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
 
     page = client.get("/").text
-    assert "Create a free AceCoach account for 7 full analyses" in page
+    assert "7 reports / month" in page
+    assert "AceCoach example analysis" in page
     assert "CaddieInsight" not in page
 
 
@@ -132,7 +134,7 @@ def test_signup_login_logout_flow(app):
     assert "Analyze your swing" in client.get("/").text
 
     client.post("/logout")
-    assert "Create a free account" in client.get("/").text
+    assert "Analyze a swing free" in client.get("/").text
 
     bad = client.post(
         "/login", data={"email": "kyle@example.com", "password": "wrongwrong"}

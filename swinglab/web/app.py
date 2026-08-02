@@ -1113,8 +1113,8 @@ def create_app(
                 "start_url": "/today",
                 "scope": "/",
                 "display": "standalone",
-                "background_color": "#f6f1e7",
-                "theme_color": "#123f32",
+                "background_color": "#f7f5f0",
+                "theme_color": "#07130d",
                 "icons": [
                     {
                         "src": "/static/pwa-icon.svg",
@@ -2475,6 +2475,8 @@ def create_app(
         try:
             if not primary_goal.strip():
                 raise ValueError("Choose a main goal for your golfer profile.")
+            if not preferred_club.strip():
+                raise ValueError("Choose a club for your golfer profile.")
             users.upsert_golfer_profile(
                 user.id,
                 display_name=display_name,

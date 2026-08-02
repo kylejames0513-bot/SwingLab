@@ -27,7 +27,7 @@ def _profile_values(**overrides):
         "sessions_per_week": 2,
         "handedness": "right",
         "camera_angle": "face-on",
-        "preferred_club": "",
+        "preferred_club": "driver",
     }
     values.update(overrides)
     return values
@@ -157,7 +157,7 @@ def test_display_name_normalizes_and_omission_preserves_it(store):
 
     assert profile.display_name == "Kyle O'Neil"
     assert profile.handicap_range is None
-    assert profile.preferred_club is None
+    assert profile.preferred_club == "driver"
     assert profile.is_complete
 
     preserved = store.upsert_golfer_profile(
@@ -167,6 +167,19 @@ def test_display_name_normalizes_and_omission_preserves_it(store):
     assert preserved.display_name == "Kyle O'Neil"
     assert preserved.primary_goal == "tempo"
     assert preserved.is_complete
+
+
+def test_profile_requires_club_context_before_it_is_complete(store):
+    user = store.create("club-context@example.com", "longenough")
+
+    profile = store.upsert_golfer_profile(
+        user.id,
+        display_name="Kyle",
+        **_profile_values(preferred_club=""),
+    )
+
+    assert profile.preferred_club is None
+    assert not profile.is_complete
 
 
 @pytest.mark.parametrize(

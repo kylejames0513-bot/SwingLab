@@ -4,6 +4,7 @@ import mimetypes
 from io import BytesIO
 from pathlib import Path
 
+import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
 
@@ -32,13 +33,11 @@ def test_landing_leads_with_one_primary_journey_and_auth_ctas(tmp_path):
     html = response.text
 
     assert response.status_code == 200
-    assert (
-        '<h1 id="landing-title">One swing priority. One practice plan. '
-        "Proof when you re-film.</h1>"
-    ) in html
+    assert '<h1 id="landing-title">Practice the move that matters.</h1>' in html
     assert '<a class="button landing-primary" href="/signup">' in html
-    assert ">Create a free account</a>" in html
-    assert '<a class="button secondary" href="/login">Sign in</a>' in html
+    assert "Analyze a swing free" in html
+    assert '<a class="button hero-secondary" href="/sample-report/">' in html
+    assert '<a href="/login">Sign in to continue your coaching loop.</a>' in html
 
 
 def test_landing_uses_real_sample_asset_with_clear_disclosure(tmp_path):
@@ -56,26 +55,26 @@ def test_landing_uses_real_sample_asset_with_clear_disclosure(tmp_path):
     assert sample.content[:4] == b"\x89PNG"
 
 
-def test_landing_uses_clean_range_scene_after_real_product_proof(tmp_path):
+def test_landing_uses_storefront_hero_without_decorative_capture_frame(tmp_path):
     _client, response = landing(tmp_path)
     html = " ".join(response.text.split())
 
-    atmosphere = 'src="/static/homepage-range-atmosphere-v1.webp"'
-    assert atmosphere in html
+    desktop = 'src="/static/caddieinsight-range-hero.webp"'
+    mobile = 'srcset="/static/caddieinsight-range-hero-mobile.webp"'
+    assert desktop in html
+    assert mobile in html
     assert (
-        'alt="Golfer filmed face-on by a phone on a hip-height tripod at sunrise"'
+        'alt="Golfer completing a driver swing beside a phone on a tripod at '
+        'a dusk driving range"'
     ) in html
-    assert 'width="1600" height="900" loading="lazy" decoding="async"' in html
-    assert (
-        "The product proof remains the complete sample report above; the range "
-        "scene is illustrative."
-    ) in html
+    assert 'width="1672" height="941" decoding="async" fetchpriority="high"' in html
+    assert "landing-hero__capture" not in html
+    assert "sl-hero__capture" not in html
     assert "ai-generated" not in html.lower()
+    assert "artificial intelligence" not in html.lower()
     assert "synthetic" not in html.lower()
-    assert "aspect-ratio: 16 / 9;" in response.text
-    assert ".atmosphere-media { aspect-ratio: 4 / 3; }" in response.text
-    assert html.index('src="/sample-report/media/strip_s1.png"') < html.index(
-        atmosphere
+    assert html.index(desktop) < html.index(
+        'src="/sample-report/media/strip_s1.png"'
     ) < html.index('id="journey-title"')
     assert (
         "Illustrated demonstration report built through the same report engine. "
@@ -83,9 +82,18 @@ def test_landing_uses_clean_range_scene_after_real_product_proof(tmp_path):
     ) in html
 
 
-def test_atmosphere_asset_is_local_optimized_and_public(tmp_path):
+@pytest.mark.parametrize(
+    ("asset_path", "expected_size"),
+    (
+        ("/static/caddieinsight-range-hero.webp", (1672, 941)),
+        ("/static/caddieinsight-range-hero-mobile.webp", (1122, 1402)),
+    ),
+)
+def test_storefront_hero_assets_are_local_optimized_and_public(
+    tmp_path, asset_path, expected_size
+):
     client, _response = landing(tmp_path)
-    asset = client.get("/static/homepage-range-atmosphere-v1.webp")
+    asset = client.get(asset_path)
 
     assert asset.status_code == 200
     assert asset.headers["content-type"] == "image/webp"
@@ -93,21 +101,21 @@ def test_atmosphere_asset_is_local_optimized_and_public(tmp_path):
     cache_control = asset.headers.get("cache-control", "").lower()
     assert "private" not in cache_control and "no-store" not in cache_control
     assert asset.content[:4] == b"RIFF" and asset.content[8:12] == b"WEBP"
-    assert len(asset.content) <= 300_000
+    assert len(asset.content) <= 150_000
     with Image.open(BytesIO(asset.content)) as image:
         assert image.format == "WEBP"
-        assert image.size == (1600, 900)
+        assert image.size == expected_size
 
     assert asset.headers.get("etag")
     assert asset.headers.get("last-modified")
     unchanged = client.get(
-        "/static/homepage-range-atmosphere-v1.webp",
+        asset_path,
         headers={"If-None-Match": asset.headers["etag"]},
     )
     assert unchanged.status_code == 304
 
 
-def test_atmosphere_asset_mime_type_does_not_depend_on_host_database(
+def test_storefront_hero_asset_mime_type_does_not_depend_on_host_database(
     tmp_path, monkeypatch
 ):
     isolated_db = mimetypes.MimeTypes(filenames=())
@@ -117,7 +125,7 @@ def test_atmosphere_asset_mime_type_does_not_depend_on_host_database(
     assert mimetypes.guess_type("asset.webp", strict=True)[0] is None
 
     client, _response = landing(tmp_path)
-    asset = client.get("/static/homepage-range-atmosphere-v1.webp")
+    asset = client.get("/static/caddieinsight-range-hero.webp")
 
     assert asset.status_code == 200
     assert asset.headers["content-type"] == "image/webp"
@@ -128,10 +136,10 @@ def test_landing_explains_the_full_loop_and_measurement_boundary(tmp_path):
     html = response.text
 
     steps = [
-        html.index("<h3>Film</h3>"),
-        html.index("<h3>Coach</h3>"),
-        html.index("<h3>Practice</h3>"),
-        html.index("<h3>Re-film</h3>"),
+        html.index("<h3>Choose the club</h3>"),
+        html.index("<h3>Film a repeatable view</h3>"),
+        html.index("<h3>Work one plan</h3>"),
+        html.index("<h3>Re-film to prove it</h3>"),
     ]
     assert steps == sorted(steps)
     assert "Phone-video timing plus 2D body movement" in html

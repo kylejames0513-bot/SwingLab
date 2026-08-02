@@ -6,6 +6,7 @@
   .setup-card h1 { max-width: 700px; margin: 0 0 12px; color: var(--sl-green); font-size: clamp(2rem, 5vw, 3.35rem); line-height: 1.02; letter-spacing: -.045em; }
   .setup-lead { max-width: 700px; margin: 0 0 28px; color: var(--sl-ink-soft); font-size: 1.02rem; }
   .setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+  .setup-grid__club { grid-column: 1 / -1; }
   .setup-grid .full { grid-column: 1 / -1; }
   .setup-grid > div > label, .setup-grid legend { display: block; margin: 0 0 7px; color: var(--sl-ink); font-weight: 750; }
   .setup-grid fieldset { min-width: 0; margin: 6px 0; padding: 0; border: 0; }
@@ -134,9 +135,10 @@
           <label for="camera">Usual camera angle</label>
           <select id="camera" name="camera_angle"><option value="face-on" {% if angle == 'face-on' %}selected{% endif %}>Face-on (recommended)</option><option value="dtl" {% if angle == 'dtl' %}selected{% endif %}>Down the line</option></select>
         </div>
-        <div>
-          <label for="club">Club you work on most</label>
-          <select id="club" name="preferred_club"><option value="" {% if not club %}selected{% endif %}>Not set</option><option value="driver" {% if club == 'driver' %}selected{% endif %}>Driver</option><option value="fairway-wood" {% if club == 'fairway-wood' %}selected{% endif %}>Fairway wood</option><option value="hybrid" {% if club == 'hybrid' %}selected{% endif %}>Hybrid</option><option value="iron" {% if club == 'iron' %}selected{% endif %}>Iron</option><option value="wedge" {% if club == 'wedge' %}selected{% endif %}>Wedge</option></select>
+        <div class="setup-grid__club">
+          <label for="club">Primary club for coaching <span aria-hidden="true">*</span></label>
+          <select id="club" name="preferred_club" aria-describedby="club-help" required><option value="" disabled {% if not club %}selected{% endif %}>Choose a club</option><option value="driver" {% if club == 'driver' %}selected{% endif %}>Driver</option><option value="fairway-wood" {% if club == 'fairway-wood' %}selected{% endif %}>Fairway wood</option><option value="hybrid" {% if club == 'hybrid' %}selected{% endif %}>Hybrid</option><option value="iron" {% if club == 'iron' %}selected{% endif %}>Iron</option><option value="wedge" {% if club == 'wedge' %}selected{% endif %}>Wedge</option></select>
+          <p class="hint" id="club-help">Required because iron, wedge, wood, and driver swings need different coaching context.</p>
         </div>
       </div>
       <div class="consent">

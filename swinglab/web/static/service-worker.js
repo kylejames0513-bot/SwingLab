@@ -4,7 +4,7 @@
  * in Cache Storage.  A missed network request gets a helpful offline page;
  * it does not pretend that an upload or current coaching data is available.
  */
-const CACHE_NAME = "caddieinsight-public-shell-v2";
+const CACHE_NAME = "caddieinsight-public-shell-v3";
 const PUBLIC_SHELL = ["/offline"];
 
 function canCachePublicShell(response) {
