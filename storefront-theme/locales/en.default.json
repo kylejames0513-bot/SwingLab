@@ -4,6 +4,10 @@
       "skip_to_content": "Skip to content"
     }
   },
+  "seo": {
+    "homepage_title": "CaddieInsight | Phone-video swing coaching",
+    "homepage_description": "Turn one golf swing video into one prioritized coaching plan, a measurable practice target, and a clearer next range session."
+  },
   "layout": {
     "cart": {
       "count_one": "Cart, 1 item",
@@ -42,19 +46,17 @@
   },
   "homepage": {
     "hero": {
-      "image_label": "AI-generated golfer filming a driver swing at a dawn driving range",
+      "image_label": "Golfer filming a driver swing at a dawn driving range",
       "image_placeholder": "Add approved premium range artwork",
-      "art_label": "AI-generated scene",
-      "art_disclosure": "AI-generated range scene — not a customer, testimonial, or analyzed swing. Product signals are a clearly labeled synthetic example.",
       "proof_label": "Free-plan proof points",
-      "signal_label": "Synthetic CaddieInsight analysis preview",
-      "signal_status": "Synthetic sample",
+      "signal_label": "CaddieInsight example analysis",
+      "signal_status": "Example session",
       "signal_ready": "Plan ready",
-      "trace_label": "Illustrative movement trace for the synthetic sample",
+      "trace_label": "Illustrative movement trace for the example session",
       "club_label": "Selected club",
       "priority_label": "Coaching priority",
       "target_label": "Practice target",
-      "signal_disclosure": "Illustrative interface using synthetic sample inputs. Open the linked report to see real-engine output."
+      "signal_disclosure": "Example interface using demonstration data. Open the linked report to see the complete coaching flow."
     },
     "method": {
       "eyebrow": "THE CADDIEINSIGHT METHOD",
@@ -66,17 +68,17 @@
     "report": {
       "eyebrow": "INSIDE THE REPORT",
       "file_label": "Illustrated preview",
-      "sample_label": "Synthetic inputs",
+      "sample_label": "Demonstration data",
       "club_label": "Club",
       "club_value": "Iron",
       "coach_label": "Coach",
       "coach_value": "One priority first",
       "practice_label": "Practice",
       "practice_value": "One plan with a pass mark",
-      "image_alt": "Illustrated key-position preview of the linked synthetic CaddieInsight sample report",
+      "image_alt": "Illustrated key-position preview of the CaddieInsight demonstration report",
       "priority_note": "The report explains why one supported movement comes first.",
       "plan_chip": "Measured plan included",
-      "disclosure": "Illustrated preview of the linked synthetic sample report. The linked full report was generated from synthetic measurements through the real report engine; this preview is not engine output, a customer result, or a testimonial."
+      "disclosure": "Illustrated preview of a demonstration report built through the same report engine. It is not a customer result or testimonial."
     }
   },
   "products": {

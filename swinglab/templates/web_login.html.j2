@@ -141,21 +141,6 @@
     object-fit: cover;
     object-position: 50% 50%;
   }
-  .atmosphere-badge {
-    position: absolute;
-    top: 16px;
-    left: 16px;
-    padding: 7px 10px;
-    color: #fff;
-    background: rgba(7, 31, 21, .92);
-    border: 1px solid rgba(255, 255, 255, .32);
-    border-radius: 999px;
-    font-family: var(--sl-font-mono);
-    font-size: .65rem;
-    font-weight: 700;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
   .atmosphere-caption {
     padding: clamp(24px, 4.6vw, 42px);
     display: grid;
@@ -174,13 +159,6 @@
     text-wrap: balance;
   }
   .atmosphere-caption__copy > p:first-child { margin: 2px 0 0; }
-  .atmosphere-disclosure {
-    margin: 20px 0 0;
-    padding-top: 14px;
-    color: #d7e3db;
-    border-top: 1px solid rgba(255, 255, 255, .16);
-    font-size: .78rem;
-  }
   .landing-section-head { max-width: 690px; }
   .landing-section-head h2 {
     margin: 0;
@@ -286,7 +264,6 @@
     .preview-read, .scope-grid, .scope-panel { grid-template-columns: 1fr; }
     .atmosphere-caption { grid-template-columns: 1fr; }
     .atmosphere-media { aspect-ratio: 4 / 3; }
-    .atmosphere-badge { top: 10px; left: 10px; }
     .flow-list { grid-template-columns: 1fr; }
     .flow-list li { min-height: 0; }
     .flow-list li:not(:last-child)::after { content: "\2193"; }
@@ -322,7 +299,7 @@
           <a class="preview-media" href="/sample-report/"
              aria-label="Open the full illustrated sample report">
             <img src="/sample-report/media/strip_s1.png"
-                 alt="Illustrated key-position strip from the synthetic sample swing report"
+                 alt="Illustrated key-position strip from the {{ brand.name }} sample swing report"
                  width="960" height="480" decoding="async">
           </a>
           <div class="preview-read" aria-label="Report structure">
@@ -330,9 +307,9 @@
             <div><span>Practice</span><strong>One plan with a pass mark</strong></div>
           </div>
         </div>
-        <figcaption class="preview-caption">Illustrated sample generated from
-          synthetic measurements through the same report engine. It is not a
-          customer result or testimonial. <a href="/sample-report/">See a sample report first</a>.</figcaption>
+        <figcaption class="preview-caption">Illustrated demonstration report built
+          through the same report engine. It is not a customer result or
+          testimonial. <a href="/sample-report/">See a sample report first</a>.</figcaption>
       </figure>
     </section>
 
@@ -340,9 +317,8 @@
       <figure class="atmosphere-figure">
         <div class="atmosphere-media">
           <img src="/static/homepage-range-atmosphere-v1.webp"
-               alt="AI-generated scene of an anonymous golfer filmed face-on by a phone on a hip-height tripod at sunrise"
+               alt="Golfer filmed face-on by a phone on a hip-height tripod at sunrise"
                width="1600" height="900" loading="lazy" decoding="async">
-          <span class="atmosphere-badge">AI-generated atmosphere</span>
         </div>
         <figcaption class="atmosphere-caption">
           <div>
@@ -352,10 +328,8 @@
           <div class="atmosphere-caption__copy">
             <p>A phone at hip height, your full body in frame, and the same
               club and camera context make the next clip more comparable. The
-              product proof remains the real-engine sample report above.</p>
-            <p class="atmosphere-disclosure">AI-generated range scene for
-              atmosphere only — not a customer, testimonial, or analyzed
-              swing.</p>
+              product proof remains the complete sample report above; the range
+              scene is illustrative.</p>
           </div>
         </figcaption>
       </figure>

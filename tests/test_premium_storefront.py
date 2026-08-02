@@ -39,9 +39,9 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
     assert hero["secondary_label"] == "Explore the sample report"
     assert hero["secondary_url"] == "https://app.caddieinsight.com/sample-report/"
     assert [hero[f"chip{number}"] for number in range(1, 4)] == [
-        "1 FULL REPORT / MONTH",
-        "NO CREDIT CARD",
-        "CLUB CONTEXT SAVED",
+        "1 REPORT / MONTH",
+        "NO CARD",
+        "CLUB SAVED",
     ]
 
     stats = INDEX["sections"]["stats"]
@@ -124,15 +124,14 @@ def test_sample_proof_is_disclosed_and_avoids_fabricated_metrics():
     report_locale = LOCALE["homepage"]["report"]
 
     assert report["sample_url"] == "https://app.caddieinsight.com/sample-report/"
-    assert "synthetic measurements" in report["body"].lower()
+    assert "demonstration report" in report["body"].lower()
     assert report_locale["file_label"] == "Illustrated preview"
     assert report_locale["disclosure"] == (
-        "Illustrated preview of the linked synthetic sample report. The linked full "
-        "report was generated from synthetic measurements through the real report "
-        "engine; this preview is not engine output, a customer result, or a testimonial."
+        "Illustrated preview of a demonstration report built through the same report "
+        "engine. It is not a customer result or testimonial."
     )
     assert "ILLUSTRATED PREVIEW" in report["caption"]
-    assert "LINKED REAL-ENGINE SAMPLE" in report["caption"]
+    assert "COMPLETE SAMPLE REPORT" in report["caption"]
     assert INDEX["sections"]["report"]["blocks"]["p1"]["settings"]["text"].startswith(
         "The linked full report"
     )
@@ -221,14 +220,15 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     assert "overflow-wrap: anywhere" in mobile_comparison
 
 
-def test_caddie_window_hero_is_responsive_fast_and_disclosed():
+def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     hero_source = source("sections/hero.liquid")
     hero_locale = LOCALE["homepage"]["hero"]
+    stats_source = source("sections/stats-band.liquid")
 
     assert '<section id="home-hero" class="sl-hero" aria-labelledby=' in hero_source
     assert hero_source.count("<h1") == 1
-    assert '<figure class="sl-hero__backdrop" aria-describedby=' in hero_source
-    assert '<figcaption id="{{ disclosure_id }}" class="sl-hero__disclosure">' in hero_source
+    assert '<figure class="sl-hero__backdrop">' in hero_source
+    assert "sl-hero__disclosure" not in hero_source
     assert "<picture>" in hero_source
     assert 'media="(max-width: 749px)"' in hero_source
     assert "hero_mobile_image | image_url: width: 1122" in hero_source
@@ -237,9 +237,8 @@ def test_caddie_window_hero_is_responsive_fast_and_disclosed():
     assert "loading: 'eager'" in hero_source
     assert "preload: true" not in hero_source
     assert "fetchpriority: 'high'" in hero_source
-    assert "homepage.hero.art_disclosure" in hero_source
     assert "homepage.hero.signal_disclosure" in hero_source
-    assert "section.settings.image.alt | default: hero_image_label" in hero_source
+    assert "assign hero_image_alt = hero_image_label" in hero_source
     assert "alt: hero_image_alt" in hero_source
     assert "alt: section.settings.heading" not in hero_source
     assert (
@@ -252,16 +251,25 @@ def test_caddie_window_hero_is_responsive_fast_and_disclosed():
     ) in hero_source
     assert "default: '#'" not in hero_source
     assert hero_locale["image_label"] == (
-        "AI-generated golfer filming a driver swing at a dawn driving range"
+        "Golfer filming a driver swing at a dawn driving range"
     )
-    assert hero_locale["art_disclosure"] == (
-        "AI-generated range scene — not a customer, testimonial, or analyzed swing. "
-        "Product signals are a clearly labeled synthetic example."
-    )
-    assert "synthetic" in hero_locale["signal_label"].lower()
-    assert "synthetic" in hero_locale["signal_status"].lower()
-    assert "synthetic" in hero_locale["signal_disclosure"].lower()
+    assert hero_locale["signal_label"] == "CaddieInsight example analysis"
+    assert hero_locale["signal_status"] == "Example session"
+    assert "demonstration data" in hero_locale["signal_disclosure"].lower()
     assert '<aside class="sl-hero__signal' in hero_source
+    mobile_hero = hero_source.split("@media (max-width: 749px)", 1)[1]
+    assert ".sl-hero { min-height: 720px; }" in mobile_hero
+    assert "min-height: 980px" not in mobile_hero
+    assert "min-height: 1020px" not in mobile_hero
+    assert (
+        ".sl-hero__fine,\n  .sl-hero__capture,\n  .sl-hero__signal { display: none; }"
+        in mobile_hero
+    )
+    mobile_stats = stats_source.split("@media (max-width: 749px)", 1)[1]
+    assert 'class="sl-stats__grid sl-reveal" tabindex="0"' in stats_source
+    assert "grid-auto-flow: column" in mobile_stats
+    assert "grid-auto-columns: minmax(164px, 62vw)" in mobile_stats
+    assert "min-height: 116px" in mobile_stats
 
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():
@@ -272,6 +280,9 @@ def test_storefront_copy_stays_inside_the_measurement_boundary():
     ).lower()
 
     for forbidden in (
+        "ai-generated",
+        "artificial intelligence",
+        "synthetic",
         "tour-grade",
         "tour-average",
         "no matter where you set the camera",
