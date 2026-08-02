@@ -3,10 +3,10 @@
 {% block title %}{{ brand.name }} — Analyze your swing{% endblock %}
 {% block style %}
   main#MainContent {
-    width: min(1180px, calc(100% - 48px));
-    max-width: none;
+    width: 100%;
+    max-width: 1280px;
     margin: 42px auto 64px;
-    padding: 0;
+    padding: 0 var(--sl-pad-x);
   }
   .upload-page {
     --upload-panel: #fffdf9;
@@ -28,7 +28,7 @@
     border-radius: 24px;
     background:
       radial-gradient(circle at 88% 14%, rgba(232, 114, 12, .18), transparent 30%),
-      linear-gradient(135deg, #123e2a 0%, #174d34 58%, #0f3424 100%);
+      var(--sl-premium-gradient);
     box-shadow: 0 28px 70px -45px rgba(8, 38, 24, .75);
     color: #f8fbf8;
   }
@@ -49,7 +49,7 @@
   .upload-status { position: relative; z-index: 1; }
   .upload-eyebrow {
     margin: 0 0 10px;
-    color: #f4a95e;
+    color: var(--sl-premium-accent);
     font-family: var(--sl-font-mono);
     font-size: .72rem;
     font-weight: 500;
@@ -90,7 +90,7 @@
     font-weight: 600;
   }
   .journey b {
-    color: #f4a95e;
+    color: var(--sl-premium-accent);
     font-family: var(--sl-font-mono);
     font-size: .67rem;
   }
@@ -106,7 +106,7 @@
     align-items: center;
     gap: 8px;
     margin: 0 0 8px;
-    color: #f4a95e;
+    color: var(--sl-premium-accent);
     font-family: var(--sl-font-mono);
     font-size: .7rem;
     letter-spacing: .1em;
@@ -116,7 +116,7 @@
     width: 7px;
     height: 7px;
     border-radius: 50%;
-    background: #f4a95e;
+    background: var(--sl-premium-accent);
     box-shadow: 0 0 0 4px rgba(244, 169, 94, .15);
   }
   .upload-status strong { display: block; color: white; font-size: 1.05rem; }
@@ -359,7 +359,7 @@
   .sidebar-card li { padding-left: 3px; line-height: 1.5; }
   .sidebar-card li + li { margin-top: 9px; }
   .sidebar-card--dark { border-color: var(--sl-green); background: var(--sl-green); color: white; }
-  .sidebar-card--dark .section-kicker { color: #f4a95e; }
+  .sidebar-card--dark .section-kicker { color: var(--sl-premium-accent); }
   .sidebar-card--dark h3 { color: white; }
   .sidebar-card--dark p,
   .sidebar-card--dark ul { color: rgba(255, 255, 255, .78); }
@@ -392,13 +392,13 @@
     .upload-sidebar { position: sticky; top: 88px; }
   }
   @media (max-width: 900px) {
-    main#MainContent { width: min(100% - 36px, 760px); margin-top: 28px; }
+    main#MainContent { margin-top: 28px; }
     .upload-hero { grid-template-columns: 1fr; gap: 24px; }
     .upload-status { max-width: 420px; }
     .upload-layout { grid-template-columns: 1fr; }
   }
   @media (max-width: 560px) {
-    main#MainContent { width: min(100% - 24px, 760px); margin-top: 18px; }
+    main#MainContent { margin-top: 18px; }
     .upload-hero { padding: 26px 22px; border-radius: 18px; }
     .upload-hero h1 { font-size: 2.15rem; }
     .journey { display: grid; }

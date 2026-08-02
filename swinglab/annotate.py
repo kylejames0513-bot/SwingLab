@@ -63,10 +63,16 @@ def chip_schedule(
         return None if math.isnan(value) else fmt.format(value)
 
     return [
-        (analysis_frames.time_of(events.address_idx), "Setup"),
+        (
+            analysis_frames.time_of(events.address_idx),
+            _fmt_chip(
+                "Setup",
+                [num(m.stance_width_sw, "stance {:.2f} SW")],
+            ),
+        ),
         (
             events.top_s,
-            _fmt_chip("Top", [num(m.backswing_s, "backswing {:.2f} s")]),
+            _fmt_chip("Top", [num(m.backswing_s, "going back {:.2f} s")]),
         ),
         (
             events.impact_s,
@@ -74,13 +80,19 @@ def chip_schedule(
                 "Impact",
                 [
                     num(m.lead_arm_angle_deg, "lead arm {:.0f}\N{DEGREE SIGN}"),
-                    num(m.head_sway_downswing_sw, "sway T\N{RIGHTWARDS ARROW}I {:+.2f} SW"),
+                    num(
+                        m.downswing_hand_speed_sw_s,
+                        "hands {:.2f} SW/s",
+                    ),
                 ],
             ),
         ),
         (
             events.finish_s,
-            _fmt_chip("Finish", [num(m.finish_balance_sw, "balance {:.2f} SW")]),
+            _fmt_chip(
+                "Finish",
+                [num(m.finish_balance_sw, "base drift {:.2f} SW")],
+            ),
         ),
     ]
 

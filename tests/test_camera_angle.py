@@ -67,6 +67,8 @@ def test_face_on_default_measures_everything():
     m = compute_metrics(1, tracked, ev, 70, "right", angle=ANGLE_FACE_ON)
     assert not math.isnan(m.head_sway_backswing_sw)
     assert not math.isnan(m.finish_balance_sw)
+    assert m.stance_width_sw == pytest.approx(0.90)
+    assert not math.isnan(m.downswing_hand_speed_sw_s)
 
 
 def test_dtl_metrics_fire_no_lateral_flags():
@@ -176,6 +178,9 @@ def test_dtl_report_shows_no_face_on_reference_numbers(tmp_path):
 
     dtl_html = render("dtl.html", ANGLE_DTL, **dtl_overrides)
     assert '<tr class="bench-row">' not in dtl_html
+    assert "Body movement" not in dtl_html
+    assert "Impact body shape and finish" not in dtl_html
+    assert "Stance width (SW)" not in dtl_html
     face_html = render("face.html", ANGLE_FACE_ON)
     assert '<tr class="bench-row">' in face_html
 

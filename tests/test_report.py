@@ -38,6 +38,8 @@ def fake_swing(n: int, tempo: float = 2.9) -> dict:
         hip_slide_backswing_sw=0.15,
         hip_slide_downswing_sw=-0.2,
         target_direction=1,
+        stance_width_sw=0.90,
+        downswing_hand_speed_sw_s=4.50,
     )
     return {
         "metrics": m,
@@ -75,7 +77,8 @@ def test_report_html_reflects_branding_and_content(tmp_path, monkeypatch):
     assert "Filming tips" in html and "hip height" in html and "on a tee" in html
     assert html.count("media/strip_s") == 3  # one row of deliverables per swing
     assert html.count("media/slowmo_s") == 3
-    assert "mean ± std" in html
+    assert "Session average" in html
+    assert "Swing-to-swing spread" in html
     assert "rotation metadata: 90°" in html
     assert 'aria-label="Report navigation"' in html
     assert 'href="https://example-golf.test">Home</a>' in html
@@ -145,9 +148,19 @@ def test_report_leads_with_coaching_and_collapses_raw_measurements(tmp_path):
     assert "Your caddie's read" in html
     assert "Fix first" in html
     assert "Practice this" in html
+    assert "Set a swing metronome to a steady beat" in html
+    assert html.index("Set a swing metronome to a steady beat") < html.index("Swing evidence")
+    assert "What your video showed" in html
+    assert "Plain-English swing breakdown" in html
+    assert "Timing estimate" in html
+    assert "Observed in this view" in html
+    assert "Personal comparison only" in html
+    assert "This is not clubhead speed or ball speed" in html
     assert '<details class="measurements">' in html
     assert html.index("Your caddie's read") < html.index(">Session</h2>")
-    assert html.index("Your caddie's read") < html.index(">Metrics</h2>")
+    assert html.index("Your caddie's read") < html.index("Measurements and glossary")
+    assert html.index("Your caddie's read") < html.index("What your video showed")
+    assert html.index("What your video showed") < html.index("Measurements and glossary")
 
 
 def test_report_brief_keeps_quality_warning_above_collapsed_details(tmp_path):
@@ -190,6 +203,7 @@ def test_report_brief_surfaces_root_camera_warning_before_dtl_scope_note(tmp_pat
     assert "Re-film before coaching" in html and warning in html
     assert html.index(warning) < html.index('<details class="measurements">')
     assert "<h2>Practice plan</h2>" not in html
+    assert "What your video showed" not in html
     assert "<h2>Start here</h2>" not in html
     assert "Browse optional training aids" not in html
     assert "Upgrade to Pro" not in html
@@ -240,6 +254,7 @@ def test_report_with_no_coachable_fields_is_capture_only(tmp_path):
     assert "did not produce enough readable motion data" in html
     assert "<summary>See capture details</summary>" in html
     assert "<h2>Practice plan</h2>" not in html
+    assert "What your video showed" not in html
     assert "media/strip_s1.png" not in html
     assert "media/overlay_s1.png" not in html
     assert "media/replay_s1.mp4" not in html
@@ -288,6 +303,10 @@ def test_clean_dtl_report_uses_only_rhythm_maintenance(tmp_path):
     assert "switch the next baseline clip to face-on" in html
     assert "Head sway (backswing)" not in html
     assert "Hip slide (backswing)" not in html
+    assert html.count('class="breakdown-card ') == 1
+    assert "Setup and stance" not in html
+    assert "Downswing hand movement" not in html
+    assert "Impact body shape and finish" not in html
     assert "Start here" not in html
     assert "0.80" not in html
 
@@ -359,6 +378,8 @@ def test_metrics_json_valid_and_nan_becomes_null(tmp_path):
     )
     data = json.loads(out.read_text())  # must be strictly valid JSON
     assert data["swings"][0]["metrics"]["tempo_ratio"] is None
+    assert data["swings"][0]["metrics"]["stance_width_sw"] == 0.9
+    assert data["swings"][0]["metrics"]["downswing_hand_speed_sw_s"] == 4.5
     assert data["video"]["width"] == 1080  # rotation-aware display width
     assert data["video"]["height"] == 1920
     assert data["disclaimer"].startswith("Automated estimates")

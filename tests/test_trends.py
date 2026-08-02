@@ -89,6 +89,31 @@ def test_legacy_sessions_contribute_only_the_fields_they_have(tmp_path, cfg):
     assert "shoulder_tilt_impact_deg" not in built.metrics  # nobody measured it
 
 
+def test_report_context_metrics_do_not_enter_unmatched_progress(tmp_path, cfg):
+    built = trends.build_trends(
+        [
+            stub_job(
+                tmp_path,
+                1,
+                [{
+                    "tempo_ratio": 3.0,
+                    "stance_width_sw": 0.90,
+                    "downswing_hand_speed_sw_s": 4.50,
+                }],
+                angle="face-on",
+            )
+        ],
+        cfg,
+    )
+    assert "tempo_ratio" in built.metrics
+    assert "stance_width_sw" not in built.metrics
+    assert "downswing_hand_speed_sw_s" not in built.metrics
+
+
+def test_generic_trend_registry_covers_every_supported_numeric_field():
+    assert set(trends.NUMERIC_FIELDS) <= set(trends._METRIC_INFO)
+
+
 def test_null_and_nan_values_never_reach_the_series(tmp_path, cfg):
     jobs = [
         stub_job(tmp_path, 1, [

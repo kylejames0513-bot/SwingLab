@@ -165,21 +165,21 @@ def test_cached_offline_shell_is_anonymous_while_drills_keep_pro_header(
     assert offline.headers["cache-control"] == "public, max-age=300"
     assert "Private Golfer Name" not in offline.text
     assert "data-pro-member-nav" not in offline.text
-    assert 'class="sl-reduced-motion"' not in offline.text
+    assert 'class="sl-premium-chrome sl-reduced-motion"' not in offline.text
 
     drills = client.get("/drills")
     assert drills.status_code == 200
     assert drills.headers["cache-control"] == "private, no-store"
     assert "Private Golfer Name" in drills.text
     assert "data-pro-member-nav" in drills.text
-    assert 'class="sl-reduced-motion"' in drills.text
+    assert 'class="sl-premium-chrome sl-reduced-motion"' in drills.text
     assert "a free account</a> gets" not in drills.text
 
     personalized = client.get("/progress")
-    assert 'class="sl-reduced-motion"' in personalized.text
+    assert 'class="sl-premium-chrome sl-reduced-motion"' in personalized.text
 
     worker = client.get("/service-worker.js").text
-    assert 'caddieinsight-public-shell-v2' in worker
+    assert 'caddieinsight-public-shell-v3' in worker
     assert 'const PUBLIC_SHELL = ["/offline"];' in worker
     assert "private|no-store" in worker
     assert "key !== CACHE_NAME" in worker

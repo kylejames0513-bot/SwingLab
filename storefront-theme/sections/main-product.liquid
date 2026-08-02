@@ -72,6 +72,7 @@
         <li>{{ 'products.product.benefit_unlock' | t }}</li>
       </ul>
 
+      <div data-app-pro-sales-link>
       {% form 'product', product, class: 'sl-product-form' %}
         {%- if product.variants.size > 1 -%}
           <label class="sl-label" for="sl-variant">{{ 'products.product.plan' | t }}</label>
@@ -185,6 +186,13 @@
         <strong>{{ 'products.product.unlock_heading' | t }}</strong>
         <p>{{ 'products.product.unlock_body' | t }}</p>
         <a href="https://app.caddieinsight.com">{{ 'products.product.open_app' | t }}</a>
+      </div>
+      </div>
+
+      <div class="sl-product-note" data-app-pro-member-only hidden>
+        <strong>{{ 'products.product.active_heading' | t }}</strong>
+        <p>{{ 'products.product.active_body' | t }}</p>
+        <a href="https://app.caddieinsight.com">{{ 'products.product.open_game_plan' | t }}</a>
       </div>
 
     {%- else -%}

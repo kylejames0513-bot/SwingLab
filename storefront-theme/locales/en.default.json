@@ -19,29 +19,37 @@
       "analyze_free": "Analyze free",
       "analyze_a_swing": "Analyze a swing",
       "account": "Account",
-      "app_sign_in": "App sign in",
+      "app_sign_in": "Sign in",
       "caddieinsight_home": "CaddieInsight home",
       "caddieinsight_profile": "CaddieInsight profile",
       "close_menu": "Close menu",
       "create_free_account": "Create free account",
       "drills": "Drills",
       "explore": "Explore",
+      "free_plan": "Free plan",
+      "game_plan_ready": "Your game plan is ready.",
       "gear": "Gear",
       "history": "History",
       "home": "Home",
+      "log_out": "Log out",
       "main": "Main navigation",
       "menu": "Menu",
       "menu_title": "Menu",
+      "membership_status": "Membership status",
       "method": "Method",
       "my_game": "My Game",
       "orders": "Orders",
       "orders_subscriptions": "Orders & subscriptions",
       "plans": "Plans",
       "pro": "Pro",
+      "pro_member": "Pro member",
       "progress": "Progress",
       "sample_report": "Sample report",
       "shop": "Shop",
-      "start_free": "Start free"
+      "signed_in": "Signed in to CaddieInsight",
+      "start_free": "Start free",
+      "welcome_back": "Welcome back",
+      "work_on_your_swing": "Let's work on your swing"
     }
   },
   "homepage": {
@@ -63,7 +71,13 @@
       "intro": "Four deliberate steps turn a phone clip into a range session with one clear job."
     },
     "plans": {
-      "eyebrow": "CHOOSE YOUR PACE"
+      "eyebrow": "CHOOSE YOUR PACE",
+      "member_heading": "Your Free plan is active. Go Pro when repetition matters.",
+      "member_subheading": "Keep your complete monthly report, or move to unlimited sessions, coach replay, and progress tracking."
+    },
+    "comparison": {
+      "member_heading": "Your Free plan compared with Pro.",
+      "member_subheading": "Your account is already active. Upgrade only when unlimited sessions, coach replay, and progress tracking are worth it to you."
     },
     "report": {
       "eyebrow": "INSIDE THE REPORT",
@@ -84,6 +98,8 @@
   "products": {
     "product": {
       "add_to_cart": "Add to cart",
+      "active_heading": "Your Pro membership is active",
+      "active_body": "Your account already has Pro access. Open your game plan instead of purchasing again.",
       "benefit_report": "Club-aware priority and a measured practice plan",
       "benefit_unlock": "Automatic access through your linked account or checkout email",
       "benefit_unlimited": "Unlimited swing analyses while Pro is active",
@@ -92,12 +108,13 @@
       "one_time_help": "Best for trying Pro or gifting a fixed access window.",
       "one_time_purchase": "One-time purchase",
       "open_app": "Open CaddieInsight app",
+      "open_game_plan": "Open your game plan",
       "plan": "Plan",
       "pro_kicker": "For golfers who want each range session to answer one clear swing question.",
       "purchase_options": "Purchase options",
       "show_image": "Show image {{ number }}",
       "sold_out": "Sold out",
-      "unlock_body": "Already use CaddieInsight? Sign in with your current CaddieInsight email. New here? Create your account with the email used at Shopify checkout. Pro connects automatically when the paid-order webhook arrives.",
+      "unlock_body": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup. Access activates when the paid order is confirmed.",
       "unlock_heading": "How Pro unlocks"
     }
   }

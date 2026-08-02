@@ -68,6 +68,7 @@ def sample_metrics() -> list[SwingMetrics]:
             head_dip_sw=0.08, lead_arm_angle_deg=168.0,
             shoulder_tilt_address_deg=9.0, shoulder_tilt_impact_deg=13.0,
             shoulder_tilt_delta_deg=4.0, finish_balance_sw=0.06,
+            stance_width_sw=0.96, downswing_hand_speed_sw_s=4.82,
         ),
         SwingMetrics(
             swing=2, strike_s=9.8, backswing_s=0.81, downswing_s=0.35,
@@ -77,6 +78,7 @@ def sample_metrics() -> list[SwingMetrics]:
             head_dip_sw=0.11, lead_arm_angle_deg=171.0,
             shoulder_tilt_address_deg=8.0, shoulder_tilt_impact_deg=12.0,
             shoulder_tilt_delta_deg=4.0, finish_balance_sw=0.04,
+            stance_width_sw=0.98, downswing_hand_speed_sw_s=4.91,
         ),
         SwingMetrics(
             swing=3, strike_s=16.4, backswing_s=0.84, downswing_s=0.33,
@@ -86,6 +88,7 @@ def sample_metrics() -> list[SwingMetrics]:
             head_dip_sw=0.09, lead_arm_angle_deg=166.0,
             shoulder_tilt_address_deg=10.0, shoulder_tilt_impact_deg=14.0,
             shoulder_tilt_delta_deg=4.0, finish_balance_sw=0.07,
+            stance_width_sw=0.95, downswing_hand_speed_sw_s=4.76,
         ),
     ]
 

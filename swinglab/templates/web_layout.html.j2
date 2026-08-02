@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#14472c">
+<meta name="theme-color" content="#07130d">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>{% block title %}{{ brand.name }}{% endblock %}</title>
@@ -12,50 +12,56 @@
 <link rel="apple-touch-icon" href="/static/pwa-icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
 <style>
   :root {
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
-    --sl-bg: #f5f4ef;
-    --sl-bg-card: #fffefa;
+    --sl-bg: #f7f5f0;
+    --sl-bg-card: #fffdf9;
     --sl-surface-soft: #edf3ee;
     --sl-surface-dark: #103c27;
-    --sl-ink: #132019;
-    --sl-ink-soft: #48554c;
+    --sl-night: #07130d;
+    --sl-ink: #17201a;
+    --sl-ink-soft: #4a544c;
     --sl-ink-muted: #5f6b62;
-    --sl-green: #103f29;
-    --sl-green-btn: #17623b;
-    --sl-green-ink: #edf7f0;
-    --sl-orange: #dc6a16;
+    --sl-green: #14472c;
+    --sl-green-btn: #1a5c38;
+    --sl-green-ink: #e9f2ec;
+    --sl-orange: #e8720c;
     --sl-orange-text: #a94708;
-    --sl-orange-soft: #fff1e1;
-    --sl-border: #dddcd3;
-    --sl-border-strong: #c7cec7;
+    --sl-orange-soft: #fff3e4;
+    --sl-premium-accent: #ffad62;
+    --sl-premium-gradient: linear-gradient(135deg, #07130d 0%, #103c27 62%, #14472c 100%);
+    --sl-border: #e3ded3;
+    --sl-border-strong: #c9c3b8;
     --sl-control-border: #7a867c;
     --sl-radius-sm: 8px;
     --sl-radius-md: 14px;
     --sl-radius-lg: 22px;
     --sl-radius-xl: 32px;
-    --sl-shadow-sm: 0 1px 2px rgba(12, 36, 23, .06);
-    --sl-shadow-md: 0 22px 54px -36px rgba(12, 36, 23, .38);
+    --sl-shadow-sm: 0 1px 2px rgba(15, 42, 27, .05);
+    --sl-shadow-md: 0 12px 30px -14px rgba(15, 42, 27, .18);
     --sl-shadow-lg: 0 34px 80px -42px rgba(8, 35, 21, .5);
     --sl-content: 1280px;
     --sl-pad-x: clamp(20px, 5vw, 56px);
     --sl-font-sans: "Archivo", Helvetica, Arial, sans-serif;
-    --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+    --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --sl-text-xs: 12px;
+    --sl-text-sm: clamp(13.5px, 13px + .15vw, 14.5px);
+    --sl-text-base: clamp(15.5px, 15px + .2vw, 17px);
+    --sl-text-lg: clamp(17px, 16.2px + .35vw, 19px);
+    --sl-text-xl: clamp(20px, 18.8px + .55vw, 23px);
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
     min-height: 100vh;
-    background:
-      radial-gradient(circle at 8% -8%, rgba(220, 106, 22, .08), transparent 28rem),
-      radial-gradient(circle at 92% 4%, rgba(23, 98, 59, .09), transparent 30rem),
-      var(--sl-bg);
+    background: var(--sl-bg);
     color: var(--sl-ink);
     font-family: var(--sl-font-sans);
+    font-size: var(--sl-text-base);
     line-height: 1.55;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
@@ -63,6 +69,7 @@
   a { color: var(--sl-green-btn); }
   a:hover { color: var(--sl-orange-text); }
   img { max-width: 100%; }
+  ::selection { background: rgba(232, 114, 12, .22); }
   :focus-visible {
     outline: 3px solid var(--sl-orange);
     outline-offset: 3px;
@@ -82,6 +89,59 @@
   }
   .sl-skip:focus-visible { left: 0; outline-color: var(--sl-orange); outline-offset: -3px; }
   html.sl-menu-open { overflow: hidden; }
+  .sl-app-banner {
+    position: relative;
+    z-index: 42;
+    min-height: 36px;
+    padding: 8px var(--sl-pad-x);
+    display: flex;
+    align-items: center;
+    background: #050d09;
+    border-bottom: 1px solid rgba(245, 242, 233, .1);
+    color: rgba(245, 242, 233, .7);
+    font-size: 12.5px;
+  }
+  .sl-app-banner__inner {
+    width: 100%;
+    max-width: var(--sl-content);
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    overflow: hidden;
+    text-align: center;
+  }
+  .sl-app-banner__status {
+    flex: 0 0 auto;
+    color: #ffad62;
+    font-family: var(--sl-font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .sl-app-banner__detail {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sl-app-banner__dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: #75d59b;
+    box-shadow: 0 0 0 5px rgba(117, 213, 155, .1);
+  }
+  .sl-app-banner a {
+    color: #f5f2e9;
+    font-weight: 700;
+    text-underline-offset: 3px;
+    white-space: nowrap;
+  }
+  .sl-app-banner a:hover { color: #ffad62; }
   .sl-header {
     position: sticky;
     top: 0;
@@ -93,6 +153,12 @@
     backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--sl-border);
   }
+  .sl-header--premium {
+    min-height: 76px;
+    background: rgba(7, 19, 13, .96);
+    border-bottom-color: rgba(239, 241, 232, .12);
+    box-shadow: 0 18px 48px -32px rgba(0, 0, 0, .85);
+  }
   .sl-header__inner {
     width: 100%;
     max-width: 1280px;
@@ -103,6 +169,7 @@
     align-items: center;
     gap: clamp(16px, 2.5vw, 28px);
   }
+  .sl-header--premium .sl-header__inner { min-height: 76px; }
   .sl-header__logo {
     display: flex;
     align-items: center;
@@ -114,6 +181,8 @@
     text-decoration: none;
   }
   .sl-header__logo-img { display: block; width: auto; height: 38px; }
+  .sl-header--premium .sl-header__logo { color: #f5f2e9; }
+  .sl-header--premium .sl-header__logo-img { filter: brightness(0) invert(1); opacity: .96; }
   .sl-header__desktop-nav {
     display: flex;
     align-items: center;
@@ -147,6 +216,19 @@
     background: var(--sl-orange-soft);
     color: var(--sl-green);
   }
+  .sl-header--premium .sl-header__link,
+  .sl-header--premium .sl-header__dropdown-trigger { color: rgba(245, 242, 233, .78); }
+  .sl-header--premium .sl-header__link:hover,
+  .sl-header--premium .sl-header__dropdown-trigger:hover,
+  .sl-header--premium .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
+    background: rgba(255, 255, 255, .08);
+    color: #fff;
+  }
+  .sl-header--premium .sl-header__link.is-current,
+  .sl-header--premium .sl-header__dropdown-trigger.is-current {
+    background: rgba(232, 114, 12, .16);
+    color: #ffad62;
+  }
   .sl-header__member {
     min-height: 40px;
     padding: 7px 13px 7px 8px;
@@ -163,6 +245,21 @@
     white-space: nowrap;
   }
   .sl-header__member:hover { border-color: var(--sl-green-btn); background: #e3f1e7; color: var(--sl-green); }
+  .sl-header--premium .sl-header__member {
+    border-color: rgba(117, 213, 155, .42);
+    background: rgba(117, 213, 155, .1);
+    color: #dff5e7;
+  }
+  .sl-header--premium .sl-header__member:hover {
+    border-color: #75d59b;
+    background: rgba(117, 213, 155, .17);
+    color: #fff;
+  }
+  .sl-header__member > span:last-child {
+    max-width: clamp(130px, 17vw, 230px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .sl-header__member-badge {
     padding: 4px 7px;
     border-radius: 999px;
@@ -172,6 +269,7 @@
     font-size: 10px;
     letter-spacing: .08em;
   }
+  .sl-header--premium .sl-header__member-badge { background: #75d59b; color: #07130d; }
   .sl-header__dropdown { position: relative; }
   .sl-header__dropdown summary { list-style: none; }
   .sl-header__dropdown summary::-webkit-details-marker { display: none; }
@@ -200,17 +298,39 @@
     box-shadow: 0 18px 42px -24px rgba(15, 42, 27, 0.42);
   }
   .sl-header__dropdown-menu--right { right: 0; left: auto; }
-  .sl-header__dropdown-menu a {
+  .sl-header__dropdown-menu a,
+  .sl-header__logout {
+    width: 100%;
     padding: 10px 12px;
+    display: block;
+    border: 0;
     border-radius: 9px;
+    background: transparent;
     color: var(--sl-ink);
+    font-family: inherit;
     font-size: 14px;
     font-weight: 600;
+    text-align: left;
     text-decoration: none;
+    cursor: pointer;
   }
-  .sl-header__dropdown-menu a:hover {
+  .sl-header__dropdown-menu form { margin: 0; }
+  .sl-header__dropdown-menu a:hover,
+  .sl-header__logout:hover {
     background: var(--sl-orange-soft);
     color: var(--sl-green);
+  }
+  .sl-header--premium .sl-header__dropdown-menu {
+    background: rgba(10, 28, 19, .99);
+    border-color: rgba(239, 241, 232, .14);
+    box-shadow: 0 24px 54px -22px rgba(0, 0, 0, .78);
+  }
+  .sl-header--premium .sl-header__dropdown-menu a,
+  .sl-header--premium .sl-header__logout { color: rgba(245, 242, 233, .86); }
+  .sl-header--premium .sl-header__dropdown-menu a:hover,
+  .sl-header--premium .sl-header__logout:hover {
+    background: rgba(255, 255, 255, .08);
+    color: #fff;
   }
   .sl-header__actions {
     display: flex;
@@ -237,6 +357,23 @@
   .sl-header__cta:hover { background: var(--sl-green-btn); color: #fff; }
   .sl-header__cart { background: transparent; color: var(--sl-green); }
   .sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange-text); }
+  .sl-header--premium .sl-header__cta {
+    min-height: 44px;
+    border-color: #f07a18;
+    background: #f07a18;
+    color: #07130d;
+    box-shadow: 0 12px 30px -18px rgba(240, 122, 24, .9);
+  }
+  .sl-header--premium .sl-header__cta:hover {
+    border-color: #ff9a42;
+    background: #ff9a42;
+    color: #07130d;
+  }
+  .sl-header--premium .sl-header__cart {
+    border-color: rgba(245, 242, 233, .48);
+    color: #f5f2e9;
+  }
+  .sl-header--premium .sl-header__cart:hover { border-color: #ff9a42; color: #ffb06b; }
   .sl-header__toggle {
     display: none;
     width: 44px;
@@ -254,6 +391,11 @@
     cursor: pointer;
   }
   .sl-header__toggle:hover { background: var(--sl-bg-card); color: var(--sl-green-btn); }
+  .sl-header--premium .sl-header__toggle {
+    border-color: rgba(245, 242, 233, .5);
+    color: #f5f2e9;
+  }
+  .sl-header--premium .sl-header__toggle:hover { background: rgba(255, 255, 255, .08); color: #fff; }
   .sl-header__toggle span {
     display: block;
     width: 100%;
@@ -368,11 +510,40 @@
     text-decoration: none;
   }
   .sl-menu__link:hover { color: var(--sl-green-btn); }
+  .sl-menu__logout {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sl-menu__group form { margin: 0; }
   .sl-menu__link.is-current {
     padding-inline: 10px;
     background: var(--sl-orange-soft);
     color: var(--sl-green);
   }
+  .sl-premium-chrome .sl-menu .sl-menu__panel {
+    background: #091811;
+    border-left-color: rgba(245, 242, 233, .14);
+    box-shadow: -28px 0 70px -32px rgba(0, 0, 0, .86);
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__title,
+  .sl-premium-chrome .sl-menu .sl-menu__link { color: #f5f2e9; }
+  .sl-premium-chrome .sl-menu .sl-menu__close {
+    background: rgba(255, 255, 255, .06);
+    border-color: rgba(245, 242, 233, .24);
+    color: #f5f2e9;
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__group { border-top-color: rgba(245, 242, 233, .14); }
+  .sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: rgba(245, 242, 233, .55); }
+  .sl-premium-chrome .sl-menu .sl-menu__link:hover { color: #ffad62; }
+  .sl-premium-chrome .sl-menu .sl-menu__link.is-current {
+    background: rgba(232, 114, 12, .16);
+    color: #ffad62;
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__cta { color: #07130d; }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {
     background: var(--sl-bg-card);
@@ -445,10 +616,58 @@
   }
   .sl-profile-reminder a { font-weight: 750; white-space: nowrap; }
   .disclaimer { color: var(--sl-ink-muted); font-style: italic; font-size: 0.85rem; margin-top: 24px; }
-  footer { text-align: center; color: var(--sl-ink-muted); font-size: 0.85rem; padding: 28px 24px 36px; }
+  .sl-app-footer {
+    margin-top: clamp(48px, 8vw, 96px);
+    padding: clamp(40px, 6vw, 68px) var(--sl-pad-x) 28px;
+    background: #0f1712;
+    color: #9fb0a4;
+    font-size: .86rem;
+  }
+  .sl-app-footer__inner {
+    width: 100%;
+    max-width: var(--sl-content);
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(150px, .7fr));
+    gap: clamp(28px, 6vw, 72px);
+  }
+  .sl-app-footer__logo {
+    display: inline-flex;
+    color: #f5f2e9;
+    font-size: 22px;
+    font-weight: 900;
+    letter-spacing: -.02em;
+    text-decoration: none;
+  }
+  .sl-app-footer__logo:hover { color: #fff; }
+  .sl-app-footer__brand p { max-width: 38ch; margin: 14px 0 0; line-height: 1.65; }
+  .sl-app-footer__nav { display: grid; align-content: start; gap: 9px; }
+  .sl-app-footer__nav strong {
+    margin-bottom: 4px;
+    color: #f5f2e9;
+    font-family: var(--sl-font-mono);
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+  .sl-app-footer__nav a { color: #b8c5bb; text-decoration: none; }
+  .sl-app-footer__nav a:hover { color: #ffad62; }
+  .sl-app-footer__bottom {
+    max-width: var(--sl-content);
+    margin: 34px auto 0;
+    padding-top: 22px;
+    display: flex;
+    justify-content: space-between;
+    gap: 18px;
+    border-top: 1px solid rgba(245, 242, 233, .12);
+    color: #7f9184;
+  }
+  .sl-app-footer__bottom p { margin: 0; }
   @media (max-width: 980px) {
     .sl-header { min-height: 64px; }
-    .sl-header__inner { min-height: 64px; gap: 10px; }
+    .sl-header__inner,
+    .sl-header--premium .sl-header__inner { min-height: 64px; gap: 10px; }
     .sl-header__desktop-nav,
     .sl-header__account,
     .sl-header__app { display: none; }
@@ -458,12 +677,22 @@
     .sl-header__logo-img { height: 28px; max-width: 175px; object-fit: contain; }
     .sl-header__cart { min-height: 38px; }
     main { margin-top: 32px; padding: 0 18px; }
+    .sl-app-footer__inner { grid-template-columns: 1fr 1fr; }
+    .sl-app-footer__brand { grid-column: 1 / -1; }
+  }
+  @media (max-width: 560px) {
+    .sl-app-banner { padding-inline: 14px; }
+    .sl-app-banner__inner { gap: 8px; }
+    .sl-app-banner__detail { display: none; }
   }
   @media (max-width: 390px) {
     .sl-header { padding-inline: 12px; }
     .sl-header__logo-img { height: 24px; max-width: 142px; }
     .sl-header__cart { padding: 5px 10px; }
     .sl-profile-reminder { align-items: flex-start; flex-direction: column; gap: 3px; }
+    .sl-app-footer__inner { grid-template-columns: 1fr; }
+    .sl-app-footer__brand { grid-column: auto; }
+    .sl-app-footer__bottom { flex-direction: column; }
   }
   body.sl-reduced-motion *,
   body.sl-reduced-motion *::before,
@@ -487,10 +716,29 @@
   {% block style %}{% endblock %}
 </style>
 </head>
-<body{% if header_profile and header_profile.reduced_motion %} class="sl-reduced-motion"{% endif %}>
+<body class="sl-premium-chrome{% if header_profile and header_profile.reduced_motion %} sl-reduced-motion{% endif %}">
 {% set member_name = header_profile.display_name if header_profile and header_profile.display_name else '' %}
+{% set free_limit = free_per_month|default(1) %}
 <a class="sl-skip" href="#MainContent">Skip to content</a>
-<header class="sl-header" data-sl-header data-menu-id="sl-mobile-menu">
+<aside class="sl-app-banner{% if user and user.is_pro %} sl-app-banner--pro{% endif %}" aria-label="Membership status">
+  <div class="sl-app-banner__inner">
+    <span class="sl-app-banner__dot" aria-hidden="true"></span>
+    {% if user and user.is_pro %}
+      <span class="sl-app-banner__status">Pro member</span>
+      <span class="sl-app-banner__detail">{{ "Welcome back, " ~ member_name ~ "." if member_name else "Your game plan is ready." }}</span>
+      <a href="/">Let&rsquo;s work on your swing &rarr;</a>
+    {% elif user %}
+      <span class="sl-app-banner__status">Free plan</span>
+      <span>{% if free_limit <= 0 %}Unlimited complete reports{% else %}{{ free_limit }} complete report{% if free_limit != 1 %}s{% endif %} each month{% endif %}</span>
+      <span class="sl-app-banner__detail">&middot; club context saved</span>
+    {% else %}
+      <span class="sl-app-banner__status">Start free</span>
+      <span>{% if free_limit <= 0 %}Unlimited full reports{% else %}{{ free_limit }} full report{% if free_limit != 1 %}s{% endif %} / month{% endif %}</span>
+      <span class="sl-app-banner__detail">&middot; no card &middot; club context saved</span>
+    {% endif %}
+  </div>
+</aside>
+<header class="sl-header sl-header--premium" data-sl-header data-menu-id="sl-mobile-menu">
   <div class="sl-header__inner">
     <a class="sl-header__logo" href="{{ storefront_url or '/' }}" aria-label="{{ brand.name }} home">
       {% if brand.logo_url %}
@@ -501,6 +749,7 @@
     </a>
 
     <nav class="sl-header__desktop-nav" aria-label="Main navigation">
+      {% if user or not require_account %}
       <details class="sl-header__dropdown" data-header-dropdown>
         <summary class="sl-header__dropdown-trigger{% if current_path == '/today' or current_path == '/sessions' or current_path == '/progress' or current_path == '/drills' %} is-current{% endif %}">
           My Game
@@ -515,6 +764,9 @@
           <a href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
         </div>
       </details>
+      {% else %}
+      <a class="sl-header__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
+      {% endif %}
       {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
       {% if user and user.is_pro %}
       <a class="sl-header__member" href="/today" data-pro-member-nav>
@@ -535,7 +787,10 @@
         </summary>
         <div class="sl-header__dropdown-menu sl-header__dropdown-menu--right">
           {% if require_account and user %}
-            <a href="/account" {% if current_path == '/account' %}aria-current="page"{% endif %}>CaddieInsight profile</a>
+            <a href="/account" {% if current_path == '/account' %}aria-current="page"{% endif %}>{{ brand.name }} profile</a>
+            <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
+              <button class="sl-header__logout" type="submit">Log out</button>
+            </form>
           {% elif require_account %}
             <a href="/login" {% if current_path == '/login' %}aria-current="page"{% endif %}>Sign in</a>
             <a href="/signup" {% if current_path == '/signup' %}aria-current="page"{% endif %}>Create free account</a>
@@ -546,7 +801,7 @@
       {% endif %}
 
       {% if storefront_url %}<a class="sl-header__cart" href="{{ storefront_url }}/cart">Cart</a>{% endif %}
-      <a class="sl-header__cta sl-header__app" href="/">Analyze a swing</a>
+      <a class="sl-header__cta sl-header__app" href="{% if user or not require_account %}/{% else %}/signup{% endif %}">{% if user or not require_account %}Analyze a swing{% else %}Analyze free{% endif %}</a>
       <button class="sl-header__toggle" type="button"
               aria-label="Menu"
               aria-expanded="false"
@@ -560,7 +815,7 @@
 </header>
 {% if require_account and user and (not header_profile or not header_profile.is_complete) and current_path != '/onboarding' %}
 <aside class="sl-profile-reminder" aria-label="Profile setup reminder">
-  <span><strong>Make CaddieInsight yours.</strong> Add your name and goal{% if not user.has_password %}, and choose whether to add a backup password{% endif %}.</span>
+  <span><strong>Make {{ brand.name }} yours.</strong> Add your name, goal, and primary club{% if not user.has_password %}, and choose whether to add a backup password{% endif %}.</span>
   <a href="/onboarding">Finish golfer profile</a>
 </aside>
 {% endif %}
@@ -576,19 +831,21 @@
     </div>
 
     <nav class="sl-menu__nav" aria-label="Main navigation">
-      <a class="sl-header__cta sl-menu__cta" href="/" data-menu-link>Analyze a swing</a>
+        <a class="sl-header__cta sl-menu__cta" href="{% if user or not require_account %}/{% else %}/signup{% endif %}" data-menu-link>{% if user or not require_account %}Analyze a swing{% else %}Analyze free{% endif %}</a>
 
       <div class="sl-menu__group">
         <p class="sl-menu__eyebrow">Practice</p>
-        {% if require_account %}
+        {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/today' %} is-current{% endif %}" href="/today" data-menu-link {% if current_path == '/today' %}aria-current="page"{% endif %}>
           <span>Today</span><span aria-hidden="true">&rarr;</span>
         </a>
         {% endif %}
+        {% if user or not require_account %}
         <a class="sl-menu__link{% if current_path == '/sessions' %} is-current{% endif %}" href="/sessions" data-menu-link {% if current_path == '/sessions' %}aria-current="page"{% endif %}>
           <span>History</span><span aria-hidden="true">&rarr;</span>
         </a>
-        {% if require_account %}
+        {% endif %}
+        {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" data-menu-link {% if current_path == '/progress' %}aria-current="page"{% endif %}>
           <span>Progress{% if user and progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
         </a>
@@ -624,8 +881,13 @@
         <p class="sl-menu__eyebrow">Account</p>
         {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/account' %} is-current{% endif %}" href="/account" data-menu-link {% if current_path == '/account' %}aria-current="page"{% endif %}>
-          <span>CaddieInsight profile</span><span aria-hidden="true">&rarr;</span>
+          <span>{{ brand.name }} profile</span><span aria-hidden="true">&rarr;</span>
         </a>
+        <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
+          <button class="sl-menu__link sl-menu__logout" type="submit">
+            <span>Log out</span><span aria-hidden="true">&rarr;</span>
+          </button>
+        </form>
         {% elif require_account %}
         <a class="sl-menu__link{% if current_path == '/login' %} is-current{% endif %}" href="/login" data-menu-link {% if current_path == '/login' %}aria-current="page"{% endif %}>
           <span>Sign in</span><span aria-hidden="true">&rarr;</span>
@@ -647,7 +909,37 @@
 <main id="MainContent">
 {% block main %}{% endblock %}
 </main>
-<footer>{{ brand.footer_text }}</footer>
+<footer class="sl-app-footer">
+  <div class="sl-app-footer__inner">
+    <div class="sl-app-footer__brand">
+      <a class="sl-app-footer__logo" href="{{ storefront_url or '/' }}">{{ brand.name }}</a>
+      <p>One priority. One practice plan. Proof when you re-film.</p>
+    </div>
+    <nav class="sl-app-footer__nav" aria-label="Practice links">
+      <strong>Practice</strong>
+      <a href="{% if user or not require_account %}/{% else %}/signup{% endif %}">{% if user or not require_account %}Analyze a swing{% else %}Analyze free{% endif %}</a>
+      {% if user or not require_account %}<a href="/sessions">History</a>{% endif %}
+      {% if require_account and user %}<a href="/progress">Progress</a>{% endif %}
+      <a href="/drills">Drills</a>
+    </nav>
+    <nav class="sl-app-footer__nav" aria-label="Account and shop links">
+      <strong>{{ brand.name }}</strong>
+      {% if require_account and user %}
+        <a href="/account">Your profile</a>
+      {% elif require_account %}
+        <a href="/login">Sign in</a>
+        <a href="/signup">Create free account</a>
+      {% endif %}
+      {% if shop_enabled %}<a href="/shop">Training gear</a>{% endif %}
+      {% if not (user and user.is_pro) %}<a href="/pricing">Pro membership</a>{% endif %}
+      {% if storefront_url %}<a href="{{ storefront_url }}">Visit the storefront</a>{% endif %}
+    </nav>
+  </div>
+  <div class="sl-app-footer__bottom">
+    <p>{{ brand.footer_text }}</p>
+    <p>Supported 2D movement and timing estimates from phone video.</p>
+  </div>
+</footer>
 <script>
   (function () {
     var header = document.querySelector('[data-sl-header]');

@@ -30,7 +30,7 @@
   endfor
   assign card_flags = flag_str | split: ','
 -%}
-<a href="{{ product.url }}" class="sl-pcard">
+<a href="{{ product.url }}" class="sl-pcard"{% if product.handle == 'swinglab-pro' %} data-app-pro-sales-link{% endif %}>
   <div class="sl-pcard-media">
     {%- if product.featured_media -%}
       {{ product.featured_media | image_url: width: 720 | image_tag: loading: 'lazy', alt: card_alt, class: 'sl-pcard-img' }}

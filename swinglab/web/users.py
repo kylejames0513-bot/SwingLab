@@ -702,7 +702,7 @@ class GolferProfile:
 
     @property
     def is_complete(self) -> bool:
-        return bool(self.display_name and self.primary_goal)
+        return bool(self.display_name and self.primary_goal and self.preferred_club)
 
 
 @dataclass(frozen=True)

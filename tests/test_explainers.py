@@ -10,13 +10,14 @@ from swinglab.config import Config
 from swinglab.explainers import (
     EXPLAINERS,
     SW_GLOSS,
+    SW_PER_SECOND_GLOSS,
     build_explainers,
 )
-from swinglab.metrics import NUMERIC_FIELDS
+from swinglab.metrics import SESSION_STATS_FIELDS
 
 
 def test_every_metric_has_an_explainer():
-    for name in NUMERIC_FIELDS + ("strike_s",):
+    for name in SESSION_STATS_FIELDS + ("strike_s",):
         e = EXPLAINERS.get(name)
         assert e is not None, name
         assert e.metric == name
@@ -29,8 +30,16 @@ def test_sw_gloss_explains_the_unit_everywhere_sw_is_used():
     assert "shoulder-widths" in SW_GLOSS
     assert "camera" in SW_GLOSS  # the point: distance-independent numbers
     for name in ("head_sway_backswing_sw", "hip_slide_backswing_sw",
-                 "head_dip_sw", "finish_balance_sw"):
+                 "head_dip_sw", "finish_balance_sw", "stance_width_sw"):
         assert EXPLAINERS[name].unit_gloss == SW_GLOSS
+
+
+def test_hand_movement_explainer_rejects_false_speed_claims():
+    explainer = EXPLAINERS["downswing_hand_speed_sw_s"]
+    assert explainer.unit_gloss == SW_PER_SECOND_GLOSS
+    assert "not clubhead speed" in explainer.text
+    assert "ball speed" in explainer.text
+    assert "miles per hour" in explainer.text
 
 
 def test_benchmarks_framed_as_references_not_targets():

@@ -74,7 +74,7 @@ def test_ensure_sample_report_refreshes_an_old_presentation_only(tmp_path):
     assert "schema-compatible old presentation" not in html
     assert (
         'name="caddieinsight-report-presentation" '
-        'content="premium-evidence-v1"'
+        'content="premium-coach-v2"'
     ) in html
     assert 'class="report-intro"' in html
 
@@ -103,9 +103,9 @@ def test_landing_page_advertises_sample_and_free_tier(tmp_path):
     cfg.web["require_account"] = True
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
     html = client.get("/").text  # logged-out landing
-    assert "See a sample report first" in html
+    assert "Explore the sample report" in html
     assert "/sample-report/" in html
-    assert "no card required" in html
+    assert "No card" in html
 
     open_client = TestClient(create_app(Config(), sessions_dir=tmp_path / "s2"))
     upload_html = open_client.get("/").text  # open-mode hero

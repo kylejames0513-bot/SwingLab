@@ -1,56 +1,280 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — {% if landing %}Swing analysis from your phone{% elif auth_view == "signup" %}Create a free account{% else %}Sign in{% endif %}{% endblock %}
 {% block style %}
-  main { max-width: 1180px; margin-top: clamp(34px, 6vw, 76px); }
-  .landing { display: grid; gap: clamp(52px, 8vw, 94px); }
+  {% if landing %}
+  main { max-width: none; margin: 0; padding: 0; }
+  .sl-app-footer { margin-top: 0; }
+  {% else %}
+  main { max-width: 620px; margin-top: clamp(40px, 7vw, 76px); }
+  {% endif %}
+  .landing { background: var(--sl-bg); }
   .landing-hero {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(390px, .92fr);
-    align-items: center;
-    gap: clamp(38px, 7vw, 88px);
+    position: relative;
+    isolation: isolate;
+    min-height: clamp(700px, 78svh, 860px);
+    overflow: hidden;
+    background: var(--sl-night);
+    color: #f5f2e9;
   }
-  .hero-copy { max-width: 650px; }
-  .hero-copy h1 {
-    max-width: 720px;
+  .landing-hero::before,
+  .landing-hero::after {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    content: "";
+  }
+  .landing-hero::before {
+    z-index: 1;
+    background:
+      linear-gradient(90deg, rgba(4, 13, 9, .96) 0%, rgba(4, 13, 9, .87) 34%, rgba(4, 13, 9, .36) 61%, rgba(4, 13, 9, .18) 100%),
+      linear-gradient(0deg, rgba(4, 13, 9, .86) 0%, transparent 38%, rgba(4, 13, 9, .16) 100%);
+  }
+  .landing-hero::after {
+    z-index: 2;
+    opacity: .24;
+    background-image:
+      linear-gradient(rgba(255, 255, 255, .025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, .025) 1px, transparent 1px);
+    background-size: 72px 72px;
+    -webkit-mask-image: linear-gradient(90deg, #000, transparent 72%);
+    mask-image: linear-gradient(90deg, #000, transparent 72%);
+  }
+  .landing-hero__backdrop,
+  .landing-hero__backdrop picture {
+    position: absolute;
+    inset: 0;
     margin: 0;
-    color: var(--sl-green);
-    font-size: clamp(2.75rem, 6.4vw, 5.6rem);
-    font-weight: 850;
+  }
+  .landing-hero__image {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+    object-position: center;
+  }
+  .landing-hero__inner {
+    position: relative;
+    z-index: 4;
+    width: 100%;
+    max-width: var(--sl-content);
+    min-height: clamp(700px, 78svh, 860px);
+    margin: 0 auto;
+    padding: clamp(72px, 9vw, 118px) var(--sl-pad-x) clamp(112px, 12vw, 158px);
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(280px, .6fr);
+    align-items: center;
+    gap: clamp(32px, 5vw, 76px);
+  }
+  .hero-copy { max-width: 730px; }
+  .hero-copy .sl-eyebrow {
+    margin: 0 0 22px;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    color: rgba(245, 242, 233, .74);
+    font-size: 11.5px;
+  }
+  .hero-copy .sl-eyebrow::before {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 auto;
+    border-radius: 50%;
+    background: #f07a18;
+    box-shadow: 0 0 0 6px rgba(240, 122, 24, .12);
+    content: "";
+  }
+  .hero-copy h1 {
+    max-width: 850px;
+    margin: 0;
+    color: #f8f6ef;
+    font-size: clamp(54px, 6.8vw, 96px);
+    font-weight: 900;
     letter-spacing: -.058em;
-    line-height: .97;
+    line-height: .91;
     text-wrap: balance;
+    text-shadow: 0 22px 52px rgba(0, 0, 0, .3);
   }
   .hero-lead {
-    max-width: 610px;
-    margin: 24px 0 0;
-    color: var(--sl-ink-soft);
-    font-size: clamp(1.02rem, 1.5vw, 1.18rem);
+    max-width: 55ch;
+    margin: 28px 0 0;
+    color: rgba(245, 242, 233, .78);
+    font-size: clamp(17px, 1.5vw, 20px);
+    line-height: 1.58;
+    text-wrap: pretty;
   }
-  .hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 28px; }
-  .hero-ctas a.button { margin: 0; }
-  .landing-primary { min-width: 212px; }
-  .hero-signin-note { margin: 13px 0 0; color: var(--sl-ink-muted); font-size: .83rem; }
+  .hero-ctas {
+    width: min(100%, 570px);
+    margin-top: 34px;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .hero-ctas a.button {
+    min-height: 54px;
+    margin: 0;
+    padding: 15px 24px;
+  }
+  .hero-ctas a.button.landing-primary {
+    border-color: #f07a18;
+    background: #f07a18;
+    color: #07130d;
+    box-shadow: 0 18px 38px -20px rgba(240, 122, 24, .9);
+  }
+  .hero-ctas a.button.landing-primary:hover { border-color: #ff9a42; background: #ff9a42; color: #07130d; }
+  .landing-primary span { margin-left: 10px; }
+  .hero-ctas .hero-secondary {
+    border-color: rgba(245, 242, 233, .42);
+    background: rgba(7, 19, 13, .32);
+    color: #f5f2e9;
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+  }
+  .hero-ctas .hero-secondary:hover {
+    border-color: rgba(245, 242, 233, .8);
+    background: rgba(245, 242, 233, .1);
+    color: #fff;
+  }
+  .hero-signin-note { margin: 14px 0 0; color: rgba(245, 242, 233, .58); font-size: .83rem; }
+  .hero-signin-note a { color: #f5f2e9; font-weight: 700; }
+  .hero-signin-note a:hover { color: #ffad62; }
   .hero-proof-points {
-    margin: 22px 0 0;
+    margin: 24px 0 0;
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 18px;
-    color: var(--sl-ink-muted);
-    font-size: .83rem;
+    gap: 10px 22px;
     list-style: none;
   }
-  .hero-proof-points li { position: relative; padding-left: 16px; }
+  .hero-proof-points li {
+    position: relative;
+    padding-left: 16px;
+    color: rgba(245, 242, 233, .68);
+    font-family: var(--sl-font-mono);
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
   .hero-proof-points li::before {
     position: absolute;
     top: .54em;
     left: 0;
-    width: 7px;
-    height: 7px;
-    background: var(--sl-orange);
+    width: 6px;
+    height: 6px;
+    background: #75d59b;
     border-radius: 50%;
     content: "";
   }
+  .hero-fine { margin: 12px 0 0; color: rgba(245, 242, 233, .48); font-size: 12.5px; }
+  .hero-signal {
+    width: min(100%, 360px);
+    margin: 0 0 44px auto;
+    padding: 18px;
+    align-self: end;
+    border: 1px solid rgba(245, 242, 233, .2);
+    border-radius: var(--sl-radius-lg);
+    background: rgba(5, 16, 10, .68);
+    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(20px);
+    box-shadow: 0 34px 80px -34px rgba(0, 0, 0, .9);
+  }
+  .hero-signal__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: rgba(245, 242, 233, .6);
+    font-family: var(--sl-font-mono);
+    font-size: 9.5px;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .hero-signal__ready { display: inline-flex; align-items: center; gap: 7px; color: #8be4ad; }
+  .hero-signal__ready::before {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    box-shadow: 0 0 0 5px rgba(139, 228, 173, .12);
+    content: "";
+  }
+  .hero-trace {
+    position: relative;
+    height: 112px;
+    margin-top: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(245, 242, 233, .1);
+    border-radius: 15px;
+    background:
+      linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px),
+      rgba(255, 255, 255, .025);
+    background-size: 28px 28px;
+  }
+  .hero-trace__line {
+    position: absolute;
+    left: 17%;
+    top: 22%;
+    width: 70%;
+    height: 92%;
+    border-top: 2px solid #f28a32;
+    border-radius: 50%;
+    transform: rotate(-8deg);
+    filter: drop-shadow(0 0 8px rgba(242, 138, 50, .52));
+  }
+  .hero-trace__dot {
+    position: absolute;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #f5f2e9;
+    box-shadow: 0 0 0 4px rgba(245, 242, 233, .12);
+  }
+  .hero-trace__dot--one { left: 22%; top: 57%; }
+  .hero-trace__dot--two { left: 52%; top: 30%; background: #f28a32; }
+  .hero-trace__dot--three { right: 14%; top: 50%; }
+  .hero-signal dl { margin: 16px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .hero-signal dl > div { min-width: 0; padding: 0 10px; }
+  .hero-signal dl > div:first-child { padding-left: 0; }
+  .hero-signal dl > div:last-child { padding-right: 0; }
+  .hero-signal dl > div + div { border-left: 1px solid rgba(245, 242, 233, .12); }
+  .hero-signal dt {
+    color: rgba(245, 242, 233, .46);
+    font-family: var(--sl-font-mono);
+    font-size: 8.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .hero-signal dd { margin: 6px 0 0; color: #f5f2e9; font-size: 11px; font-weight: 700; line-height: 1.35; }
+  .hero-signal__note { margin: 14px 0 0; color: rgba(245, 242, 233, .48); font-size: 10.5px; line-height: 1.45; }
+  .hero-signal__link { color: #f5f2e9; font-weight: 700; }
+  .landing-body {
+    width: 100%;
+    max-width: var(--sl-content);
+    margin: 0 auto;
+    padding: clamp(64px, 9vw, 112px) var(--sl-pad-x);
+    display: grid;
+    gap: clamp(64px, 9vw, 108px);
+  }
+  .report-proof {
+    display: grid;
+    grid-template-columns: minmax(0, .86fr) minmax(390px, 1.14fr);
+    align-items: center;
+    gap: clamp(36px, 7vw, 82px);
+  }
+  .report-proof__copy h2,
+  .landing-section-head h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-size: clamp(2rem, 4vw, 3.25rem);
+    letter-spacing: -.045em;
+    line-height: 1.04;
+    text-wrap: balance;
+  }
+  .report-proof__copy > p:not(.sl-eyebrow),
+  .landing-section-head p:last-child { margin: 16px 0 0; color: var(--sl-ink-soft); }
+  .report-proof__copy .button { margin-top: 24px; }
   .preview-figure { margin: 0; }
   .preview-shell {
     overflow: hidden;
@@ -120,61 +344,14 @@
     line-height: 1.5;
   }
   .preview-caption a { font-weight: 700; }
-  .atmosphere-figure {
-    margin: 0;
-    overflow: hidden;
-    background: var(--sl-surface-dark);
-    border: 1px solid rgba(255, 255, 255, .12);
-    border-radius: var(--sl-radius-xl);
-    box-shadow: var(--sl-shadow-lg);
-  }
-  .atmosphere-media {
-    position: relative;
-    overflow: hidden;
-    aspect-ratio: 16 / 9;
-    background: #102d20;
-  }
-  .atmosphere-media img {
-    width: 100%;
-    height: 100%;
-    display: block;
-    object-fit: cover;
-    object-position: 50% 50%;
-  }
-  .atmosphere-caption {
-    padding: clamp(24px, 4.6vw, 42px);
-    display: grid;
-    grid-template-columns: minmax(0, .82fr) minmax(0, 1.18fr);
-    align-items: start;
-    gap: clamp(24px, 6vw, 68px);
-    color: #d7e3db;
-  }
-  .atmosphere-caption .sl-eyebrow { color: #ffad72; }
-  .atmosphere-caption h2 {
-    margin: 0;
-    color: #fff;
-    font-size: clamp(1.9rem, 4vw, 3.1rem);
-    line-height: 1.03;
-    letter-spacing: -.045em;
-    text-wrap: balance;
-  }
-  .atmosphere-caption__copy > p:first-child { margin: 2px 0 0; }
   .landing-section-head { max-width: 690px; }
-  .landing-section-head h2 {
-    margin: 0;
-    color: var(--sl-green);
-    font-size: clamp(2rem, 4vw, 3.25rem);
-    letter-spacing: -.045em;
-    line-height: 1.04;
-    text-wrap: balance;
-  }
-  .landing-section-head p:last-child { margin: 16px 0 0; color: var(--sl-ink-soft); }
   .flow-list {
     margin: 30px 0 0;
     padding: 0;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 12px;
+    align-items: stretch;
     list-style: none;
     counter-reset: journey;
   }
@@ -183,6 +360,9 @@
     padding: 22px;
     position: relative;
     overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
     background: var(--sl-bg-card);
     border: 1px solid var(--sl-border);
     border-radius: var(--sl-radius-lg);
@@ -219,10 +399,10 @@
     border-radius: var(--sl-radius-xl);
     box-shadow: var(--sl-shadow-lg);
   }
-  .scope-panel .sl-eyebrow { color: #ffad72; }
+  .scope-panel .sl-eyebrow { color: var(--sl-premium-accent); }
   .scope-panel h2 { margin: 0; font-size: clamp(1.8rem, 3.8vw, 3rem); line-height: 1.05; letter-spacing: -.04em; }
   .scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .scope-grid div { padding: 18px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .11); border-radius: var(--sl-radius-md); }
+  .scope-grid div { height: 100%; padding: 18px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .11); border-radius: var(--sl-radius-md); }
   .scope-grid h3 { margin: 0; color: #fff; font-size: .95rem; }
   .scope-grid p { margin: 9px 0 0; color: #cbdad0; font-size: .86rem; }
   .auth-shell { max-width: 470px; margin: 0 auto; }
@@ -251,140 +431,185 @@
                   color: var(--sl-ink-soft); font-size: .88rem; margin-top: 18px;
                   padding: 12px 14px; }
   @media (max-width: 980px) {
-    main { margin-top: 36px; }
-    .landing-hero { grid-template-columns: 1fr; }
-    .hero-copy { max-width: 760px; }
+    .landing-hero__inner { grid-template-columns: minmax(0, 1fr) minmax(250px, .48fr); }
+    .hero-copy h1 { font-size: clamp(50px, 7.8vw, 74px); }
+    .report-proof { grid-template-columns: 1fr; }
     .preview-figure { max-width: 680px; }
     .flow-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
-  @media (max-width: 680px) {
-    .hero-copy h1 { font-size: clamp(2.55rem, 13vw, 4rem); }
-    .hero-ctas { align-items: stretch; flex-direction: column; }
-    .hero-ctas a.button { width: 100%; }
+  @media (max-width: 749px) {
+    .landing-hero { min-height: 720px; }
+    .landing-hero::before {
+      background:
+        linear-gradient(180deg, rgba(4, 13, 9, .95) 0%, rgba(4, 13, 9, .82) 48%, rgba(4, 13, 9, .46) 76%, rgba(4, 13, 9, .72) 100%),
+        linear-gradient(90deg, rgba(4, 13, 9, .72), rgba(4, 13, 9, .08));
+    }
+    .landing-hero::after {
+      background-size: 48px 48px;
+      -webkit-mask-image: linear-gradient(180deg, #000, transparent 68%);
+      mask-image: linear-gradient(180deg, #000, transparent 68%);
+    }
+    .landing-hero__image { object-position: 58% center; }
+    .landing-hero__inner {
+      min-height: 720px;
+      padding-top: clamp(48px, 10vw, 72px);
+      padding-bottom: 74px;
+      grid-template-columns: 1fr;
+      align-content: center;
+      gap: 0;
+    }
+    .hero-copy h1 { max-width: 11ch; font-size: clamp(42px, 13vw, 58px); line-height: .94; }
+    .hero-lead { max-width: 38ch; margin-top: 18px; font-size: 16px; line-height: 1.5; }
+    .hero-ctas { width: min(100%, 330px); grid-template-columns: 1fr; gap: 6px; margin-top: 22px; }
+    .hero-ctas a.button { width: 100%; min-height: 48px; padding: 12px 18px; }
+    .hero-ctas .hero-secondary {
+      width: auto;
+      min-height: 40px;
+      padding: 8px 2px;
+      justify-self: start;
+      justify-content: flex-start;
+      border: 0;
+      background: transparent;
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+      text-decoration: underline;
+      text-decoration-color: rgba(245, 242, 233, .5);
+      text-underline-offset: 5px;
+    }
+    .hero-proof-points { width: fit-content; margin-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); gap: 8px 16px; }
+    .hero-proof-points li { padding-left: 13px; font-size: 9.5px; letter-spacing: .09em; }
+    .hero-fine, .hero-signal { display: none; }
+    .landing-body { padding-top: 58px; padding-bottom: 72px; }
     .preview-read, .scope-grid, .scope-panel { grid-template-columns: 1fr; }
-    .atmosphere-caption { grid-template-columns: 1fr; }
-    .atmosphere-media { aspect-ratio: 4 / 3; }
     .flow-list { grid-template-columns: 1fr; }
     .flow-list li { min-height: 0; }
     .flow-list li:not(:last-child)::after { content: "\2193"; }
+  }
+  @media (max-width: 390px) {
+    .landing-hero__inner { padding-inline: 18px; }
+    .hero-copy .sl-eyebrow { font-size: 10px; letter-spacing: .13em; }
+    .hero-copy h1 { font-size: clamp(40px, 13.5vw, 52px); }
   }
 {% endblock %}
 {% block main %}
   {% if landing %}
   <div class="landing">
     <section class="landing-hero" aria-labelledby="landing-title">
-      <div class="hero-copy">
-        <p class="sl-eyebrow">Your swing feedback loop</p>
-        <h1 id="landing-title">One swing priority. One practice plan. Proof when you re-film.</h1>
-        <p class="hero-lead">Create a free {{ brand.name }} account for {% if free_per_month <= 0 %}unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month{% endif %}. Film with your phone, get one measured place to
-          start, and return with the same setup to see what changed — no card required.</p>
-        <div class="hero-ctas" aria-label="Get started">
-          <a class="button landing-primary" href="/signup">Create a free account</a>
-          <a class="button secondary" href="/login">Sign in</a>
+      <picture class="landing-hero__backdrop">
+        <source media="(max-width: 749px)" srcset="/static/caddieinsight-range-hero-mobile.webp">
+        <img class="landing-hero__image" src="/static/caddieinsight-range-hero.webp"
+             alt="Golfer completing a driver swing beside a phone on a tripod at a dusk driving range"
+             width="1672" height="941" decoding="async" fetchpriority="high">
+      </picture>
+      <div class="landing-hero__inner">
+        <div class="hero-copy">
+          <p class="sl-eyebrow">Phone-video coaching &middot; no sensors</p>
+          <h1 id="landing-title">Practice the move that matters.</h1>
+          <p class="hero-lead">Choose the club, film one repeatable view, and get one prioritized coaching plan with a pass mark for your next clip.{% if free_per_month <= 0 %} Your free account includes unlimited full analyses, with no card required.{% endif %}</p>
+          <div class="hero-ctas" aria-label="Get started">
+            <a class="button landing-primary" href="/signup">Analyze a swing free <span aria-hidden="true">&rarr;</span></a>
+            <a class="button hero-secondary" href="/sample-report/">Explore the sample report</a>
+          </div>
+          <p class="hero-signin-note">Already have an account? <a href="/login">Sign in to continue your coaching loop.</a></p>
+          <ul class="hero-proof-points" aria-label="Free-plan proof points">
+            <li>{% if free_per_month <= 0 %}Unlimited reports{% else %}{{ free_per_month }} report{% if free_per_month != 1 %}s{% endif %} / month{% endif %}</li>
+            <li>No card</li>
+            <li>Club saved</li>
+          </ul>
+          <p class="hero-fine">Supported 2D movement and timing estimates from phone video.</p>
         </div>
-        <p class="hero-signin-note">Already have an account? Sign in to continue your coaching loop.</p>
-        <ul class="hero-proof-points" aria-label="Account benefits">
-          <li>No purchase required</li>
-          <li>Your selected club stays with the report</li>
-          <li>Private account history</li>
-        </ul>
+        <aside class="hero-signal" aria-label="{{ brand.name }} example analysis">
+          <div class="hero-signal__head">
+            <span>Example session</span>
+            <span class="hero-signal__ready">Plan ready</span>
+          </div>
+          <div class="hero-trace" role="img" aria-label="Illustrative movement trace for the example session">
+            <span class="hero-trace__line" aria-hidden="true"></span>
+            <span class="hero-trace__dot hero-trace__dot--one" aria-hidden="true"></span>
+            <span class="hero-trace__dot hero-trace__dot--two" aria-hidden="true"></span>
+            <span class="hero-trace__dot hero-trace__dot--three" aria-hidden="true"></span>
+          </div>
+          <dl>
+            <div><dt>Selected club</dt><dd>Iron</dd></div>
+            <div><dt>Coaching priority</dt><dd>Lead-hip control</dd></div>
+            <div><dt>Practice target</dt><dd>One pass mark</dd></div>
+          </dl>
+          <p class="hero-signal__note">Example interface using demonstration data. <a class="hero-signal__link" href="/sample-report/">Open the full report.</a></p>
+        </aside>
       </div>
-
-      <figure class="preview-figure" aria-labelledby="preview-title">
-        <div class="preview-shell">
-          <div class="preview-topbar">
-            <span class="preview-dots" aria-hidden="true"><span></span><span></span><span></span></span>
-            <span id="preview-title">Illustrated swing report</span>
-          </div>
-          <a class="preview-media" href="/sample-report/"
-             aria-label="Open the full illustrated sample report">
-            <img src="/sample-report/media/strip_s1.png"
-                 alt="Illustrated key-position strip from the {{ brand.name }} sample swing report"
-                 width="960" height="480" decoding="async">
-          </a>
-          <div class="preview-read" aria-label="Report structure">
-            <div><span>Coach</span><strong>One priority first</strong></div>
-            <div><span>Practice</span><strong>One plan with a pass mark</strong></div>
-          </div>
-        </div>
-        <figcaption class="preview-caption">Illustrated demonstration report built
-          through the same report engine. It is not a customer result or
-          testimonial. <a href="/sample-report/">See a sample report first</a>.</figcaption>
-      </figure>
     </section>
 
-    <section aria-labelledby="atmosphere-title">
-      <figure class="atmosphere-figure">
-        <div class="atmosphere-media">
-          <img src="/static/homepage-range-atmosphere-v1.webp"
-               alt="Golfer filmed face-on by a phone on a hip-height tripod at sunrise"
-               width="1600" height="900" loading="lazy" decoding="async">
+    <div class="landing-body">
+      <section class="report-proof" aria-labelledby="preview-title">
+        <div class="report-proof__copy">
+          <p class="sl-eyebrow">Inside the report</p>
+          <h2 id="preview-title">See what your next range session is really for.</h2>
+          <p>The complete sample uses the same report engine as a customer session: required club context, one supported priority, and one measured plan for the next clip.</p>
+          <a class="button secondary" href="/sample-report/">Open the full sample report</a>
         </div>
-        <figcaption class="atmosphere-caption">
+        <figure class="preview-figure">
+          <div class="preview-shell">
+            <div class="preview-topbar">
+              <span class="preview-dots" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span>Illustrated swing report</span>
+            </div>
+            <a class="preview-media" href="/sample-report/" aria-label="Open the full illustrated sample report">
+              <img src="/sample-report/media/strip_s1.png"
+                   alt="Illustrated key-position strip from the {{ brand.name }} sample swing report"
+                   width="960" height="480" loading="lazy" decoding="async">
+            </a>
+            <div class="preview-read" aria-label="Report structure">
+              <div><span>Coach</span><strong>One priority first</strong></div>
+              <div><span>Practice</span><strong>One plan with a pass mark</strong></div>
+            </div>
+          </div>
+          <figcaption class="preview-caption">Illustrated demonstration report built through the same report engine. It is not a customer result or testimonial.</figcaption>
+        </figure>
+      </section>
+
+      <section aria-labelledby="journey-title">
+        <div class="landing-section-head">
+          <p class="sl-eyebrow">The {{ brand.name }} method</p>
+          <h2 id="journey-title">Film. Coach. Practice. Prove it.</h2>
+          <p>Four deliberate steps turn a phone clip into a range session with one clear job.</p>
+        </div>
+        <ol class="flow-list" aria-label="Film, Coach, Practice, Re-film">
+          <li>
+            <h3>Choose the club</h3>
+            <p>Select the club before upload. It stays with the report so iron and driver swings are coached in the right context.</p>
+          </li>
+          <li>
+            <h3>Film a repeatable view</h3>
+            <p>Record the full body from hip height. Face-on supports movement coaching; down the line supports timing and rhythm only.</p>
+          </li>
+          <li>
+            <h3>Work one plan</h3>
+            <p>See one supported priority, a focused drill, and a measurable pass mark instead of disconnected swing tips.</p>
+          </li>
+          <li>
+            <h3>Re-film to prove it</h3>
+            <p>Use the same club, handedness, and camera angle so the next clip can test whether the measured pattern changed.</p>
+          </li>
+        </ol>
+      </section>
+
+      <section class="scope-panel" aria-labelledby="scope-title">
+        <div>
+          <p class="sl-eyebrow">Trust the scope</p>
+          <h2 id="scope-title">Useful because it is specific about what it can see.</h2>
+        </div>
+        <div class="scope-grid">
           <div>
-            <p class="sl-eyebrow">Capture context matters</p>
-            <h2 id="atmosphere-title">Film the setup you can repeat.</h2>
+            <h3>Supported measurements</h3>
+            <p>Phone-video timing plus 2D body movement in the camera view from supported face-on footage.</p>
           </div>
-          <div class="atmosphere-caption__copy">
-            <p>A phone at hip height, your full body in frame, and the same
-              club and camera context make the next clip more comparable. The
-              product proof remains the complete sample report above; the range
-              scene is illustrative.</p>
+          <div>
+            <h3>Not measured</h3>
+            <p>Club path, face angle, attack angle, dynamic loft, launch, spin, carry, strike location, and ball flight.</p>
           </div>
-        </figcaption>
-      </figure>
-    </section>
-
-    <section aria-labelledby="journey-title">
-      <div class="landing-section-head">
-        <p class="sl-eyebrow">A repeatable practice system</p>
-        <h2 id="journey-title">From a phone clip to your next measurable check.</h2>
-        <p>The report narrows the session to one action, then keeps the capture
-          context attached so a later re-film can be compared honestly.</p>
-      </div>
-      <ol class="flow-list" aria-label="Film, Coach, Practice, Re-film">
-        <li>
-          <h3>Film</h3>
-          <p>Choose your club and record the full body from hip height. Face-on
-            supports body-motion coaching; down the line supports timing and
-            rhythm only.</p>
-        </li>
-        <li>
-          <h3>Coach</h3>
-          <p>See one priority from the supported measurements, with the
-            evidence and coaching line visible in the report.</p>
-        </li>
-        <li>
-          <h3>Practice</h3>
-          <p>Follow one focused drill, a clear dosage, and a measurable pass
-            mark instead of collecting disconnected swing tips.</p>
-        </li>
-        <li>
-          <h3>Re-film</h3>
-          <p>Use the same club, handedness, and camera angle. Comparable clips
-            can show whether the measured pattern moved against your baseline.</p>
-        </li>
-      </ol>
-    </section>
-
-    <section class="scope-panel" aria-labelledby="scope-title">
-      <div>
-        <p class="sl-eyebrow">Trust the scope</p>
-        <h2 id="scope-title">Useful because it is specific about what it can see.</h2>
-      </div>
-      <div class="scope-grid">
-        <div>
-          <h3>Supported measurements</h3>
-          <p>Phone-video timing plus 2D body movement in the camera view from
-            supported face-on footage.</p>
         </div>
-        <div>
-          <h3>Not measured</h3>
-          <p>Club path, face angle, attack angle, dynamic loft, launch, spin,
-            carry, strike location, and ball flight.</p>
-        </div>
-      </div>
-    </section>
+      </section>
+    </div>
   </div>
 
   {% else %}

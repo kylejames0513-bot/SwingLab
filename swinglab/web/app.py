@@ -246,6 +246,14 @@ def _normalized_origin(value: str) -> tuple[str, str, int] | None:
     return scheme, hostname, port
 
 
+def _serialized_origin(origin: tuple[str, str, int]) -> str:
+    scheme, hostname, port = origin
+    rendered_host = f"[{hostname}]" if ":" in hostname else hostname
+    default_port = 443 if scheme == "https" else 80
+    suffix = "" if port == default_port else f":{port}"
+    return f"{scheme}://{rendered_host}{suffix}"
+
+
 def _same_origin_form_post(request: Request) -> bool:
     """Reject browser-declared cross-origin form posts.
 
@@ -467,6 +475,7 @@ def create_app(
                 "a restart. Set it to a long random string in the environment."
             )
     public_origin = _normalized_origin(os.environ.get("PUBLIC_BASE_URL"))
+    storefront_origin = _normalized_origin(cfg.shop.get("store_url"))
     app.add_middleware(
         SessionMiddleware,
         secret_key=secret,
@@ -1113,8 +1122,8 @@ def create_app(
                 "start_url": "/today",
                 "scope": "/",
                 "display": "standalone",
-                "background_color": "#f6f1e7",
-                "theme_color": "#123f32",
+                "background_color": "#f7f5f0",
+                "theme_color": "#07130d",
                 "icons": [
                     {
                         "src": "/static/pwa-icon.svg",
@@ -1425,6 +1434,87 @@ def create_app(
             # Local logout is already complete.  Do not trap someone in their
             # account because a provider discovery call is temporarily down.
             return RedirectResponse("/", status_code=303)
+
+    def storefront_session_request_origin(request: Request) -> str:
+        if storefront_origin is None or not cfg.web.get("require_account"):
+            raise HTTPException(404, "Not Found")
+        if request.headers.get("authorization") is not None:
+            raise HTTPException(403, "Invalid storefront session request.")
+        source_origin = _normalized_origin(request.headers.get("origin"))
+        if source_origin is None or not hmac.compare_digest(
+            repr(source_origin).encode("utf-8"),
+            repr(storefront_origin).encode("utf-8"),
+        ):
+            raise HTTPException(403, "Invalid storefront session origin.")
+        return _serialized_origin(storefront_origin)
+
+    def storefront_session_response(
+        payload: dict[str, object], origin: str
+    ) -> JSONResponse:
+        return JSONResponse(
+            payload,
+            headers={
+                "Access-Control-Allow-Origin": origin,
+                "Access-Control-Allow-Credentials": "true",
+                "Cache-Control": "private, no-store",
+                "Cross-Origin-Resource-Policy": "same-site",
+                "Pragma": "no-cache",
+                "Vary": "Origin",
+            },
+        )
+
+    @app.get("/auth/storefront/session")
+    def storefront_session_status(request: Request):
+        origin = storefront_session_request_origin(request)
+        user = current_user(request)
+        if user is None:
+            return storefront_session_response({"authenticated": False}, origin)
+        profile = users.get_golfer_profile(user.id)
+        return storefront_session_response(
+            {
+                "authenticated": True,
+                "display_name": profile.display_name if profile else "",
+                "is_pro": bool(user.is_pro),
+            },
+            origin,
+        )
+
+    @app.post("/auth/storefront/session")
+    def storefront_session_logout(request: Request):
+        origin = storefront_session_request_origin(request)
+        user = current_user(request)
+        browser_session_id = request.session.get(
+            SHOPIFY_ACCOUNT_BROWSER_SESSION_KEY
+        )
+        request.session.clear()
+        browser_session = (
+            users.consume_shopify_customer_account_browser_session(
+                browser_session_id
+            )
+            if browser_session_id is not None
+            else None
+        )
+        if (
+            shopify_customer_account_client is not None
+            and user is not None
+            and browser_session is not None
+            and hmac.compare_digest(user.id, browser_session.user_id)
+        ):
+            try:
+                return RedirectResponse(
+                    shopify_customer_account_client.logout_url(
+                        id_token=browser_session.id_token
+                    ),
+                    status_code=303,
+                    headers={"Cache-Control": "no-store"},
+                )
+            except shopify_customer_accounts.ShopifyCustomerAccountError:
+                pass
+        return RedirectResponse(
+            origin,
+            status_code=303,
+            headers={"Cache-Control": "no-store"},
+        )
 
     def send_code_email(
         email: str,
@@ -2475,6 +2565,8 @@ def create_app(
         try:
             if not primary_goal.strip():
                 raise ValueError("Choose a main goal for your golfer profile.")
+            if not preferred_club.strip():
+                raise ValueError("Choose a club for your golfer profile.")
             users.upsert_golfer_profile(
                 user.id,
                 display_name=display_name,

@@ -28,10 +28,11 @@ from .drills import gear_shop_url, practice_plan
 from .explainers import build_explainers
 from .ffmpeg import VideoInfo
 from .metrics import ANGLE_DTL, ANGLE_FACE_ON, session_stats
+from .report_insights import build_swing_breakdown
 
 
 REPORT_FORMAT_VERSION = "caddie-brief-v1"
-REPORT_PRESENTATION_VERSION = "premium-evidence-v1"
+REPORT_PRESENTATION_VERSION = "premium-coach-v2"
 REPORT_OUTCOME_COACHING = "coaching_ready"
 REPORT_OUTCOME_CAPTURE = "capture_only"
 PRIORITY_RULE_META_NAME = "caddieinsight-coaching-priority-rule"
@@ -262,6 +263,16 @@ def write_report_html(
         for block in plan for d in block["drills"]
     }
     selected_club_label = club_label(club)
+    swing_breakdown = (
+        build_swing_breakdown(
+            all_metrics,
+            cfg,
+            angle=angle,
+            selected_club=selected_club_label,
+        )
+        if coaching_allowed
+        else []
+    )
     club_aware_enabled = selected_priority_rule == 2
     club_priority_changes_ties = bool(
         club_aware_enabled
@@ -303,6 +314,7 @@ def write_report_html(
         explainers=build_explainers(cfg.coaching),
         slowmo_factor=cfg.slowmo["factor"],
         caddie_brief=caddie_brief,
+        swing_breakdown=swing_breakdown,
         flags=flags,
         issue_cards=issue_ctx,
         practice_plan=plan,

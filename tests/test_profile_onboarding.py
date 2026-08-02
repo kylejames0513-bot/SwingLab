@@ -41,7 +41,7 @@ def profile_form(**overrides):
         "sessions_per_week": "2",
         "handedness": "right",
         "camera_angle": "face-on",
-        "preferred_club": "",
+        "preferred_club": "iron",
     }
     payload.update(overrides)
     return payload
@@ -71,6 +71,9 @@ def test_password_signup_creates_claimed_profile_shell_and_guides_completion(app
     assert "What should your caddie call you?" in welcome.text
     assert 'value="None"' not in welcome.text
     assert "Add a backup password" not in welcome.text
+    assert 'name="preferred_club"' in welcome.text
+    assert 'aria-describedby="club-help" required' in welcome.text
+    assert '<option value="" disabled selected>Choose a club</option>' in welcome.text
     assert welcome.headers["cache-control"] == "private, no-store"
 
     missing_name = client.post(
@@ -86,6 +89,12 @@ def test_password_signup_creates_claimed_profile_shell_and_guides_completion(app
     assert missing_goal.status_code == 200
     assert "Choose a main goal" in missing_goal.text
 
+    missing_club = client.post(
+        "/onboarding", data=profile_form(preferred_club="")
+    )
+    assert missing_club.status_code == 200
+    assert "Choose a club" in missing_club.text
+
     saved = client.post(
         "/onboarding", data=profile_form(), follow_redirects=False
     )
@@ -96,6 +105,7 @@ def test_password_signup_creates_claimed_profile_shell_and_guides_completion(app
     assert profile.display_name == "Kyle James"
     assert profile.handicap_range is None
     assert profile.primary_goal == "consistency"
+    assert profile.preferred_club == "iron"
     assert profile.is_complete is True
     assert "Kyle James" in client.get("/account").text
 

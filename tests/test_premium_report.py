@@ -40,7 +40,7 @@ def test_report_remains_offline_self_contained_and_contract_marked(
     html = render_report(tmp_path)
 
     assert 'name="caddieinsight-report-format" content="caddie-brief-v1"' in html
-    assert 'name="caddieinsight-report-presentation" content="premium-evidence-v1"' in html
+    assert 'name="caddieinsight-report-presentation" content="premium-coach-v2"' in html
     assert 'name="caddieinsight-report-outcome" content="coaching_ready"' in html
     assert 'name="caddieinsight-coaching-priority-rule" content="' in html
     assert "fonts.googleapis.com" not in html
@@ -89,10 +89,8 @@ def test_report_has_accessible_evidence_tables_media_and_print_css(tmp_path):
     source = TEMPLATE.read_text(encoding="utf-8")
 
     assert 'href="#report-main">Skip to report</a>' in html
-    assert (
-        'role="region" aria-label="Swing timing and movement measurements"'
-        in html
-    )
+    assert 'role="region" aria-label="Swing timing measurements"' in html
+    assert 'role="region" aria-label="Body movement measurements"' in html
     assert (
         '<caption class="visually-hidden">Session context and source details</caption>'
         in html

@@ -30,6 +30,10 @@ SW_GLOSS = (
 SECONDS_GLOSS = "Measured in seconds, straight from your video's frames."
 RATIO_GLOSS = "A ratio: backswing time \N{DIVISION SIGN} downswing time."
 DEG_GLOSS = "Degrees as the camera sees them, filmed face-on."
+SW_PER_SECOND_GLOSS = (
+    "Shoulder-widths per second in the camera view — a personal comparison "
+    "unit, not mph."
+)
 
 
 @dataclass(frozen=True)
@@ -194,14 +198,42 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
         ),
         Explainer(
             "finish_balance_sw",
-            "Finish balance",
-            "How much your feet moved while holding the finish. A quiet, "
-            "held finish reads near zero and is the cheapest proof the "
-            "whole swing stayed in balance; a step or stumble reads tenths. "
-            f"At or under about {bal} SW is the reference.",
+            "Finish base stability",
+            "How far the midpoint between your ankles drifted while you held "
+            "the finish. A steady base is usually easier to repeat than a "
+            "step or slide after impact, but this number is not total foot "
+            f"movement. At or under about {bal} SW is the reference.",
             SW_GLOSS,
-            how="Foot travel while the finish is held, in shoulder widths; "
-                f"flagged beyond {bal} SW.",
+            how="Average ankle-midpoint drift while the finish is held, in "
+                f"shoulder widths; flagged beyond {bal} SW. Equal and "
+                "opposite foot motion can cancel, so the replay remains the "
+                "visual check.",
+        ),
+        Explainer(
+            "stance_width_sw",
+            "Setup stance width",
+            "How far apart your feet were at setup compared with your own "
+            "shoulder width. This gives each follow-up video a repeatable "
+            "setup baseline; narrow, shoulder-width, or wide is context, not "
+            "a grade, because club choice, intended shot, and body shape all "
+            "change the useful stance.",
+            SW_GLOSS,
+            how="Median horizontal ankle separation across the readable "
+                "address frames, divided by address shoulder width. Context "
+                "only — it never fires a coaching flag.",
+        ),
+        Explainer(
+            "downswing_hand_speed_sw_s",
+            "Downswing hand movement",
+            "How quickly the midpoint between your wrists moved through the "
+            "camera view from the top to the strike frame. Use it to compare "
+            "your own swings filmed with the same club and camera setup; "
+            "faster is not automatically better, and this is not clubhead "
+            "speed, ball speed, or miles per hour.",
+            SW_PER_SECOND_GLOSS,
+            how="Average smoothed 2D wrist-midpoint path length from top to "
+                "the audio-estimated impact frame, divided by elapsed time "
+                "and address shoulder width. Context only.",
         ),
     ]
     return {e.metric: e for e in entries}

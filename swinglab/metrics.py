@@ -41,8 +41,18 @@ FACE_ON_ONLY_FIELDS = (
     "shoulder_tilt_impact_deg",
     "shoulder_tilt_delta_deg",
     "finish_balance_sw",
+    "stance_width_sw",
+    "downswing_hand_speed_sw_s",
 )
 
+# Report-only context measurements. These belong in the single-session
+# averages, but not in the generic cross-session trend/Proof Cycle registry:
+# stance and projected hand movement are comparable only when club, view,
+# framing, and effort are deliberately matched.
+CONTEXT_NUMERIC_FIELDS = (
+    "stance_width_sw",
+    "downswing_hand_speed_sw_s",
+)
 
 def finite_float(value: object) -> float | None:
     """Return one finite numeric value, or ``None`` for unsafe input.
@@ -82,6 +92,11 @@ class SwingMetrics:
     # False when target-direction inference hit its last-resort fallback —
     # the coaching notes then carry an explicit low-confidence line.
     target_confident: bool = True
+    # Context measurements, not universal coaching grades. Keeping these
+    # after target_confident preserves the positional constructor used by
+    # older callers while adding named, additive fields to metrics.json.
+    stance_width_sw: float = float("nan")  # ankle span at address / shoulder width
+    downswing_hand_speed_sw_s: float = float("nan")  # projected wrist-centroid path / s
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -286,6 +301,73 @@ def _finish_balance_sw(
     return round(float(np.mean(drift)) / sw, 3)
 
 
+def _stance_width_sw(
+    tracked: list[pose.Landmarks | None], sw: float
+) -> float:
+    """Median projected ankle separation at address, in shoulder widths.
+
+    This is setup context rather than a good/bad score: useful stance width
+    changes with the golfer, club, and intended shot. The first usable
+    address frames are combined so one pose wobble cannot define the result.
+    """
+    if not math.isfinite(sw) or sw <= 0:
+        return float("nan")
+    first = [lm for lm in tracked if lm is not None][:ADDRESS_FRAMES]
+    if len(first) < 3:
+        return float("nan")
+    widths = [
+        abs(float(lm[pose.LEFT_ANKLE][0] - lm[pose.RIGHT_ANKLE][0])) / sw
+        for lm in first
+    ]
+    return round(float(np.median(widths)), 3)
+
+
+def _downswing_hand_speed_sw_s(
+    tracked: list[pose.Landmarks | None],
+    events: SwingEvents,
+    sw: float,
+    fps: float,
+) -> float:
+    """Average 2D hand-centroid path rate from top to impact, in SW/s.
+
+    The value is deliberately body-normalized and camera-view-only. It is a
+    matched-video comparison signal, never clubhead speed, ball speed, or mph.
+    A three-point positional median reduces pose jitter before path length is
+    accumulated; frame indices preserve elapsed time across dropped frames.
+    """
+    if not math.isfinite(sw) or sw <= 0 or not math.isfinite(fps) or fps <= 0:
+        return float("nan")
+    if events.impact_idx <= events.top_idx:
+        return float("nan")
+    samples = [
+        (i, pose.hand_centroid(tracked[i]).astype(float))
+        for i in range(events.top_idx, events.impact_idx + 1)
+        if 0 <= i < len(tracked) and tracked[i] is not None
+    ]
+    if len(samples) < 3:
+        return float("nan")
+    # Require evidence at both ends of the measured phase. Otherwise a small
+    # readable middle fragment would be mislabeled as top-to-impact motion.
+    if samples[0][0] > events.top_idx + 1 or samples[-1][0] < events.impact_idx - 1:
+        return float("nan")
+    points = [point for _, point in samples]
+    smoothed = (
+        points[:1]
+        + [
+            np.median(np.stack(points[k - 1 : k + 2]), axis=0)
+            for k in range(1, len(points) - 1)
+        ]
+        + points[-1:]
+    )
+    path_px = math.fsum(
+        float(np.linalg.norm(b - a)) for a, b in zip(smoothed, smoothed[1:])
+    )
+    elapsed_s = (samples[-1][0] - samples[0][0]) / fps
+    if elapsed_s <= 0:
+        return float("nan")
+    return round(path_px / sw / elapsed_s, 3)
+
+
 def compute_metrics(
     swing_no: int,
     tracked: list[pose.Landmarks | None],
@@ -355,6 +437,13 @@ def compute_metrics(
         shoulder_tilt_impact_deg=tilt_impact,
         shoulder_tilt_delta_deg=tilt_delta,
         finish_balance_sw=_finish_balance_sw(tracked, finish_idx, sw, hold_frames),
+        stance_width_sw=_stance_width_sw(tracked, sw),
+        downswing_hand_speed_sw_s=_downswing_hand_speed_sw_s(
+            tracked,
+            events,
+            sw,
+            float(fps) if fps is not None else base_fps,
+        ),
     )
     if angle == ANGLE_DTL:
         # Every one of these is defined face-on. Down the line they would be
@@ -382,6 +471,8 @@ NUMERIC_FIELDS = (
     "finish_balance_sw",
 )
 
+SESSION_STATS_FIELDS = NUMERIC_FIELDS + CONTEXT_NUMERIC_FIELDS
+
 
 def session_stats(all_metrics: list[SwingMetrics]) -> dict[str, dict[str, float]]:
     """Mean and standard deviation of each metric across swings.
@@ -389,7 +480,7 @@ def session_stats(all_metrics: list[SwingMetrics]) -> dict[str, dict[str, float]
     Low variance is itself a finding worth reporting, so std is always included.
     """
     stats: dict[str, dict[str, float]] = {}
-    for field_name in NUMERIC_FIELDS:
+    for field_name in SESSION_STATS_FIELDS:
         values = [
             value
             for metric in all_metrics

@@ -13,12 +13,12 @@
     border-radius: var(--sl-radius-xl);
     background:
       radial-gradient(circle at 88% 12%, rgba(255, 203, 138, .18), transparent 16rem),
-      linear-gradient(135deg, #0d3422, #185838);
+      var(--sl-premium-gradient);
     color: #fff;
     box-shadow: var(--sl-shadow-lg);
   }
   .history-header__copy { max-width: 700px; }
-  .history-header .sl-eyebrow { margin-bottom: 8px; color: #ffd09d; }
+  .history-header .sl-eyebrow { margin-bottom: 8px; color: var(--sl-premium-accent); }
   .history-header h1 {
     margin: 0;
     color: #fff;
@@ -164,7 +164,6 @@
     .history-table td.history-result { grid-column: 1 / -1; }
   }
   @media (max-width: 520px) {
-    main { padding-inline: 14px; }
     .history-shell { gap: 16px; }
     .history-header, .history-panel { border-radius: 19px; }
     .history-table tr { grid-template-columns: 1fr; }

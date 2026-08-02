@@ -42,6 +42,8 @@ def make_metrics(**overrides) -> SwingMetrics:
         target_direction=-1,
         lead_arm_angle_deg=162.3,
         finish_balance_sw=0.08,
+        stance_width_sw=0.90,
+        downswing_hand_speed_sw_s=4.25,
     )
     base.update(overrides)
     return SwingMetrics(**base)
@@ -171,10 +173,10 @@ def test_chip_schedule_texts_and_times():
     )
     texts = [text for _, text in sched]
     assert texts == [
-        "Setup",
-        "Top · backswing 0.80 s",
-        "Impact · lead arm 162° · sway T→I -0.12 SW",
-        "Finish · balance 0.08 SW",
+        "Setup · stance 0.90 SW",
+        "Top · going back 0.80 s",
+        "Impact · lead arm 162° · hands 4.25 SW/s",
+        "Finish · base drift 0.08 SW",
     ]
 
 
@@ -184,7 +186,7 @@ def test_chips_at_is_cumulative():
     sched = annotate.chip_schedule(fs, ev, make_metrics())
     texts = [text for _, text in sched]
     assert annotate.chips_at(9.9, sched) == []
-    assert annotate.chips_at(10.0, sched) == ["Setup"]
+    assert annotate.chips_at(10.0, sched) == ["Setup · stance 0.90 SW"]
     assert annotate.chips_at(ev.top_s, sched) == texts[:2]
     assert annotate.chips_at(11.8, sched) == texts[:3]
     assert annotate.chips_at(12.35, sched) == texts
@@ -197,8 +199,9 @@ def test_chip_schedule_degrades_on_nan():
     all_nan = make_metrics(
         backswing_s=NAN,
         lead_arm_angle_deg=NAN,
-        head_sway_downswing_sw=NAN,
         finish_balance_sw=NAN,
+        stance_width_sw=NAN,
+        downswing_hand_speed_sw_s=NAN,
     )
     assert [text for _, text in annotate.chip_schedule(fs, ev, all_nan)] == [
         "Setup",
@@ -208,7 +211,7 @@ def test_chip_schedule_degrades_on_nan():
     ]
     one_nan = make_metrics(lead_arm_angle_deg=NAN)
     texts = [text for _, text in annotate.chip_schedule(fs, ev, one_nan)]
-    assert texts[2] == "Impact · sway T→I -0.12 SW"
+    assert texts[2] == "Impact · hands 4.25 SW/s"
 
 
 def test_replay_landmarks_mapping_and_scale():

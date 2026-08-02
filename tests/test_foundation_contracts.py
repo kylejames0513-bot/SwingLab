@@ -33,6 +33,8 @@ ACCOUNT_AND_API_ROUTES = {
     ("/reset/request", frozenset({"POST"})),
     ("/reset/confirm", frozenset({"POST"})),
     ("/logout", frozenset({"POST"})),
+    ("/auth/storefront/session", frozenset({"GET"})),
+    ("/auth/storefront/session", frozenset({"POST"})),
     ("/account", frozenset({"GET"})),
     ("/account/password", frozenset({"POST"})),
     ("/account/digest", frozenset({"POST"})),
