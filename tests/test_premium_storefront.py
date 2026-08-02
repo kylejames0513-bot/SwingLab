@@ -229,6 +229,7 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert hero_source.count("<h1") == 1
     assert '<figure class="sl-hero__backdrop">' in hero_source
     assert "sl-hero__disclosure" not in hero_source
+    assert "sl-hero__capture" not in hero_source
     assert "<picture>" in hero_source
     assert 'media="(max-width: 749px)"' in hero_source
     assert "hero_mobile_image | image_url: width: 1122" in hero_source
@@ -262,7 +263,7 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "min-height: 980px" not in mobile_hero
     assert "min-height: 1020px" not in mobile_hero
     assert (
-        ".sl-hero__fine,\n  .sl-hero__capture,\n  .sl-hero__signal { display: none; }"
+        ".sl-hero__fine,\n  .sl-hero__signal { display: none; }"
         in mobile_hero
     )
     mobile_stats = stats_source.split("@media (max-width: 749px)", 1)[1]
