@@ -1,8 +1,13 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — You’re offline{% endblock %}
+{% block style %}
+  .notice-card h1 { margin: 0 0 10px; color: var(--sl-green); font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1; letter-spacing: -.045em; }
+  .notice-card p { color: var(--sl-ink-soft); }
+{% endblock %}
 {% block main %}
-  <div class="card">
-    <h2>You’re offline</h2>
+  <div class="card notice-card">
+    <p class="sl-eyebrow">Connection needed</p>
+    <h1>You’re offline</h1>
     <p>Your completed reports and practice plans are waiting safely on the server. Reconnect to open them or upload a new video.</p>
     <p>You can still review the <a href="/drills">drill library</a> if it was loaded on this device.</p>
   </div>

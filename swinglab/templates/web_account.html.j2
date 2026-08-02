@@ -1,178 +1,303 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Account{% endblock %}
 {% block style %}
-  .row { display: flex; justify-content: space-between; align-items: baseline;
-         gap: 16px; padding: 12px 0; border-bottom: 1px solid #eee; }
-  .row:last-of-type { border-bottom: none; }
-  .row .k { color: #555; font-size: 0.9rem; white-space: nowrap; }
-  .row > span:last-child { min-width: 0; overflow-wrap: anywhere; text-align: right; }
-  .plan { display: inline-block; padding: 2px 12px; border-radius: 999px;
-          font-weight: 700; font-size: 0.85rem; }
-  .plan.pro { background: var(--primary); color: white; }
-  .plan.free { background: #eee; color: #444; }
-  .good { background: #e5f3ea; border-left: 4px solid var(--primary);
-          padding: 12px 16px; border-radius: 4px; margin-bottom: 20px; }
-  .danger-zone { margin-top: 28px; padding-top: 20px;
-                 border-top: 1px solid #ead7d4; }
-  .danger-zone h3 { color: #7d211a; margin-bottom: 6px; }
-  .danger-link { display: inline-block; color: #8f241c; font-weight: 700;
-                 margin-top: 4px; }
-  form { display: inline; }
-  .logout button { background: white; color: #b3261e; border: 1px solid #ddd; }
-  .quiet button { background: white; color: #444; border: 1px solid #ccc; }
-  form[action="/account/password"] { display: block; margin: 8px 0 20px; }
-  form[action="/account/password"] label { display: block; margin: 8px 0 4px; }
-  form[action="/account/password"] input { width: 100%; max-width: 320px;
-    padding: 10px; border: 1px solid #ccc; border-radius: 6px;
-    box-sizing: border-box; }
+  main { max-width: 1120px; }
+  .account-shell { display: grid; gap: 22px; }
+  .account-header {
+    position: relative;
+    overflow: hidden;
+    padding: clamp(27px, 5vw, 46px);
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: var(--sl-radius-xl);
+    background:
+      radial-gradient(circle at 87% 12%, rgba(255, 203, 138, .18), transparent 17rem),
+      linear-gradient(135deg, #0d3422, #185838);
+    color: #fff;
+    box-shadow: var(--sl-shadow-lg);
+  }
+  .account-header__copy { position: relative; z-index: 1; max-width: 760px; }
+  .account-header .sl-eyebrow { margin-bottom: 8px; color: #ffd09d; }
+  .account-header h1 {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(2.2rem, 7vw, 4.6rem);
+    line-height: 1;
+    letter-spacing: -.05em;
+  }
+  .account-header__summary { margin: 14px 0 0; display: flex; align-items: center; flex-wrap: wrap; gap: 9px; color: #dcebe1; }
+  .account-plan {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 10px;
+    border-radius: 999px;
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 500;
+    letter-spacing: .055em;
+    text-transform: uppercase;
+  }
+  .account-header .account-plan--pro { background: #fff; color: var(--sl-green); }
+  .account-header .account-plan--free { background: rgba(255, 255, 255, .14); color: #fff; border: 1px solid rgba(255, 255, 255, .24); }
+  .account-notice { padding: 15px 18px; border: 1px solid #bcd7c5; border-left: 4px solid var(--sl-green-btn); border-radius: 11px; background: #e9f5ec; color: #124529; }
+  .account-notice strong { color: var(--sl-green); }
+  .account-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; align-items: start; }
+  .account-card {
+    min-width: 0;
+    padding: clamp(21px, 3.5vw, 30px);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
+  }
+  .account-card--wide { grid-column: 1 / -1; }
+  .account-card__header { margin-bottom: 17px; }
+  .account-card__header .sl-eyebrow { margin-bottom: 6px; }
+  .account-card__header h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.3rem, 3vw, 1.75rem); letter-spacing: -.03em; }
+  .account-card__header p { margin: 6px 0 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .account-facts { margin: 0; }
+  .account-row { display: grid; grid-template-columns: minmax(130px, .8fr) minmax(0, 1.2fr); gap: 18px; align-items: baseline; padding: 13px 0; border-bottom: 1px solid var(--sl-border); }
+  .account-row:first-child { padding-top: 0; }
+  .account-row:last-child { padding-bottom: 0; border-bottom: 0; }
+  .account-row dt { color: var(--sl-ink-muted); font-size: .8rem; font-weight: 650; }
+  .account-row dd { min-width: 0; margin: 0; color: var(--sl-ink); font-weight: 650; overflow-wrap: anywhere; text-align: right; }
+  .account-row dd a { white-space: nowrap; }
+  .account-card .account-plan--pro { background: var(--sl-green); color: #fff; }
+  .account-card .account-plan--free { background: #e8ece9; color: var(--sl-ink-soft); }
+  .account-subsection { margin-top: 22px; padding-top: 19px; border-top: 1px solid var(--sl-border); }
+  .account-subsection h3 { margin: 0 0 7px; color: var(--sl-green); font-size: 1rem; }
+  .account-subsection p { margin: 7px 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .account-card form { margin: 0; }
+  .account-card form + form,
+  .account-card form + .hint,
+  .account-card .button + .hint { margin-top: 9px; }
+  .account-card form[action="/account/password"] { display: grid; gap: 8px; margin-top: 13px; }
+  .account-card form[action="/account/password"] label { color: var(--sl-ink); font-size: .84rem; font-weight: 700; }
+  .account-card form[action="/account/password"] input {
+    width: 100%;
+    min-height: 46px;
+    padding: 10px 12px;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: 9px;
+    background: #fff;
+    color: var(--sl-ink);
+    font: inherit;
+  }
+  .account-card form[action="/account/password"] button { width: fit-content; margin-top: 5px; }
+  .account-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-top: 17px; }
+  .account-actions > *, .account-actions .button, .account-actions button { margin-top: 0; }
+  .account-actions--stack { align-items: flex-start; flex-direction: column; }
+  .quiet button { border-color: var(--sl-border-strong); background: transparent; color: var(--sl-green); box-shadow: none; }
+  .quiet button:hover { border-color: var(--sl-green); background: #f2f7f3; color: var(--sl-green); }
+  .logout button { border-color: #d7b7b2; background: transparent; color: #8a2820; box-shadow: none; }
+  .logout button:hover { border-color: #8a2820; background: #fff5f2; color: #741f19; }
+  .security-note { padding: 13px 15px; border-radius: 10px; background: var(--sl-surface-soft); color: var(--sl-ink-soft); font-size: .88rem; }
+  .store-status { padding: 14px 15px; border: 1px solid #c9d9cd; border-radius: 11px; background: #f1f7f2; color: var(--sl-ink-soft); }
+  .store-status strong { color: var(--sl-green); }
+  .danger-card { border-color: #e2c3be; background: linear-gradient(135deg, #fffefa, #fff8f6); }
+  .danger-card .sl-eyebrow { color: #8a2820; }
+  .danger-card h2 { color: #741f19; }
+  .danger-card__content { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; }
+  .danger-card__content p { margin: 0; color: var(--sl-ink-soft); }
+  .danger-link { color: #8a2820; font-weight: 800; white-space: nowrap; }
+  .error { margin: 10px 0; padding: 11px 13px; border-radius: 8px; background: #fff0ed; }
+  @media (max-width: 820px) {
+    .account-grid { grid-template-columns: 1fr; }
+    .account-card--wide { grid-column: auto; }
+    .danger-card__content { grid-template-columns: 1fr; }
+    .danger-link { white-space: normal; }
+  }
+  @media (max-width: 540px) {
+    main { padding-inline: 14px; }
+    .account-shell { gap: 16px; }
+    .account-header, .account-card { border-radius: 19px; }
+    .account-row { grid-template-columns: 1fr; gap: 3px; }
+    .account-row dd { text-align: left; }
+    .account-actions { align-items: stretch; flex-direction: column; }
+    .account-actions > *, .account-actions .button, .account-actions button { width: 100%; text-align: center; }
+    .account-card form[action="/account/password"] button { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .account-shell * { transition: none !important; }
+  }
 {% endblock %}
 {% block main %}
-  {% if upgraded %}
-  <div class="good">Thanks — your payment went through! Your plan updates to
-    <strong>Pro</strong> the moment Stripe confirms it (usually seconds).
-    Refresh if you don't see it yet.</div>
-  {% endif %}
-  {% if password_added %}
-  <div class="good">Password added — you can now log in with it as well as
-    with an emailed code.</div>
-  {% endif %}
-  {% if shopify_connected %}
-  <div class="good">Shopify sign-in is connected. Your Shopify customer identity is linked without copying a password.</div>
-  {% endif %}
-  {% if history_reset_flash %}
-  <div class="good" role="status">
-    Your swing history has been deleted. Removed
-    {{ history_reset_flash.deleted_jobs }} swing
-    {{ "session" if history_reset_flash.deleted_jobs == 1 else "sessions" }},
-    including their reports and linked practice evidence. Your account,
-    golfer setup, Pro access, purchases, connected devices, and this month's
-    allowance are unchanged.
-    {% if history_reset_flash.cleanup_pending %}
-    Secure file cleanup is pending and will retry when the app restarts.
+  <div class="account-shell">
+    {% if upgraded %}
+      <div class="account-notice" role="status">Thanks — your payment went through! Your plan updates to <strong>Pro</strong> the moment Stripe confirms it (usually seconds). Refresh if you don't see it yet.</div>
     {% endif %}
-  </div>
-  {% endif %}
-  <div class="card">
-    <h2>Your account</h2>
-    <div class="row"><span class="k">Email</span><span>{{ user.email }}</span></div>
-    <div class="row"><span class="k">Plan</span>
-      <span class="plan {{ 'pro' if user.is_pro else 'free' }}">
-        {{ "Pro" if user.is_pro else "Free" }}</span></div>
-    <div class="row"><span class="k">Allowance used this month</span>
-      <span>{{ usage }}{% if quota_left is not none %} — {{ quota_left }} left{% endif %}</span></div>
-    {% if pro_lifetime %}
-    {# "Never expires" is true regardless of any subscription the user
-       also holds — "no renewals" would not be. #}
-    <div class="row"><span class="k">Pro access</span>
-      <span>Lifetime — never expires</span></div>
-    {% elif pro_until_date %}
-    <div class="row"><span class="k">Pro access until</span>
-      <span>{{ pro_until_date }}</span></div>
+    {% if password_added %}
+      <div class="account-notice" role="status">Password added — you can now log in with it as well as with an emailed code.</div>
     {% endif %}
-    {% if user.shopify_customer_id %}
-    <div class="row"><span class="k">Store</span>
-      <span>Connected to the {{ brand.name }} store</span></div>
+    {% if shopify_connected %}
+      <div class="account-notice" role="status">Shopify sign-in is connected. Your Shopify customer identity is linked without copying a password.</div>
     {% endif %}
-    {% if shopify_customer_accounts_enabled %}
-    <div class="row"><span class="k">Shopify sign-in</span>
-      <span>{% if user.shopify_account_migration_state == 'shopify_authenticated' %}Connected{% elif user.shopify_account_migration_state == 'linked_pending_first_sign_in' %}Linked — sign in once to finish{% else %}Not connected{% endif %}</span></div>
-    {% endif %}
-    <div class="row"><span class="k">Weekly drill email</span>
-      <span>{{ "On" if user.digest_opt_in else "Off" }}</span></div>
-    <div class="row"><span class="k">Caddie name</span>
-      <span>{{ golfer_profile.display_name if golfer_profile and golfer_profile.display_name else "Not set" }} · <a href="/onboarding">Edit</a></span></div>
-    <div class="row"><span class="k">Golfer setup</span>
-      <span>{% if golfer_profile and golfer_profile.is_complete %}Ready{% else %}Needs a few choices{% endif %} · <a href="/onboarding">Edit</a></span></div>
-    <div class="row"><span class="k">Product updates</span>
-      <span>{{ "On" if golfer_profile and golfer_profile.marketing_email_opt_in else "Off" }} · <a href="/onboarding">Edit</a></span></div>
-
-    {% if not user.has_password %}
-    <h3>Add a password (optional)</h3>
-    <p class="hint">You sign in with a code emailed to
-      {{ user.email }}.{% if mail_enabled %} That keeps working — a password
-      is just a second way in.{% else %} Email isn't set up on this server
-      right now, so adding a password is the only way back in after you log
-      out.{% endif %}</p>
-    {% if password_error %}<p class="error">{{ password_error }}</p>{% endif %}
-    <form action="/account/password" method="post">
-      <label for="ap-password" class="k">New password</label>
-      <input id="ap-password" name="password" type="password" required
-             minlength="8" autocomplete="new-password">
-      <button type="submit">Add password</button>
-    </form>
-    {% elif mail_enabled %}
-    <h3>Password and sign-in</h3>
-    <p class="hint">You can keep using emailed codes, change your password,
-      or recover it if you forget it.</p>
-    <a class="button secondary" href="/reset">Change or reset password</a>
+    {% if history_reset_flash %}
+      <div class="account-notice" role="status">
+        Your swing history has been deleted. Removed
+        {{ history_reset_flash.deleted_jobs }} swing
+        {{ "session" if history_reset_flash.deleted_jobs == 1 else "sessions" }},
+        including their reports and linked practice evidence. Your account,
+        golfer setup, Pro access, purchases, connected devices, and this month's
+        allowance are unchanged.
+        {% if history_reset_flash.cleanup_pending %}
+          Secure file cleanup is pending and will retry when the app restarts.
+        {% endif %}
+      </div>
     {% endif %}
 
-    {% if user.digest_opt_in %}
-    <form class="quiet" action="/account/digest" method="post">
-      <button type="submit">Turn off the weekly drill email</button>
-    </form>
-    {% if not mail_enabled %}
-    <p class="hint">Email isn't set up on this server yet — nothing sends
-      until it is, but your choice is saved.</p>
-    {% endif %}
-    {% else %}
-    <form action="/account/digest" method="post">
-      <input type="hidden" name="enabled" value="on">
-      <button type="submit">Email me one drill a week</button>
-    </form>
-    <p class="hint">One email a week: the drills for your latest session's
-      flags, with the pass marks. Unsubscribe any time.</p>
-    {% endif %}
+    <header class="account-header" aria-labelledby="account-title">
+      <div class="account-header__copy">
+        <p class="sl-eyebrow">Member settings</p>
+        <h1 id="account-title">Account</h1>
+        <p class="account-header__summary"><span>{{ user.email }}</span><span aria-hidden="true">·</span><span class="account-plan account-plan--{{ 'pro' if user.is_pro else 'free' }}">{{ "Pro member" if user.is_pro else "Free plan" }}</span></p>
+      </div>
+    </header>
 
-    {% if user.is_pro %}
-      {% if billing_enabled and user.stripe_customer_id %}
-      <form action="/billing/portal" method="post">
-        <button type="submit">Manage subscription</button>
-      </form>
-      {% elif pro_store_url and pro_until_date %}
-      {# A lifetime member has nothing to extend — no button for them. #}
-      <a class="button" href="{{ pro_store_url }}">Extend Pro on the store</a>
+    <div class="account-grid">
+      <section class="account-card" aria-labelledby="profile-heading">
+        <header class="account-card__header">
+          <p class="sl-eyebrow">Coaching context</p>
+          <h2 id="profile-heading">Profile</h2>
+          <p>The saved details your caddie uses to frame practical guidance.</p>
+        </header>
+        <dl class="account-facts">
+          <div class="account-row"><dt>Caddie name</dt><dd>{{ golfer_profile.display_name if golfer_profile and golfer_profile.display_name else "Not set" }} · <a href="/onboarding">Edit</a></dd></div>
+          <div class="account-row"><dt>Golfer setup</dt><dd>{% if golfer_profile and golfer_profile.is_complete %}Ready{% else %}Needs a few choices{% endif %} · <a href="/onboarding">Edit</a></dd></div>
+        </dl>
+      </section>
+
+      <section class="account-card" aria-labelledby="membership-heading">
+        <header class="account-card__header">
+          <p class="sl-eyebrow">Access</p>
+          <h2 id="membership-heading">Membership &amp; allowance</h2>
+          <p>Your current analysis access and membership status.</p>
+        </header>
+        <dl class="account-facts">
+          <div class="account-row"><dt>Plan</dt><dd><span class="account-plan account-plan--{{ 'pro' if user.is_pro else 'free' }}">{{ "Pro" if user.is_pro else "Free" }}</span></dd></div>
+          <div class="account-row"><dt>Allowance used this month</dt><dd>{{ usage }}{% if quota_left is not none %} — {{ quota_left }} left{% endif %}</dd></div>
+          {% if pro_lifetime %}
+            <div class="account-row"><dt>Pro access</dt><dd>Lifetime — never expires</dd></div>
+          {% elif pro_until_date %}
+            <div class="account-row"><dt>Pro access until</dt><dd>{{ pro_until_date }}</dd></div>
+          {% endif %}
+        </dl>
+        <div class="account-subsection">
+          {% if user.is_pro %}
+            {% if billing_enabled and user.stripe_customer_id %}
+              <form action="/billing/portal" method="post"><button type="submit">Manage subscription</button></form>
+            {% elif pro_store_url and pro_until_date %}
+              <a class="button" href="{{ pro_store_url }}">Extend Pro on the store</a>
+            {% else %}
+              <p>Your Pro access is active.</p>
+            {% endif %}
+          {% elif pro_store_url %}
+            <a class="button" href="{{ pro_store_url }}">Upgrade to Pro</a>
+            <p class="hint">Pro is unlimited analyses{% if replay_pro_only and progress_pro_only %}, the annotated coach replay of every swing, and the progress dashboard{% elif replay_pro_only %} and the annotated coach replay of every swing{% elif progress_pro_only %} and the progress dashboard{% endif %}. Check out with <strong>{{ user.email }}</strong> — it unlocks on this account automatically.</p>
+          {% elif billing_enabled %}
+            <form action="/billing/checkout" method="post"><button type="submit">Upgrade to Pro — {% if pro_per_month <= 0 %}unlimited swings{% else %}up to {{ pro_per_month }} analyses a month{% endif %}</button></form>
+          {% else %}
+            <p class="hint">Pro memberships are coming soon.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      <section class="account-card" aria-labelledby="security-heading">
+        <header class="account-card__header">
+          <p class="sl-eyebrow">Account access</p>
+          <h2 id="security-heading">Sign-in &amp; security</h2>
+          <p>Keep a reliable way back into your private coaching history.</p>
+        </header>
+        <dl class="account-facts">
+          <div class="account-row"><dt>Email</dt><dd>{{ user.email }}</dd></div>
+        </dl>
+
+        {% if not user.has_password %}
+          <div class="account-subsection">
+            <h3>Add a password (optional)</h3>
+            <p class="hint">You sign in with a code emailed to {{ user.email }}.{% if mail_enabled %} That keeps working — a password is just a second way in.{% else %} Email isn't set up on this server right now, so adding a password is the only way back in after you log out.{% endif %}</p>
+            {% if password_error %}<p class="error" role="alert">{{ password_error }}</p>{% endif %}
+            <form action="/account/password" method="post">
+              <label for="ap-password">New password</label>
+              <input id="ap-password" name="password" type="password" required minlength="8" autocomplete="new-password">
+              <button type="submit">Add password</button>
+            </form>
+          </div>
+        {% elif mail_enabled %}
+          <div class="account-subsection">
+            <h3>Password and sign-in</h3>
+            <p class="hint">You can keep using emailed codes, change your password, or recover it if you forget it.</p>
+            <a class="button secondary" href="/reset">Change or reset password</a>
+          </div>
+        {% endif %}
+
+        <div class="account-subsection">
+          <p class="security-note">Logging out ends this browser session. It does not delete your account, membership, or swing history.</p>
+          <div class="account-actions">
+            <form class="logout" action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post"><button type="submit">Log out</button></form>
+          </div>
+        </div>
+      </section>
+
+      <section class="account-card" aria-labelledby="preferences-heading">
+        <header class="account-card__header">
+          <p class="sl-eyebrow">Communication</p>
+          <h2 id="preferences-heading">Preferences</h2>
+          <p>Control coaching reminders and optional product news.</p>
+        </header>
+        <dl class="account-facts">
+          <div class="account-row"><dt>Weekly drill email</dt><dd>{{ "On" if user.digest_opt_in else "Off" }}</dd></div>
+          <div class="account-row"><dt>Product updates</dt><dd>{{ "On" if golfer_profile and golfer_profile.marketing_email_opt_in else "Off" }} · <a href="/onboarding">Edit</a></dd></div>
+        </dl>
+        <div class="account-subsection">
+          {% if user.digest_opt_in %}
+            <form class="quiet" action="/account/digest" method="post"><button type="submit">Turn off the weekly drill email</button></form>
+            {% if not mail_enabled %}<p class="hint">Email isn't set up on this server yet — nothing sends until it is, but your choice is saved.</p>{% endif %}
+          {% else %}
+            <form action="/account/digest" method="post"><input type="hidden" name="enabled" value="on"><button type="submit">Email me one drill a week</button></form>
+            <p class="hint">One email a week: the drills for your latest session's flags, with the pass marks. Unsubscribe any time.</p>
+          {% endif %}
+        </div>
+      </section>
+
+      {% if user.shopify_customer_id or shopify_customer_accounts_enabled %}
+        <section class="account-card account-card--wide" aria-labelledby="shopify-heading">
+          <header class="account-card__header">
+            <p class="sl-eyebrow">Store identity</p>
+            <h2 id="shopify-heading">Shopify connection</h2>
+            <p>Store identity and CaddieInsight sign-in stay explicit and separate from your golf data.</p>
+          </header>
+          {% if user.shopify_customer_id %}
+            <p class="store-status"><strong>Connected to the {{ brand.name }} store.</strong> Qualifying purchases can apply access to this CaddieInsight account; no store password is copied here.</p>
+          {% endif %}
+          {% if shopify_customer_accounts_enabled %}
+            <dl class="account-facts{% if user.shopify_customer_id %} account-subsection{% endif %}">
+              <div class="account-row"><dt>Shopify sign-in</dt><dd>{% if user.shopify_account_migration_state == 'shopify_authenticated' %}Connected{% elif user.shopify_account_migration_state == 'linked_pending_first_sign_in' %}Linked — sign in once to finish{% else %}Not connected{% endif %}</dd></div>
+            </dl>
+            {% if user.shopify_account_migration_state == 'shopify_authenticated' %}
+              <p class="hint">Your Shopify Customer Account is the sign-in currently used in this browser. Your CaddieInsight golf data stays here.</p>
+            {% else %}
+              <div class="account-subsection">
+                <h3>Connect Shopify sign-in</h3>
+                <p class="hint">Connect the Shopify account you control. We use its verified customer identity—not an email guess—and never copy a password.</p>
+                <a class="button secondary" href="/auth/shopify/start">Connect Shopify sign-in</a>
+              </div>
+            {% endif %}
+          {% endif %}
+        </section>
       {% endif %}
-    {% elif pro_store_url %}
-      <a class="button" href="{{ pro_store_url }}">Upgrade to Pro</a>
-      <p class="hint">Pro is unlimited
-        analyses{% if replay_pro_only and progress_pro_only %}, the
-        annotated coach replay of every swing, and the progress
-        dashboard{% elif replay_pro_only %} and the annotated coach replay
-        of every swing{% elif progress_pro_only %} and the progress
-        dashboard{% endif %}. Check out with
-        <strong>{{ user.email }}</strong> — it unlocks on this account
-        automatically.</p>
-    {% elif billing_enabled %}
-      <form action="/billing/checkout" method="post">
-        <button type="submit">Upgrade to Pro —
-          {% if pro_per_month <= 0 %}unlimited swings{% else %}up to
-          {{ pro_per_month }} analyses a month{% endif %}</button>
-      </form>
-    {% else %}
-      <p class="hint">Pro memberships are coming soon.</p>
-    {% endif %}
-    {% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}
-    <p class="hint">Your Shopify Customer Account is the sign-in currently used in this browser. Your CaddieInsight golf data stays here.</p>
-    {% elif shopify_customer_accounts_enabled %}
-    <h3>Connect Shopify sign-in</h3>
-    <p class="hint">Connect the Shopify account you control. We use its verified customer identity—not an email guess—and never copy a password.</p>
-    <a class="button secondary" href="/auth/shopify/start">Connect Shopify sign-in</a>
-    {% endif %}
 
-    {% if history_reset_enabled %}
-    <section class="danger-zone" aria-labelledby="history-controls-heading">
-      <h3 id="history-controls-heading">Swing history controls</h3>
-      <p class="hint">Want a clean coaching baseline? Delete your swing
-        sessions, reports, practice check-ins, and Proof Cycle evidence while
-        keeping your account, golfer setup, membership, purchases, connected
-        devices, and monthly allowance.</p>
-      <a class="danger-link" href="/account/history/delete">Delete swing history / Start over</a>
-    </section>
-    {% endif %}
-
-    <form class="logout" action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
-      <button type="submit">Log out</button>
-    </form>
+      {% if history_reset_enabled %}
+        <section class="account-card account-card--wide danger-card" aria-labelledby="history-controls-heading">
+          <header class="account-card__header">
+            <p class="sl-eyebrow">Data controls</p>
+            <h2 id="history-controls-heading">Swing history controls</h2>
+          </header>
+          <div class="danger-card__content">
+            <p>Want a clean coaching baseline? Delete your swing sessions, reports, practice check-ins, and Proof Cycle evidence while keeping your account, golfer setup, membership, purchases, connected devices, and monthly allowance.</p>
+            <a class="danger-link" href="/account/history/delete">Delete swing history / Start over</a>
+          </div>
+        </section>
+      {% endif %}
+    </div>
   </div>
 {% endblock %}

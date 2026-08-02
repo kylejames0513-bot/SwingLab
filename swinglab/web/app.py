@@ -877,9 +877,18 @@ def create_app(
             )
         )
 
-    def render(template: str, request: Request, **context) -> HTMLResponse:
+    def render(
+        template: str,
+        request: Request,
+        *,
+        public_shell: bool = False,
+        **context,
+    ) -> HTMLResponse:
         stripe_enabled = billing.enabled()
-        render_user = current_user(request)
+        # Service-worker cached pages must never carry a member's name,
+        # entitlement, profile, or account navigation.  Render the explicitly
+        # public shell anonymously even when the request includes a session.
+        render_user = None if public_shell else current_user(request)
         header_profile = (
             users.get_golfer_profile(render_user.id)
             if render_user is not None and cfg.web.get("require_account")
@@ -942,7 +951,9 @@ def create_app(
                 **context,
             )
         )
-        if render_user is not None:
+        if public_shell:
+            response.headers["Cache-Control"] = "public, max-age=300"
+        elif render_user is not None:
             # Membership, profile, and owned-session pages are personalized.
             # Never let a shared/browser cache preserve an old entitlement or
             # a name/history state the member has since changed.
@@ -1124,9 +1135,7 @@ def create_app(
 
     @app.get("/offline", response_class=HTMLResponse)
     def offline_page(request: Request):
-        response = render("web_offline.html.j2", request)
-        response.headers["Cache-Control"] = "public, max-age=300"
-        return response
+        return render("web_offline.html.j2", request, public_shell=True)
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):

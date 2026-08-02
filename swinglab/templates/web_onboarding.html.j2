@@ -1,19 +1,28 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Your golfer setup{% endblock %}
 {% block style %}
-  .setup-lead { max-width: 650px; color: #4d554f; }
+  main { max-width: 980px; }
+  .setup-card { padding: clamp(24px, 5vw, 46px); }
+  .setup-card h1 { max-width: 700px; margin: 0 0 12px; color: var(--sl-green); font-size: clamp(2rem, 5vw, 3.35rem); line-height: 1.02; letter-spacing: -.045em; }
+  .setup-lead { max-width: 700px; margin: 0 0 28px; color: var(--sl-ink-soft); font-size: 1.02rem; }
   .setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
   .setup-grid .full { grid-column: 1 / -1; }
+  .setup-grid > div > label, .setup-grid legend { display: block; margin: 0 0 7px; color: var(--sl-ink); font-weight: 750; }
+  .setup-grid fieldset { min-width: 0; margin: 6px 0; padding: 0; border: 0; }
+  .setup-grid input[type="text"], .setup-grid select, .setup-security input {
+    width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid var(--sl-control-border); border-radius: var(--sl-radius-sm); background: #fff; color: var(--sl-ink); font: inherit;
+  }
+  .setup-grid input:focus, .setup-grid select:focus, .setup-security input:focus { border-color: var(--sl-green-btn); outline: 3px solid rgba(23, 98, 59, .14); outline-offset: 1px; }
   .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-  .choice-grid label { display: block; border: 1px solid #d7ddd8; border-radius: 9px; padding: 12px; cursor: pointer; }
+  .choice-grid label { display: block; border: 1px solid var(--sl-border-strong); border-radius: var(--sl-radius-md); padding: 14px; background: #fff; cursor: pointer; }
   .choice-grid input { margin-right: 7px; }
-  .choice-grid strong { display: block; color: var(--primary); margin: 5px 0 2px; }
-  .choice-grid span { font-size: .86rem; color: #555; }
-  .consent { border-top: 1px solid #e4e7e4; margin-top: 20px; padding-top: 16px; }
+  .choice-grid strong { display: block; color: var(--sl-green); margin: 5px 0 2px; }
+  .choice-grid span { font-size: .86rem; color: var(--sl-ink-soft); }
+  .consent { display: grid; gap: 12px; border-top: 1px solid var(--sl-border); margin-top: 24px; padding-top: 20px; }
   .consent label { display: flex; align-items: flex-start; gap: 9px; }
   .consent input { margin-top: 4px; }
-  .setup-security { margin: 18px 0 24px; padding: 18px; border: 1px solid #c8d9cc; border-radius: 12px; background: #f2f8f4; }
-  .setup-security h3 { margin: 0 0 5px; color: var(--primary); }
+  .setup-security { margin: 20px 0 28px; padding: 20px; border: 1px solid #c8d9cc; border-radius: var(--sl-radius-md); background: var(--sl-surface-soft); }
+  .setup-security h2 { margin: 0 0 5px; color: var(--sl-green); font-size: 1.15rem; }
   .setup-security p { margin: 5px 0 12px; }
   .setup-security form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
   .setup-security form > div { min-width: 0; }
@@ -36,16 +45,16 @@
 {% set club = submitted.preferred_club if submitted is defined else (profile.preferred_club if profile else '') %}
 {% set reduced = submitted.reduced_motion if submitted is defined else (profile.reduced_motion if profile else false) %}
 {% set marketing = submitted.marketing_email if submitted is defined else (profile.marketing_email_opt_in if profile else false) %}
-  <div class="card">
-    <p class="eyebrow">{{ "Welcome to CaddieInsight" if welcome else "Make your next step fit your game" }}</p>
-    <h2>{{ "Create your golfer profile" if welcome else "Your golfer setup" }}</h2>
+  <div class="card setup-card">
+    <p class="sl-eyebrow">{{ "Welcome to CaddieInsight" if welcome else "Make your next step fit your game" }}</p>
+    <h1>{{ "Create your golfer profile" if welcome else "Your golfer setup" }}</h1>
     <p class="setup-lead">This changes the explanations and practice options—not the measurements. You can change it any time, and you never have to label your game with an exact handicap.</p>
     {% if error %}<p class="error">{{ error }}</p>{% endif %}
     {% if password_added %}
       <p class="setup-notice" role="status"><strong>Backup password added.</strong> You can now sign in by email code or password.</p>
     {% elif not user.has_password %}
       <section class="setup-security" aria-labelledby="backup-password-title">
-        <h3 id="backup-password-title">Add a backup password</h3>
+        <h2 id="backup-password-title">Add a backup password</h2>
         {% if mail_enabled %}
         <p>Your emailed code will keep working. A password gives you a second, familiar way back into your CaddieInsight account.</p>
         {% elif user.shopify_account_migration_state == 'shopify_authenticated' %}

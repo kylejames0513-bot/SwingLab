@@ -1,8 +1,13 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Unsubscribed{% endblock %}
+{% block style %}
+  .notice-card h1 { margin: 0 0 10px; color: var(--sl-green); font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1; letter-spacing: -.045em; }
+  .notice-card p { color: var(--sl-ink-soft); }
+{% endblock %}
 {% block main %}
-  <div class="card">
-    <h2>You're unsubscribed</h2>
+  <div class="card notice-card">
+    <p class="sl-eyebrow">Preference saved</p>
+    <h1>You're unsubscribed</h1>
     <p>The weekly practice-plan email is off — no more sends to this address.
       Your reports and <a href="/progress">progress page</a> stay exactly
       where they are, and you can turn the email back on any time from your

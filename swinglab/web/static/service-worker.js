@@ -4,8 +4,13 @@
  * in Cache Storage.  A missed network request gets a helpful offline page;
  * it does not pretend that an upload or current coaching data is available.
  */
-const CACHE_NAME = "caddieinsight-public-shell-v1";
-const PUBLIC_SHELL = ["/offline", "/drills"];
+const CACHE_NAME = "caddieinsight-public-shell-v2";
+const PUBLIC_SHELL = ["/offline"];
+
+function canCachePublicShell(response) {
+  const cacheControl = response.headers.get("Cache-Control") || "";
+  return response.ok && !/(?:private|no-store)/i.test(cacheControl);
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -35,8 +40,10 @@ self.addEventListener("fetch", (event) => {
   if (PUBLIC_SHELL.includes(url.pathname)) {
     event.respondWith(
       fetch(request).then((response) => {
-        const copy = response.clone();
-        caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        if (canCachePublicShell(response)) {
+          const copy = response.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+        }
         return response;
       }).catch(() => caches.match(request))
     );

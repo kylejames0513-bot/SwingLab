@@ -1,235 +1,435 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — {{ "Re-film needed" if refilm_needed else ("Results ready" if done else ("Analysis failed" if failed else "Analyzing…")) }}{% endblock %}
 {% block style %}
-  .spinner { width: 28px; height: 28px; border: 4px solid #ddd;
-             border-top-color: var(--accent); border-radius: 50%;
-             animation: spin 0.9s linear infinite; display: inline-block;
-             vertical-align: middle; margin-right: 12px; }
+  main { max-width: 940px; }
+  .status-surface {
+    overflow: hidden;
+    padding: 0;
+    border-radius: var(--sl-radius-xl);
+  }
+  .state-hero {
+    padding: clamp(28px, 6vw, 52px);
+    background:
+      radial-gradient(circle at 92% 0, rgba(255, 255, 255, .13), transparent 18rem),
+      var(--sl-surface-dark);
+    color: var(--sl-green-ink);
+  }
+  .state-hero--attention { background: #633117; }
+  .state-hero--waiting { background: #173b2a; }
+  .result-kicker {
+    margin: 0 0 12px;
+    color: #ffb47d;
+    font-family: var(--sl-font-mono);
+    font-size: .72rem;
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .state-hero h1 {
+    max-width: 720px;
+    margin: 0;
+    color: #fff;
+    font-size: clamp(2rem, 5vw, 3.6rem);
+    letter-spacing: -.045em;
+    line-height: 1.02;
+    text-wrap: balance;
+  }
+  .state-summary {
+    max-width: 680px;
+    margin: 16px 0 0;
+    color: #d4e3d8;
+    font-size: clamp(.98rem, 1.6vw, 1.08rem);
+  }
+  .state-body { padding: clamp(24px, 5vw, 44px); }
+  .spinner {
+    width: 24px;
+    height: 24px;
+    display: inline-block;
+    margin-right: 12px;
+    vertical-align: .05em;
+    border: 3px solid rgba(255, 255, 255, .28);
+    border-top-color: #ffb47d;
+    border-radius: 50%;
+    animation: spin .9s linear infinite;
+  }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .log { background: #f4f4f4; border-radius: 6px; padding: 12px 16px;
-         font-family: ui-monospace, monospace; font-size: 0.85rem;
-         white-space: pre-wrap; margin-top: 16px; max-height: 240px; overflow-y: auto; }
-  .result-kicker { color: var(--primary); font-size: 0.76rem; font-weight: 700;
-                   letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 4px; }
-  .coach-intro { color: #555; margin-top: 4px; }
-  .coach-block { border-left: 4px solid var(--primary); background: #f2f8f4;
-                 border-radius: 5px; padding: 12px 16px; margin: 14px 0; }
-  .coach-block.focus { border-left-color: var(--accent); background: #fff7ef; }
-  .coach-block h3 { margin: 0 0 6px; font-size: 1rem; color: var(--primary); }
-  .coach-block p { margin: 6px 0; }
-  .coach-value { font-size: 1.05rem; }
-  .coach-value .bench { color: #666; font-size: 0.84rem; }
-  .coach-warning { border: 1px solid #e7c45d; background: #fffbea;
-                   border-radius: 6px; padding: 10px 14px; color: #54440b; }
-  .coach-trend { color: #444; font-size: 0.92rem; }
-  .coach-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-  .coach-actions .button { margin-top: 8px; }
-  .proof-cycle { border: 1px solid #b9cfbe; background: #f4faf5;
-                 border-radius: 7px; padding: 14px 16px; margin: 16px 0; }
+  .status-progress {
+    width: 100%;
+    height: 14px;
+    margin: 0;
+    overflow: hidden;
+    background: #dfe7e1;
+    border: 1px solid #ced9d1;
+    border-radius: 999px;
+  }
+  .status-progress__fill {
+    height: 100%;
+    min-width: 0;
+    background: linear-gradient(90deg, var(--sl-green-btn), #3a8b59);
+    border-radius: inherit;
+    transition: width .35s ease;
+  }
+  .status-progress.is-indeterminate .status-progress__fill {
+    width: 38% !important;
+    background: linear-gradient(90deg, transparent, var(--sl-green-btn), transparent);
+    animation: status-indeterminate 1.4s ease-in-out infinite;
+  }
+  @keyframes status-indeterminate {
+    from { transform: translateX(-105%); }
+    to { transform: translateX(265%); }
+  }
+  .bar-label { margin: 12px 0 0; color: var(--sl-ink); font-weight: 700; }
+  .processing-note { margin-bottom: 0; }
+  .coach-intro { max-width: 680px; color: var(--sl-ink-soft); margin: 0 0 22px; }
+  .result-path { display: grid; gap: 14px; }
+  .coach-block {
+    margin: 0;
+    padding: 20px;
+    background: var(--sl-surface-soft);
+    border: 1px solid #d6e3d9;
+    border-radius: var(--sl-radius-lg);
+  }
+  .coach-block.focus {
+    padding: clamp(22px, 4vw, 30px);
+    background: var(--sl-orange-soft);
+    border-color: #efc89d;
+  }
+  .coach-block h2,
+  .coach-block h3 { margin: 0 0 8px; color: var(--sl-green); font-size: 1rem; }
+  .coach-block p { margin: 7px 0; }
+  .coach-value { font-size: clamp(1.08rem, 2vw, 1.32rem); }
+  .coach-value .bench { color: var(--sl-ink-muted); font-size: .82rem; font-weight: 500; }
+  .coach-warning {
+    margin: 0 0 16px;
+    padding: 14px 16px;
+    color: #5b420c;
+    background: #fff8df;
+    border: 1px solid #e8cb72;
+    border-radius: var(--sl-radius-md);
+  }
+  .coach-trend { margin: 18px 0 0; color: var(--sl-ink-soft); font-size: .92rem; }
+  .coach-actions {
+    margin-top: 22px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .coach-actions .button { margin-top: 0; }
+  .proof-stack { margin-top: 18px; display: grid; gap: 12px; }
+  .proof-cycle {
+    margin: 0;
+    padding: 18px 20px;
+    background: #f4faf5;
+    border: 1px solid #b9cfbe;
+    border-radius: var(--sl-radius-lg);
+  }
   .proof-cycle.positive { border-color: #77aa82; background: #eff8f1; }
   .proof-cycle.neutral { border-color: #d7c477; background: #fffbea; }
   .proof-cycle.attention { border-color: #e2a476; background: #fff6ef; }
-  .proof-cycle-kicker { color: var(--primary); font-size: 0.76rem; font-weight: 700;
-                        letter-spacing: 0.08em; text-transform: uppercase; margin: 0 0 4px; }
-  .proof-cycle h3 { margin: 0 0 6px; color: var(--primary); font-size: 1rem; }
+  .proof-cycle-kicker {
+    margin: 0 0 5px;
+    color: var(--sl-green-btn);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .proof-cycle h2 { margin: 0 0 6px; color: var(--sl-green); font-size: 1.02rem; }
   .proof-cycle p { margin: 6px 0; }
-  .gear { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-          gap: 12px; margin-top: 12px; }
-  a.gear-item { border: 1px solid #e0e0e0; border-radius: 8px; padding: 10px;
-                text-decoration: none; color: inherit; font-size: 0.88rem; }
-  a.gear-item:hover { border-color: var(--primary); }
-  a.gear-item img { width: 100%; aspect-ratio: 1; object-fit: cover;
-                    border-radius: 6px; background: #f0f0f0; }
-  a.gear-item .name { display: block; margin-top: 8px; color: var(--primary); }
-  a.gear-item .price { display: block; font-weight: 600; margin-top: 2px; }
+  .failure-panel { padding: 20px; background: #fff3ef; border: 1px solid #e9b7a8; border-radius: var(--sl-radius-lg); }
+  .failure-panel .error { margin-top: 0; font-size: 1rem; font-style: normal; }
+  .technical-details { margin-top: 28px; border-top: 1px solid var(--sl-border); padding-top: 18px; }
+  .technical-details summary { color: var(--sl-ink-soft); cursor: pointer; font-size: .86rem; font-weight: 700; }
+  .technical-details summary:hover { color: var(--sl-green-btn); }
+  .log {
+    max-height: 240px;
+    margin: 14px 0 0;
+    padding: 14px 16px;
+    overflow-y: auto;
+    color: #dce8df;
+    background: #122219;
+    border-radius: var(--sl-radius-md);
+    font-family: var(--sl-font-mono);
+    font-size: .78rem;
+    white-space: pre-wrap;
+  }
+  .gear-heading { margin: 30px 0 0; color: var(--sl-green); }
+  .gear { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
+  a.gear-item { padding: 12px; color: inherit; text-decoration: none; background: var(--sl-bg-card); border: 1px solid var(--sl-border); border-radius: var(--sl-radius-md); font-size: .88rem; }
+  a.gear-item:hover { border-color: var(--sl-green-btn); box-shadow: var(--sl-shadow-sm); }
+  a.gear-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--sl-radius-sm); background: #f0f0f0; }
+  a.gear-item .name { display: block; margin-top: 8px; color: var(--sl-green); }
+  a.gear-item .price { display: block; margin-top: 2px; font-weight: 700; }
+  @media (max-width: 640px) {
+    .status-surface { border-radius: var(--sl-radius-lg); }
+    .coach-actions { align-items: stretch; flex-direction: column; }
+    .coach-actions .button { width: 100%; }
+  }
+  .sl-reduced-motion .spinner,
+  .sl-reduced-motion .status-progress.is-indeterminate .status-progress__fill { animation: none; }
+  .sl-reduced-motion .status-progress.is-indeterminate .status-progress__fill {
+    width: 100% !important;
+    opacity: .42;
+    transform: none;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .spinner, .status-progress.is-indeterminate .status-progress__fill { animation: none; }
+    .status-progress.is-indeterminate .status-progress__fill { width: 100% !important; opacity: .42; transform: none; }
+  }
 {% endblock %}
 {% block main %}
-  <div class="card">
+  <div class="card status-surface">
     {% if done %}
-      <p class="result-kicker">{% if refilm_needed %}Re-film needed · clip reviewed{% else %}Results ready{% if job.swings_total %} ·
-        {{ job.swings_total }} swing{{ "s" if job.swings_total != 1 }} measured{% endif %}{% endif %}</p>
-      {% if caddie_brief %}
-        {% if caddie_brief.refilm_required %}
-        <h2>Re-film before coaching</h2>
-        <p class="coach-intro">Your caddie needs a trustworthy view before
-          choosing a swing change.</p>
-        <p class="coach-warning"><strong>Why this session stopped:</strong>
-          {{ caddie_brief.warning }}</p>
-        <div class="coach-block focus">
-          <h3>Do this first</h3>
-          <p class="coach-value"><strong>{{ caddie_brief.focus_name }}</strong></p>
-          <p>{{ caddie_brief.why }}</p>
-          <p><strong>Next:</strong> {{ caddie_brief.fix }}</p>
-        </div>
-        <div class="coach-actions">
-          <a class="button" href="/">Re-film with the checklist</a>
-          {% if capture_report_available %}
-          <a class="button secondary" href="/session/{{ job.id }}/report">Review capture details</a>
-          {% endif %}
-        </div>
-        {% if require_account %}
-        <p class="hint">The first rejected clip each month does not use an
-          analysis. Every later upload uses the normal allowance, whether it
-          produces coaching or needs another re-film.</p>
-        {% endif %}
-        {% else %}
-        <h2>Your caddie's read</h2>
-        <p class="coach-intro">One clear next step from this session's actual
-          measurements—not another wall of numbers.</p>
-
-        {% if caddie_brief.warning %}
-        <p class="coach-warning"><strong>Measurement note:</strong>
-          {{ caddie_brief.warning }}</p>
-        {% endif %}
-
-        {% if caddie_brief.strength %}
-        <div class="coach-block">
-          <h3>Keep</h3>
-          <p>{{ caddie_brief.strength }}</p>
-        </div>
-        {% endif %}
-
-        <div class="coach-block focus">
-          <h3>{{ "Protect" if caddie_brief.clean else "Fix first" }}</h3>
-          <p class="coach-value"><strong>{{ caddie_brief.focus_name }}</strong>
-            {% if caddie_brief.focus_value %} — {{ caddie_brief.focus_value }}
-              {% if caddie_brief.benchmark_text %}
-              <span class="bench">({{ caddie_brief.benchmark_text }})</span>
-              {% endif %}
-            {% endif %}
-          </p>
-          <p>{{ caddie_brief.why }}</p>
-          <p><strong>Coach's cue:</strong> {{ caddie_brief.fix }}</p>
-          {% if caddie_brief.recurring_sessions > 1 %}
-          <p class="hint">This priority has appeared in
-            {{ caddie_brief.recurring_sessions }} comparable sessions.</p>
-          {% endif %}
-          {% if caddie_brief.remaining_issues %}
-          <p class="hint">{{ caddie_brief.remaining_issues }} other measured
-            issue{{ "s" if caddie_brief.remaining_issues != 1 }} stays in the
-            full report for later. Work on one thing first.</p>
-          {% endif %}
-        </div>
-
-        <div class="coach-block">
-          <h3>Practice this</h3>
-          <p><strong>{{ caddie_brief.drill.name }}</strong> —
-            {{ caddie_brief.drill.aim }}</p>
-          <p><strong>Dosage:</strong> {{ caddie_brief.drill.dosage }}<br>
-            <strong>Pass mark:</strong> {{ caddie_brief.drill.success_metric }}</p>
-        </div>
-
-        {% if proof_cycle %}
-        <section class="proof-cycle {{ proof_cycle.tone }}" data-proof-cycle>
-          <p class="proof-cycle-kicker">Proof Cycle · {{ proof_cycle.target_name }}</p>
-          <h3>{{ proof_cycle.heading }}</h3>
-          <p><strong>{{ proof_cycle.summary }}</strong></p>
-          <p>{{ proof_cycle.detail }}</p>
-          <p><strong>Next:</strong> {{ proof_cycle.next_step }}</p>
-          {% if proof_cycle.accepted_refilm_count %}
-          <p class="hint">{{ proof_cycle.accepted_refilm_count }} matched follow-up{{ "s" if proof_cycle.accepted_refilm_count != 1 }} counted.</p>
-          {% endif %}
-        </section>
-        {% endif %}
-
-        {% if proof_cycle_practice %}
-        <section class="proof-cycle {{ proof_cycle_practice.tone }}" data-proof-cycle-practice>
-          <p class="proof-cycle-kicker">Practice-to-re-film context</p>
-          <h3>{{ proof_cycle_practice.heading }}</h3>
-          <p><strong>{{ proof_cycle_practice.summary }}</strong></p>
-          <p>{{ proof_cycle_practice.detail }}</p>
-          <p><strong>Next:</strong> {{ proof_cycle_practice.next_step }}</p>
-          {% if proof_cycle_practice.practice_session_count %}
-          <p class="hint">{{ proof_cycle_practice.practice_session_count }} self-reported practice receipt{{ "s" if proof_cycle_practice.practice_session_count != 1 }} · {{ proof_cycle_practice.practice_minutes }} minutes total.</p>
-          {% endif %}
-        </section>
-        {% endif %}
-
-        {% if caddie_brief.trend %}
-        <p class="coach-trend"><strong>Your journal:</strong>
-          {{ caddie_brief.trend }}.</p>
-        {% endif %}
-
-        <div class="coach-actions">
-          <a class="button" href="/session/{{ job.id }}/report">See your full coaching plan</a>
-          <a class="button secondary" href="/">Practice, then re-film</a>
-        </div>
-
-        {% if gear %}
-          <h3 style="margin: 28px 0 0">Optional aid for
-            {{ caddie_brief.focus_name }}</h3>
-          <p class="hint">No purchase is required—the drill above is complete
-            as written. This item appears only because its Shopify tag matches
-            this session's first measured priority.</p>
-          <div class="gear">
-            {% for p in gear %}
-              <a class="gear-item" href="{{ p.url }}" target="_blank" rel="noopener" data-gear-match data-session-id="{{ job.id }}">
-                {% if p.image %}<img src="{{ p.image }}" alt="{{ p.image_alt or p.title }}" loading="lazy">{% endif %}
-                <span class="name">{{ p.title }}</span>
-                <span class="price">{{ p.price_display }}</span>
-              </a>
-            {% endfor %}
-          </div>
-          <p style="margin-bottom: 0"><a href="/shop">Browse the full gear shop →</a></p>
-        {% endif %}
-        {% endif %}
+      {% if caddie_brief and caddie_brief.refilm_required %}
+      <header class="state-hero state-hero--attention">
+        <p class="result-kicker">Re-film needed · clip reviewed</p>
+        <h1>Re-film before coaching</h1>
+        <p class="state-summary">The clip was reviewed, but the measurements
+          are not trustworthy enough to choose a swing change. Fix the capture
+          first.</p>
+      </header>
+      {% elif caddie_brief %}
+      <header class="state-hero">
+        <p class="result-kicker">Results ready{% if job.swings_total %} ·
+          {{ job.swings_total }} swing{{ "s" if job.swings_total != 1 }} measured{% endif %}</p>
+        <h1>Your caddie's read</h1>
+        <p class="state-summary">Start with one measured priority, follow its
+          practice plan, then re-film with the same setup.</p>
+      </header>
+      {% elif legacy_report %}
+      <header class="state-hero">
+        <p class="result-kicker">Report available</p>
+        <h1>Results ready</h1>
+        <p class="state-summary">The original report is still available for
+          this session. Its limits are explained below.</p>
+      </header>
       {% else %}
-        {% if legacy_report %}
-        <h2>Results ready</h2>
-        {% if current_report_only %}
-        <p>Your coaching report remains available. Its structured metrics
-          could not be read, so progress comparisons stay paused for this
-          session.</p>
-        {% else %}
-        <p>This session was created by an earlier CaddieInsight version.
-          Its original report remains available.</p>
-        {% endif %}
-        <a class="button" href="/session/{{ job.id }}/report">View original report</a>
-        {% else %}
-        <h2>Re-film before coaching</h2>
-        <p>This clip did not produce enough readable motion data to choose a
-          swing change. Re-film instead of practicing from incomplete
-          measurements.</p>
-        <a class="button secondary" href="/">Re-film with the checklist</a>
-        {% if capture_report_available %}
-        <a class="button secondary" href="/session/{{ job.id }}/report">Review capture details</a>
-        {% endif %}
-        {% endif %}
+      <header class="state-hero state-hero--attention">
+        <p class="result-kicker">Re-film needed · clip reviewed</p>
+        <h1>Re-film before coaching</h1>
+        <p class="state-summary">This clip did not produce enough readable
+          motion data to support a swing change.</p>
+      </header>
       {% endif %}
     {% elif failed %}
-      <h2>Analysis failed</h2>
-      <p class="error">{{ error_help.message if error_help else job.error }}</p>
-      {% if error_help and error_help.tips %}
-      <p><strong>Things to check:</strong></p>
-      <ul>
-        {% for tip in error_help.tips %}<li>{{ tip }}</li>{% endfor %}
-      </ul>
-      {% endif %}
-      {% if error_help and error_help.checklist %}
-      <p class="hint">The <a href="/#filming-checklist">filming checklist</a>
-        covers all of this in one place.</p>
-      {% endif %}
-      <a class="button" href="/">Try again</a>
+      <header class="state-hero state-hero--attention">
+        <p class="result-kicker">Analysis failed</p>
+        <h1>We couldn’t finish this swing.</h1>
+        <p class="state-summary">The analysis stopped before a coaching result
+          was created. Use the visible next steps below and try again.</p>
+      </header>
     {% else %}
-      <h2 id="live-title"><span class="spinner"></span>{% if queue_position %}Waiting in line…{% else %}Analyzing your swing…{% endif %}</h2>
-      <div class="bar" id="live-bar-wrap" {% if not job.swings_total %}style="display:none"{% endif %}>
-        <div id="live-bar" style="width: {{ (100 * job.swings_done / job.swings_total) | round(0, 'floor') | int if job.swings_total else 0 }}%"></div>
-      </div>
-      <p class="bar-label" id="live-label">
-        {%- if queue_position -%}
-          You are #{{ queue_position }} in line — the analysis starts automatically.
-        {%- elif job.swings_total -%}
-          Swing {{ [job.swings_done + 1, job.swings_total] | min }} of {{ job.swings_total }}
-          {{- " — fast mode." if job.fast else " — slow motion rendering is the long step." }}
-        {%- else -%}
-          Reading the video and listening for ball strikes…
-        {%- endif -%}
-      </p>
-      <p class="hint">This page updates live — no need to reload. You can also
-        come back later; the link keeps working.</p>
+      <header class="state-hero state-hero--waiting">
+        <p class="result-kicker">{{ "Waiting in line" if queue_position else "Analysis in progress" }}</p>
+        <h1 id="live-title"><span class="spinner" aria-hidden="true"></span>{% if queue_position %}Waiting in line…{% else %}Analyzing your swing…{% endif %}</h1>
+        <p class="state-summary">{% if queue_position %}Your upload is queued
+          and will start automatically.{% else %}The video is being read now.
+          This page will move to your result when it is ready.{% endif %}</p>
+      </header>
     {% endif %}
-    {% if job.log %}<div class="log" id="live-log">{{ job.log | join("\n") }}</div>
-    {% else %}<div class="log" id="live-log" style="display:none"></div>{% endif %}
+
+    <div class="state-body">
+      {% if done %}
+        {% if caddie_brief %}
+          {% if caddie_brief.refilm_required %}
+          <p class="coach-warning"><strong>Why this session stopped:</strong>
+            {{ caddie_brief.warning }}</p>
+          <div class="result-path">
+            <section class="coach-block focus">
+              <h2>Do this first</h2>
+              <p class="coach-value"><strong>{{ caddie_brief.focus_name }}</strong></p>
+              <p>{{ caddie_brief.why }}</p>
+              <p><strong>Next:</strong> {{ caddie_brief.fix }}</p>
+            </section>
+          </div>
+          <div class="coach-actions">
+            <a class="button" href="/">Re-film with the checklist</a>
+            {% if capture_report_available %}
+            <a class="button secondary" href="/session/{{ job.id }}/report">Review capture details</a>
+            {% endif %}
+          </div>
+          {% if require_account %}
+          <p class="hint">The first rejected clip each month does not use an
+            analysis. Every later upload uses the normal allowance, whether it
+            produces coaching or needs another re-film.</p>
+          {% endif %}
+          {% else %}
+          <p class="coach-intro">One clear next step from this session's actual
+            measurements—not another wall of numbers.</p>
+
+          {% if caddie_brief.warning %}
+          <p class="coach-warning"><strong>Measurement note:</strong>
+            {{ caddie_brief.warning }}</p>
+          {% endif %}
+
+          <div class="result-path">
+            <section class="coach-block focus">
+              <h2>{{ "Protect" if caddie_brief.clean else "Fix first" }}</h2>
+              <p class="coach-value"><strong>{{ caddie_brief.focus_name }}</strong>
+                {% if caddie_brief.focus_value %} — {{ caddie_brief.focus_value }}
+                  {% if caddie_brief.benchmark_text %}
+                  <span class="bench">({{ caddie_brief.benchmark_text }})</span>
+                  {% endif %}
+                {% endif %}
+              </p>
+              <p>{{ caddie_brief.why }}</p>
+              <p><strong>Coach's cue:</strong> {{ caddie_brief.fix }}</p>
+              {% if caddie_brief.recurring_sessions > 1 %}
+              <p class="hint">This priority has appeared in
+                {{ caddie_brief.recurring_sessions }} comparable sessions.</p>
+              {% endif %}
+              {% if caddie_brief.remaining_issues %}
+              <p class="hint">{{ caddie_brief.remaining_issues }} other measured
+                issue{{ "s" if caddie_brief.remaining_issues != 1 }} stays in the
+                full report for later. Work on one thing first.</p>
+              {% endif %}
+            </section>
+
+            <section class="coach-block">
+              <h2>Practice this</h2>
+              <p><strong>{{ caddie_brief.drill.name }}</strong> —
+                {{ caddie_brief.drill.aim }}</p>
+              <p><strong>Dosage:</strong> {{ caddie_brief.drill.dosage }}<br>
+                <strong>Pass mark:</strong> {{ caddie_brief.drill.success_metric }}</p>
+            </section>
+
+            {% if caddie_brief.strength %}
+            <section class="coach-block">
+              <h2>Keep</h2>
+              <p>{{ caddie_brief.strength }}</p>
+            </section>
+            {% endif %}
+          </div>
+
+          {% if proof_cycle or proof_cycle_practice %}<div class="proof-stack">{% endif %}
+          {% if proof_cycle %}
+          <section class="proof-cycle {{ proof_cycle.tone }}" data-proof-cycle>
+            <p class="proof-cycle-kicker">Proof Cycle · {{ proof_cycle.target_name }}</p>
+            <h2>{{ proof_cycle.heading }}</h2>
+            <p><strong>{{ proof_cycle.summary }}</strong></p>
+            <p>{{ proof_cycle.detail }}</p>
+            <p><strong>Next:</strong> {{ proof_cycle.next_step }}</p>
+            {% if proof_cycle.accepted_refilm_count %}
+            <p class="hint">{{ proof_cycle.accepted_refilm_count }} matched follow-up{{ "s" if proof_cycle.accepted_refilm_count != 1 }} counted.</p>
+            {% endif %}
+          </section>
+          {% endif %}
+
+          {% if proof_cycle_practice %}
+          <section class="proof-cycle {{ proof_cycle_practice.tone }}" data-proof-cycle-practice>
+            <p class="proof-cycle-kicker">Practice-to-re-film context</p>
+            <h2>{{ proof_cycle_practice.heading }}</h2>
+            <p><strong>{{ proof_cycle_practice.summary }}</strong></p>
+            <p>{{ proof_cycle_practice.detail }}</p>
+            <p><strong>Next:</strong> {{ proof_cycle_practice.next_step }}</p>
+            {% if proof_cycle_practice.practice_session_count %}
+            <p class="hint">{{ proof_cycle_practice.practice_session_count }} self-reported practice receipt{{ "s" if proof_cycle_practice.practice_session_count != 1 }} · {{ proof_cycle_practice.practice_minutes }} minutes total.</p>
+            {% endif %}
+          </section>
+          {% endif %}
+          {% if proof_cycle or proof_cycle_practice %}</div>{% endif %}
+
+          {% if caddie_brief.trend %}
+          <p class="coach-trend"><strong>Your journal:</strong>
+            {{ caddie_brief.trend }}.</p>
+          {% endif %}
+
+          <div class="coach-actions">
+            <a class="button" href="/">Practice, then re-film</a>
+            <a class="button secondary" href="/session/{{ job.id }}/report">See your full coaching plan</a>
+          </div>
+
+          {% if gear %}
+            <h2 class="gear-heading">Optional aid for {{ caddie_brief.focus_name }}</h2>
+            <p class="hint">No purchase is required—the drill above is complete
+              as written. This item appears only because its Shopify tag matches
+              this session's first measured priority.</p>
+            <div class="gear">
+              {% for p in gear %}
+                <a class="gear-item" href="{{ p.url }}" target="_blank" rel="noopener" data-gear-match data-session-id="{{ job.id }}">
+                  {% if p.image %}<img src="{{ p.image }}" alt="{{ p.image_alt or p.title }}" loading="lazy">{% endif %}
+                  <span class="name">{{ p.title }}</span>
+                  <span class="price">{{ p.price_display }}</span>
+                </a>
+              {% endfor %}
+            </div>
+            <p><a href="/shop">Browse the full gear shop →</a></p>
+          {% endif %}
+          {% endif %}
+        {% else %}
+          {% if legacy_report %}
+          {% if current_report_only %}
+          <p>Your coaching report remains available. Its structured metrics
+            could not be read, so progress comparisons stay paused for this
+            session.</p>
+          {% else %}
+          <p>This session was created by an earlier CaddieInsight version.
+            Its original report remains available.</p>
+          {% endif %}
+          <div class="coach-actions">
+            <a class="button" href="/session/{{ job.id }}/report">View original report</a>
+          </div>
+          {% else %}
+          <p>This clip did not produce enough readable motion data to choose a
+            swing change. Re-film instead of practicing from incomplete
+            measurements.</p>
+          <div class="coach-actions">
+            <a class="button" href="/">Re-film with the checklist</a>
+            {% if capture_report_available %}
+            <a class="button secondary" href="/session/{{ job.id }}/report">Review capture details</a>
+            {% endif %}
+          </div>
+          {% endif %}
+        {% endif %}
+      {% elif failed %}
+        <section class="failure-panel" aria-labelledby="failure-next-step">
+          <h2 id="failure-next-step">What to do next</h2>
+          <p class="error">{{ error_help.message if error_help else job.error }}</p>
+          {% if error_help and error_help.tips %}
+          <p><strong>Things to check:</strong></p>
+          <ul>
+            {% for tip in error_help.tips %}<li>{{ tip }}</li>{% endfor %}
+          </ul>
+          {% endif %}
+          {% if error_help and error_help.checklist %}
+          <p class="hint">The <a href="/#filming-checklist">filming checklist</a>
+            covers all of this in one place.</p>
+          {% endif %}
+          <div class="coach-actions"><a class="button" href="/">Try again</a></div>
+        </section>
+      {% else %}
+        <div class="status-progress{% if queue_position or not job.swings_total %} is-indeterminate{% endif %}"
+             id="live-bar-wrap" role="progressbar" aria-labelledby="live-title"
+             aria-describedby="live-label"{% if job.swings_total and not queue_position %}
+             aria-valuemin="0" aria-valuemax="{{ job.swings_total }}"
+             aria-valuenow="{{ job.swings_done }}"{% endif %}>
+          <div class="status-progress__fill" id="live-bar"
+               style="width: {{ (100 * job.swings_done / job.swings_total) | round(0, 'floor') | int if job.swings_total and not queue_position else 0 }}%"></div>
+        </div>
+        <p class="bar-label" id="live-label">
+          {%- if queue_position -%}
+            You are #{{ queue_position }} in line — the analysis starts automatically.
+          {%- elif job.swings_total -%}
+            Swing {{ [job.swings_done + 1, job.swings_total] | min }} of {{ job.swings_total }}
+            {{- " — fast mode." if job.fast else " — slow motion rendering is the long step." }}
+          {%- else -%}
+            Reading the video and listening for ball strikes…
+          {%- endif -%}
+        </p>
+        <p class="hint processing-note">This page updates live — no need to
+          reload. You can also come back later; the link keeps working.</p>
+      {% endif %}
+
+      <details class="technical-details">
+        <summary>Behind-the-scenes processing details</summary>
+        <p class="hint">Raw processing messages are kept here in case support
+          asks for them.</p>
+        {% if job.log %}<div class="log" id="live-log">{{ job.log | join("\n") }}</div>
+        {% else %}<div class="log" id="live-log" style="display:none"></div>{% endif %}
+      </details>
+    </div>
   </div>
 {% endblock %}
 {% block script %}
@@ -248,21 +448,38 @@
       return;
     }
     if (data.status === "queued" && data.queue_position) {
-      title.innerHTML = '<span class="spinner"></span>Waiting in line…';
+      title.innerHTML = '<span class="spinner" aria-hidden="true"></span>Waiting in line…';
+      barWrap.style.display = "";
+      barWrap.classList.add("is-indeterminate");
+      barWrap.removeAttribute("aria-valuemin");
+      barWrap.removeAttribute("aria-valuemax");
+      barWrap.removeAttribute("aria-valuenow");
+      bar.style.width = "0%";
       label.textContent = "You are #" + data.queue_position
         + " in line — the analysis starts automatically.";
     } else {
-      title.innerHTML = '<span class="spinner"></span>Analyzing your swing…';
+      title.innerHTML = '<span class="spinner" aria-hidden="true"></span>Analyzing your swing…';
       if (data.swings_total) {
         barWrap.style.display = "";
+        barWrap.classList.remove("is-indeterminate");
+        barWrap.setAttribute("aria-valuemin", "0");
+        barWrap.setAttribute("aria-valuemax", data.swings_total);
+        barWrap.setAttribute("aria-valuenow", data.swings_done);
         bar.style.width = Math.floor(100 * data.swings_done / data.swings_total) + "%";
         var current = Math.min(data.swings_done + 1, data.swings_total);
         label.textContent = "Swing " + current + " of " + data.swings_total
           + (data.fast ? " — fast mode." : " — slow motion rendering is the long step.");
       } else {
+        barWrap.style.display = "";
+        barWrap.classList.add("is-indeterminate");
+        barWrap.removeAttribute("aria-valuemin");
+        barWrap.removeAttribute("aria-valuemax");
+        barWrap.removeAttribute("aria-valuenow");
+        bar.style.width = "0%";
         label.textContent = "Reading the video and listening for ball strikes…";
       }
     }
+    barWrap.setAttribute("aria-valuetext", label.textContent);
     if (data.log && data.log.length) {
       logEl.style.display = "";
       logEl.textContent = data.log.join("\n");

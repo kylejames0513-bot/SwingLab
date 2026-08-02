@@ -3,7 +3,7 @@
   {%- else %}<td{% if flagged %} class="flag"{% endif %}>{{ fmt|format(v) }}</td>{% endif -%}
 {%- endmacro -%}
 {% macro mhead(key, label) -%}
-  <th>{% if explainers and key in explainers -%}
+  <th scope="col">{% if explainers and key in explainers -%}
     <details class="mx"><summary>{{ label }}</summary>
       <div class="mx-body"><p>{{ explainers[key].text }}</p>
         {% if explainers[key].how %}<p class="mx-how">How it's measured:
@@ -13,7 +13,7 @@
   {%- else %}{{ label }}{% endif %}</th>
 {%- endmacro -%}
 {% macro issue_card(c, extra_class="") -%}
-  <div class="card sev-{{ c.severity }}{% if extra_class %} {{ extra_class }}{% endif %}">
+  <div class="card sev-{{ c.severity }}{% if extra_class %} {{ extra_class }}{% endif %}" role="article">
     <div class="card-head"><h3>{{ c.display_name }}</h3>
       <span class="sev">{{ c.severity }}</span></div>
     <p class="card-val">{{ c.session_label }}:
@@ -32,6 +32,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="caddieinsight-report-format" content="{{ report_format_version }}">
+<meta name="caddieinsight-report-presentation" content="{{ report_presentation_version }}">
 <meta name="caddieinsight-report-outcome" content="{{ report_outcome }}">
 <meta name="caddieinsight-coaching-priority-rule" content="{{ priority_rule_version }}">
 <title>{{ brand.name }} — Swing Report</title>
@@ -42,7 +43,7 @@
   }
   body { font-family: Arial, Helvetica, sans-serif;
          margin: 0; color: #17201a; background: #f7f5f0; }
-  .sample-banner { background: var(--accent); color: white; padding: 10px 32px;
+  .sample-banner { background: #944600; color: white; padding: 10px 32px;
                    display: flex; align-items: center; justify-content: center;
                    gap: 14px; flex-wrap: wrap; font-size: 0.95rem; }
   .sample-banner a { color: white; font-weight: 700; text-decoration: underline;
@@ -193,7 +194,7 @@
   @media print {
     @page { margin: 12mm; }
     body { background: white; color: #17201a; font-size: 10pt; }
-    .sample-banner, .report-actions, .video-row, .replay-locked-note { display: none !important; }
+    .report-actions, .video-row, .replay-locked-note { display: none !important; }
     .report-header { background: white; border-bottom: 2px solid var(--primary);
                      min-height: 0; padding: 0 0 5mm; }
     main { max-width: none; padding: 5mm 0 0; }
@@ -210,9 +211,449 @@
                                                          page-break-inside: avoid; }
     h2, h3, h4 { break-after: avoid; page-break-after: avoid; }
   }
+
+  /* Premium evidence-first presentation. This layer deliberately keeps the
+     report self-contained: no remote fonts, assets, scripts, or runtime UI. */
+  :root {
+    --ink: #17201a;
+    --ink-soft: #4d5850;
+    --ink-muted: #5d685f;
+    --accent-ink: #944600;
+    --paper: #fffdf8;
+    --canvas: #f3f1eb;
+    --line: #ddd8cc;
+    --green-wash: #edf5ef;
+    --warm-wash: #fff3e4;
+    --shadow: 0 22px 55px -40px rgba(15, 42, 27, .55);
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    color: var(--ink);
+    background:
+      radial-gradient(circle at 88% 3%, rgba(232, 114, 12, .08), transparent 25rem),
+      var(--canvas);
+    font-family: Arial, Helvetica, sans-serif;
+    line-height: 1.55;
+  }
+  .report-skip {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    z-index: 100;
+    padding: 10px 14px;
+    border-radius: 8px;
+    background: var(--primary);
+    color: white;
+    font-weight: 700;
+    transform: translateY(-150%);
+  }
+  .report-skip:focus { transform: translateY(0); }
+  .sample-banner { padding-block: 11px; }
+  .report-header {
+    min-height: 76px;
+    background: rgba(255, 253, 248, .96);
+    border-bottom-color: var(--line);
+    box-shadow: 0 8px 30px -26px rgba(15, 42, 27, .65);
+  }
+  .report-brand { font-size: 20px; }
+  .report-label { padding-left: 14px; border-left: 1px solid var(--line); color: var(--ink-muted); }
+  .hchip {
+    padding: 5px 10px;
+    border-color: rgba(20, 71, 44, .22);
+    background: var(--green-wash);
+    font-weight: 700;
+  }
+  main {
+    max-width: 1160px;
+    margin-inline: auto;
+    padding: 34px clamp(18px, 4vw, 42px) 64px;
+  }
+  .report-intro {
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 18px;
+    padding: clamp(28px, 5vw, 52px);
+    border-radius: 22px;
+    background: var(--primary);
+    background:
+      radial-gradient(circle at 92% 18%, rgba(255, 255, 255, .11), transparent 25%),
+      linear-gradient(135deg, #0d2e20, var(--primary));
+    box-shadow: 0 30px 70px -48px rgba(6, 31, 19, .9);
+    color: white;
+  }
+  .report-intro::after {
+    content: "";
+    position: absolute;
+    right: -70px;
+    bottom: -130px;
+    width: 300px;
+    height: 300px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 50%;
+    box-shadow: 0 0 0 42px rgba(255, 255, 255, .035),
+                0 0 0 82px rgba(255, 255, 255, .025);
+    pointer-events: none;
+  }
+  .section-kicker {
+    margin: 0 0 7px;
+    color: var(--accent-ink);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .7rem;
+    font-weight: 700;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .report-intro .section-kicker { color: #ffc98f; }
+  .report-intro h1 {
+    position: relative;
+    z-index: 1;
+    max-width: 780px;
+    margin: 0;
+    color: white;
+    font-size: clamp(2.25rem, 6vw, 4.5rem);
+    line-height: .98;
+    letter-spacing: -.05em;
+  }
+  .report-intro__lede {
+    position: relative;
+    z-index: 1;
+    max-width: 720px;
+    margin: 17px 0 0;
+    color: rgba(255, 255, 255, .8);
+    font-size: clamp(.98rem, 1.8vw, 1.12rem);
+  }
+  .report-context {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 9px;
+    margin: 24px 0 0;
+  }
+  .report-context div {
+    min-width: 120px;
+    padding: 9px 12px;
+    border: 1px solid rgba(255, 255, 255, .18);
+    border-radius: 11px;
+    background: rgba(255, 255, 255, .075);
+  }
+  .report-context dt {
+    color: #ffc98f;
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .62rem;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .report-context dd { margin: 2px 0 0; color: white; font-size: .86rem; font-weight: 700; }
+  h2 {
+    margin: 0 0 13px;
+    padding: 0;
+    border: 0;
+    color: var(--primary);
+    font-size: clamp(1.35rem, 3vw, 1.9rem);
+    letter-spacing: -.025em;
+  }
+  .trust-note {
+    margin: 0 0 22px;
+    padding: 14px 17px;
+    border: 1px solid #d0dfd4;
+    border-radius: 12px;
+    background: var(--green-wash);
+    color: #30443a;
+    font-size: .9rem;
+  }
+  .brief {
+    position: relative;
+    margin-bottom: 24px;
+    padding: clamp(22px, 4vw, 36px);
+    border: 1px solid #d3ded6;
+    border-top: 0;
+    border-radius: 18px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+  }
+  .brief::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 5px;
+    border-radius: 18px 18px 0 0;
+    background: linear-gradient(90deg, var(--primary), var(--accent));
+  }
+  .brief > p:not(.section-kicker):not(.brief-warning) { color: var(--ink-soft); }
+  .brief-grid {
+    grid-template-columns: minmax(0, 1.35fr) minmax(240px, .8fr);
+    gap: 13px;
+  }
+  .brief-block {
+    padding: 17px 18px;
+    border: 1px solid #dce5de;
+    border-radius: 12px;
+    background: var(--green-wash);
+  }
+  .brief-block.focus {
+    grid-column: 1 / -1;
+    order: -2;
+    padding: 20px;
+    border-color: #e5c39d;
+    background: var(--warm-wash);
+  }
+  .brief-block h3 {
+    color: var(--ink-muted);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .68rem;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .brief-value { margin-top: 7px; color: var(--ink); font-size: 1.2rem; }
+  .flag,
+  .card.sev-major .sev { color: var(--accent-ink); }
+  .card .sev,
+  .card .bench,
+  .drill-media figcaption { color: var(--ink-muted); }
+  .brief-warning { border-radius: 10px; }
+  .brief-refilm,
+  .refilm-target {
+    margin-top: 12px;
+    padding: 11px 13px;
+    border-left: 3px solid var(--accent);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, .72);
+  }
+  .target-label {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--ink-muted);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .64rem;
+    font-weight: 700;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  details.measurements {
+    overflow: hidden;
+    margin: 22px 0 28px;
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    background: var(--paper);
+    box-shadow: 0 14px 38px -34px rgba(15, 42, 27, .5);
+  }
+  details.measurements > summary {
+    padding: 16px 19px;
+    border-bottom: 0;
+    background: #f8f6f1;
+    color: var(--primary);
+    font-weight: 800;
+  }
+  details.measurements[open] > summary { border-bottom: 1px solid var(--line); }
+  details.measurements > h2,
+  details.measurements > h3,
+  details.measurements > p,
+  details.measurements > ul,
+  details.measurements > .table-scroll,
+  details.measurements > table { margin-inline: 20px; width: calc(100% - 40px); }
+  details.measurements > h2 { margin-top: 24px; }
+  details.measurements > h3 { margin-top: 22px; color: var(--primary); }
+  details.measurements > :last-child { margin-bottom: 24px; }
+  table { border: 1px solid var(--line); border-radius: 8px; background: white; }
+  caption { padding: 0 0 8px; color: var(--ink-soft); font-weight: 700; text-align: left; }
+  th, td { border-color: #e0ddd5; padding: 9px 10px; }
+  th { background: var(--primary); }
+  table.meta { border: 0; }
+  table.meta th { width: 145px; color: var(--ink-muted); font-weight: 700; }
+  tr.mean-row td { background: var(--green-wash); }
+  tr.bench-row td { background: #faf8f3; }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .swing-evidence { margin: 34px 0 30px; }
+  .section-heading { max-width: 720px; margin-bottom: 16px; }
+  .section-heading p:last-child { margin: 0; color: var(--ink-soft); }
+  .swing {
+    margin: 16px 0;
+    padding: clamp(18px, 3vw, 26px);
+    border-color: var(--line);
+    border-radius: 15px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+  }
+  .swing > h2 { font-size: 1.25rem; }
+  .swing img,
+  .swing video { border: 1px solid #dedbd3; border-radius: 9px; background: #111; }
+  .video-row { gap: 20px; }
+  .video-row figure {
+    padding: 13px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: #f8f6f1;
+  }
+  .video-row figure h3 { margin: 0; color: var(--primary); font-size: 1rem; }
+  .coaching-followthrough {
+    margin-top: 38px;
+    padding-top: 28px;
+    border-top: 1px solid var(--line);
+  }
+  .strengths-section,
+  .priority-detail,
+  .practice-section { margin-top: 28px; }
+  .praise {
+    padding: 17px 19px;
+    border: 1px solid #cfe1d3;
+    border-left: 5px solid var(--primary);
+    border-radius: 11px;
+    background: var(--green-wash);
+  }
+  .card {
+    border-color: var(--line);
+    border-radius: 12px;
+    background: var(--paper);
+    box-shadow: 0 14px 34px -32px rgba(15, 42, 27, .6);
+  }
+  .card.start-here {
+    max-width: none;
+    padding: 20px;
+    border-width: 1px 1px 1px 6px;
+    background: var(--warm-wash);
+  }
+  details.more-issues {
+    margin-top: 14px;
+    padding: 12px 15px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #f8f6f1;
+  }
+  details.more-issues > summary { padding: 3px 0; }
+  .plan {
+    margin: 15px 0;
+    padding: 20px;
+    border-color: var(--line);
+    border-radius: 14px;
+    background: var(--paper);
+    box-shadow: var(--shadow);
+  }
+  .plan > h3 { font-size: 1.13rem; }
+  .drill { padding-top: 16px; }
+  .drill h4 { color: var(--ink); font-size: 1.05rem; }
+  .drill .aim { color: var(--ink-soft); }
+  .drill-media { gap: 20px; }
+  .drill-media figure {
+    padding: 9px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: white;
+  }
+  .gear-link {
+    padding: 13px 15px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: #f8f6f1;
+  }
+  .tips {
+    margin-top: 34px;
+    padding: 17px 19px;
+    border: 1px solid #cfe1d3;
+    border-left: 5px solid var(--primary);
+    border-radius: 11px;
+    background: var(--green-wash);
+  }
+  .disclaimer { color: var(--ink-muted); }
+  footer { padding: 20px; color: var(--ink-muted); }
+  @media (max-width: 760px) {
+    .report-header { align-items: flex-start; flex-direction: column; gap: 8px; padding: 16px 18px; }
+    .report-label { padding-left: 0; border-left: 0; }
+    .report-actions { width: 100%; margin: 5px 0 0; }
+    main { padding: 20px 14px 44px; }
+    .report-intro { padding: 28px 22px; border-radius: 17px; }
+    .report-intro h1 { font-size: 2.45rem; }
+    .brief-grid { grid-template-columns: 1fr; }
+    .brief-block.focus { grid-column: auto; }
+    details.measurements > h2,
+    details.measurements > h3,
+    details.measurements > p,
+    details.measurements > ul,
+    details.measurements > .table-scroll,
+    details.measurements > table { margin-inline: 14px; width: calc(100% - 28px); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    html { scroll-behavior: auto; }
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
+  }
+  @media print {
+    @page { size: auto; margin: 12mm 11mm 14mm; }
+    html { scroll-behavior: auto; }
+    body {
+      background: white !important;
+      color: #17201a;
+      font-size: 9.5pt;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    .report-skip,
+    .report-actions, .video-row, .replay-locked-note { display: none !important; }
+    .sample-banner {
+      display: flex !important;
+      padding: 3mm 5mm;
+      border: 2px solid #944600;
+      background: white !important;
+      color: #944600 !important;
+    }
+    .sample-banner a { display: none !important; }
+    .report-header { box-shadow: none; }
+    main { padding-top: 5mm; }
+    .report-intro {
+      margin-bottom: 5mm;
+      padding: 8mm;
+      border: 2px solid var(--primary);
+      border-radius: 0;
+      background: white !important;
+      color: #17201a;
+      box-shadow: none;
+    }
+    .report-intro .section-kicker,
+    .report-intro h1 { color: var(--primary); }
+    .report-intro h1 { font-size: 25pt; }
+    .report-intro__lede { color: #36423a; }
+    .report-context div { border-color: #cfd5d0; background: white; }
+    .report-context dt { color: var(--primary); }
+    .report-context dd { color: #17201a; }
+    .report-intro::after { display: none; }
+    .brief,
+    .swing,
+    .card,
+    .plan { box-shadow: none; }
+    .brief-grid { display: block; }
+    .brief-block { margin-bottom: 3mm; }
+    .swing-evidence,
+    .coaching-followthrough { margin-top: 6mm; }
+    details.measurements { overflow: visible; box-shadow: none; }
+    details.measurements > h2,
+    details.measurements > h3,
+    details.measurements > p,
+    details.measurements > ul,
+    details.measurements > .table-scroll,
+    details.measurements > table { margin-inline: 0; width: 100%; }
+    tr, img, .brief-block, .drill { break-inside: avoid; page-break-inside: avoid; }
+    .section-heading,
+    .target-label { break-after: avoid; page-break-after: avoid; }
+  }
 </style>
 </head>
 <body>
+<a class="report-skip" href="#report-main">Skip to report</a>
 {% if sample_banner %}
 <div class="sample-banner">
   <span>{{ sample_banner.text }}</span>
@@ -220,7 +661,7 @@
 </div>
 {% endif %}
 <header class="report-header">
-  {% if brand.logo_path %}<img class="logo" src="{{ brand.logo_path }}" alt="logo">{% endif %}
+  {% if brand.logo_path %}<img class="logo" src="{{ brand.logo_path }}" alt="{{ brand.name }}">{% endif %}
   {% if storefront_url %}
     <a class="report-brand" href="{{ storefront_url }}">{{ brand.name | upper }}</a>
   {% else %}
@@ -242,7 +683,28 @@
       aria-label="Print this swing report or save it as a PDF">Print / Save PDF</button>
   </div>
 </header>
-<main>
+<main id="report-main">
+
+<section class="report-intro" aria-labelledby="report-title">
+  <p class="section-kicker">Evidence-first swing review</p>
+  <h1 id="report-title">Swing report</h1>
+  {% if caddie_brief and caddie_brief.refilm_required %}
+  <p class="report-intro__lede">This capture review leads with what prevented
+    trustworthy coaching, then keeps the available session evidence and a clear
+    re-film instruction together.</p>
+  {% else %}
+  <p class="report-intro__lede">This report organizes phone-video timing and
+    supported 2D movement into one coaching priority, a practice prescription,
+    and a comparable re-film target.</p>
+  {% endif %}
+  <dl class="report-context" aria-label="Swing context">
+    {% if club_label %}<div><dt>Club</dt><dd>{{ club_label }}</dd></div>{% endif %}
+    <div><dt>Handedness</dt><dd>{{ hand }}</dd></div>
+    <div><dt>Camera</dt><dd>{% if dtl %}Down the line{% else %}Face-on{% endif %}</dd></div>
+    {% if level_label %}<div><dt>Experience</dt><dd>{{ level_label }}</dd></div>{% endif %}
+    <div><dt>Swings</dt><dd>{{ swings|length }} detected</dd></div>
+  </dl>
+</section>
 
 {% if club_aware_enabled %}
 <p class="trust-note" aria-label="Club-aware measurement scope">
@@ -263,9 +725,17 @@
 </p>
 {% endif %}
 
+<p class="trust-note" aria-label="Matched re-film protocol">
+  <strong>Make the follow-up comparable.</strong> Re-film with the same club,
+  handedness, camera angle and height, framing, and a similar swing effort.
+  Matching the setup improves the phone-video comparison; it does not establish
+  cause or measure ball flight.
+</p>
+
 {% if caddie_brief %}
 <section class="brief">
   {% if caddie_brief.refilm_required %}
+  <p class="section-kicker">Capture quality</p>
   <h2>Re-film before coaching</h2>
   <p>Your caddie needs a trustworthy view before choosing a swing change.</p>
   <p class="brief-warning"><strong>Why this session stopped:</strong>
@@ -277,6 +747,7 @@
     <p><strong>Next:</strong> {{ caddie_brief.fix }}</p>
   </div>
   {% else %}
+  <p class="section-kicker">Primary read</p>
   <h2>Your caddie's read</h2>
   <p>Start with one thing. The measurements and full drill library stay below
     when you want the detail.</p>
@@ -285,12 +756,6 @@
     {{ caddie_brief.warning }}</p>
   {% endif %}
   <div class="brief-grid">
-    {% if caddie_brief.strength %}
-    <div class="brief-block">
-      <h3>Keep</h3>
-      <p>{{ caddie_brief.strength }}</p>
-    </div>
-    {% endif %}
     <div class="brief-block focus">
       <h3>{{ "Protect" if caddie_brief.clean else "Fix first" }}</h3>
       <p class="brief-value"><strong>{{ caddie_brief.focus_name }}</strong>
@@ -308,9 +773,16 @@
       <p><strong><a href="#drill-{{ caddie_brief.drill.id }}">{{
         caddie_brief.drill.name }}</a></strong> —
         {{ caddie_brief.drill.aim }}</p>
-      <p><strong>Dosage:</strong> {{ caddie_brief.drill.dosage }}<br>
+      <p><strong>Dosage:</strong> {{ caddie_brief.drill.dosage }}</p>
+      <p class="brief-refilm"><span class="target-label">Matched re-film target</span>
         <strong>Pass mark:</strong> {{ caddie_brief.drill.success_metric }}</p>
     </div>
+    {% if caddie_brief.strength %}
+    <div class="brief-block">
+      <h3>Keep</h3>
+      <p>{{ caddie_brief.strength }}</p>
+    </div>
+    {% endif %}
   </div>
   {% endif %}
 </section>
@@ -321,20 +793,21 @@
 <summary>{% if refilm_required %}See capture details{% else %}See the measurements and session details{% endif %}</summary>
 <h2>Session</h2>
 <table class="meta">
+  <caption class="visually-hidden">Session context and source details</caption>
   {# Filename only — the full path is server internals (web uploads live at
      <session>/source.mov) and means nothing to the reader. #}
-  <tr><th>Video</th><td>{{ video.path.name }}</td></tr>
-  <tr><th>Duration</th><td>{{ "%.1f"|format(video.duration_s) }} s</td></tr>
-  <tr><th>Resolution</th><td>{{ video.display_width }}×{{ video.display_height }}
+  <tr><th scope="row">Video</th><td>{{ video.path.name }}</td></tr>
+  <tr><th scope="row">Duration</th><td>{{ "%.1f"|format(video.duration_s) }} s</td></tr>
+  <tr><th scope="row">Resolution</th><td>{{ video.display_width }}×{{ video.display_height }}
       {% if video.rotation %}(rotation metadata: {{ video.rotation }}°){% endif %}</td></tr>
-  <tr><th>Frame rate</th><td>{{ "%.2f"|format(video.fps) }} fps</td></tr>
-  {% if analysis_fps %}<tr><th>Analyzed at</th><td>{{ "%g"|format(analysis_fps) }} fps</td></tr>{% endif %}
-  {% if video.creation_time %}<tr><th>Recorded</th><td>{{ video.creation_time }}</td></tr>{% endif %}
-  <tr><th>Swings detected</th><td>{{ swings|length }}</td></tr>
-  <tr><th>Handedness</th><td>{{ hand }}</td></tr>
-  <tr><th>Camera angle</th><td>{% if dtl %}Down the line (tempo &amp; rhythm only){% else %}Face-on{% endif %}</td></tr>
-  {% if club_label %}<tr><th>Club</th><td>{{ club_label }}</td></tr>{% endif %}
-  {% if level_label %}<tr><th>Experience</th><td>{{ level_label }}</td></tr>{% endif %}
+  <tr><th scope="row">Frame rate</th><td>{{ "%.2f"|format(video.fps) }} fps</td></tr>
+  {% if analysis_fps %}<tr><th scope="row">Analyzed at</th><td>{{ "%g"|format(analysis_fps) }} fps</td></tr>{% endif %}
+  {% if video.creation_time %}<tr><th scope="row">Recorded</th><td>{{ video.creation_time }}</td></tr>{% endif %}
+  <tr><th scope="row">Swings detected</th><td>{{ swings|length }}</td></tr>
+  <tr><th scope="row">Handedness</th><td>{{ hand }}</td></tr>
+  <tr><th scope="row">Camera angle</th><td>{% if dtl %}Down the line (tempo &amp; rhythm only){% else %}Face-on{% endif %}</td></tr>
+  {% if club_label %}<tr><th scope="row">Club</th><td>{{ club_label }}</td></tr>{% endif %}
+  {% if level_label %}<tr><th scope="row">Experience</th><td>{{ level_label }}</td></tr>{% endif %}
 </table>
 
 {% if not refilm_required %}
@@ -344,10 +817,11 @@
    reframing for the reader, never a change to any number below. #}
 <p class="meta">{{ level_note }}</p>
 {% endif %}
-<div class="table-scroll">
+<div class="table-scroll" role="region" aria-label="Swing timing and movement measurements" tabindex="0">
 <table>
+  <caption class="visually-hidden">Swing timing and movement measurements</caption>
   <tr>
-    <th>Swing</th>
+    <th scope="col">Swing</th>
     {{ mhead("strike_s", "Strike (s)") }}
     {{ mhead("backswing_s", "Backswing (s)") }}
     {{ mhead("downswing_s", "Downswing (s)") }}
@@ -389,9 +863,10 @@ for what it means. Benchmarks are references, not day-one targets — moving
 toward them matters more than hitting them.</p>
 
 <h3>Impact &amp; finish</h3>
-<div class="table-scroll">
+<div class="table-scroll" role="region" aria-label="Impact and finish measurements" tabindex="0">
 <table>
-  <tr><th>Swing</th>
+  <caption class="visually-hidden">Impact and finish measurements</caption>
+  <tr><th scope="col">Swing</th>
     {{ mhead("head_dip_sw", "Head dip A→I (SW)") }}
     {{ mhead("lead_arm_angle_deg", "Lead arm at impact (°)") }}
     {{ mhead("shoulder_tilt_impact_deg", "Shoulder tilt at impact (°)") }}
@@ -442,8 +917,16 @@ balance is mean foot drift during the hold — lower is better.</p>
 {% endif %}
 </details>
 
+<section class="swing-evidence" aria-labelledby="swing-evidence-heading">
+  <header class="section-heading">
+    <p class="section-kicker">Session evidence</p>
+    <h2 id="swing-evidence-heading">Swing evidence</h2>
+    <p>Review the captured positions and available playback for each detected
+      swing. These are the source views behind the {% if refilm_required %}capture-quality
+      decision{% else %}coaching summary{% endif %} above.</p>
+  </header>
 {% for s in swings %}
-<div class="swing">
+<article class="swing" aria-label="Swing {{ s.metrics.swing }} evidence">
   <h2>Swing {{ s.metrics.swing }}</h2>
   {% if not refilm_required %}
   <ul class="notes">
@@ -463,13 +946,15 @@ balance is mean foot drift during the hold — lower is better.</p>
     {% if s.slowmo %}
     <figure>
       <h3>Slow motion ({{ slowmo_factor }}× slower)</h3>
-      <video controls muted playsinline src="{{ s.slowmo }}"></video>
+      <video controls muted playsinline src="{{ s.slowmo }}"
+        aria-label="Slow motion playback for swing {{ s.metrics.swing }}"></video>
     </figure>
     {% endif %}
     {% if not refilm_required and s.replay %}
     <figure>
       <h3>Coach replay</h3>
-      <video controls muted playsinline src="{{ s.replay }}"></video>
+      <video controls muted playsinline src="{{ s.replay }}"
+        aria-label="Coach replay for swing {{ s.metrics.swing }}"></video>
       <figcaption class="meta">Your own footage, annotated: the tracked body,
       the hand path (wrist centroid), and the numbers appearing at each swing
       event — same window as the slow motion.</figcaption>
@@ -495,20 +980,27 @@ balance is mean foot drift during the hold — lower is better.</p>
     {% endif %}
   </div>
   {% endif %}
-</div>
+</article>
 {% endfor %}
+</section>
 
 {% if not (caddie_brief and caddie_brief.refilm_required) %}
+<section class="coaching-followthrough" aria-label="Coaching detail and practice prescription">
 {% if praise_notes %}
+<section class="strengths-section" aria-label="Strengths to protect">
+<p class="section-kicker">Strengths to protect</p>
 <h2>What's working</h2>
 <div class="praise">
   <strong>Keep these — they're already inside the reference lines.</strong>
   <ul>
     {% for note in praise_notes %}<li>{{ note }}</li>{% endfor %}
-  </ul>
+</ul>
 </div>
+</section>
 {% endif %}
 
+<section class="priority-detail" aria-label="Priority detail">
+<p class="section-kicker">Priority detail</p>
 {% if issue_cards %}
 <h2>Start here</h2>
 <p class="start-lead">Fix one thing at a time. This week:
@@ -533,7 +1025,10 @@ balance is mean foot drift during the hold — lower is better.</p>
 <p class="meta">Nothing flagged this session — see the maintenance plan below.</p>
 {% endif %}
 {% endif %}
+</section>
 
+<section class="practice-section" aria-label="Practice prescription">
+<p class="section-kicker">Practice prescription</p>
 <h2>Practice plan</h2>
 {% if flags %}
 <p class="meta">Built from what this session flagged. Run the drills for two
@@ -561,10 +1056,10 @@ baseline.</p>
     </ol>
     {% if d.id in drill_media %}
     <div class="drill-media">
-      <figure>{{ drill_media[d.id].diagram|safe }}<figcaption>Setup</figcaption></figure>
+      <figure aria-label="{{ d.name }} setup diagram">{{ drill_media[d.id].diagram|safe }}<figcaption>Setup</figcaption></figure>
       <details>
         <summary>Show the motion</summary>
-        <figure>{{ drill_media[d.id].animation|safe }}<figcaption>Loops
+        <figure aria-label="{{ d.name }} motion guide">{{ drill_media[d.id].animation|safe }}<figcaption>Loops
         through the drill's key positions; holds the setup pose when your
         device asks for reduced motion.</figcaption></figure>
       </details>
@@ -573,7 +1068,8 @@ baseline.</p>
     {# Success metrics are self-contained sentences that open with their own
        "Re-film…:" lead-in, so the label must not repeat the word (avoids
        "Re-film target: Re-film: …"). The sentence is kept verbatim. #}
-    <p class="dose"><strong>Dosage:</strong> {{ d.dosage }}<br>
+    <p class="dose"><strong>Dosage:</strong> {{ d.dosage }}</p>
+    <p class="refilm-target"><span class="target-label">Matched follow-up</span>
       <strong>Pass mark</strong> — {{ d.success_metric }}</p>
     {% if d.gear_note %}<p class="gear-note">{{ d.gear_note }}</p>{% endif %}
   </div>
@@ -585,9 +1081,11 @@ baseline.</p>
 written. <a href="{{ gear_url }}">Browse optional training aids</a> tagged to
 measured coaching issues.</p>
 {% endif %}
+</section>
+</section>
 {% endif %}
 
-<div class="tips">
+<aside class="tips" aria-label="Filming tips">
   <strong>Filming tips for best results</strong>
   <ul>
     <li>Phone at hip height, sound on.</li>
@@ -596,9 +1094,9 @@ measured coaching issues.</p>
       rhythm only for now.</li>
     <li>Whole body in frame, ball on a tee, and don't trim the clip.</li>
   </ul>
-</div>
+</aside>
 
-<p class="disclaimer">{{ brand.disclaimer }}</p>
+<p class="disclaimer" role="note">{{ brand.disclaimer }}</p>
 </main>
 <footer>{{ brand.footer_text }}</footer>
 </body>

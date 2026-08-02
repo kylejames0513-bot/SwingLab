@@ -1,38 +1,40 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Drill library{% endblock %}
 {% block style %}
-  .lead { text-align: center; margin-bottom: 24px; }
-  .lead h2 { font-size: 1.8rem; margin: 0 0 8px; }
-  .lead p { color: #555; font-size: 1.02rem; max-width: 560px; margin: 0 auto; }
-  .path { background: #e5f3ea; border-left: 4px solid var(--primary);
-          padding: 16px 20px; border-radius: 4px; margin-bottom: 28px; }
-  .path h3 { margin: 0 0 6px; }
-  .path ol { margin: 10px 0 0; padding-left: 20px; color: #333; }
+  main { max-width: 980px; }
+  .lead { max-width: 720px; margin: 0 auto 30px; text-align: center; }
+  .lead h1 { margin: 0 0 10px; color: var(--sl-green); font-size: clamp(2.2rem, 6vw, 3.8rem); line-height: 1; letter-spacing: -.048em; }
+  .lead p { color: var(--sl-ink-soft); font-size: 1.02rem; max-width: 680px; margin: 0 auto; }
+  .path { background: var(--sl-surface-soft); border: 1px solid #c8d9cc; border-left: 5px solid var(--sl-green-btn);
+          padding: clamp(20px, 4vw, 30px); border-radius: var(--sl-radius-lg); margin-bottom: 32px; box-shadow: var(--sl-shadow-sm); }
+  .path h2 { margin: 0 0 6px; }
+  .path ol { margin: 10px 0 0; padding-left: 20px; color: var(--sl-ink); }
   .path li { margin: 8px 0; }
-  .path .why { color: #555; font-size: 0.9rem; }
+  .path .why { color: var(--sl-ink-soft); font-size: 0.9rem; }
   .family { margin-bottom: 30px; }
-  .family > h3 { border-bottom: 2px solid var(--primary);
+  .family > h2 { border-bottom: 2px solid var(--primary);
                  padding-bottom: 6px; }
-  .drill { background: white; border: 1px solid #e0e0e0; border-radius: 8px;
-           padding: 16px 20px; margin: 14px 0; }
-  .drill h4 { margin: 0 0 4px; }
-  .aim { color: #555; margin: 0 0 8px; }
-  .drill ol { padding-left: 20px; color: #444; }
+  .drill { background: var(--sl-bg-card); border: 1px solid var(--sl-border); border-radius: var(--sl-radius-lg);
+           padding: clamp(18px, 4vw, 28px); margin: 14px 0; box-shadow: var(--sl-shadow-sm); }
+  .drill h3 { margin: 0 0 4px; }
+  .aim { color: var(--sl-ink-soft); margin: 0 0 8px; }
+  .drill ol { padding-left: 20px; color: var(--sl-ink-soft); }
   .drill li { margin: 6px 0; }
   .drill-media { display: flex; gap: 16px; flex-wrap: wrap;
                  align-items: flex-start; margin: 10px 0; }
   .drill-media figure { margin: 0; }
-  .drill-media figcaption { color: #777; font-size: 0.8rem; }
+  .drill-media figcaption { color: var(--sl-ink-muted); font-size: 0.8rem; }
   .drill-media details > summary { cursor: pointer; color: var(--primary);
                                    font-size: 0.9rem; }
-  .dose { color: #333; font-size: 0.92rem; }
-  .gear-note { color: #666; font-size: 0.85rem; }
+  .dose { color: var(--sl-ink); font-size: 0.92rem; }
+  .gear-note { color: var(--sl-ink-muted); font-size: 0.85rem; }
   .gear-link { text-align: center; margin: 24px 0; }
   .cta { text-align: center; margin: 28px 0; }
 {% endblock %}
 {% block main %}
   <div class="lead">
-    <h2>The drill library</h2>
+    <p class="sl-eyebrow">Practice with a pass mark</p>
+    <h1>The drill library</h1>
     <p>Every drill our practice plans prescribe, free to read — each with a
       setup diagram, a step-by-step protocol, a dosage, and a measurable
       pass mark in the same numbers your report prints. Film a swing and
@@ -40,7 +42,7 @@
   </div>
 
   <div class="path" id="beginner-path">
-    <h3>New to golf? The four-week Beginner Path</h3>
+    <h2>New to golf? The four-week Beginner Path</h2>
     <p class="why">You don't need all of this at once. One family a week,
       in this order, builds the swing from the ground up — and a re-film at
       the end shows the change in numbers, not vibes.</p>
@@ -60,16 +62,16 @@
     <p class="why">Each drill below says exactly what number tells you it
       worked{% if user or not require_account %} — upload a clip to get
       yours{% else %} — <a href="/signup">a free account</a> gets
-      {{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
-      every month{% endif %}.</p>
+      {% if free_per_month <= 0 %}unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
+      every month{% endif %}{% endif %}.</p>
   </div>
 
   {% for fam in families %}
   <div class="family" id="family-{{ fam.key }}">
-    <h3>{{ fam.title }}</h3>
+    <h2>{{ fam.title }}</h2>
     {% for d in fam.drills %}
     <div class="drill" id="drill-{{ d.id }}">
-      <h4>{{ d.name }}</h4>
+      <h3>{{ d.name }}</h3>
       <p class="aim">{{ d.aim }}</p>
       <ol>
         {% for step in d.protocol %}<li>{{ step }}</li>{% endfor %}
