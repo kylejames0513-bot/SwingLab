@@ -160,6 +160,67 @@ def test_product_behavior_cards_are_not_presented_as_quotes_or_testimonials():
     assert '<h3 class="sl-coach__label">' in coach_source
 
 
+def test_storefront_cards_stay_balanced_across_responsive_layouts():
+    plans = INDEX["sections"]["plans"]
+    plan_words = [
+        len(plans["blocks"][key]["settings"]["description"].split())
+        for key in plans["block_order"]
+    ]
+    assert max(plan_words) - min(plan_words) <= 3
+
+    how = INDEX["sections"]["how_it_works"]
+    how_words = [
+        len(how["blocks"][key]["settings"]["body"].split())
+        for key in how["block_order"]
+    ]
+    assert max(how_words) - min(how_words) <= 3
+
+    coach = INDEX["sections"]["coach_notes"]
+    coach_words = [
+        len(coach["blocks"][key]["settings"]["quote"].split())
+        for key in coach["block_order"]
+    ]
+    assert max(coach_words) - min(coach_words) <= 2
+
+    plans_source = source("sections/product-grid.liquid")
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in plans_source
+    assert "aspect-ratio: 20 / 13" in plans_source
+    assert "height: 100%" in plans_source
+
+    how_source = source("sections/how-it-works.liquid")
+    assert "@media (min-width: 640px)" in how_source
+    assert "@media (min-width: 1100px)" in how_source
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in how_source
+
+    coach_source = source("sections/coach-notes.liquid")
+    assert "@media (min-width: 640px)" in coach_source
+    assert "@media (min-width: 1000px)" in coach_source
+
+
+def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
+    base = source("assets/base.css")
+    assert "--sl-radius-sm: 8px" in base
+    assert "--sl-radius-lg: 22px" in base
+    assert "--sl-radius-xl: 32px" in base
+    assert ".sl-btn {\n  min-height: 46px" in base
+    assert "border-radius: 999px" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
+    assert "@media (min-width: 480px)" in base
+    assert "@media (min-width: 900px)" in base
+    assert "@media (min-width: 1200px)" in base
+    assert "min-block-size: 2.8em" in base
+    assert ".sl-pcard-price { margin: auto 0 0" in base
+
+    product = source("sections/main-product.liquid")
+    assert ".sl-product--pro .sl-product-form" in product
+    assert "max-width: 520px" in product
+
+    comparison = source("sections/comparison.liquid")
+    mobile_comparison = comparison.split("@media (max-width: 749px)", 1)[1]
+    assert "min-width: 0" in mobile_comparison
+    assert "table-layout: fixed" in mobile_comparison
+    assert "overflow-wrap: anywhere" in mobile_comparison
+
+
 def test_caddie_window_hero_is_responsive_fast_and_disclosed():
     hero_source = source("sections/hero.liquid")
     hero_locale = LOCALE["homepage"]["hero"]

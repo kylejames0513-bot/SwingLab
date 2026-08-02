@@ -76,7 +76,8 @@
 }
 .sl-how__grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: 1fr;
+  align-items: stretch;
   gap: 16px;
   margin-top: clamp(30px, 4vw, 48px);
 }
@@ -85,6 +86,7 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  height: 100%;
   min-height: 330px;
   border: 1px solid #ded9ce;
   border-radius: 20px;
@@ -169,6 +171,12 @@
   color: #07130d;
   border-color: var(--sl-orange);
 }
+@media (min-width: 640px) {
+  .sl-how__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1100px) {
+  .sl-how__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
 @media (max-width: 749px) {
   .sl-how__intro { grid-template-columns: 1fr; gap: 20px; }
   .sl-how__title { font-size: clamp(42px, 13vw, 58px); }
@@ -193,7 +201,7 @@
       "settings": [
         { "type": "text", "id": "number", "label": "Step number", "default": "01" },
         { "type": "text", "id": "title", "label": "Title", "default": "Choose the club" },
-        { "type": "textarea", "id": "body", "label": "Body", "default": "Select the club you are filming. It stays attached to the report; wedge coaching remains neutral until shot intent and lie are captured." },
+        { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club before upload: iron, wedge, hybrid, fairway wood, or driver. It stays with the report and next comparison. Wedge coaching remains neutral until shot intent and lie are captured." },
         { "type": "text", "id": "caption", "label": "Caption (small mono line)", "info": "Optional specimen-style label under the body." }
       ]
     }
@@ -208,7 +216,7 @@
           "settings": {
             "number": "01",
             "title": "Choose the club",
-            "body": "Select the club you are filming. It stays attached to the report; wedge coaching remains neutral until shot intent and lie are captured.",
+            "body": "Choose the club before upload: iron, wedge, hybrid, fairway wood, or driver. It stays with the report and next comparison. Wedge coaching remains neutral until shot intent and lie are captured.",
             "caption": "CLUB CONTEXT IS REQUIRED"
           }
         },
@@ -217,7 +225,7 @@
           "settings": {
             "number": "02",
             "title": "Film a repeatable view",
-            "body": "Set the phone at hip height with your full body in frame. Face-on supports movement coaching; down-the-line currently supports timing only.",
+            "body": "Set the phone at hip height with your full body in frame, then select the view before upload. Face-on supports movement coaching; down-the-line supports timing only. Save that setup for the next clip.",
             "caption": "MATCH THE VIEW NEXT TIME"
           }
         },
@@ -226,7 +234,7 @@
           "settings": {
             "number": "03",
             "title": "Work one plan",
-            "body": "The report ranks supported findings, brings one priority forward, and gives that practice plan a measured pass mark.",
+            "body": "CaddieInsight ranks supported findings, brings one priority forward, and turns it into a drill with a measured pass mark. You leave with one clear range-session job instead of disconnected swing notes.",
             "caption": "ONE PRIORITY · ONE PASS MARK"
           }
         },
@@ -235,7 +243,7 @@
           "settings": {
             "number": "04",
             "title": "Re-film to prove it",
-            "body": "Use the same club and selected view, then repeat your hip-height, full-body framing. CaddieInsight verifies the saved club, handedness, and selected camera angle; physical height, distance, and framing remain part of your setup.",
+            "body": "Use the same club and selected view, then repeat the hip-height, full-body setup. CaddieInsight verifies the saved club, handedness, and selected camera angle; height, distance, and framing remain part of your setup.",
             "caption": "REPEAT THE CAPTURE SETUP"
           }
         }

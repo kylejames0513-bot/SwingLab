@@ -189,8 +189,9 @@
 }
 .sl-hero__actions {
   margin-top: 34px;
-  display: flex;
-  flex-wrap: wrap;
+  width: min(100%, 570px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
 }
 .sl-hero__primary,
@@ -432,7 +433,7 @@
     line-height: 0.94;
   }
   .sl-hero__body { margin-top: 22px; font-size: 17px; }
-  .sl-hero__actions { margin-top: 28px; }
+  .sl-hero__actions { width: 100%; grid-template-columns: 1fr; margin-top: 28px; }
   .sl-hero__primary,
   .sl-hero__secondary { width: 100%; }
   .sl-hero__proof { gap: 10px 16px; }
