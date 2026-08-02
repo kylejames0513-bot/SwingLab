@@ -245,6 +245,10 @@ def test_storefront_logout_uses_provider_handoff_for_a_shopify_login(
     )
     assert callback.status_code == 303
 
+    signed_in_shell = client.get("/", follow_redirects=True).text
+    assert signed_in_shell.count('action="/auth/shopify/logout" method="post"') == 2
+    assert 'action="/logout" method="post"' not in signed_in_shell
+
     logged_out = client.post(
         SESSION_PATH,
         headers=_storefront_headers(),

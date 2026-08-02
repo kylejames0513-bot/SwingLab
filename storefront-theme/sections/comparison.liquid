@@ -1,10 +1,14 @@
-<section id="{{ section.settings.anchor | default: 'compare' }}" class="sl-compare">
+<section id="{{ section.settings.anchor | default: 'compare' }}" class="sl-compare" data-app-upgrade-section>
   <div class="sl-wrap sl-reveal">
     <div class="sl-compare__head">
-      <h2 class="sl-h2">{{ section.settings.heading | default: 'Free gets you started. Pro keeps score.' }}</h2>
+      <h2 class="sl-h2">
+        <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Free gets you started. Pro keeps score.' }}</span>
+        <span data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_heading' | t }}</span>
+      </h2>
       {%- if section.settings.sub != blank -%}
-        <p class="sl-compare__sub">{{ section.settings.sub }}</p>
+        <p class="sl-compare__sub" data-app-auth-signed-out>{{ section.settings.sub }}</p>
       {%- endif -%}
+      <p class="sl-compare__sub" data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_subheading' | t }}</p>
     </div>
 
     <div class="sl-compare__scroll">
@@ -30,10 +34,18 @@
 
     <div class="sl-compare__actions">
       {%- if section.settings.primary_label != blank -%}
-        <a href="{{ section.settings.primary_url | default: '/products/swinglab-pro' }}" class="sl-btn sl-btn--primary">{{ section.settings.primary_label }}</a>
+        <a href="{{ section.settings.primary_url | default: '/products/swinglab-pro' }}"
+           class="sl-btn sl-btn--primary"
+           data-app-pro-sales-link>{{ section.settings.primary_label }}</a>
       {%- endif -%}
       {%- if section.settings.secondary_label != blank -%}
-        <a href="{{ section.settings.secondary_url | default: '#' }}" class="sl-btn sl-btn--outline">{{ section.settings.secondary_label }}</a>
+        <a href="{{ section.settings.secondary_url | default: '#' }}"
+           class="sl-btn sl-btn--outline"
+           data-app-primary-cta
+           data-app-signed-out-label="{{ section.settings.secondary_label | escape }}"
+           data-app-signed-out-url="{{ section.settings.secondary_url | default: '#' }}">
+          <span data-app-cta-label>{{ section.settings.secondary_label }}</span>
+        </a>
       {%- endif -%}
     </div>
     {%- if section.settings.footnote != blank -%}
@@ -182,7 +194,7 @@
     { "type": "url", "id": "primary_url", "label": "Primary button link" },
     { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Start free" },
     { "type": "url", "id": "secondary_url", "label": "Secondary button link" },
-    { "type": "textarea", "id": "footnote", "label": "Footnote", "default": "Already use CaddieInsight? Keep signing in with your current account email. New here? Create your account with the email used at Shopify checkout." }
+    { "type": "textarea", "id": "footnote", "label": "Footnote", "default": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup." }
   ],
   "blocks": [
     {

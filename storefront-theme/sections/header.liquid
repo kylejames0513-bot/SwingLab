@@ -248,8 +248,12 @@
 html.sl-menu-open { overflow: hidden; }
 .sl-announcement[hidden],
 .sl-member-rail[hidden],
-[data-app-pro-sales-link][hidden] { display: none; }
-body:has(.sl-header[data-app-authenticated="true"] [data-app-member-rail]) .sl-announcement { display: none; }
+[data-app-auth-signed-out][hidden],
+[data-app-auth-signed-in][hidden],
+[data-app-pro-sales-link][hidden],
+[data-app-pro-member-only][hidden],
+[data-app-upgrade-section][hidden] { display: none; }
+body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: none; }
 .sl-member-rail {
   width: calc(100% + var(--sl-pad-x) + var(--sl-pad-x));
   min-height: 38px;
@@ -904,12 +908,9 @@ body:has(.sl-header[data-app-authenticated="true"] [data-app-member-rail]) .sl-a
       }
 
       function eachAppAuthNode(selector, callback) {
-        var roots = [header, menu];
-        for (var rootIndex = 0; rootIndex < roots.length; rootIndex++) {
-          var nodes = roots[rootIndex].querySelectorAll(selector);
-          for (var nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
-            callback(nodes[nodeIndex]);
-          }
+        var nodes = document.querySelectorAll(selector);
+        for (var nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+          callback(nodes[nodeIndex]);
         }
       }
 
@@ -962,12 +963,24 @@ body:has(.sl-header[data-app-authenticated="true"] [data-app-member-rail]) .sl-a
         eachAppAuthNode('[data-app-pro-sales-link]', function (node) {
           node.hidden = isPro;
         });
+        eachAppAuthNode('[data-app-pro-member-only]', function (node) {
+          node.hidden = !isPro;
+        });
+        eachAppAuthNode('[data-app-upgrade-section]', function (node) {
+          node.hidden = isPro;
+        });
         eachAppAuthNode('[data-app-primary-cta]', function (node) {
           var signedOutLabel = node.getAttribute('data-app-signed-out-label') || analyzeLabel;
           var signedOutUrl = node.getAttribute('data-app-signed-out-url') || appUrl;
-          node.textContent = authenticated
+          var resolvedLabel = authenticated
             ? (isPro ? proActionLabel : analyzeLabel)
             : signedOutLabel;
+          var labelNode = node.querySelector('[data-app-cta-label]');
+          if (labelNode) {
+            labelNode.textContent = resolvedLabel;
+          } else {
+            node.textContent = resolvedLabel;
+          }
           node.setAttribute('href', authenticated ? appUrl : signedOutUrl);
         });
 
@@ -976,6 +989,7 @@ body:has(.sl-header[data-app-authenticated="true"] [data-app-member-rail]) .sl-a
         }
         header.dataset.appAuthenticated = authenticated ? 'true' : 'false';
         header.dataset.appPro = isPro ? 'true' : 'false';
+        header.slAppAuthPayload = payload;
       }
 
       function refreshAppSession() {
@@ -1058,12 +1072,15 @@ body:has(.sl-header[data-app-authenticated="true"] [data-app-member-rail]) .sl-a
       refreshAppSession();
 
       header.dataset.slHeaderReady = 'true';
+      header.slApplyAppAuthState = setAppAuthState;
       header.slHeaderCleanup = function () {
         closeMenu(false);
         closeDesktopMenus();
         controller.abort();
         document.documentElement.classList.remove('sl-menu-open');
         delete header.dataset.slHeaderReady;
+        delete header.slApplyAppAuthState;
+        delete header.slAppAuthPayload;
         delete header.slHeaderCleanup;
       };
     }
@@ -1080,9 +1097,26 @@ body:has(.sl-header[data-app-authenticated="true"] [data-app-member-rail]) .sl-a
       }
     }
 
-    window.CaddieInsightHeader = { init: init, unload: unload };
+    function reapplyAppState() {
+      var headers = findHeaders(document);
+      for (var i = 0; i < headers.length; i++) {
+        var header = headers[i];
+        if (header.slApplyAppAuthState && header.slAppAuthPayload) {
+          header.slApplyAppAuthState(header.slAppAuthPayload);
+        }
+      }
+    }
+
+    window.CaddieInsightHeader = {
+      init: init,
+      unload: unload,
+      reapplyAppState: reapplyAppState
+    };
     init(document);
-    document.addEventListener('shopify:section:load', function (event) { init(event.target); });
+    document.addEventListener('shopify:section:load', function (event) {
+      init(event.target);
+      reapplyAppState();
+    });
     document.addEventListener('shopify:section:unload', function (event) { unload(event.target); });
   })();
 </script>

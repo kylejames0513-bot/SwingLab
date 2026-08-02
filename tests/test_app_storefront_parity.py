@@ -103,6 +103,8 @@ def test_free_and_pro_navigation_remain_dynamic(tmp_path, monkeypatch):
     free_shell = client.get("/today").text.split("</dialog>", 1)[0]
     assert 'href="/pricing"' in free_shell
     assert "data-pro-member-nav" not in free_shell
+    assert free_shell.count('action="/logout" method="post"') == 2
+    assert "Create free account" not in free_shell
 
     signed_out = TestClient(app).get("/").text.split("</dialog>", 1)[0]
     assert signed_out.count('class="sl-header__cta') == 2

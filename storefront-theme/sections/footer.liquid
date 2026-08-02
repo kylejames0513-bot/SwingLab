@@ -43,7 +43,7 @@
             <nav class="sl-footer__col" aria-label="{{ link.title | escape }}">
               <p class="sl-footer__head">{{ link.title }}</p>
               {%- for child in link.links -%}
-                <a class="sl-footer__link" href="{{ child.url }}">{{ child.title }}</a>
+                <a class="sl-footer__link" href="{{ child.url }}"{% if child.url contains '/products/swinglab-pro' %} data-app-pro-sales-link{% endif %}>{{ child.title }}</a>
               {%- endfor -%}
             </nav>
           {%- endif -%}
@@ -52,7 +52,7 @@
         <nav class="sl-footer__col" aria-label="Shop">
           <p class="sl-footer__head">Shop</p>
           <a class="sl-footer__link" href="{{ gear_url }}">Training gear</a>
-          {%- if pro_product != blank -%}<a class="sl-footer__link" href="{{ pro_product.url }}">Pro Membership</a>{%- endif -%}
+          {%- if pro_product != blank -%}<a class="sl-footer__link" href="{{ pro_product.url }}" data-app-pro-sales-link>Pro Membership</a>{%- endif -%}
           {%- if cap_product != blank -%}<a class="sl-footer__link" href="{{ cap_product.url }}">Performance Cap</a>{%- endif -%}
         </nav>
         <nav class="sl-footer__col" aria-label="Learn">
@@ -102,7 +102,7 @@
     {%- if menu != blank and menu_is_nested == false and menu.links.size > 0 -%}
       <nav class="sl-footer__quick" aria-label="Footer links">
         {%- for link in menu.links -%}
-          <a class="sl-footer__link" href="{{ link.url }}">{{ link.title }}</a>
+          <a class="sl-footer__link" href="{{ link.url }}"{% if link.url contains '/products/swinglab-pro' %} data-app-pro-sales-link{% endif %}>{{ link.title }}</a>
         {%- endfor -%}
       </nav>
     {%- endif -%}

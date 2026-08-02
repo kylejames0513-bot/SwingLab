@@ -8,10 +8,18 @@
       {%- endif -%}
       <div class="sl-cta__actions">
         {%- if section.settings.primary_label != blank -%}
-          <a href="{{ section.settings.primary_url | default: '#' }}" class="sl-btn sl-btn--light">{{ section.settings.primary_label }}</a>
+          <a href="{{ section.settings.primary_url | default: '#' }}"
+             class="sl-btn sl-btn--light"
+             data-app-primary-cta
+             data-app-signed-out-label="{{ section.settings.primary_label | escape }}"
+             data-app-signed-out-url="{{ section.settings.primary_url | default: '#' }}">
+            <span data-app-cta-label>{{ section.settings.primary_label }}</span>
+          </a>
         {%- endif -%}
         {%- if section.settings.secondary_label != blank -%}
-          <a href="{{ section.settings.secondary_url | default: '/products/swinglab-pro' }}" class="sl-btn sl-cta__ghost">{{ section.settings.secondary_label }}</a>
+          <a href="{{ section.settings.secondary_url | default: '/products/swinglab-pro' }}"
+             class="sl-btn sl-cta__ghost"
+             data-app-pro-sales-link>{{ section.settings.secondary_label }}</a>
         {%- endif -%}
       </div>
     </div>

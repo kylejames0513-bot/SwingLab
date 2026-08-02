@@ -182,7 +182,10 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
     assert max(coach_words) - min(coach_words) <= 2
 
     plans_source = source("sections/product-grid.liquid")
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in plans_source
+    assert (
+        "grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr))"
+        in plans_source
+    )
     assert "aspect-ratio: 20 / 13" in plans_source
     assert "height: 100%" in plans_source
 
@@ -331,11 +334,44 @@ def test_theme_uses_shopify_fonts_and_store_aware_routes():
     assert route_sources.count("routes.collections_url") == 4
 
     how_source = source("sections/how-it-works.liquid")
-    assert (
-        "section.settings.cta_label != blank and section.settings.cta_url != blank"
-        in how_source
-    )
+    assert "section.settings.cta_label" not in how_source
+    assert '"id": "cta_label"' not in how_source
+    assert '"id": "cta_url"' not in how_source
     assert "default: '#'" not in how_source
+
+
+def test_storefront_account_and_pro_actions_follow_the_app_session():
+    how = source("sections/how-it-works.liquid")
+    hero = source("sections/hero.liquid")
+    comparison = source("sections/comparison.liquid")
+    plans = source("sections/product-grid.liquid")
+    banner = source("sections/cta-banner.liquid")
+    product = source("sections/main-product.liquid")
+    product_card = source("snippets/product-card.liquid")
+    footer = source("sections/footer.liquid")
+    faq = INDEX["sections"]["faq"]["blocks"]["q_pro_unlock"]["settings"]["answer"]
+
+    assert "Create a free account" not in how
+    assert "cta_label" not in INDEX["sections"]["how_it_works"]["settings"]
+    assert "data-app-primary-cta" in hero
+    assert "data-app-primary-cta" in banner
+    assert "data-app-primary-cta" in comparison
+    assert "data-app-pro-sales-link" in banner
+    assert "data-app-pro-sales-link" in comparison
+    assert "data-app-upgrade-section" in comparison
+    assert "data-app-upgrade-section" in plans
+    assert INDEX["sections"]["plans"]["settings"]["membership_section"] is True
+    assert INDEX["sections"]["plans"]["blocks"]["free"]["settings"][
+        "member_visibility"
+    ] == "signed_out"
+    assert "data-app-pro-member-only hidden" in product
+    assert "product.handle == 'swinglab-pro'" in product_card
+    assert footer.count("data-app-pro-sales-link") >= 3
+    assert "create your account" not in faq.lower()
+    assert INDEX["sections"]["cta"]["settings"]["primary_label"] == (
+        "Analyze a swing free"
+    )
+    assert '<button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Sign up</button>' in footer
 
 
 def test_generated_storefront_art_avoids_unsupported_measurement_claims():

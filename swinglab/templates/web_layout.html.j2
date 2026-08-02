@@ -298,15 +298,25 @@
     box-shadow: 0 18px 42px -24px rgba(15, 42, 27, 0.42);
   }
   .sl-header__dropdown-menu--right { right: 0; left: auto; }
-  .sl-header__dropdown-menu a {
+  .sl-header__dropdown-menu a,
+  .sl-header__logout {
+    width: 100%;
     padding: 10px 12px;
+    display: block;
+    border: 0;
     border-radius: 9px;
+    background: transparent;
     color: var(--sl-ink);
+    font-family: inherit;
     font-size: 14px;
     font-weight: 600;
+    text-align: left;
     text-decoration: none;
+    cursor: pointer;
   }
-  .sl-header__dropdown-menu a:hover {
+  .sl-header__dropdown-menu form { margin: 0; }
+  .sl-header__dropdown-menu a:hover,
+  .sl-header__logout:hover {
     background: var(--sl-orange-soft);
     color: var(--sl-green);
   }
@@ -315,8 +325,10 @@
     border-color: rgba(239, 241, 232, .14);
     box-shadow: 0 24px 54px -22px rgba(0, 0, 0, .78);
   }
-  .sl-header--premium .sl-header__dropdown-menu a { color: rgba(245, 242, 233, .86); }
-  .sl-header--premium .sl-header__dropdown-menu a:hover {
+  .sl-header--premium .sl-header__dropdown-menu a,
+  .sl-header--premium .sl-header__logout { color: rgba(245, 242, 233, .86); }
+  .sl-header--premium .sl-header__dropdown-menu a:hover,
+  .sl-header--premium .sl-header__logout:hover {
     background: rgba(255, 255, 255, .08);
     color: #fff;
   }
@@ -498,6 +510,15 @@
     text-decoration: none;
   }
   .sl-menu__link:hover { color: var(--sl-green-btn); }
+  .sl-menu__logout {
+    width: 100%;
+    border: 0;
+    background: transparent;
+    font-family: inherit;
+    text-align: left;
+    cursor: pointer;
+  }
+  .sl-menu__group form { margin: 0; }
   .sl-menu__link.is-current {
     padding-inline: 10px;
     background: var(--sl-orange-soft);
@@ -728,6 +749,7 @@
     </a>
 
     <nav class="sl-header__desktop-nav" aria-label="Main navigation">
+      {% if user or not require_account %}
       <details class="sl-header__dropdown" data-header-dropdown>
         <summary class="sl-header__dropdown-trigger{% if current_path == '/today' or current_path == '/sessions' or current_path == '/progress' or current_path == '/drills' %} is-current{% endif %}">
           My Game
@@ -742,6 +764,9 @@
           <a href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
         </div>
       </details>
+      {% else %}
+      <a class="sl-header__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
+      {% endif %}
       {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
       {% if user and user.is_pro %}
       <a class="sl-header__member" href="/today" data-pro-member-nav>
@@ -763,6 +788,9 @@
         <div class="sl-header__dropdown-menu sl-header__dropdown-menu--right">
           {% if require_account and user %}
             <a href="/account" {% if current_path == '/account' %}aria-current="page"{% endif %}>{{ brand.name }} profile</a>
+            <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
+              <button class="sl-header__logout" type="submit">Log out</button>
+            </form>
           {% elif require_account %}
             <a href="/login" {% if current_path == '/login' %}aria-current="page"{% endif %}>Sign in</a>
             <a href="/signup" {% if current_path == '/signup' %}aria-current="page"{% endif %}>Create free account</a>
@@ -807,15 +835,17 @@
 
       <div class="sl-menu__group">
         <p class="sl-menu__eyebrow">Practice</p>
-        {% if require_account %}
+        {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/today' %} is-current{% endif %}" href="/today" data-menu-link {% if current_path == '/today' %}aria-current="page"{% endif %}>
           <span>Today</span><span aria-hidden="true">&rarr;</span>
         </a>
         {% endif %}
+        {% if user or not require_account %}
         <a class="sl-menu__link{% if current_path == '/sessions' %} is-current{% endif %}" href="/sessions" data-menu-link {% if current_path == '/sessions' %}aria-current="page"{% endif %}>
           <span>History</span><span aria-hidden="true">&rarr;</span>
         </a>
-        {% if require_account %}
+        {% endif %}
+        {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" data-menu-link {% if current_path == '/progress' %}aria-current="page"{% endif %}>
           <span>Progress{% if user and progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
         </a>
@@ -853,6 +883,11 @@
         <a class="sl-menu__link{% if current_path == '/account' %} is-current{% endif %}" href="/account" data-menu-link {% if current_path == '/account' %}aria-current="page"{% endif %}>
           <span>{{ brand.name }} profile</span><span aria-hidden="true">&rarr;</span>
         </a>
+        <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
+          <button class="sl-menu__link sl-menu__logout" type="submit">
+            <span>Log out</span><span aria-hidden="true">&rarr;</span>
+          </button>
+        </form>
         {% elif require_account %}
         <a class="sl-menu__link{% if current_path == '/login' %} is-current{% endif %}" href="/login" data-menu-link {% if current_path == '/login' %}aria-current="page"{% endif %}>
           <span>Sign in</span><span aria-hidden="true">&rarr;</span>
@@ -882,14 +917,19 @@
     </div>
     <nav class="sl-app-footer__nav" aria-label="Practice links">
       <strong>Practice</strong>
-      <a href="/">Analyze a swing</a>
-      <a href="/sessions">History</a>
-      {% if require_account %}<a href="/progress">Progress</a>{% endif %}
+      <a href="{% if user or not require_account %}/{% else %}/signup{% endif %}">{% if user or not require_account %}Analyze a swing{% else %}Analyze free{% endif %}</a>
+      {% if user or not require_account %}<a href="/sessions">History</a>{% endif %}
+      {% if require_account and user %}<a href="/progress">Progress</a>{% endif %}
       <a href="/drills">Drills</a>
     </nav>
     <nav class="sl-app-footer__nav" aria-label="Account and shop links">
       <strong>{{ brand.name }}</strong>
-      {% if require_account %}<a href="/account">Your profile</a>{% endif %}
+      {% if require_account and user %}
+        <a href="/account">Your profile</a>
+      {% elif require_account %}
+        <a href="/login">Sign in</a>
+        <a href="/signup">Create free account</a>
+      {% endif %}
       {% if shop_enabled %}<a href="/shop">Training gear</a>{% endif %}
       {% if not (user and user.is_pro) %}<a href="/pricing">Pro membership</a>{% endif %}
       {% if storefront_url %}<a href="{{ storefront_url }}">Visit the storefront</a>{% endif %}

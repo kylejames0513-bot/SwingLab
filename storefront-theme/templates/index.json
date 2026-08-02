@@ -112,9 +112,7 @@
       "settings": {
         "anchor": "how",
         "heading": "Film. Coach. Practice. Prove it.",
-        "footer_note": "CaddieInsight measures supported 2D phone-video movement and timing. It does not infer club path, face angle, launch, spin, carry, strike, or ball flight.",
-        "cta_label": "Create a free account",
-        "cta_url": "https://app.caddieinsight.com/signup"
+        "footer_note": "CaddieInsight measures supported 2D phone-video movement and timing. It does not infer club path, face angle, launch, spin, carry, strike, or ball flight."
       }
     },
     "report": {
@@ -184,6 +182,7 @@
             "price_note": "Month $4.99 · Year $39.99 · Lifetime $79.99",
             "product": "swinglab-pro",
             "use_product_price": true,
+            "member_visibility": "pro_offer",
             "image": "shopify://shop_images/product-pro.png",
             "placeholder_label": "pro membership art",
             "warm_placeholder": false,
@@ -200,6 +199,7 @@
             "price_note": "No card required · complete report included",
             "url": "https://app.caddieinsight.com",
             "use_product_price": false,
+            "member_visibility": "signed_out",
             "image": "shopify://shop_images/pro-report-strip.png",
             "placeholder_label": "free plan report strip",
             "warm_placeholder": false,
@@ -214,7 +214,8 @@
       "settings": {
         "anchor": "plans",
         "heading": "Start free. Go Pro when repetition matters.",
-        "subheading": "The coaching engine stays the same. Pro removes the monthly limit and adds replay plus progress tracking."
+        "subheading": "The coaching engine stays the same. Pro removes the monthly limit and adds replay plus progress tracking.",
+        "membership_section": true
       }
     },
     "comparison": {
@@ -305,7 +306,7 @@
         "primary_url": "shopify://products/swinglab-pro",
         "secondary_label": "Start free",
         "secondary_url": "https://app.caddieinsight.com",
-        "footnote": "Already use CaddieInsight? Keep signing in with your current account email. New here? Create your account with the email used at Shopify checkout."
+        "footnote": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup."
       }
     },
     "coach_notes": {
@@ -386,7 +387,7 @@
           "type": "qa",
           "settings": {
             "question": "How does Pro unlock after I buy it here?",
-            "answer": "If you already use CaddieInsight, Pro connects to your linked account and you should keep signing in with its current email. If you are new, create your account with the email used at Shopify checkout."
+            "answer": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup; access activates when the paid order is confirmed."
           }
         },
         "q_lefty": {
@@ -450,7 +451,7 @@
       "settings": {
         "heading": "Your next range session should answer one question.",
         "sub": "Choose the club. Film the view. Work one measured plan. Re-film by repeating the setup.",
-        "primary_label": "Create a free account",
+        "primary_label": "Analyze a swing free",
         "primary_url": "https://app.caddieinsight.com/signup",
         "secondary_label": "Get Pro",
         "secondary_url": "shopify://products/swinglab-pro"

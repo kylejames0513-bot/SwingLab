@@ -40,7 +40,14 @@
 
       <div class="sl-hero__actions">
         {%- if section.settings.primary_label != blank and section.settings.primary_url != blank -%}
-          <a href="{{ section.settings.primary_url }}" class="sl-btn sl-hero__primary">{{ section.settings.primary_label }} <span aria-hidden="true">&rarr;</span></a>
+          <a href="{{ section.settings.primary_url }}"
+             class="sl-btn sl-hero__primary"
+             data-app-primary-cta
+             data-app-signed-out-label="{{ section.settings.primary_label | escape }}"
+             data-app-signed-out-url="{{ section.settings.primary_url }}">
+            <span data-app-cta-label>{{ section.settings.primary_label }}</span>
+            <span aria-hidden="true">&rarr;</span>
+          </a>
         {%- endif -%}
         {%- if section.settings.secondary_label != blank and section.settings.secondary_url != blank -%}
           <a href="{{ section.settings.secondary_url }}" class="sl-btn sl-hero__secondary">{{ section.settings.secondary_label }}</a>

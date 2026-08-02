@@ -45,6 +45,15 @@ def test_storefront_account_menu_hydrates_from_the_app_session_safely():
     assert "node.textContent = authenticated ? welcomeText : '';" in HEADER
     assert "innerHTML" not in HEADER
     assert "data-app-auth-summary" in HEADER
+    assert "var nodes = document.querySelectorAll(selector);" in HEADER
+    assert "node.querySelector('[data-app-cta-label]')" in HEADER
+    assert "eachAppAuthNode('[data-app-pro-member-only]'" in HEADER
+    assert "eachAppAuthNode('[data-app-upgrade-section]'" in HEADER
+    assert "reapplyAppState: reapplyAppState" in HEADER
+    assert (
+        'body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement'
+        in HEADER
+    )
 
 
 def test_storefront_homepage_prominently_welcomes_signed_in_members():
