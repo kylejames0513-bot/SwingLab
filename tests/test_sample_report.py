@@ -59,6 +59,26 @@ def test_ensure_sample_report_refreshes_only_an_old_synthetic_format(tmp_path):
     assert "Your caddie's read" in html
 
 
+def test_ensure_sample_report_refreshes_an_old_presentation_only(tmp_path):
+    sample_dir = tmp_path / "sr"
+    sample_dir.mkdir()
+    report = sample_dir / "report.html"
+    report.write_text(
+        '<meta name="caddieinsight-report-format" content="caddie-brief-v1">'
+        "<p>schema-compatible old presentation</p>",
+        encoding="utf-8",
+    )
+
+    refreshed = sample.ensure_sample_report(sample_dir, Config())
+    html = refreshed.read_text(encoding="utf-8")
+    assert "schema-compatible old presentation" not in html
+    assert (
+        'name="caddieinsight-report-presentation" '
+        'content="premium-evidence-v1"'
+    ) in html
+    assert 'class="report-intro"' in html
+
+
 def test_sample_report_route_is_public(tmp_path):
     cfg = Config()
     cfg.web["require_account"] = True  # locked-down instance...

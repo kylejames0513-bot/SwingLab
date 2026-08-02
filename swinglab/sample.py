@@ -30,7 +30,11 @@ from .config import Config
 from .drawing import draw_skeleton, load_font
 from .ffmpeg import VideoInfo
 from .metrics import SwingMetrics, session_stats
-from .report import REPORT_FORMAT_VERSION, write_report_html
+from .report import (
+    REPORT_FORMAT_VERSION,
+    REPORT_PRESENTATION_VERSION,
+    write_report_html,
+)
 
 # What the banner on top of the sample says. cta_url is the app's landing
 # page, where signup lives.
@@ -255,9 +259,11 @@ def build_sample_swings(sample_dir: Path, cfg: Config) -> list[dict]:
 def ensure_sample_report(sample_dir: Path, cfg: Config) -> Path:
     """Generate or format-refresh the synthetic public sample report.
 
-    Current-format reports are left byte-for-byte alone.  An older synthetic
-    report is regenerated through the real renderer and atomically replaces
-    only ``sample-report/report.html``; customer sessions are never involved.
+    Current-format, current-presentation reports are left byte-for-byte alone.
+    An older synthetic report is regenerated through the real renderer and
+    atomically replaces only ``sample-report/report.html``; customer sessions
+    are never involved.  Presentation and schema versions stay separate so a
+    sample redesign never changes persisted customer-report compatibility.
     """
     sample_dir = Path(sample_dir)
     report_path = sample_dir / "report.html"
@@ -266,11 +272,15 @@ def ensure_sample_report(sample_dir: Path, cfg: Config) -> Path:
             existing = report_path.read_text(encoding="utf-8")
         except OSError:
             existing = ""
-        marker = (
+        format_marker = (
             'name="caddieinsight-report-format" '
             f'content="{REPORT_FORMAT_VERSION}"'
         )
-        if marker in existing:
+        presentation_marker = (
+            'name="caddieinsight-report-presentation" '
+            f'content="{REPORT_PRESENTATION_VERSION}"'
+        )
+        if format_marker in existing and presentation_marker in existing:
             return report_path
     sample_dir.mkdir(parents=True, exist_ok=True)
     swings = build_sample_swings(sample_dir, cfg)

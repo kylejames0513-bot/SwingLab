@@ -1,53 +1,260 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Session history{% endblock %}
 {% block style %}
-  table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee;
-           font-size: 0.95rem; }
-  th { color: #555; font-weight: 600; font-size: 0.85rem;
-       text-transform: uppercase; letter-spacing: 0.03em; }
-  tr:hover td { background: #fafafa; }
-  a.session { color: var(--primary); font-weight: 600; text-decoration: none; }
-  a.session:hover { text-decoration: underline; }
-  .chip { display: inline-block; padding: 2px 10px; border-radius: 999px;
-          font-size: 0.8rem; font-weight: 600; }
-  .chip.done { background: #e5f3ea; color: #1a5c38; }
-  .chip.refilm { background: #fff3e0; color: #8a4b08; }
-  .chip.failed { background: #fbe9e7; color: #b3261e; }
-  .chip.processing, .chip.queued { background: #fff3e0; color: #a35406; }
-  .chip.club { background: #eef1f4; color: #33414e; font-weight: 500; }
+  main { max-width: 1180px; }
+  .history-shell { display: grid; gap: 22px; }
+  .history-header {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding: clamp(26px, 5vw, 44px);
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: var(--sl-radius-xl);
+    background:
+      radial-gradient(circle at 88% 12%, rgba(255, 203, 138, .18), transparent 16rem),
+      linear-gradient(135deg, #0d3422, #185838);
+    color: #fff;
+    box-shadow: var(--sl-shadow-lg);
+  }
+  .history-header__copy { max-width: 700px; }
+  .history-header .sl-eyebrow { margin-bottom: 8px; color: #ffd09d; }
+  .history-header h1 {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(2.2rem, 7vw, 4.6rem);
+    line-height: 1;
+    letter-spacing: -.05em;
+  }
+  .history-header p:last-child { margin: 13px 0 0; color: #dcebe1; }
+  .history-header .button { flex: 0 0 auto; margin: 0; border-color: #fff; background: #fff; color: var(--sl-green); box-shadow: none; }
+  .history-header .button:hover { border-color: #fff; background: #f5fbf7; color: var(--sl-green); }
+  .history-panel {
+    overflow: hidden;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
+  }
+  .history-panel__heading { padding: 23px 25px 17px; border-bottom: 1px solid var(--sl-border); }
+  .history-panel__heading h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.25rem, 3vw, 1.7rem); letter-spacing: -.025em; }
+  .history-panel__heading p { margin: 5px 0 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .history-table-wrap { width: 100%; overflow-x: auto; }
+  .history-table { width: 100%; border-collapse: collapse; }
+  .history-table th,
+  .history-table td { padding: 17px 14px; border-bottom: 1px solid var(--sl-border); text-align: left; vertical-align: middle; }
+  .history-table th:first-child,
+  .history-table td:first-child { padding-left: 25px; }
+  .history-table th:last-child,
+  .history-table td:last-child { padding-right: 25px; }
+  .history-table tbody tr:last-child td { border-bottom: 0; }
+  .history-table tbody tr:hover { background: #fafbf7; }
+  .history-table th {
+    color: var(--sl-ink-muted);
+    background: #f7f7f2;
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 500;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+  .history-date { color: var(--sl-ink); font-size: .88rem; white-space: nowrap; }
+  .history-date__time { display: block; color: var(--sl-ink-muted); font-size: .73rem; }
+  .history-session { min-width: 145px; }
+  .history-session__link { color: var(--sl-green); font-weight: 800; text-decoration: none; overflow-wrap: anywhere; }
+  .history-session__link:hover { color: var(--sl-orange-text); text-decoration: underline; }
+  .history-club { white-space: nowrap; }
+  .history-chip {
+    display: inline-flex;
+    align-items: center;
+    width: fit-content;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: #e8ece9;
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 500;
+    letter-spacing: .025em;
+    white-space: nowrap;
+  }
+  .history-chip--done { background: #e1f1e5; color: #155d35; }
+  .history-chip--refilm { background: #fff0e4; color: #8d3b10; }
+  .history-chip--failed { background: #f9e7e4; color: #8a2820; }
+  .history-chip--processing,
+  .history-chip--queued { background: #e9eff5; color: #285170; }
+  .history-swings { color: var(--sl-ink-soft); white-space: nowrap; }
+  .history-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; min-width: 145px; }
+  .history-action { color: var(--sl-green-btn); font-size: .8rem; font-weight: 750; white-space: nowrap; }
+  .history-action--primary { color: var(--sl-green); }
+  .history-empty { padding: clamp(34px, 7vw, 70px) 24px; text-align: center; }
+  .history-empty__mark {
+    width: 52px;
+    height: 52px;
+    margin: 0 auto 16px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    background: var(--sl-orange-soft);
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-weight: 700;
+  }
+  .history-empty h2 { margin: 0; color: var(--sl-green); }
+  .history-empty p { max-width: 470px; margin: 9px auto 0; color: var(--sl-ink-soft); }
+  .history-empty .button { margin-top: 19px; }
+  .history-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 4px 3px;
+    color: var(--sl-ink-soft);
+    font-size: .88rem;
+  }
+  .history-footer a { font-weight: 750; }
+  .history-footer__danger { color: #8a2820; }
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  @media (max-width: 800px) {
+    .history-header { align-items: flex-start; flex-direction: column; }
+    .history-header .button { width: 100%; }
+    .history-table-wrap { overflow: visible; }
+    .history-table,
+    .history-table tbody { display: block; }
+    .history-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
+    .history-table tbody { padding: 12px; }
+    .history-table tr {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 12px 18px;
+      padding: 17px;
+      border: 1px solid var(--sl-border);
+      border-radius: 14px;
+      background: #fff;
+    }
+    .history-table tr + tr { margin-top: 11px; }
+    .history-table th,
+    .history-table td,
+    .history-table th:first-child,
+    .history-table td:first-child,
+    .history-table th:last-child,
+    .history-table td:last-child { padding: 0; border: 0; }
+    .history-table td { display: block; min-width: 0; }
+    .history-table td::before {
+      content: attr(data-label);
+      display: block;
+      margin-bottom: 3px;
+      color: var(--sl-ink-muted);
+      font-family: var(--sl-font-mono);
+      font-size: .62rem;
+      letter-spacing: .06em;
+      text-transform: uppercase;
+    }
+    .history-table td.history-session,
+    .history-table td.history-result { grid-column: 1 / -1; }
+  }
+  @media (max-width: 520px) {
+    main { padding-inline: 14px; }
+    .history-shell { gap: 16px; }
+    .history-header, .history-panel { border-radius: 19px; }
+    .history-table tr { grid-template-columns: 1fr; }
+    .history-table td.history-session,
+    .history-table td.history-result { grid-column: auto; }
+    .history-footer { align-items: flex-start; flex-direction: column; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .history-panel *, .history-header * { transition: none !important; }
+  }
 {% endblock %}
 {% block main %}
-  <div class="card">
-    <h2>Session history</h2>
+  <div class="history-shell">
+    <header class="history-header" aria-labelledby="history-title">
+      <div class="history-header__copy">
+        <p class="sl-eyebrow">Your coaching record</p>
+        <h1 id="history-title">Session history</h1>
+        <p>Return to the evidence, practice cue, and result from every swing saved to this account.</p>
+      </div>
+      <a class="button" href="/#upload-form">Analyze a new swing</a>
+    </header>
+
     {% if sessions %}
-      <table>
-        <tr><th>When</th><th>Clip</th><th>Club</th><th>Status</th><th>Swings</th></tr>
-        {% for s in sessions %}
-        <tr>
-          <td>{{ s.as_dict().created_at[:16].replace("T", " ") }}</td>
-          <td><a class="session" href="/session/{{ s.id }}">{{ s.source_name or s.id }}</a></td>
-          <td>{% if s.club %}<span class="chip club">{{ club_labels.get(s.club, s.club) }}</span>{% else %}—{% endif %}</td>
-          <td>
-            {% if s.id in refilm_ids %}
-            <span class="chip refilm">Re-film needed</span>
-            {% else %}
-            <span class="chip {{ s.status }}">{{ s.status }}</span>
-            {% endif %}
-          </td>
-          <td>{{ s.swings_total if s.swings_total else "—" }}</td>
-        </tr>
-        {% endfor %}
-      </table>
+      <section class="history-panel" aria-labelledby="saved-sessions-title">
+        <div class="history-panel__heading">
+          <h2 id="saved-sessions-title">Saved sessions</h2>
+          <p>{{ sessions|length }} most recent {{ "session" if sessions|length == 1 else "sessions" }}, newest first.</p>
+        </div>
+        <div class="history-table-wrap">
+          <table class="history-table">
+            <caption class="visually-hidden">Saved swing sessions with date, club, analysis status, swing count, and result actions.</caption>
+            <thead>
+              <tr><th scope="col">Date</th><th scope="col">Session</th><th scope="col">Club</th><th scope="col">Status</th><th scope="col">Swings</th><th scope="col">Result</th></tr>
+            </thead>
+            <tbody>
+              {% for s in sessions %}
+                {% set created_at = s.as_dict().created_at %}
+                <tr data-session-status="{{ 'refilm' if s.id in refilm_ids else s.status }}">
+                  <td data-label="Date">
+                    <time class="history-date" datetime="{{ created_at }}">{{ created_at[:10] }}<span class="history-date__time">{{ created_at[11:16] }} UTC</span></time>
+                  </td>
+                  <td class="history-session" data-label="Session">
+                    <a class="history-session__link" href="/session/{{ s.id }}">{{ s.source_name or s.id }}</a>
+                  </td>
+                  <td class="history-club" data-label="Club">
+                    <span class="history-chip">{{ club_labels.get(s.club, s.club) if s.club else "Not recorded" }}</span>
+                  </td>
+                  <td data-label="Status">
+                    {% if s.id in refilm_ids %}
+                      <span class="history-chip history-chip--refilm">Re-film needed</span>
+                    {% elif s.status == 'done' %}
+                      <span class="history-chip history-chip--done">Coaching ready</span>
+                    {% elif s.status == 'processing' %}
+                      <span class="history-chip history-chip--processing">Analyzing</span>
+                    {% elif s.status == 'queued' %}
+                      <span class="history-chip history-chip--queued">Queued</span>
+                    {% elif s.status == 'failed' %}
+                      <span class="history-chip history-chip--failed">Needs attention</span>
+                    {% else %}
+                      <span class="history-chip">{{ s.status|capitalize }}</span>
+                    {% endif %}
+                  </td>
+                  <td class="history-swings" data-label="Swings">{{ s.swings_total if s.swings_total else "—" }}</td>
+                  <td class="history-result" data-label="Result">
+                    <div class="history-actions">
+                      <a class="history-action history-action--primary" href="/session/{{ s.id }}">{% if s.status in ('queued', 'processing') %}Check status{% elif s.status == 'failed' %}Review session{% elif s.id in refilm_ids %}Capture guidance{% else %}View coaching{% endif %}</a>
+                      {% if s.status == 'done' and s.report_rel and s.id not in refilm_ids %}<a class="history-action" href="/session/{{ s.id }}/report">Open report</a>{% endif %}
+                      {% if s.id in refilm_ids %}<a class="history-action" href="/#upload-form">Re-film</a>{% endif %}
+                    </div>
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </section>
     {% else %}
-      <p>No sessions yet — <a href="/">analyze your first clip</a>.</p>
+      <section class="history-panel history-empty" aria-labelledby="empty-history-title">
+        <div class="history-empty__mark" aria-hidden="true">01</div>
+        <h2 id="empty-history-title">Your first result starts here</h2>
+        <p>No sessions yet. Film one swing to create a coaching result you can return to after practice.</p>
+        <a class="button" href="/#upload-form">Analyze your first swing</a>
+      </section>
     {% endif %}
+
     {% if user and require_account %}
-    <p style="margin-bottom: 0"><a href="/progress">See your progress across
-      sessions &rarr;</a></p>
-    {% if history_reset_enabled %}
-    <p class="hint"><a href="/account/history/delete">Delete swing history / Start over</a></p>
-    {% endif %}
+      <nav class="history-footer" aria-label="History and progress controls">
+        <a href="/progress">See your progress across sessions →</a>
+        {% if history_reset_enabled %}<a class="history-footer__danger" href="/account/history/delete">Delete swing history / Start over</a>{% endif %}
+      </nav>
     {% endif %}
   </div>
 {% endblock %}

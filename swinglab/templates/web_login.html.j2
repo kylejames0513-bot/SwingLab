@@ -187,7 +187,7 @@
   .scope-grid h3 { margin: 0; color: #fff; font-size: .95rem; }
   .scope-grid p { margin: 9px 0 0; color: #cbdad0; font-size: .86rem; }
   .auth-shell { max-width: 470px; margin: 0 auto; }
-  .auth-shell h2 { color: var(--sl-green); font-size: 1.8rem; margin: 0 0 8px; }
+  .auth-shell > h1 { color: var(--sl-green); font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.05; letter-spacing: -.035em; margin: 0 0 8px; }
   .auth-shell .lead { color: var(--sl-ink-soft); margin: 0 0 20px; }
   label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 0.9rem; }
   input[type=email], input[type=password], input[type=text] {
@@ -339,7 +339,7 @@
 
   {% if verify_email %}
   <div class="card auth-shell">
-    <h2>Check your email</h2>
+    <h1>Check your email</h1>
     <p>This email already has something waiting on it, so we sent a
        6-digit code to <strong>{{ verify_email }}</strong> to confirm
        it's yours. The code expires in 10 minutes.</p>
@@ -357,7 +357,7 @@
 
   {% elif reset_stage == "request" %}
   <div class="card auth-shell">
-    <h2>Reset your password</h2>
+    <h1>Reset your password</h1>
     <p class="lead">If you previously added a password, we’ll email you a
        verification code. You can always sign in with an email code instead.</p>
     <form action="/reset/request" method="post">
@@ -370,7 +370,7 @@
 
   {% elif reset_stage == "confirm" %}
   <div class="card auth-shell">
-    <h2>Enter your code</h2>
+    <h1>Enter your code</h1>
     <p>If an account exists for <strong>{{ reset_email }}</strong>, a 6-digit
        code is on its way (it expires in 10 minutes).</p>
     <form action="/reset/confirm" method="post">
@@ -389,7 +389,7 @@
 
   {% elif code_email %}
   <div class="card auth-shell">
-    <h2>{% if auth_view == "signup" %}Verify your email{% else %}Check your email{% endif %}</h2>
+    <h1>{% if auth_view == "signup" %}Verify your email{% else %}Check your email{% endif %}</h1>
     <p>We sent a six-digit code to <strong>{{ code_email }}</strong>.
        Enter it below — it expires in 10 minutes.{% if auth_view == "signup" %}
        Your free account is created only after the code is verified.{% endif %}</p>
@@ -422,12 +422,12 @@
   {% elif passwordless_login and not show_password %}
   <div class="card auth-shell">
     {% if auth_view == "signup" %}
-    <h2>Create your free account</h2>
+    <h1>Create your free account</h1>
     <p class="lead">We’ll send a six-digit verification code. Entering it
       creates your {{ brand.name }} account with
       {% if free_per_month <= 0 %}unlimited free analyses{% else %}{{ free_per_month }} free analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month{% endif %}.</p>
     {% else %}
-    <h2>Welcome back</h2>
+    <h1>Welcome back</h1>
     <p class="lead">Enter your {{ brand.name }} email and we’ll send a secure
       six-digit sign-in code. No password required.</p>
     {% endif %}
@@ -461,7 +461,7 @@
   {% else %}
   <div class="card auth-shell">
     {% if auth_view == "signup" %}
-      <h2>Create your free account</h2>
+      <h1>Create your free account</h1>
       <p class="lead">{% if free_per_month <= 0 %}Unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} every month{% endif %}. No card required.</p>
       <form action="/signup" method="post">
         <label for="su-email">Email</label>
@@ -480,7 +480,7 @@
         <a class="aux-link" href="/login">Already have an account? Sign in</a>
       </div>
     {% else %}
-      <h2>Sign in with your password</h2>
+      <h1>Sign in with your password</h1>
       <form action="/login" method="post">
         <label for="li-email">Email</label>
         <input id="li-email" name="email" type="email" required autocomplete="email">

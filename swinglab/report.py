@@ -31,6 +31,7 @@ from .metrics import ANGLE_DTL, ANGLE_FACE_ON, session_stats
 
 
 REPORT_FORMAT_VERSION = "caddie-brief-v1"
+REPORT_PRESENTATION_VERSION = "premium-evidence-v1"
 REPORT_OUTCOME_COACHING = "coaching_ready"
 REPORT_OUTCOME_CAPTURE = "capture_only"
 PRIORITY_RULE_META_NAME = "caddieinsight-coaching-priority-rule"
@@ -270,6 +271,7 @@ def write_report_html(
     html = env.get_template("report.html.j2").render(
         brand=cfg.brand,
         report_format_version=REPORT_FORMAT_VERSION,
+        report_presentation_version=REPORT_PRESENTATION_VERSION,
         priority_rule_version=selected_priority_rule,
         report_outcome=(
             REPORT_OUTCOME_COACHING

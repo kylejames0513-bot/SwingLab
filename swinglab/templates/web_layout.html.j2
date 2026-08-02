@@ -465,6 +465,15 @@
     .sl-header__cart { padding: 5px 10px; }
     .sl-profile-reminder { align-items: flex-start; flex-direction: column; gap: 3px; }
   }
+  body.sl-reduced-motion *,
+  body.sl-reduced-motion *::before,
+  body.sl-reduced-motion *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: .01ms !important;
+  }
+  body.sl-reduced-motion .sl-menu[open] .sl-menu__panel { animation: none; }
   @media (prefers-reduced-motion: reduce) {
     html { scroll-behavior: auto; }
     *, *::before, *::after {
@@ -478,7 +487,7 @@
   {% block style %}{% endblock %}
 </style>
 </head>
-<body>
+<body{% if header_profile and header_profile.reduced_motion %} class="sl-reduced-motion"{% endif %}>
 {% set member_name = header_profile.display_name if header_profile and header_profile.display_name else '' %}
 <a class="sl-skip" href="#MainContent">Skip to content</a>
 <header class="sl-header" data-sl-header data-menu-id="sl-mobile-menu">

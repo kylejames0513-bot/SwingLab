@@ -1,72 +1,138 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Start over{% endblock %}
 {% block style %}
-  .reset-card { max-width: 720px; margin-inline: auto; }
-  .warning { border-left: 4px solid #a42b22; background: #fff7f5;
-             padding: 14px 16px; border-radius: 6px; }
-  .warning h2 { color: #7d211a; margin-top: 0; }
-  .keep { background: #f2f8f4; border: 1px solid #d6e9dc;
-          padding: 14px 18px; border-radius: 8px; margin: 18px 0; }
-  .keep h3 { margin-top: 0; }
-  ul { padding-left: 22px; }
-  li + li { margin-top: 5px; }
-  label { display: block; font-weight: 700; margin: 16px 0 6px; }
-  input { width: 100%; max-width: 420px; padding: 11px 12px;
-          box-sizing: border-box; border: 1px solid #aaa; border-radius: 6px; }
-  .danger-button { background: #9b2c23; border-color: #9b2c23;
-                   margin-top: 18px; }
-  .danger-button:hover { background: #7d211a; }
-  .actions { display: flex; flex-wrap: wrap; align-items: center;
-             gap: 14px; margin-top: 18px; }
-  .actions form { margin: 0; }
-  code { font-weight: 800; color: #662018; }
+  main { max-width: 850px; }
+  .reset-shell { display: grid; gap: 20px; }
+  .reset-header {
+    padding: clamp(26px, 5vw, 42px);
+    border: 1px solid #e2c3be;
+    border-radius: var(--sl-radius-xl);
+    background:
+      radial-gradient(circle at 90% 10%, rgba(164, 43, 34, .08), transparent 15rem),
+      linear-gradient(135deg, #fffefa, #fff4f1);
+    box-shadow: var(--sl-shadow-md);
+  }
+  .reset-header .sl-eyebrow { margin-bottom: 8px; color: #8a2820; }
+  .reset-header h1 {
+    max-width: 700px;
+    margin: 0;
+    color: #741f19;
+    font-size: clamp(2rem, 6vw, 3.65rem);
+    line-height: 1.03;
+    letter-spacing: -.045em;
+  }
+  .reset-header p:last-child { max-width: 680px; margin: 15px 0 0; color: #654943; font-size: 1rem; }
+  .reset-card {
+    padding: clamp(23px, 4vw, 34px);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
+  }
+  .reset-card h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.3rem, 3vw, 1.75rem); letter-spacing: -.025em; }
+  .reset-card > p { color: var(--sl-ink-soft); }
+  .reset-scope { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .scope-card { padding: 20px; border: 1px solid var(--sl-border); border-radius: 14px; background: #fff; }
+  .scope-card--delete { border-color: #e6c8c3; background: #fff8f6; }
+  .scope-card--keep { border-color: #c9d9cd; background: #f1f7f2; }
+  .scope-card h2 { font-size: 1.08rem; }
+  .scope-card--delete h2 { color: #741f19; }
+  .scope-card ul { margin: 13px 0 0; padding-left: 20px; color: var(--sl-ink-soft); }
+  .scope-card li + li { margin-top: 7px; }
+  .reset-form { margin-top: 23px; padding-top: 22px; border-top: 1px solid var(--sl-border); }
+  .reset-form label { display: block; margin: 16px 0 7px; color: var(--sl-ink); font-weight: 750; }
+  .reset-form input {
+    width: 100%;
+    max-width: 460px;
+    min-height: 48px;
+    padding: 11px 12px;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: 9px;
+    background: #fff;
+    color: var(--sl-ink);
+    font: inherit;
+  }
+  .reset-form input:focus-visible { border-color: var(--sl-orange); }
+  .reset-code { padding: 2px 6px; border-radius: 5px; background: #f3ded9; color: #741f19; font-family: var(--sl-font-mono); font-size: .9em; font-weight: 700; }
+  .reset-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 21px; }
+  .reset-actions form { margin: 0; }
+  .reset-actions .danger-button {
+    margin: 0;
+    border-color: #922a22;
+    background: #922a22;
+    color: #fff;
+    box-shadow: 0 10px 24px -16px rgba(116, 31, 25, .7);
+  }
+  .reset-actions .danger-button:hover { border-color: #741f19; background: #741f19; }
+  .reset-cancel { min-height: 46px; display: inline-flex; align-items: center; padding: 10px 4px; font-weight: 750; }
+  .reset-error { margin: 0; padding: 13px 15px; border: 1px solid #e2b7b1; border-left: 4px solid #922a22; border-radius: 9px; background: #fff0ed; color: #741f19; }
+  .reauth-note { margin: 0; padding: 17px 18px; border: 1px solid #d9c8b2; border-radius: 12px; background: #fff7eb; color: var(--sl-ink-soft); }
+  @media (max-width: 650px) {
+    main { padding-inline: 14px; }
+    .reset-shell { gap: 16px; }
+    .reset-header, .reset-card { border-radius: 19px; }
+    .reset-scope { grid-template-columns: 1fr; }
+    .reset-actions { align-items: stretch; flex-direction: column; }
+    .reset-actions > *, .reset-actions button { width: 100%; text-align: center; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .reset-shell * { transition: none !important; }
+  }
 {% endblock %}
 {% block main %}
-  <div class="card reset-card">
-    <div class="warning">
-      <h2>Delete swing history and start over</h2>
-      <p>This permanently removes your uploaded swing sessions, generated
-        reports, practice check-ins, and Proof Cycle evidence. It cannot be
-        undone.</p>
+  <div class="reset-shell">
+    <header class="reset-header" aria-labelledby="reset-title">
+      <p class="sl-eyebrow">Danger zone</p>
+      <h1 id="reset-title">Delete swing history and start over</h1>
+      <p>This permanently removes your uploaded swing sessions, generated reports, practice check-ins, and Proof Cycle evidence. It cannot be undone.</p>
+    </header>
+
+    <div class="reset-scope" aria-label="Deletion scope">
+      <section class="scope-card scope-card--delete" aria-labelledby="removed-heading">
+        <h2 id="removed-heading">What is deleted</h2>
+        <ul>
+          <li>Uploaded swing sessions and generated reports</li>
+          <li>Practice check-ins and Proof Cycle evidence</li>
+        </ul>
+      </section>
+      <section class="scope-card scope-card--keep" aria-labelledby="stays-heading">
+        <h2 id="stays-heading">What stays</h2>
+        <ul>
+          <li>Your account and golfer profile</li>
+          <li>Your Free or Pro membership and purchases</li>
+          <li>Shopify connection and connected-device sign-ins</li>
+          <li>This month's analysis allowance and security records</li>
+        </ul>
+      </section>
     </div>
 
-    <div class="keep">
-      <h3>What stays</h3>
-      <ul>
-        <li>Your account and golfer profile</li>
-        <li>Your Free or Pro membership and purchases</li>
-        <li>Shopify connection and connected-device sign-ins</li>
-        <li>This month's analysis allowance and security records</li>
-      </ul>
-    </div>
+    <section class="reset-card" aria-labelledby="confirmation-heading">
+      <h2 id="confirmation-heading">Confirm this reset</h2>
+      {% if error %}<p class="reset-error" role="alert">{{ error }}</p>{% endif %}
 
-    {% if error %}<p class="error" role="alert">{{ error }}</p>{% endif %}
-
-    {% if recent_auth_required %}
-      <p>To protect a signed-in browser that may have been left open,
-        authenticate again before deleting its history.</p>
-      <div class="actions">
-        <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
-          <button type="submit">Sign out to authenticate again</button>
-        </form>
-        <a href="/account">Cancel</a>
-      </div>
-    {% else %}
-      <form action="/account/history/delete" method="post">
-        <input type="hidden" name="nonce" value="{{ nonce }}">
-        <label for="history-confirmation">Type <code>{{ confirmation_phrase }}</code> exactly</label>
-        <input id="history-confirmation" name="confirmation" type="text"
-               required autocomplete="off" spellcheck="false">
-        {% if user.has_password %}
-        <label for="history-password">Current password</label>
-        <input id="history-password" name="password" type="password"
-               required autocomplete="current-password">
-        {% endif %}
-        <div class="actions">
-          <button class="danger-button" type="submit">Delete swing history</button>
-          <a href="/account">Cancel</a>
+      {% if recent_auth_required %}
+        <p class="reauth-note">To protect a signed-in browser that may have been left open, authenticate again before deleting its history.</p>
+        <div class="reset-actions">
+          <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">
+            <button type="submit">Sign out to authenticate again</button>
+          </form>
+          <a class="reset-cancel" href="/account">Cancel</a>
         </div>
-      </form>
-    {% endif %}
+      {% else %}
+        <form class="reset-form" action="/account/history/delete" method="post">
+          <input type="hidden" name="nonce" value="{{ nonce }}">
+          <label for="history-confirmation">Type <code class="reset-code">{{ confirmation_phrase }}</code> exactly</label>
+          <input id="history-confirmation" name="confirmation" type="text" required autocomplete="off" spellcheck="false">
+          {% if user.has_password %}
+            <label for="history-password">Current password</label>
+            <input id="history-password" name="password" type="password" required autocomplete="current-password">
+          {% endif %}
+          <div class="reset-actions">
+            <button class="danger-button" type="submit">Delete swing history</button>
+            <a class="reset-cancel" href="/account">Cancel</a>
+          </div>
+        </form>
+      {% endif %}
+    </section>
   </div>
 {% endblock %}
