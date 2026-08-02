@@ -32,6 +32,9 @@ orange kinetic accent, Archivo display type with DM Mono specimen labels.
   its benefits/unlock experience (locale keys in `locales/`, managed in
   Shopify), gear pages get flag chips, compare-at pricing, trust strip, and
   the drill-protocol description written by `store-assets` product copy.
+- Storefront artwork uses immutable, release-specific Shopify File names.
+  Upload a new version and update the source reference in a reviewed PR; never
+  overwrite a filename still referenced by the current live theme.
 
 ## Validation
 

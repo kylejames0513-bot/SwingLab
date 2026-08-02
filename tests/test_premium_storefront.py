@@ -237,6 +237,19 @@ def test_generated_storefront_art_avoids_unsupported_measurement_claims():
     assert "CHOOSE CLUB · FILM THE VIEW · WORK ONE PLAN · RE-FILM" in hero_art
 
 
+def test_storefront_uses_immutable_release_artwork_references():
+    hero = INDEX["sections"]["hero"]["settings"]
+    report_source = source("sections/report-feature.liquid")
+    readme = source("README.md")
+
+    assert hero["image"] == (
+        "shopify://shop_images/caddieinsight-evidence-loop-hero-136534a.png"
+    )
+    assert "images['caddieinsight-report-preview-136534a.png']" in report_source
+    assert "images['report-keyframes.png']" not in report_source
+    assert "immutable, release-specific Shopify File names" in readme
+
+
 def test_theme_check_is_pinned_and_release_docs_have_no_stale_theme_ids():
     workflow = (ROOT / ".github" / "workflows" / "theme-check.yml").read_text(
         encoding="utf-8"

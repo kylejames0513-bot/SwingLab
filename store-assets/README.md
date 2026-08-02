@@ -23,9 +23,9 @@ pose-estimation skeletons, the product's own visual language.
 | `banner-about.png` | "About CaddieInsight" page banner — instrument-bench still life |
 | `og-swinglab.png` | Social share card (og:image), 1200×630 |
 
-Filenames intentionally keep their original `swinglab-`/`og-swinglab` names —
-every Shopify CDN URL and theme reference resolves by filename, so only the
-art inside changed with the CaddieInsight rebrand, never the file name.
+Generator outputs intentionally keep their original `swinglab-`/`og-swinglab`
+names so local builds stay reproducible. Shopify releases use new, immutable
+CDN filenames and update the reviewed theme source to those release names.
 
 The first batch is already uploaded to the store's Shopify CDN and wired into
 products, the CaddieInsight Gear collection, and the Horizon theme's settings
@@ -33,6 +33,9 @@ products, the CaddieInsight Gear collection, and the Horizon theme's settings
 drill/banner/og set is the second upload batch. The gear-product images are
 placeholders by design — dropshipped listings will carry supplier photos once
 a supplier app is connected.
+
+Do not replace a Shopify File name referenced by the current live theme; that
+would bypass the unpublished-theme preview and weaken rollback.
 
 ## Regenerating
 
