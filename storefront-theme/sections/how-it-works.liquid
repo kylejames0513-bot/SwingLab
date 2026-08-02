@@ -1,6 +1,12 @@
 <section id="{{ section.settings.anchor | default: 'how' }}" class="sl-how">
   <div class="sl-wrap sl-reveal">
-    <h2 class="sl-how__title">{{ section.settings.heading | default: 'A practice loop you can repeat.' }}</h2>
+    <div class="sl-how__head">
+      <p class="sl-how__eyebrow">{{ 'homepage.method.eyebrow' | t }}</p>
+      <div class="sl-how__intro">
+        <h2 class="sl-how__title">{{ section.settings.heading | default: 'A practice loop you can repeat.' }}</h2>
+        <p>{{ 'homepage.method.intro' | t }}</p>
+      </div>
+    </div>
     <div class="sl-how__grid">
       {%- for block in section.blocks -%}
         <div class="sl-step"{{ block.shopify_attributes }}>
@@ -29,66 +35,119 @@
 
 {% stylesheet %}
 .sl-how {
-  background: var(--sl-green);
-  color: var(--sl-green-ink);
-  padding: clamp(36px, 5vw, 64px) var(--sl-pad-x);
+  background: #f0eee7;
+  color: var(--sl-ink);
+  padding: clamp(76px, 9vw, 126px) 0;
+}
+.sl-how__head {
+  padding-bottom: clamp(30px, 4vw, 52px);
+  border-bottom: 1px solid #d8d3c8;
+}
+.sl-how__eyebrow {
+  margin: 0 0 18px;
+  color: var(--sl-orange);
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
+}
+.sl-how__intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.55fr);
+  gap: clamp(28px, 6vw, 86px);
+  align-items: end;
 }
 .sl-how__title {
   margin: 0;
-  font-size: clamp(26px, 3vw, 36px);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  max-width: 12ch;
+  color: #0d2d1d;
+  font-size: clamp(42px, 5.7vw, 76px);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 0.96;
+  text-wrap: balance;
+}
+.sl-how__intro > p {
+  margin: 0;
+  color: var(--sl-ink-soft);
+  font-size: clamp(16px, 1.5vw, 19px);
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 .sl-how__grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 20px;
-  margin-top: 32px;
+  gap: 16px;
+  margin-top: clamp(30px, 4vw, 48px);
 }
 .sl-step {
+  position: relative;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  border: 1px solid rgba(233, 242, 236, 0.22);
-  border-radius: var(--sl-radius);
-  padding: 24px;
+  min-height: 330px;
+  border: 1px solid #ded9ce;
+  border-radius: 20px;
+  padding: clamp(22px, 2.4vw, 30px);
+  background: rgba(255, 253, 249, 0.86);
+  box-shadow: 0 22px 48px -40px rgba(15, 42, 27, 0.42);
+}
+.sl-step::after {
+  content: "";
+  position: absolute;
+  right: -50px;
+  bottom: -70px;
+  width: 150px;
+  height: 150px;
+  border: 1px solid rgba(20, 71, 44, 0.1);
+  border-radius: 50%;
 }
 .sl-step__num {
   margin: 0;
+  width: 50px;
+  height: 50px;
+  display: grid;
+  place-items: center;
+  border: 1px solid rgba(232, 114, 12, 0.32);
+  border-radius: 50%;
+  background: #fff7ed;
   font-family: var(--sl-font-mono);
-  font-size: 30px;
+  font-size: 15px;
   font-weight: 500;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
   color: var(--sl-orange);
 }
 .sl-step__title {
-  margin: 12px 0 8px;
-  font-size: 19px;
-  font-weight: 700;
+  margin: 34px 0 12px;
+  color: var(--sl-green);
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 .sl-step__body {
   margin: 0;
-  font-size: 15px;
-  line-height: 1.55;
-  color: rgba(233, 242, 236, 0.75);
+  font-size: 15.5px;
+  line-height: 1.62;
+  color: var(--sl-ink-soft);
 }
 .sl-step__caption {
   margin: 0;
   margin-top: auto;
   padding-top: 14px;
-  border-top: 1px solid rgba(233, 242, 236, 0.16);
+  border-top: 1px solid #e3ded3;
   font-family: var(--sl-font-mono);
   font-size: 10.5px;
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(233, 242, 236, 0.55);
+  color: var(--sl-ink-muted);
 }
 .sl-step__body { margin-bottom: 14px; }
 .sl-how__foot {
   margin-top: 32px;
   padding-top: 24px;
-  border-top: 1px solid rgba(233, 242, 236, 0.22);
+  border-top: 1px solid #d8d3c8;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -98,17 +157,22 @@
 .sl-how__foot-note {
   margin: 0;
   font-size: 15px;
-  color: rgba(233, 242, 236, 0.8);
+  color: var(--sl-ink-soft);
 }
 .sl-how__btn {
-  background: transparent;
+  background: var(--sl-green);
   color: var(--sl-green-ink);
-  border-color: rgba(233, 242, 236, 0.55);
+  border-color: var(--sl-green);
 }
 .sl-how__btn:hover {
-  background: var(--sl-bg);
-  color: var(--sl-green);
-  border-color: var(--sl-bg);
+  background: var(--sl-orange);
+  color: #07130d;
+  border-color: var(--sl-orange);
+}
+@media (max-width: 749px) {
+  .sl-how__intro { grid-template-columns: 1fr; gap: 20px; }
+  .sl-how__title { font-size: clamp(42px, 13vw, 58px); }
+  .sl-step { min-height: 0; }
 }
 {% endstylesheet %}
 

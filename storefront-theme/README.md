@@ -4,9 +4,11 @@ Source-controlled copy of the custom CaddieInsight Shopify theme. GitHub is
 the source of truth for theme code; Shopify theme state, preview state, and
 publication state must be verified separately during a release.
 
-Built on the same "Fairway Modernism" design system as `../store-assets/`
-(see `PHILOSOPHY.md` there): warm off-white field, deep green ink, one
-orange kinetic accent, Archivo display type with DM Mono specimen labels.
+Version 1.3 adds the "Caddie Window" premium campaign layer to Fairway
+Modernism: cinematic range photography, near-black pine surfaces, restrained
+orange motion light, and glass analysis signals above the established warm
+off-white commerce system. Archivo remains the display voice and DM Mono is
+reserved for measured evidence labels.
 
 ## Layout
 
@@ -35,6 +37,9 @@ orange kinetic accent, Archivo display type with DM Mono specimen labels.
 - Storefront artwork uses immutable, release-specific Shopify File names.
   Upload a new version and update the source reference in a reviewed PR; never
   overwrite a filename still referenced by the current live theme.
+- The homepage and CaddieInsight Pro product use the premium dark header
+  modifier. Collection, cart, search, account, and ordinary product routes keep
+  the standard commerce header and the same account/cart navigation contracts.
 
 ## Validation
 

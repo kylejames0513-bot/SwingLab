@@ -1,7 +1,9 @@
 # CaddieInsight store assets
 
-Brand and product artwork for the Shopify storefront, generated as code so
-every image can be reproduced or retuned. The visual system ("Fairway
+Brand and product artwork for the Shopify storefront. Most catalog and
+technical artwork is generated as code so it can be reproduced or retuned;
+approved campaign photography keeps its generation prompt and content hash
+beside the output. The visual system ("Fairway
 Modernism", see `PHILOSOPHY.md`) uses the same design tokens as the
 storefront theme: warm off-white `#f7f5f0`, deep green `#14472c` /
 `#1a5c38`, orange accent `#e8720c`, Archivo type — and draws golfers as
@@ -18,6 +20,8 @@ pose-estimation skeletons, the product's own visual language.
 | `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon |
 | `collection-gear.png` | CaddieInsight Gear collection image |
 | `swinglab-hero.png` | Homepage hero background (Horizon theme) |
+| `caddieinsight-premium-range-hero-0852e38d.png` | Premium desktop homepage hero campaign image |
+| `caddieinsight-premium-range-hero-mobile-2e4ee946.png` | Purpose-built portrait companion for the mobile homepage hero |
 | `swinglab-report-band.png` | Homepage "Numbers you can act on" band |
 | `banner-method.png` | "The CaddieInsight Method" page banner — four-position swing frieze |
 | `banner-about.png` | "About CaddieInsight" page banner — instrument-bench still life |
@@ -36,6 +40,10 @@ a supplier app is connected.
 
 Do not replace a Shopify File name referenced by the current live theme; that
 would bypass the unpublished-theme preview and weaken rollback.
+
+The premium range hero pair was created with the built-in image generation
+workflow. Its approved prompts, dimensions, hashes, and disclosure boundary
+are recorded in `prompts/caddieinsight-premium-range-hero-v2.md`.
 
 ## Regenerating
 

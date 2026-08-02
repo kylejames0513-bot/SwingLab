@@ -3,18 +3,22 @@
     "hero": {
       "type": "hero",
       "settings": {
-        "eyebrow": "PERSONALIZED COACHING FROM ONE PHONE CLIP",
-        "heading": "One swing priority. One practice plan. Proof when you re-film.",
-        "body": "Choose the club, film face-on at hip height, and get one prioritized movement, a measured practice target, and the capture context saved for your next check.",
-        "primary_label": "See the real-engine sample",
-        "primary_url": "https://app.caddieinsight.com/sample-report/",
-        "secondary_label": "Create a free account",
-        "secondary_url": "https://app.caddieinsight.com/signup",
-        "chip1": "ONE PRIORITY",
-        "chip2": "ONE PASS MARK",
-        "chip3": "MATCHED RE-FILM",
-        "fine_print": "Try one full analysis each month free — no card required.",
-        "image": "shopify://shop_images/caddieinsight-evidence-loop-hero-136534a.png"
+        "eyebrow": "PHONE-VIDEO COACHING · NO SENSORS",
+        "heading": "Practice the move that matters.",
+        "body": "Choose the club, film one repeatable view, and get one prioritized coaching plan with a pass mark for your next clip.",
+        "primary_label": "Analyze a swing free",
+        "primary_url": "https://app.caddieinsight.com/signup",
+        "secondary_label": "Explore the sample report",
+        "secondary_url": "https://app.caddieinsight.com/sample-report/",
+        "chip1": "1 FULL REPORT / MONTH",
+        "chip2": "NO CREDIT CARD",
+        "chip3": "CLUB CONTEXT SAVED",
+        "fine_print": "Supported 2D movement and timing estimates from phone video.",
+        "image": "shopify://shop_images/caddieinsight-premium-range-hero-0852e38d.png",
+        "mobile_image": "shopify://shop_images/caddieinsight-premium-range-hero-mobile-2e4ee946.png",
+        "signal_club": "Iron",
+        "signal_priority": "Lead-hip control",
+        "signal_target": "One pass mark"
       }
     },
     "stats": {
@@ -23,29 +27,29 @@
         "stat_tempo": {
           "type": "stat",
           "settings": {
-            "value": "1 priority",
-            "label": "ranked for the club you filmed"
+            "value": "Club saved",
+            "label": "context travels with the report"
           }
         },
         "stat_positions": {
           "type": "stat",
           "settings": {
-            "value": "1 pass mark",
-            "label": "attached to the practice plan"
+            "value": "View locked",
+            "label": "face-on for movement coaching"
           }
         },
         "stat_slowmo": {
           "type": "stat",
           "settings": {
-            "value": "Same club",
-            "label": "required for the next comparison"
+            "value": "One priority",
+            "label": "ranked before the practice plan"
           }
         },
         "stat_drift": {
           "type": "stat",
           "settings": {
-            "value": "Same selected view",
-            "label": "saved before the next comparison"
+            "value": "Proof loop",
+            "label": "repeat the club and selected view"
           }
         }
       },
@@ -107,7 +111,7 @@
       ],
       "settings": {
         "anchor": "how",
-        "heading": "A practice loop you can repeat.",
+        "heading": "Film. Coach. Practice. Prove it.",
         "footer_note": "CaddieInsight measures supported 2D phone-video movement and timing. It does not infer club path, face angle, launch, spin, carry, strike, or ball flight.",
         "cta_label": "Create a free account",
         "cta_url": "https://app.caddieinsight.com/signup"
@@ -148,8 +152,9 @@
         "p4"
       ],
       "settings": {
-        "heading": "See the product before you sign up",
-        "body": "Open a real-engine sample built from synthetic measurements. It shows how CaddieInsight turns supported phone-video evidence into one priority, one practice target, and a clearer next check.",
+        "anchor": "report",
+        "heading": "See what your next range session is really for.",
+        "body": "Open a real-engine sample built from synthetic measurements. See how CaddieInsight ranks supported phone-video evidence, brings one movement forward, and attaches a measurable plan to the next clip.",
         "caption": "ILLUSTRATED PREVIEW · LINKED REAL-ENGINE SAMPLE · SYNTHETIC INPUTS",
         "cta_label": "Open the full sample report",
         "sample_url": "https://app.caddieinsight.com/sample-report/"
@@ -181,7 +186,8 @@
             "use_product_price": true,
             "image": "shopify://shop_images/product-pro.png",
             "placeholder_label": "pro membership art",
-            "warm_placeholder": false
+            "warm_placeholder": false,
+            "featured": true
           }
         },
         "free": {
@@ -196,7 +202,8 @@
             "use_product_price": false,
             "image": "shopify://shop_images/pro-report-strip.png",
             "placeholder_label": "free plan report strip",
-            "warm_placeholder": false
+            "warm_placeholder": false,
+            "featured": false
           }
         }
       },
@@ -205,9 +212,9 @@
         "free"
       ],
       "settings": {
-        "anchor": "shop",
-        "heading": "Start with CaddieInsight",
-        "subheading": "Buy Pro here, then open CaddieInsight to use it"
+        "anchor": "plans",
+        "heading": "Start free. Go Pro when repetition matters.",
+        "subheading": "The coaching engine stays the same. Pro removes the monthly limit and adds replay plus progress tracking."
       }
     },
     "comparison": {

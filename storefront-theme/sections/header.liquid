@@ -7,6 +7,19 @@
   assign app_account_url = app_url | append: '/account'
   assign gear_url = routes.collections_url | append: '/swinglab-gear'
   assign pro_product = all_products['swinglab-pro']
+  assign premium_header = false
+  if request.page_type == 'index'
+    assign premium_header = true
+  elsif request.page_type == 'product' and product.handle == 'swinglab-pro'
+    assign premium_header = true
+  endif
+  assign method_url = routes.root_url | append: '#how'
+  assign sample_url = routes.root_url | append: '#report'
+  assign plans_url = routes.root_url | append: '#plans'
+  assign plans_link_url = plans_url
+  if request.page_type == 'product' and product.handle == 'swinglab-pro'
+    assign plans_link_url = product.url
+  endif
   assign menu_id = 'sl-mobile-menu-' | append: section.id
   assign menu_title_id = menu_id | append: '-title'
   if cart_count == 1
@@ -16,7 +29,7 @@
   endif
 -%}
 
-<header class="sl-header" data-sl-header data-menu-id="{{ menu_id }}">
+<header class="sl-header{% if premium_header %} sl-header--premium{% endif %}" data-sl-header data-menu-id="{{ menu_id }}">
   <div class="sl-header__inner">
     <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
       {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
@@ -28,22 +41,29 @@
     </a>
 
     <nav class="sl-header__desktop-nav" aria-label="{{ 'layout.navigation.main' | t }}">
-      {%- if app_url != blank -%}
-        <details class="sl-header__dropdown" data-header-dropdown>
-          <summary class="sl-header__dropdown-trigger">
-            {{ 'layout.navigation.my_game' | t }}
-            <span class="sl-header__chevron" aria-hidden="true"></span>
-          </summary>
-          <div class="sl-header__dropdown-menu">
-            <a href="{{ app_history_url }}">{{ 'layout.navigation.history' | t }}</a>
-            <a href="{{ app_progress_url }}">{{ 'layout.navigation.progress' | t }}</a>
-            <a href="{{ app_drills_url }}">{{ 'layout.navigation.drills' | t }}</a>
-          </div>
-        </details>
-      {%- endif -%}
-      <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
-      {%- if pro_product != blank -%}
-        <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
+      {%- if premium_header -%}
+        <a href="{{ method_url }}" class="sl-header__link">{{ 'layout.navigation.method' | t }}</a>
+        <a href="{{ sample_url }}" class="sl-header__link">{{ 'layout.navigation.sample_report' | t }}</a>
+        <a href="{{ plans_link_url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.plans' | t }}</a>
+        <a href="{{ gear_url }}" class="sl-header__link">{{ 'layout.navigation.gear' | t }}</a>
+      {%- else -%}
+        {%- if app_url != blank -%}
+          <details class="sl-header__dropdown" data-header-dropdown>
+            <summary class="sl-header__dropdown-trigger">
+              {{ 'layout.navigation.my_game' | t }}
+              <span class="sl-header__chevron" aria-hidden="true"></span>
+            </summary>
+            <div class="sl-header__dropdown-menu">
+              <a href="{{ app_history_url }}">{{ 'layout.navigation.history' | t }}</a>
+              <a href="{{ app_progress_url }}">{{ 'layout.navigation.progress' | t }}</a>
+              <a href="{{ app_drills_url }}">{{ 'layout.navigation.drills' | t }}</a>
+            </div>
+          </details>
+        {%- endif -%}
+        <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
+        {%- if pro_product != blank -%}
+          <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
+        {%- endif -%}
       {%- endif -%}
     </nav>
 
@@ -56,6 +76,11 @@
         <div class="sl-header__dropdown-menu sl-header__dropdown-menu--right">
           {%- if app_url != blank -%}
             <a href="{{ app_account_url }}">{{ 'layout.navigation.caddieinsight_profile' | t }}</a>
+            {%- if premium_header -%}
+              <a href="{{ app_history_url }}">{{ 'layout.navigation.history' | t }}</a>
+              <a href="{{ app_progress_url }}">{{ 'layout.navigation.progress' | t }}</a>
+              <a href="{{ app_drills_url }}">{{ 'layout.navigation.drills' | t }}</a>
+            {%- endif -%}
           {%- endif -%}
           <a href="{{ routes.account_url }}">{{ 'layout.navigation.orders_subscriptions' | t }}</a>
         </div>
@@ -70,7 +95,7 @@
       </a>
 
       {%- if app_url != blank -%}
-        <a href="{{ app_url }}" class="sl-header__cta sl-header__app">{{ 'layout.navigation.analyze_a_swing' | t }}</a>
+        <a href="{{ app_url }}" class="sl-header__cta sl-header__app">{% if premium_header %}{{ 'layout.navigation.analyze_free' | t }}{% else %}{{ 'layout.navigation.analyze_a_swing' | t }}{% endif %}</a>
       {%- endif -%}
 
       <button class="sl-header__toggle" type="button"
@@ -97,7 +122,25 @@
 
     <nav class="sl-menu__nav" aria-label="{{ 'layout.navigation.main' | t }}">
       {%- if app_url != blank -%}
-        <a href="{{ app_url }}" class="sl-header__cta sl-menu__cta" data-menu-link>{{ 'layout.navigation.analyze_a_swing' | t }}</a>
+        <a href="{{ app_url }}" class="sl-header__cta sl-menu__cta" data-menu-link>{% if premium_header %}{{ 'layout.navigation.analyze_free' | t }}{% else %}{{ 'layout.navigation.analyze_a_swing' | t }}{% endif %}</a>
+      {%- endif -%}
+
+      {%- if premium_header -%}
+        <div class="sl-menu__group">
+          <p class="sl-menu__eyebrow">{{ 'layout.navigation.explore' | t }}</p>
+          <a href="{{ method_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.method' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+          <a href="{{ sample_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.sample_report' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+          <a href="{{ plans_link_url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
+            <span>{{ 'layout.navigation.plans' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+          <a href="{{ gear_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+        </div>
       {%- endif -%}
 
       {%- if app_url != blank -%}
@@ -115,17 +158,19 @@
       </div>
       {%- endif -%}
 
-      <div class="sl-menu__group">
-        <p class="sl-menu__eyebrow">{{ 'layout.navigation.shop' | t }}</p>
-        <a href="{{ gear_url }}" class="sl-menu__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>
-          <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
-        </a>
-        {%- if pro_product != blank -%}
-          <a href="{{ pro_product.url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
-            <span>{{ 'layout.navigation.pro' | t }}</span><span aria-hidden="true">&rarr;</span>
+      {%- unless premium_header -%}
+        <div class="sl-menu__group">
+          <p class="sl-menu__eyebrow">{{ 'layout.navigation.shop' | t }}</p>
+          <a href="{{ gear_url }}" class="sl-menu__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>
+            <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
-        {%- endif -%}
-      </div>
+          {%- if pro_product != blank -%}
+            <a href="{{ pro_product.url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
+              <span>{{ 'layout.navigation.pro' | t }}</span><span aria-hidden="true">&rarr;</span>
+            </a>
+          {%- endif -%}
+        </div>
+      {%- endunless -%}
 
       <div class="sl-menu__group">
         <p class="sl-menu__eyebrow">{{ 'layout.navigation.account' | t }}</p>
@@ -434,6 +479,95 @@ html.sl-menu-open { overflow: hidden; }
   background: var(--sl-orange-soft);
   color: var(--sl-green);
 }
+.sl-header--premium {
+  min-height: 76px;
+  background: rgba(7, 19, 13, 0.94);
+  border-bottom-color: rgba(239, 241, 232, 0.12);
+  box-shadow: 0 18px 48px -32px rgba(0, 0, 0, 0.85);
+}
+.sl-header--premium .sl-header__inner { min-height: 76px; }
+.sl-header--premium .sl-header__logo { color: #f5f2e9; }
+.sl-header--premium .sl-header__logo-img {
+  filter: brightness(0) invert(1);
+  opacity: 0.96;
+}
+.sl-header--premium .sl-header__link,
+.sl-header--premium .sl-header__dropdown-trigger {
+  color: rgba(245, 242, 233, 0.78);
+}
+.sl-header--premium .sl-header__link:hover,
+.sl-header--premium .sl-header__dropdown-trigger:hover,
+.sl-header--premium .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+.sl-header--premium .sl-header__link.is-current {
+  background: rgba(232, 114, 12, 0.16);
+  color: #ffad62;
+}
+.sl-header--premium .sl-header__dropdown-menu {
+  background: rgba(10, 28, 19, 0.98);
+  border-color: rgba(239, 241, 232, 0.14);
+  box-shadow: 0 24px 54px -22px rgba(0, 0, 0, 0.78);
+}
+.sl-header--premium .sl-header__dropdown-menu a { color: rgba(245, 242, 233, 0.86); }
+.sl-header--premium .sl-header__dropdown-menu a:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+.sl-header--premium .sl-header__cart {
+  border-color: rgba(245, 242, 233, 0.48);
+  color: #f5f2e9;
+}
+.sl-header--premium .sl-header__cart:hover {
+  border-color: #ff9a42;
+  color: #ffb06b;
+}
+.sl-header--premium .sl-header__cart-count {
+  background: #f07a18;
+  color: #07130d;
+}
+.sl-header--premium .sl-header__cta {
+  min-height: 44px;
+  border-color: #f07a18;
+  background: #f07a18;
+  color: #07130d;
+  box-shadow: 0 12px 30px -18px rgba(240, 122, 24, 0.9);
+}
+.sl-header--premium .sl-header__cta:hover {
+  border-color: #ff9a42;
+  background: #ff9a42;
+  color: #07130d;
+}
+.sl-header--premium .sl-header__toggle {
+  border-color: rgba(245, 242, 233, 0.5);
+  color: #f5f2e9;
+}
+.sl-header--premium :focus-visible,
+.sl-premium-chrome .sl-menu :focus-visible {
+  outline: 3px solid #ffad62;
+  outline-offset: 4px;
+}
+.sl-premium-chrome .sl-menu .sl-menu__panel {
+  background: #091811;
+  border-left-color: rgba(245, 242, 233, 0.14);
+  box-shadow: -28px 0 70px -32px rgba(0, 0, 0, 0.86);
+}
+.sl-premium-chrome .sl-menu .sl-menu__title,
+.sl-premium-chrome .sl-menu .sl-menu__link { color: #f5f2e9; }
+.sl-premium-chrome .sl-menu .sl-menu__close {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(245, 242, 233, 0.24);
+  color: #f5f2e9;
+}
+.sl-premium-chrome .sl-menu .sl-menu__group { border-top-color: rgba(245, 242, 233, 0.14); }
+.sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: rgba(245, 242, 233, 0.55); }
+.sl-premium-chrome .sl-menu .sl-menu__link:hover { color: #ffad62; }
+.sl-premium-chrome .sl-menu .sl-menu__link.is-current {
+  background: rgba(232, 114, 12, 0.16);
+  color: #ffad62;
+}
+.sl-premium-chrome .sl-menu .sl-menu__cta { color: #07130d; }
 @media (max-width: 980px) {
   .sl-header { min-height: 64px; }
   .sl-header__inner { min-height: 64px; gap: 10px; }
