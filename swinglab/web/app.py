@@ -49,6 +49,7 @@ import hmac
 import json
 import logging
 import math
+import mimetypes
 import os
 import secrets
 import shutil
@@ -393,6 +394,7 @@ def create_app(
     # install shell (icon + service worker), never a report, user data, or
     # video.  The worker itself caches public help/offline pages only;
     # completed reports remain network-only.
+    mimetypes.add_type("image/webp", ".webp", strict=True)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # Customer Account sign-in is a separate, explicitly enabled migration
