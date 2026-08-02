@@ -1,5 +1,6 @@
 """Premium logged-out journey and shared-shell compatibility contracts."""
 
+import mimetypes
 from io import BytesIO
 from pathlib import Path
 
@@ -105,6 +106,22 @@ def test_atmosphere_asset_is_local_optimized_and_public(tmp_path):
         headers={"If-None-Match": asset.headers["etag"]},
     )
     assert unchanged.status_code == 304
+
+
+def test_atmosphere_asset_mime_type_does_not_depend_on_host_database(
+    tmp_path, monkeypatch
+):
+    isolated_db = mimetypes.MimeTypes(filenames=())
+    isolated_db.types_map[True].pop(".webp", None)
+    isolated_db.types_map[False].pop(".webp", None)
+    monkeypatch.setattr(mimetypes, "_db", isolated_db)
+    assert mimetypes.guess_type("asset.webp", strict=True)[0] is None
+
+    client, _response = landing(tmp_path)
+    asset = client.get("/static/homepage-range-atmosphere-v1.webp")
+
+    assert asset.status_code == 200
+    assert asset.headers["content-type"] == "image/webp"
 
 
 def test_landing_explains_the_full_loop_and_measurement_boundary(tmp_path):
