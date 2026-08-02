@@ -3,18 +3,22 @@
     "hero": {
       "type": "hero",
       "settings": {
-        "eyebrow": "PERSONALIZED COACHING FROM ONE PHONE CLIP",
-        "heading": "One swing priority. One practice plan. Proof when you re-film.",
-        "body": "Choose the club, film face-on at hip height, and get one prioritized movement, a measured practice target, and the capture context saved for your next check.",
-        "primary_label": "See the real-engine sample",
-        "primary_url": "https://app.caddieinsight.com/sample-report/",
-        "secondary_label": "Create a free account",
-        "secondary_url": "https://app.caddieinsight.com/signup",
-        "chip1": "ONE PRIORITY",
-        "chip2": "ONE PASS MARK",
-        "chip3": "MATCHED RE-FILM",
-        "fine_print": "Try one full analysis each month free — no card required.",
-        "image": "shopify://shop_images/caddieinsight-evidence-loop-hero-136534a.png"
+        "eyebrow": "PHONE-VIDEO COACHING · NO SENSORS",
+        "heading": "Practice the move that matters.",
+        "body": "Choose the club, film one repeatable view, and get one prioritized coaching plan with a pass mark for your next clip.",
+        "primary_label": "Analyze a swing free",
+        "primary_url": "https://app.caddieinsight.com/signup",
+        "secondary_label": "Explore the sample report",
+        "secondary_url": "https://app.caddieinsight.com/sample-report/",
+        "chip1": "1 FULL REPORT / MONTH",
+        "chip2": "NO CREDIT CARD",
+        "chip3": "CLUB CONTEXT SAVED",
+        "fine_print": "Supported 2D movement and timing estimates from phone video.",
+        "image": "shopify://shop_images/caddieinsight-premium-range-hero-0852e38d.png",
+        "mobile_image": "shopify://shop_images/caddieinsight-premium-range-hero-mobile-2e4ee946.png",
+        "signal_club": "Iron",
+        "signal_priority": "Lead-hip control",
+        "signal_target": "One pass mark"
       }
     },
     "stats": {
@@ -23,29 +27,29 @@
         "stat_tempo": {
           "type": "stat",
           "settings": {
-            "value": "1 priority",
-            "label": "ranked for the club you filmed"
+            "value": "Club saved",
+            "label": "context travels with the report"
           }
         },
         "stat_positions": {
           "type": "stat",
           "settings": {
-            "value": "1 pass mark",
-            "label": "attached to the practice plan"
+            "value": "View locked",
+            "label": "face-on for movement coaching"
           }
         },
         "stat_slowmo": {
           "type": "stat",
           "settings": {
-            "value": "Same club",
-            "label": "required for the next comparison"
+            "value": "One priority",
+            "label": "ranked before the practice plan"
           }
         },
         "stat_drift": {
           "type": "stat",
           "settings": {
-            "value": "Same selected view",
-            "label": "saved before the next comparison"
+            "value": "Proof loop",
+            "label": "repeat the club and selected view"
           }
         }
       },
@@ -67,7 +71,7 @@
           "settings": {
             "number": "01",
             "title": "Choose the club",
-            "body": "Select the iron, wedge, hybrid, fairway wood, or driver you are filming. The club stays with the report. Wedge coaching remains neutral until shot intent and lie are captured, but the club is still saved for a matched comparison.",
+            "body": "Choose the club before upload: iron, wedge, hybrid, fairway wood, or driver. It stays with the report and next comparison. Wedge coaching remains neutral until shot intent and lie are captured.",
             "caption": "CLUB CONTEXT IS REQUIRED"
           }
         },
@@ -76,7 +80,7 @@
           "settings": {
             "number": "02",
             "title": "Film a repeatable view",
-            "body": "Set the phone at hip height with your full body in frame. Face-on supports movement coaching; down-the-line currently supports timing only.",
+            "body": "Set the phone at hip height with your full body in frame, then select the view before upload. Face-on supports movement coaching; down-the-line supports timing only. Save that setup for the next clip.",
             "caption": "MATCH THE VIEW NEXT TIME"
           }
         },
@@ -85,7 +89,7 @@
           "settings": {
             "number": "03",
             "title": "Work one plan",
-            "body": "The report ranks supported findings, brings one priority forward, and gives that practice plan a measured pass mark.",
+            "body": "CaddieInsight ranks supported findings, brings one priority forward, and turns it into a drill with a measured pass mark. You leave with one clear range-session job instead of disconnected swing notes.",
             "caption": "ONE PRIORITY · ONE PASS MARK"
           }
         },
@@ -94,7 +98,7 @@
           "settings": {
             "number": "04",
             "title": "Re-film to prove it",
-            "body": "Use the same club and selected view, then repeat your hip-height, full-body framing. CaddieInsight verifies the saved club, handedness, and selected camera angle; physical height, distance, and framing remain part of your setup.",
+            "body": "Use the same club and selected view, then repeat the hip-height, full-body setup. CaddieInsight verifies the saved club, handedness, and selected camera angle; height, distance, and framing remain part of your setup.",
             "caption": "REPEAT THE CAPTURE SETUP"
           }
         }
@@ -107,7 +111,7 @@
       ],
       "settings": {
         "anchor": "how",
-        "heading": "A practice loop you can repeat.",
+        "heading": "Film. Coach. Practice. Prove it.",
         "footer_note": "CaddieInsight measures supported 2D phone-video movement and timing. It does not infer club path, face angle, launch, spin, carry, strike, or ball flight.",
         "cta_label": "Create a free account",
         "cta_url": "https://app.caddieinsight.com/signup"
@@ -148,8 +152,9 @@
         "p4"
       ],
       "settings": {
-        "heading": "See the product before you sign up",
-        "body": "Open a real-engine sample built from synthetic measurements. It shows how CaddieInsight turns supported phone-video evidence into one priority, one practice target, and a clearer next check.",
+        "anchor": "report",
+        "heading": "See what your next range session is really for.",
+        "body": "Open a real-engine sample built from synthetic measurements. See how CaddieInsight ranks supported phone-video evidence, brings one movement forward, and attaches a measurable plan to the next clip.",
         "caption": "ILLUSTRATED PREVIEW · LINKED REAL-ENGINE SAMPLE · SYNTHETIC INPUTS",
         "cta_label": "Open the full sample report",
         "sample_url": "https://app.caddieinsight.com/sample-report/"
@@ -174,14 +179,15 @@
           "settings": {
             "badge": "MEMBERSHIP",
             "title": "CaddieInsight Pro",
-            "description": "Unlimited swing analyses, the annotated coach replay of every swing, and the progress dashboard. Checkout here unlocks Pro on the CaddieInsight account matching your email.",
+            "description": "Unlimited swing analyses, an annotated coach replay of every swing, and the progress dashboard. Shopify checkout unlocks Pro on the CaddieInsight account connected to your purchase email.",
             "price_text": "",
             "price_note": "Month $4.99 · Year $39.99 · Lifetime $79.99",
             "product": "swinglab-pro",
             "use_product_price": true,
             "image": "shopify://shop_images/product-pro.png",
             "placeholder_label": "pro membership art",
-            "warm_placeholder": false
+            "warm_placeholder": false,
+            "featured": true
           }
         },
         "free": {
@@ -189,14 +195,15 @@
           "settings": {
             "badge": "FREE PLAN",
             "title": "Try CaddieInsight Free",
-            "description": "1 full swing analysis every month, free forever — the complete report each time.",
+            "description": "One full swing analysis every month, including the complete coaching report, saved club context, and a measured practice plan. Start without a card and repeat the loop next month.",
             "price_text": "$0",
-            "price_note": "No card required",
+            "price_note": "No card required · complete report included",
             "url": "https://app.caddieinsight.com",
             "use_product_price": false,
             "image": "shopify://shop_images/pro-report-strip.png",
             "placeholder_label": "free plan report strip",
-            "warm_placeholder": false
+            "warm_placeholder": false,
+            "featured": false
           }
         }
       },
@@ -205,9 +212,9 @@
         "free"
       ],
       "settings": {
-        "anchor": "shop",
-        "heading": "Start with CaddieInsight",
-        "subheading": "Buy Pro here, then open CaddieInsight to use it"
+        "anchor": "plans",
+        "heading": "Start free. Go Pro when repetition matters.",
+        "subheading": "The coaching engine stays the same. Pro removes the monthly limit and adds replay plus progress tracking."
       }
     },
     "comparison": {
@@ -308,21 +315,21 @@
           "type": "note",
           "settings": {
             "label": "CLUB CONTEXT",
-            "quote": "An iron and a driver ask different questions. Club selection is required before upload and stays attached to the report."
+            "quote": "An iron and a driver ask different questions. Club selection is required before upload, stays attached to the report, and gives the next comparison the same equipment context."
           }
         },
         "n_sway": {
           "type": "note",
           "settings": {
             "label": "ONE PRIORITY",
-            "quote": "Supported findings are ranked, then one movement is brought to the top so the range session has a clear job."
+            "quote": "Supported findings are ranked, then one movement is brought forward with a matching drill and pass mark, so the range session has one clear job instead of scattered advice."
           }
         },
         "n_consistency": {
           "type": "note",
           "settings": {
             "label": "MATCHED RE-FILM",
-            "quote": "Use the same club and selected view, then repeat the hip-height, full-body setup so the next clip is a fairer check of whether the practiced movement held."
+            "quote": "Use the same club and selected view, then repeat the hip-height, full-body setup so the next clip can test whether the practiced movement held under comparable capture conditions."
           }
         }
       },

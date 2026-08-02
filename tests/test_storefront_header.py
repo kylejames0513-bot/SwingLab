@@ -8,6 +8,7 @@ from pathlib import Path
 
 THEME_ROOT = Path(__file__).resolve().parents[1] / "storefront-theme"
 HEADER = (THEME_ROOT / "sections" / "header.liquid").read_text(encoding="utf-8")
+LAYOUT = (THEME_ROOT / "layout" / "theme.liquid").read_text(encoding="utf-8")
 APP_LAYOUT = (
     Path(__file__).resolve().parents[1]
     / "swinglab"
@@ -25,6 +26,56 @@ def test_storefront_header_has_one_state_aware_app_action():
     assert "'layout.navigation.analyze' | t" not in HEADER
     assert HEADER.count("'layout.navigation.analyze_a_swing' | t") == 2
     assert "app_url | append: '/drills'" in HEADER
+
+
+def test_premium_header_is_scoped_to_home_and_the_pro_product():
+    premium_scope = (
+        "if request.page_type == 'index'\n"
+        "    assign premium_header = true\n"
+        "  elsif request.page_type == 'product' and product.handle == 'swinglab-pro'\n"
+        "    assign premium_header = true"
+    )
+    chrome_scope = (
+        "if request.page_type == 'index'\n"
+        "    assign premium_chrome = true\n"
+        "  elsif request.page_type == 'product' and product.handle == 'swinglab-pro'\n"
+        "    assign premium_chrome = true"
+    )
+
+    assert "assign premium_header = false" in HEADER
+    assert premium_scope in HEADER
+    assert (
+        'class="sl-header{% if premium_header %} sl-header--premium{% endif %}"'
+        in HEADER
+    )
+    assert "assign premium_chrome = false" in LAYOUT
+    assert chrome_scope in LAYOUT
+    assert "{% if premium_chrome %} sl-premium-chrome{% endif %}" in LAYOUT
+
+    desktop_nav = HEADER.split('<nav class="sl-header__desktop-nav"', 1)[1].split(
+        "</nav>", 1
+    )[0]
+    premium_nav, standard_nav = desktop_nav.split("{%- else -%}", 1)
+    for label in ("method", "sample_report", "plans", "gear"):
+        assert f"'layout.navigation.{label}' | t" in premium_nav
+    assert "'layout.navigation.pro' | t" not in premium_nav
+    assert "'layout.navigation.my_game' | t" in standard_nav
+    assert "'layout.navigation.pro' | t" in standard_nav
+    assert "assign plans_link_url = plans_url" in HEADER
+    assert "assign plans_link_url = product.url" in HEADER
+    assert 'href="{{ plans_link_url }}"' in HEADER
+
+    mobile_nav = HEADER.split('<nav class="sl-menu__nav"', 1)[1].split(
+        "</nav>", 1
+    )[0]
+    assert "'layout.navigation.explore' | t" in mobile_nav
+    for label in ("method", "sample_report", "plans", "gear"):
+        assert f"'layout.navigation.{label}' | t" in mobile_nav
+    assert (
+        "{% if premium_header %}{{ 'layout.navigation.analyze_free' | t }}"
+        in mobile_nav
+    )
+    assert ".sl-premium-chrome .sl-menu" in HEADER
 
 
 def test_mobile_header_uses_one_cart_link_and_an_accessible_dialog():
@@ -66,9 +117,14 @@ def test_storefront_keeps_mobile_actions_readable():
 
 def test_header_labels_describe_destinations():
     navigation = LOCALE["layout"]["navigation"]
+    assert navigation["analyze_free"] == "Analyze free"
     assert navigation["analyze_a_swing"] == "Analyze a swing"
     assert navigation["drills"] == "Drills"
+    assert navigation["explore"] == "Explore"
     assert navigation["my_game"] == "My Game"
     assert navigation["account"] == "Account"
     assert navigation["orders_subscriptions"] == "Orders & subscriptions"
+    assert navigation["method"] == "Method"
+    assert navigation["sample_report"] == "Sample report"
+    assert navigation["plans"] == "Plans"
     assert navigation["close_menu"] == "Close menu"

@@ -2,13 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
+import struct
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 THEME = ROOT / "storefront-theme"
+ASSET_ROOT = ROOT / "store-assets" / "out"
+DESKTOP_HERO_NAME = "caddieinsight-premium-range-hero-0852e38d.png"
+MOBILE_HERO_NAME = "caddieinsight-premium-range-hero-mobile-2e4ee946.png"
 INDEX = json.loads((THEME / "templates" / "index.json").read_text(encoding="utf-8"))
 LOCALE = json.loads(
     (THEME / "locales" / "en.default.json").read_text(encoding="utf-8")
@@ -19,31 +24,60 @@ def source(relative: str) -> str:
     return (THEME / relative).read_text(encoding="utf-8")
 
 
+def png_dimensions(path: Path) -> tuple[int, int]:
+    header = path.read_bytes()[:24]
+    assert header[:8] == b"\x89PNG\r\n\x1a\n"
+    return struct.unpack(">II", header[16:24])
+
+
 def test_storefront_leads_with_the_evidence_loop_and_real_sample():
     hero = INDEX["sections"]["hero"]["settings"]
 
-    assert hero["heading"] == (
-        "One swing priority. One practice plan. Proof when you re-film."
-    )
-    assert hero["primary_label"] == "See the real-engine sample"
-    assert hero["primary_url"] == "https://app.caddieinsight.com/sample-report/"
-    assert hero["secondary_url"] == "https://app.caddieinsight.com/signup"
+    assert hero["heading"] == "Practice the move that matters."
+    assert hero["primary_label"] == "Analyze a swing free"
+    assert hero["primary_url"] == "https://app.caddieinsight.com/signup"
+    assert hero["secondary_label"] == "Explore the sample report"
+    assert hero["secondary_url"] == "https://app.caddieinsight.com/sample-report/"
     assert [hero[f"chip{number}"] for number in range(1, 4)] == [
-        "ONE PRIORITY",
-        "ONE PASS MARK",
-        "MATCHED RE-FILM",
+        "1 FULL REPORT / MONTH",
+        "NO CREDIT CARD",
+        "CLUB CONTEXT SAVED",
     ]
 
     stats = INDEX["sections"]["stats"]
     assert [stats["blocks"][key]["settings"]["value"] for key in stats["block_order"]] == [
-        "1 priority",
-        "1 pass mark",
-        "Same club",
-        "Same selected view",
+        "Club saved",
+        "View locked",
+        "One priority",
+        "Proof loop",
     ]
-    assert INDEX["order"].index("report") < INDEX["order"].index("gear")
-    assert INDEX["order"].index("plans") < INDEX["order"].index("gear")
+    assert INDEX["order"][:6] == [
+        "hero",
+        "stats",
+        "how_it_works",
+        "report",
+        "plans",
+        "comparison",
+    ]
     assert INDEX["order"].index("comparison") < INDEX["order"].index("gear")
+
+
+def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
+    how = INDEX["sections"]["how_it_works"]
+    report = INDEX["sections"]["report"]
+    plans = INDEX["sections"]["plans"]
+
+    assert how["settings"]["anchor"] == "how"
+    assert report["settings"]["anchor"] == "report"
+    assert plans["settings"]["anchor"] == "plans"
+    assert plans["block_order"] == ["pro", "free"]
+    assert plans["blocks"]["pro"]["settings"]["featured"] is True
+    assert plans["blocks"]["free"]["settings"]["featured"] is False
+    assert '<div class="sl-report__inner sl-wrap">' in source(
+        "sections/report-feature.liquid"
+    )
+    assert '<p class="sl-how__eyebrow">' in source("sections/how-it-works.liquid")
+    assert "sl-card--featured" in source("sections/product-grid.liquid")
 
 
 def test_storefront_makes_club_and_capture_context_part_of_the_product():
@@ -126,13 +160,85 @@ def test_product_behavior_cards_are_not_presented_as_quotes_or_testimonials():
     assert '<h3 class="sl-coach__label">' in coach_source
 
 
-def test_illustrated_homepage_art_has_a_visible_trust_disclosure():
+def test_storefront_cards_stay_balanced_across_responsive_layouts():
+    plans = INDEX["sections"]["plans"]
+    plan_words = [
+        len(plans["blocks"][key]["settings"]["description"].split())
+        for key in plans["block_order"]
+    ]
+    assert max(plan_words) - min(plan_words) <= 3
+
+    how = INDEX["sections"]["how_it_works"]
+    how_words = [
+        len(how["blocks"][key]["settings"]["body"].split())
+        for key in how["block_order"]
+    ]
+    assert max(how_words) - min(how_words) <= 3
+
+    coach = INDEX["sections"]["coach_notes"]
+    coach_words = [
+        len(coach["blocks"][key]["settings"]["quote"].split())
+        for key in coach["block_order"]
+    ]
+    assert max(coach_words) - min(coach_words) <= 2
+
+    plans_source = source("sections/product-grid.liquid")
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in plans_source
+    assert "aspect-ratio: 20 / 13" in plans_source
+    assert "height: 100%" in plans_source
+
+    how_source = source("sections/how-it-works.liquid")
+    assert "@media (min-width: 640px)" in how_source
+    assert "@media (min-width: 1100px)" in how_source
+    assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in how_source
+
+    coach_source = source("sections/coach-notes.liquid")
+    assert "@media (min-width: 640px)" in coach_source
+    assert "@media (min-width: 1000px)" in coach_source
+
+
+def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
+    base = source("assets/base.css")
+    assert "--sl-radius-sm: 8px" in base
+    assert "--sl-radius-lg: 22px" in base
+    assert "--sl-radius-xl: 32px" in base
+    assert ".sl-btn {\n  min-height: 46px" in base
+    assert "border-radius: 999px" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
+    assert "@media (min-width: 480px)" in base
+    assert "@media (min-width: 900px)" in base
+    assert "@media (min-width: 1200px)" in base
+    assert "min-block-size: 2.8em" in base
+    assert ".sl-pcard-price { margin: auto 0 0" in base
+
+    product = source("sections/main-product.liquid")
+    assert ".sl-product--pro .sl-product-form" in product
+    assert "max-width: 520px" in product
+
+    comparison = source("sections/comparison.liquid")
+    mobile_comparison = comparison.split("@media (max-width: 749px)", 1)[1]
+    assert "min-width: 0" in mobile_comparison
+    assert "table-layout: fixed" in mobile_comparison
+    assert "overflow-wrap: anywhere" in mobile_comparison
+
+
+def test_caddie_window_hero_is_responsive_fast_and_disclosed():
     hero_source = source("sections/hero.liquid")
     hero_locale = LOCALE["homepage"]["hero"]
 
-    assert '<figure class="sl-hero__media-wrap' in hero_source
-    assert '<figcaption class="sl-hero__media-note">' in hero_source
+    assert '<section id="home-hero" class="sl-hero" aria-labelledby=' in hero_source
+    assert hero_source.count("<h1") == 1
+    assert '<figure class="sl-hero__backdrop" aria-describedby=' in hero_source
+    assert '<figcaption id="{{ disclosure_id }}" class="sl-hero__disclosure">' in hero_source
+    assert "<picture>" in hero_source
+    assert 'media="(max-width: 749px)"' in hero_source
+    assert "hero_mobile_image | image_url: width: 1122" in hero_source
+    assert 'widths: \'750, 1100, 1400, 1672\'' in hero_source
+    assert "sizes: '100vw'" in hero_source
+    assert "loading: 'eager'" in hero_source
+    assert "preload: true" not in hero_source
+    assert "fetchpriority: 'high'" in hero_source
     assert "homepage.hero.art_disclosure" in hero_source
+    assert "homepage.hero.signal_disclosure" in hero_source
     assert "section.settings.image.alt | default: hero_image_label" in hero_source
     assert "alt: hero_image_alt" in hero_source
     assert "alt: section.settings.heading" not in hero_source
@@ -146,12 +252,16 @@ def test_illustrated_homepage_art_has_a_visible_trust_disclosure():
     ) in hero_source
     assert "default: '#'" not in hero_source
     assert hero_locale["image_label"] == (
-        "Illustrated golfer in a swing-analysis scene"
+        "AI-generated golfer filming a driver swing at a dawn driving range"
     )
     assert hero_locale["art_disclosure"] == (
-        "Illustrated swing-analysis scene — not a customer, testimonial, or analyzed "
-        "swing."
+        "AI-generated range scene — not a customer, testimonial, or analyzed swing. "
+        "Product signals are a clearly labeled synthetic example."
     )
+    assert "synthetic" in hero_locale["signal_label"].lower()
+    assert "synthetic" in hero_locale["signal_status"].lower()
+    assert "synthetic" in hero_locale["signal_disclosure"].lower()
+    assert '<aside class="sl-hero__signal' in hero_source
 
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():
@@ -239,15 +349,44 @@ def test_generated_storefront_art_avoids_unsupported_measurement_claims():
 
 def test_storefront_uses_immutable_release_artwork_references():
     hero = INDEX["sections"]["hero"]["settings"]
+    hero_source = source("sections/hero.liquid")
     report_source = source("sections/report-feature.liquid")
     readme = source("README.md")
 
-    assert hero["image"] == (
-        "shopify://shop_images/caddieinsight-evidence-loop-hero-136534a.png"
-    )
+    assert hero["image"] == f"shopify://shop_images/{DESKTOP_HERO_NAME}"
+    assert hero["mobile_image"] == f"shopify://shop_images/{MOBILE_HERO_NAME}"
+    assert f"images['{DESKTOP_HERO_NAME}']" in hero_source
+    assert f"images['{MOBILE_HERO_NAME}']" in hero_source
     assert "images['caddieinsight-report-preview-136534a.png']" in report_source
     assert "images['report-keyframes.png']" not in report_source
     assert "immutable, release-specific Shopify File names" in readme
+
+    expected_assets = {
+        DESKTOP_HERO_NAME: (
+            (1672, 941),
+            "0852e38d5184c428d427519b5f1944d7986114a1aef7ebb836d80cfe1e08ba0e",
+        ),
+        MOBILE_HERO_NAME: (
+            (1122, 1402),
+            "2e4ee946358c68e175dd46247c75760d7cc07aee6edd75901e9a589a2259e36e",
+        ),
+    }
+    for filename, (dimensions, expected_sha256) in expected_assets.items():
+        asset = ASSET_ROOT / filename
+        assert asset.is_file()
+        assert png_dimensions(asset) == dimensions
+        assert hashlib.sha256(asset.read_bytes()).hexdigest() == expected_sha256
+
+    prompt_record = (
+        ROOT
+        / "store-assets"
+        / "prompts"
+        / "caddieinsight-premium-range-hero-v2.md"
+    ).read_text(encoding="utf-8")
+    assert DESKTOP_HERO_NAME in prompt_record
+    assert MOBILE_HERO_NAME in prompt_record
+    assert "not customer photos" in prompt_record
+    assert "testimonials" in prompt_record
 
 
 def test_theme_check_is_pinned_and_release_docs_have_no_stale_theme_ids():

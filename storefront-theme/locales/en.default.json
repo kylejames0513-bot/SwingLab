@@ -12,6 +12,7 @@
     },
     "navigation": {
       "analyze": "Analyze",
+      "analyze_free": "Analyze free",
       "analyze_a_swing": "Analyze a swing",
       "account": "Account",
       "app_sign_in": "App sign in",
@@ -20,29 +21,50 @@
       "close_menu": "Close menu",
       "create_free_account": "Create free account",
       "drills": "Drills",
+      "explore": "Explore",
       "gear": "Gear",
       "history": "History",
       "home": "Home",
       "main": "Main navigation",
       "menu": "Menu",
       "menu_title": "Menu",
+      "method": "Method",
       "my_game": "My Game",
       "orders": "Orders",
       "orders_subscriptions": "Orders & subscriptions",
+      "plans": "Plans",
       "pro": "Pro",
       "progress": "Progress",
+      "sample_report": "Sample report",
       "shop": "Shop",
       "start_free": "Start free"
     }
   },
   "homepage": {
     "hero": {
-      "image_label": "Illustrated golfer in a swing-analysis scene",
-      "image_placeholder": "Add approved range artwork",
-      "art_label": "Illustrated scene",
-      "art_disclosure": "Illustrated swing-analysis scene — not a customer, testimonial, or analyzed swing."
+      "image_label": "AI-generated golfer filming a driver swing at a dawn driving range",
+      "image_placeholder": "Add approved premium range artwork",
+      "art_label": "AI-generated scene",
+      "art_disclosure": "AI-generated range scene — not a customer, testimonial, or analyzed swing. Product signals are a clearly labeled synthetic example.",
+      "proof_label": "Free-plan proof points",
+      "signal_label": "Synthetic CaddieInsight analysis preview",
+      "signal_status": "Synthetic sample",
+      "signal_ready": "Plan ready",
+      "trace_label": "Illustrative movement trace for the synthetic sample",
+      "club_label": "Selected club",
+      "priority_label": "Coaching priority",
+      "target_label": "Practice target",
+      "signal_disclosure": "Illustrative interface using synthetic sample inputs. Open the linked report to see real-engine output."
+    },
+    "method": {
+      "eyebrow": "THE CADDIEINSIGHT METHOD",
+      "intro": "Four deliberate steps turn a phone clip into a range session with one clear job."
+    },
+    "plans": {
+      "eyebrow": "CHOOSE YOUR PACE"
     },
     "report": {
+      "eyebrow": "INSIDE THE REPORT",
       "file_label": "Illustrated preview",
       "sample_label": "Synthetic inputs",
       "club_label": "Club",
@@ -61,7 +83,7 @@
     "product": {
       "add_to_cart": "Add to cart",
       "benefit_report": "Club-aware priority and a measured practice plan",
-      "benefit_unlock": "Access connects to your existing linked account, or your checkout email if you are new",
+      "benefit_unlock": "Automatic access through your linked account or checkout email",
       "benefit_unlimited": "Unlimited swing analyses while Pro is active",
       "benefit_video": "Key frames, centerline overlay, and slow-motion clips",
       "includes": "CaddieInsight Pro includes",

@@ -44,12 +44,27 @@
 
 {% stylesheet %}
 .sl-compare {
-  padding-top: clamp(32px, 4.5vw, 56px);
-  padding-bottom: clamp(32px, 4.5vw, 56px);
+  padding-top: clamp(76px, 8vw, 112px);
+  padding-bottom: clamp(76px, 8vw, 112px);
+  background: #f0eee7;
 }
-.sl-compare__head { max-width: 72ch; }
+.sl-compare__head {
+  max-width: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 0.55fr);
+  gap: clamp(28px, 6vw, 84px);
+  align-items: end;
+}
+.sl-compare .sl-h2 {
+  max-width: 13ch;
+  font-size: clamp(38px, 4.8vw, 62px);
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  line-height: 1;
+  text-wrap: balance;
+}
 .sl-compare__sub {
-  margin: 12px 0 0;
+  margin: 0;
   font-size: 16px;
   line-height: 1.55;
   color: var(--sl-ink-soft);
@@ -57,9 +72,13 @@
   text-wrap: pretty;
 }
 .sl-compare__scroll {
-  margin-top: 28px;
+  margin-top: clamp(34px, 5vw, 54px);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
+  border: 1px solid #ded8cc;
+  border-radius: 22px;
+  background: rgba(255, 253, 249, 0.88);
+  box-shadow: 0 24px 60px -46px rgba(15, 42, 27, 0.5);
 }
 .sl-compare__table {
   width: 100%;
@@ -69,7 +88,7 @@
 }
 .sl-compare__table th,
 .sl-compare__table td {
-  padding: 14px 18px;
+  padding: 17px 20px;
   border-bottom: 1px solid var(--sl-border);
   text-align: left;
   vertical-align: top;
@@ -94,7 +113,7 @@
   font-weight: 600;
   font-size: 15.5px;
   color: var(--sl-ink);
-  padding-left: 0;
+  padding-left: 22px;
 }
 .sl-compare__table tbody td {
   font-family: var(--sl-font-mono);
@@ -111,9 +130,10 @@
   border-radius: 0 0 10px 10px;
 }
 .sl-compare__actions {
-  display: flex;
+  width: min(100%, 440px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  flex-wrap: wrap;
   margin-top: 30px;
 }
 .sl-compare__footnote {
@@ -122,6 +142,30 @@
   line-height: 1.55;
   color: var(--sl-ink-muted);
   max-width: 62ch;
+}
+@media (max-width: 749px) {
+  .sl-compare__scroll { overflow-x: visible; }
+  .sl-compare__table {
+    min-width: 0;
+    table-layout: fixed;
+  }
+  .sl-compare__feature-head,
+  .sl-compare__table tbody th { width: 48%; }
+  .sl-compare__col { width: 26%; }
+  .sl-compare__table th,
+  .sl-compare__table td {
+    padding: 13px 8px;
+    overflow-wrap: anywhere;
+  }
+  .sl-compare__table tbody th { padding-left: 12px; }
+}
+@media (max-width: 479px) {
+  .sl-compare__actions { grid-template-columns: 1fr; }
+}
+@media (max-width: 749px) {
+  .sl-compare__head { grid-template-columns: 1fr; gap: 18px; }
+  .sl-compare .sl-h2 { font-size: clamp(38px, 11.5vw, 52px); }
+  .sl-compare__sub { margin-top: 0; }
 }
 {% endstylesheet %}
 

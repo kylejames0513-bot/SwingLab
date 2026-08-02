@@ -1,9 +1,17 @@
+{%- liquid
+  assign premium_chrome = false
+  if request.page_type == 'index'
+    assign premium_chrome = true
+  elsif request.page_type == 'product' and product.handle == 'swinglab-pro'
+    assign premium_chrome = true
+  endif
+-%}
 <!doctype html>
 <html lang="{{ request.locale.iso_code }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#14472c">
+  <meta name="theme-color" content="{% if premium_chrome %}#07130d{% else %}#14472c{% endif %}">
   <link rel="canonical" href="{{ canonical_url }}">
 
   <title>
@@ -55,7 +63,7 @@
 
   {{ content_for_header }}
 </head>
-<body class="template-{{ request.page_type | handle }}">
+<body class="template-{{ request.page_type | handle }}{% if premium_chrome %} sl-premium-chrome{% endif %}">
   <a class="sl-skip" href="#MainContent">{{ 'general.accessibility.skip_to_content' | t }}</a>
 
   {% sections 'header-group' %}

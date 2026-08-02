@@ -1,185 +1,497 @@
-<section class="sl-hero sl-wrap">
-  <div class="sl-hero__copy sl-reveal">
-    {%- if section.settings.eyebrow != blank -%}
-      <p class="sl-hero__eyebrow">{{ section.settings.eyebrow }}</p>
-    {%- endif -%}
-    <h1 class="sl-hero__title">{{ section.settings.heading | default: 'Know your swing in minutes.' }}</h1>
-    {%- if section.settings.body != blank -%}
-      <p class="sl-hero__body">{{ section.settings.body }}</p>
-    {%- endif -%}
-    <div class="sl-hero__actions">
-      {%- if section.settings.primary_label != blank and section.settings.primary_url != blank -%}
-        <a href="{{ section.settings.primary_url }}" class="sl-btn sl-btn--primary">{{ section.settings.primary_label }}</a>
-      {%- endif -%}
-      {%- if section.settings.secondary_label != blank and section.settings.secondary_url != blank -%}
-        <a href="{{ section.settings.secondary_url }}" class="sl-btn sl-btn--outline">{{ section.settings.secondary_label }}</a>
-      {%- endif -%}
-    </div>
-    {%- if section.settings.chip1 != blank or section.settings.chip2 != blank or section.settings.chip3 != blank -%}
-      <div class="sl-hero__chips">
-        {%- if section.settings.chip1 != blank -%}
-          <span class="sl-hero__chip sl-mono-label">{{ section.settings.chip1 }}</span>
-        {%- endif -%}
-        {%- if section.settings.chip2 != blank -%}
-          <span class="sl-hero__chip sl-mono-label">{{ section.settings.chip2 }}</span>
-        {%- endif -%}
-        {%- if section.settings.chip3 != blank -%}
-          <span class="sl-hero__chip sl-mono-label">{{ section.settings.chip3 }}</span>
-        {%- endif -%}
-      </div>
-    {%- endif -%}
-    {%- if section.settings.fine_print != blank -%}
-      <p class="sl-hero__fine">{{ section.settings.fine_print }}</p>
-    {%- endif -%}
-  </div>
+{%- liquid
+  assign hero_image_label = 'homepage.hero.image_label' | t
+  assign hero_image = section.settings.image | default: images['caddieinsight-premium-range-hero-0852e38d.png']
+  assign hero_mobile_image = section.settings.mobile_image | default: images['caddieinsight-premium-range-hero-mobile-2e4ee946.png']
+  assign hero_image_alt = section.settings.image.alt | default: hero_image_label
+  assign disclosure_id = 'HeroDisclosure-' | append: section.id
+-%}
 
-  <figure class="sl-hero__media-wrap sl-reveal sl-reveal--d1">
-    <span class="sl-hero__arc" aria-hidden="true"></span>
-    <div class="sl-media sl-hero__media">
-      {%- liquid
-        assign hero_image_label = 'homepage.hero.image_label' | t
-        assign hero_image_placeholder = 'homepage.hero.image_placeholder' | t
-        assign hero_image_alt = section.settings.image.alt | default: hero_image_label
-      -%}
-      {% render 'media-placeholder',
-        image: section.settings.image,
-        ratio_w: 520, ratio_h: 620,
-        label: hero_image_label,
-        sublabel: hero_image_placeholder,
-        alt: hero_image_alt %}
-    </div>
-    <figcaption class="sl-hero__media-note">
-      <span class="sl-chip">{{ 'homepage.hero.art_label' | t }}</span>
-      <span>{{ 'homepage.hero.art_disclosure' | t }}</span>
+<section id="home-hero" class="sl-hero" aria-labelledby="HeroTitle-{{ section.id }}">
+  <figure class="sl-hero__backdrop" aria-describedby="{{ disclosure_id }}">
+    {%- if hero_image -%}
+      <picture>
+        {%- if hero_mobile_image -%}
+          <source
+            media="(max-width: 749px)"
+            srcset="{{ hero_mobile_image | image_url: width: 480 }} 480w, {{ hero_mobile_image | image_url: width: 750 }} 750w, {{ hero_mobile_image | image_url: width: 1000 }} 1000w, {{ hero_mobile_image | image_url: width: 1122 }} 1122w"
+            sizes="100vw">
+        {%- endif -%}
+        {{ hero_image | image_url: width: 1672 | image_tag:
+          class: 'sl-hero__image',
+          widths: '750, 1100, 1400, 1672',
+          sizes: '100vw',
+          loading: 'eager',
+          fetchpriority: 'high',
+          alt: hero_image_alt }}
+      </picture>
+    {%- else -%}
+      <div class="sl-hero__fallback" aria-hidden="true"></div>
+    {%- endif -%}
+    <figcaption id="{{ disclosure_id }}" class="sl-hero__disclosure">
+      <span>{{ 'homepage.hero.art_label' | t }}</span>
+      {{ 'homepage.hero.art_disclosure' | t }}
     </figcaption>
   </figure>
+
+  <div class="sl-hero__capture" aria-hidden="true">
+    <span></span><span></span><span></span><span></span>
+  </div>
+
+  <div class="sl-hero__inner sl-wrap">
+    <div class="sl-hero__copy sl-reveal is-in">
+      {%- if section.settings.eyebrow != blank -%}
+        <p class="sl-hero__eyebrow"><span aria-hidden="true"></span>{{ section.settings.eyebrow }}</p>
+      {%- endif -%}
+      <h1 id="HeroTitle-{{ section.id }}" class="sl-hero__title">{{ section.settings.heading | default: 'Practice the move that matters.' }}</h1>
+      {%- if section.settings.body != blank -%}
+        <p class="sl-hero__body">{{ section.settings.body }}</p>
+      {%- endif -%}
+
+      <div class="sl-hero__actions">
+        {%- if section.settings.primary_label != blank and section.settings.primary_url != blank -%}
+          <a href="{{ section.settings.primary_url }}" class="sl-btn sl-hero__primary">{{ section.settings.primary_label }} <span aria-hidden="true">&rarr;</span></a>
+        {%- endif -%}
+        {%- if section.settings.secondary_label != blank and section.settings.secondary_url != blank -%}
+          <a href="{{ section.settings.secondary_url }}" class="sl-btn sl-hero__secondary">{{ section.settings.secondary_label }}</a>
+        {%- endif -%}
+      </div>
+
+      {%- if section.settings.chip1 != blank or section.settings.chip2 != blank or section.settings.chip3 != blank -%}
+        <ul class="sl-hero__proof" aria-label="{{ 'homepage.hero.proof_label' | t }}">
+          {%- if section.settings.chip1 != blank -%}<li>{{ section.settings.chip1 }}</li>{%- endif -%}
+          {%- if section.settings.chip2 != blank -%}<li>{{ section.settings.chip2 }}</li>{%- endif -%}
+          {%- if section.settings.chip3 != blank -%}<li>{{ section.settings.chip3 }}</li>{%- endif -%}
+        </ul>
+      {%- endif -%}
+      {%- if section.settings.fine_print != blank -%}
+        <p class="sl-hero__fine">{{ section.settings.fine_print }}</p>
+      {%- endif -%}
+    </div>
+
+    <aside class="sl-hero__signal sl-reveal sl-reveal--d1 is-in" aria-label="{{ 'homepage.hero.signal_label' | t }}">
+      <div class="sl-hero__signal-head">
+        <span>{{ 'homepage.hero.signal_status' | t }}</span>
+        <span class="sl-hero__signal-live"><i aria-hidden="true"></i>{{ 'homepage.hero.signal_ready' | t }}</span>
+      </div>
+      <div class="sl-hero__trace" role="img" aria-label="{{ 'homepage.hero.trace_label' | t }}">
+        <span class="sl-hero__trace-line" aria-hidden="true"></span>
+        <span class="sl-hero__trace-dot sl-hero__trace-dot--one" aria-hidden="true"></span>
+        <span class="sl-hero__trace-dot sl-hero__trace-dot--two" aria-hidden="true"></span>
+        <span class="sl-hero__trace-dot sl-hero__trace-dot--three" aria-hidden="true"></span>
+      </div>
+      <dl class="sl-hero__signal-grid">
+        <div><dt>{{ 'homepage.hero.club_label' | t }}</dt><dd>{{ section.settings.signal_club }}</dd></div>
+        <div><dt>{{ 'homepage.hero.priority_label' | t }}</dt><dd>{{ section.settings.signal_priority }}</dd></div>
+        <div><dt>{{ 'homepage.hero.target_label' | t }}</dt><dd>{{ section.settings.signal_target }}</dd></div>
+      </dl>
+      <p class="sl-hero__signal-note">{{ 'homepage.hero.signal_disclosure' | t }}</p>
+    </aside>
+  </div>
 </section>
 
 {% stylesheet %}
 .sl-hero {
-  display: grid;
-  grid-template-columns: 1.05fr 0.95fr;
-  gap: clamp(24px, 4vw, 56px);
-  align-items: center;
-  padding-top: clamp(28px, 4.5vw, 56px);
-  padding-bottom: clamp(28px, 4.5vw, 56px);
-  overflow: clip;
-}
-.sl-hero__copy {
   position: relative;
-  z-index: 1;
-  min-width: 0;
+  isolation: isolate;
+  min-height: clamp(700px, 78svh, 860px);
+  overflow: hidden;
+  background: #07130d;
+  color: #f5f2e9;
 }
+.sl-hero::before,
+.sl-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.sl-hero::before {
+  z-index: 1;
+  background:
+    linear-gradient(90deg, rgba(4, 13, 9, 0.96) 0%, rgba(4, 13, 9, 0.87) 34%, rgba(4, 13, 9, 0.36) 61%, rgba(4, 13, 9, 0.18) 100%),
+    linear-gradient(0deg, rgba(4, 13, 9, 0.86) 0%, transparent 38%, rgba(4, 13, 9, 0.16) 100%);
+}
+.sl-hero::after {
+  z-index: 2;
+  opacity: 0.24;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+  background-size: 72px 72px;
+  -webkit-mask-image: linear-gradient(90deg, #000, transparent 72%);
+  mask-image: linear-gradient(90deg, #000, transparent 72%);
+}
+.sl-hero__backdrop,
+.sl-hero__backdrop picture {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+}
+.sl-hero__image,
+.sl-hero__fallback {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.sl-hero__fallback {
+  background: radial-gradient(circle at 72% 42%, rgba(240, 122, 24, 0.22), transparent 24%), linear-gradient(135deg, #0f2d1e, #050c08);
+}
+.sl-hero__inner {
+  position: relative;
+  z-index: 4;
+  min-height: clamp(700px, 78svh, 860px);
+  padding-top: clamp(72px, 9vw, 118px);
+  padding-bottom: clamp(132px, 13vw, 178px);
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(280px, 0.6fr);
+  gap: clamp(32px, 5vw, 76px);
+  align-items: center;
+}
+.sl-hero__copy { max-width: 730px; }
 .sl-hero__eyebrow {
-  margin: 0 0 16px;
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  margin: 0 0 22px;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: rgba(245, 242, 233, 0.74);
+  font-family: var(--sl-font-mono);
+  font-size: 11.5px;
+  font-weight: 500;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--sl-orange);
+}
+.sl-hero__eyebrow span {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #f07a18;
+  box-shadow: 0 0 0 6px rgba(240, 122, 24, 0.12);
 }
 .sl-hero__title {
+  max-width: 850px;
   margin: 0;
-  font-size: clamp(40px, 5.5vw, 68px);
-  line-height: 1.02;
+  color: #f8f6ef;
+  font-size: clamp(54px, 6.8vw, 96px);
   font-weight: 900;
-  letter-spacing: -0.03em;
-  color: var(--sl-green);
+  letter-spacing: -0.058em;
+  line-height: 0.91;
   text-wrap: balance;
+  text-shadow: 0 22px 52px rgba(0, 0, 0, 0.3);
 }
 .sl-hero__body {
-  margin: 20px 0 0;
-  font-size: var(--sl-text-lg);
-  line-height: 1.55;
-  color: var(--sl-ink-soft);
-  max-width: 46ch;
+  max-width: 55ch;
+  margin: 28px 0 0;
+  color: rgba(245, 242, 233, 0.78);
+  font-size: clamp(17px, 1.5vw, 20px);
+  line-height: 1.58;
   text-wrap: pretty;
 }
 .sl-hero__actions {
-  display: flex;
-  gap: 14px;
-  margin-top: 32px;
-  flex-wrap: wrap;
+  margin-top: 34px;
+  width: min(100%, 570px);
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
 }
-.sl-hero__chips {
+.sl-hero__primary,
+.sl-hero__secondary {
+  min-height: 54px;
+  padding: 15px 24px;
   display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+}
+.sl-hero__primary {
+  border-color: #f07a18;
+  background: #f07a18;
+  color: #07130d;
+  box-shadow: 0 18px 38px -20px rgba(240, 122, 24, 0.9);
+}
+.sl-hero__primary:hover {
+  border-color: #ff9a42;
+  background: #ff9a42;
+  color: #07130d;
+}
+.sl-hero__primary span { margin-left: 10px; transition: transform 0.2s ease; }
+.sl-hero__primary:hover span { transform: translateX(4px); }
+.sl-hero__secondary {
+  border-color: rgba(245, 242, 233, 0.42);
+  background: rgba(7, 19, 13, 0.32);
+  color: #f5f2e9;
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+}
+.sl-hero__secondary:hover {
+  border-color: rgba(245, 242, 233, 0.8);
+  background: rgba(245, 242, 233, 0.1);
+  color: #ffffff;
+}
+.sl-hero__primary:focus-visible,
+.sl-hero__secondary:focus-visible {
+  outline: 3px solid #ffad62;
+  outline-offset: 4px;
+}
+.sl-hero__proof {
+  margin: 26px 0 0;
+  padding: 0;
+  display: flex;
   flex-wrap: wrap;
-  margin-top: 26px;
-  background: var(--sl-bg-card);
-  border: 1px solid var(--sl-border);
-  border-radius: 12px;
-  overflow: hidden;
+  gap: 10px 22px;
+  list-style: none;
 }
-.sl-hero__chip {
-  display: block;
-  padding: 11px 18px;
-  color: var(--sl-ink-soft);
-  white-space: nowrap;
-}
-.sl-hero__chip + .sl-hero__chip { border-left: 1px solid var(--sl-border); }
-.sl-hero__fine {
-  margin: 14px 0 0;
-  font-size: 13px;
-  color: var(--sl-ink-muted);
-}
-.sl-hero__media-wrap { position: relative; margin: 0; }
-.sl-hero__media {
+.sl-hero__proof li {
   position: relative;
-  z-index: 1;
-  border-radius: 16px;
+  padding-left: 16px;
+  color: rgba(245, 242, 233, 0.68);
+  font-family: var(--sl-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
-/* the movement's sacred mark: one faint quarter-sweep behind the media */
-.sl-hero__arc {
+.sl-hero__proof li::before {
+  content: "";
   position: absolute;
-  z-index: 0;
-  top: -9%;
-  left: -14%;
-  width: 78%;
-  aspect-ratio: 1;
-  border: 1.5px solid transparent;
-  border-top-color: rgba(20, 71, 44, 0.16);
+  top: 0.42em;
+  left: 0;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
-  transform: rotate(-16deg);
-  pointer-events: none;
+  background: #75d59b;
 }
-.sl-hero__media-note {
-  position: relative;
-  z-index: 1;
+.sl-hero__fine {
+  margin: 12px 0 0;
+  color: rgba(245, 242, 233, 0.48);
+  font-size: 12.5px;
+}
+.sl-hero__capture {
+  position: absolute;
+  z-index: 3;
+  top: 14%;
+  right: 8%;
+  width: min(34vw, 500px);
+  height: 58%;
+  pointer-events: none;
+  opacity: 0.5;
+}
+.sl-hero__capture span {
+  position: absolute;
+  width: 38px;
+  height: 38px;
+  border-color: rgba(245, 242, 233, 0.64);
+}
+.sl-hero__capture span:nth-child(1) { top: 0; left: 0; border-top: 1px solid; border-left: 1px solid; }
+.sl-hero__capture span:nth-child(2) { top: 0; right: 0; border-top: 1px solid; border-right: 1px solid; }
+.sl-hero__capture span:nth-child(3) { bottom: 0; left: 0; border-bottom: 1px solid; border-left: 1px solid; }
+.sl-hero__capture span:nth-child(4) { right: 0; bottom: 0; border-right: 1px solid; border-bottom: 1px solid; }
+.sl-hero__signal {
+  width: min(100%, 360px);
+  margin: 0 0 44px auto;
+  padding: 18px;
+  align-self: end;
+  border: 1px solid rgba(245, 242, 233, 0.2);
+  border-radius: 22px;
+  background: rgba(5, 16, 10, 0.68);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: 0 34px 80px -34px rgba(0, 0, 0, 0.9);
+}
+.sl-hero__signal-head {
   display: flex;
   align-items: center;
-  gap: 10px 12px;
-  flex-wrap: wrap;
-  margin-top: 12px;
-  font-size: 12.5px;
-  line-height: 1.5;
-  color: var(--sl-ink-muted);
+  justify-content: space-between;
+  gap: 12px;
+  color: rgba(245, 242, 233, 0.6);
+  font-family: var(--sl-font-mono);
+  font-size: 9.5px;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
 }
-.sl-hero__media-note .sl-chip { font-size: 10px; }
-
+.sl-hero__signal-live { display: inline-flex; align-items: center; gap: 7px; color: #8be4ad; }
+.sl-hero__signal-live i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 5px rgba(139, 228, 173, 0.12);
+}
+.sl-hero__trace {
+  position: relative;
+  height: 112px;
+  margin-top: 16px;
+  overflow: hidden;
+  border: 1px solid rgba(245, 242, 233, 0.1);
+  border-radius: 15px;
+  background:
+    linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
+    rgba(255, 255, 255, 0.025);
+  background-size: 28px 28px;
+}
+.sl-hero__trace-line {
+  position: absolute;
+  left: 17%;
+  top: 22%;
+  width: 70%;
+  height: 92%;
+  border-top: 2px solid #f28a32;
+  border-radius: 50%;
+  transform: rotate(-8deg);
+  filter: drop-shadow(0 0 8px rgba(242, 138, 50, 0.52));
+}
+.sl-hero__trace-dot {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #f5f2e9;
+  box-shadow: 0 0 0 4px rgba(245, 242, 233, 0.12);
+}
+.sl-hero__trace-dot--one { left: 22%; top: 57%; }
+.sl-hero__trace-dot--two { left: 52%; top: 30%; background: #f28a32; }
+.sl-hero__trace-dot--three { right: 14%; top: 50%; }
+.sl-hero__signal-grid {
+  margin: 16px 0 0;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.sl-hero__signal-grid > div { min-width: 0; padding: 0 10px; }
+.sl-hero__signal-grid > div:first-child { padding-left: 0; }
+.sl-hero__signal-grid > div:last-child { padding-right: 0; }
+.sl-hero__signal-grid > div + div { border-left: 1px solid rgba(245, 242, 233, 0.12); }
+.sl-hero__signal-grid dt {
+  color: rgba(245, 242, 233, 0.46);
+  font-family: var(--sl-font-mono);
+  font-size: 8.5px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.sl-hero__signal-grid dd {
+  margin: 6px 0 0;
+  color: #f5f2e9;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+.sl-hero__signal-note {
+  margin: 14px 0 0;
+  color: rgba(245, 242, 233, 0.42);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+.sl-hero__disclosure {
+  position: absolute;
+  z-index: 5;
+  bottom: 74px;
+  left: var(--sl-pad-x);
+  max-width: 46ch;
+  color: rgba(245, 242, 233, 0.54);
+  font-size: 10.5px;
+  line-height: 1.45;
+  text-align: left;
+}
+.sl-hero__disclosure span {
+  margin-right: 8px;
+  color: rgba(245, 242, 233, 0.74);
+  font-family: var(--sl-font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+@media (max-width: 980px) {
+  .sl-hero__inner { grid-template-columns: minmax(0, 1fr) minmax(250px, 0.48fr); }
+  .sl-hero__title { font-size: clamp(50px, 7.8vw, 74px); }
+  .sl-hero__capture { right: 4%; width: 40vw; }
+}
 @media (max-width: 749px) {
-  .sl-hero { grid-template-columns: 1fr; }
-  .sl-hero__arc { display: none; }
-  .sl-hero__chip { padding: 10px 14px; }
+  .sl-hero { min-height: 980px; }
+  .sl-hero::before {
+    background:
+      linear-gradient(180deg, rgba(4, 13, 9, 0.98) 0%, rgba(4, 13, 9, 0.9) 42%, rgba(4, 13, 9, 0.42) 69%, rgba(4, 13, 9, 0.78) 100%),
+      linear-gradient(90deg, rgba(4, 13, 9, 0.78), rgba(4, 13, 9, 0.12));
+  }
+  .sl-hero::after {
+    background-size: 48px 48px;
+    -webkit-mask-image: linear-gradient(180deg, #000, transparent 68%);
+    mask-image: linear-gradient(180deg, #000, transparent 68%);
+  }
+  .sl-hero__image { object-position: center; }
+  .sl-hero__inner {
+    min-height: 980px;
+    padding-top: 58px;
+    padding-bottom: 96px;
+    grid-template-columns: 1fr;
+    align-content: start;
+    gap: 30px;
+  }
+  .sl-hero__title {
+    max-width: 10ch;
+    font-size: clamp(46px, 14vw, 62px);
+    line-height: 0.94;
+  }
+  .sl-hero__body { margin-top: 22px; font-size: 17px; }
+  .sl-hero__actions { width: 100%; grid-template-columns: 1fr; margin-top: 28px; }
+  .sl-hero__primary,
+  .sl-hero__secondary { width: 100%; }
+  .sl-hero__proof { gap: 10px 16px; }
+  .sl-hero__capture {
+    top: 58%;
+    right: 8%;
+    width: 58%;
+    height: 30%;
+    opacity: 0.42;
+  }
+  .sl-hero__signal {
+    width: min(100%, 370px);
+    margin: 0;
+    align-self: start;
+  }
+  .sl-hero__disclosure {
+    right: 20px;
+    bottom: 54px;
+    left: 20px;
+    text-align: left;
+  }
+}
+@media (max-width: 390px) {
+  .sl-hero { min-height: 1020px; }
+  .sl-hero__inner { min-height: 1020px; padding-inline: 18px; }
+  .sl-hero__eyebrow { font-size: 10px; letter-spacing: 0.13em; }
+  .sl-hero__title { font-size: clamp(42px, 13.5vw, 52px); }
+  .sl-hero__signal-grid { grid-template-columns: 1fr; }
+  .sl-hero__signal-grid > div { padding: 10px 0; }
+  .sl-hero__signal-grid > div + div { border-top: 1px solid rgba(245, 242, 233, 0.12); border-left: 0; }
+  .sl-hero__trace { height: 92px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sl-hero__primary span { transition: none; }
 }
 {% endstylesheet %}
 
 {% schema %}
 {
-  "name": "Hero",
+  "name": "Premium hero",
   "settings": [
-    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "PERSONALIZED COACHING FROM ONE PHONE CLIP" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "One swing priority. One practice plan. Proof when you re-film." },
-    { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club, film face-on at hip height, and get one prioritized movement, a measured practice target, and the capture context saved for your next check." },
-    { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "See the real-engine sample" },
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "PHONE-VIDEO COACHING · NO SENSORS" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Practice the move that matters." },
+    { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club, film one repeatable view, and get one prioritized coaching plan with a pass mark for your next clip." },
+    { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Analyze a swing free" },
     { "type": "url", "id": "primary_url", "label": "Primary button link" },
-    { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Create a free account" },
+    { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Explore the sample report" },
     { "type": "url", "id": "secondary_url", "label": "Secondary button link" },
-    { "type": "text", "id": "chip1", "label": "Proof chip 1", "default": "ONE PRIORITY" },
-    { "type": "text", "id": "chip2", "label": "Proof chip 2", "default": "ONE PASS MARK" },
-    { "type": "text", "id": "chip3", "label": "Proof chip 3", "default": "MATCHED RE-FILM" },
-    { "type": "text", "id": "fine_print", "label": "Fine print", "default": "Try one full analysis each month free — no card required." },
-    { "type": "image_picker", "id": "image", "label": "Hero image", "info": "Leave blank to show the striped placeholder." }
+    { "type": "text", "id": "chip1", "label": "Proof point 1", "default": "1 FULL REPORT / MONTH" },
+    { "type": "text", "id": "chip2", "label": "Proof point 2", "default": "NO CREDIT CARD" },
+    { "type": "text", "id": "chip3", "label": "Proof point 3", "default": "CLUB CONTEXT SAVED" },
+    { "type": "text", "id": "fine_print", "label": "Fine print", "default": "Supported 2D movement and timing estimates from phone video." },
+    { "type": "image_picker", "id": "image", "label": "Desktop hero image", "info": "Use the approved wide premium range artwork." },
+    { "type": "image_picker", "id": "mobile_image", "label": "Mobile hero image", "info": "Use the approved portrait companion artwork." },
+    { "type": "text", "id": "signal_club", "label": "Sample club", "default": "Iron" },
+    { "type": "text", "id": "signal_priority", "label": "Sample priority", "default": "Lead-hip control" },
+    { "type": "text", "id": "signal_target", "label": "Sample target", "default": "One pass mark" }
   ],
-  "presets": [{ "name": "Hero" }]
+  "presets": [{ "name": "Premium hero" }]
 }
 {% endschema %}
