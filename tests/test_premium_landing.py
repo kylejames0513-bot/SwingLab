@@ -1,8 +1,10 @@
 """Premium logged-out journey and shared-shell compatibility contracts."""
 
+from io import BytesIO
 from pathlib import Path
 
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from swinglab.config import Config
 from swinglab.web.app import create_app
@@ -51,6 +53,58 @@ def test_landing_uses_real_sample_asset_with_clear_disclosure(tmp_path):
     sample = client.get("/sample-report/media/strip_s1.png")
     assert sample.status_code == 200
     assert sample.content[:4] == b"\x89PNG"
+
+
+def test_landing_discloses_atmosphere_after_real_product_proof(tmp_path):
+    _client, response = landing(tmp_path)
+    html = " ".join(response.text.split())
+
+    atmosphere = 'src="/static/homepage-range-atmosphere-v1.webp"'
+    assert atmosphere in html
+    assert (
+        'alt="AI-generated scene of an anonymous golfer filmed face-on by a '
+        'phone on a hip-height tripod at sunrise"'
+    ) in html
+    assert 'width="1600" height="900" loading="lazy" decoding="async"' in html
+    assert "AI-generated atmosphere" in html
+    assert (
+        "AI-generated range scene for atmosphere only — not a customer, "
+        "testimonial, or analyzed swing."
+    ) in html
+    assert "The product proof remains the real-engine sample report above." in html
+    assert "aspect-ratio: 16 / 9;" in response.text
+    assert ".atmosphere-media { aspect-ratio: 4 / 3; }" in response.text
+    assert html.index('src="/sample-report/media/strip_s1.png"') < html.index(
+        atmosphere
+    ) < html.index('id="journey-title"')
+    assert (
+        "Illustrated sample generated from synthetic measurements through "
+        "the same report engine. It is not a customer result or testimonial."
+    ) in html
+
+
+def test_atmosphere_asset_is_local_optimized_and_public(tmp_path):
+    client, _response = landing(tmp_path)
+    asset = client.get("/static/homepage-range-atmosphere-v1.webp")
+
+    assert asset.status_code == 200
+    assert asset.headers["content-type"] == "image/webp"
+    assert "set-cookie" not in asset.headers
+    cache_control = asset.headers.get("cache-control", "").lower()
+    assert "private" not in cache_control and "no-store" not in cache_control
+    assert asset.content[:4] == b"RIFF" and asset.content[8:12] == b"WEBP"
+    assert len(asset.content) <= 300_000
+    with Image.open(BytesIO(asset.content)) as image:
+        assert image.format == "WEBP"
+        assert image.size == (1600, 900)
+
+    assert asset.headers.get("etag")
+    assert asset.headers.get("last-modified")
+    unchanged = client.get(
+        "/static/homepage-range-atmosphere-v1.webp",
+        headers={"If-None-Match": asset.headers["etag"]},
+    )
+    assert unchanged.status_code == 304
 
 
 def test_landing_explains_the_full_loop_and_measurement_boundary(tmp_path):

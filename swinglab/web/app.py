@@ -389,9 +389,10 @@ def create_app(
     app.state.users = users
     app.state.cfg = cfg
     static_dir = Path(__file__).parent / "static"
-    # Static assets contain only the install shell (icon + service worker),
-    # never a report, user data, or video.  The worker itself caches public
-    # help/offline pages only; completed reports remain network-only.
+    # Static assets contain only versioned public brand imagery and the
+    # install shell (icon + service worker), never a report, user data, or
+    # video.  The worker itself caches public help/offline pages only;
+    # completed reports remain network-only.
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # Customer Account sign-in is a separate, explicitly enabled migration
