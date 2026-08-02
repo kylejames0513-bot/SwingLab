@@ -10,9 +10,9 @@
         "primary_url": "https://app.caddieinsight.com/signup",
         "secondary_label": "Explore the sample report",
         "secondary_url": "https://app.caddieinsight.com/sample-report/",
-        "chip1": "1 FULL REPORT / MONTH",
-        "chip2": "NO CREDIT CARD",
-        "chip3": "CLUB CONTEXT SAVED",
+        "chip1": "1 REPORT / MONTH",
+        "chip2": "NO CARD",
+        "chip3": "CLUB SAVED",
         "fine_print": "Supported 2D movement and timing estimates from phone video.",
         "image": "shopify://shop_images/caddieinsight-premium-range-hero-0852e38d.png",
         "mobile_image": "shopify://shop_images/caddieinsight-premium-range-hero-mobile-2e4ee946.png",
@@ -154,8 +154,8 @@
       "settings": {
         "anchor": "report",
         "heading": "See what your next range session is really for.",
-        "body": "Open a real-engine sample built from synthetic measurements. See how CaddieInsight ranks supported phone-video evidence, brings one movement forward, and attaches a measurable plan to the next clip.",
-        "caption": "ILLUSTRATED PREVIEW · LINKED REAL-ENGINE SAMPLE · SYNTHETIC INPUTS",
+        "body": "Open a demonstration report built through the same report engine. See how CaddieInsight ranks supported phone-video evidence, brings one movement forward, and attaches a measurable plan to the next clip.",
+        "caption": "ILLUSTRATED PREVIEW · COMPLETE SAMPLE REPORT · DEMONSTRATION DATA",
         "cta_label": "Open the full sample report",
         "sample_url": "https://app.caddieinsight.com/sample-report/"
       }

@@ -1,6 +1,6 @@
 <section class="sl-stats" aria-label="{{ section.settings.aria_label | default: 'The CaddieInsight practice loop' }}">
   <div class="sl-wrap">
-    <ul class="sl-stats__grid sl-reveal">
+    <ul class="sl-stats__grid sl-reveal" tabindex="0">
       {%- for block in section.blocks -%}
         <li class="sl-stats__cell"{{ block.shopify_attributes }}>
           <span class="sl-stats__value">{{ block.settings.value }}</span>
@@ -70,11 +70,35 @@
   .sl-stats__cell:nth-child(n+3) { border-top: 1px solid rgba(245, 242, 233, 0.12); }
 }
 @media (max-width: 749px) {
-  .sl-stats { margin-top: -34px; padding-bottom: 48px; }
-  .sl-stats__grid { border-radius: 18px; }
-  .sl-stats__cell { padding: 22px 16px; }
-  .sl-stats__value { font-size: 19px; }
-  .sl-stats__label { font-size: 9.5px; letter-spacing: 0.12em; }
+  .sl-stats { margin-top: -28px; padding-bottom: 34px; }
+  .sl-stats__grid {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(164px, 62vw);
+    gap: 10px;
+    padding: 0 0 8px;
+    overflow-x: auto;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+  }
+  .sl-stats__grid::-webkit-scrollbar { display: none; }
+  .sl-stats__cell:nth-child(n) {
+    min-height: 116px;
+    padding: 16px 15px;
+    border: 1px solid rgba(245, 242, 233, 0.14);
+    border-radius: 16px;
+    background: rgba(16, 40, 27, 0.94);
+    scroll-snap-align: start;
+  }
+  .sl-stats__cell::before { width: 18px; margin-bottom: 3px; }
+  .sl-stats__value { font-size: 18px; }
+  .sl-stats__label { font-size: 8.5px; letter-spacing: 0.1em; line-height: 1.4; }
 }
 {% endstylesheet %}
 

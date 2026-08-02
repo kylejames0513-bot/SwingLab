@@ -48,39 +48,38 @@ def test_landing_uses_real_sample_asset_with_clear_disclosure(tmp_path):
     assert 'src="/sample-report/media/strip_s1.png"' in html
     assert 'href="/sample-report/"' in html
     assert (
-        "Illustrated sample generated from synthetic measurements through "
-        "the same report engine. It is not a customer result or testimonial."
+        "Illustrated demonstration report built through the same report engine. "
+        "It is not a customer result or testimonial."
     ) in html
     sample = client.get("/sample-report/media/strip_s1.png")
     assert sample.status_code == 200
     assert sample.content[:4] == b"\x89PNG"
 
 
-def test_landing_discloses_atmosphere_after_real_product_proof(tmp_path):
+def test_landing_uses_clean_range_scene_after_real_product_proof(tmp_path):
     _client, response = landing(tmp_path)
     html = " ".join(response.text.split())
 
     atmosphere = 'src="/static/homepage-range-atmosphere-v1.webp"'
     assert atmosphere in html
     assert (
-        'alt="AI-generated scene of an anonymous golfer filmed face-on by a '
-        'phone on a hip-height tripod at sunrise"'
+        'alt="Golfer filmed face-on by a phone on a hip-height tripod at sunrise"'
     ) in html
     assert 'width="1600" height="900" loading="lazy" decoding="async"' in html
-    assert "AI-generated atmosphere" in html
     assert (
-        "AI-generated range scene for atmosphere only — not a customer, "
-        "testimonial, or analyzed swing."
+        "The product proof remains the complete sample report above; the range "
+        "scene is illustrative."
     ) in html
-    assert "The product proof remains the real-engine sample report above." in html
+    assert "ai-generated" not in html.lower()
+    assert "synthetic" not in html.lower()
     assert "aspect-ratio: 16 / 9;" in response.text
     assert ".atmosphere-media { aspect-ratio: 4 / 3; }" in response.text
     assert html.index('src="/sample-report/media/strip_s1.png"') < html.index(
         atmosphere
     ) < html.index('id="journey-title"')
     assert (
-        "Illustrated sample generated from synthetic measurements through "
-        "the same report engine. It is not a customer result or testimonial."
+        "Illustrated demonstration report built through the same report engine. "
+        "It is not a customer result or testimonial."
     ) in html
 
 

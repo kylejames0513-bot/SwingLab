@@ -5,6 +5,12 @@
   elsif request.page_type == 'product' and product.handle == 'swinglab-pro'
     assign premium_chrome = true
   endif
+  assign resolved_page_title = page_title
+  assign resolved_page_description = page_description
+  if request.page_type == 'index'
+    assign resolved_page_title = 'seo.homepage_title' | t
+    assign resolved_page_description = 'seo.homepage_description' | t
+  endif
 -%}
 <!doctype html>
 <html lang="{{ request.locale.iso_code }}">
@@ -15,18 +21,18 @@
   <link rel="canonical" href="{{ canonical_url }}">
 
   <title>
-    {{ page_title }}{% if current_tags %} &ndash; tagged "{{ current_tags | join: ', ' }}"{% endif %}
+    {{ resolved_page_title }}{% if current_tags %} &ndash; tagged "{{ current_tags | join: ', ' }}"{% endif %}
     {% if current_page != 1 %} &ndash; Page {{ current_page }}{% endif %}
-    {% unless page_title contains shop.name %} &ndash; {{ shop.name }}{% endunless %}
+    {% unless resolved_page_title contains shop.name %} &ndash; {{ shop.name }}{% endunless %}
   </title>
 
-  {% if page_description %}<meta name="description" content="{{ page_description | escape }}">{% endif %}
+  {% if resolved_page_description %}<meta name="description" content="{{ resolved_page_description | escape }}">{% endif %}
 
   <meta property="og:site_name" content="{{ shop.name }}">
   <meta property="og:type" content="{% if request.page_type == 'product' %}product{% else %}website{% endif %}">
-  <meta property="og:title" content="{{ page_title | default: shop.name | escape }}">
+  <meta property="og:title" content="{{ resolved_page_title | default: shop.name | escape }}">
   <meta property="og:url" content="{{ canonical_url }}">
-  {% if page_description %}<meta property="og:description" content="{{ page_description | escape }}">{% endif %}
+  {% if resolved_page_description %}<meta property="og:description" content="{{ resolved_page_description | escape }}">{% endif %}
   {%- assign og_image = page_image | default: images['og-swinglab.png'] -%}
   {%- if og_image -%}
     <meta property="og:image" content="https:{{ og_image | image_url: width: 1200 }}">
