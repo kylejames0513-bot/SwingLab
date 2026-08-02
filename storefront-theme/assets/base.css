@@ -38,8 +38,8 @@
   --sl-footer: #0f1712;      /* near-black footer */
   --sl-footer-ink: #9fb0a4;
 
-  --sl-font-sans: "Archivo", Helvetica, Arial, sans-serif;
-  --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, monospace;
+  --sl-font-sans: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   --sl-maxw: 1280px;
   --sl-pad-x: clamp(20px, 5vw, 56px);

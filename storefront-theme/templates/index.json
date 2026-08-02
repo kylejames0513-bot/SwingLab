@@ -3,17 +3,17 @@
     "hero": {
       "type": "hero",
       "settings": {
-        "eyebrow": "SWING ANALYSIS FROM ONE PHONE VIDEO",
-        "heading": "Know your swing in minutes.",
-        "body": "Film a few swings at the range, upload the clip, and get tempo, sway and slide numbers, key-position frames, quarter-speed slow motion, and plain-English coaching notes.",
-        "primary_label": "Analyze a swing free",
-        "primary_url": "https://app.caddieinsight.com",
-        "secondary_label": "Get Pro",
-        "secondary_url": "shopify://products/swinglab-pro",
-        "chip1": "TEMPO 3.0:1",
-        "chip2": "SWAY +0.4 SW",
-        "chip3": "4 KEY FRAMES",
-        "fine_print": "Free plan includes 1 full analysis a month, forever — no card required.",
+        "eyebrow": "PERSONALIZED COACHING FROM ONE PHONE CLIP",
+        "heading": "One swing priority. One practice plan. Proof when you re-film.",
+        "body": "Choose the club, film face-on at hip height, and get one prioritized movement, a measured practice target, and the capture context saved for your next check.",
+        "primary_label": "See the real-engine sample",
+        "primary_url": "https://app.caddieinsight.com/sample-report/",
+        "secondary_label": "Create a free account",
+        "secondary_url": "https://app.caddieinsight.com/signup",
+        "chip1": "ONE PRIORITY",
+        "chip2": "ONE PASS MARK",
+        "chip3": "MATCHED RE-FILM",
+        "fine_print": "Try one full analysis each month free — no card required.",
         "image": "shopify://shop_images/swinglab-hero.png"
       }
     },
@@ -23,29 +23,29 @@
         "stat_tempo": {
           "type": "stat",
           "settings": {
-            "value": "3.0:1",
-            "label": "benchmark tempo ratio"
+            "value": "1 priority",
+            "label": "ranked for the club you filmed"
           }
         },
         "stat_positions": {
           "type": "stat",
           "settings": {
-            "value": "4",
-            "label": "key positions per swing"
+            "value": "1 pass mark",
+            "label": "attached to the practice plan"
           }
         },
         "stat_slowmo": {
           "type": "stat",
           "settings": {
-            "value": "1/4x",
-            "label": "motion-interpolated slow-mo"
+            "value": "Same club",
+            "label": "required for the next comparison"
           }
         },
         "stat_drift": {
           "type": "stat",
           "settings": {
-            "value": "2",
-            "label": "body-drift metrics per swing"
+            "value": "Same selected view",
+            "label": "saved before the next comparison"
           }
         }
       },
@@ -56,7 +56,7 @@
         "stat_drift"
       ],
       "settings": {
-        "aria_label": "CaddieInsight in numbers"
+        "aria_label": "The CaddieInsight practice loop"
       }
     },
     "how_it_works": {
@@ -66,41 +66,51 @@
           "type": "step",
           "settings": {
             "number": "01",
-            "title": "Film a few swings",
-            "body": "Phone at hip height, face-on, ball on a tee. That's it. (Down-the-line clips get tempo & rhythm only for now.)",
-            "caption": "HIP HEIGHT · FACE-ON FOR THE FULL REPORT"
+            "title": "Choose the club",
+            "body": "Select the iron, wedge, hybrid, fairway wood, or driver you are filming. The club stays with the report. Wedge coaching remains neutral until shot intent and lie are captured, but the club is still saved for a matched comparison.",
+            "caption": "CLUB CONTEXT IS REQUIRED"
           }
         },
         "s2": {
           "type": "step",
           "settings": {
             "number": "02",
-            "title": "Upload the clip",
-            "body": "Straight from your camera roll — no trimming or editing. Every swing in the clip is found automatically.",
-            "caption": "STRIKES FOUND BY AUDIO"
+            "title": "Film a repeatable view",
+            "body": "Set the phone at hip height with your full body in frame. Face-on supports movement coaching; down-the-line currently supports timing only.",
+            "caption": "MATCH THE VIEW NEXT TIME"
           }
         },
         "s3": {
           "type": "step",
           "settings": {
             "number": "03",
-            "title": "Read your report",
-            "body": "Tempo, head sway and hip slide per swing, key-position frames, quarter-speed slow motion, and coaching notes in plain English.",
-            "caption": "TEMPO · SWAY · SLIDE"
+            "title": "Work one plan",
+            "body": "The report ranks supported findings, brings one priority forward, and gives that practice plan a measured pass mark.",
+            "caption": "ONE PRIORITY · ONE PASS MARK"
+          }
+        },
+        "s4": {
+          "type": "step",
+          "settings": {
+            "number": "04",
+            "title": "Re-film to prove it",
+            "body": "Use the same club and selected view, then repeat your hip-height, full-body framing. CaddieInsight verifies the saved club, handedness, and selected camera angle; physical height, distance, and framing remain part of your setup.",
+            "caption": "REPEAT THE CAPTURE SETUP"
           }
         }
       },
       "block_order": [
         "s1",
         "s2",
-        "s3"
+        "s3",
+        "s4"
       ],
       "settings": {
         "anchor": "how",
-        "heading": "Film. Upload. Improve.",
-        "footer_note": "Average time from upload to report: a few minutes.",
-        "cta_label": "Try it on a clip",
-        "cta_url": "https://app.caddieinsight.com"
+        "heading": "A practice loop you can repeat.",
+        "footer_note": "CaddieInsight measures supported 2D phone-video movement and timing. It does not infer club path, face angle, launch, spin, carry, strike, or ball flight.",
+        "cta_label": "Create a free account",
+        "cta_url": "https://app.caddieinsight.com/signup"
       }
     },
     "report": {
@@ -109,25 +119,25 @@
         "p1": {
           "type": "point",
           "settings": {
-            "text": "Labeled key-position strip: address, top, impact, finish"
+            "text": "The linked full report uses the same engine as customer sessions"
           }
         },
         "p2": {
           "type": "point",
           "settings": {
-            "text": "Centerline overlay: your captured body in orange against the corrected line in green"
+            "text": "The selected club and capture context stay with the report"
           }
         },
         "p3": {
           "type": "point",
           "settings": {
-            "text": "Smooth quarter-speed slow motion of every swing"
+            "text": "One prioritized coaching card instead of a wall of observations"
           }
         },
         "p4": {
           "type": "point",
           "settings": {
-            "text": "Coaching notes and a practice plan built from what the session flagged"
+            "text": "One measured practice plan with a pass mark for the next clip"
           }
         }
       },
@@ -138,17 +148,19 @@
         "p4"
       ],
       "settings": {
-        "heading": "Numbers you can act on",
-        "body": "Every report benchmarks your tempo against the tour-average 3.0 ratio and measures head sway and hip slide in shoulder widths — comparable across sessions, no matter where you set the camera.",
-        "caption": "FIG. 01 — EXAMPLE REPORT · KEY-POSITION STRIP + SESSION METRICS"
+        "heading": "See the product before you sign up",
+        "body": "Open a real-engine sample built from synthetic measurements. It shows how CaddieInsight turns supported phone-video evidence into one priority, one practice target, and a clearer next check.",
+        "caption": "ILLUSTRATED PREVIEW · LINKED REAL-ENGINE SAMPLE · SYNTHETIC INPUTS",
+        "cta_label": "Open the full sample report",
+        "sample_url": "https://app.caddieinsight.com/sample-report/"
       }
     },
     "gear": {
       "type": "gear-showcase",
       "settings": {
         "anchor": "gear",
-        "heading": "Train what the report flagged",
-        "sub": "Every flag in your report maps to a drill — and a tool. Tag-matched gear shows up on your results page automatically.",
+        "heading": "Train the priority your report surfaces",
+        "sub": "The app maps supported coaching flags to a drill first. When a relevant training aid exists, the recommendation stays tied to that practice job.",
         "collection": "swinglab-gear",
         "max_products": 6,
         "link_label": "Shop all gear"
@@ -220,7 +232,7 @@
         "r_notes": {
           "type": "row",
           "settings": {
-            "feature": "Coaching notes + practice plan",
+            "feature": "Club-aware priority + measured practice plan",
             "free_value": "Included",
             "pro_value": "Included"
           }
@@ -228,7 +240,7 @@
         "r_history": {
           "type": "row",
           "settings": {
-            "feature": "Private, per-account session history",
+            "feature": "Private history with delete-and-restart controls",
             "free_value": "Included",
             "pro_value": "Included"
           }
@@ -278,8 +290,8 @@
       ],
       "settings": {
         "anchor": "compare",
-        "heading": "Free gets you started. Pro keeps score.",
-        "sub": "Both plans run the same analysis engine. Free is one full report a month; Pro is unlimited filming plus the annotated coach replay and the progress dashboard.",
+        "heading": "Free proves the loop. Pro keeps it moving.",
+        "sub": "Both plans run the same coaching engine. Free includes one full report each month; Pro adds unlimited sessions, annotated coach replay, and the progress dashboard.",
         "free_label": "Free",
         "pro_label": "Pro",
         "primary_label": "Get Pro",
@@ -295,22 +307,22 @@
         "n_tempo": {
           "type": "note",
           "settings": {
-            "label": "TEMPO 2.2:1",
-            "quote": "Tempo ratio 2.2:1 is quicker than the 2.4 threshold (tour average is about 3.0:1 with a downswing near 0.25 s). Let the backswing finish before starting down."
+            "label": "CLUB CONTEXT",
+            "quote": "An iron and a driver ask different questions. Club selection is required before upload and stays attached to the report."
           }
         },
         "n_sway": {
           "type": "note",
           "settings": {
-            "label": "SWAY 0.42 SW",
-            "quote": "Head sways 0.42 shoulder widths away from the target going back (flagged beyond 0.35). Feel like the head stays inside the trail foot at the top."
+            "label": "ONE PRIORITY",
+            "quote": "Supported findings are ranked, then one movement is brought to the top so the range session has a clear job."
           }
         },
         "n_consistency": {
           "type": "note",
           "settings": {
-            "label": "TEMPO SD 0.12",
-            "quote": "Tempo is impressively consistent across swings (std dev 0.12). Consistency like this is a real asset — low variance is itself a finding worth keeping."
+            "label": "MATCHED RE-FILM",
+            "quote": "Use the same club and selected view, then repeat the hip-height, full-body setup so the next clip is a fairer check of whether the practiced movement held."
           }
         }
       },
@@ -320,9 +332,9 @@
         "n_consistency"
       ],
       "settings": {
-        "heading": "Straight from the reports",
-        "sub": "CaddieInsight writes its coaching notes from your measured numbers, thresholds and all. These are the kinds of lines the engine produces.",
-        "footnote": "GENERATED BY THE ANALYSIS ENGINE — NOT WRITTEN FOR THIS PAGE"
+        "heading": "A coach that shows its work",
+        "sub": "The report keeps the decision legible: which club you filmed, which supported movement comes first, what to practice, and what must match on the next clip.",
+        "footnote": "PRODUCT BEHAVIOR — NOT A CUSTOMER TESTIMONIAL"
       }
     },
     "faq": {
@@ -339,7 +351,21 @@
           "type": "qa",
           "settings": {
             "question": "Do I need to trim the clip first?",
-            "answer": "No. Upload the whole clip — CaddieInsight finds every swing automatically from the sound of the strike and analyzes each one."
+            "answer": "No. Upload the whole clip — CaddieInsight listens for audible strikes and separates detected swings automatically. If a strike is not audible or detection misses it, you can supply a manual strike time."
+          }
+        },
+        "q_club": {
+          "type": "qa",
+          "settings": {
+            "question": "Why do I have to choose a club?",
+            "answer": "For irons, hybrids, fairway woods, and drivers, supported club context helps rank responsible coaching. CaddieInsight requires the club before upload and keeps it with the report. A wedge is stored and used for matched comparisons, but its coaching remains neutral until shot intent and lie are captured."
+          }
+        },
+        "q_history": {
+          "type": "qa",
+          "settings": {
+            "question": "Can I delete my swing history and start over?",
+            "answer": "Yes. Your account includes a deliberate delete-history flow so you can remove prior sessions and restart your practice record."
           }
         },
         "q_free": {
@@ -388,6 +414,8 @@
       "block_order": [
         "q_filming",
         "q_trim",
+        "q_club",
+        "q_history",
         "q_free",
         "q_pro_unlock",
         "q_lefty",
@@ -413,10 +441,10 @@
     "cta": {
       "type": "cta-banner",
       "settings": {
-        "heading": "Your next range session should count.",
-        "sub": "Film one clip. Get your numbers. Fix one thing at a time.",
-        "primary_label": "Analyze a swing free",
-        "primary_url": "https://app.caddieinsight.com",
+        "heading": "Your next range session should answer one question.",
+        "sub": "Choose the club. Film the view. Work one measured plan. Re-film by repeating the setup.",
+        "primary_label": "Create a free account",
+        "primary_url": "https://app.caddieinsight.com/signup",
         "secondary_label": "Get Pro",
         "secondary_url": "shopify://products/swinglab-pro"
       }
@@ -427,9 +455,9 @@
     "stats",
     "how_it_works",
     "report",
-    "gear",
     "plans",
     "comparison",
+    "gear",
     "coach_notes",
     "faq",
     "email",

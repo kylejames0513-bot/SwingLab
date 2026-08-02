@@ -1,6 +1,6 @@
 <section id="{{ section.settings.anchor | default: 'how' }}" class="sl-how">
   <div class="sl-wrap sl-reveal">
-    <h2 class="sl-how__title">{{ section.settings.heading | default: 'Film. Upload. Improve.' }}</h2>
+    <h2 class="sl-how__title">{{ section.settings.heading | default: 'A practice loop you can repeat.' }}</h2>
     <div class="sl-how__grid">
       {%- for block in section.blocks -%}
         <div class="sl-step"{{ block.shopify_attributes }}>
@@ -19,8 +19,8 @@
         {%- if section.settings.footer_note != blank -%}
           <p class="sl-how__foot-note">{{ section.settings.footer_note }}</p>
         {%- endif -%}
-        {%- if section.settings.cta_label != blank -%}
-          <a href="{{ section.settings.cta_url | default: '#' }}" class="sl-btn sl-how__btn">{{ section.settings.cta_label }}</a>
+        {%- if section.settings.cta_label != blank and section.settings.cta_url != blank -%}
+          <a href="{{ section.settings.cta_url }}" class="sl-btn sl-how__btn">{{ section.settings.cta_label }}</a>
         {%- endif -%}
       </div>
     {%- endif -%}
@@ -117,9 +117,9 @@
   "name": "How it works",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "how" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Film. Upload. Improve." },
-    { "type": "text", "id": "footer_note", "label": "Footer note", "default": "Average time from upload to report: a few minutes." },
-    { "type": "text", "id": "cta_label", "label": "Footer button label", "default": "Try it on a clip" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "A practice loop you can repeat." },
+    { "type": "text", "id": "footer_note", "label": "Footer note", "default": "Face-on supports movement coaching; down-the-line currently supports timing only." },
+    { "type": "text", "id": "cta_label", "label": "Footer button label", "default": "Create a free account" },
     { "type": "url", "id": "cta_url", "label": "Footer button link" }
   ],
   "blocks": [
@@ -128,8 +128,8 @@
       "name": "Step",
       "settings": [
         { "type": "text", "id": "number", "label": "Step number", "default": "01" },
-        { "type": "text", "id": "title", "label": "Title", "default": "Film a few swings" },
-        { "type": "textarea", "id": "body", "label": "Body", "default": "Phone at hip height, face-on, ball on a tee. That's it. (Down-the-line clips get tempo & rhythm only for now.)" },
+        { "type": "text", "id": "title", "label": "Title", "default": "Choose the club" },
+        { "type": "textarea", "id": "body", "label": "Body", "default": "Select the club you are filming. It stays attached to the report; wedge coaching remains neutral until shot intent and lie are captured." },
         { "type": "text", "id": "caption", "label": "Caption (small mono line)", "info": "Optional specimen-style label under the body." }
       ]
     }
@@ -143,27 +143,36 @@
           "type": "step",
           "settings": {
             "number": "01",
-            "title": "Film a few swings",
-            "body": "Phone at hip height, face-on, ball on a tee. That's it. (Down-the-line clips get tempo & rhythm only for now.)",
-            "caption": "HIP HEIGHT · FACE-ON FOR THE FULL REPORT"
+            "title": "Choose the club",
+            "body": "Select the club you are filming. It stays attached to the report; wedge coaching remains neutral until shot intent and lie are captured.",
+            "caption": "CLUB CONTEXT IS REQUIRED"
           }
         },
         {
           "type": "step",
           "settings": {
             "number": "02",
-            "title": "Upload the clip",
-            "body": "Straight from your camera roll — no trimming or editing. Every swing in the clip is found automatically.",
-            "caption": "STRIKES FOUND BY AUDIO"
+            "title": "Film a repeatable view",
+            "body": "Set the phone at hip height with your full body in frame. Face-on supports movement coaching; down-the-line currently supports timing only.",
+            "caption": "MATCH THE VIEW NEXT TIME"
           }
         },
         {
           "type": "step",
           "settings": {
             "number": "03",
-            "title": "Read your report",
-            "body": "Tempo, head sway and hip slide per swing, key-position frames, quarter-speed slow motion, and coaching notes in plain English.",
-            "caption": "TEMPO · SWAY · SLIDE"
+            "title": "Work one plan",
+            "body": "The report ranks supported findings, brings one priority forward, and gives that practice plan a measured pass mark.",
+            "caption": "ONE PRIORITY · ONE PASS MARK"
+          }
+        },
+        {
+          "type": "step",
+          "settings": {
+            "number": "04",
+            "title": "Re-film to prove it",
+            "body": "Use the same club and selected view, then repeat your hip-height, full-body framing. CaddieInsight verifies the saved club, handedness, and selected camera angle; physical height, distance, and framing remain part of your setup.",
+            "caption": "REPEAT THE CAPTURE SETUP"
           }
         }
       ]

@@ -32,18 +32,31 @@
     <link rel="apple-touch-icon" href="{{ favicon | image_url: width: 180 }}">
   {%- endif -%}
 
-  {%- comment -%} Archivo carries the voice; DM Mono sets specimen labels and values {%- endcomment -%}
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
-
   {{ 'base.css' | asset_url | stylesheet_tag }}
+  {%- liquid
+    assign body_font_medium = settings.type_body_font | font_modify: 'weight', '500'
+    assign body_font_semibold = settings.type_body_font | font_modify: 'weight', '600'
+    assign body_font_bold = settings.type_body_font | font_modify: 'weight', '700'
+    assign body_font_extra_bold = settings.type_body_font | font_modify: 'weight', '800'
+    assign body_font_black = settings.type_body_font | font_modify: 'weight', '900'
+  -%}
+  {% style %}
+    {{ settings.type_body_font | font_face: font_display: 'swap' }}
+    {%- if body_font_medium -%}{{ body_font_medium | font_face: font_display: 'swap' }}{%- endif -%}
+    {%- if body_font_semibold -%}{{ body_font_semibold | font_face: font_display: 'swap' }}{%- endif -%}
+    {%- if body_font_bold -%}{{ body_font_bold | font_face: font_display: 'swap' }}{%- endif -%}
+    {%- if body_font_extra_bold -%}{{ body_font_extra_bold | font_face: font_display: 'swap' }}{%- endif -%}
+    {%- if body_font_black -%}{{ body_font_black | font_face: font_display: 'swap' }}{%- endif -%}
+    :root {
+      --sl-font-sans: {{ settings.type_body_font.family }}, {{ settings.type_body_font.fallback_families }};
+    }
+  {% endstyle %}
   <noscript><style>.sl-reveal { opacity: 1; transform: none; }</style></noscript>
 
   {{ content_for_header }}
 </head>
 <body class="template-{{ request.page_type | handle }}">
-  <a class="sl-skip" href="#MainContent">Skip to content</a>
+  <a class="sl-skip" href="#MainContent">{{ 'general.accessibility.skip_to_content' | t }}</a>
 
   {% sections 'header-group' %}
 
