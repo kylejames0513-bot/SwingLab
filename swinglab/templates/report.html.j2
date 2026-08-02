@@ -15,7 +15,7 @@
 {% macro issue_card(c, extra_class="") -%}
   <div class="card sev-{{ c.severity }}{% if extra_class %} {{ extra_class }}{% endif %}" role="article">
     <div class="card-head"><h3>{{ c.display_name }}</h3>
-      <span class="sev">{{ c.severity }}</span></div>
+      <span class="sev">{{ "Main priority" if c.severity == "major" else "Watch" }}</span></div>
     <p class="card-val">{{ c.session_label }}:
       <strong>{{ c.session_text }}</strong>
       <span class="bench">({{ c.benchmark_text }})</span></p>
@@ -409,6 +409,8 @@
     text-transform: uppercase;
   }
   .brief-value { margin-top: 7px; color: var(--ink); font-size: 1.2rem; }
+  .brief-steps { margin: 10px 0 12px; padding-left: 22px; color: var(--ink-soft); }
+  .brief-steps li { margin: 5px 0; }
   .flag,
   .card.sev-major .sev { color: var(--accent-ink); }
   .card .sev,
@@ -433,6 +435,82 @@
     letter-spacing: .09em;
     text-transform: uppercase;
   }
+  .swing-breakdown {
+    margin: 30px 0 26px;
+  }
+  .breakdown-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .breakdown-card {
+    display: flex;
+    min-height: 100%;
+    flex-direction: column;
+    padding: 19px;
+    border: 1px solid var(--line);
+    border-top: 4px solid var(--primary);
+    border-radius: 14px;
+    background: var(--paper);
+    box-shadow: 0 16px 38px -34px rgba(15, 42, 27, .65);
+  }
+  .breakdown-card--warning { border-top-color: var(--accent); }
+  .breakdown-card--context { border-top-color: #537463; }
+  .breakdown-card--unavailable { border-top-color: #929b94; background: #f8f7f3; }
+  .breakdown-card__head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .breakdown-card__evidence {
+    margin: 0 0 5px;
+    color: var(--ink-muted);
+    font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+    font-size: .62rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .breakdown-card h3 { margin: 0; color: var(--ink); font-size: 1.12rem; }
+  .breakdown-card__status {
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: var(--green-wash);
+    color: var(--primary);
+    font-size: .7rem;
+    font-weight: 800;
+  }
+  .breakdown-card--warning .breakdown-card__status {
+    background: var(--warm-wash);
+    color: var(--accent-ink);
+  }
+  .breakdown-card--context .breakdown-card__status,
+  .breakdown-card--unavailable .breakdown-card__status {
+    background: #ecefea;
+    color: #465249;
+  }
+  .breakdown-card__summary { margin: 0 0 13px; color: var(--ink); line-height: 1.55; }
+  .breakdown-card__why { margin: auto 0 0; color: var(--ink-soft); font-size: .9rem; }
+  .breakdown-card__limit {
+    margin: 12px 0 0;
+    padding-top: 11px;
+    border-top: 1px solid var(--line);
+    color: var(--ink-muted);
+    font-size: .82rem;
+  }
+  .measurement-guide {
+    margin: 0 20px 18px;
+    padding: 14px 16px;
+    border: 1px solid #d8ddd8;
+    border-radius: 10px;
+    background: #f7f8f5;
+    color: var(--ink-soft);
+    font-size: .88rem;
+  }
+  .measurement-guide p { margin: 5px 0; }
   details.measurements {
     overflow: hidden;
     margin: 22px 0 28px;
@@ -465,6 +543,7 @@
   table.meta { border: 0; }
   table.meta th { width: 145px; color: var(--ink-muted); font-weight: 700; }
   tr.mean-row td { background: var(--green-wash); }
+  tr.spread-row td { background: #f6f4ee; color: var(--ink-soft); }
   tr.bench-row td { background: #faf8f3; }
   .visually-hidden {
     position: absolute;
@@ -577,6 +656,9 @@
     .report-intro h1 { font-size: 2.45rem; }
     .brief-grid { grid-template-columns: 1fr; }
     .brief-block.focus { grid-column: auto; }
+    .breakdown-grid { grid-template-columns: 1fr; }
+    .breakdown-card { padding: 17px; }
+    .measurement-guide { margin-inline: 14px; }
     details.measurements > h2,
     details.measurements > h3,
     details.measurements > p,
@@ -632,6 +714,7 @@
     .report-context dd { color: #17201a; }
     .report-intro::after { display: none; }
     .brief,
+    .breakdown-card,
     .swing,
     .card,
     .plan { box-shadow: none; }
@@ -646,7 +729,7 @@
     details.measurements > ul,
     details.measurements > .table-scroll,
     details.measurements > table { margin-inline: 0; width: 100%; }
-    tr, img, .brief-block, .drill { break-inside: avoid; page-break-inside: avoid; }
+    tr, img, .brief-block, .breakdown-card, .drill { break-inside: avoid; page-break-inside: avoid; }
     .section-heading,
     .target-label { break-after: avoid; page-break-after: avoid; }
   }
@@ -694,8 +777,8 @@
     re-film instruction together.</p>
   {% else %}
   <p class="report-intro__lede">This report organizes phone-video timing and
-    supported 2D movement into one coaching priority, a practice prescription,
-    and a comparable re-film target.</p>
+    supported 2D movement into a plain-English swing breakdown, one coaching
+    priority, a practice prescription, and a comparable re-film target.</p>
   {% endif %}
   <dl class="report-context" aria-label="Swing context">
     {% if club_label %}<div><dt>Club</dt><dd>{{ club_label }}</dd></div>{% endif %}
@@ -720,8 +803,8 @@
   {% endif %}
   Supported measurements are phone-video timing and, from supported face-on
   clips, 2D body movement in the camera view. {{ brand.name }} does not measure
-  club path, face angle, attack angle, dynamic loft, launch, spin, carry,
-  strike location, or ball flight.
+  clubhead speed, ball speed, club path, face angle, attack angle, dynamic
+  loft, launch, spin, carry, strike location, or ball flight.
 </p>
 {% endif %}
 
@@ -773,6 +856,9 @@
       <p><strong><a href="#drill-{{ caddie_brief.drill.id }}">{{
         caddie_brief.drill.name }}</a></strong> —
         {{ caddie_brief.drill.aim }}</p>
+      <ol class="brief-steps" aria-label="Practice steps">
+        {% for step in caddie_brief.drill.protocol %}<li>{{ step }}</li>{% endfor %}
+      </ol>
       <p><strong>Dosage:</strong> {{ caddie_brief.drill.dosage }}</p>
       <p class="brief-refilm"><span class="target-label">Matched re-film target</span>
         <strong>Pass mark:</strong> {{ caddie_brief.drill.success_metric }}</p>
@@ -789,6 +875,37 @@
 {% endif %}
 
 {% set refilm_required = caddie_brief and caddie_brief.refilm_required %}
+{% if swing_breakdown and not refilm_required %}
+<section class="swing-breakdown" aria-labelledby="swing-breakdown-heading">
+  <header class="section-heading">
+    <p class="section-kicker">Plain-English swing breakdown</p>
+    <h2 id="swing-breakdown-heading">What your video showed</h2>
+    <p>Read the status first, then the explanation. Each card separates what
+      the video observed from what it cannot measure.</p>
+  </header>
+  <div class="breakdown-grid">
+    {% for item in swing_breakdown %}
+    <article class="breakdown-card breakdown-card--{{ item.tone }}">
+      <div class="breakdown-card__head">
+        <div>
+          <p class="breakdown-card__evidence">{{ item.evidence }}</p>
+          <h3>{{ item.title }}</h3>
+        </div>
+        <span class="breakdown-card__status">{{ item.status }}</span>
+      </div>
+      <p class="breakdown-card__summary">{{ item.summary }}</p>
+      <p class="breakdown-card__why"><strong>Why it matters:</strong>
+        {{ item.why }}</p>
+      {% if item.limit %}
+      <p class="breakdown-card__limit"><strong>What it cannot tell us:</strong>
+        {{ item.limit }}</p>
+      {% endif %}
+    </article>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+
 <details class="measurements">
 <summary>{% if refilm_required %}See capture details{% else %}See the measurements and session details{% endif %}</summary>
 <h2>Session</h2>
@@ -811,25 +928,37 @@
 </table>
 
 {% if not refilm_required %}
-<h2>Metrics</h2>
+<h2>Measurements and glossary</h2>
 {% if level_note %}
 {# One framing line per declared experience level (swinglab.levels) —
    reframing for the reader, never a change to any number below. #}
 <p class="meta">{{ level_note }}</p>
 {% endif %}
-<div class="table-scroll" role="region" aria-label="Swing timing and movement measurements" tabindex="0">
+<div class="measurement-guide" aria-label="How to read the measurements">
+  <p><strong>How to read this section.</strong> A highlighted number crossed a
+    coaching line; it is a place to investigate, not a diagnosis.</p>
+  <p><strong>Shoulder-width (SW)</strong> makes movement easier to compare:
+    0.25 SW means one-quarter of your shoulder width at setup.</p>
+  <p><strong>Session average</strong> is the usual value across readable swings.
+    <strong>Swing-to-swing spread</strong> shows how much those swings differed;
+    a smaller spread means the motion was more repeatable.</p>
+  <p><strong>—</strong> means the value was not readable or this camera view
+    cannot support it. It never means zero. Tap a column name for its full
+    plain-English definition and measurement method.</p>
+  <p><strong>Benchmarks are references, not day-one targets.</strong> Moving
+    toward a useful reference matters more than matching it immediately.</p>
+</div>
+
+<h3>Timing and rhythm</h3>
+<div class="table-scroll" role="region" aria-label="Swing timing measurements" tabindex="0">
 <table>
-  <caption class="visually-hidden">Swing timing and movement measurements</caption>
+  <caption class="visually-hidden">Swing timing and rhythm measurements</caption>
   <tr>
     <th scope="col">Swing</th>
-    {{ mhead("strike_s", "Strike (s)") }}
-    {{ mhead("backswing_s", "Backswing (s)") }}
-    {{ mhead("downswing_s", "Downswing (s)") }}
-    {{ mhead("tempo_ratio", "Tempo (reference %.1f:1)"|format(coaching.tempo_target)) }}
-    {{ mhead("head_sway_backswing_sw", "Head sway A→T (SW)") }}
-    {{ mhead("head_sway_downswing_sw", "Head sway T→I (SW)") }}
-    {{ mhead("hip_slide_backswing_sw", "Hip slide A→T (SW)") }}
-    {{ mhead("hip_slide_downswing_sw", "Hip slide T→I (SW)") }}
+    {{ mhead("strike_s", "Impact time in clip (s)") }}
+    {{ mhead("backswing_s", "Time going back (s)") }}
+    {{ mhead("downswing_s", "Time coming down (s)") }}
+    {{ mhead("tempo_ratio", "Swing rhythm (reference %.1f-to-1)"|format(coaching.tempo_target)) }}
   </tr>
   {% for s in swings %}
   <tr>
@@ -838,40 +967,115 @@
     {{ num(s.metrics.backswing_s) }}
     {{ num(s.metrics.downswing_s) }}
     {{ num(s.metrics.tempo_ratio, "%.2f", s.metrics.tempo_ratio < coaching.tempo_warn_below) }}
-    {{ num(s.metrics.head_sway_backswing_sw, "%.2f", s.metrics.head_sway_backswing_sw > coaching.sway_warn_sw) }}
-    {{ num(s.metrics.head_sway_downswing_sw) }}
-    {{ num(s.metrics.hip_slide_backswing_sw, "%.2f", s.metrics.hip_slide_backswing_sw > coaching.sway_warn_sw) }}
-    {{ num(s.metrics.hip_slide_downswing_sw) }}
   </tr>
   {% endfor %}
   {% if stats %}
-  <tr class="mean-row">
-    <td>mean ± std</td><td>—</td>
-    {% for key in ["backswing_s", "downswing_s", "tempo_ratio",
-                   "head_sway_backswing_sw", "head_sway_downswing_sw",
-                   "hip_slide_backswing_sw", "hip_slide_downswing_sw"] %}
+  <tr class="mean-row"><td>Session average</td><td>—</td>
+    {% for key in ["backswing_s", "downswing_s", "tempo_ratio"] %}
       {% set st = stats.get(key) %}
-      <td>{% if st %}{{ "%.2f"|format(st.mean) }} ± {{ "%.2f"|format(st.std) }}{% else %}—{% endif %}</td>
+      <td>{% if st %}{{ "%.2f"|format(st.mean) }}{% else %}—{% endif %}</td>
+    {% endfor %}
+  </tr>
+  <tr class="spread-row"><td>Swing-to-swing spread</td><td>—</td>
+    {% for key in ["backswing_s", "downswing_s", "tempo_ratio"] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ "%.2f"|format(st.std) }}{% else %}—{% endif %}</td>
     {% endfor %}
   </tr>
   {% endif %}
 </table>
 </div>
-<p class="meta">SW = shoulder widths at address. A→T = address to top, T→I = top to impact.
-Positive lateral values are movement away from the target. Tap a column name
-for what it means. Benchmarks are references, not day-one targets — moving
-toward them matters more than hitting them.</p>
 
-<h3>Impact &amp; finish</h3>
+{% if not dtl %}
+<h3>Body movement</h3>
+<div class="table-scroll" role="region" aria-label="Body movement measurements" tabindex="0">
+<table>
+  <caption class="visually-hidden">Body movement measurements</caption>
+  <tr><th scope="col">Swing</th>
+    {{ mhead("head_sway_backswing_sw", "Head drift going back (SW)") }}
+    {{ mhead("head_sway_downswing_sw", "Head move into impact (SW)") }}
+    {{ mhead("hip_slide_backswing_sw", "Hip drift going back (SW)") }}
+    {{ mhead("hip_slide_downswing_sw", "Hip move into impact (SW)") }}
+  </tr>
+  {% for s in swings %}{% set m = s.metrics %}
+  <tr><td>{{ m.swing }}</td>
+    {{ num(m.head_sway_backswing_sw, "%.2f", m.head_sway_backswing_sw > coaching.sway_warn_sw) }}
+    {{ num(m.head_sway_downswing_sw) }}
+    {{ num(m.hip_slide_backswing_sw, "%.2f", m.hip_slide_backswing_sw > coaching.sway_warn_sw) }}
+    {{ num(m.hip_slide_downswing_sw) }}
+  </tr>{% endfor %}
+  {% if stats %}
+  <tr class="mean-row"><td>Session average</td>
+    {% for key in ["head_sway_backswing_sw", "head_sway_downswing_sw",
+                   "hip_slide_backswing_sw", "hip_slide_downswing_sw"] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ "%.2f"|format(st.mean) }}{% else %}—{% endif %}</td>
+    {% endfor %}
+  </tr>
+  <tr class="spread-row"><td>Swing-to-swing spread</td>
+    {% for key in ["head_sway_backswing_sw", "head_sway_downswing_sw",
+                   "hip_slide_backswing_sw", "hip_slide_downswing_sw"] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ "%.2f"|format(st.std) }}{% else %}—{% endif %}</td>
+    {% endfor %}
+  </tr>
+  <tr class="bench-row"><td>Coaching line</td>
+    <td>≤ {{ "%.2f"|format(coaching.sway_warn_sw) }}</td>
+    <td>Context only</td>
+    <td>≤ {{ "%.2f"|format(coaching.sway_warn_sw) }}</td>
+    <td>Context only</td>
+  </tr>
+  {% endif %}
+</table>
+</div>
+<p class="meta">Positive sideways movement is away from the target; negative
+movement is toward it. The into-impact columns are context, not grades.</p>
+
+<h3>Setup and movement context</h3>
+<div class="table-scroll" role="region" aria-label="Setup and movement context" tabindex="0">
+<table>
+  <caption class="visually-hidden">Setup and movement context measurements</caption>
+  <tr><th scope="col">Swing</th>
+    {{ mhead("stance_width_sw", "Stance width (SW)") }}
+    {{ mhead("downswing_hand_speed_sw_s", "Downswing hand movement (SW/s)") }}
+  </tr>
+  {% for s in swings %}{% set m = s.metrics %}
+  <tr><td>{{ m.swing }}</td>
+    {{ num(m.stance_width_sw) }}
+    {{ num(m.downswing_hand_speed_sw_s) }}
+  </tr>{% endfor %}
+  {% if stats %}
+  <tr class="mean-row"><td>Session average</td>
+    {% for key in ["stance_width_sw", "downswing_hand_speed_sw_s"] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ "%.2f"|format(st.mean) }}{% else %}—{% endif %}</td>
+    {% endfor %}
+  </tr>
+  <tr class="spread-row"><td>Swing-to-swing spread</td>
+    {% for key in ["stance_width_sw", "downswing_hand_speed_sw_s"] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ "%.2f"|format(st.std) }}{% else %}—{% endif %}</td>
+    {% endfor %}
+  </tr>
+  <tr class="bench-row"><td>How to use it</td>
+    <td>Setup baseline</td><td>Matched re-films only</td>
+  </tr>
+  {% endif %}
+</table>
+</div>
+<p class="meta">These are context measurements, not scores. Hand movement is
+a body-normalized camera-view estimate — never clubhead speed, ball speed, or mph.</p>
+
+<h3>Impact body shape and finish</h3>
 <div class="table-scroll" role="region" aria-label="Impact and finish measurements" tabindex="0">
 <table>
   <caption class="visually-hidden">Impact and finish measurements</caption>
   <tr><th scope="col">Swing</th>
-    {{ mhead("head_dip_sw", "Head dip A→I (SW)") }}
-    {{ mhead("lead_arm_angle_deg", "Lead arm at impact (°)") }}
-    {{ mhead("shoulder_tilt_impact_deg", "Shoulder tilt at impact (°)") }}
-    {{ mhead("shoulder_tilt_delta_deg", "Tilt change A→I (°)") }}
-    {{ mhead("finish_balance_sw", "Finish balance (SW)") }}</tr>
+    {{ mhead("head_dip_sw", "Head height lost by impact (SW)") }}
+    {{ mhead("lead_arm_angle_deg", "Lead-arm straightness (°)") }}
+    {{ mhead("shoulder_tilt_impact_deg", "Impact shoulder angle (°)") }}
+    {{ mhead("shoulder_tilt_delta_deg", "Shoulder angle gained or lost (°)") }}
+    {{ mhead("finish_balance_sw", "Stance-center drift at finish (SW)") }}</tr>
   {% for s in swings %}{% set m = s.metrics %}
   <tr><td>{{ m.swing }}</td>
     {{ num(m.head_dip_sw, flagged=(m.head_dip_sw > coaching.head_dip_warn_sw)) }}
@@ -881,19 +1085,25 @@ toward them matters more than hitting them.</p>
     {{ num(m.finish_balance_sw, flagged=(m.finish_balance_sw > coaching.finish_balance_warn_sw)) }}
   </tr>{% endfor %}
   {% if stats %}
-  <tr class="mean-row"><td>mean ± std</td>
+  <tr class="mean-row"><td>Session average</td>
     {% for key, fmt in [("head_dip_sw", "%.2f"), ("lead_arm_angle_deg", "%.0f"),
                         ("shoulder_tilt_impact_deg", "%.0f"),
                         ("shoulder_tilt_delta_deg", "%.0f"),
                         ("finish_balance_sw", "%.2f")] %}
       {% set st = stats.get(key) %}
-      <td>{% if st %}{{ fmt|format(st.mean) }} ± {{ fmt|format(st.std) }}{% else %}—{% endif %}</td>
+      <td>{% if st %}{{ fmt|format(st.mean) }}{% else %}—{% endif %}</td>
     {% endfor %}
   </tr>
-  {# Down the line none of these are measured, so reference numbers for
-     them would be the only numbers in the table — omit the row. #}
-  {% if not dtl %}
-  <tr class="bench-row"><td>reference</td>
+  <tr class="spread-row"><td>Swing-to-swing spread</td>
+    {% for key, fmt in [("head_dip_sw", "%.2f"), ("lead_arm_angle_deg", "%.0f"),
+                        ("shoulder_tilt_impact_deg", "%.0f"),
+                        ("shoulder_tilt_delta_deg", "%.0f"),
+                        ("finish_balance_sw", "%.2f")] %}
+      {% set st = stats.get(key) %}
+      <td>{% if st %}{{ fmt|format(st.std) }}{% else %}—{% endif %}</td>
+    {% endfor %}
+  </tr>
+  <tr class="bench-row"><td>Coaching line</td>
     <td>≤ {{ "%.2f"|format(coaching.head_dip_warn_sw) }}</td>
     <td>≥ {{ "%.0f"|format(coaching.lead_arm_warn_deg) }}</td>
     <td>≥ {{ "%.0f"|format(coaching.shoulder_tilt_impact_min_deg) }}</td>
@@ -901,12 +1111,13 @@ toward them matters more than hitting them.</p>
     <td>≤ {{ "%.2f"|format(coaching.finish_balance_warn_sw) }}</td>
   </tr>
   {% endif %}
-  {% endif %}
 </table>
 </div>
 <p class="meta">Angles are measured in the camera's view (face-on). Head dip is
-address to impact; positive shoulder tilt = trail shoulder lower; finish
-balance is mean foot drift during the hold — lower is better.</p>
+setup to impact; a positive shoulder angle means the trail shoulder is lower.
+Finish drift tracks the midpoint between the ankles while the finish is held;
+it does not measure every movement of either foot.</p>
+{% endif %}
 
 {% if session_notes %}
 <h2>Session notes</h2>

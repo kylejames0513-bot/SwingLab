@@ -5,6 +5,7 @@ from __future__ import annotations
 from swinglab.caddie_brief import (
     build_caddie_brief,
     build_caddie_brief_from_payload,
+    metrics_from_payload,
     payload_has_unsupported_angle_data,
     payload_requires_refilm,
 )
@@ -206,6 +207,44 @@ def test_payload_adapter_is_honest_about_missing_data():
         assert brief.drill is None
 
 
+def test_payload_adapter_preserves_context_metrics_without_coaching_on_them():
+    rows = metrics_from_payload(
+        {
+            "swings": [
+                {
+                    "metrics": {
+                        "tempo_ratio": 3.0,
+                        "stance_width_sw": 0.92,
+                        "downswing_hand_speed_sw_s": 4.75,
+                    }
+                }
+            ]
+        }
+    )
+    assert len(rows) == 1
+    assert rows[0].stance_width_sw == 0.92
+    assert rows[0].downswing_hand_speed_sw_s == 4.75
+    brief = brief_for(rows[0])
+    assert brief.clean
+
+
+def test_context_metrics_alone_cannot_fabricate_a_coaching_brief():
+    brief = build_caddie_brief_from_payload(
+        {
+            "swings": [
+                {
+                    "metrics": {
+                        "stance_width_sw": 0.92,
+                        "downswing_hand_speed_sw_s": 4.75,
+                    }
+                }
+            ]
+        },
+        Config(),
+    )
+    assert brief.refilm_required
+
+
 def test_partial_dtl_payload_keeps_scope_warning_and_trend():
     brief = build_caddie_brief_from_payload(
         {
@@ -338,7 +377,7 @@ def test_brief_names_the_triggering_swing_when_mean_is_inside_line():
         metric(swing=2, head_sway_backswing_sw=0.10),
     )
     assert brief.focus_name == "Head sway (backswing)"
-    assert brief.focus_value == "One swing: 0.50 SW"
+    assert brief.focus_value == "Swing 1: 0.50 SW"
     assert "flagged above 0.35 SW" in brief.benchmark_text
 
 

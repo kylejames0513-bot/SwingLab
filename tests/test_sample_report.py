@@ -74,7 +74,7 @@ def test_ensure_sample_report_refreshes_an_old_presentation_only(tmp_path):
     assert "schema-compatible old presentation" not in html
     assert (
         'name="caddieinsight-report-presentation" '
-        'content="premium-evidence-v1"'
+        'content="premium-coach-v2"'
     ) in html
     assert 'class="report-intro"' in html
 

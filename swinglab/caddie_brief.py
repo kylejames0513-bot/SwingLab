@@ -197,7 +197,7 @@ def build_caddie_brief(
         strength=strengths[0] if strengths else None,
         focus_flag=focus.flag,
         focus_name=focus.display_name,
-        focus_value=_focus_value(focus),
+        focus_value=_focus_value(focus, all_metrics),
         benchmark_text=focus.benchmark_text,
         why=focus.why,
         fix=focus.fix,
@@ -291,6 +291,10 @@ def metrics_from_payload(payload: dict) -> list[SwingMetrics]:
             ),
             finish_balance_sw=_number(raw, "finish_balance_sw"),
             target_confident=raw.get("target_confident") is not False,
+            stance_width_sw=_number(raw, "stance_width_sw"),
+            downswing_hand_speed_sw_s=_number(
+                raw, "downswing_hand_speed_sw_s"
+            ),
         )
         if any(
             not math.isnan(getattr(measured, field))
@@ -560,10 +564,31 @@ def payload_has_unsupported_angle_data(
     )
 
 
-def _focus_value(card: IssueCard) -> str:
+def _focus_value(card: IssueCard, metrics: list[SwingMetrics]) -> str:
     """Lead with the breached swing when a safe mean hides the actual flag."""
+    measured = [
+        (index, value)
+        for index, value in enumerate(card.per_swing)
+        if value is not None
+    ]
+
+    def named_worst(text: str) -> str:
+        if not measured:
+            return text
+        worst_index, _ = (
+            max(measured, key=lambda item: item[1])
+            if card.worse_direction == "higher"
+            else min(measured, key=lambda item: item[1])
+        )
+        swing_number = (
+            metrics[worst_index].swing
+            if worst_index < len(metrics)
+            else worst_index + 1
+        )
+        return f"Swing {swing_number}: {text}"
+
     if card.session_label == "worst swing":
-        return f"One swing: {card.session_text}"
+        return named_worst(card.session_text)
     if card.benchmark_value is None or card.session_value is None:
         return card.session_text
     mean_breaches = (
@@ -573,13 +598,12 @@ def _focus_value(card: IssueCard) -> str:
     )
     if mean_breaches:
         return card.session_text
-    measured = [value for value in card.per_swing if value is not None]
     if not measured:
         return card.session_text
     worst = (
-        max(measured)
+        max(value for _, value in measured)
         if card.worse_direction == "higher"
-        else min(measured)
+        else min(value for _, value in measured)
     )
     breached = (
         worst > card.benchmark_value
@@ -596,4 +620,4 @@ def _focus_value(card: IssueCard) -> str:
         text = f"{worst:.0f}\N{DEGREE SIGN}"
     else:
         text = f"{worst:g}{card.unit}"
-    return f"One swing: {text}"
+    return named_worst(text)

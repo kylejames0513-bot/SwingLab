@@ -29,7 +29,9 @@ from swinglab.coaching import (
 from swinglab.config import DEFAULTS, Config
 from swinglab.events import SwingEvents
 from swinglab.metrics import (
+    CONTEXT_NUMERIC_FIELDS,
     NUMERIC_FIELDS,
+    SESSION_STATS_FIELDS,
     SwingMetrics,
     compute_metrics,
     lead_trail_sides,
@@ -256,6 +258,19 @@ def test_finish_balance_step_measured_exactly():
     assert m.finish_balance_sw == pytest.approx(0.10, abs=0.001)
 
 
+def test_finish_balance_is_ankle_midpoint_drift_not_total_foot_motion():
+    tracked = [make_landmarks() for _ in range(75)]
+    for i in (73, 74):
+        lm = make_landmarks()
+        lm[pose.LEFT_ANKLE] = lm[pose.LEFT_ANKLE] + np.array([20.0, 0.0])
+        lm[pose.RIGHT_ANKLE] = lm[pose.RIGHT_ANKLE] + np.array([-20.0, 0.0])
+        tracked[i] = lm
+    m = compute_metrics(1, tracked, events_for(tracked), 70, "right")
+    # Equal and opposite ankle motion cancels at the midpoint. The customer
+    # label must therefore say base/stance-center drift, not total foot motion.
+    assert m.finish_balance_sw == 0.0
+
+
 def test_finish_balance_reads_hold_frames_from_cfg():
     tracked = [make_landmarks() for _ in range(75)]
     for i in (73, 74):
@@ -285,6 +300,77 @@ def test_finish_balance_window_clamp_never_raises():
     assert math.isnan(m.finish_balance_sw)  # finish on the last frame
 
 
+# ------------------------------------------------ stance and hand movement
+
+
+def test_stance_width_uses_address_ankles_and_shoulder_width():
+    tracked = [make_landmarks() for _ in range(75)]
+    m = compute_metrics(1, tracked, events_for(tracked), 70, "right")
+    # Synthetic address: ankles are 90 px apart, shoulders are 100 px apart.
+    assert m.stance_width_sw == pytest.approx(0.90)
+
+
+def test_stance_width_uses_median_instead_of_one_pose_wobble():
+    tracked = [make_landmarks() for _ in range(75)]
+    tracked[2][pose.LEFT_ANKLE] = np.array([700.0, 900.0])
+    tracked[2][pose.RIGHT_ANKLE] = np.array([300.0, 900.0])
+    m = compute_metrics(1, tracked, events_for(tracked), 70, "right")
+    assert m.stance_width_sw == pytest.approx(0.90)
+
+
+def test_stance_width_nan_without_three_address_frames():
+    tracked: list = [None] * 75
+    tracked[0] = make_landmarks()
+    tracked[1] = make_landmarks()
+    m = compute_metrics(1, tracked, events_for(tracked), 70, "right")
+    assert math.isnan(m.stance_width_sw)
+
+
+def test_downswing_hand_movement_is_body_normalized_path_rate():
+    tracked = [make_landmarks() for _ in range(75)]
+    for index in range(40, 55):
+        # 10 px per frame for 14 frame intervals: 140 px in 14/30 s.
+        tracked[index] = make_landmarks(hand_x=500.0 + 10.0 * (index - 40))
+    m = compute_metrics(
+        1, tracked, events_for(tracked), 70, "right", fps=30.0
+    )
+    assert m.downswing_hand_speed_sw_s == pytest.approx(3.0, abs=0.001)
+
+
+def test_downswing_hand_movement_refuses_missing_phase_endpoints():
+    tracked = [make_landmarks() for _ in range(75)]
+    for index in (40, 41, 53, 54):
+        tracked[index] = None
+    m = compute_metrics(
+        1, tracked, events_for(tracked), 70, "right", fps=30.0
+    )
+    assert math.isnan(m.downswing_hand_speed_sw_s)
+
+
+def test_context_metrics_are_in_session_stats():
+    rows = [
+        make_metrics(
+            1,
+            stance_width_sw=0.9,
+            downswing_hand_speed_sw_s=4.0,
+        ),
+        make_metrics(
+            2,
+            stance_width_sw=1.1,
+            downswing_hand_speed_sw_s=5.0,
+        ),
+    ]
+    stats = session_stats(rows)
+    assert "stance_width_sw" in CONTEXT_NUMERIC_FIELDS
+    assert "downswing_hand_speed_sw_s" in CONTEXT_NUMERIC_FIELDS
+    assert "stance_width_sw" in SESSION_STATS_FIELDS
+    assert "downswing_hand_speed_sw_s" in SESSION_STATS_FIELDS
+    assert "stance_width_sw" not in NUMERIC_FIELDS
+    assert "downswing_hand_speed_sw_s" not in NUMERIC_FIELDS
+    assert stats["stance_width_sw"] == {"mean": 1.0, "std": 0.1}
+    assert stats["downswing_hand_speed_sw_s"] == {"mean": 4.5, "std": 0.5}
+
+
 def test_fully_missing_window_all_new_metrics_nan():
     tracked: list = [None] * 75
     m = compute_metrics(1, tracked, events_for(tracked), 70, "right")
@@ -295,6 +381,8 @@ def test_fully_missing_window_all_new_metrics_nan():
         "shoulder_tilt_impact_deg",
         "shoulder_tilt_delta_deg",
         "finish_balance_sw",
+        "stance_width_sw",
+        "downswing_hand_speed_sw_s",
     ):
         assert math.isnan(getattr(m, field_name))
 
