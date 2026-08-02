@@ -267,16 +267,10 @@ def hero_image():
              limb=MINT, joint=ORANGE, lw=12)
     d.line([w * s * 0.47, 1222 * s, w * s * 0.96, 1222 * s],
            fill="#1d5535", width=int(5 * s))
-    # metric chips under the ground line, the way the report captions a swing
-    chips = ("TEMPO 3.0", "SWAY 0.18 SW", "SLIDE 0.10 SW")
-    f = mono(int(26 * s))
-    chx = w * s * 0.505
-    for label in chips:
-        tw = sum(d.textlength(ch, font=f) for ch in label) + 3 * s * (len(label) - 1)
-        rrect(d, [chx, 1262 * s, chx + tw + 68 * s, 1338 * s], 38 * s,
-              outline="#2f6b4a", width=int(4 * s))
-        tracked(d, (chx + 34 * s, 1284 * s), label, f, MINT, tracking=int(3 * s))
-        chx += tw + 100 * s
+    # Product-loop caption, intentionally free of invented analysis values.
+    tracked(d, (w * s * 0.505, 1284 * s),
+            "CHOOSE CLUB · FILM THE VIEW · WORK ONE PLAN · RE-FILM",
+            mono(int(26 * s)), MINT, tracking=int(3 * s))
     finish(img, "swinglab-hero.png", w, h)
 
 

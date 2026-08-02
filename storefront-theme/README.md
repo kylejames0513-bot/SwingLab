@@ -1,10 +1,8 @@
 # CaddieInsight storefront theme
 
-Source of the custom Shopify theme running on the store's draft theme slot
-(`swinglab-storefront-theme`, unpublished). This directory is the working
-copy: every file here has been applied byte-for-byte to the draft theme via
-the Admin API (`themeFilesUpsert`), and future edits should be made here
-first, then re-upserted.
+Source-controlled copy of the custom CaddieInsight Shopify theme. GitHub is
+the source of truth for theme code; Shopify theme state, preview state, and
+publication state must be verified separately during a release.
 
 Built on the same "Fairway Modernism" design system as `../store-assets/`
 (see `PHILOSOPHY.md` there): warm off-white field, deep green ink, one
@@ -35,23 +33,23 @@ orange kinetic accent, Archivo display type with DM Mono specimen labels.
   Shopify), gear pages get flag chips, compare-at pricing, trust strip, and
   the drill-protocol description written by `store-assets` product copy.
 
-## Applying changes
+## Validation
 
-Upsert changed files to the draft theme (never the live one) with the Admin
-API:
+Run both gates from the repository root before opening a pull request:
 
-```graphql
-mutation UpsertThemeFiles($themeId: ID!, $files: [OnlineStoreThemeFilesUpsertFileInput!]!) {
-  themeFilesUpsert(themeId: $themeId, files: $files) {
-    upsertedThemeFiles { filename }
-    userErrors { field message }
-  }
-}
+```text
+shopify theme check --path storefront-theme --fail-level warning
+python -m pytest tests/test_storefront_header.py tests/test_theme_selling_plans.py tests/test_premium_storefront.py -q
 ```
 
-with `files: [{ filename, body: { type: TEXT, value } }]`, draft theme id
-`gid://shopify/OnlineStoreTheme/154368999596`. Preview
-`caddieinsight-storefront-theme` in Shopify admin under
-Online Store → Themes before publishing it manually. Never upsert these
-working-copy changes directly to the live MAIN theme
-(`gid://shopify/OnlineStoreTheme/154372636844`).
+Theme Check also runs in GitHub Actions. A source PR is not a Shopify preview
+or a live release.
+
+## Release boundary
+
+Do not copy a theme identifier from documentation or an earlier release.
+At release time, discover the current theme inventory read-only, preserve the
+current live theme for rollback, and upload the reviewed source to a duplicate
+unpublished theme. Preview that duplicate across desktop and mobile before
+requesting separate approval to publish it. Never upsert working-copy files
+directly to the live theme.

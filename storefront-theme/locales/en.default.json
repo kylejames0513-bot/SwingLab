@@ -35,10 +35,32 @@
       "start_free": "Start free"
     }
   },
+  "homepage": {
+    "hero": {
+      "image_label": "Illustrated golfer in a swing-analysis scene",
+      "image_placeholder": "Add approved range artwork",
+      "art_label": "Illustrated scene",
+      "art_disclosure": "Illustrated swing-analysis scene — not a customer, testimonial, or analyzed swing."
+    },
+    "report": {
+      "file_label": "Illustrated preview",
+      "sample_label": "Synthetic inputs",
+      "club_label": "Club",
+      "club_value": "Iron",
+      "coach_label": "Coach",
+      "coach_value": "One priority first",
+      "practice_label": "Practice",
+      "practice_value": "One plan with a pass mark",
+      "image_alt": "Illustrated key-position preview of the linked synthetic CaddieInsight sample report",
+      "priority_note": "The report explains why one supported movement comes first.",
+      "plan_chip": "Measured plan included",
+      "disclosure": "Illustrated preview of the linked synthetic sample report. The linked full report was generated from synthetic measurements through the real report engine; this preview is not engine output, a customer result, or a testimonial."
+    }
+  },
   "products": {
     "product": {
       "add_to_cart": "Add to cart",
-      "benefit_report": "Tempo, sway, hip-slide, and consistency metrics",
+      "benefit_report": "Club-aware priority and a measured practice plan",
       "benefit_unlock": "Access connects to your existing linked account, or your checkout email if you are new",
       "benefit_unlimited": "Unlimited swing analyses while Pro is active",
       "benefit_video": "Key frames, centerline overlay, and slow-motion clips",
@@ -47,7 +69,7 @@
       "one_time_purchase": "One-time purchase",
       "open_app": "Open CaddieInsight app",
       "plan": "Plan",
-      "pro_kicker": "For golfers who want every range session to produce measurable feedback, not just another bucket of balls.",
+      "pro_kicker": "For golfers who want each range session to answer one clear swing question.",
       "purchase_options": "Purchase options",
       "show_image": "Show image {{ number }}",
       "sold_out": "Sold out",

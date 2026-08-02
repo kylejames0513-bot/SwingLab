@@ -3,7 +3,7 @@
 
   {%- if cart.item_count == 0 -%}
     <p class="sl-empty">Your cart is empty.</p>
-    <a class="sl-btn sl-btn--primary" href="/collections/swinglab-gear">Browse the gear</a>
+    <a class="sl-btn sl-btn--primary" href="{{ routes.collections_url }}/swinglab-gear">Browse the gear</a>
   {%- else -%}
     <form action="{{ routes.cart_url }}" method="post" id="cart">
       <div class="sl-cart-lines" role="list">
@@ -54,7 +54,7 @@
         <p class="sl-cart-subtotal"><span class="sl-mono-label">Subtotal</span> <strong>{{ cart.total_price | money }}</strong></p>
         <p class="sl-cart-hint">Taxes and shipping calculated at checkout.</p>
         <div class="sl-cart-actions">
-          <a class="sl-btn sl-btn--outline" href="/collections/swinglab-gear">Continue shopping</a>
+          <a class="sl-btn sl-btn--outline" href="{{ routes.collections_url }}/swinglab-gear">Continue shopping</a>
           <button class="sl-btn sl-btn--outline" type="submit" name="update">Update cart</button>
           <button class="sl-btn sl-btn--primary" type="submit" name="checkout">Check out</button>
         </div>

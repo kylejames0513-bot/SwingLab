@@ -32,7 +32,7 @@
     -%}
 
     {%- if search.results_count == 0 -%}
-      <p class="sl-empty">Nothing matched. Try a shorter term, or browse the <a href="/collections/swinglab-gear">gear collection</a>.</p>
+      <p class="sl-empty">Nothing matched. Try a shorter term, or browse the <a href="{{ routes.collections_url }}/swinglab-gear">gear collection</a>.</p>
     {%- endif -%}
 
     {%- if product_count > 0 -%}

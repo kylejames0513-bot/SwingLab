@@ -2,7 +2,7 @@
   {
     "name": "theme_info",
     "theme_name": "CaddieInsight Storefront",
-    "theme_version": "1.1.0",
+    "theme_version": "1.2.0",
     "theme_author": "CaddieInsight",
     "theme_documentation_url": "https://app.caddieinsight.com",
     "theme_support_url": "https://app.caddieinsight.com"
@@ -24,8 +24,14 @@
     "name": "Typography",
     "settings": [
       {
+        "type": "font_picker",
+        "id": "type_body_font",
+        "label": "Interface and heading font",
+        "default": "archivo_n4"
+      },
+      {
         "type": "paragraph",
-        "content": "The storefront uses Archivo for interface and headings and DM Mono for specimen labels and measured values. Both are loaded from Google Fonts in the layout."
+        "content": "The selected font is served from Shopify's CDN. Evidence labels use a system monospace stack for fast, stable rendering."
       }
     ]
   }

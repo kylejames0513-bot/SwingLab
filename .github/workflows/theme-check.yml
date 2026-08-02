@@ -1,0 +1,31 @@
+name: Shopify Theme Check
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: theme-check-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  theme-check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Validate Shopify theme
+        uses: Shopify/theme-check-action@58fd69afdfc30110f997ba9e212b302671e00d3b
+        with:
+          theme_root: storefront-theme
+          flags: --fail-level warning
+          version: 3.58.2

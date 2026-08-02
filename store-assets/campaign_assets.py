@@ -583,8 +583,8 @@ def banner_about():
 def report_keyframes():
     """Key-position strip for the homepage report card (1600×480): four
     equal frames — ADDRESS / TOP / IMPACT / FINISH — on deep-green fields,
-    mono labels beneath. The one orange element is the club-path arc
-    segment falling into the ball on the IMPACT frame."""
+    with mono labels beneath. This is a position-sequence illustration, not
+    a club-path measurement."""
     w, h = 1600, 480
     img, d = canvas(w, h, bg=CARD)
     s = S
@@ -602,18 +602,6 @@ def report_keyframes():
                width=int(3 * s))
         # ankles (y = 0.88 of the box) land on the ground line
         box = (x + 62 * s, fy + 36 * s, fw - 124 * s, (gy - fy - 36 * s) / 0.88)
-        if key == "impact":
-            # the strip's one orange gesture: club path falling to the ball
-            cx_ = x + 350 * s
-            cy_ = fy + 40 * s
-            club = (box[0] + POSES["impact"]["club"][0] * box[2],
-                    box[1] + POSES["impact"]["club"][1] * box[3])
-            r = math.hypot(club[0] - cx_, club[1] - cy_)
-            a1 = math.degrees(math.atan2(club[1] - cy_, club[0] - cx_))
-            swing_arc(d, cx_, cy_, r, a1, 176, ORANGE, int(8 * s))
-            arrow_head(d, s, club, a1 - 90, size=20)
-            d.ellipse([club[0] + 12 * s, club[1] - 6 * s,
-                       club[0] + 26 * s, club[1] + 8 * s], fill=MINT)
         skeleton(d, POSES[key], box, s, limb=MINT, joint="#7fbf9a", lw=7)
         tracked(d, (x + fw / 2, fy + fh + 24 * s), label, mono(int(28 * s)),
                 INK_SOFT, tracking=int(4 * s), anchor="m")
