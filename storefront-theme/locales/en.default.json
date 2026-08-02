@@ -19,7 +19,7 @@
       "analyze_free": "Analyze free",
       "analyze_a_swing": "Analyze a swing",
       "account": "Account",
-      "app_sign_in": "App sign in",
+      "app_sign_in": "Sign in",
       "caddieinsight_home": "CaddieInsight home",
       "caddieinsight_profile": "CaddieInsight profile",
       "close_menu": "Close menu",
@@ -29,6 +29,7 @@
       "gear": "Gear",
       "history": "History",
       "home": "Home",
+      "log_out": "Log out",
       "main": "Main navigation",
       "menu": "Menu",
       "menu_title": "Menu",
@@ -38,10 +39,13 @@
       "orders_subscriptions": "Orders & subscriptions",
       "plans": "Plans",
       "pro": "Pro",
+      "pro_member": "Pro member",
       "progress": "Progress",
       "sample_report": "Sample report",
       "shop": "Shop",
-      "start_free": "Start free"
+      "signed_in": "Signed in to CaddieInsight",
+      "start_free": "Start free",
+      "welcome_back": "Welcome back"
     }
   },
   "homepage": {

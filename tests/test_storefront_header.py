@@ -21,11 +21,28 @@ LOCALE = json.loads(
 
 
 def test_storefront_header_has_one_state_aware_app_action():
-    assert "app_login_url" not in HEADER
-    assert "app_signup_url" not in HEADER
+    assert "app_login_url = app_url | append: '/login'" in HEADER
+    assert "app_signup_url = app_url | append: '/signup'" in HEADER
+    assert "app_session_url = app_url | append: '/auth/storefront/session'" in HEADER
     assert "'layout.navigation.analyze' | t" not in HEADER
     assert HEADER.count("'layout.navigation.analyze_a_swing' | t") == 2
     assert "app_url | append: '/drills'" in HEADER
+
+
+def test_storefront_account_menu_hydrates_from_the_app_session_safely():
+    assert 'data-app-session-url="{{ app_session_url }}"' in HEADER
+    assert HEADER.count("data-app-auth-signed-out>") == 2
+    assert HEADER.count("data-app-auth-signed-in hidden") == 2
+    assert HEADER.count('action="{{ app_session_url }}" method="post"') == 2
+    assert HEADER.count("'layout.navigation.app_sign_in' | t") == 2
+    assert HEADER.count("'layout.navigation.create_free_account' | t") == 2
+    assert HEADER.count("'layout.navigation.log_out' | t") == 2
+    assert "fetch(sessionUrl, {" in HEADER
+    assert "credentials: 'include'" in HEADER
+    assert "cache: 'no-store'" in HEADER
+    assert "node.textContent = authenticated ? welcomeText : '';" in HEADER
+    assert "innerHTML" not in HEADER
+    assert "data-app-auth-summary" in HEADER
 
 
 def test_premium_header_is_scoped_to_home_and_the_pro_product():
@@ -123,8 +140,14 @@ def test_header_labels_describe_destinations():
     assert navigation["explore"] == "Explore"
     assert navigation["my_game"] == "My Game"
     assert navigation["account"] == "Account"
+    assert navigation["app_sign_in"] == "Sign in"
+    assert navigation["create_free_account"] == "Create free account"
+    assert navigation["log_out"] == "Log out"
     assert navigation["orders_subscriptions"] == "Orders & subscriptions"
     assert navigation["method"] == "Method"
     assert navigation["sample_report"] == "Sample report"
     assert navigation["plans"] == "Plans"
+    assert navigation["pro_member"] == "Pro member"
+    assert navigation["signed_in"] == "Signed in to CaddieInsight"
+    assert navigation["welcome_back"] == "Welcome back"
     assert navigation["close_menu"] == "Close menu"

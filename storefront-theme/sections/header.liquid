@@ -5,6 +5,9 @@
   assign app_progress_url = app_url | append: '/progress'
   assign app_drills_url = app_url | append: '/drills'
   assign app_account_url = app_url | append: '/account'
+  assign app_login_url = app_url | append: '/login'
+  assign app_signup_url = app_url | append: '/signup'
+  assign app_session_url = app_url | append: '/auth/storefront/session'
   assign gear_url = routes.collections_url | append: '/swinglab-gear'
   assign pro_product = all_products['swinglab-pro']
   assign premium_header = false
@@ -29,7 +32,14 @@
   endif
 -%}
 
-<header class="sl-header{% if premium_header %} sl-header--premium{% endif %}" data-sl-header data-menu-id="{{ menu_id }}">
+<header class="sl-header{% if premium_header %} sl-header--premium{% endif %}"
+        data-sl-header
+        data-menu-id="{{ menu_id }}"
+        {% if app_url != blank %}data-app-session-url="{{ app_session_url }}"
+        data-app-account-label="{{ 'layout.navigation.account' | t | escape }}"
+        data-app-welcome-label="{{ 'layout.navigation.welcome_back' | t | escape }}"
+        data-app-signed-in-label="{{ 'layout.navigation.signed_in' | t | escape }}"
+        data-app-pro-label="{{ 'layout.navigation.pro_member' | t | escape }}"{% endif %}>
   <div class="sl-header__inner">
     <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
       {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
@@ -70,17 +80,27 @@
     <div class="sl-header__actions">
       <details class="sl-header__dropdown sl-header__account" data-header-dropdown>
         <summary class="sl-header__dropdown-trigger">
-          {{ 'layout.navigation.account' | t }}
+          <span data-app-auth-summary>{{ 'layout.navigation.account' | t }}</span>
           <span class="sl-header__chevron" aria-hidden="true"></span>
         </summary>
         <div class="sl-header__dropdown-menu sl-header__dropdown-menu--right">
           {%- if app_url != blank -%}
-            <a href="{{ app_account_url }}">{{ 'layout.navigation.caddieinsight_profile' | t }}</a>
-            {%- if premium_header -%}
-              <a href="{{ app_history_url }}">{{ 'layout.navigation.history' | t }}</a>
-              <a href="{{ app_progress_url }}">{{ 'layout.navigation.progress' | t }}</a>
-              <a href="{{ app_drills_url }}">{{ 'layout.navigation.drills' | t }}</a>
-            {%- endif -%}
+            <div class="sl-app-auth__state" data-app-auth-signed-out>
+              <a href="{{ app_login_url }}">{{ 'layout.navigation.app_sign_in' | t }}</a>
+              <a href="{{ app_signup_url }}">{{ 'layout.navigation.create_free_account' | t }}</a>
+            </div>
+            <div class="sl-app-auth__state" data-app-auth-signed-in hidden>
+              <span class="sl-app-auth__welcome" data-app-auth-welcome aria-live="polite"></span>
+              <a href="{{ app_account_url }}">{{ 'layout.navigation.caddieinsight_profile' | t }}</a>
+              {%- if premium_header -%}
+                <a href="{{ app_history_url }}">{{ 'layout.navigation.history' | t }}</a>
+                <a href="{{ app_progress_url }}">{{ 'layout.navigation.progress' | t }}</a>
+                <a href="{{ app_drills_url }}">{{ 'layout.navigation.drills' | t }}</a>
+              {%- endif -%}
+              <form action="{{ app_session_url }}" method="post">
+                <button class="sl-app-auth__logout" type="submit">{{ 'layout.navigation.log_out' | t }}</button>
+              </form>
+            </div>
           {%- endif -%}
           <a href="{{ routes.account_url }}">{{ 'layout.navigation.orders_subscriptions' | t }}</a>
         </div>
@@ -175,9 +195,25 @@
       <div class="sl-menu__group">
         <p class="sl-menu__eyebrow">{{ 'layout.navigation.account' | t }}</p>
         {%- if app_url != blank -%}
+        <div class="sl-app-auth__state" data-app-auth-signed-out>
+          <a href="{{ app_login_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.app_sign_in' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+          <a href="{{ app_signup_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.create_free_account' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
+        </div>
+        <div class="sl-app-auth__state" data-app-auth-signed-in hidden>
+          <span class="sl-app-auth__welcome" data-app-auth-welcome aria-live="polite"></span>
           <a href="{{ app_account_url }}" class="sl-menu__link" data-menu-link>
             <span>{{ 'layout.navigation.caddieinsight_profile' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
+          <form action="{{ app_session_url }}" method="post">
+            <button class="sl-menu__link sl-app-auth__logout" type="submit">
+              <span>{{ 'layout.navigation.log_out' | t }}</span><span aria-hidden="true">&rarr;</span>
+            </button>
+          </form>
+        </div>
         {%- endif -%}
         <a href="{{ routes.account_url }}" class="sl-menu__link" data-menu-link>
           <span>{{ 'layout.navigation.orders_subscriptions' | t }}</span><span aria-hidden="true">&rarr;</span>
@@ -292,6 +328,49 @@ html.sl-menu-open { overflow: hidden; }
   text-decoration: none;
 }
 .sl-header__dropdown-menu a:hover {
+  background: var(--sl-orange-soft);
+  color: var(--sl-green);
+}
+.sl-header__account .sl-header__dropdown-trigger { max-width: 210px; }
+[data-app-auth-summary] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sl-app-auth__state {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+.sl-app-auth__state[hidden] { display: none; }
+.sl-app-auth__welcome {
+  min-width: 0;
+  padding: 8px 12px 6px;
+  overflow: hidden;
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: .1em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.sl-header__dropdown-menu .sl-app-auth__logout {
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--sl-ink);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+.sl-header__dropdown-menu .sl-app-auth__logout:hover {
   background: var(--sl-orange-soft);
   color: var(--sl-green);
 }
@@ -479,6 +558,16 @@ html.sl-menu-open { overflow: hidden; }
   background: var(--sl-orange-soft);
   color: var(--sl-green);
 }
+.sl-menu__group .sl-app-auth__state { width: 100%; }
+.sl-menu__group .sl-app-auth__welcome { padding-inline: 4px; }
+.sl-menu__link.sl-app-auth__logout {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+}
 .sl-header--premium {
   min-height: 76px;
   background: rgba(7, 19, 13, 0.94);
@@ -511,10 +600,16 @@ html.sl-menu-open { overflow: hidden; }
   box-shadow: 0 24px 54px -22px rgba(0, 0, 0, 0.78);
 }
 .sl-header--premium .sl-header__dropdown-menu a { color: rgba(245, 242, 233, 0.86); }
+.sl-header--premium .sl-header__dropdown-menu .sl-app-auth__logout { color: rgba(245, 242, 233, 0.86); }
 .sl-header--premium .sl-header__dropdown-menu a:hover {
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
 }
+.sl-header--premium .sl-header__dropdown-menu .sl-app-auth__logout:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+.sl-header--premium .sl-app-auth__welcome { color: rgba(245, 242, 233, 0.55); }
 .sl-header--premium .sl-header__cart {
   border-color: rgba(245, 242, 233, 0.48);
   color: #f5f2e9;
@@ -684,6 +779,69 @@ html.sl-menu-open { overflow: hidden; }
           .catch(function () {});
       }
 
+      function eachAppAuthNode(selector, callback) {
+        var roots = [header, menu];
+        for (var rootIndex = 0; rootIndex < roots.length; rootIndex++) {
+          var nodes = roots[rootIndex].querySelectorAll(selector);
+          for (var nodeIndex = 0; nodeIndex < nodes.length; nodeIndex++) {
+            callback(nodes[nodeIndex]);
+          }
+        }
+      }
+
+      function setAppAuthState(payload) {
+        var authenticated = Boolean(payload && payload.authenticated === true);
+        var displayName = authenticated && typeof payload.display_name === 'string'
+          ? payload.display_name.trim()
+          : '';
+        var summary = header.querySelector('[data-app-auth-summary]');
+        var accountLabel = header.getAttribute('data-app-account-label')
+          || (summary ? summary.textContent.trim() : '');
+        var welcomeLabel = header.getAttribute('data-app-welcome-label') || accountLabel;
+        var signedInLabel = header.getAttribute('data-app-signed-in-label') || accountLabel;
+        var proLabel = header.getAttribute('data-app-pro-label') || '';
+        var welcomeText = displayName ? welcomeLabel + ', ' + displayName : signedInLabel;
+        if (authenticated && payload.is_pro === true && proLabel) {
+          welcomeText += ' · ' + proLabel;
+        }
+
+        eachAppAuthNode('[data-app-auth-signed-out]', function (node) {
+          node.hidden = authenticated;
+        });
+        eachAppAuthNode('[data-app-auth-signed-in]', function (node) {
+          node.hidden = !authenticated;
+        });
+        eachAppAuthNode('[data-app-auth-welcome]', function (node) {
+          node.textContent = authenticated ? welcomeText : '';
+        });
+
+        if (summary) {
+          summary.textContent = authenticated
+            ? (displayName ? welcomeLabel + ', ' + displayName : signedInLabel)
+            : accountLabel;
+        }
+        header.dataset.appAuthenticated = authenticated ? 'true' : 'false';
+      }
+
+      function refreshAppSession() {
+        var sessionUrl = header.getAttribute('data-app-session-url');
+        if (!sessionUrl) return;
+        fetch(sessionUrl, {
+          cache: 'no-store',
+          credentials: 'include',
+          headers: { 'Accept': 'application/json' },
+          signal: controller.signal
+        })
+          .then(function (response) {
+            if (!response.ok) throw new Error('App session is unavailable.');
+            return response.json();
+          })
+          .then(setAppAuthState)
+          .catch(function (error) {
+            if (error && error.name === 'AbortError') return;
+          });
+      }
+
       openButton.addEventListener('click', openMenu, listenerOptions);
       if (closeButton) {
         closeButton.addEventListener('click', function () { closeMenu(true); }, listenerOptions);
@@ -729,7 +887,10 @@ html.sl-menu-open { overflow: hidden; }
         }
       }, listenerOptions);
       window.addEventListener('pageshow', function (event) {
-        if (event.persisted) refreshCount();
+        if (event.persisted) {
+          refreshCount();
+          refreshAppSession();
+        }
       }, listenerOptions);
       document.addEventListener('cart:change', function (event) {
         if (event.detail && typeof event.detail.item_count !== 'undefined') {
@@ -738,6 +899,8 @@ html.sl-menu-open { overflow: hidden; }
           refreshCount();
         }
       }, listenerOptions);
+
+      refreshAppSession();
 
       header.dataset.slHeaderReady = 'true';
       header.slHeaderCleanup = function () {
