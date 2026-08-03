@@ -78,6 +78,12 @@ def test_membership_card_media_labels_make_each_plan_unmistakable():
     plans = INDEX["sections"]["plans"]["blocks"]
     product_grid = source("sections/product-grid.liquid")
 
+    assert plans["pro"]["settings"]["image"] == (
+        "shopify://shop_images/caddieinsight-pro-card-v2.png"
+    )
+    assert plans["free"]["settings"]["image"] == (
+        "shopify://shop_images/caddieinsight-free-card-v2.png"
+    )
     assert plans["pro"]["settings"]["image_label"] == "CaddieInsight Pro"
     assert plans["free"]["settings"]["image_label"] == "CaddieInsight Free"
     assert "assign image_label = b.image_label | default: title" in product_grid
