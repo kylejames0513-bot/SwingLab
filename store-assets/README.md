@@ -17,6 +17,7 @@ pose-estimation skeletons, the product's own visual language.
 | `drill-*.png` (5) | Second gallery image per training aid: the drill it trains, with setup measurements and protocol |
 | `detail-cap.png` | Second gallery image on the cap: flat-lay construction study |
 | `product-pro.png`, `pro-report-strip.png`, `pro-overlay-detail.png`, `pro-plans.png` | The CaddieInsight Pro product gallery |
+| `caddieinsight-pro-card-v2.png`, `caddieinsight-free-card-v2.png` | Versioned photoreal membership-card candidates, awaiting Shopify upload and theme binding |
 | `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon |
 | `collection-gear.png` | CaddieInsight Gear collection image |
 | `swinglab-hero.png` | Homepage hero background (Horizon theme) |

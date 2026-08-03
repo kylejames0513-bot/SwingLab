@@ -62,6 +62,18 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
     assert INDEX["order"].index("comparison") < INDEX["order"].index("gear")
 
 
+def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
+    candidates = (
+        "caddieinsight-pro-card-v2.png",
+        "caddieinsight-free-card-v2.png",
+    )
+
+    for filename in candidates:
+        path = ASSET_ROOT / filename
+        assert path.exists(), f"Missing membership card art: {filename}"
+        assert png_dimensions(path) == (1536, 1024)
+
+
 def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
     how = INDEX["sections"]["how_it_works"]
     report = INDEX["sections"]["report"]
