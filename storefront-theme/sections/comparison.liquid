@@ -2,7 +2,7 @@
   <div class="sl-wrap sl-reveal">
     <div class="sl-compare__head">
       <h2 class="sl-h2">
-        <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Free gets you started. Pro keeps score.' }}</span>
+        <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Compare Free and Pro.' }}</span>
         <span data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_heading' | t }}</span>
       </h2>
       {%- if section.settings.sub != blank -%}
@@ -56,8 +56,8 @@
 
 {% stylesheet %}
 .sl-compare {
-  padding-top: clamp(76px, 8vw, 112px);
-  padding-bottom: clamp(76px, 8vw, 112px);
+  padding-top: var(--sl-section-space);
+  padding-bottom: var(--sl-section-space);
   background: #f0eee7;
 }
 .sl-compare__head {
@@ -72,7 +72,7 @@
 .sl-compare .sl-h2 {
   max-width: 13ch;
   margin-inline: auto;
-  font-size: clamp(38px, 4.8vw, 62px);
+  font-size: var(--sl-heading-support);
   font-weight: 900;
   letter-spacing: -0.045em;
   line-height: 1;
@@ -192,7 +192,6 @@
 }
 @media (max-width: 749px) {
   .sl-compare__head { gap: 18px; }
-  .sl-compare .sl-h2 { font-size: clamp(38px, 11.5vw, 52px); }
   .sl-compare__sub { margin-top: 0; }
 }
 {% endstylesheet %}
@@ -202,8 +201,8 @@
   "name": "Free vs Pro",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "compare" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Free gets you started. Pro keeps score." },
-    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Both plans run the same analysis engine. Free is one full report a month; Pro is unlimited filming plus the annotated coach replay and the progress dashboard." },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Compare Free and Pro." },
+    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Both plans use the same coaching engine. Pro removes the monthly limit and adds replay plus progress tracking." },
     { "type": "text", "id": "free_label", "label": "Free column label", "default": "Free" },
     { "type": "text", "id": "pro_label", "label": "Pro column label", "default": "Pro" },
     { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Get Pro" },
@@ -234,7 +233,7 @@
         { "type": "row", "settings": { "feature": "Private, per-account session history", "free_value": "Included", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Matched training-aid recommendations", "free_value": "Included", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Annotated coach replay video", "free_value": "—", "pro_value": "Included" } },
-        { "type": "row", "settings": { "feature": "Progress dashboard & trends", "free_value": "—", "pro_value": "Included" } },
+        { "type": "row", "settings": { "feature": "Progress dashboard and trends", "free_value": "—", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Price", "free_value": "$0", "pro_value": "$4.99/mo · $39.99/yr · $79.99 lifetime" } }
       ]
     }

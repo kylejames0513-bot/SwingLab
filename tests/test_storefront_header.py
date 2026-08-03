@@ -77,12 +77,6 @@ def test_storefront_homepage_prominently_welcomes_signed_in_members():
 
 
 def test_premium_header_is_scoped_to_home_and_the_pro_product():
-    premium_scope = (
-        "if request.page_type == 'index'\n"
-        "    assign premium_header = true\n"
-        "  elsif request.page_type == 'product' and product.handle == 'swinglab-pro'\n"
-        "    assign premium_header = true"
-    )
     chrome_scope = (
         "if request.page_type == 'index'\n"
         "    assign premium_chrome = true\n"
@@ -91,9 +85,12 @@ def test_premium_header_is_scoped_to_home_and_the_pro_product():
     )
 
     assert "assign premium_header = false" in HEADER
-    assert premium_scope in HEADER
+    assert "assign overlay_header = false" in HEADER
+    assert "if request.page_type == 'index'" in HEADER
+    assert "assign overlay_header = true" in HEADER
+    assert "elsif request.page_type == 'product' and product.handle == 'swinglab-pro'" in HEADER
     assert (
-        'class="sl-header{% if premium_header %} sl-header--premium{% endif %}"'
+        'class="sl-header{% if premium_header %} sl-header--premium{% endif %}{% if overlay_header %} sl-header--overlay{% endif %}"'
         in HEADER
     )
     assert "assign premium_chrome = false" in LAYOUT
@@ -134,6 +131,16 @@ def test_mobile_header_uses_one_cart_link_and_an_accessible_dialog():
     assert "window.matchMedia('(min-width: 981px)')" in HEADER
 
 
+def test_home_header_overlays_the_hero_then_gains_a_scroll_surface():
+    assert "assign overlay_header = true" in HEADER
+    assert ".shopify-section:has(> .sl-header--overlay) { margin-bottom: -76px; }" in HEADER
+    overlay_css = HEADER.split(".sl-header--overlay {", 1)[1].split("}", 1)[0]
+    assert "background: transparent" in overlay_css
+    assert ".sl-header--overlay.is-scrolled" in HEADER
+    assert "window.scrollY > 12" in HEADER
+    assert "window.addEventListener('scroll', updateHeaderSurface" in HEADER
+
+
 def test_storefront_and_app_share_the_responsive_header_contract():
     for source in (HEADER, APP_LAYOUT):
         assert "max-width: 1280px" in source
@@ -158,7 +165,13 @@ def test_storefront_header_reinitializes_cleanly_in_the_theme_editor():
 def test_storefront_keeps_mobile_actions_readable():
     assert 'class="sl-header__cta sl-header__app"' in HEADER
     assert 'class="sl-header__cta sl-menu__cta"' in HEADER
-    assert ".sl-header__cart-label { display: none; }" not in HEADER
+    assert 'aria-label="{{ cart_aria }}"' in HEADER
+    tiny_mobile = HEADER.split("@media (max-width: 480px)", 1)[1].split(
+        "@media (max-width: 360px)", 1
+    )[0]
+    assert ".sl-header__cart-label { display: none; }" in tiny_mobile
+    assert "@media (max-width: 360px)" in HEADER
+    assert "@media (min-width: 981px) and (max-width: 1099px)" in HEADER
 
 
 def test_header_labels_describe_destinations():
@@ -175,7 +188,7 @@ def test_header_labels_describe_destinations():
     assert navigation["app_sign_in"] == "Sign in"
     assert navigation["create_free_account"] == "Create free account"
     assert navigation["log_out"] == "Log out"
-    assert navigation["orders_subscriptions"] == "Orders & subscriptions"
+    assert navigation["orders_subscriptions"] == "Orders and subscriptions"
     assert navigation["method"] == "Method"
     assert navigation["sample_report"] == "Sample report"
     assert navigation["plans"] == "Plans"

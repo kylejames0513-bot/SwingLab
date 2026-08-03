@@ -4,11 +4,11 @@ Source-controlled copy of the custom CaddieInsight Shopify theme. GitHub is
 the source of truth for theme code; Shopify theme state, preview state, and
 publication state must be verified separately during a release.
 
-Version 1.3 adds the "Caddie Window" premium campaign layer to Fairway
-Modernism: cinematic range photography, near-black pine surfaces, restrained
-orange motion light, and glass analysis signals above the established warm
-off-white commerce system. Archivo remains the display voice and DM Mono is
-reserved for measured evidence labels.
+Version 1.4 refines the "Caddie Window" premium campaign layer with a
+transparent homepage header that gains a dark glass surface on scroll,
+consistent section rhythm, accessible accent colors, and tighter commerce
+states. Archivo remains the display voice and a system monospace stack marks
+measured evidence labels.
 
 ## Layout
 
@@ -37,8 +37,9 @@ reserved for measured evidence labels.
 - Storefront artwork uses immutable, release-specific Shopify File names.
   Upload a new version and update the source reference in a reviewed PR; never
   overwrite a filename still referenced by the current live theme.
-- The homepage and CaddieInsight Pro product use the premium dark header
-  modifier. Collection, cart, search, account, and ordinary product routes keep
+- The homepage starts with a transparent overlay header and shifts to a premium
+  dark glass surface on scroll. CaddieInsight Pro keeps an opaque premium
+  header; collection, cart, search, account, and ordinary product routes keep
   the standard commerce header and the same account/cart navigation contracts.
 
 ## Validation
@@ -47,7 +48,7 @@ Run both gates from the repository root before opening a pull request:
 
 ```text
 shopify theme check --path storefront-theme --fail-level warning
-python -m pytest tests/test_storefront_header.py tests/test_theme_selling_plans.py tests/test_premium_storefront.py -q
+python -m pytest tests/test_storefront_header.py tests/test_storefront_mobile_regressions.py tests/test_theme_selling_plans.py tests/test_premium_storefront.py -q
 ```
 
 Theme Check also runs in GitHub Actions. A source PR is not a Shopify preview

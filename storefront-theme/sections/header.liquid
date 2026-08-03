@@ -11,8 +11,10 @@
   assign gear_url = routes.collections_url | append: '/swinglab-gear'
   assign pro_product = all_products['swinglab-pro']
   assign premium_header = false
+  assign overlay_header = false
   if request.page_type == 'index'
     assign premium_header = true
+    assign overlay_header = true
   elsif request.page_type == 'product' and product.handle == 'swinglab-pro'
     assign premium_header = true
   endif
@@ -38,7 +40,7 @@
   endif
 -%}
 
-<header class="sl-header{% if premium_header %} sl-header--premium{% endif %}"
+<header class="sl-header{% if premium_header %} sl-header--premium{% endif %}{% if overlay_header %} sl-header--overlay{% endif %}"
         data-sl-header
         data-menu-id="{{ menu_id }}"
         {% if app_url != blank %}data-app-session-url="{{ app_session_url }}"
@@ -324,16 +326,22 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   color: #ffad62;
   text-decoration-color: currentColor;
 }
-.sl-header {
+.shopify-section:has(> .sl-header) {
   position: sticky;
   top: 0;
   z-index: 40;
+}
+.shopify-section:has(> .sl-header--overlay) { margin-bottom: -76px; }
+.sl-header {
+  position: relative;
+  z-index: 1;
   min-height: 72px;
   padding: 0 var(--sl-pad-x);
   background: rgba(247, 245, 240, 0.94);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--sl-border);
+  transition: background-color .24s ease, border-color .24s ease, box-shadow .24s ease, backdrop-filter .24s ease;
 }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .sl-header { background: var(--sl-bg); }
@@ -478,6 +486,18 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   align-items: center;
   gap: 10px;
   flex-shrink: 0;
+}
+@media (min-width: 981px) {
+  .sl-header__inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+  .sl-header__logo { justify-self: start; }
+  .sl-header__desktop-nav {
+    margin-left: 0;
+    justify-self: center;
+  }
+  .sl-header__actions { justify-self: end; }
 }
 .sl-header__cta {
   min-height: 40px;
@@ -737,6 +757,24 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   border-color: rgba(245, 242, 233, 0.5);
   color: #f5f2e9;
 }
+.sl-header--overlay {
+  background: transparent;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-bottom-color: transparent;
+  box-shadow: none;
+}
+.sl-header--overlay.is-scrolled {
+  background: rgba(7, 19, 13, 0.9);
+  -webkit-backdrop-filter: blur(18px) saturate(1.1);
+  backdrop-filter: blur(18px) saturate(1.1);
+  border-bottom-color: rgba(239, 241, 232, 0.12);
+  box-shadow: 0 18px 48px -32px rgba(0, 0, 0, 0.85);
+}
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  .sl-header--overlay { background: transparent; }
+  .sl-header--overlay.is-scrolled { background: #07130d; }
+}
 .sl-header--premium :focus-visible,
 .sl-premium-chrome .sl-menu :focus-visible {
   outline: 3px solid #ffad62;
@@ -763,17 +801,33 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
 }
 .sl-premium-chrome .sl-menu .sl-menu__cta { color: #07130d; }
 @media (max-width: 980px) {
+  .shopify-section:has(> .sl-header--overlay) { margin-bottom: -64px; }
   .sl-header { min-height: 64px; }
   .sl-header__inner,
-  .sl-header--premium .sl-header__inner { min-height: 64px; gap: 10px; }
+  .sl-header--premium .sl-header__inner {
+    min-height: 64px;
+    gap: 10px;
+    position: relative;
+    justify-content: flex-end;
+  }
   .sl-header__desktop-nav,
   .sl-header__account,
   .sl-header__app { display: none; }
+  .sl-header__logo {
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+  }
   .sl-header__actions { margin-left: auto; gap: 8px; }
   .sl-header__toggle { display: flex; }
   .sl-header__logo-img { height: 28px; max-width: 175px; object-fit: contain; }
   .sl-header__logo { font-size: 18px; }
   .sl-header__cart { min-height: 38px; }
+}
+@media (min-width: 981px) and (max-width: 1099px) {
+  .sl-header__account,
+  .sl-header__app { display: none; }
+  .sl-header__toggle { display: flex; }
 }
 @media (max-width: 560px) {
   .sl-member-rail {
@@ -802,16 +856,27 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   }
 }
 @media (max-width: 480px) {
+  .shopify-section:has(> .sl-header--overlay) { margin-bottom: -60px; }
   .sl-header { --sl-pad-x: 20px; min-height: 60px; }
   .sl-header__inner,
   .sl-header--premium .sl-header__inner { min-height: 60px; gap: 8px; }
   .sl-header__logo-img { height: 25px; max-width: 154px; }
   .sl-header__actions { gap: 6px; }
   .sl-header__cart { min-height: 36px; padding: 5px 7px 5px 10px; font-size: 13px; }
+  .sl-header__cart-label { display: none; }
   .sl-header__cart-count { min-width: 20px; padding: 5px; }
   .sl-header__toggle { width: 40px; height: 40px; padding: 9px; }
 }
+@media (max-width: 360px) {
+  .sl-header { --sl-pad-x: 16px; }
+  .sl-header__logo {
+    left: 16px;
+    transform: none;
+  }
+  .sl-header__logo-img { max-width: 128px; }
+}
 @media (prefers-reduced-motion: reduce) {
+  .sl-header { transition: none; }
   .sl-header__chevron { transition: none; }
   .sl-menu[open] .sl-menu__panel { animation: none; }
 }
@@ -847,7 +912,13 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
       var menuLinks = menu.querySelectorAll('[data-menu-link]');
       var desktopMenus = header.querySelectorAll('[data-header-dropdown]');
       var desktopQuery = window.matchMedia('(min-width: 981px)');
+      var overlayHeader = header.classList.contains('sl-header--overlay');
       var restoreMenuFocus = false;
+
+      function updateHeaderSurface() {
+        if (!overlayHeader) return;
+        header.classList.toggle('is-scrolled', window.scrollY > 12);
+      }
 
       function finishMenuClose() {
         openButton.setAttribute('aria-expanded', 'false');
@@ -1030,6 +1101,10 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
         menuLinks[i].addEventListener('click', function () { closeMenu(false); }, listenerOptions);
       }
       desktopQuery.addEventListener('change', closeOnBreakpointChange, listenerOptions);
+      if (overlayHeader) {
+        updateHeaderSurface();
+        window.addEventListener('scroll', updateHeaderSurface, { signal: controller.signal, passive: true });
+      }
 
       for (var j = 0; j < desktopMenus.length; j++) {
         desktopMenus[j].addEventListener('toggle', function (event) {

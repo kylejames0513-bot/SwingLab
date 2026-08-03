@@ -31,7 +31,7 @@
 
         # If a real product is linked, let its data win over placeholder text.
         if b.product != blank
-          assign p = all_products[b.product]
+          assign p = b.product
           if title == blank
             assign title = p.title
           endif
@@ -91,8 +91,8 @@
 
 {% stylesheet %}
 .sl-shop {
-  padding-top: clamp(78px, 9vw, 126px);
-  padding-bottom: clamp(78px, 9vw, 126px);
+  padding-top: var(--sl-section-space);
+  padding-bottom: var(--sl-section-space);
 }
 .sl-shop__head {
   max-width: 850px;
@@ -110,7 +110,7 @@
 .sl-shop .sl-h2 {
   max-width: 13ch;
   margin-inline: auto;
-  font-size: clamp(40px, 5.2vw, 68px);
+  font-size: var(--sl-heading-display);
   font-weight: 900;
   letter-spacing: -0.05em;
   line-height: 0.98;
@@ -268,7 +268,6 @@
 }
 @media (max-width: 749px) {
   .sl-shop__grid { grid-template-columns: 1fr; }
-  .sl-shop .sl-h2 { font-size: clamp(40px, 12vw, 56px); }
   .sl-card__media-label {
     top: 12px;
     left: 12px;
@@ -293,7 +292,7 @@
       "settings": [
         { "type": "text", "id": "badge", "label": "Badge", "default": "MEMBERSHIP" },
         { "type": "text", "id": "title", "label": "Title", "default": "CaddieInsight Pro" },
-        { "type": "textarea", "id": "description", "label": "Description", "default": "Unlimited swing analyses with every deliverable — strip, overlay, slow motion, notes." },
+        { "type": "textarea", "id": "description", "label": "Description", "default": "Unlimited swing analyses, an annotated coach replay for every swing, and progress tracking across sessions so each range visit builds on the last." },
         { "type": "text", "id": "price_text", "label": "Price text", "info": "Leave blank when using the linked product's live price." },
         { "type": "text", "id": "price_note", "label": "Price note", "info": "Small line under the price, e.g. plan lengths." },
         { "type": "url", "id": "url", "label": "Card link" },
@@ -322,7 +321,7 @@
           "settings": {
             "badge": "MEMBERSHIP",
             "title": "CaddieInsight Pro",
-            "description": "Unlimited swing analyses with every deliverable — strip, overlay, slow motion, notes.",
+            "description": "Unlimited swing analyses, an annotated coach replay for every swing, and progress tracking across sessions so each range visit builds on the last.",
             "use_product_price": true,
             "member_visibility": "pro_offer",
             "image_label": "CaddieInsight Pro",
@@ -335,7 +334,7 @@
           "settings": {
             "badge": "FREE PLAN",
             "title": "Try CaddieInsight Free",
-            "description": "1 full swing analysis every month, free forever — the complete report each time.",
+            "description": "One complete swing analysis each month, with saved club context, coaching priorities, and a measurable practice plan. No card required.",
             "price_text": "$0",
             "price_note": "No card required",
             "member_visibility": "signed_out",

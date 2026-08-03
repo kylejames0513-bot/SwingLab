@@ -32,7 +32,7 @@
 .sl-how {
   background: #f0eee7;
   color: var(--sl-ink);
-  padding: clamp(76px, 9vw, 126px) 0;
+  padding: var(--sl-section-space) 0;
 }
 .sl-how__head {
   padding-bottom: clamp(30px, 4vw, 52px);
@@ -57,7 +57,7 @@
   margin: 0 auto;
   max-width: 12ch;
   color: #0d2d1d;
-  font-size: clamp(42px, 5.7vw, 76px);
+  font-size: var(--sl-heading-display);
   font-weight: 900;
   letter-spacing: -0.05em;
   line-height: 0.96;
@@ -177,7 +177,6 @@
 }
 @media (max-width: 749px) {
   .sl-how__intro { grid-template-columns: 1fr; gap: 20px; }
-  .sl-how__title { font-size: clamp(42px, 13vw, 58px); }
   .sl-step { min-height: 0; }
 }
 {% endstylesheet %}

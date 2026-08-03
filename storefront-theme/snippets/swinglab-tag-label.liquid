@@ -1,0 +1,28 @@
+{% doc %}
+  Renders a customer-facing label for a SwingLab compatibility product tag.
+  Returns no output for tags outside the swinglab namespace.
+
+  @param {string} tag - The product tag to normalize.
+
+  @example
+  {% render 'swinglab-tag-label', tag: 'swinglab:hip-slide' %}
+{% enddoc %}
+
+{%- liquid
+  assign normalized_tag = tag | downcase | strip
+  assign tag_prefix = normalized_tag | slice: 0, 9
+  assign label = ''
+
+  if tag_prefix == 'swinglab:'
+    assign label = normalized_tag | remove_first: 'swinglab:' | replace: '-', ' ' | strip
+
+    case label
+      when 'general'
+        assign label = 'all swings'
+      when 'hip slide'
+        assign label = 'hip control'
+    endcase
+  endif
+-%}
+
+{{- label -}}

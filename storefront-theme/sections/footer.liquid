@@ -9,6 +9,9 @@
   assign faq_page = pages['faq']
   assign shipping_page = pages['shipping-returns']
   assign about_page = pages['about']
+  assign newsletter_form_id = 'sl-footer-form-' | append: section.id
+  assign newsletter_email_id = 'sl-footer-email-' | append: section.id
+  assign newsletter_message_id = 'sl-footer-message-' | append: section.id
 
   comment
     A menu whose top-level links have children replaces the built-in
@@ -33,7 +36,7 @@
           <p class="sl-footer__tagline">{{ section.settings.tagline }}</p>
         {%- endif -%}
         {%- if app_url != blank -%}
-          <a class="sl-footer__applink" href="{{ app_url }}">Open the app</a>
+          <a class="sl-footer__applink" href="{{ app_url }}">Open CaddieInsight</a>
         {%- endif -%}
       </div>
 
@@ -52,18 +55,19 @@
         <nav class="sl-footer__col" aria-label="Shop">
           <p class="sl-footer__head">Shop</p>
           <a class="sl-footer__link" href="{{ gear_url }}">Training gear</a>
-          {%- if pro_product != blank -%}<a class="sl-footer__link" href="{{ pro_product.url }}" data-app-pro-sales-link>Pro Membership</a>{%- endif -%}
-          {%- if cap_product != blank -%}<a class="sl-footer__link" href="{{ cap_product.url }}">Performance Cap</a>{%- endif -%}
+          {%- if pro_product != blank -%}<a class="sl-footer__link" href="{{ pro_product.url }}" data-app-pro-sales-link>CaddieInsight Pro</a>{%- endif -%}
+          {%- if cap_product != blank -%}<a class="sl-footer__link" href="{{ cap_product.url }}">Performance cap</a>{%- endif -%}
         </nav>
         <nav class="sl-footer__col" aria-label="Learn">
           <p class="sl-footer__head">Learn</p>
           {%- if method_page != blank -%}<a class="sl-footer__link" href="{{ method_page.url }}">The Method</a>{%- endif -%}
-          {%- if how_page != blank -%}<a class="sl-footer__link" href="{{ how_page.url }}">How CaddieInsight Works</a>{%- endif -%}
+          {%- if how_page != blank -%}<a class="sl-footer__link" href="{{ how_page.url }}">How CaddieInsight works</a>{%- endif -%}
           {%- if faq_page != blank -%}<a class="sl-footer__link" href="{{ faq_page.url }}">FAQ</a>{%- endif -%}
         </nav>
         <nav class="sl-footer__col" aria-label="Support">
           <p class="sl-footer__head">Support</p>
-          {%- if shipping_page != blank -%}<a class="sl-footer__link" href="{{ shipping_page.url }}">Shipping &amp; Returns</a>{%- endif -%}
+          <a class="sl-footer__link" href="{{ routes.account_url }}">Orders and subscriptions</a>
+          {%- if shipping_page != blank -%}<a class="sl-footer__link" href="{{ shipping_page.url }}">Shipping and returns</a>{%- endif -%}
           {%- if about_page != blank -%}<a class="sl-footer__link" href="{{ about_page.url }}">About</a>{%- endif -%}
         </nav>
       {%- endif -%}
@@ -71,39 +75,45 @@
 
     <div class="sl-footer__newsletter">
       <div class="sl-footer__news-copy">
-        <p class="sl-footer__head">{{ section.settings.newsletter_heading | default: 'The practice letter' }}</p>
-        <p class="sl-footer__news-sub">{{ section.settings.newsletter_text | default: 'One drill a week. No noise.' }}</p>
+        <p class="sl-footer__head">{{ section.settings.newsletter_heading | default: 'The Practice Letter' }}</p>
+        <p class="sl-footer__news-sub">{{ section.settings.newsletter_text | default: 'One practical drill each week.' }}</p>
       </div>
-      {% form 'customer', class: 'sl-footer__form' %}
+      {% form 'customer', class: 'sl-footer__form', id: newsletter_form_id %}
         <input type="hidden" name="contact[tags]" value="newsletter">
         {%- if form.posted_successfully? -%}
-          <p class="sl-footer__form-ok">Signed up. The first drill lands in your inbox this week.</p>
+          <p id="{{ newsletter_message_id }}" class="sl-footer__form-ok" role="status" aria-live="polite" aria-atomic="true">You’re in. Look for the next Practice Letter in your inbox.</p>
         {%- else -%}
-          <label class="visually-hidden" for="sl-footer-email">Email address</label>
+          <label class="visually-hidden" for="{{ newsletter_email_id }}">Email address</label>
           <input
-            id="sl-footer-email"
+            id="{{ newsletter_email_id }}"
             class="sl-footer__input"
             type="email"
             name="contact[email]"
+            value="{{ form.email | escape }}"
             placeholder="you@example.com"
             autocomplete="email"
             autocorrect="off"
             autocapitalize="off"
+            {% if form.errors %}aria-invalid="true" aria-describedby="{{ newsletter_message_id }}"{% endif %}
             required
           >
-          <button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Sign up</button>
+          <button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Join the list</button>
           {%- if form.errors -%}
-            <p class="sl-footer__form-err">Please enter a valid email address.</p>
+            <p id="{{ newsletter_message_id }}" class="sl-footer__form-err" role="alert" aria-live="assertive" aria-atomic="true">Please enter a valid email address.</p>
           {%- endif -%}
         {%- endif -%}
       {% endform %}
     </div>
 
-    {%- if menu != blank and menu_is_nested == false and menu.links.size > 0 -%}
-      <nav class="sl-footer__quick" aria-label="Footer links">
-        {%- for link in menu.links -%}
-          <a class="sl-footer__link" href="{{ link.url }}"{% if link.url contains '/products/swinglab-pro' %} data-app-pro-sales-link{% endif %}>{{ link.title }}</a>
-        {%- endfor -%}
+    {%- if shop.policies.size > 0 -%}
+      <nav class="sl-footer__policies" aria-label="Store policies">
+        <ul class="sl-footer__policies-list">
+          {%- for policy in shop.policies -%}
+            {%- if policy != blank -%}
+              <li><a class="sl-footer__link" href="{{ policy.url }}">{{ policy.title | escape }}</a></li>
+            {%- endif -%}
+          {%- endfor -%}
+        </ul>
       </nav>
     {%- endif -%}
 
@@ -147,7 +157,7 @@
 .sl-footer__tagline {
   margin: 0 0 16px;
   line-height: 1.6;
-  color: var(--sl-footer-ink);
+  color: #a8b8ad;
 }
 .sl-footer__applink {
   display: inline-block;
@@ -172,10 +182,10 @@
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: #6d7d72;
+  color: #a8b8ad;
 }
 .sl-footer__link {
-  color: var(--sl-footer-ink);
+  color: #b7c5ba;
   text-decoration: none;
   font-size: 14.5px;
 }
@@ -215,10 +225,10 @@
   border-radius: 999px;
   padding: 11px 18px;
 }
-.sl-footer__input::placeholder { color: rgba(159, 176, 164, 0.75); }
+.sl-footer__input::placeholder { color: #a8b8ad; }
 .sl-footer__input:focus {
-  outline: 2px solid var(--sl-orange);
-  outline-offset: 2px;
+  outline: 3px solid #ffad62;
+  outline-offset: 3px;
   border-color: transparent;
 }
 .sl-footer__form-ok { margin: 0; color: var(--sl-green-ink); }
@@ -228,12 +238,17 @@
   font-size: 13px;
   color: #e8a06a;
 }
-.sl-footer__quick {
+.sl-footer__policies {
+  border-top: 1px solid rgba(159, 176, 164, 0.18);
+  padding: 20px 0 24px;
+}
+.sl-footer__policies-list {
+  margin: 0;
+  padding: 0;
   display: flex;
   flex-wrap: wrap;
   gap: 10px 22px;
-  border-top: 1px solid rgba(159, 176, 164, 0.18);
-  padding: 20px 0 24px;
+  list-style: none;
 }
 .sl-footer__fine {
   border-top: 1px solid rgba(159, 176, 164, 0.18);
@@ -248,7 +263,7 @@
   margin: 0;
   font-size: 12.5px;
   font-style: italic;
-  color: #6d7d72;
+  color: #a8b8ad;
   max-width: 640px;
 }
 .sl-footer__copyright {
@@ -256,7 +271,7 @@
   font-family: var(--sl-font-mono);
   font-size: 12px;
   letter-spacing: 0.06em;
-  color: #6d7d72;
+  color: #a8b8ad;
   white-space: nowrap;
 }
 {% endstylesheet %}
@@ -275,32 +290,32 @@
       "type": "text",
       "id": "tagline",
       "label": "Positioning line",
-      "default": "One priority. One practice plan. Proof when you re-film."
+      "default": "One priority. One practice plan. Proof when you re‑film."
     },
     {
       "type": "text",
       "id": "app_url",
       "label": "App URL",
       "default": "https://app.caddieinsight.com",
-      "info": "The \"Open the app\" link points here. Leave empty to hide it."
+      "info": "The \"Open CaddieInsight\" link points here. Leave empty to hide it."
     },
     {
       "type": "link_list",
       "id": "menu",
       "label": "Footer menu (optional)",
-      "info": "A menu with nested links replaces the built-in Shop / Learn / Support columns. A flat menu renders as a compact link row above the fine print."
+      "info": "A menu with nested links replaces the built-in Shop, Learn, and Support columns."
     },
     {
       "type": "text",
       "id": "newsletter_heading",
       "label": "Newsletter heading",
-      "default": "The practice letter"
+      "default": "The Practice Letter"
     },
     {
       "type": "text",
       "id": "newsletter_text",
       "label": "Newsletter supporting line",
-      "default": "One drill a week. No noise."
+      "default": "One practical drill each week."
     },
     {
       "type": "textarea",

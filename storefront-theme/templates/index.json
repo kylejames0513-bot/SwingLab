@@ -121,40 +121,33 @@
         "p1": {
           "type": "point",
           "settings": {
-            "text": "The linked full report uses the same engine as customer sessions"
+            "text": "See the selected club and capture context"
           }
         },
         "p2": {
           "type": "point",
           "settings": {
-            "text": "The selected club and capture context stay with the report"
+            "text": "Understand why one coaching priority comes first"
           }
         },
         "p3": {
           "type": "point",
           "settings": {
-            "text": "One prioritized coaching card instead of a wall of observations"
-          }
-        },
-        "p4": {
-          "type": "point",
-          "settings": {
-            "text": "One measured practice plan with a pass mark for the next clip"
+            "text": "Leave with a focused drill and measurable pass mark"
           }
         }
       },
       "block_order": [
         "p1",
         "p2",
-        "p3",
-        "p4"
+        "p3"
       ],
       "settings": {
         "anchor": "report",
-        "heading": "See what your next range session is really for.",
-        "body": "Open a demonstration report built through the same report engine. See how CaddieInsight ranks supported phone-video evidence, brings one movement forward, and attaches a measurable plan to the next clip.",
-        "caption": "ILLUSTRATED PREVIEW · COMPLETE SAMPLE REPORT · DEMONSTRATION DATA",
-        "cta_label": "Open the full sample report",
+        "heading": "Know what to practice next.",
+        "body": "Explore a sample report to see how CaddieInsight turns phone-video evidence into one priority, a focused drill, and a measurable pass mark.",
+        "caption": "SAMPLE REPORT · DEMONSTRATION DATA",
+        "cta_label": "View the sample report",
         "sample_url": "https://app.caddieinsight.com/sample-report/"
       }
     },
@@ -163,10 +156,10 @@
       "settings": {
         "anchor": "gear",
         "heading": "Train the priority your report surfaces",
-        "sub": "The app maps supported coaching flags to a drill first. When a relevant training aid exists, the recommendation stays tied to that practice job.",
+        "sub": "The app maps supported coaching priorities to a drill first. When a relevant training aid exists, the recommendation stays tied to that practice job.",
         "collection": "swinglab-gear",
         "max_products": 6,
-        "link_label": "Shop all gear"
+        "link_label": "View all training gear"
       }
     },
     "plans": {
@@ -177,9 +170,9 @@
           "settings": {
             "badge": "MEMBERSHIP",
             "title": "CaddieInsight Pro",
-            "description": "Unlimited swing analyses, an annotated coach replay of every swing, and the progress dashboard. Shopify checkout unlocks Pro on the CaddieInsight account connected to your purchase email.",
+            "description": "Unlimited swing analyses, an annotated coach replay for every swing, and progress tracking across sessions so each range visit builds on the last.",
             "price_text": "",
-            "price_note": "Month $4.99 · Year $39.99 · Lifetime $79.99",
+            "price_note": "Monthly $4.99 · Annual $39.99 · Lifetime $79.99",
             "product": "swinglab-pro",
             "use_product_price": true,
             "member_visibility": "pro_offer",
@@ -195,9 +188,9 @@
           "settings": {
             "badge": "FREE PLAN",
             "title": "Try CaddieInsight Free",
-            "description": "One full swing analysis every month, including the complete coaching report, saved club context, and a measured practice plan. Start without a card and repeat the loop next month.",
+            "description": "One complete swing analysis each month, with saved club context, coaching priorities, and a measurable practice plan. No card required.",
             "price_text": "$0",
-            "price_note": "No card required · complete report included",
+            "price_note": "No card required",
             "url": "https://app.caddieinsight.com",
             "use_product_price": false,
             "member_visibility": "signed_out",
@@ -274,7 +267,7 @@
         "r_progress": {
           "type": "row",
           "settings": {
-            "feature": "Progress dashboard & trends",
+            "feature": "Progress dashboard and trends",
             "free_value": "—",
             "pro_value": "Included"
           }
@@ -300,8 +293,8 @@
       ],
       "settings": {
         "anchor": "compare",
-        "heading": "Free proves the loop. Pro keeps it moving.",
-        "sub": "Both plans run the same coaching engine. Free includes one full report each month; Pro adds unlimited sessions, annotated coach replay, and the progress dashboard.",
+        "heading": "Compare Free and Pro.",
+        "sub": "Both plans use the same coaching engine. Pro removes the monthly limit and adds replay plus progress tracking.",
         "free_label": "Free",
         "pro_label": "Pro",
         "primary_label": "Get Pro",
@@ -342,9 +335,9 @@
         "n_consistency"
       ],
       "settings": {
-        "heading": "A coach that shows its work",
+        "heading": "Coaching that shows its work",
         "sub": "The report keeps the decision legible: which club you filmed, which supported movement comes first, what to practice, and what must match on the next clip.",
-        "footnote": "PRODUCT BEHAVIOR — NOT A CUSTOMER TESTIMONIAL"
+        "footnote": "PRODUCT FEATURES SHOWN · NOT A CUSTOMER TESTIMONIAL"
       }
     },
     "faq": {
@@ -403,14 +396,14 @@
           "type": "qa",
           "settings": {
             "question": "How long does gear take to arrive?",
-            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and US delivery typically takes 6–12 business days, with tracking emailed at dispatch."
+            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and U.S. delivery typically takes 6–12 business days, with tracking emailed at dispatch."
           }
         },
         "q_returns": {
           "type": "qa",
           "settings": {
             "question": "What if a training aid isn't right for me?",
-            "answer": "Unused gear can be returned within 30 days, no questions asked. See the Shipping & Returns page for the details."
+            "answer": "Unused gear may be returned within 30 days. See the Shipping & Returns page for eligibility and instructions."
           }
         },
         "q_refund": {
@@ -440,19 +433,20 @@
     },
     "email": {
       "type": "email-capture",
+      "disabled": true,
       "settings": {
-        "heading": "One drill a week",
-        "sub": "A short, measurable practice plan in your inbox. Unsubscribe anytime.",
+        "heading": "The Practice Letter",
+        "sub": "One practical drill each week.",
         "placeholder": "you@example.com",
-        "button_label": "Sign up",
-        "success_text": "You're on the list. The first drill arrives with the next send."
+        "button_label": "Join the list",
+        "success_text": "You're in. Look for the next Practice Letter in your inbox."
       }
     },
     "cta": {
       "type": "cta-banner",
       "settings": {
         "heading": "Your next range session should answer one question.",
-        "sub": "Choose the club. Film the view. Work one measured plan. Re-film by repeating the setup.",
+        "sub": "Choose the club. Film the view. Work one measured plan. Re‑film by repeating the setup.",
         "primary_label": "Analyze a swing free",
         "primary_url": "https://app.caddieinsight.com/signup",
         "secondary_label": "Get Pro",
@@ -465,10 +459,10 @@
     "stats",
     "how_it_works",
     "report",
+    "coach_notes",
+    "gear",
     "plans",
     "comparison",
-    "gear",
-    "coach_notes",
     "faq",
     "email",
     "cta"

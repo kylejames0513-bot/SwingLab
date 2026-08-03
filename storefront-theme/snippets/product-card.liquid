@@ -1,12 +1,11 @@
-{%- comment -%}
-  Product card for collection, search, and related-product grids.
-  Accepts: product
+{% doc %}
+  Renders a product card for collection, search, and related-product grids.
 
-  Renders (base.css classes): image with hover lift, save-percent badge
-  when a single-price product has a compare-at price, sold-out badge,
-  title, price with compare-at strike, and up to two small flag chips
-  parsed from "swinglab:<flag>" tags.
-{%- endcomment -%}
+  @param {product} product - Product displayed by the card.
+
+  @example
+  {% render 'product-card', product: product %}
+{% enddoc %}
 {%- liquid
   assign card_alt = product.featured_media.alt | default: product.title
 
@@ -17,18 +16,15 @@
     assign save_pct = product.compare_at_price | minus: product.price | times: 100 | divided_by: product.compare_at_price
   endif
 
-  assign flag_str = ''
+  assign flag_tag_str = ''
   for tag in product.tags
-    assign t = tag | downcase
+    assign t = tag | downcase | strip
     assign t_prefix = t | slice: 0, 9
     if t_prefix == 'swinglab:'
-      assign flag = t | remove_first: 'swinglab:' | replace: '-', ' ' | strip
-      if flag != blank
-        assign flag_str = flag_str | append: flag | append: ','
-      endif
+      assign flag_tag_str = flag_tag_str | append: t | append: ','
     endif
   endfor
-  assign card_flags = flag_str | split: ','
+  assign card_flag_tags = flag_tag_str | split: ','
 -%}
 <a href="{{ product.url }}" class="sl-pcard"{% if product.handle == 'swinglab-pro' %} data-app-pro-sales-link{% endif %}>
   <div class="sl-pcard-media">
@@ -49,11 +45,20 @@
     {%- if product.price_varies %}From {% endif -%}{{ product.price | money }}
     {%- if on_sale %} <s class="sl-price-compare">{{ product.compare_at_price | money }}</s>{% endif -%}
   </p>
-  {%- if card_flags.size > 0 -%}
+  {%- capture card_flag_chips -%}
+    {%- for tag in card_flag_tags limit: 2 -%}
+      {%- capture flag_label -%}
+        {%- render 'swinglab-tag-label', tag: tag -%}
+      {%- endcapture -%}
+      {%- assign flag_label = flag_label | strip -%}
+      {%- if flag_label != blank -%}
+        <span class="sl-chip">{{ flag_label | escape }}</span>
+      {%- endif -%}
+    {%- endfor -%}
+  {%- endcapture -%}
+  {%- if card_flag_chips contains 'sl-chip' -%}
     <p class="sl-pcard-flags">
-      {%- for flag in card_flags limit: 2 -%}
-        <span class="sl-chip">{{ flag }}</span>
-      {%- endfor -%}
+      {{- card_flag_chips -}}
     </p>
   {%- endif -%}
 </a>

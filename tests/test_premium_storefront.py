@@ -51,15 +51,17 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "One priority",
         "Proof loop",
     ]
-    assert INDEX["order"][:6] == [
+    assert INDEX["order"][:8] == [
         "hero",
         "stats",
         "how_it_works",
         "report",
+        "coach_notes",
+        "gear",
         "plans",
         "comparison",
     ]
-    assert INDEX["order"].index("comparison") < INDEX["order"].index("gear")
+    assert INDEX["sections"]["email"]["disabled"] is True
 
 
 def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
@@ -154,16 +156,14 @@ def test_sample_proof_is_disclosed_and_avoids_fabricated_metrics():
     report_locale = LOCALE["homepage"]["report"]
 
     assert report["sample_url"] == "https://app.caddieinsight.com/sample-report/"
-    assert "demonstration report" in report["body"].lower()
-    assert report_locale["file_label"] == "Illustrated preview"
+    assert "sample report" in report["body"].lower()
+    assert report_locale["file_label"] == "Sample report"
     assert report_locale["disclosure"] == (
-        "Illustrated preview of a demonstration report built through the same report "
-        "engine. It is not a customer result or testimonial."
+        "Sample report built with demonstration data. Not a customer result or testimonial."
     )
-    assert "ILLUSTRATED PREVIEW" in report["caption"]
-    assert "COMPLETE SAMPLE REPORT" in report["caption"]
-    assert INDEX["sections"]["report"]["blocks"]["p1"]["settings"]["text"].startswith(
-        "The linked full report"
+    assert report["caption"] == "SAMPLE REPORT · DEMONSTRATION DATA"
+    assert INDEX["sections"]["report"]["blocks"]["p1"]["settings"]["text"] == (
+        "See the selected club and capture context"
     )
     assert '<dl class="sl-report__proof">' in report_source
     assert "homepage.report.disclosure" in report_source
@@ -180,9 +180,9 @@ def test_product_behavior_cards_are_not_presented_as_quotes_or_testimonials():
     coach = INDEX["sections"]["coach_notes"]
     coach_source = source("sections/coach-notes.liquid")
 
-    assert coach["settings"]["heading"] == "A coach that shows its work"
+    assert coach["settings"]["heading"] == "Coaching that shows its work"
     assert coach["settings"]["footnote"] == (
-        "PRODUCT BEHAVIOR — NOT A CUSTOMER TESTIMONIAL"
+        "PRODUCT FEATURES SHOWN · NOT A CUSTOMER TESTIMONIAL"
     )
     assert "<blockquote" not in coach_source
     assert '<article class="sl-coach__card"' in coach_source
@@ -464,12 +464,12 @@ def test_storefront_account_and_pro_actions_follow_the_app_session():
     ] == "signed_out"
     assert "data-app-pro-member-only hidden" in product
     assert "product.handle == 'swinglab-pro'" in product_card
-    assert footer.count("data-app-pro-sales-link") >= 3
+    assert footer.count("data-app-pro-sales-link") >= 2
     assert "create your account" not in faq.lower()
     assert INDEX["sections"]["cta"]["settings"]["primary_label"] == (
         "Analyze a swing free"
     )
-    assert '<button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Sign up</button>' in footer
+    assert '<button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Join the list</button>' in footer
 
 
 def test_generated_storefront_art_avoids_unsupported_measurement_claims():

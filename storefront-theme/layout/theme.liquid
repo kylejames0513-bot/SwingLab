@@ -63,6 +63,9 @@
     {%- if body_font_black -%}{{ body_font_black | font_face: font_display: 'swap' }}{%- endif -%}
     :root {
       --sl-font-sans: {{ settings.type_body_font.family }}, {{ settings.type_body_font.fallback_families }};
+      --sl-bg: {{ settings.color_page_bg }};
+      --sl-green: {{ settings.color_green }};
+      --sl-orange: {{ settings.color_accent }};
     }
   {% endstyle %}
   <noscript><style>.sl-reveal { opacity: 1; transform: none; }</style></noscript>
