@@ -87,13 +87,9 @@
 }
 .sl-report__copy {
   min-width: 0;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
 }
 .sl-report__eyebrow {
-  margin: 0 0 18px;
+  margin: 0 auto 18px;
   color: #ff9a42;
   font-family: var(--sl-font-mono);
   font-size: 11px;
@@ -108,23 +104,24 @@
   font-weight: 900;
   letter-spacing: -0.048em;
   line-height: 0.98;
+  text-align: center;
   text-wrap: balance;
 }
 .sl-report__body {
   max-width: 48ch;
-  margin: 24px auto 0;
+  margin: 24px 0 0;
   font-size: 17px;
   line-height: 1.65;
   color: rgba(245, 242, 233, 0.7);
+  text-align: left;
   text-wrap: pretty;
 }
 .sl-report__list {
   margin-top: 20px;
-  justify-items: center;
 }
 .sl-report .sl-check-list li {
   color: rgba(245, 242, 233, 0.72);
-  text-align: center;
+  text-align: left;
 }
 .sl-report__media-wrap {
   position: relative;
@@ -261,26 +258,29 @@
   color: var(--sl-ink-soft);
   flex: 1 1 260px;
   max-width: 44ch;
+  text-align: left;
   text-wrap: pretty;
 }
 .sl-report__foot .sl-chip { flex: 0 0 auto; }
 
 .sl-report__caption {
   display: block;
-  margin: 14px auto 0;
+  margin: 14px 0 0;
   color: rgba(245, 242, 233, 0.56);
+  text-align: left;
 }
 .sl-report__disclosure {
   max-width: 62ch;
-  margin: 9px auto 0;
+  margin: 9px 0 0;
   font-size: 13px;
   line-height: 1.55;
   color: rgba(245, 242, 233, 0.5);
+  text-align: left;
 }
 .sl-report__cta {
   display: flex;
   width: fit-content;
-  margin: 20px auto 0;
+  margin: 20px 0 0;
   border-color: rgba(245, 242, 233, 0.46);
   color: #f5f2e9;
 }

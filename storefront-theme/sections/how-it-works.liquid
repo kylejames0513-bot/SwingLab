@@ -69,6 +69,7 @@
   color: var(--sl-ink-soft);
   font-size: clamp(16px, 1.5vw, 19px);
   line-height: 1.6;
+  text-align: left;
   text-wrap: pretty;
 }
 .sl-how__grid {
@@ -84,14 +85,14 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   height: 100%;
   min-height: 330px;
   border: 1px solid #ded9ce;
   border-radius: 20px;
   padding: var(--sl-card-inset);
-  text-align: center;
+  text-align: left;
   background: rgba(255, 253, 249, 0.86);
   box-shadow: 0 22px 48px -40px rgba(15, 42, 27, 0.42);
 }
@@ -120,6 +121,7 @@
   letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
   color: var(--sl-orange);
+  align-self: center;
 }
 .sl-step__title {
   margin: 34px 0 12px;
@@ -127,6 +129,7 @@
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.02em;
+  text-align: center;
 }
 .sl-step__body {
   margin: 0;
@@ -146,6 +149,7 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--sl-ink-muted);
+  text-align: center;
 }
 .sl-step__body { margin-bottom: 0; }
 .sl-how__foot {
@@ -157,7 +161,7 @@
   justify-content: center;
   gap: 18px;
   flex-wrap: wrap;
-  text-align: center;
+  text-align: left;
 }
 .sl-how__foot-note {
   margin: 0 auto;

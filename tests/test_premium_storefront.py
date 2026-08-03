@@ -285,42 +285,63 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "grid-auto-columns:" not in mobile_stats
 
 
-def test_homepage_bordered_surfaces_keep_safe_insets_and_center_content():
+def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     base = source("assets/base.css")
     assert "--sl-pad-x: clamp(24px, 5vw, 64px)" in base
     assert "--sl-card-inset: clamp(24px, 3vw, 36px)" in base
     assert "--sl-dense-inset: clamp(14px, 1.5vw, 20px)" in base
 
-    centered_surfaces = {
-        "sections/stats-band.liquid": ".sl-stats__cell",
+    left_flow_surfaces = {
         "sections/how-it-works.liquid": ".sl-step",
         "sections/product-grid.liquid": ".sl-card__body",
         "sections/gear-showcase.liquid": ".sl-gear__body",
         "sections/coach-notes.liquid": ".sl-coach__card",
     }
-    for relative, selector in centered_surfaces.items():
+    for relative, selector in left_flow_surfaces.items():
         section_source = source(relative)
         rule = section_source.split(f"{selector} {{", 1)[1].split("}", 1)[0]
-        assert "align-items: center" in rule
-        assert "justify-content: center" in rule
-        assert "text-align: center" in rule
+        assert "align-items: stretch" in rule
+        assert "justify-content: flex-start" in rule
+        assert "text-align: left" in rule
         assert "padding: var(--sl-card-inset)" in rule
+
+    hero = source("sections/hero.liquid")
+    hero_title = hero.split(".sl-hero__title {", 1)[1].split("}", 1)[0]
+    hero_body = hero.split(".sl-hero__body {", 1)[1].split("}", 1)[0]
+    hero_proof = hero.split(".sl-hero__proof {", 1)[1].split("}", 1)[0]
+    assert "text-align: center" in hero_title
+    assert "text-align: left" in hero_body
+    assert "justify-content: flex-start" in hero_proof
+    assert "background: rgba(5, 16, 10, 0.46)" in hero_proof
+
+    stats = source("sections/stats-band.liquid")
+    stats_cell = stats.split(".sl-stats__cell {", 1)[1].split("}", 1)[0]
+    assert "align-items: center" in stats_cell
+    assert "text-align: center" in stats_cell
+    assert "margin-top: -54px" not in stats
+    assert "padding-top: clamp(36px, 5vw, 64px)" in stats
 
     report = source("sections/report-feature.liquid")
     assert ".sl-report__card {" in report
     assert "padding: var(--sl-card-inset)" in report
-    assert "margin: 20px auto 0" in report
+    assert "margin: 20px 0 0" in report
+    assert "text-align: left" in report.split(".sl-report__body {", 1)[1].split("}", 1)[0]
 
     comparison = source("sections/comparison.liquid")
     assert "padding: var(--sl-dense-inset)" in comparison
     assert "vertical-align: middle" in comparison
     assert "margin: 30px auto 0" in comparison
+    feature_column = comparison.split(".sl-compare__table tbody th {", 1)[1].split("}", 1)[0]
+    values = comparison.split(".sl-compare__table tbody td {", 1)[1].split("}", 1)[0]
+    assert "text-align: left" in feature_column
+    assert "text-align: center" in values
 
     faq = source("sections/faq.liquid")
     assert "padding: var(--sl-dense-inset) var(--sl-card-inset)" in faq
-    assert "padding: 0 var(--sl-card-inset) var(--sl-card-inset)" in faq
+    assert "padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px)" in faq
     assert "padding: 18px 4px" not in faq
-    assert "padding-left: 0" not in faq
+    assert "text-align: left" in faq.split(".sl-faq__q {", 1)[1].split("}", 1)[0]
+    assert "text-align: left" in faq.split(".sl-faq__a {", 1)[1].split("}", 1)[0]
 
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():

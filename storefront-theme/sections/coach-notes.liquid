@@ -43,6 +43,7 @@
   line-height: 1.55;
   color: var(--sl-ink-soft);
   max-width: 60ch;
+  text-align: left;
   text-wrap: pretty;
 }
 .sl-coach__grid {
@@ -56,8 +57,8 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   height: 100%;
   gap: 14px;
   background: var(--sl-bg-card);
@@ -65,9 +66,9 @@
   border-radius: var(--sl-radius-lg);
   padding: var(--sl-card-inset);
   box-shadow: var(--sl-shadow-card);
-  text-align: center;
+  text-align: left;
 }
-.sl-coach__label { margin: 0; line-height: 1; }
+.sl-coach__label { align-self: center; margin: 0; line-height: 1; }
 .sl-coach__quote {
   margin: 0;
   font-size: 15.5px;
@@ -78,7 +79,7 @@
 .sl-coach__footnote {
   display: block;
   margin: 22px auto 0;
-  text-align: center;
+  text-align: left;
 }
 
 @media (min-width: 640px) {

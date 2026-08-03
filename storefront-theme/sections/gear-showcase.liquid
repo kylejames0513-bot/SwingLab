@@ -94,6 +94,7 @@
   line-height: 1.55;
   color: var(--sl-ink-soft);
   max-width: 56ch;
+  text-align: left;
   text-wrap: pretty;
 }
 .sl-gear__all { flex-shrink: 0; }
@@ -134,12 +135,12 @@
 .sl-gear__body {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   gap: 8px;
   padding: var(--sl-card-inset);
   flex: 1;
-  text-align: center;
+  text-align: left;
 }
 .sl-gear__chips {
   display: flex;
@@ -157,14 +158,16 @@
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--sl-green);
+  text-align: center;
 }
 .sl-gear__price {
-  margin: auto auto 0;
+  margin: auto 0 0;
   padding-top: 8px;
   font-size: 16px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--sl-ink);
+  text-align: center;
 }
 .sl-gear__cell--empty { grid-column: 1 / -1; }
 .sl-gear__cell--empty code {

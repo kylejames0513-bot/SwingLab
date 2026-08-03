@@ -149,13 +149,9 @@
 .sl-hero__copy {
   width: 100%;
   max-width: 730px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
 }
 .sl-hero__eyebrow {
-  margin: 0 0 22px;
+  margin: 0 auto 22px;
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -175,12 +171,13 @@
 }
 .sl-hero__title {
   max-width: 850px;
-  margin: 0;
+  margin: 0 auto;
   color: #f8f6ef;
   font-size: clamp(54px, 6.8vw, 96px);
   font-weight: 900;
   letter-spacing: -0.058em;
   line-height: 0.91;
+  text-align: center;
   text-wrap: balance;
   text-shadow: 0 22px 52px rgba(0, 0, 0, 0.3);
 }
@@ -190,10 +187,11 @@
   color: rgba(245, 242, 233, 0.78);
   font-size: clamp(17px, 1.5vw, 20px);
   line-height: 1.58;
+  text-align: left;
   text-wrap: pretty;
 }
 .sl-hero__actions {
-  margin: 34px auto 0;
+  margin: 34px 0 0;
   width: min(100%, 570px);
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -239,13 +237,20 @@
   outline-offset: 4px;
 }
 .sl-hero__proof {
+  width: fit-content;
+  max-width: 100%;
   margin: 26px 0 0;
-  padding: 0;
+  padding: 11px 14px;
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 10px 22px;
   list-style: none;
+  border: 1px solid rgba(245, 242, 233, 0.14);
+  border-radius: 12px;
+  background: rgba(5, 16, 10, 0.46);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
 }
 .sl-hero__proof li {
   position: relative;
@@ -271,7 +276,7 @@
   margin: 12px 0 0;
   color: rgba(245, 242, 233, 0.48);
   font-size: 12.5px;
-  text-align: center;
+  text-align: left;
 }
 .sl-hero__signal {
   width: min(100%, 360px);
@@ -412,7 +417,7 @@
   }
   .sl-hero__body {
     max-width: 36ch;
-    margin-inline: auto;
+    margin-inline: 0;
     margin-top: 16px;
     font-size: 15.5px;
     line-height: 1.48;
@@ -421,7 +426,7 @@
     width: min(100%, 310px);
     grid-template-columns: 1fr;
     gap: 10px;
-    margin: 20px auto 0;
+    margin: 20px 0 0;
   }
   .sl-hero__primary { width: 100%; min-height: 48px; padding: 12px 18px; }
   .sl-hero__secondary {
@@ -437,7 +442,7 @@
   .sl-hero__secondary:hover { border-color: rgba(245, 242, 233, 0.72); background: rgba(245, 242, 233, 0.1); }
   .sl-hero__proof {
     width: fit-content;
-    margin: 18px auto 0;
+    margin: 18px 0 0;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, max-content));
     gap: 8px 16px;
