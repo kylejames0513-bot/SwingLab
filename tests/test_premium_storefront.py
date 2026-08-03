@@ -219,8 +219,13 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     comparison = source("sections/comparison.liquid")
     mobile_comparison = comparison.split("@media (max-width: 749px)", 1)[1]
     assert "min-width: 0" in mobile_comparison
-    assert "table-layout: fixed" in mobile_comparison
+    assert "display: grid" in mobile_comparison
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in mobile_comparison
+    assert "grid-column: 1 / -1" in mobile_comparison
+    assert "padding: var(--sl-dense-inset)" in mobile_comparison
     assert "overflow-wrap: anywhere" in mobile_comparison
+    assert "table-layout: fixed" not in mobile_comparison
+    assert "padding: 8px" not in mobile_comparison
 
 
 def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
@@ -270,10 +275,52 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
         in mobile_hero
     )
     mobile_stats = stats_source.split("@media (max-width: 749px)", 1)[1]
-    assert 'class="sl-stats__grid sl-reveal" tabindex="0"' in stats_source
-    assert "grid-auto-flow: column" in mobile_stats
-    assert "grid-auto-columns: minmax(164px, 62vw)" in mobile_stats
-    assert "min-height: 116px" in mobile_stats
+    assert 'class="sl-stats__grid sl-reveal"' in stats_source
+    assert 'tabindex="0"' not in stats_source
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in mobile_stats
+    assert "overflow: visible" in mobile_stats
+    assert "min-height: 136px" in mobile_stats
+    assert "padding: var(--sl-card-inset)" in mobile_stats
+    assert "grid-auto-flow: column" not in mobile_stats
+    assert "grid-auto-columns:" not in mobile_stats
+
+
+def test_homepage_bordered_surfaces_keep_safe_insets_and_center_content():
+    base = source("assets/base.css")
+    assert "--sl-pad-x: clamp(24px, 5vw, 64px)" in base
+    assert "--sl-card-inset: clamp(24px, 3vw, 36px)" in base
+    assert "--sl-dense-inset: clamp(14px, 1.5vw, 20px)" in base
+
+    centered_surfaces = {
+        "sections/stats-band.liquid": ".sl-stats__cell",
+        "sections/how-it-works.liquid": ".sl-step",
+        "sections/product-grid.liquid": ".sl-card__body",
+        "sections/gear-showcase.liquid": ".sl-gear__body",
+        "sections/coach-notes.liquid": ".sl-coach__card",
+    }
+    for relative, selector in centered_surfaces.items():
+        section_source = source(relative)
+        rule = section_source.split(f"{selector} {{", 1)[1].split("}", 1)[0]
+        assert "align-items: center" in rule
+        assert "justify-content: center" in rule
+        assert "text-align: center" in rule
+        assert "padding: var(--sl-card-inset)" in rule
+
+    report = source("sections/report-feature.liquid")
+    assert ".sl-report__card {" in report
+    assert "padding: var(--sl-card-inset)" in report
+    assert "margin: 20px auto 0" in report
+
+    comparison = source("sections/comparison.liquid")
+    assert "padding: var(--sl-dense-inset)" in comparison
+    assert "vertical-align: middle" in comparison
+    assert "margin: 30px auto 0" in comparison
+
+    faq = source("sections/faq.liquid")
+    assert "padding: var(--sl-dense-inset) var(--sl-card-inset)" in faq
+    assert "padding: 0 var(--sl-card-inset) var(--sl-card-inset)" in faq
+    assert "padding: 18px 4px" not in faq
+    assert "padding-left: 0" not in faq
 
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():

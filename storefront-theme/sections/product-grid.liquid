@@ -92,6 +92,8 @@
 }
 .sl-shop__head {
   max-width: 850px;
+  margin-inline: auto;
+  text-align: center;
 }
 .sl-shop__eyebrow {
   margin: 0 0 18px;
@@ -103,6 +105,7 @@
 }
 .sl-shop .sl-h2 {
   max-width: 13ch;
+  margin-inline: auto;
   font-size: clamp(40px, 5.2vw, 68px);
   font-weight: 900;
   letter-spacing: -0.05em;
@@ -111,7 +114,7 @@
 }
 .sl-shop__sub {
   max-width: 62ch;
-  margin: 20px 0 0;
+  margin: 20px auto 0;
   font-size: 17px;
   line-height: 1.6;
   color: var(--sl-ink-soft);
@@ -170,11 +173,14 @@
   object-fit: cover;
 }
 .sl-card__body {
-  padding: clamp(22px, 2.6vw, 30px);
+  padding: var(--sl-card-inset);
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 6px;
   flex: 1;
+  text-align: center;
 }
 .sl-card__badge {
   margin: 0;
@@ -194,6 +200,7 @@
 }
 .sl-card__desc {
   margin: 0;
+  max-width: 46ch;
   font-size: 16px;
   line-height: 1.5;
   color: var(--sl-ink-soft);

@@ -37,6 +37,7 @@
 .sl-how__head {
   padding-bottom: clamp(30px, 4vw, 52px);
   border-bottom: 1px solid #d8d3c8;
+  text-align: center;
 }
 .sl-how__eyebrow {
   margin: 0 0 18px;
@@ -50,10 +51,10 @@
   display: grid;
   grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.55fr);
   gap: clamp(28px, 6vw, 86px);
-  align-items: end;
+  align-items: center;
 }
 .sl-how__title {
-  margin: 0;
+  margin: 0 auto;
   max-width: 12ch;
   color: #0d2d1d;
   font-size: clamp(42px, 5.7vw, 76px);
@@ -63,7 +64,8 @@
   text-wrap: balance;
 }
 .sl-how__intro > p {
-  margin: 0;
+  margin: 0 auto;
+  max-width: 48ch;
   color: var(--sl-ink-soft);
   font-size: clamp(16px, 1.5vw, 19px);
   line-height: 1.6;
@@ -72,6 +74,7 @@
 .sl-how__grid {
   display: grid;
   grid-template-columns: 1fr;
+  grid-auto-rows: 1fr;
   align-items: stretch;
   gap: 16px;
   margin-top: clamp(30px, 4vw, 48px);
@@ -81,11 +84,14 @@
   overflow: hidden;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   height: 100%;
   min-height: 330px;
   border: 1px solid #ded9ce;
   border-radius: 20px;
-  padding: clamp(22px, 2.4vw, 30px);
+  padding: var(--sl-card-inset);
+  text-align: center;
   background: rgba(255, 253, 249, 0.86);
   box-shadow: 0 22px 48px -40px rgba(15, 42, 27, 0.42);
 }
@@ -124,13 +130,14 @@
 }
 .sl-step__body {
   margin: 0;
+  max-width: 34ch;
   font-size: 15.5px;
   line-height: 1.62;
   color: var(--sl-ink-soft);
 }
 .sl-step__caption {
-  margin: 0;
-  margin-top: auto;
+  width: 100%;
+  margin: 24px 0 0;
   padding-top: 14px;
   border-top: 1px solid #e3ded3;
   font-family: var(--sl-font-mono);
@@ -140,19 +147,21 @@
   text-transform: uppercase;
   color: var(--sl-ink-muted);
 }
-.sl-step__body { margin-bottom: 14px; }
+.sl-step__body { margin-bottom: 0; }
 .sl-how__foot {
   margin-top: 32px;
   padding-top: 24px;
   border-top: 1px solid #d8d3c8;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   gap: 18px;
   flex-wrap: wrap;
+  text-align: center;
 }
 .sl-how__foot-note {
-  margin: 0;
+  margin: 0 auto;
+  max-width: 70ch;
   font-size: 15px;
   color: var(--sl-ink-soft);
 }

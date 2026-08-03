@@ -42,7 +42,9 @@
   --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   --sl-maxw: 1280px;
-  --sl-pad-x: clamp(20px, 5vw, 56px);
+  --sl-pad-x: clamp(24px, 5vw, 64px);
+  --sl-card-inset: clamp(24px, 3vw, 36px);
+  --sl-dense-inset: clamp(14px, 1.5vw, 20px);
   --sl-radius-sm: 8px;
   --sl-radius: 14px;
   --sl-radius-lg: 22px;
@@ -155,7 +157,7 @@ img { max-width: 100%; display: block; }
   font-weight: 700;
   font-size: 16px;
   line-height: 1.2;
-  padding: 10px 22px;
+  padding: 12px clamp(22px, 3vw, 28px);
   border-radius: 999px;
   border: 1.5px solid transparent;
   cursor: pointer;
