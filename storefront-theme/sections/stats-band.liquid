@@ -1,6 +1,6 @@
 <section class="sl-stats" aria-label="{{ section.settings.aria_label | default: 'The CaddieInsight practice loop' }}">
   <div class="sl-wrap">
-    <ul class="sl-stats__grid sl-reveal" tabindex="0">
+    <ul class="sl-stats__grid sl-reveal">
       {%- for block in section.blocks -%}
         <li class="sl-stats__cell"{{ block.shopify_attributes }}>
           <span class="sl-stats__value">{{ block.settings.value }}</span>
@@ -37,15 +37,18 @@
 .sl-stats__cell {
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: clamp(24px, 3.4vw, 36px) clamp(18px, 2.4vw, 30px);
+  padding: var(--sl-card-inset);
+  text-align: center;
 }
 .sl-stats__cell::before {
   content: "";
   display: block;
   width: 22px;
   height: 2px;
-  margin-bottom: 8px;
+  margin: 0 auto 8px;
   background: #f07a18;
   box-shadow: 0 0 14px rgba(240, 122, 24, 0.44);
 }
@@ -72,29 +75,23 @@
 @media (max-width: 749px) {
   .sl-stats { margin-top: -28px; padding-bottom: 34px; }
   .sl-stats__grid {
-    grid-template-columns: none;
-    grid-auto-flow: column;
-    grid-auto-columns: minmax(164px, 62vw);
-    gap: 10px;
-    padding: 0 0 8px;
-    overflow-x: auto;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    padding: 0;
+    overflow: visible;
     border: 0;
     border-radius: 0;
     background: transparent;
     box-shadow: none;
     -webkit-backdrop-filter: none;
     backdrop-filter: none;
-    scroll-snap-type: x proximity;
-    scrollbar-width: none;
   }
-  .sl-stats__grid::-webkit-scrollbar { display: none; }
   .sl-stats__cell:nth-child(n) {
-    min-height: 116px;
-    padding: 16px 15px;
+    min-height: 136px;
+    padding: var(--sl-card-inset);
     border: 1px solid rgba(245, 242, 233, 0.14);
     border-radius: 16px;
     background: rgba(16, 40, 27, 0.94);
-    scroll-snap-align: start;
   }
   .sl-stats__cell::before { width: 18px; margin-bottom: 3px; }
   .sl-stats__value { font-size: 18px; }

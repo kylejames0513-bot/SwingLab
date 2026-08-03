@@ -97,7 +97,7 @@ def test_pro_member_rail_and_primary_cta_use_distinct_actions():
     assert "isPro ? proActionLabel : analyzeLabel" in HEADER
 
 
-def test_authenticated_header_compacts_across_modern_iphone_widths():
+def test_authenticated_header_centers_member_content_across_modern_iphone_widths():
     media = max_width_media_blocks(HEADER)
     modern_phone_css = "\n".join(
         body for width, body in media if width == 480
@@ -105,18 +105,23 @@ def test_authenticated_header_compacts_across_modern_iphone_widths():
     assert modern_phone_css
     assert ".sl-header__logo-img" in modern_phone_css
     assert ".sl-header__cart" in modern_phone_css
+    assert "--sl-pad-x: 20px" in modern_phone_css
+    assert "--sl-pad-x: 16px" not in modern_phone_css
 
     member_inner_rules = declarations(HEADER, ".sl-member-rail__inner")
     member_greeting_rules = declarations(HEADER, ".sl-member-rail__greeting")
     assert member_inner_rules
     assert member_greeting_rules
-    assert any("flex-wrap: nowrap" in rule for rule in member_inner_rules)
-    assert all("flex-wrap: wrap" not in rule for rule in member_inner_rules)
-    assert all("order: 3" not in rule for rule in member_greeting_rules)
+    assert any("flex-wrap: wrap" in rule for rule in member_inner_rules)
+    assert any("justify-content: center" in rule for rule in member_inner_rules)
+    assert any("text-align: center" in rule for rule in member_inner_rules)
+    assert any("order: 4" in rule for rule in member_greeting_rules)
+    assert any("flex: 1 0 100%" in rule for rule in member_greeting_rules)
     assert "text-overflow: ellipsis" in "\n".join(member_greeting_rules)
     assert "white-space: nowrap" in "\n".join(member_greeting_rules)
 
     member_phone_css = "\n".join(body for width, body in media if width == 560)
+    assert "padding: 10px var(--sl-pad-x)" in member_phone_css
     assert "calc(100% + 28px)" not in member_phone_css
     assert "margin-inline: -14px" not in member_phone_css
 
@@ -132,7 +137,9 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     assert compact_phone_css
     assert ".sl-hero__title" in compact_phone_css
     assert "min-height: 720px" not in mobile_css
-    assert "align-content: center" not in mobile_css
+    assert "align-content: center" in mobile_css
+    assert "justify-items: center" in mobile_css
+    assert "padding-inline: 18px" not in mobile_css
     assert "--sl-mobile-hero-height:" in mobile_css
     assert "svh" in mobile_css or "dvh" in mobile_css
     assert mobile_css.count("min-height: var(--sl-mobile-hero-height)") >= 2
@@ -142,3 +149,10 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     assert all(
         "object-position: 58% center" not in rule for rule in mobile_image_rules
     )
+
+    copy_rules = declarations(HERO, ".sl-hero__copy")
+    assert copy_rules
+    assert any("align-items: center" in rule for rule in copy_rules)
+    assert any("text-align: center" in rule for rule in copy_rules)
+    assert "margin: 20px auto 0" in mobile_css
+    assert "margin: 18px auto 0" in mobile_css
