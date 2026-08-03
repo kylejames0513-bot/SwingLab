@@ -1,7 +1,7 @@
 <section class="sl-coach" aria-labelledby="CoachNotes-{{ section.id }}">
   <div class="sl-wrap sl-reveal">
     <div class="sl-coach__head">
-      <h2 id="CoachNotes-{{ section.id }}" class="sl-h2">{{ section.settings.heading | default: 'A coach that shows its work' }}</h2>
+      <h2 id="CoachNotes-{{ section.id }}" class="sl-h2">{{ section.settings.heading | default: 'Coaching that shows its work' }}</h2>
       {%- if section.settings.sub != blank -%}
         <p class="sl-coach__sub">{{ section.settings.sub }}</p>
       {%- endif -%}
@@ -28,8 +28,8 @@
 
 {% stylesheet %}
 .sl-coach {
-  padding-top: clamp(32px, 4.5vw, 56px);
-  padding-bottom: clamp(32px, 4.5vw, 56px);
+  padding-top: var(--sl-section-space-compact);
+  padding-bottom: var(--sl-section-space-compact);
   border-top: 1px solid var(--sl-border);
 }
 .sl-coach__head {
@@ -43,6 +43,7 @@
   line-height: 1.55;
   color: var(--sl-ink-soft);
   max-width: 60ch;
+  text-align: left;
   text-wrap: pretty;
 }
 .sl-coach__grid {
@@ -56,8 +57,8 @@
   margin: 0;
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
+  align-items: stretch;
+  justify-content: flex-start;
   height: 100%;
   gap: 14px;
   background: var(--sl-bg-card);
@@ -65,9 +66,9 @@
   border-radius: var(--sl-radius-lg);
   padding: var(--sl-card-inset);
   box-shadow: var(--sl-shadow-card);
-  text-align: center;
+  text-align: left;
 }
-.sl-coach__label { margin: 0; line-height: 1; }
+.sl-coach__label { align-self: center; margin: 0; line-height: 1; }
 .sl-coach__quote {
   margin: 0;
   font-size: 15.5px;
@@ -78,7 +79,7 @@
 .sl-coach__footnote {
   display: block;
   margin: 22px auto 0;
-  text-align: center;
+  text-align: left;
 }
 
 @media (min-width: 640px) {
@@ -100,9 +101,9 @@
 {
   "name": "Coach notes",
   "settings": [
-    { "type": "text", "id": "heading", "label": "Heading", "default": "A coach that shows its work" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Coaching that shows its work" },
     { "type": "textarea", "id": "sub", "label": "Subheading", "default": "The report keeps the decision legible: which club you filmed, which supported movement comes first, what to practice, and what must match on the next clip." },
-    { "type": "text", "id": "footnote", "label": "Footnote", "default": "PRODUCT BEHAVIOR — NOT A CUSTOMER TESTIMONIAL" }
+    { "type": "text", "id": "footnote", "label": "Footnote", "default": "PRODUCT FEATURES SHOWN · NOT A CUSTOMER TESTIMONIAL" }
   ],
   "blocks": [
     {

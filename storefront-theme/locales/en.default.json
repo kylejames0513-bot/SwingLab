@@ -9,6 +9,9 @@
     "homepage_description": "Turn one golf swing video into one prioritized coaching plan, a measurable practice target, and a clearer next range session."
   },
   "layout": {
+    "announcement": {
+      "label": "Announcement"
+    },
     "cart": {
       "count_one": "Cart, 1 item",
       "count_other": "Cart, {{ count }} items",
@@ -39,7 +42,7 @@
       "method": "Method",
       "my_game": "My Game",
       "orders": "Orders",
-      "orders_subscriptions": "Orders & subscriptions",
+      "orders_subscriptions": "Orders and subscriptions",
       "open_game_plan": "Open game plan",
       "plans": "Plans",
       "pro": "Pro",
@@ -82,7 +85,7 @@
     },
     "report": {
       "eyebrow": "INSIDE THE REPORT",
-      "file_label": "Illustrated preview",
+      "file_label": "Sample report",
       "sample_label": "Demonstration data",
       "club_label": "Club",
       "club_value": "Iron",
@@ -90,10 +93,10 @@
       "coach_value": "One priority first",
       "practice_label": "Practice",
       "practice_value": "One plan with a pass mark",
-      "image_alt": "Illustrated key-position preview of the CaddieInsight demonstration report",
+      "image_alt": "Key-position preview from the CaddieInsight sample report",
       "priority_note": "The report explains why one supported movement comes first.",
       "plan_chip": "Measured plan included",
-      "disclosure": "Illustrated preview of a demonstration report built through the same report engine. It is not a customer result or testimonial."
+      "disclosure": "Sample report built with demonstration data. Not a customer result or testimonial."
     }
   },
   "products": {

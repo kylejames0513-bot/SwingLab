@@ -3,6 +3,8 @@
     <header class="sl-main-page__head">
       <h1 class="sl-main-page__title">{{ page.title }}</h1>
     </header>
+  {%- else -%}
+    <h1 class="visually-hidden">{{ page.title }}</h1>
   {%- endif -%}
   <div class="sl-page-content sl-rte">{{ page.content }}</div>
 </div>

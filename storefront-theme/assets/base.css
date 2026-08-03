@@ -2,7 +2,7 @@
    CaddieInsight storefront — base styles & design tokens
    Fairway Modernism: a warm off-white field, one deep green
    ink, one kinetic orange accent. Archivo carries the voice;
-   DM Mono is reserved for specimen labels and measured values.
+   a system monospace stack marks measured evidence labels.
 
    Shared-pattern contract (available to every template/section):
    .sl-chip            pill label, mono, letterspaced uppercase
@@ -28,11 +28,12 @@
   --sl-bg-card: #fffdf9;     /* product card surface */
   --sl-ink: #17201a;         /* primary text */
   --sl-ink-soft: #4a544c;    /* secondary text */
-  --sl-ink-muted: #7a8279;   /* fine print */
+  --sl-ink-muted: #626a63;   /* fine print */
   --sl-green: #14472c;       /* deep green (headings, dark bg) */
   --sl-green-btn: #1a5c38;   /* action green */
   --sl-green-ink: #e9f2ec;   /* text on green */
-  --sl-orange: #e8720c;      /* accent */
+  --sl-orange: #a84b00;      /* accessible accent text on light surfaces */
+  --sl-orange-bright: #f07a18; /* decorative/action accent on dark surfaces */
   --sl-orange-soft: #fff3e4; /* accent wash for callouts */
   --sl-border: #e3ded3;      /* hairline on light */
   --sl-footer: #0f1712;      /* near-black footer */
@@ -49,6 +50,11 @@
   --sl-radius: 14px;
   --sl-radius-lg: 22px;
   --sl-radius-xl: 32px;
+
+  --sl-section-space: clamp(72px, 8vw, 104px);
+  --sl-section-space-compact: clamp(52px, 6vw, 76px);
+  --sl-heading-display: clamp(40px, 5vw, 64px);
+  --sl-heading-support: clamp(32px, 4vw, 46px);
 
   --sl-shadow-card: 0 1px 2px rgba(15, 42, 27, 0.05), 0 12px 30px -14px rgba(15, 42, 27, 0.18);
   --sl-shadow-card-hover: 0 2px 4px rgba(15, 42, 27, 0.05), 0 18px 40px -16px rgba(15, 42, 27, 0.24);
@@ -92,9 +98,16 @@ img { max-width: 100%; display: block; }
 
 /* refined focus rings: visible for keyboards, quiet for pointers */
 :focus-visible {
-  outline: 2px solid var(--sl-green-btn);
+  outline: 3px solid var(--sl-green-btn);
   outline-offset: 3px;
   border-radius: 3px;
+}
+.sl-announcement :focus-visible,
+.sl-hero :focus-visible,
+.sl-report :focus-visible,
+.sl-cta :focus-visible,
+.sl-footer :focus-visible {
+  outline-color: #ffad62;
 }
 
 .sl-wrap {
@@ -161,7 +174,7 @@ img { max-width: 100%; display: block; }
   border-radius: 999px;
   border: 1.5px solid transparent;
   cursor: pointer;
-  transition: background .15s ease, color .15s ease, border-color .15s ease;
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
 .sl-btn--primary { background: var(--sl-green-btn); color: #fdfcf9; }
 .sl-btn--primary:hover { background: var(--sl-green); color: #fdfcf9; }
@@ -177,11 +190,15 @@ img { max-width: 100%; display: block; }
   border-radius: 999px;
 }
 .sl-btn[disabled] { opacity: .5; cursor: not-allowed; }
+@media (prefers-reduced-motion: no-preference) {
+  .sl-btn:not([disabled]):hover { transform: translateY(-1px); }
+  .sl-btn:not([disabled]):active { transform: translateY(0); }
+}
 
 /* ---- shared section heading ---- */
 .sl-h2 {
   margin: 0;
-  font-size: clamp(26px, 3vw, 36px);
+  font-size: var(--sl-heading-support);
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--sl-green);
@@ -768,13 +785,20 @@ img { max-width: 100%; display: block; }
 @media (max-width: 600px) {
   .sl-cart-line { grid-template-columns: 64px 1fr auto; }
   .sl-cart-line-price { grid-column: 2 / -1; text-align: left; }
+  .sl-cart-foot { align-items: stretch; }
+  .sl-cart-actions { flex-direction: column; }
+  .sl-cart-actions .sl-btn { width: 100%; }
 }
 
 /* ---- search ---- */
 .sl-searchpage { padding-top: 48px; padding-bottom: 72px; }
 .sl-search-form { display: flex; gap: 12px; margin: 22px 0 8px; max-width: 560px; }
-.sl-search-form .sl-input { flex: 1; }
+.sl-search-form .sl-input { flex: 1; min-width: 0; }
 .sl-search-count { color: var(--sl-ink-soft); margin: 14px 0 0; }
+@media (max-width: 420px) {
+  .sl-search-form { flex-direction: column; }
+  .sl-search-form .sl-btn { width: 100%; }
+}
 
 /* ---- 404 ---- */
 .sl-404 { padding-top: 96px; padding-bottom: 120px; text-align: center; }

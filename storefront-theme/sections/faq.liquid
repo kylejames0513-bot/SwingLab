@@ -20,8 +20,8 @@
 
 {% stylesheet %}
 .sl-faq {
-  padding-top: clamp(32px, 4.5vw, 56px);
-  padding-bottom: clamp(32px, 4.5vw, 56px);
+  padding-top: var(--sl-section-space-compact);
+  padding-bottom: var(--sl-section-space-compact);
 }
 .sl-faq .sl-h2 { text-align: center; }
 .sl-faq__list {
@@ -31,10 +31,8 @@
 }
 .sl-faq__item { border-bottom: 1px solid var(--sl-border); }
 .sl-faq__q {
-  display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) 32px;
-  align-items: center;
-  justify-content: center;
+  display: flex;
+  align-items: baseline;
   gap: 16px;
   min-height: 72px;
   padding: var(--sl-dense-inset) var(--sl-card-inset);
@@ -43,7 +41,7 @@
   color: var(--sl-green);
   cursor: pointer;
   list-style: none;
-  text-align: center;
+  text-align: left;
 }
 .sl-faq__q::-webkit-details-marker { display: none; }
 .sl-faq__q:hover .sl-faq__q-text { color: var(--sl-green-btn); }
@@ -54,15 +52,15 @@
   font-weight: 500;
   letter-spacing: 0.08em;
   color: var(--sl-orange);
-  justify-self: center;
+  transform: translateY(-2px);
 }
-.sl-faq__q-text { min-width: 0; }
+.sl-faq__q-text { flex: 1; min-width: 0; }
 .sl-faq__icon {
   position: relative;
   flex: none;
-  justify-self: center;
   width: 14px;
   height: 14px;
+  margin-left: 8px;
 }
 .sl-faq__icon::before,
 .sl-faq__icon::after {
@@ -88,12 +86,12 @@
 .sl-faq__a {
   width: 100%;
   max-width: 70ch;
-  margin-inline: auto;
-  padding: 0 var(--sl-card-inset) var(--sl-card-inset);
+  margin: 0;
+  padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px);
   font-size: 15.5px;
   line-height: 1.62;
   color: var(--sl-ink-soft);
-  text-align: center;
+  text-align: left;
 }
 .sl-faq__a p { margin: 0 0 10px; }
 .sl-faq__a p:last-child { margin-bottom: 0; }

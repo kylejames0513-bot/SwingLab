@@ -1,17 +1,18 @@
-{%- comment -%}
-  Renders a merchant image if one is set, otherwise the striped SVG
-  placeholder from the design, so blank sections still read correctly.
+{% doc %}
+  Renders a merchant image or a striped placeholder when no image is set.
 
-  Params:
-    image    - (image) optional Shopify image; when blank the placeholder shows
-    ratio_w  - viewBox width  (default 400)
-    ratio_h  - viewBox height (default 260)
-    label    - primary placeholder caption
-    sublabel - optional secondary caption
-    warm     - true to use the warm (tan) stripe variant
-    flush    - true to drop the border-radius/border (edge-to-edge in cards)
-    alt      - alt text for a real image
-{%- endcomment -%}
+  @param {image} [image] - Shopify image to render.
+  @param {number} [ratio_w] - Placeholder viewBox width; defaults to 400.
+  @param {number} [ratio_h] - Placeholder viewBox height; defaults to 260.
+  @param {string} [label] - Primary placeholder caption.
+  @param {string} [sublabel] - Secondary placeholder caption.
+  @param {boolean} [warm] - Uses the warm stripe variant when true.
+  @param {boolean} [flush] - Removes the placeholder border and radius when true.
+  @param {string} [alt] - Alternative text for a real image.
+
+  @example
+  {% render 'media-placeholder', image: section.settings.image, label: 'Product art', alt: 'Training aid' %}
+{% enddoc %}
 {%- liquid
   assign vw = ratio_w | default: 400
   assign vh = ratio_h | default: 260

@@ -152,7 +152,9 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
 
     copy_rules = declarations(HERO, ".sl-hero__copy")
     assert copy_rules
-    assert any("align-items: center" in rule for rule in copy_rules)
-    assert any("text-align: center" in rule for rule in copy_rules)
-    assert "margin: 20px auto 0" in mobile_css
-    assert "margin: 18px auto 0" in mobile_css
+    assert all("align-items: center" not in rule for rule in copy_rules)
+    assert all("text-align: center" not in rule for rule in copy_rules)
+    title_rules = declarations(HERO, ".sl-hero__title")
+    assert any("text-align: center" in rule for rule in title_rules)
+    assert "margin: 20px 0 0" in mobile_css
+    assert "margin: 18px 0 0" in mobile_css

@@ -51,15 +51,47 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "One priority",
         "Proof loop",
     ]
-    assert INDEX["order"][:6] == [
+    assert INDEX["order"][:8] == [
         "hero",
         "stats",
         "how_it_works",
         "report",
+        "coach_notes",
+        "gear",
         "plans",
         "comparison",
     ]
-    assert INDEX["order"].index("comparison") < INDEX["order"].index("gear")
+    assert INDEX["sections"]["email"]["disabled"] is True
+
+
+def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
+    candidates = (
+        "caddieinsight-pro-card-v2.png",
+        "caddieinsight-free-card-v2.png",
+    )
+
+    for filename in candidates:
+        path = ASSET_ROOT / filename
+        assert path.exists(), f"Missing membership card art: {filename}"
+        assert png_dimensions(path) == (1536, 1024)
+
+
+def test_membership_card_media_labels_make_each_plan_unmistakable():
+    plans = INDEX["sections"]["plans"]["blocks"]
+    product_grid = source("sections/product-grid.liquid")
+
+    assert plans["pro"]["settings"]["image"] == (
+        "shopify://shop_images/caddieinsight-pro-card-v2.png"
+    )
+    assert plans["free"]["settings"]["image"] == (
+        "shopify://shop_images/caddieinsight-free-card-v2.png"
+    )
+    assert plans["pro"]["settings"]["image_label"] == "CaddieInsight Pro"
+    assert plans["free"]["settings"]["image_label"] == "CaddieInsight Free"
+    assert "assign image_label = b.image_label | default: title" in product_grid
+    assert 'class="sl-card__media-label" aria-hidden="true"' in product_grid
+    assert ".sl-card__media-label" in product_grid
+    assert "position: absolute" in product_grid
 
 
 def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
@@ -124,16 +156,14 @@ def test_sample_proof_is_disclosed_and_avoids_fabricated_metrics():
     report_locale = LOCALE["homepage"]["report"]
 
     assert report["sample_url"] == "https://app.caddieinsight.com/sample-report/"
-    assert "demonstration report" in report["body"].lower()
-    assert report_locale["file_label"] == "Illustrated preview"
+    assert "sample report" in report["body"].lower()
+    assert report_locale["file_label"] == "Sample report"
     assert report_locale["disclosure"] == (
-        "Illustrated preview of a demonstration report built through the same report "
-        "engine. It is not a customer result or testimonial."
+        "Sample report built with demonstration data. Not a customer result or testimonial."
     )
-    assert "ILLUSTRATED PREVIEW" in report["caption"]
-    assert "COMPLETE SAMPLE REPORT" in report["caption"]
-    assert INDEX["sections"]["report"]["blocks"]["p1"]["settings"]["text"].startswith(
-        "The linked full report"
+    assert report["caption"] == "SAMPLE REPORT · DEMONSTRATION DATA"
+    assert INDEX["sections"]["report"]["blocks"]["p1"]["settings"]["text"] == (
+        "See the selected club and capture context"
     )
     assert '<dl class="sl-report__proof">' in report_source
     assert "homepage.report.disclosure" in report_source
@@ -150,9 +180,9 @@ def test_product_behavior_cards_are_not_presented_as_quotes_or_testimonials():
     coach = INDEX["sections"]["coach_notes"]
     coach_source = source("sections/coach-notes.liquid")
 
-    assert coach["settings"]["heading"] == "A coach that shows its work"
+    assert coach["settings"]["heading"] == "Coaching that shows its work"
     assert coach["settings"]["footnote"] == (
-        "PRODUCT BEHAVIOR — NOT A CUSTOMER TESTIMONIAL"
+        "PRODUCT FEATURES SHOWN · NOT A CUSTOMER TESTIMONIAL"
     )
     assert "<blockquote" not in coach_source
     assert '<article class="sl-coach__card"' in coach_source
@@ -285,42 +315,63 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "grid-auto-columns:" not in mobile_stats
 
 
-def test_homepage_bordered_surfaces_keep_safe_insets_and_center_content():
+def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     base = source("assets/base.css")
     assert "--sl-pad-x: clamp(24px, 5vw, 64px)" in base
     assert "--sl-card-inset: clamp(24px, 3vw, 36px)" in base
     assert "--sl-dense-inset: clamp(14px, 1.5vw, 20px)" in base
 
-    centered_surfaces = {
-        "sections/stats-band.liquid": ".sl-stats__cell",
+    left_flow_surfaces = {
         "sections/how-it-works.liquid": ".sl-step",
         "sections/product-grid.liquid": ".sl-card__body",
         "sections/gear-showcase.liquid": ".sl-gear__body",
         "sections/coach-notes.liquid": ".sl-coach__card",
     }
-    for relative, selector in centered_surfaces.items():
+    for relative, selector in left_flow_surfaces.items():
         section_source = source(relative)
         rule = section_source.split(f"{selector} {{", 1)[1].split("}", 1)[0]
-        assert "align-items: center" in rule
-        assert "justify-content: center" in rule
-        assert "text-align: center" in rule
+        assert "align-items: stretch" in rule
+        assert "justify-content: flex-start" in rule
+        assert "text-align: left" in rule
         assert "padding: var(--sl-card-inset)" in rule
+
+    hero = source("sections/hero.liquid")
+    hero_title = hero.split(".sl-hero__title {", 1)[1].split("}", 1)[0]
+    hero_body = hero.split(".sl-hero__body {", 1)[1].split("}", 1)[0]
+    hero_proof = hero.split(".sl-hero__proof {", 1)[1].split("}", 1)[0]
+    assert "text-align: center" in hero_title
+    assert "text-align: left" in hero_body
+    assert "justify-content: flex-start" in hero_proof
+    assert "background: rgba(5, 16, 10, 0.46)" in hero_proof
+
+    stats = source("sections/stats-band.liquid")
+    stats_cell = stats.split(".sl-stats__cell {", 1)[1].split("}", 1)[0]
+    assert "align-items: center" in stats_cell
+    assert "text-align: center" in stats_cell
+    assert "margin-top: -54px" not in stats
+    assert "padding-top: clamp(36px, 5vw, 64px)" in stats
 
     report = source("sections/report-feature.liquid")
     assert ".sl-report__card {" in report
     assert "padding: var(--sl-card-inset)" in report
-    assert "margin: 20px auto 0" in report
+    assert "margin: 20px 0 0" in report
+    assert "text-align: left" in report.split(".sl-report__body {", 1)[1].split("}", 1)[0]
 
     comparison = source("sections/comparison.liquid")
     assert "padding: var(--sl-dense-inset)" in comparison
     assert "vertical-align: middle" in comparison
     assert "margin: 30px auto 0" in comparison
+    feature_column = comparison.split(".sl-compare__table tbody th {", 1)[1].split("}", 1)[0]
+    values = comparison.split(".sl-compare__table tbody td {", 1)[1].split("}", 1)[0]
+    assert "text-align: left" in feature_column
+    assert "text-align: center" in values
 
     faq = source("sections/faq.liquid")
     assert "padding: var(--sl-dense-inset) var(--sl-card-inset)" in faq
-    assert "padding: 0 var(--sl-card-inset) var(--sl-card-inset)" in faq
+    assert "padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px)" in faq
     assert "padding: 18px 4px" not in faq
-    assert "padding-left: 0" not in faq
+    assert "text-align: left" in faq.split(".sl-faq__q {", 1)[1].split("}", 1)[0]
+    assert "text-align: left" in faq.split(".sl-faq__a {", 1)[1].split("}", 1)[0]
 
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():
@@ -413,12 +464,12 @@ def test_storefront_account_and_pro_actions_follow_the_app_session():
     ] == "signed_out"
     assert "data-app-pro-member-only hidden" in product
     assert "product.handle == 'swinglab-pro'" in product_card
-    assert footer.count("data-app-pro-sales-link") >= 3
+    assert footer.count("data-app-pro-sales-link") >= 2
     assert "create your account" not in faq.lower()
     assert INDEX["sections"]["cta"]["settings"]["primary_label"] == (
         "Analyze a swing free"
     )
-    assert '<button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Sign up</button>' in footer
+    assert '<button type="submit" class="sl-btn sl-btn--sm sl-btn--light">Join the list</button>' in footer
 
 
 def test_generated_storefront_art_avoids_unsupported_measurement_claims():

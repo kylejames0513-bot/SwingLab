@@ -2,7 +2,7 @@
   {
     "name": "theme_info",
     "theme_name": "CaddieInsight Storefront",
-    "theme_version": "1.3.0",
+    "theme_version": "1.4.0",
     "theme_author": "CaddieInsight",
     "theme_documentation_url": "https://app.caddieinsight.com",
     "theme_support_url": "https://app.caddieinsight.com"
@@ -13,11 +13,11 @@
       {
         "type": "header",
         "content": "Brand palette",
-        "info": "The theme ships with the CaddieInsight palette baked into base.css design tokens. These settings are provided for future extension."
+        "info": "These colors control the page background, primary green, and accessible accent text across the storefront."
       },
       { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#f7f5f0" },
       { "type": "color", "id": "color_green", "label": "Deep green", "default": "#14472c" },
-      { "type": "color", "id": "color_accent", "label": "Accent (orange)", "default": "#e8720c" }
+      { "type": "color", "id": "color_accent", "label": "Accessible accent text", "default": "#a84b00" }
     ]
   },
   {

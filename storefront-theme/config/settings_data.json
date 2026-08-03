@@ -2,14 +2,14 @@
   "current": {
     "color_page_bg": "#f7f5f0",
     "color_green": "#14472c",
-    "color_accent": "#e8720c",
+    "color_accent": "#a84b00",
     "type_body_font": "archivo_n4"
   },
   "presets": {
     "CaddieInsight Storefront": {
       "color_page_bg": "#f7f5f0",
       "color_green": "#14472c",
-      "color_accent": "#e8720c",
+      "color_accent": "#a84b00",
       "type_body_font": "archivo_n4"
     }
   }
