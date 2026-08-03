@@ -74,6 +74,18 @@ def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
         assert png_dimensions(path) == (1536, 1024)
 
 
+def test_membership_card_media_labels_make_each_plan_unmistakable():
+    plans = INDEX["sections"]["plans"]["blocks"]
+    product_grid = source("sections/product-grid.liquid")
+
+    assert plans["pro"]["settings"]["image_label"] == "CaddieInsight Pro"
+    assert plans["free"]["settings"]["image_label"] == "CaddieInsight Free"
+    assert "assign image_label = b.image_label | default: title" in product_grid
+    assert 'class="sl-card__media-label" aria-hidden="true"' in product_grid
+    assert ".sl-card__media-label" in product_grid
+    assert "position: absolute" in product_grid
+
+
 def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
     how = INDEX["sections"]["how_it_works"]
     report = INDEX["sections"]["report"]

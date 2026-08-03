@@ -184,6 +184,7 @@
             "use_product_price": true,
             "member_visibility": "pro_offer",
             "image": "shopify://shop_images/product-pro.png",
+            "image_label": "CaddieInsight Pro",
             "placeholder_label": "pro membership art",
             "warm_placeholder": false,
             "featured": true
@@ -201,6 +202,7 @@
             "use_product_price": false,
             "member_visibility": "signed_out",
             "image": "shopify://shop_images/pro-report-strip.png",
+            "image_label": "CaddieInsight Free",
             "placeholder_label": "free plan report strip",
             "warm_placeholder": false,
             "featured": false

@@ -27,6 +27,7 @@
         assign compare_at = ''
         assign url = b.url
         assign is_pro_card = false
+        assign image_label = b.image_label | default: title
 
         # If a real product is linked, let its data win over placeholder text.
         if b.product != blank
@@ -65,6 +66,9 @@
             warm: b.warm_placeholder,
             flush: true,
             alt: title %}
+          {%- if image_label != blank -%}
+            <span class="sl-card__media-label" aria-hidden="true">{{ image_label | escape }}</span>
+          {%- endif -%}
         </div>
         <div class="sl-card__body">
           {%- if b.badge != blank -%}<p class="sl-card__badge">{{ b.badge }}</p>{%- endif -%}
@@ -162,9 +166,42 @@
 .sl-card--featured .sl-card__price { color: #ffffff; }
 .sl-card--featured .sl-card__note { color: rgba(245, 242, 233, 0.52); }
 .sl-card__media {
+  position: relative;
   aspect-ratio: 20 / 13;
   overflow: hidden;
   line-height: 0;
+}
+.sl-card__media-label {
+  position: absolute;
+  z-index: 1;
+  top: 14px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 29px;
+  max-width: calc(100% - 28px);
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid rgba(245, 242, 233, 0.34);
+  border-radius: 999px;
+  background: rgba(7, 19, 13, 0.78);
+  box-shadow: 0 10px 24px -12px rgba(7, 19, 13, 0.9);
+  color: #f5f2e9;
+  font-family: var(--sl-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+.sl-card--featured .sl-card__media-label {
+  border-color: rgba(240, 122, 24, 0.76);
+  background: rgba(7, 19, 13, 0.72);
 }
 .sl-card__media img,
 .sl-card__media .sl-placeholder {
@@ -232,6 +269,11 @@
 @media (max-width: 749px) {
   .sl-shop__grid { grid-template-columns: 1fr; }
   .sl-shop .sl-h2 { font-size: clamp(40px, 12vw, 56px); }
+  .sl-card__media-label {
+    top: 12px;
+    left: 12px;
+    max-width: calc(100% - 24px);
+  }
 }
 {% endstylesheet %}
 
@@ -263,6 +305,7 @@
           { "value": "pro_offer", "label": "Hide from Pro members" }
         ], "default": "all" },
         { "type": "image_picker", "id": "image", "label": "Card image", "info": "Leave blank to show the striped placeholder." },
+        { "type": "text", "id": "image_label", "label": "Image label", "info": "Short plan name shown over the image. Leave blank to use the card title." },
         { "type": "text", "id": "placeholder_label", "label": "Placeholder caption", "default": "product art" },
         { "type": "checkbox", "id": "warm_placeholder", "label": "Warm (tan) placeholder stripes", "default": false },
         { "type": "checkbox", "id": "featured", "label": "Feature this plan", "default": false }
@@ -282,6 +325,7 @@
             "description": "Unlimited swing analyses with every deliverable — strip, overlay, slow motion, notes.",
             "use_product_price": true,
             "member_visibility": "pro_offer",
+            "image_label": "CaddieInsight Pro",
             "placeholder_label": "pro membership art",
             "warm_placeholder": false
           }
@@ -295,6 +339,7 @@
             "price_text": "$0",
             "price_note": "No card required",
             "member_visibility": "signed_out",
+            "image_label": "CaddieInsight Free",
             "placeholder_label": "free plan report strip",
             "warm_placeholder": true
           }
