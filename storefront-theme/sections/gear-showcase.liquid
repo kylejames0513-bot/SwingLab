@@ -185,6 +185,21 @@
 @media (min-width: 1020px) {
   .sl-gear__grid { grid-template-columns: repeat(3, 1fr); gap: 24px; }
 }
+@media (max-width: 749px) {
+  .sl-gear__sub {
+    max-width: 52ch;
+    text-align: center;
+  }
+  .sl-gear__all {
+    min-height: 44px;
+    justify-content: center;
+  }
+  .sl-gear__body {
+    align-items: center;
+    text-align: center;
+  }
+  .sl-gear__cell--empty { text-align: center; }
+}
 @media (prefers-reduced-motion: no-preference) {
   .sl-gear__card { transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease; }
   .sl-gear__card:hover {

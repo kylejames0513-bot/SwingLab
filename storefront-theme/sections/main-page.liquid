@@ -1,4 +1,4 @@
-<div class="sl-wrap sl-page">
+<div class="sl-wrap sl-page{% if page.handle == 'the-swinglab-method' %} sl-page--method{% endif %}">
   {%- if section.settings.show_title -%}
     <header class="sl-main-page__head">
       <h1 class="sl-main-page__title">{{ page.title }}</h1>
@@ -6,7 +6,7 @@
   {%- else -%}
     <h1 class="visually-hidden">{{ page.title }}</h1>
   {%- endif -%}
-  <div class="sl-page-content sl-rte">{{ page.content }}</div>
+  <div class="sl-page-content sl-rte{% if page.handle == 'the-swinglab-method' %} sl-method-page{% endif %}">{{ page.content }}</div>
 </div>
 
 {% stylesheet %}
@@ -19,6 +19,109 @@
   line-height: 1.1;
   color: var(--sl-green);
   text-wrap: balance;
+}
+
+/* The Method is authored in Shopify Pages, so give that page its own
+   editorial rhythm without changing the geometry of every static page. */
+.sl-page--method {
+  max-width: 1120px;
+  padding-top: 0;
+}
+.sl-page--method .sl-method-page { margin-top: 0; }
+.sl-method-page .sl-page-hero {
+  max-width: 820px;
+  margin-inline: auto;
+  padding-top: clamp(48px, 7vw, 84px);
+  text-align: center;
+}
+.sl-method-page .sl-page-hero > p:not(.sl-eyebrow):not(.sl-mono-label) {
+  margin-inline: auto;
+}
+.sl-method-page > h2,
+.sl-method-page > h3 {
+  max-width: 820px;
+  margin-inline: auto;
+  text-wrap: balance;
+}
+.sl-method-page > h2 { margin-top: clamp(48px, 7vw, 72px); }
+.sl-method-page > h3 { margin-top: clamp(32px, 5vw, 48px); }
+.sl-method-page > p {
+  max-width: 760px;
+  margin-inline: auto;
+}
+.sl-method-page > img {
+  display: block;
+  width: 100%;
+  margin: clamp(28px, 5vw, 52px) auto;
+  border-radius: 18px;
+}
+.sl-method-page .sl-drill-grid { margin-top: 24px; }
+.sl-method-page .sl-drill-card > p { margin: 0; }
+.sl-method-page .sl-spec-table { max-width: 100%; }
+.sl-method-page > div:has(> .sl-btn) {
+  justify-content: center !important;
+  margin-inline: auto !important;
+}
+
+@media (max-width: 749px) {
+  .sl-page--method {
+    padding-top: 0;
+    padding-bottom: 56px;
+  }
+  .sl-method-page { text-align: center; }
+  .sl-method-page .sl-page-hero {
+    padding-top: 32px;
+    padding-bottom: 26px;
+  }
+  .sl-method-page .sl-page-hero h1,
+  .sl-method-page .sl-page-hero h2,
+  .sl-method-page > h2,
+  .sl-method-page > h3,
+  .sl-method-page > p,
+  .sl-method-page .sl-note {
+    text-align: center;
+  }
+  .sl-method-page > h2 { margin-top: 42px; }
+  .sl-method-page > h3 { margin-top: 30px; }
+  .sl-method-page > p,
+  .sl-method-page .sl-page-hero > p:not(.sl-eyebrow):not(.sl-mono-label) {
+    max-width: 34ch;
+    margin-inline: auto;
+  }
+  .sl-method-page .sl-drill-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+    margin-top: 18px;
+  }
+  .sl-method-page .sl-drill-card {
+    align-items: stretch;
+    padding: 22px 18px;
+    text-align: center;
+  }
+  .sl-method-page .sl-drill-card__head { justify-content: center; }
+  .sl-method-page .sl-drill-card__steps,
+  .sl-method-page .sl-drill-card ol,
+  .sl-method-page .sl-check-list {
+    width: min(100%, 34ch);
+    margin-inline: auto;
+    text-align: left;
+  }
+  .sl-method-page .sl-chip {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .sl-method-page .sl-spec-table th,
+  .sl-method-page .sl-spec-table td { text-align: center; }
+  .sl-method-page > div:has(> .sl-btn) {
+    width: 100%;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px !important;
+  }
+  .sl-method-page > div:has(> .sl-btn) .sl-btn {
+    width: min(100%, 320px);
+  }
 }
 {% endstylesheet %}
 

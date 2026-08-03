@@ -584,6 +584,41 @@
 .sl-product-note a {
   font-weight: 700;
 }
+
+@media (max-width: 749px) {
+  .sl-product-info > .sl-eyebrow,
+  .sl-product-title,
+  .sl-product-kicker {
+    text-align: center;
+  }
+  .sl-product--pro .sl-product-form,
+  .sl-product-form {
+    align-items: center;
+  }
+  .sl-product--pro .sl-product-info .sl-select,
+  .sl-product--pro .sl-add,
+  .sl-product--pro .sl-plan-set,
+  .sl-product--pro .sl-product-note,
+  .sl-product--pro .sl-product-benefits,
+  .sl-product--pro .sl-product-form,
+  .sl-product-note,
+  .sl-main-product__trust {
+    margin-inline: auto;
+  }
+  .sl-main-product__flags,
+  .sl-main-product__price {
+    justify-content: center;
+  }
+  .sl-main-product__qty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .sl-product-note { text-align: center; }
+  .sl-product-benefits,
+  .sl-plan-set,
+  .sl-main-product__trust { text-align: left; }
+}
 {% endstylesheet %}
 
 {% schema %}

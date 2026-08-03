@@ -751,7 +751,14 @@ img { max-width: 100%; display: block; }
 /* ---- pagination ---- */
 .sl-pagination { margin-top: 40px; text-align: center; font-weight: 600; }
 .sl-pagination a, .sl-pagination span {
-  display: inline-block; padding: 8px 14px; border-radius: 8px; text-decoration: none;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 8px;
+  text-decoration: none;
 }
 .sl-pagination a { transition: background .15s ease, color .15s ease; }
 .sl-pagination a:hover { background: rgba(20, 71, 44, 0.08); color: var(--sl-green); }
@@ -775,7 +782,13 @@ img { max-width: 100%; display: block; }
 }
 .sl-cart-title { font-weight: 700; color: var(--sl-ink); text-decoration: none; }
 .sl-cart-variant { margin: 4px 0 0; color: var(--sl-ink-soft); font-size: 14px; }
-.sl-cart-remove { font-size: 13px; color: var(--sl-ink-muted); }
+.sl-cart-remove {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  font-size: 13px;
+  color: var(--sl-ink-muted);
+}
 .sl-qty { width: 76px; text-align: center; padding: 10px 8px; }
 .sl-cart-line-price { font-weight: 700; min-width: 80px; text-align: right; }
 .sl-cart-foot { margin-top: 26px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
@@ -795,7 +808,7 @@ img { max-width: 100%; display: block; }
 .sl-search-form { display: flex; gap: 12px; margin: 22px 0 8px; max-width: 560px; }
 .sl-search-form .sl-input { flex: 1; min-width: 0; }
 .sl-search-count { color: var(--sl-ink-soft); margin: 14px 0 0; }
-@media (max-width: 420px) {
+@media (max-width: 560px) {
   .sl-search-form { flex-direction: column; }
   .sl-search-form .sl-btn { width: 100%; }
 }
@@ -809,3 +822,89 @@ img { max-width: 100%; display: block; }
 /* ---- static pages ---- */
 .sl-page { padding-top: 48px; padding-bottom: 72px; max-width: 1080px; }
 .sl-page-content { margin-top: 18px; }
+
+/* ============================================================
+   Phone layout: centered controls and calm, single-column rhythm
+   ============================================================ */
+@media (max-width: 749px) {
+  .sl-btn--sm { min-height: 44px; }
+
+  .sl-chip {
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    text-align: center;
+  }
+
+  .sl-product {
+    gap: 30px;
+    padding-top: 32px;
+    padding-bottom: 56px;
+  }
+  .sl-product-media,
+  .sl-product-info {
+    text-align: center;
+  }
+  .sl-product-thumbs,
+  .sl-main-product__flags,
+  .sl-main-product__price {
+    justify-content: center;
+  }
+  .sl-product-info form {
+    width: 100%;
+    align-items: center;
+  }
+  .sl-product-info .sl-select,
+  .sl-product-info .sl-add {
+    width: min(100%, 360px);
+    min-width: 0;
+  }
+  .sl-product-kicker,
+  .sl-product-note,
+  .sl-product-benefits,
+  .sl-main-product__trust,
+  .sl-plan-set {
+    margin-inline: auto;
+  }
+  .sl-product-kicker { max-width: 34ch; }
+  .sl-product-benefits,
+  .sl-main-product__trust,
+  .sl-plan-set,
+  .sl-product-desc {
+    text-align: left;
+  }
+  .sl-product-desc {
+    max-width: 38ch;
+    margin-inline: auto;
+  }
+  .sl-product-note { text-align: center; }
+
+  .sl-pcard,
+  .sl-result-card {
+    text-align: center;
+  }
+  .sl-pcard-flags { justify-content: center; }
+  .sl-pcard-price { margin-inline: auto; }
+
+  .sl-collection,
+  .sl-searchpage,
+  .sl-cartpage:has(> .sl-empty),
+  .sl-page > .sl-main-page__head {
+    text-align: center;
+  }
+  .sl-collection-desc,
+  .sl-search-count,
+  .sl-searchpage > .sl-empty {
+    margin-inline: auto;
+  }
+  .sl-search-form {
+    width: 100%;
+    margin: 22px auto 8px;
+  }
+  .sl-search-form .sl-btn,
+  .sl-cartpage:has(> .sl-empty) > .sl-btn {
+    width: min(100%, 320px);
+    margin-inline: auto;
+  }
+  .sl-main-search__other { margin-inline: auto; }
+}

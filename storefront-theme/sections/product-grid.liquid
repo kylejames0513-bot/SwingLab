@@ -267,11 +267,23 @@
   }
 }
 @media (max-width: 749px) {
+  .sl-shop__sub { text-align: center; }
   .sl-shop__grid { grid-template-columns: 1fr; }
   .sl-card__media-label {
     top: 12px;
-    left: 12px;
+    left: 50%;
     max-width: calc(100% - 24px);
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  .sl-card__body {
+    align-items: center;
+    text-align: center;
+  }
+  .sl-card__desc {
+    max-width: 40ch;
+    margin-inline: auto;
+    text-align: center;
   }
 }
 {% endstylesheet %}

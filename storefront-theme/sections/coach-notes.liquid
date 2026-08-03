@@ -95,6 +95,25 @@
 @media (min-width: 1000px) {
   .sl-coach__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+@media (max-width: 749px) {
+  .sl-coach__sub {
+    max-width: 52ch;
+    text-align: center;
+  }
+  .sl-coach__card {
+    align-items: center;
+    text-align: center;
+  }
+  .sl-coach__quote {
+    max-width: 42ch;
+    margin-inline: auto;
+    text-align: center;
+  }
+  .sl-coach__footnote {
+    max-width: 52ch;
+    text-align: center;
+  }
+}
 {% endstylesheet %}
 
 {% schema %}

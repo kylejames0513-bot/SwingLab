@@ -7,9 +7,9 @@
         <p>{{ 'homepage.method.intro' | t }}</p>
       </div>
     </div>
-    <div class="sl-how__grid">
+    <ol class="sl-how__grid">
       {%- for block in section.blocks -%}
-        <div class="sl-step"{{ block.shopify_attributes }}>
+        <li class="sl-step"{{ block.shopify_attributes }}>
           {%- assign step_num = block.settings.number | default: forloop.index -%}
           <p class="sl-step__num">{{ step_num }}</p>
           <h3 class="sl-step__title">{{ block.settings.title }}</h3>
@@ -17,9 +17,9 @@
           {%- if block.settings.caption != blank -%}
             <p class="sl-step__caption">{{ block.settings.caption }}</p>
           {%- endif -%}
-        </div>
+        </li>
       {%- endfor -%}
-    </div>
+    </ol>
     {%- if section.settings.footer_note != blank -%}
       <div class="sl-how__foot">
         <p class="sl-how__foot-note">{{ section.settings.footer_note }}</p>
@@ -35,7 +35,7 @@
   padding: var(--sl-section-space) 0;
 }
 .sl-how__head {
-  padding-bottom: clamp(30px, 4vw, 52px);
+  padding-bottom: clamp(28px, 4vw, 48px);
   border-bottom: 1px solid #d8d3c8;
   text-align: center;
 }
@@ -49,13 +49,14 @@
 }
 .sl-how__intro {
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(260px, 0.55fr);
-  gap: clamp(28px, 6vw, 86px);
-  align-items: center;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(16px, 2vw, 22px);
+  max-width: 880px;
+  margin-inline: auto;
 }
 .sl-how__title {
   margin: 0 auto;
-  max-width: 12ch;
+  max-width: 15ch;
   color: #0d2d1d;
   font-size: var(--sl-heading-display);
   font-weight: 900;
@@ -65,11 +66,11 @@
 }
 .sl-how__intro > p {
   margin: 0 auto;
-  max-width: 48ch;
+  max-width: 58ch;
   color: var(--sl-ink-soft);
   font-size: clamp(16px, 1.5vw, 19px);
   line-height: 1.6;
-  text-align: left;
+  text-align: center;
   text-wrap: pretty;
 }
 .sl-how__grid {
@@ -79,6 +80,9 @@
   align-items: stretch;
   gap: 16px;
   margin-top: clamp(30px, 4vw, 48px);
+  margin-bottom: 0;
+  padding: 0;
+  list-style: none;
 }
 .sl-step {
   position: relative;
@@ -88,10 +92,10 @@
   align-items: stretch;
   justify-content: flex-start;
   height: 100%;
-  min-height: 330px;
+  min-height: 0;
   border: 1px solid #ded9ce;
   border-radius: 20px;
-  padding: var(--sl-card-inset);
+  padding: clamp(24px, 2.5vw, 32px);
   text-align: left;
   background: rgba(255, 253, 249, 0.86);
   box-shadow: 0 22px 48px -40px rgba(15, 42, 27, 0.42);
@@ -121,15 +125,15 @@
   letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
   color: var(--sl-orange);
-  align-self: center;
+  align-self: flex-start;
 }
 .sl-step__title {
-  margin: 34px 0 12px;
+  margin: 26px 0 10px;
   color: var(--sl-green);
   font-size: 22px;
   font-weight: 800;
   letter-spacing: -0.02em;
-  text-align: center;
+  text-align: left;
 }
 .sl-step__body {
   margin: 0;
@@ -140,7 +144,7 @@
 }
 .sl-step__caption {
   width: 100%;
-  margin: 24px 0 0;
+  margin: auto 0 0;
   padding-top: 14px;
   border-top: 1px solid #e3ded3;
   font-family: var(--sl-font-mono);
@@ -149,7 +153,7 @@
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--sl-ink-muted);
-  text-align: center;
+  text-align: left;
 }
 .sl-step__body { margin-bottom: 0; }
 .sl-how__foot {
@@ -161,23 +165,58 @@
   justify-content: center;
   gap: 18px;
   flex-wrap: wrap;
-  text-align: left;
+  text-align: center;
 }
 .sl-how__foot-note {
   margin: 0 auto;
   max-width: 70ch;
   font-size: 15px;
+  line-height: 1.6;
   color: var(--sl-ink-soft);
 }
-@media (min-width: 640px) {
+@media (min-width: 768px) {
   .sl-how__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1100px) {
   .sl-how__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
-@media (max-width: 749px) {
-  .sl-how__intro { grid-template-columns: 1fr; gap: 20px; }
-  .sl-step { min-height: 0; }
+@media (max-width: 767px) {
+  .sl-how { padding: clamp(62px, 17vw, 76px) 0; }
+  .sl-how__head { padding-bottom: 26px; }
+  .sl-how__eyebrow { margin-bottom: 14px; }
+  .sl-how__intro { gap: 16px; }
+  .sl-how__intro > p { max-width: 34ch; }
+  .sl-how__grid {
+    gap: 12px;
+    margin-top: 24px;
+  }
+  .sl-step {
+    align-items: center;
+    padding: 24px 22px;
+    text-align: center;
+  }
+  .sl-step__num { align-self: center; }
+  .sl-step__title {
+    margin: 22px 0 9px;
+    text-align: center;
+  }
+  .sl-step__body {
+    margin-inline: auto;
+    max-width: 34ch;
+    text-align: center;
+  }
+  .sl-step__caption {
+    padding-top: 12px;
+    text-align: center;
+  }
+  .sl-how__foot {
+    margin-top: 24px;
+    padding-top: 20px;
+  }
+  .sl-how__foot-note {
+    max-width: 36ch;
+    text-align: center;
+  }
 }
 {% endstylesheet %}
 
@@ -187,7 +226,7 @@
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "how" },
     { "type": "text", "id": "heading", "label": "Heading", "default": "A practice loop you can repeat." },
-    { "type": "text", "id": "footer_note", "label": "Footer note", "default": "Face-on supports movement coaching; down-the-line currently supports timing only." }
+    { "type": "text", "id": "footer_note", "label": "Footer note", "default": "Face-on supports movement coaching; down-the-line currently supports timing only. CaddieInsight estimates supported 2D movement and timing from phone video—not club path, face angle, launch, spin, carry, strike, or ball flight." }
   ],
   "blocks": [
     {
@@ -196,7 +235,7 @@
       "settings": [
         { "type": "text", "id": "number", "label": "Step number", "default": "01" },
         { "type": "text", "id": "title", "label": "Title", "default": "Choose the club" },
-        { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club before upload: iron, wedge, hybrid, fairway wood, or driver. It stays with the report and next comparison. Wedge coaching remains neutral until shot intent and lie are captured." },
+        { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club before upload—iron, wedge, hybrid, fairway wood, or driver. It stays with the report and your next comparison, so coaching reflects the equipment you actually used." },
         { "type": "text", "id": "caption", "label": "Caption (small mono line)", "info": "Optional specimen-style label under the body." }
       ]
     }
@@ -211,7 +250,7 @@
           "settings": {
             "number": "01",
             "title": "Choose the club",
-            "body": "Choose the club before upload: iron, wedge, hybrid, fairway wood, or driver. It stays with the report and next comparison. Wedge coaching remains neutral until shot intent and lie are captured.",
+            "body": "Choose the club before upload—iron, wedge, hybrid, fairway wood, or driver. It stays with the report and your next comparison, so coaching reflects the equipment you actually used.",
             "caption": "CLUB CONTEXT IS REQUIRED"
           }
         },
@@ -220,7 +259,7 @@
           "settings": {
             "number": "02",
             "title": "Film a repeatable view",
-            "body": "Set the phone at hip height with your full body in frame, then select the view before upload. Face-on supports movement coaching; down-the-line supports timing only. Save that setup for the next clip.",
+            "body": "Set your phone at hip height with your full body in frame, then select face-on or down-the-line before upload. Save that setup so your next clip is genuinely comparable.",
             "caption": "MATCH THE VIEW NEXT TIME"
           }
         },
@@ -229,7 +268,7 @@
           "settings": {
             "number": "03",
             "title": "Work one plan",
-            "body": "CaddieInsight ranks supported findings, brings one priority forward, and turns it into a drill with a measured pass mark. You leave with one clear range-session job instead of disconnected swing notes.",
+            "body": "CaddieInsight ranks supported findings, brings one priority forward, and pairs it with a focused drill, clear dosage, and measurable pass mark—one practical job for your next range session.",
             "caption": "ONE PRIORITY · ONE PASS MARK"
           }
         },
@@ -238,7 +277,7 @@
           "settings": {
             "number": "04",
             "title": "Re-film to prove it",
-            "body": "Use the same club and selected view, then repeat the hip-height, full-body setup. CaddieInsight verifies the saved club, handedness, and selected camera angle; height, distance, and framing remain part of your setup.",
+            "body": "Re-film with the same club and view. CaddieInsight verifies the saved club, handedness, and selected camera angle; height, distance, and framing remain part of your setup for a fair comparison.",
             "caption": "REPEAT THE CAPTURE SETUP"
           }
         }

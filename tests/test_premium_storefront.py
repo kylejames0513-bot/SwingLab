@@ -220,7 +220,8 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
     assert "height: 100%" in plans_source
 
     how_source = source("sections/how-it-works.liquid")
-    assert "@media (min-width: 640px)" in how_source
+    assert "@media (min-width: 768px)" in how_source
+    assert "@media (min-width: 640px)" not in how_source
     assert "@media (min-width: 1100px)" in how_source
     assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in how_source
 
@@ -333,7 +334,10 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
         assert "align-items: stretch" in rule
         assert "justify-content: flex-start" in rule
         assert "text-align: left" in rule
-        assert "padding: var(--sl-card-inset)" in rule
+        if relative == "sections/how-it-works.liquid":
+            assert "padding: clamp(24px, 2.5vw, 32px)" in rule
+        else:
+            assert "padding: var(--sl-card-inset)" in rule
 
     hero = source("sections/hero.liquid")
     hero_title = hero.split(".sl-hero__title {", 1)[1].split("}", 1)[0]
