@@ -262,7 +262,7 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "demonstration data" in hero_locale["signal_disclosure"].lower()
     assert '<aside class="sl-hero__signal' in hero_source
     mobile_hero = hero_source.split("@media (max-width: 749px)", 1)[1]
-    assert ".sl-hero { min-height: 720px; }" in mobile_hero
+    assert "min-height: 720px" not in mobile_hero
     assert "min-height: 980px" not in mobile_hero
     assert "min-height: 1020px" not in mobile_hero
     assert (
