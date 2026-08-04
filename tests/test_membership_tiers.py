@@ -85,6 +85,13 @@ def test_shipped_config_pins_the_live_membership_ladder():
     assert billing["pro_price_lifetime_text"] == "$79.99 once — Pro for good"
     assert billing["pro_annual_badge_text"] == "Best value — save 33%"
     assert billing["store_subscriptions"] is True
+    # The /pricing cards deep-link these variants so checkout preselects
+    # the plan that was clicked — they must match the live store.
+    assert billing["shopify_variant_ids"] == {
+        "monthly": "46811170177196",
+        "yearly": "46811170209964",
+        "lifetime": "46839745282220",
+    }
 
 
 # -- the lifetime grant rides the day ledger ----------------------------------
@@ -221,6 +228,39 @@ def test_pricing_page_shows_all_three_tiers(tmp_path, monkeypatch):
     assert "1 full swing analysis" in html
     # The old false claim is gone for good.
     assert "only difference is how often you can film" not in html
+
+
+def test_pricing_cards_deep_link_their_store_variants(tmp_path, monkeypatch):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "shpss_test_secret")
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.billing["shopify_variant_ids"] = {
+        "monthly": "111", "yearly": "222", "lifetime": "333",
+    }
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+    signup(client)
+
+    html = client.get("/pricing").text
+    base = "https://teststore.myshopify.com/products/swinglab-pro"
+    yearly = html.index(f'href="{base}?variant=222"')
+    monthly = html.index(f'href="{base}?variant=111"')
+    lifetime = html.index(f'href="{base}?variant=333"')
+    # One deep link per card, in the cards' own order (yearly hero first).
+    assert yearly < monthly < lifetime
+
+
+def test_pricing_cards_fall_back_to_the_plain_product_page(app):
+    # No variant map (the bare-code default): every card links the product
+    # page itself — never a guessed variant.
+    client = TestClient(app)
+    signup(client)
+    html = client.get("/pricing").text
+    assert "?variant=" not in html
+    assert html.count(
+        'href="https://teststore.myshopify.com/products/swinglab-pro"'
+    ) == 3
 
 
 def test_lifetime_card_needs_the_store(tmp_path, monkeypatch):

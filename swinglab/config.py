@@ -234,6 +234,20 @@ DEFAULTS: dict[str, Any] = {
         # on a passes-only store, where nothing ever auto-renews.
         "store_subscriptions": False,
     },
+    "allowances": {
+        # Free matched re-film credit. The product's own method is film ->
+        # practice -> re-film, so a free account that produced a
+        # coaching-ready baseline this calendar month keeps ONE more upload
+        # free within 14 days of that baseline — PROVIDED the declared
+        # context matches it (same club, same handedness, same camera
+        # angle; the same comparison boundary the Proof Cycle uses). One
+        # credit per calendar month, the first-rejected-clip courtesy is
+        # unchanged, and Pro accounts are unaffected. Bare-code default is
+        # false — a white-label install stays on the plain quota until the
+        # operator opts in; the SHIPPED config.yaml turns it on, the same
+        # deliberate difference as replay_pro_only.
+        "free_matched_refilm": False,
+    },
     "shopify_customer_sync": {
         # App-created accounts remain local-first. This bridge is deliberately
         # off until an operator provisions the Admin API credentials, reviews
@@ -345,6 +359,10 @@ class Config:
     @property
     def billing(self) -> dict[str, Any]:
         return self.data["billing"]
+
+    @property
+    def allowances(self) -> dict[str, Any]:
+        return self.data["allowances"]
 
     @property
     def shopify_customer_sync(self) -> dict[str, Any]:

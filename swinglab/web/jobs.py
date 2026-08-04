@@ -9,6 +9,12 @@ video is still in its session folder, so no work is lost.
 
 Sessions written by pre-database versions (status.json files) are imported on
 startup, so an upgrade in place keeps its history.
+
+An owned upload can opt in (per clip) to one completion email: report link
+when coaching is ready, an honest re-film note when the clip couldn't be
+measured, or the humanized failure guidance (humanize.py) when the analysis
+failed. The send is claimed by stamping ``notified_at`` BEFORE delivery, so
+there is never more than one email per job.
 """
 
 from __future__ import annotations
@@ -53,6 +59,8 @@ from ..report import (
     REPORT_OUTCOME_COACHING,
     persisted_report_outcome,
 )
+from . import mailer
+from .humanize import friendly_error
 
 logger = logging.getLogger("swinglab.web.jobs")
 
@@ -93,7 +101,9 @@ CREATE TABLE IF NOT EXISTS jobs (
     report_rel   TEXT,
     swings_done  INTEGER NOT NULL DEFAULT 0,
     swings_total INTEGER NOT NULL DEFAULT 0,
-    log          TEXT NOT NULL DEFAULT '[]'
+    log          TEXT NOT NULL DEFAULT '[]',
+    notify_email INTEGER NOT NULL DEFAULT 0,
+    notified_at  REAL
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
 
@@ -181,6 +191,8 @@ class Job:
     report_rel: str | None = None  # path of report.html relative to session_dir
     swings_done: int = 0
     swings_total: int = 0  # 0 until strike detection has counted the swings
+    notify_email: bool = False  # owner asked to be emailed at completion
+    notified_at: float | None = None  # claim stamp — at most one email per job
 
     def as_dict(self) -> dict:
         return {
@@ -245,6 +257,15 @@ class JobManager:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN club TEXT")
             if "level" not in columns:
                 self._conn.execute("ALTER TABLE jobs ADD COLUMN level TEXT")
+            if "notify_email" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN notify_email INTEGER NOT NULL"
+                    " DEFAULT 0"
+                )
+            if "notified_at" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN notified_at REAL"
+                )
             history_columns = {
                 row[1]
                 for row in self._conn.execute(
@@ -637,6 +658,7 @@ class JobManager:
         club: str | None = None,
         level: str | None = None,
         expected_history_epoch: int | None = None,
+        notify_email: bool = False,
     ) -> Job:
         # Enter the manager lock before creating the directory so a concurrent
         # account reset cannot miss a half-created, not-yet-persisted session.
@@ -675,6 +697,7 @@ class JobManager:
                 fast=fast,
                 client_ip=client_ip,
                 user_id=user_id,
+                notify_email=bool(notify_email and user_id),
             )
             job.session_dir.mkdir(parents=True)
             self._save(job)
@@ -763,7 +786,114 @@ class JobManager:
             logger.exception("Unexpected error during analysis of job %s", job.id)
             self._delete_failed_source_if_configured(job)
         self._save(job)
+        self._notify_owner(job)
         self._cleanup_expired()
+
+    # -- completion email (opt-in per upload) -----------------------------
+    def _notify_owner(self, job: Job) -> None:
+        """The "email me when my coaching is ready" send — at most one email
+        per job, ever. The claim (stamping ``notified_at``) lands BEFORE the
+        delivery attempt, the same rule as the weekly digest: a crash or a
+        failed send loses one courtesy email instead of ever double-sending.
+        Zero behavior without the upload-time opt-in, an owning account, a
+        user store, or configured email delivery."""
+        if not job.notify_email or job.user_id is None or self._users is None:
+            return
+        if job.status not in (DONE, FAILED):
+            return
+        if not mailer.enabled():
+            return
+        owner = self._users.get(job.user_id)
+        if owner is None or not getattr(owner, "email", None):
+            return
+        now = time.time()
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE jobs SET notified_at = ?"
+                " WHERE id = ? AND notify_email = 1 AND notified_at IS NULL",
+                (now, job.id),
+            )
+            self._conn.commit()
+        if cursor.rowcount != 1:
+            return  # already sent (or another worker owns the send)
+        job.notified_at = now
+        subject, body = self._completion_email(job, owner)
+        try:
+            mailer.send(owner.email, subject, body)
+        except Exception:
+            # The claim stands — a delivery retry could double-email, and the
+            # result is still waiting on the (already working) session page.
+            logger.error("Completion email delivery failed for job %s", job.id)
+
+    def _completion_email(self, job: Job, owner) -> tuple[str, str]:
+        """(subject, plain-text body) for a finished job — honest about the
+        three real outcomes: coaching ready, re-film needed, or failed."""
+        brand = str(self.cfg.brand["name"])
+        base = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+        session_url = f"{base}/session/{job.id}"
+        checklist_url = f"{base}/#filming-checklist"
+        metered = bool(
+            self.cfg.web.get("require_account")
+            and int(
+                self.cfg.billing["pro_per_month"]
+                if getattr(owner, "is_pro", False)
+                else self.cfg.billing["free_per_month"]
+            )
+            > 0
+        )
+        if job.status == DONE and self.coaching_eligible(job):
+            return (
+                f"Your {brand} coaching is ready",
+                "Your swing analysis has finished.\n\n"
+                "One priority, one drill, and a re-film target are waiting"
+                " on your report:\n"
+                f"{session_url}\n",
+            )
+        if job.status == DONE:
+            lines = [
+                "Your clip was analyzed, but it couldn't be measured well"
+                " enough for trustworthy coaching.",
+                "The session page shows exactly what to change before you"
+                " film again:",
+                session_url,
+                "",
+                f"Filming checklist: {checklist_url}",
+            ]
+            if metered and job.user_id is not None and (
+                self.refilm_rejections_this_month(job.user_id)
+                <= _FREE_REFILM_CREDITS_PER_MONTH
+            ):
+                lines += [
+                    "",
+                    "Your first rejected clip each month doesn't use an"
+                    " analysis — this was it, so the re-film costs you"
+                    " nothing.",
+                ]
+            return (
+                f"Your {brand} clip needs a re-film",
+                "\n".join(lines) + "\n",
+            )
+        friendly = friendly_error(job.error)
+        lines = [
+            "Your swing analysis couldn't finish.",
+            "",
+            friendly.message,
+        ]
+        if friendly.tips:
+            lines.append("")
+            lines.extend(f"- {tip}" for tip in friendly.tips)
+        lines += ["", f"Filming checklist: {checklist_url}"]
+        if metered:
+            lines += [
+                "",
+                "A failed upload never uses one of your monthly analyses"
+                " — fix the clip and upload it again.",
+            ]
+        lines += ["", f"Upload again: {base}/"]
+        return (
+            f"Your {brand} analysis needs another clip",
+            "\n".join(lines) + "\n",
+        )
 
     def _write_proof_cycle_artifact(self, job: Job) -> None:
         """Persist an additive Proof Cycle sidecar without risking the report.
@@ -840,11 +970,14 @@ class JobManager:
     # -- persistence ------------------------------------------------------
     def _save(self, job: Job) -> None:
         with self._lock:
+            # notify_email is creation-time intent and notified_at is claimed
+            # by _notify_owner's guarded UPDATE, so neither is in the conflict
+            # update set — a stale in-memory job can never reopen a claim.
             self._conn.execute(
                 "INSERT INTO jobs (id, status, created_at, updated_at, source_name,"
                 " hand, angle, club, level, strikes, fast, client_ip, user_id, error,"
-                " report_rel, swings_done, swings_total, log)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " report_rel, swings_done, swings_total, log, notify_email)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET status = excluded.status,"
                 " updated_at = excluded.updated_at, error = excluded.error,"
                 " report_rel = excluded.report_rel, swings_done = excluded.swings_done,"
@@ -868,6 +1001,7 @@ class JobManager:
                     job.swings_done,
                     job.swings_total,
                     json.dumps(job.log),
+                    int(job.notify_email),
                 ),
             )
             self._conn.commit()
@@ -892,6 +1026,8 @@ class JobManager:
             report_rel=row["report_rel"],
             swings_done=row["swings_done"],
             swings_total=row["swings_total"],
+            notify_email=bool(row["notify_email"]),
+            notified_at=row["notified_at"],
         )
 
     # -- history deletion and quota receipts -----------------------------
@@ -1462,6 +1598,10 @@ class JobManager:
             self._save(job)
             if job.status == QUEUED:
                 self.submit(job, video)
+            else:
+                # A restart-orphaned job is terminal too — the promised "one
+                # email when it's done" still goes out (claim-guarded).
+                self._notify_owner(job)
 
     def _import_legacy_sessions(self) -> None:
         """One-time import of sessions from the pre-database status.json era."""

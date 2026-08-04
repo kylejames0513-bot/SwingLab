@@ -110,6 +110,54 @@ def test_password_signup_creates_claimed_profile_shell_and_guides_completion(app
     assert "Kyle James" in client.get("/account").text
 
 
+def test_onboarding_offers_skip_to_filming_and_weekly_digest_opt_in(app):
+    client = TestClient(app)
+    client.post(
+        "/signup",
+        data={"email": "skip@example.com", "password": "longenough"},
+    )
+    user = app.state.users.get_by_email("skip@example.com")
+    assert user is not None
+    assert user.digest_opt_in is False
+
+    welcome = client.get("/onboarding?welcome=1")
+    assert "Skip for now — film your first swing" in welcome.text
+    assert 'href="/#upload-form"' in welcome.text
+    assert 'name="digest"' in welcome.text
+    assert 'name="digest" checked' not in welcome.text
+
+    saved = client.post(
+        "/onboarding", data=profile_form(digest="on"), follow_redirects=False
+    )
+    assert saved.status_code == 303
+    assert app.state.users.get(user.id).digest_opt_in is True
+
+    # A complete profile makes onboarding an edit page: no skip link, the
+    # checkbox reflects the saved consent, and unchecking is a real opt-out
+    # through the same path the account page uses.
+    edit = client.get("/onboarding")
+    assert "Skip for now" not in edit.text
+    assert 'name="digest" checked' in edit.text
+    client.post("/onboarding", data=profile_form())
+    assert app.state.users.get(user.id).digest_opt_in is False
+
+
+def test_today_setup_state_lets_the_user_film_before_finishing_setup(app):
+    client = TestClient(app)
+    client.post(
+        "/signup",
+        data={"email": "film-first@example.com", "password": "longenough"},
+    )
+
+    today = client.get("/today")
+
+    assert today.status_code == 200
+    assert 'data-today-state="setup"' in today.text
+    assert 'data-primary-next-move href="/#upload-form"' in today.text
+    assert "Film your first swing" in today.text
+    assert 'href="/onboarding"' in today.text
+
+
 def test_existing_incomplete_account_gets_banner_without_forced_redirect(app):
     client = TestClient(app)
     client.post(

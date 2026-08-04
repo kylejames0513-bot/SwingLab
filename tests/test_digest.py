@@ -12,6 +12,7 @@ import sqlite3
 import threading
 import types
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
@@ -255,6 +256,46 @@ def test_digest_uses_recomputed_consistency_priority_with_stale_stats(
     assert "came back clean" not in html
 
 
+def test_first_digest_of_month_carries_the_allowance_reset_note(tmp_path):
+    metered = Config()
+    metered.web["require_account"] = True
+    jobs = stub_jobs(tmp_path, [payload_for([{"tempo_ratio": 2.2}])])
+    august_10 = datetime(2026, 8, 10, tzinfo=timezone.utc).timestamp()
+    july_28 = datetime(2026, 7, 28, tzinfo=timezone.utc).timestamp()
+    august_3 = datetime(2026, 8, 3, tzinfo=timezone.utc).timestamp()
+    note = "free analysis is ready"
+
+    # First digest of the calendar month (and the first digest ever) tells a
+    # free user their allowance reset.
+    _, html = digest.compose_digest(
+        stub_user(is_pro=False, digest_last_sent_at=july_28),
+        metered, jobs, secret=SECRET, now=august_10,
+    )
+    assert note in html and "film this month" in html
+    _, html = digest.compose_digest(
+        stub_user(is_pro=False), metered, jobs, secret=SECRET, now=august_10,
+    )
+    assert note in html
+
+    # Later digests in the same month, Pro users, and unmetered installs
+    # never carry it.
+    _, html = digest.compose_digest(
+        stub_user(is_pro=False, digest_last_sent_at=august_3),
+        metered, jobs, secret=SECRET, now=august_10,
+    )
+    assert note not in html
+    _, html = digest.compose_digest(
+        stub_user(is_pro=True, digest_last_sent_at=july_28),
+        metered, jobs, secret=SECRET, now=august_10,
+    )
+    assert note not in html
+    _, html = digest.compose_digest(
+        stub_user(is_pro=False, digest_last_sent_at=july_28),
+        Config(), jobs, secret=SECRET, now=august_10,
+    )
+    assert note not in html
+
+
 # -- run_once send gates -----------------------------------------------------
 
 @pytest.fixture
@@ -420,6 +461,96 @@ def test_reset_cannot_commit_between_digest_composition_and_delivery(
     assert len(outbox) == 1
     assert manager.get(job.id) is None
     assert not job.session_dir.exists()
+
+
+# -- pro expiry reminder (transactional — no digest consent involved) --------
+
+def test_pro_expiry_reminder_sends_once_per_expiry_period(
+    store, outbox, monkeypatch
+):
+    cfg, manager, users = store
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "shpss_test_secret")
+    user = users.create("kyle@example.com", "longenough")
+    users.grant_pro_days(user.id, 5)  # lapses inside the 7-day window
+
+    assert digest.run_pro_expiry_reminders_once(users, cfg) == 1
+    to, subject, body, html = outbox[0]
+    assert to == "kyle@example.com" and html is False
+    assert subject == "CaddieInsight Pro ends in 5 days"
+    assert "https://teststore.myshopify.com/products/swinglab-pro" in body
+    assert "free monthly analysis" in body  # honest about what lapsing means
+
+    # Same expiry period: claimed, never nags twice — even a day later.
+    assert digest.run_pro_expiry_reminders_once(users, cfg) == 0
+    assert len(outbox) == 1
+
+    # Extending Pro moves pro_until, which arms the NEXT period's reminder.
+    users.grant_pro_days(user.id, 1)
+    assert digest.run_pro_expiry_reminders_once(users, cfg) == 1
+    assert len(outbox) == 2
+
+
+def test_pro_expiry_reminder_skips_lifetime_subscription_and_distant_pro(
+    store, outbox
+):
+    cfg, manager, users = store
+    lifer = users.create("life@example.com", "longenough")
+    users.grant_pro_days(lifer.id, 36500)  # SL-PRO-LIFE — never reminded
+
+    yearly = users.create("year@example.com", "longenough")
+    users.grant_pro_days(yearly.id, 365)  # not yet inside the window
+
+    stripe = users.create("stripe@example.com", "longenough")
+    users.set_plan(stripe.id, "pro", "active")  # renews on its own
+    users.grant_pro_days(stripe.id, 5)
+
+    assert digest.run_pro_expiry_reminders_once(users, cfg) == 0
+    assert outbox == []
+
+
+def test_pro_expiry_reminder_needs_email_and_links_pricing_without_a_store(
+    store, outbox, monkeypatch
+):
+    cfg, manager, users = store
+    monkeypatch.delenv("SHOPIFY_STORE_DOMAIN", raising=False)
+    monkeypatch.delenv("SHOPIFY_WEBHOOK_SECRET", raising=False)
+    user = users.create("kyle@example.com", "longenough")
+    users.grant_pro_days(user.id, 3)
+
+    assert digest.run_pro_expiry_reminders_once(users, cfg) == 1
+    assert "/pricing" in outbox[0][2]
+
+    # Without email delivery the pass is inert AND claims nothing.
+    monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
+    monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
+    other = users.create("quiet@example.com", "longenough")
+    users.grant_pro_days(other.id, 3)
+    assert digest.run_pro_expiry_reminders_once(users, cfg) == 0
+    assert len(outbox) == 1
+
+
+def test_pro_expiry_scheduler_ignores_the_digest_kill_switch(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(
+        jobs_module, "analyze_video", make_fake_analyze(SESSION_PAYLOADS)
+    )
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
+    monkeypatch.delenv("SWINGLAB_MAIL_FROM", raising=False)
+    app = create_app(Config(), sessions_dir=tmp_path / "a")
+    assert app.state.pro_expiry_thread is None  # nothing without email
+
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp+starttls://u:p@mail.test:587")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+    monkeypatch.setattr(mailer, "send", lambda *a, **k: None)
+    cfg = Config()
+    cfg.web["digest_enabled"] = False  # kills the digest, NOT transactional mail
+    app = create_app(cfg, sessions_dir=tmp_path / "b")
+    assert app.state.digest_thread is None
+    thread = app.state.pro_expiry_thread
+    assert thread is not None and thread.daemon
 
 
 # -- app surfaces ------------------------------------------------------------

@@ -337,7 +337,9 @@
           {% endif %}
 
           <div class="coach-actions">
-            <a class="button" href="/">Practice, then re-film</a>
+            {# With accounts on, practice lives on /today's practice panel;
+               open instances have no /today, so the upload page stands in. #}
+            <a class="button" href="{% if require_account %}/today#practice-plan{% else %}/{% endif %}">Practice, then re-film</a>
             <a class="button secondary" href="/session/{{ job.id }}/report">See your full coaching plan</a>
           </div>
 

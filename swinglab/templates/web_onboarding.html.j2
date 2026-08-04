@@ -31,6 +31,9 @@
   .setup-security button { margin-top: 0; }
   .setup-notice { padding: 12px 15px; border-left: 4px solid var(--primary); border-radius: 6px; background: #e5f3ea; }
   .setup-name { grid-column: 1 / -1; }
+  .setup-skip { margin: 20px 0 0; text-align: center; }
+  .setup-skip a { font-weight: 700; }
+  .setup-skip-hint { margin-top: 6px; text-align: center; }
   @media (max-width: 620px) { .setup-grid, .choice-grid { grid-template-columns: 1fr; } }
   @media (max-width: 620px) { .setup-security form { grid-template-columns: 1fr; } .setup-security button { width: 100%; } }
 {% endblock %}
@@ -46,6 +49,7 @@
 {% set club = submitted.preferred_club if submitted is defined else (profile.preferred_club if profile else '') %}
 {% set reduced = submitted.reduced_motion if submitted is defined else (profile.reduced_motion if profile else false) %}
 {% set marketing = submitted.marketing_email if submitted is defined else (profile.marketing_email_opt_in if profile else false) %}
+{% set digest = submitted.digest if submitted is defined else (user.digest_opt_in if user else false) %}
   <div class="card setup-card">
     <p class="sl-eyebrow">{{ "Welcome to CaddieInsight" if welcome else "Make your next step fit your game" }}</p>
     <h1>{{ "Create your golfer profile" if welcome else "Your golfer setup" }}</h1>
@@ -143,9 +147,14 @@
       </div>
       <div class="consent">
         <label><input type="checkbox" name="reduced_motion" {% if reduced %}checked{% endif %}><span><strong>Reduce motion where available</strong><br><span class="hint">Keeps animated guidance calm without changing your analysis.</span></span></label>
+        <label><input type="checkbox" name="digest" {% if digest %}checked{% endif %}><span><strong>Email me one drill a week</strong><br><span class="hint">One drill a week. No spam. Your latest session&rsquo;s drills with their pass marks — unsubscribe any time.</span></span></label>
         <label><input type="checkbox" name="marketing_email" {% if marketing %}checked{% endif %}><span><strong>Send me occasional CaddieInsight product and launch updates</strong><br><span class="hint">Optional. This is separate from your weekly drill email and stays off unless you choose it.</span></span></label>
       </div>
       <button type="submit">Save my setup</button>
     </form>
+    {% if not (profile and profile.is_complete) %}
+    <p class="setup-skip"><a href="/#upload-form">Skip for now — film your first swing</a></p>
+    <p class="hint setup-skip-hint">Uploading asks for the club and camera angle anyway; you can finish this profile any time.</p>
+    {% endif %}
   </div>
 {% endblock %}

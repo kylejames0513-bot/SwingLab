@@ -39,6 +39,14 @@ sessions (swinglab.trends + diagrams.trend_chart), and an opt-in weekly
 practice-plan email (digest.py) runs on an hourly scheduler thread — only
 when email delivery is configured and web.digest_enabled is on, and only to users who
 asked for it.
+
+Lifecycle email (all claim-before-send, at most once per subject): a paid
+Shopify Pro order confirms itself or nudges account activation
+(shopify_billing.py), an upload with the "email me when my coaching is
+ready" checkbox gets one completion email — report link, or the humanized
+failure guidance (jobs.py + humanize.py) — and a daily thread reminds
+time-boxed Pro ~7 days before it lapses (digest.py, transactional, not
+gated by digest consent).
 """
 
 from __future__ import annotations
@@ -55,6 +63,7 @@ import secrets
 import shutil
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -156,6 +165,10 @@ EMAIL_DELIVERY_UNCERTAIN_MESSAGE = (
     "otherwise try again in a minute."
 )
 SHOPIFY_WEBHOOK_MAX_BODY_BYTES = 1024 * 1024
+# The free matched re-film (allowances.free_matched_refilm) stays open this
+# long after its coaching-ready baseline — long enough for a real practice
+# week, short enough that the comparison still means something.
+MATCHED_REFILM_WINDOW_DAYS = 14
 LOGIN_FLOW_SESSION_KEY = "email_login_flow_nonce"
 SIGNUP_FLOW_SESSION_KEY = "password_signup_flow_nonce"
 PRODUCT_ANON_SESSION_KEY = "product_anon_id"
@@ -314,11 +327,97 @@ def client_ip(request: Request) -> str | None:
     return request.client.host if request.client else None
 
 
+def exact_job_context(job: Job | None) -> tuple[str, str, str] | None:
+    """Authoritative club, hand, and angle, or no comparable context."""
+
+    if job is None:
+        return None
+    club = getattr(job, "club", None)
+    hand = getattr(job, "hand", None)
+    angle = getattr(job, "angle", None)
+    if (
+        club not in CLUB_LABELS
+        or hand not in ("right", "left")
+        or angle not in ANGLES
+    ):
+        return None
+    return club, hand, angle
+
+
+def context_label(context: tuple[str, str, str] | None) -> str | None:
+    if context is None:
+        return None
+    club, hand, angle = context
+    return " · ".join(
+        (
+            CLUB_LABELS[club],
+            "Right-handed" if hand == "right" else "Left-handed",
+            "Face-on" if angle == "face-on" else "Down-the-line",
+        )
+    )
+
+
+def matched_refilm_enabled(cfg: Config) -> bool:
+    """Only the literal boolean true activates the free matched re-film."""
+
+    return cfg.allowances.get("free_matched_refilm") is True
+
+
+def matched_refilm_baseline(
+    user: User | None,
+    manager: JobManager,
+    cfg: Config,
+    *,
+    now: float | None = None,
+) -> Job | None:
+    """This month's coaching-ready session that a free matched re-film may
+    follow, or None when the credit cannot apply.
+
+    The credit closes the free tier's proof loop: every surface teaches
+    film -> practice -> re-film, so a free account that earned a
+    coaching-ready baseline this calendar month (UTC, the same window as
+    the allowance) keeps ONE more upload free while it stays comparable —
+    same club, handedness, and camera angle, within 14 days of that
+    baseline. Pro accounts never need it, and the flag fails closed like
+    every other boolean gate. Whether the credit is still unspent is the
+    caller's arithmetic (usage against the limit); this only finds the
+    latest baseline that makes it possible.
+    """
+    if user is None or user.is_pro or not matched_refilm_enabled(cfg):
+        return None
+    timestamp = time.time() if now is None else now
+    month_start = (
+        datetime.fromtimestamp(timestamp, timezone.utc)
+        .replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        .timestamp()
+    )
+    window_s = MATCHED_REFILM_WINDOW_DAYS * 86400
+    for job in manager.list_recent(user_id=user.id):
+        created_at = float(job.created_at or 0.0)
+        if job.status != DONE or not created_at:
+            continue
+        if created_at < month_start or timestamp - created_at > window_s:
+            continue
+        if exact_job_context(job) is None:
+            continue
+        if manager.coaching_eligible(job):
+            return job
+    return None
+
+
 def ensure_user_can_analyze(
-    user: User | None, manager: JobManager, cfg: Config
+    user: User | None,
+    manager: JobManager,
+    cfg: Config,
+    *,
+    declared_context: tuple[str, str, str] | None = None,
 ) -> None:
     """The paywall. Free accounts get billing.free_per_month analyses per
-    calendar month; Pro gets billing.pro_per_month (0 = unlimited)."""
+    calendar month; Pro gets billing.pro_per_month (0 = unlimited). With
+    allowances.free_matched_refilm on, a free account whose allowance is
+    spent still gets ONE upload that matches this month's coaching-ready
+    baseline (declared_context carries the upload's declared club, hand,
+    and angle); a mismatched or second extra upload stays blocked."""
     if not cfg.web.get("require_account"):
         return
     if user is None:
@@ -328,13 +427,31 @@ def ensure_user_can_analyze(
     )
     if limit <= 0:  # unlimited
         return
-    if manager.usage_this_month(user.id) >= limit:
+    used = manager.usage_this_month(user.id)
+    if used >= limit:
         noun = "analysis" if limit == 1 else "analyses"
         if user.is_pro:
             raise HTTPException(
                 402,
                 f"You've reached this month's limit of {limit} {noun}. "
                 "It resets on the 1st.",
+            )
+        baseline = matched_refilm_baseline(user, manager, cfg)
+        if baseline is not None and used < limit + 1:
+            required = exact_job_context(baseline)
+            if declared_context == required:
+                # The free matched re-film: the one extra upload that keeps
+                # the film -> practice -> re-film loop closable on free.
+                return
+            raise HTTPException(
+                402,
+                f"You've used your {limit} free {noun} this month, but your "
+                "matched re-film is still free: film "
+                f"{context_label(required)} to match your coaching-ready "
+                "baseline and this upload consumes nothing. A different "
+                "club, handedness, or camera angle needs the normal "
+                "allowance — upgrade to Pro for that, or come back on "
+                "the 1st.",
             )
         pro_limit = int(cfg.billing["pro_per_month"])
         pro_allowance = (
@@ -845,22 +962,6 @@ def create_app(
 
         return cfg.coaching.get("club_aware_enabled") is True
 
-    def exact_job_context(job: Job | None) -> tuple[str, str, str] | None:
-        """Authoritative club, hand, and angle, or no comparable context."""
-
-        if job is None:
-            return None
-        club = getattr(job, "club", None)
-        hand = getattr(job, "hand", None)
-        angle = getattr(job, "angle", None)
-        if (
-            club not in CLUB_LABELS
-            or hand not in ("right", "left")
-            or angle not in ANGLES
-        ):
-            return None
-        return club, hand, angle
-
     def latest_readable_job(jobs) -> Job | None:
         """Latest stored session that can honestly contribute one sample."""
 
@@ -877,17 +978,27 @@ def create_app(
                 return job
         return None
 
-    def context_label(context: tuple[str, str, str] | None) -> str | None:
-        if context is None:
+    def matched_refilm_credit(user: User | None) -> dict | None:
+        """The upload/today view of the free matched re-film: None when the
+        credit cannot apply (flag off, open instance, Pro, unlimited free,
+        or no coaching-ready baseline in this month's 14-day window), else
+        the baseline's context and whether the credit is still unspent."""
+
+        if not cfg.web.get("require_account") or user is None:
             return None
-        club, hand, angle = context
-        return " · ".join(
-            (
-                CLUB_LABELS[club],
-                "Right-handed" if hand == "right" else "Left-handed",
-                "Face-on" if angle == "face-on" else "Down-the-line",
-            )
-        )
+        limit = int(cfg.billing["free_per_month"])
+        if limit <= 0:
+            return None
+        baseline = matched_refilm_baseline(user, manager, cfg)
+        context = exact_job_context(baseline)
+        if baseline is None or context is None:
+            return None
+        return {
+            "available": manager.usage_this_month(user.id) < limit + 1,
+            "label": context_label(context),
+            "club": CLUB_LABELS[context[0]],
+            "baseline_id": baseline.id,
+        }
 
     def render(
         template: str,
@@ -950,6 +1061,15 @@ def create_app(
                 progress_pro_only=bool(
                     cfg.billing.get("progress_pro_only")
                     and cfg.web.get("require_account")
+                ),
+                # Effective, like the gates above: the free matched re-film
+                # only exists where the paywall does (accounts on, a finite
+                # free allowance) — pricing copy must never advertise a
+                # credit no upload would ever need.
+                free_matched_refilm=bool(
+                    matched_refilm_enabled(cfg)
+                    and cfg.web.get("require_account")
+                    and int(cfg.billing["free_per_month"]) > 0
                 ),
                 shop_enabled=shop_active(),
                 mail_enabled=mailer.enabled(),
@@ -1191,6 +1311,41 @@ def create_app(
             if left == 0 and user is not None and not user.is_pro
             else None
         )
+        refilm_credit = matched_refilm_credit(user)
+        # When the wall is real (allowance spent, no credit left), the
+        # upgrade prompt names the golfer's own pending pass mark — the
+        # re-film target their last coaching session asked them to prove.
+        pending_pass_mark = None
+        if (
+            left == 0
+            and user is not None
+            and not user.is_pro
+            and not (refilm_credit is not None and refilm_credit["available"])
+        ):
+            try:
+                latest_eligible = next(
+                    (
+                        job
+                        for job in manager.list_recent(user_id=user.id)
+                        if job.status == DONE
+                        and manager.coaching_eligible(job)
+                    ),
+                    None,
+                )
+                brief = (
+                    caddie_brief_for(latest_eligible)
+                    if latest_eligible is not None
+                    else None
+                )
+                if (
+                    brief is not None
+                    and brief.drill is not None
+                    and not brief.refilm_required
+                ):
+                    pending_pass_mark = brief.drill.success_metric
+            except Exception:
+                # A nice-to-have line must never take down the upload page.
+                pending_pass_mark = None
         upload_transfer_assignment = active_proof_cycle_practice_assignment(
             user,
             club=(golfer_profile.preferred_club if golfer_profile else None),
@@ -1215,6 +1370,8 @@ def create_app(
             baseline_blocked=baseline_blocked,
             refilm_rejections=refilm_rejections,
             charged_refilm_attempts=charged_refilm_attempts,
+            refilm_credit=refilm_credit,
+            pending_pass_mark=pending_pass_mark,
             upload_transfer_assignment=upload_transfer_assignment,
         )
 
@@ -2554,6 +2711,7 @@ def create_app(
         preferred_club: str = Form(""),
         reduced_motion: str = Form(""),
         marketing_email: str = Form(""),
+        digest_opt: str = Form("", alias="digest"),
     ):
         if not _same_origin_form_post(request):
             raise HTTPException(403, "Invalid request origin.")
@@ -2600,8 +2758,14 @@ def create_app(
                     "preferred_club": preferred_club,
                     "reduced_motion": reduced_motion,
                     "marketing_email": marketing_email,
+                    "digest": digest_opt,
                 },
             )
+        # The form's checkbox reflects the account's current choice, so a
+        # save is a genuine toggle through the same consent path as /account.
+        users.set_digest_opt_in(
+            user.id, digest_opt.lower() in ("on", "true", "1", "yes")
+        )
         return RedirectResponse("/today?setup_saved", status_code=303)
 
     def practice_choices_for_drill(drill, profile: GolferProfile | None) -> list[dict]:
@@ -2711,13 +2875,23 @@ def create_app(
             else None
         )
         analyses_left = quota_left(user)
+        refilm_credit = matched_refilm_credit(user)
+        refilm_credit_open = bool(
+            refilm_credit is not None and refilm_credit["available"]
+        )
         allowance_text = (
             "Unlimited analyses"
             if analyses_left is None
             else (
-                f"{analyses_left} analysis left this month"
-                if analyses_left == 1
-                else f"{analyses_left} analyses left this month"
+                # The proof loop stays open even at zero: the tile must not
+                # contradict the free matched re-film offered right below.
+                "Allowance used — your matched re-film is still free"
+                if analyses_left == 0 and refilm_credit_open
+                else (
+                    f"{analyses_left} analysis left this month"
+                    if analyses_left == 1
+                    else f"{analyses_left} analyses left this month"
+                )
             )
         )
         today_tiles = (
@@ -2862,6 +3036,8 @@ def create_app(
             latest_report_available=latest_report_available,
             today_state=today_state,
             today_tiles=today_tiles,
+            analyses_left=analyses_left,
+            refilm_credit=refilm_credit,
             recent_sessions=recent_sessions,
             today_proof=today_proof,
             caddie_brief=brief,
@@ -3088,11 +3264,33 @@ def create_app(
 
     @app.get("/pricing", response_class=HTMLResponse)
     def pricing(request: Request):
+        # Per-card store deep links: each Pro card preselects its own
+        # variant at checkout when the operator has mapped one
+        # (billing.shopify_variant_ids). An unmapped card falls back to
+        # the plain product page rather than guessing a variant.
+        base_store_url = (
+            shopify_billing.buy_url(cfg)
+            if shopify_billing.commerce_enabled()
+            else None
+        )
+        variant_ids = cfg.billing.get("shopify_variant_ids") or {}
+
+        def plan_store_url(plan: str) -> str | None:
+            if base_store_url is None:
+                return None
+            variant = str(variant_ids.get(plan) or "").strip()
+            if not variant:
+                return base_store_url
+            return f"{base_store_url}?variant={variant}"
+
         # The quiet personal line: only for logged-in users with >= 2
         # sessions of real data (trend_sentence is None otherwise).
         return render(
             "web_pricing.html.j2", request,
             trend_line=personal_trend(current_user(request)),
+            pro_store_url_monthly=plan_store_url("monthly"),
+            pro_store_url_yearly=plan_store_url("yearly"),
+            pro_store_url_lifetime=plan_store_url("lifetime"),
             # Display strings only — the store/Stripe stays the source of
             # truth for what is actually charged.
             pro_price_annual_text=cfg.billing.get("pro_price_annual_text"),
@@ -3197,6 +3395,7 @@ def create_app(
         level: str = Form(""),
         strikes: str = Form(""),
         fast: str = Form(""),
+        notify: str = Form(""),
         transfer_check: str = Form(""),
     ):
         if request.headers.get("authorization") is not None:
@@ -3207,7 +3406,12 @@ def create_app(
             if not _same_origin_form_post(request):
                 raise HTTPException(403, "Invalid request origin.")
             user = current_user(request)
-        ensure_user_can_analyze(user, manager, cfg)
+        # The raw form values are fine here: the free matched re-film only
+        # matches a validated baseline context, so junk simply never matches
+        # — and quota decisions keep precedence over input validation.
+        ensure_user_can_analyze(
+            user, manager, cfg, declared_context=(club, hand, angle)
+        )
         had_completed_analysis = bool(
             user is not None
             and any(
@@ -3291,6 +3495,12 @@ def create_app(
                 fast=fast.lower() in ("on", "true", "1", "yes"),
                 client_ip=ip,
                 user_id=user.id if user else None,
+                # "Email me when my coaching is ready" — meaningful only for
+                # an owned session (there is no address to notify otherwise).
+                notify_email=(
+                    user is not None
+                    and notify.lower() in ("on", "true", "1", "yes")
+                ),
                 expected_history_epoch=(
                     user.history_epoch if user is not None else None
                 ),
@@ -4521,5 +4731,9 @@ def create_app(
     # Email is configured AND web.digest_enabled is on — otherwise None and
     # zero behavior (see digest.py for the consent + claim-before-send rules).
     app.state.digest_thread = digest.start_scheduler(manager, users, cfg, secret)
+    # Pro expiry reminder: daily daemon thread, transactional — gated only on
+    # email delivery being configured (the digest kill-switch and consent
+    # flags do not apply; see digest.py, bottom).
+    app.state.pro_expiry_thread = digest.start_pro_expiry_scheduler(users, cfg)
 
     return app
