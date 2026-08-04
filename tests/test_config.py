@@ -64,10 +64,27 @@ def test_missing_explicit_defaults(tmp_path):
     assert cfg.data == DEFAULTS
 
 
-def test_shipped_proof_cycle_activation_keeps_practice_collection_off():
+def test_shipped_proof_cycle_stage_two_enables_practice_evidence():
+    """Stage-2 rollout: the read-only result surface was observed live, so
+    the shipped config now also collects self-reported practice receipts and
+    normal-swing transfer checks. They never change a measurement verdict;
+    the bare-code default stays off."""
     cfg = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
 
     assert cfg.proof_cycle["enabled"] is True
-    assert cfg.proof_cycle["practice_evidence_enabled"] is False
+    assert cfg.proof_cycle["practice_evidence_enabled"] is True
+    assert DEFAULTS["proof_cycle"]["practice_evidence_enabled"] is False
     assert cfg.web["history_reset_enabled"] is True
     assert cfg.coaching["club_aware_enabled"] is True
+
+
+def test_matched_refilm_credit_defaults_off_and_ships_on():
+    """allowances.free_matched_refilm follows the replay_pro_only shape:
+    bare-code installs keep the plain monthly quota, the shipped config
+    closes the free tier's film -> practice -> re-film loop."""
+    assert DEFAULTS["allowances"]["free_matched_refilm"] is False
+
+    cfg = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+
+    assert cfg.allowances["free_matched_refilm"] is True
+    assert Config().allowances["free_matched_refilm"] is False

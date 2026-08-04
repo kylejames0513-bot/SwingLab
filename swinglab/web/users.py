@@ -290,6 +290,13 @@ CREATE TABLE IF NOT EXISTS gear_orders (
     cancelled_at REAL
 );
 CREATE INDEX IF NOT EXISTS gear_orders_order ON gear_orders(order_id);
+CREATE TABLE IF NOT EXISTS lifecycle_email_sends (
+    kind        TEXT NOT NULL,
+    subject_key TEXT NOT NULL,
+    user_id     TEXT,
+    sent_at     REAL NOT NULL,
+    PRIMARY KEY (kind, subject_key)
+);
 CREATE TABLE IF NOT EXISTS email_codes (
     email      TEXT NOT NULL,
     purpose    TEXT NOT NULL,
@@ -1701,6 +1708,7 @@ class UserStore:
             "mobile_api_tokens",
             "shopify_customer_account_oauth_states",
             "shopify_customer_account_browser_sessions",
+            "lifecycle_email_sends",
         ):
             self._conn.execute(
                 f"DELETE FROM {table} WHERE user_id IN ({placeholders})",
@@ -2982,6 +2990,11 @@ class UserStore:
                 self._conn.execute("DELETE FROM shopify_orders")
                 self._conn.execute("DELETE FROM gear_orders")
                 self._conn.execute("DELETE FROM pro_grants")
+                # Order-keyed send markers are Shopify-derived data too.
+                self._conn.execute(
+                    "DELETE FROM lifecycle_email_sends"
+                    " WHERE kind LIKE 'shopify\\_%' ESCAPE '\\'"
+                )
                 self._conn.execute("DELETE FROM shopify_customer_tombstones")
                 self._conn.execute(
                     "DELETE FROM shopify_pending_customer_links"
@@ -7732,6 +7745,46 @@ class UserStore:
             )
             self._conn.commit()
         return cursor.rowcount == 1
+
+    # -- one-shot transactional (lifecycle) emails ------------------------
+    def claim_lifecycle_email(
+        self,
+        kind: str,
+        subject_key: str,
+        user_id: str | None = None,
+    ) -> bool:
+        """Atomically claim a one-shot transactional email BEFORE it goes
+        out. True = this caller owns the send. The insert-first order is the
+        same rule as claim_digest_send: a webhook replay or a crash mid-send
+        can never double-email for one (kind, subject_key). ``user_id``, when
+        the send belongs to an account, lets account deletion take the
+        markers with it."""
+        if not kind or not subject_key:
+            return False
+        with self._lock:
+            cursor = self._conn.execute(
+                "INSERT OR IGNORE INTO lifecycle_email_sends"
+                " (kind, subject_key, user_id, sent_at)"
+                " VALUES (?, ?, ?, ?)",
+                (kind, subject_key, user_id, time.time()),
+            )
+            self._conn.commit()
+        return cursor.rowcount == 1
+
+    def pro_expiring_between(self, start: float, end: float) -> list[User]:
+        """Accounts whose time-boxed Pro lapses in (start, end], oldest
+        first. Subscription-managed Pro (Stripe plan with a live status) is
+        excluded — it renews on its own, so only the day-grant entitlement
+        can quietly run out. A lifetime grant sits ~100 years out and never
+        lands inside a reminder window."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM users WHERE pro_until > ? AND pro_until <= ?"
+                " AND NOT (plan = ? AND subscription_status IN (?, ?, ?))"
+                " ORDER BY created_at",
+                (start, end, PRO, *_PRO_OK_STATUSES),
+            ).fetchall()
+        return [self._from_row(row) for row in rows]
 
     # -- one-time email codes (claim verification, password reset) --------
     @staticmethod

@@ -14,6 +14,7 @@ import hmac
 import json
 import sqlite3
 import time
+from datetime import datetime, timezone
 
 import pytest
 
@@ -22,7 +23,7 @@ from fastapi.testclient import TestClient
 from starlette.requests import Request
 
 from swinglab.config import Config
-from swinglab.web import jobs as jobs_module, shopify_billing
+from swinglab.web import jobs as jobs_module, mailer, shopify_billing
 from swinglab.web.app import (
     SHOPIFY_WEBHOOK_MAX_BODY_BYTES,
     _read_bounded_request_body,
@@ -126,6 +127,33 @@ def pro_refund(
 def get_user(client, email="kyle@example.com"):
     users: UserStore = client.app.state.users
     return users.get_by_email(email)
+
+
+@pytest.fixture
+def outbox(monkeypatch):
+    """Mail 'on' (env set) but captured instead of delivered. Listed AFTER
+    the app fixture in test signatures so create_app never starts email
+    scheduler threads."""
+    sent: list[tuple[str, str, str]] = []
+    monkeypatch.delenv("SWINGLAB_MAIL_TRANSPORT", raising=False)
+    monkeypatch.delenv("RESEND_API_KEY", raising=False)
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp+starttls://u:p@mail.test:587")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+    monkeypatch.setattr(
+        mailer, "send", lambda to, subject, body: sent.append((to, subject, body))
+    )
+    return sent
+
+
+def verified_user(client, email="kyle@example.com", password="longenough"):
+    """An inbox-verified account made through the durable store primitives
+    (mail-on tests can't use the HTTP signup helper without also capturing
+    its verification-code emails)."""
+    users: UserStore = client.app.state.users
+    intent = users.issue_signup_intent(email, password)
+    code = users.issue_email_code(email, "claim")
+    assert code is not None
+    return users.complete_signup_intent_with_code(intent, code)
 
 
 def test_paid_order_unlocks_pro(app):
@@ -603,6 +631,76 @@ def test_bounded_webhook_reader_rejects_chunked_body_without_length():
             )
         )
     assert exc.value.status_code == 413
+
+
+def test_paid_order_emails_a_confirmation_exactly_once(app, outbox):
+    client = TestClient(app)
+    verified_user(client)
+
+    assert order_webhook(client, pro_order()).status_code == 200
+
+    assert len(outbox) == 1
+    to, subject, body = outbox[0]
+    assert to == "kyle@example.com"
+    assert subject == "CaddieInsight Pro is active on your account"
+    assert "31 days of Pro" in body
+    assert "/today" in body
+    end_day = datetime.fromtimestamp(
+        get_user(client).pro_until, timezone.utc
+    ).strftime("%B %d, %Y")
+    assert end_day in body
+
+    # A Shopify webhook retry reconciles silently — never a second email.
+    assert order_webhook(client, pro_order()).status_code == 200
+    assert len(outbox) == 1
+
+
+def test_lifetime_order_email_says_lifetime_not_a_date(app, outbox):
+    client = TestClient(app)
+    verified_user(client)
+    order_webhook(client, pro_order(sku="SL-PRO-LIFE"))
+
+    assert len(outbox) == 1
+    _, _, body = outbox[0]
+    assert "Lifetime Pro" in body
+    assert "It never expires." in body
+
+
+def test_unmatched_paid_order_emails_the_activation_nudge_once(app, outbox):
+    client = TestClient(app)
+
+    assert order_webhook(
+        client, pro_order(email="new@example.com")
+    ).status_code == 200
+
+    assert len(outbox) == 1
+    to, subject, body = outbox[0]
+    assert to == "new@example.com"
+    assert subject == "Your CaddieInsight Pro is waiting — activate your account"
+    assert "/signup?email=new%40example.com" in body
+
+    # Retried delivery of the same order stays one email.
+    order_webhook(client, pro_order(email="new@example.com"))
+    assert len(outbox) == 1
+
+
+def test_gear_only_order_sends_no_lifecycle_email(app, outbox):
+    client = TestClient(app)
+    verified_user(client)
+    order_webhook(client, pro_order(sku="SL-TEMPO-WAND"))
+    assert outbox == []
+
+
+def test_order_email_failure_never_fails_the_webhook(app, outbox, monkeypatch):
+    client = TestClient(app)
+    verified_user(client)
+
+    def boom(to, subject, body):
+        raise mailer.EmailDeliveryRejected("provider down")
+
+    monkeypatch.setattr(mailer, "send", boom)
+    assert order_webhook(client, pro_order()).status_code == 200
+    assert get_user(client).is_pro  # the grant is never held hostage by email
 
 
 def test_pages_link_to_the_store(app):

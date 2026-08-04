@@ -148,6 +148,43 @@ def test_landing_explains_the_full_loop_and_measurement_boundary(tmp_path):
     assert "ball flight" in html
 
 
+def test_landing_names_the_proof_cycle_with_a_labeled_demo_verdict(tmp_path):
+    _client, response = landing(tmp_path)
+    html = " ".join(response.text.split())
+
+    assert 'id="proof-cycle-title"' in html
+    assert "0.41 &rarr; 0.29 shoulder widths" in html
+    assert (
+        "Held across 2 matched re-films with the same club, handedness, "
+        "and camera angle."
+    ) in html
+    # Trust rule: the example verdict is labeled at the point it appears.
+    assert "Demonstration data" in html
+    assert (
+        "your driver and your 7-iron get different coaching priorities"
+    ) in html
+    assert 'href="/drills"' in html
+    assert "Beginner Path" in html
+
+
+def test_apple_touch_icon_is_a_local_opaque_180px_png(tmp_path):
+    client, response = landing(tmp_path)
+
+    assert (
+        '<link rel="apple-touch-icon" sizes="180x180" '
+        'href="/static/apple-touch-icon.png">'
+    ) in response.text
+    icon = client.get("/static/apple-touch-icon.png")
+    assert icon.status_code == 200
+    assert icon.content[:8] == b"\x89PNG\r\n\x1a\n"
+    with Image.open(BytesIO(icon.content)) as image:
+        assert image.format == "PNG"
+        assert image.size == (180, 180)
+        # iOS composites transparent touch icons over black — the mark
+        # ships on its own opaque field instead.
+        assert image.mode == "RGB"
+
+
 def test_shared_shell_keeps_navigation_accessibility_contracts():
     assert '<a class="sl-skip" href="#MainContent">' in LAYOUT
     assert '<main id="MainContent">' in LAYOUT

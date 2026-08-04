@@ -1,5 +1,7 @@
 {% extends "web_layout.html.j2" %}
-{% set allowance_used = quota_left is defined and quota_left is not none and quota_left <= 0 %}
+{% set allowance_spent = quota_left is defined and quota_left is not none and quota_left <= 0 %}
+{% set refilm_credit_active = allowance_spent and refilm_credit is defined and refilm_credit and refilm_credit.available %}
+{% set allowance_used = allowance_spent and not refilm_credit_active %}
 {% block title %}{{ brand.name }} — Analyze your swing{% endblock %}
 {% block style %}
   main#MainContent {
@@ -444,10 +446,13 @@
         </div>
       </div>
       <aside class="upload-status" aria-label="Account analysis status">
-        <p class="upload-status__label"><span class="upload-status__dot" aria-hidden="true"></span> {{ "Allowance used" if allowance_used else "Ready to analyze" }}</p>
+        <p class="upload-status__label"><span class="upload-status__dot" aria-hidden="true"></span> {{ "Allowance used" if allowance_used else ("Matched re-film free" if refilm_credit_active else "Ready to analyze") }}</p>
         {% if allowance_used %}
         <strong>No analyses left this month</strong>
         <p>Your allowance resets on the 1st.</p>
+        {% elif refilm_credit_active %}
+        <strong>Your matched re-film is free this month</strong>
+        <p>Same club, same view: {{ refilm_credit.label }}.</p>
         {% elif require_account and (not user or not user.is_pro) %}
         <strong>{% if free_per_month <= 0 %}Unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %} each month{% endif %}</strong>
         <p>Free, no card required.</p>
@@ -503,6 +508,14 @@
             counted toward this month's allowance. The first rejected clip did
             not.</p>
           {% endif %}
+          {% elif refilm_credit_active %}
+          <p class="hint"><strong>Your matched re-film is free this month</strong>
+            — same club, same view.</p>
+          <p class="hint">You've used this month's allowance, but the proof
+            loop stays open: film {{ refilm_credit.label }} to match your
+            coaching-ready baseline and this upload consumes nothing. A
+            different club, handedness, or camera angle would need the normal
+            allowance, so only the matched re-film goes through.</p>
           {% elif baseline_blocked %}
           <p class="error">Your baseline still needs a clear clip, and this
             month's allowance has been used.</p>
@@ -534,6 +547,15 @@
             {{ pro_per_month }} analyses a month{% endif %}, or come back
             on the 1st.{% else %}They reset on the 1st.{% endif %}</p>
           {% endif %}
+          {% endif %}
+          {% if pending_pass_mark %}
+          {# The golfer's own re-film target, straight from their last
+             coaching session — never a generic upgrade line. #}
+          <p class="hint">Your pending pass mark is still waiting:
+            {{ pending_pass_mark }}
+            {% if user and not user.is_pro and pro_available %}<a href="/pricing">Go
+            Pro</a> to film the proof now, or test it after the reset on
+            the 1st.{% else %}Test it after the reset on the 1st.{% endif %}</p>
           {% endif %}
         </div>
         {% endif %}
@@ -614,6 +636,15 @@
               .mkv — straight off your phone is fine{% if max_upload_mb %}, up to
               {{ max_upload_mb | int }} MB{% endif %}.</p>
 
+            {% if user and mail_enabled %}
+            <div class="check">
+              <input id="notify" name="notify" type="checkbox" value="on" checked>
+              <label for="notify"><strong>Email me when my coaching is ready</strong>
+                — one email for this clip when the analysis finishes (or needs
+                another attempt), sent to {{ user.email }}. Nothing else joins it.</label>
+            </div>
+            {% endif %}
+
             {% if upload_transfer_assignment %}
             <div class="transfer-option">
               <div class="check">
@@ -671,6 +702,11 @@
             {% if allowance_used %}
             <p class="hint submit-note" id="allowance-blocked-note">A new upload cannot start until your allowance resets on the 1st{% if user and not user.is_pro and pro_available %}, or <a href="/pricing">you activate Pro</a>{% endif %}.</p>
             {% else %}
+            {% if refilm_credit_active %}
+            <p class="hint submit-note">This upload is your free matched
+              re-film — {{ refilm_credit.label }}, and it consumes no
+              allowance.</p>
+            {% endif %}
             <p class="hint submit-note">Analysis time varies with clip length.
               You can leave the page while it runs — the result link keeps working.</p>
             {% endif %}

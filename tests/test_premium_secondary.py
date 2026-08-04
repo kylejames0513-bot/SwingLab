@@ -114,8 +114,17 @@ def test_static_secondary_templates_keep_premium_semantics():
     onboarding = (TEMPLATES / "web_onboarding.html.j2").read_text(
         encoding="utf-8"
     )
+    account = (TEMPLATES / "web_account.html.j2").read_text(encoding="utf-8")
+    offline = (TEMPLATES / "web_offline.html.j2").read_text(encoding="utf-8")
 
     assert "<h1>Golf gear</h1>" in shop
+    # Pro can arrive via Shopify or Stripe — the upgraded flash stays
+    # provider-neutral instead of naming the wrong processor.
+    assert "payment provider confirms" in account
+    assert "Stripe confirms" not in account
+    # The offline shell precaches only /offline, so the page must not claim
+    # other pages stay readable offline.
+    assert "if it was loaded on this device" not in offline
     assert "<h1>You're unsubscribed</h1>" in unsubscribed
     assert '<thead><tr><th scope="col">Feature</th>' in pricing
     assert pricing.count('scope="row"') >= 5
