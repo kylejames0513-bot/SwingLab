@@ -1,0 +1,214 @@
+{%- liquid
+  assign contact_form_id = 'sl-contact-form-' | append: section.id
+  assign name_id = contact_form_id | append: '-name'
+  assign email_id = contact_form_id | append: '-email'
+  assign body_id = contact_form_id | append: '-body'
+-%}
+
+<div class="sl-wrap sl-main-contact">
+  <header class="sl-main-contact__head">
+    <p class="sl-eyebrow">{{ section.settings.eyebrow | default: 'Support' }}</p>
+    <h1 class="sl-main-contact__title">{{ section.settings.heading | default: page.title }}</h1>
+    {%- if section.settings.intro != blank -%}
+      <p class="sl-main-contact__intro">{{ section.settings.intro }}</p>
+    {%- endif -%}
+  </header>
+
+  {%- if page.content != blank -%}
+    <div class="sl-main-contact__content sl-rte">{{ page.content }}</div>
+  {%- endif -%}
+
+  {% form 'contact', class: 'sl-main-contact__form', id: contact_form_id %}
+    {%- if form.posted_successfully? -%}
+      <p class="sl-main-contact__success" role="status">
+        {{ section.settings.success_text | default: 'Message received. A real person replies, usually within one business day.' }}
+      </p>
+    {%- else -%}
+      {%- if form.errors -%}
+        <p class="sl-main-contact__errors" role="alert">
+          {{ section.settings.error_text | default: 'Your message could not be sent. Please fix the highlighted field and try again.' }}
+        </p>
+      {%- endif -%}
+
+      <div class="sl-main-contact__field">
+        <label class="sl-label" for="{{ name_id }}">Name</label>
+        <input
+          id="{{ name_id }}"
+          class="sl-input"
+          type="text"
+          name="contact[name]"
+          value="{{ form.name | escape }}"
+          autocomplete="name">
+      </div>
+
+      <div class="sl-main-contact__field">
+        <label class="sl-label" for="{{ email_id }}">Email</label>
+        <input
+          id="{{ email_id }}"
+          class="sl-input"
+          type="email"
+          name="contact[email]"
+          value="{{ form.email | escape }}"
+          autocomplete="email"
+          autocorrect="off"
+          autocapitalize="off"
+          {% if form.errors contains 'email' %}aria-invalid="true" aria-describedby="{{ email_id }}-error"{% endif %}
+          required>
+        {%- if form.errors contains 'email' -%}
+          <p id="{{ email_id }}-error" class="sl-main-contact__field-error">
+            {{ form.errors.translated_fields.email | capitalize }} {{ form.errors.messages.email }}.
+          </p>
+        {%- endif -%}
+      </div>
+
+      <div class="sl-main-contact__field">
+        <label class="sl-label" for="{{ body_id }}">Message</label>
+        <textarea
+          id="{{ body_id }}"
+          class="sl-input sl-main-contact__textarea"
+          name="contact[body]"
+          rows="6"
+          {% if form.errors contains 'body' %}aria-invalid="true" aria-describedby="{{ body_id }}-error"{% endif %}
+          required>{{ form.body | escape }}</textarea>
+        {%- if form.errors contains 'body' -%}
+          <p id="{{ body_id }}-error" class="sl-main-contact__field-error">
+            {{ form.errors.translated_fields.body | capitalize }} {{ form.errors.messages.body }}.
+          </p>
+        {%- endif -%}
+      </div>
+
+      <button type="submit" class="sl-btn sl-btn--primary sl-main-contact__submit">Send message</button>
+    {%- endif -%}
+  {% endform %}
+</div>
+
+{% stylesheet %}
+.sl-main-contact {
+  max-width: 760px;
+  padding-top: 48px;
+  padding-bottom: 72px;
+}
+
+.sl-main-contact__head { margin: 0 0 8px; }
+
+.sl-main-contact__title {
+  margin: 0;
+  font-size: var(--sl-text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--sl-green);
+  text-wrap: balance;
+}
+
+.sl-main-contact__intro {
+  max-width: 56ch;
+  margin: 14px 0 0;
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--sl-ink-soft);
+  text-wrap: pretty;
+}
+
+.sl-main-contact__content { margin-top: 18px; }
+
+.sl-main-contact__form {
+  margin-top: 28px;
+  padding: var(--sl-card-inset);
+  display: grid;
+  gap: 18px;
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+}
+
+.sl-main-contact__field {
+  display: grid;
+  gap: 0;
+  min-width: 0;
+}
+
+.sl-main-contact__field .sl-input { width: 100%; }
+
+.sl-main-contact__textarea {
+  resize: vertical;
+  min-height: 140px;
+}
+
+.sl-main-contact__submit {
+  justify-self: start;
+  min-width: min(100%, 220px);
+}
+
+.sl-main-contact__success {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--sl-green);
+  line-height: 1.55;
+}
+
+.sl-main-contact__errors {
+  margin: 0;
+  padding: 12px 14px;
+  border-left: 4px solid var(--sl-orange);
+  border-radius: 8px;
+  background: #fff8ed;
+  color: var(--sl-ink);
+  font-size: 14.5px;
+  line-height: 1.5;
+}
+
+.sl-main-contact__field-error {
+  margin: 6px 0 0;
+  font-size: 13.5px;
+  color: #9c3518;
+}
+
+@media (max-width: 749px) {
+  .sl-main-contact__head { text-align: center; }
+  .sl-main-contact__intro { margin-inline: auto; }
+  .sl-main-contact__submit {
+    justify-self: center;
+    width: min(100%, 320px);
+  }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Contact page",
+  "settings": [
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Eyebrow",
+      "default": "Support"
+    },
+    {
+      "type": "text",
+      "id": "heading",
+      "label": "Heading",
+      "info": "Leave blank to use the page title."
+    },
+    {
+      "type": "textarea",
+      "id": "intro",
+      "label": "Intro",
+      "info": "Short line under the heading. Page content, if any, renders above the form."
+    },
+    {
+      "type": "text",
+      "id": "success_text",
+      "label": "Success message",
+      "default": "Message received. A real person replies, usually within one business day."
+    },
+    {
+      "type": "text",
+      "id": "error_text",
+      "label": "Error message",
+      "default": "Your message could not be sent. Please fix the highlighted field and try again."
+    }
+  ]
+}
+{% endschema %}

@@ -191,7 +191,7 @@
             "description": "One complete swing analysis each month, with saved club context, coaching priorities, and a measurable practice plan. No card required.",
             "price_text": "$0",
             "price_note": "No card required",
-            "url": "https://app.caddieinsight.com",
+            "url": "https://app.caddieinsight.com/signup",
             "use_product_price": false,
             "member_visibility": "signed_out",
             "image": "shopify://shop_images/caddieinsight-free-card-v2.png",
@@ -433,10 +433,10 @@
     },
     "email": {
       "type": "email-capture",
-      "disabled": true,
+      "disabled": false,
       "settings": {
         "heading": "The Practice Letter",
-        "sub": "One practical drill each week.",
+        "sub": "One practical drill in your inbox each week, with the setup and the pass mark. No spam, no filler — unsubscribe anytime.",
         "placeholder": "you@example.com",
         "button_label": "Join the list",
         "success_text": "You're in. Look for the next Practice Letter in your inbox."

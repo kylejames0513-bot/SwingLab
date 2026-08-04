@@ -33,7 +33,7 @@
     src="{{ image | image_url: width: 1200 }}"
     srcset="{{ image | image_url: width: 600 }} 600w, {{ image | image_url: width: 1200 }} 1200w, {{ image | image_url: width: 1800 }} 1800w"
     sizes="(max-width: 900px) 100vw, 600px"
-    width="{{ vw }}" height="{{ vh }}"
+    width="{{ image.width | default: vw }}" height="{{ image.height | default: vh }}"
     alt="{{ alt | default: image.alt | escape }}"
     loading="lazy">
 {%- else -%}

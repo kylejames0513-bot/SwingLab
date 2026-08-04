@@ -26,7 +26,8 @@
   {%- endif -%}
 
   <p class="sl-mono-label sl-main-collection__count">
-    {{ collection.products_count }} training aid{% unless collection.products_count == 1 %}s{% endunless %}
+    {{ collection.products_count }}
+    {%- if collection.products_count == 1 %} {{ section.settings.count_noun_singular | default: 'product' }}{% else %} {{ section.settings.count_noun_plural | default: 'products' }}{% endif %}
   </p>
 
   {%- if collection.products.size > 0 -%}
@@ -44,6 +45,27 @@
   {%- endif -%}
 </div>
 {% endpaginate %}
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": {{ request.origin | append: routes.root_url | json }}
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": {{ collection.title | json }},
+        "item": {{ request.origin | append: collection.url | json }}
+      }
+    ]
+  }
+</script>
 
 {% stylesheet %}
 .sl-main-collection__banner {
@@ -116,6 +138,20 @@
       "max": 24,
       "step": 4,
       "default": 12
+    },
+    {
+      "type": "text",
+      "id": "count_noun_singular",
+      "label": "Count noun (singular)",
+      "default": "product",
+      "info": "Shown after the product count, e.g. \"1 product\"."
+    },
+    {
+      "type": "text",
+      "id": "count_noun_plural",
+      "label": "Count noun (plural)",
+      "default": "products",
+      "info": "Shown after the product count, e.g. \"6 products\"."
     }
   ]
 }

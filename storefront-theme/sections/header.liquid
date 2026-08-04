@@ -102,6 +102,13 @@
     </nav>
 
     <div class="sl-header__actions">
+      <a href="{{ routes.search_url }}" class="sl-header__search" aria-label="{{ 'layout.navigation.search' | t }}">
+        <svg viewBox="0 0 20 20" width="17" height="17" fill="none" aria-hidden="true" focusable="false">
+          <circle cx="8.5" cy="8.5" r="5.75" stroke="currentColor" stroke-width="1.8"></circle>
+          <path d="m12.9 12.9 4.1 4.1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path>
+        </svg>
+      </a>
+
       <details class="sl-header__dropdown sl-header__account" data-header-dropdown>
         <summary class="sl-header__dropdown-trigger">
           <span data-app-auth-summary>{{ 'layout.navigation.account' | t }}</span>
@@ -184,6 +191,9 @@
           <a href="{{ gear_url }}" class="sl-menu__link" data-menu-link>
             <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
+          <a href="{{ routes.search_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.search' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
         </div>
       {%- endif -%}
 
@@ -213,6 +223,9 @@
               <span>{{ 'layout.navigation.pro' | t }}</span><span aria-hidden="true">&rarr;</span>
             </a>
           {%- endif -%}
+          <a href="{{ routes.search_url }}" class="sl-menu__link" data-menu-link>
+            <span>{{ 'layout.navigation.search' | t }}</span><span aria-hidden="true">&rarr;</span>
+          </a>
         </div>
       {%- endunless -%}
 
@@ -517,6 +530,21 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
 }
 .sl-header__cta:hover { background: var(--sl-green-btn); color: #fff; }
 .sl-header__app { white-space: nowrap; }
+.sl-header__search {
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1.5px solid var(--sl-green);
+  border-radius: 50%;
+  color: var(--sl-green);
+  text-decoration: none;
+  transition: border-color .15s ease, color .15s ease;
+}
+.sl-header__search:hover { border-color: var(--sl-orange); color: var(--sl-orange); }
+.sl-header__search svg { display: block; }
 .sl-header__cart {
   min-height: 40px;
   padding: 6px 8px 6px 14px;
@@ -737,6 +765,14 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   border-color: #ff9a42;
   color: #ffb06b;
 }
+.sl-header--premium .sl-header__search {
+  border-color: rgba(245, 242, 233, 0.48);
+  color: #f5f2e9;
+}
+.sl-header--premium .sl-header__search:hover {
+  border-color: #ff9a42;
+  color: #ffb06b;
+}
 .sl-header--premium .sl-header__cart-count {
   background: #f07a18;
   color: #07130d;
@@ -812,6 +848,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   }
   .sl-header__desktop-nav,
   .sl-header__account,
+  .sl-header__search,
   .sl-header__app { display: none; }
   .sl-header__logo {
     position: absolute;

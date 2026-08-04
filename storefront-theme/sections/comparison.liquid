@@ -1,3 +1,29 @@
+{%- liquid
+  # Live Pro pricing for the "Price" row, with graceful fallback to the
+  # static block text when the product or a named variant cannot resolve.
+  assign pro_product = all_products['swinglab-pro']
+  assign live_pro_price = ''
+  if pro_product != blank
+    assign monthly_price = pro_product.price_min | money
+    assign yearly_price = ''
+    assign lifetime_price = ''
+    for variant in pro_product.variants
+      assign variant_title = variant.title | downcase
+      if variant.sku == 'SL-PRO-LIFE' or variant_title contains 'lifetime'
+        assign lifetime_price = variant.price | money
+      elsif variant_title contains 'year' or variant_title contains 'annual'
+        assign yearly_price = variant.price | money
+      endif
+    endfor
+    assign live_pro_price = monthly_price | append: '/mo'
+    if yearly_price != blank
+      assign live_pro_price = live_pro_price | append: ' · ' | append: yearly_price | append: '/yr'
+    endif
+    if lifetime_price != blank
+      assign live_pro_price = live_pro_price | append: ' · ' | append: lifetime_price | append: ' lifetime'
+    endif
+  endif
+-%}
 <section id="{{ section.settings.anchor | default: 'compare' }}" class="sl-compare" data-app-upgrade-section>
   <div class="sl-wrap sl-reveal">
     <div class="sl-compare__head">
@@ -22,10 +48,17 @@
         </thead>
         <tbody>
           {%- for block in section.blocks -%}
+          {%- assign feature_key = block.settings.feature | downcase | strip -%}
           <tr {{ block.shopify_attributes }}>
               <th scope="row">{{ block.settings.feature }}</th>
               <td>{{ block.settings.free_value }}</td>
-              <td class="sl-compare__pro">{{ block.settings.pro_value }}</td>
+              <td class="sl-compare__pro">
+                {%- if feature_key == 'price' and live_pro_price != blank -%}
+                  {{ live_pro_price }}
+                {%- else -%}
+                  {{ block.settings.pro_value }}
+                {%- endif -%}
+              </td>
             </tr>
           {%- endfor -%}
         </tbody>
