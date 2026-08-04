@@ -1,3 +1,4 @@
+{%- assign contact_url = pages['contact'].url | default: '/pages/contact' -%}
 <div class="sl-wrap sl-404">
   <p class="sl-eyebrow">Error 404</p>
   <h1 class="sl-main-404__title">{{ section.settings.heading | default: 'Out of bounds.' }}</h1>
@@ -5,7 +6,9 @@
   <div class="sl-404-actions">
     <a class="sl-btn sl-btn--primary" href="{{ routes.root_url }}">Back to the home page</a>
     <a class="sl-btn sl-btn--outline" href="{{ routes.collections_url }}/swinglab-gear">Browse the gear</a>
+    <a class="sl-btn sl-btn--outline" href="{{ routes.search_url }}">Search the store</a>
   </div>
+  <p class="sl-main-404__support">Still stuck? <a href="{{ contact_url }}">Contact support</a></p>
 </div>
 
 {% stylesheet %}
@@ -15,6 +18,17 @@
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--sl-green);
+}
+
+.sl-main-404__support {
+  margin: 22px 0 0;
+  font-size: 14.5px;
+  color: var(--sl-ink-soft);
+}
+
+.sl-main-404__support a {
+  color: var(--sl-green-btn);
+  font-weight: 700;
 }
 {% endstylesheet %}
 

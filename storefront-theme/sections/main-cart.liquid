@@ -1,3 +1,12 @@
+{%- liquid
+  assign returns_url = pages['shipping-returns'].url | default: '/pages/shipping-returns'
+  assign has_membership_line = false
+  for item in cart.items
+    if item.product.type == 'Membership'
+      assign has_membership_line = true
+    endif
+  endfor
+-%}
 <div class="sl-wrap sl-cartpage">
   <h1 class="sl-h2">{{ 'layout.cart.title' | t }}</h1>
 
@@ -50,6 +59,13 @@
         <p class="sl-note sl-main-cart__promo">{{ section.settings.promo_note }}</p>
       {%- endif -%}
 
+      {%- if has_membership_line -%}
+        <div class="sl-note sl-main-cart__unlock">
+          <strong>{{ 'products.product.unlock_heading' | t }}</strong>
+          <p>{{ 'products.product.unlock_body' | t }}</p>
+        </div>
+      {%- endif -%}
+
       <div class="sl-cart-foot">
         <p class="sl-cart-subtotal"><span class="sl-mono-label">Subtotal</span> <strong>{{ cart.total_price | money }}</strong></p>
         <p class="sl-cart-hint">Taxes and shipping calculated at checkout.</p>
@@ -58,6 +74,11 @@
           <button class="sl-btn sl-btn--outline" type="submit" name="update">Update cart</button>
           <button class="sl-btn sl-btn--primary" type="submit" name="checkout">Check out</button>
         </div>
+        <ul class="sl-main-cart__trust" aria-label="Ordering assurance">
+          <li><a href="{{ returns_url }}">30-day returns on unused gear</a></li>
+          <li>Tracked shipping on every gear order</li>
+          <li>14-day refunds on unused Pro</li>
+        </ul>
       </div>
     </form>
   {%- endif -%}
@@ -70,8 +91,73 @@
   font-size: 14px;
 }
 
+.sl-main-cart__unlock {
+  max-width: 520px;
+  margin: 24px 0 0;
+  font-size: 14px;
+}
+
+.sl-main-cart__unlock strong {
+  color: var(--sl-green);
+}
+
+.sl-main-cart__unlock p {
+  margin: 6px 0 0;
+  line-height: 1.55;
+}
+
 .sl-cart-subtotal .sl-mono-label {
   margin-right: 8px;
+}
+
+/* compact reassurance row under the checkout actions */
+.sl-main-cart__trust {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--sl-border);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px 20px;
+}
+
+.sl-main-cart__trust li {
+  position: relative;
+  padding-left: 15px;
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sl-ink-soft);
+  line-height: 1.6;
+}
+
+.sl-main-cart__trust li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--sl-orange);
+}
+
+.sl-main-cart__trust a {
+  color: inherit;
+  text-underline-offset: 3px;
+}
+
+.sl-main-cart__trust a:hover {
+  color: var(--sl-green-btn);
+}
+
+@media (max-width: 600px) {
+  .sl-main-cart__trust {
+    justify-content: flex-start;
+  }
 }
 {% endstylesheet %}
 

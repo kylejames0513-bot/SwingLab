@@ -9,6 +9,7 @@
   assign faq_page = pages['faq']
   assign shipping_page = pages['shipping-returns']
   assign about_page = pages['about']
+  assign contact_url = pages['contact'].url | default: '/pages/contact'
   assign newsletter_form_id = 'sl-footer-form-' | append: section.id
   assign newsletter_email_id = 'sl-footer-email-' | append: section.id
   assign newsletter_message_id = 'sl-footer-message-' | append: section.id
@@ -67,6 +68,7 @@
         <nav class="sl-footer__col" aria-label="Support">
           <p class="sl-footer__head">Support</p>
           <a class="sl-footer__link" href="{{ routes.account_url }}">Orders and subscriptions</a>
+          <a class="sl-footer__link" href="{{ contact_url }}">Contact</a>
           {%- if shipping_page != blank -%}<a class="sl-footer__link" href="{{ shipping_page.url }}">Shipping and returns</a>{%- endif -%}
           {%- if about_page != blank -%}<a class="sl-footer__link" href="{{ about_page.url }}">About</a>{%- endif -%}
         </nav>

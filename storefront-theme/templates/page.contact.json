@@ -1,0 +1,15 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-contact",
+      "settings": {
+        "eyebrow": "Support",
+        "heading": "Contact CaddieInsight",
+        "intro": "Questions about a report, an order, or Pro access? Send a note and a real person replies, usually within one business day."
+      }
+    }
+  },
+  "order": [
+    "main"
+  ]
+}

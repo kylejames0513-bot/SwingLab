@@ -61,7 +61,7 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "plans",
         "comparison",
     ]
-    assert INDEX["sections"]["email"]["disabled"] is True
+    assert INDEX["sections"]["email"]["disabled"] is False
 
 
 def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
@@ -301,10 +301,9 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "min-height: 720px" not in mobile_hero
     assert "min-height: 980px" not in mobile_hero
     assert "min-height: 1020px" not in mobile_hero
-    assert (
-        ".sl-hero__fine,\n  .sl-hero__signal { display: none; }"
-        in mobile_hero
-    )
+    assert ".sl-hero__signal { display: none; }" in mobile_hero
+    assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
+    assert ".sl-hero__fine { display: none; }" not in mobile_hero
     mobile_stats = stats_source.split("@media (max-width: 749px)", 1)[1]
     assert 'class="sl-stats__grid sl-reveal"' in stats_source
     assert 'tabindex="0"' not in stats_source

@@ -19,6 +19,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="{% if premium_chrome %}#07130d{% else %}#14472c{% endif %}">
   <link rel="canonical" href="{{ canonical_url }}">
+  {% comment %}theme-check-disable RemoteAsset{% endcomment %}
+  <link rel="preconnect" href="https://app.caddieinsight.com" crossorigin>
+  {% comment %}theme-check-enable RemoteAsset{% endcomment %}
 
   <title>
     {{ resolved_page_title }}{% if current_tags %} &ndash; tagged "{{ current_tags | join: ', ' }}"{% endif %}
@@ -69,6 +72,30 @@
     }
   {% endstyle %}
   <noscript><style>.sl-reveal { opacity: 1; transform: none; }</style></noscript>
+
+  {%- assign schema_logo = images['swinglab-logo.png'] -%}
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "Organization",
+      "name": "CaddieInsight",
+      "url": {{ shop.url | json }}{% if schema_logo %},
+      "logo": {{ schema_logo | image_url: width: 480 | prepend: 'https:' | json }}{% endif %}
+    }
+  </script>
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      "name": {{ shop.name | json }},
+      "url": {{ shop.url | json }},
+      "potentialAction": {
+        "@type": "SearchAction",
+        "target": {{ shop.url | append: routes.search_url | append: '?q={search_term_string}' | json }},
+        "query-input": "required name=search_term_string"
+      }
+    }
+  </script>
 
   {{ content_for_header }}
 </head>
