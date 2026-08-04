@@ -40,7 +40,8 @@
     <p>Free and Pro run the same analysis and get the same report — the
       metrics table, key-position frames, slow motion, centerline overlays,
       coaching notes, and a practice plan with re-film targets. Free is
-      {% if free_per_month <= 0 %}unlimited full reports{% else %}{{ free_per_month }} full report{% if free_per_month != 1 %}s{% endif %}
+      {% if free_per_month <= 0 %}unlimited full reports{% else %}{{ free_per_month }} full report{% if free_per_month != 1 %}s{% endif %}{% if free_matched_refilm %}
+      plus a matched re-film{% endif %}
       a month{% endif %}. Pro is {% if pro_per_month <= 0 %}unlimited filming{% else %}up to
       {{ pro_per_month }} analyses a month{% endif %}{% if replay_pro_only %}, plus the
       annotated coach replay — your own footage played back with your
@@ -56,7 +57,7 @@
     <tbody>
     <tr>
       <th scope="row">Swing analyses per month</th>
-      <td>{{ "Unlimited" if free_per_month <= 0 else free_per_month }}</td>
+      <td>{% if free_per_month <= 0 %}Unlimited{% elif free_matched_refilm %}{{ free_per_month }} + 1 matched re-film{% else %}{{ free_per_month }}{% endif %}</td>
       <td class="yes">{{ "Unlimited" if pro_per_month <= 0 else pro_per_month }}</td>
     </tr>
     <tr>
@@ -96,11 +97,13 @@
   <p class="personal">{{ trend_line }}.</p>
   {% endif %}
 
-  {% macro pro_cta() -%}
+  {% macro pro_cta(store_href=None) -%}
+      {# store_href deep-links the card's own variant so checkout opens on
+         the plan that was clicked; without one, the plain product page. #}
       {% if user and user.is_pro %}
       <p class="hint">You're on Pro — thanks for the support!</p>
       {% elif user and pro_store_url %}
-      <a class="button" href="{{ pro_store_url }}" data-pro-click>Get Pro on the {{ brand.name }} store</a>
+      <a class="button" href="{{ store_href or pro_store_url }}" data-pro-click>Get Pro on the {{ brand.name }} store</a>
       <p class="hint">Check out with <strong>{{ user.email }}</strong> —
         Pro unlocks on this account automatically.</p>
       {% elif user and billing_enabled %}
@@ -116,16 +119,16 @@
   <div class="plans">
     <div class="card hero">
       {% if pro_annual_badge_text %}<span class="badge">{{ pro_annual_badge_text }}</span>{% endif %}
-      <h2>Pro — yearly</h2>
+      <h2>Pro — Season Pass</h2>
       <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
       <ul>
         <li>{% if pro_per_month <= 0 %}Unlimited swing analyses for a year{% else %}
           Up to {{ pro_per_month }} analyses a month for a year{% endif %}</li>
-        <li>Everything Pro includes, all season</li>
+        <li>Everything Pro includes, all season — and the off-season too</li>
         {% if replay_pro_only %}<li>Upgrade and re-film with your annotated coach replay</li>{% endif %}
         <li>One checkout covers the whole year — no monthly decision to remake</li>
       </ul>
-      {{ pro_cta() }}
+      {{ pro_cta(pro_store_url_yearly) }}
     </div>
     <div class="card">
       <h2>Pro — monthly</h2>
@@ -140,7 +143,7 @@
         <li>One month at a time — it simply expires, nothing renews</li>
         {% endif %}
       </ul>
-      {{ pro_cta() }}
+      {{ pro_cta(pro_store_url_monthly) }}
       {% if pro_store_url %}
       <p class="hint">The store shows the available terms, renewal details,
         and total price before payment.</p>
@@ -150,25 +153,30 @@
       {% endif %}
     </div>
     {% if pro_store_url %}
-    {# The lifetime tier exists only as a store purchase (SL-PRO-LIFE) —
-       a Stripe-only install has no one-payment product to sell, so the
-       card would promise something its checkout can't deliver. #}
+    {# The Founders Pass exists only as a store purchase (it matches on
+       SKU SL-PRO-LIFE, never the variant title) — a Stripe-only install
+       has no one-payment product to sell, so the card would promise
+       something its checkout can't deliver. #}
     <div class="card">
-      <h2>Pro — lifetime</h2>
+      <h2>Pro — Founders Pass</h2>
       <p class="price">{{ pro_price_lifetime_text or "One payment" }}</p>
       <ul>
-        <li>One payment — Pro for as long as {{ brand.name }} runs</li>
-        <li>Everything Pro includes, forever</li>
+        <li>One payment — everything Pro includes, for as long as
+          {{ brand.name }} runs</li>
+        <li>Capped at the first 100 members — a lifetime product is only
+          honest if we can afford to keep running it, so we limit how
+          many exist</li>
         <li>Never renews, never expires</li>
       </ul>
-      {{ pro_cta() }}
+      {{ pro_cta(pro_store_url_lifetime) }}
     </div>
     {% endif %}
     <div class="card">
       <h2>Free</h2>
       <p class="price">$0</p>
       <ul>
-        <li>{% if free_per_month <= 0 %}Unlimited full swing analyses{% else %}{{ free_per_month }} full swing analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
+        <li>{% if free_per_month <= 0 %}Unlimited full swing analyses{% elif free_matched_refilm %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
+          + 1 matched re-film each month{% else %}{{ free_per_month }} full swing analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
           every month{% endif %}, forever</li>
         <li>Full report: metrics, key positions, slow motion, overlays</li>
         <li>Coaching notes and a practice plan for every coaching-ready session</li>
@@ -184,14 +192,14 @@
     {{ brand.name }} store, monthly and yearly Pro renew automatically —
     cancel anytime and Pro keeps running to the end of the period you've
     paid for. Bought as a one-time pass, a month is 31 days and a year is
-    365, and they simply expire. Lifetime is a single payment and never
-    renews. Prices shown here are display text; the store checkout is
+    365, and they simply expire. The Founders Pass is a single payment and
+    never renews. Prices shown here are display text; the store checkout is
     always the source of truth.</p>
   {% elif pro_store_url %}
   <p class="fineprint">How it works: nothing auto-renews. On the
     {{ brand.name }} store a month is a fixed 31-day pass and a year is
-    365 days — they simply expire, and quantities stack. Lifetime is a
-    single payment and never ends. Prices shown here are display text;
+    365 days — they simply expire, and quantities stack. The Founders Pass
+    is a single payment and never ends. Prices shown here are display text;
     the store checkout is always the source of truth.</p>
   {% else %}
   <p class="fineprint">Prices shown here are display text — checkout is

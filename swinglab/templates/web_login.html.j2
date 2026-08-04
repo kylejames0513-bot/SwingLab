@@ -345,6 +345,64 @@
   }
   .preview-caption a { font-weight: 700; }
   .landing-section-head { max-width: 690px; }
+  .flow-club-note {
+    max-width: 690px;
+    margin: 18px 0 0;
+    padding-left: 14px;
+    border-left: 3px solid var(--sl-orange);
+    color: var(--sl-ink-soft);
+  }
+  .flow-club-note strong { color: var(--sl-green); }
+  .flow-library-link { margin: 22px 0 0; color: var(--sl-ink-soft); }
+  .flow-library-link a { font-weight: 700; }
+  .proof-cycle-strip {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr);
+    align-items: center;
+    gap: clamp(32px, 6vw, 76px);
+  }
+  .proof-verdict {
+    padding: clamp(22px, 3.5vw, 32px);
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-lg);
+    box-shadow: var(--sl-shadow-lg);
+  }
+  .proof-verdict__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .proof-verdict__badge {
+    padding: 4px 11px;
+    border-radius: 999px;
+    background: #e5f3ea;
+    color: var(--sl-green);
+    font-weight: 700;
+    letter-spacing: .08em;
+  }
+  .proof-verdict__reading {
+    margin: 15px 0 0;
+    color: var(--sl-green);
+    font-size: clamp(1.5rem, 3vw, 2.1rem);
+    font-weight: 800;
+    letter-spacing: -.03em;
+    line-height: 1.1;
+  }
+  .proof-verdict__detail { margin: 9px 0 0; color: var(--sl-ink-soft); font-size: .92rem; }
+  .proof-verdict__note {
+    margin: 15px 0 0;
+    padding-top: 12px;
+    border-top: 1px dashed var(--sl-border-strong);
+    color: var(--sl-ink-muted);
+    font-size: .8rem;
+  }
   .flow-list {
     margin: 30px 0 0;
     padding: 0;
@@ -436,6 +494,8 @@
     .report-proof { grid-template-columns: 1fr; }
     .preview-figure { max-width: 680px; }
     .flow-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .proof-cycle-strip { grid-template-columns: 1fr; }
+    .proof-verdict { max-width: 560px; }
   }
   @media (max-width: 749px) {
     .landing-hero { min-height: 720px; }
@@ -591,6 +651,30 @@
             <p>Use the same club, handedness, and camera angle so the next clip can test whether the measured pattern changed.</p>
           </li>
         </ol>
+        <p class="flow-club-note"><strong>Club-aware coaching:</strong> your driver and your 7-iron get different coaching priorities.</p>
+        <p class="flow-library-link">Every drill is free to read before you film anything — <a href="/drills">browse the drill library and the four-week Beginner Path</a>.</p>
+      </section>
+
+      <section class="proof-cycle-strip" aria-labelledby="proof-cycle-title">
+        <div class="landing-section-head">
+          <p class="sl-eyebrow">The Proof Cycle</p>
+          <h2 id="proof-cycle-title">Matched re-films, verified — not vibes.</h2>
+          <p>Every priority ships with a pass mark. Film again with the same
+            club, handedness, and camera angle, and {{ brand.name }} compares
+            the matched measurements against their noise floors — a change is
+            only called improved after two matched re-films hold it.</p>
+        </div>
+        <div class="proof-verdict" role="group" aria-label="Example Proof Cycle verdict using demonstration data">
+          <div class="proof-verdict__head">
+            <span>Proof cycle &middot; Head sway</span>
+            <span class="proof-verdict__badge">Improved</span>
+          </div>
+          <p class="proof-verdict__reading">0.41 &rarr; 0.29 shoulder widths</p>
+          <p class="proof-verdict__detail">Held across 2 matched re-films with
+            the same club, handedness, and camera angle.</p>
+          <p class="proof-verdict__note">Demonstration data — your verdicts are
+            measured from your own matched re-films, never invented.</p>
+        </div>
       </section>
 
       <section class="scope-panel" aria-labelledby="scope-title">

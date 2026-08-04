@@ -24,6 +24,12 @@ week instead of ever double-emailing within one. The thread never raises.
 Unsubscribe links carry an HMAC-SHA256 token over the user id + purpose,
 signed with SWINGLAB_SECRET (constant-time compare), so they work logged
 out and cannot be forged for another account.
+
+This module also hosts the Pro expiry reminder (bottom of the file): a
+separate daily daemon thread sending one transactional email ~7 days before
+a time-boxed Pro grant lapses. It shares the claim-before-send discipline
+but none of the digest's consent gates — transactional account mail is
+governed only by whether email delivery is configured at all.
 """
 
 from __future__ import annotations
@@ -33,9 +39,11 @@ import hmac
 import html
 import json
 import logging
+import math
 import os
 import threading
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from ..caddie_brief import (
@@ -52,13 +60,19 @@ from ..trends import (
     metrics_json_path,
     trend_sentence,
 )
-from . import mailer
+from . import mailer, shopify_billing
 
 logger = logging.getLogger("swinglab.web.digest")
 
 DIGEST_INTERVAL_S = 6.5 * 86400  # at most one email per user per ~week
 TICK_S = 3600  # scheduler wakes hourly
 _UNSUB_PURPOSE = "digest-unsubscribe"
+
+# Pro expiry reminder (transactional — no digest consent involved): one
+# email per expiry period, sent when pro_until is within this lead window.
+PRO_EXPIRY_LEAD_S = 7 * 86400
+PRO_EXPIRY_TICK_S = 86400  # a daily check is plenty for a 7-day window
+_PRO_EXPIRY_KIND = "pro_expiry_reminder"
 
 # Subject-line focus per drill family (the practice_plan block keys):
 # plain and honest, no hype.
@@ -140,16 +154,30 @@ def _context_label(context: tuple[str, str, str]) -> str:
         )
     )
 
+def _first_digest_of_month(user, now: float) -> bool:
+    """Whether this send is the user's first digest of the UTC calendar
+    month (digest_last_sent_at is read BEFORE the claim stamps it)."""
+    last = getattr(user, "digest_last_sent_at", None)
+    if last is None:
+        return True
+    current = datetime.fromtimestamp(now, timezone.utc)
+    previous = datetime.fromtimestamp(float(last), timezone.utc)
+    return (current.year, current.month) != (previous.year, previous.month)
+
+
 def compose_digest(
-    user, cfg: Config, jobs, base_url: str = "", secret: str = ""
+    user, cfg: Config, jobs, base_url: str = "", secret: str = "",
+    now: float | None = None,
 ) -> tuple[str, str] | None:
     """(subject, html) for this user's week, or None when no finished
     session has readable numbers yet (send nothing rather than guess).
 
     ``jobs`` is the user's job list (any statuses — only finished sessions
     count); ``base_url`` prefixes every link (PUBLIC_BASE_URL in
-    production); ``secret`` signs the unsubscribe token.
+    production); ``secret`` signs the unsubscribe token; ``now`` anchors the
+    first-digest-of-the-month allowance note (current time by default).
     """
+    now = time.time() if now is None else now
     jobs = list(jobs)
     trends = build_trends(jobs, cfg)
     if not trends.samples:
@@ -354,6 +382,29 @@ def compose_digest(
             f'font-size:14px;">{esc(sentence)}.</p>'
         )
 
+    # Free plans reset on the 1st. The first digest of each calendar month
+    # carries that (and only that) as a short note — consented digest mail
+    # only, never a separate unsolicited email.
+    reset_note = ""
+    free_per_month = int(cfg.billing.get("free_per_month") or 0)
+    if (
+        cfg.web.get("require_account")
+        and free_per_month > 0
+        and not getattr(user, "is_pro", False)
+        and _first_digest_of_month(user, now)
+    ):
+        allowance = (
+            "free analysis is"
+            if free_per_month == 1
+            else f"{free_per_month} free analyses are"
+        )
+        reset_note = (
+            f'<p style="margin:0 0 16px;padding:10px 14px;background:#fff4e7;'
+            f"border-left:4px solid {accent};border-radius:4px;color:#333;"
+            f'font-size:14px;">New month: your {allowance} ready — film '
+            "this month's check-in.</p>"
+        )
+
     body = (
         '<div style="font-family:-apple-system,Segoe UI,Roboto,Helvetica,'
         "Arial,sans-serif;max-width:560px;margin:0 auto;color:#1c1c1c;"
@@ -365,6 +416,7 @@ def compose_digest(
         'border-radius:0 0 8px 8px;padding:20px;">'
         f'<p style="margin:0 0 12px;">{context_line}</p>'
         f"{exact_context_line}"
+        f"{reset_note}"
         f"{progress_line}"
         f"{drill_cards}"
         f"{also}"
@@ -402,7 +454,7 @@ def run_once(users, manager, cfg: Config, secret: str, now: float | None = None)
         with manager.history_delivery_guard():
             composed = compose_digest(
                 user, cfg, manager.list_recent(user_id=user.id),
-                base_url=base_url, secret=secret,
+                base_url=base_url, secret=secret, now=now,
             )
             if composed is None:
                 continue  # no finished history — keep eligibility
@@ -441,6 +493,98 @@ def start_scheduler(manager, users, cfg: Config, secret: str) -> threading.Threa
         args=(manager, users, cfg, secret),
         daemon=True,
         name="swinglab-digest",
+    )
+    thread.start()
+    return thread
+
+
+# -- Pro expiry reminder (transactional, not the digest) ---------------------
+
+def run_pro_expiry_reminders_once(users, cfg: Config, now: float | None = None) -> int:
+    """One reminder ~7 days before a time-boxed Pro grant lapses. Returns
+    how many reminders went out.
+
+    Transactional account mail: no digest consent or kill-switch applies —
+    only configured email delivery gates it. The send is CLAIMED first in
+    the lifecycle ledger, keyed on (user, exact expiry timestamp), so each
+    expiry period reminds exactly once; extending Pro moves pro_until and
+    naturally arms the next period. Lifetime grants sit ~100 years out and
+    never enter the window; Stripe-subscription Pro is excluded by the
+    store query (it renews on its own)."""
+    if not mailer.enabled():
+        return 0
+    now = time.time() if now is None else now
+    base_url = (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+    extend_url = (
+        shopify_billing.buy_url(cfg)
+        if shopify_billing.commerce_enabled()
+        else f"{base_url}/pricing"
+    )
+    brand = str(cfg.brand["name"])
+    pro_per_month = int(cfg.billing.get("pro_per_month") or 0)
+    allowance = (
+        "unlimited analyses"
+        if pro_per_month <= 0
+        else f"up to {pro_per_month} analyses a month"
+    )
+    sent = 0
+    for user in users.pro_expiring_between(now, now + PRO_EXPIRY_LEAD_S):
+        if not user.email:
+            continue
+        if not users.claim_lifecycle_email(
+            _PRO_EXPIRY_KIND,
+            f"{user.id}:{int(user.pro_until)}",
+            user_id=user.id,
+        ):
+            continue  # this expiry period was already reminded
+        days_left = max(1, math.ceil((user.pro_until - now) / 86400))
+        end_day = datetime.fromtimestamp(
+            user.pro_until, timezone.utc
+        ).strftime("%B %d, %Y")
+        noun = "day" if days_left == 1 else "days"
+        try:
+            mailer.send(
+                user.email,
+                f"{brand} Pro ends in {days_left} {noun}",
+                f"Your {brand} Pro access ends on {end_day} —"
+                f" {days_left} {noun} from now.\n\n"
+                f"Extend it on the store to keep {allowance}:\n"
+                f"{extend_url}\n\n"
+                "If it lapses, your account, swing history, and the free"
+                " monthly analysis all stay — only the Pro allowance"
+                " stops.",
+            )
+            sent += 1
+            logger.info("pro-expiry: reminder sent")
+        except Exception:
+            # The claim stands: losing one reminder beats ever nagging twice
+            # for the same period.
+            logger.error("pro-expiry: reminder delivery failed")
+    return sent
+
+
+def _pro_expiry_loop(users, cfg: Config) -> None:
+    while True:
+        try:
+            run_pro_expiry_reminders_once(users, cfg)
+        except Exception:  # never let the thread die
+            logger.exception("pro-expiry: tick failed")
+        time.sleep(PRO_EXPIRY_TICK_S)
+
+
+def start_pro_expiry_scheduler(users, cfg: Config) -> threading.Thread | None:
+    """Start the daily Pro expiry reminder thread (daemon — dies with the
+    process). Returns None — and nothing runs — unless email delivery is
+    configured; the digest kill-switch does not apply to transactional
+    mail. The first tick runs immediately so a restart never skips a due
+    reminder."""
+    if not mailer.enabled():
+        return None
+    thread = threading.Thread(
+        target=_pro_expiry_loop,
+        args=(users, cfg),
+        daemon=True,
+        name="swinglab-pro-expiry",
     )
     thread.start()
     return thread

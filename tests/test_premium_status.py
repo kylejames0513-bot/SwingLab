@@ -182,6 +182,31 @@ def test_coaching_result_orders_priority_practice_proof_and_actions():
     assert "2 matched follow-ups counted" in html
 
 
+def test_practice_action_routes_to_the_today_practice_plan_with_accounts():
+    # The anchor must exist on /today for the deep link to land anywhere.
+    today_template = (TEMPLATES / "web_today.html.j2").read_text(
+        encoding="utf-8"
+    )
+    assert 'id="practice-plan"' in today_template
+
+    with_accounts = render(
+        done=True,
+        job=job(swings_total=3, swings_done=3),
+        caddie_brief=brief(),
+        require_account=True,
+    )
+    assert 'href="/today#practice-plan">Practice, then re-film</a>' in with_accounts
+
+    # Open instances have no /today — the upload page stands in.
+    open_mode = render(
+        done=True,
+        job=job(swings_total=3, swings_done=3),
+        caddie_brief=brief(),
+    )
+    assert 'href="/">Practice, then re-film</a>' in open_mode
+    assert "/today#practice-plan" not in open_mode
+
+
 def test_refilm_state_leads_with_capture_fix_and_keeps_details_link():
     html = render(
         done=True,

@@ -220,19 +220,39 @@ DEFAULTS: dict[str, Any] = {
         # DISPLAY strings for the pricing page only — what is actually
         # charged always lives in Shopify/Stripe. Keep these matching the
         # store or don't set them. The badge is a display string for the
-        # same reason: the "save 33%" arithmetic is only true of the real
-        # store prices, so it lives here where the operator retunes it (or
-        # empties it) alongside them.
-        "pro_price_monthly_text": "$4.99/month",
-        "pro_price_annual_text": "$39.99/year — $3.33/month",
-        "pro_price_lifetime_text": "$79.99 once — Pro for good",
-        "pro_annual_badge_text": "Best value — save 33%",
+        # same reason: the "save 42%" arithmetic ($69.99/year vs the
+        # $119.88 twelve months at $9.99 would cost) is only true of the
+        # real store prices, so it lives here where the operator retunes
+        # it (or empties it) alongside them. The Founders Pass is the
+        # capped successor to the open lifetime tier: $149 once, first
+        # 100 members only — a lifetime product is only honest if the
+        # business can afford to keep running it, so we cap how many
+        # exist. It still rides the SL-PRO-LIFE SKU; existing lifetime
+        # buyers are grandfathered unchanged.
+        "pro_price_monthly_text": "$9.99/month",
+        "pro_price_annual_text": "$69.99/year — $5.83/month",
+        "pro_price_lifetime_text": "$149 once — the Founders Pass",
+        "pro_annual_badge_text": "Best value — save 42%",
         # True only once the store actually sells auto-renewing
         # subscriptions (Shopify's Subscriptions app installed, selling
         # plans attached to the monthly/yearly variants). The pricing page
         # describes renewal from this flag — false keeps the copy honest
         # on a passes-only store, where nothing ever auto-renews.
         "store_subscriptions": False,
+    },
+    "allowances": {
+        # Free matched re-film credit. The product's own method is film ->
+        # practice -> re-film, so a free account that produced a
+        # coaching-ready baseline this calendar month keeps ONE more upload
+        # free within 14 days of that baseline — PROVIDED the declared
+        # context matches it (same club, same handedness, same camera
+        # angle; the same comparison boundary the Proof Cycle uses). One
+        # credit per calendar month, the first-rejected-clip courtesy is
+        # unchanged, and Pro accounts are unaffected. Bare-code default is
+        # false — a white-label install stays on the plain quota until the
+        # operator opts in; the SHIPPED config.yaml turns it on, the same
+        # deliberate difference as replay_pro_only.
+        "free_matched_refilm": False,
     },
     "shopify_customer_sync": {
         # App-created accounts remain local-first. This bridge is deliberately
@@ -345,6 +365,10 @@ class Config:
     @property
     def billing(self) -> dict[str, Any]:
         return self.data["billing"]
+
+    @property
+    def allowances(self) -> dict[str, Any]:
+        return self.data["allowances"]
 
     @property
     def shopify_customer_sync(self) -> dict[str, Any]:

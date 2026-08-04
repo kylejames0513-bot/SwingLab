@@ -53,6 +53,15 @@ Shopify's calendar-month/calendar-year contract dates requires authoritative
 subscription billing-cycle data that is not present in an ``orders/paid``
 payload and is deliberately not inferred here.
 
+When email delivery is configured (mailer.py), a reconciled paid Pro order
+also sends exactly one transactional email: a confirmation (days added, new
+end date, /today link) when the grant landed on an account, or a "your Pro
+is waiting — activate your account" nudge to the checkout email when it
+parked in ``pro_grants``. The send is claimed first in the lifecycle
+ledger (users.claim_lifecycle_email), so webhook retries and crash-window
+repairs never double-email, and a delivery failure only logs — the webhook
+stays a 200 because the grant is already committed.
+
 The same ``orders/paid`` webhook also feeds the gear ledger: every line
 item that is NOT a Pro SKU is recorded in ``gear_orders`` (order id, sku,
 title, quantity, normalized email) with the same per-order replay
@@ -105,16 +114,23 @@ import hmac
 import json
 import logging
 import os
-from datetime import datetime
+from datetime import datetime, timezone
+from urllib.parse import quote
 
 from ..config import Config
 from ..integrations.shopify.identity import (
     normalize_customer_id,
     normalize_shop_domain,
 )
+from . import mailer
 from .users import UserStore
 
 logger = logging.getLogger("swinglab.web.shopify")
+
+# Grants at least this long display (and read in email) as "Lifetime" —
+# the same 50-year boundary as the account page (app.LIFETIME_DISPLAY_MIN_S;
+# SL-PRO-LIFE is 36500 days).
+LIFETIME_MIN_DAYS = 50 * 365
 
 PAID_TOPICS = ("orders/paid", "ORDERS_PAID")
 CANCELLED_TOPICS = ("orders/cancelled", "ORDERS_CANCELLED")
@@ -536,14 +552,99 @@ def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
     days = _order_days(order, cfg)
     if not order_id or (days <= 0 and not gear):
         return
-    applied, _, user_id = users.apply_shopify_order(
+    applied, effective_email, user_id = users.apply_shopify_order(
         order_id, email, days, customer_id, gear=gear
     )
     if not applied:
         logger.info("Shopify order webhook replay skipped.")
         return
     _record_order_funnel_event(users, "paid_order", order_id, user_id)
+    if days > 0:
+        _send_pro_purchase_email(
+            users, cfg, order_id, effective_email, user_id, days
+        )
     logger.info("Shopify order webhook reconciled.")
+
+
+def _app_base_url() -> str:
+    """The app's public origin for links inside email (PUBLIC_BASE_URL —
+    https://app.caddieinsight.com in production), same source as digest.py."""
+    return (os.environ.get("PUBLIC_BASE_URL") or "").rstrip("/")
+
+
+def _format_day(timestamp: float) -> str:
+    return datetime.fromtimestamp(timestamp, timezone.utc).strftime("%B %d, %Y")
+
+
+def _send_pro_purchase_email(
+    users: UserStore,
+    cfg: Config,
+    order_id: str,
+    email: str,
+    user_id: str | None,
+    days: float,
+) -> None:
+    """One transactional email per paid Pro order: a confirmation when the
+    order landed on an account, or an "activate your account" nudge when the
+    grant parked in ``pro_grants``.
+
+    Claim-before-send through the lifecycle ledger keeps webhook retries and
+    crash-window repairs from ever double-emailing one order, and a delivery
+    failure is only logged — the grant is already committed, so the webhook
+    must stay a 200 (Shopify would otherwise replay the whole mutation)."""
+    if not mailer.enabled():
+        return
+    brand = str(cfg.brand["name"])
+    base = _app_base_url()
+    lifetime = days >= LIFETIME_MIN_DAYS
+    added = "Lifetime Pro" if lifetime else f"{days:g} days of Pro"
+    try:
+        if user_id is not None:
+            user = users.get(user_id)
+            if user is None or not user.email:
+                return
+            if not users.claim_lifecycle_email(
+                "shopify_pro_activated", order_id, user_id=user_id
+            ):
+                return
+            until_line = (
+                "It never expires."
+                if lifetime
+                else f"Your Pro access now runs until {_format_day(user.pro_until)}."
+            )
+            mailer.send(
+                user.email,
+                f"{brand} Pro is active on your account",
+                f"Thanks — your {brand} order added {added} to your"
+                " account.\n"
+                f"{until_line}\n\n"
+                "Your next coaching check-in is ready when you are:\n"
+                f"{base}/today\n\n"
+                "This confirmation is about a purchase on your account,"
+                " not a mailing list.",
+            )
+        else:
+            if not email:
+                return
+            if not users.claim_lifecycle_email(
+                "shopify_pro_waiting", order_id
+            ):
+                return
+            mailer.send(
+                email,
+                f"Your {brand} Pro is waiting — activate your account",
+                f"Thanks for your {brand} order — {added} is paid for and"
+                " parked under this email address.\n\n"
+                "Create your account with this same email and it activates"
+                " automatically:\n"
+                f"{base}/signup?email={quote(email)}\n\n"
+                "Nothing expires while you wait — the purchase is applied"
+                " the moment you sign in.",
+            )
+    except mailer.EmailDeliveryError as exc:
+        logger.error("Shopify order email delivery failed: %s", exc)
+    except Exception:
+        logger.exception("Shopify order email could not be sent.")
 
 
 def _apply_fulfillment(fulfillment: dict, users: UserStore) -> None:

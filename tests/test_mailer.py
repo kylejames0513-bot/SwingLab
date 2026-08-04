@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import time
 import types
 from html import unescape
 
@@ -32,7 +33,7 @@ from tests.test_account_sync import (
     pro_order,
     webhook,
 )
-from tests.test_web import fake_analyze_ok
+from tests.test_web import fake_analyze_no_strikes, fake_analyze_ok
 
 
 @pytest.fixture
@@ -452,7 +453,10 @@ def test_claiming_a_stub_requires_the_emailed_code(app, outbox):
     resp = client.post("/signup", data=form, follow_redirects=False)
     assert resp.status_code == 200  # not signed up yet — code step shown
     assert "6-digit code" in resp.text
-    assert len(outbox) == 1 and outbox[0][0] == "buyer@example.com"
+    # The paid webhook already sent its own "Pro is waiting" nudge (see
+    # test_shopify_billing); the claim code arrives as the second message.
+    assert [to for to, _, _ in outbox] == ["buyer@example.com"] * 2
+    assert "activate your account" in outbox[0][1]
     assert not get_user(client).has_password  # still a stub
 
     intent = signup_intent(resp)
@@ -703,6 +707,105 @@ def test_new_signup_intent_revokes_older_browser_token(tmp_path):
 
     assert users.get_signup_intent(old) is None
     assert users.get_signup_intent(new) is not None
+
+
+# -- "email me when my coaching is ready" -----------------------------------
+
+def upload_clip(client, extra=None):
+    resp = client.post(
+        "/upload",
+        files={"video": ("swing.mov", b"fake video bytes", "video/quicktime")},
+        data={"hand": "right", "strikes": "", "club": "iron", **(extra or {})},
+        follow_redirects=False,
+    )
+    assert resp.status_code == 303
+    return resp.headers["location"].rsplit("/", 1)[-1]
+
+
+def wait_for_emails(outbox, count=1, timeout=5.0):
+    """The completion email is sent by the worker thread — poll for it."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if len(outbox) >= count:
+            return
+        time.sleep(0.02)
+    raise TimeoutError("completion email never arrived")
+
+
+def wait_for_terminal_job(manager, job_id, timeout=5.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        job = manager.get(job_id)
+        if job is not None and job.status in ("done", "failed"):
+            return job
+        time.sleep(0.02)
+    raise TimeoutError("job never finished")
+
+
+def test_upload_form_offers_the_ready_email_checkbox(app, outbox):
+    client = TestClient(app)
+    verified_password_signup(client, outbox, "kyle@example.com", "longenough")
+    page = client.get("/").text
+    assert "Email me when my coaching is ready" in page
+    assert 'name="notify" type="checkbox" value="on" checked' in page
+
+    # No account signed in (thus no address) — no promise to email anyone.
+    anonymous = TestClient(app)
+    assert 'name="notify"' not in anonymous.get(
+        "/", follow_redirects=True
+    ).text
+
+
+def test_report_ready_email_sends_exactly_once_per_job(app, outbox):
+    client = TestClient(app)
+    verified_password_signup(client, outbox, "kyle@example.com", "longenough")
+    outbox.clear()
+
+    job_id = upload_clip(client, extra={"notify": "on"})
+    wait_for_emails(outbox)
+
+    to, subject, body = outbox[0]
+    assert to == "kyle@example.com"
+    assert subject == "Your CaddieInsight coaching is ready"
+    assert f"/session/{job_id}" in body
+
+    # One email per job max: replaying the notifier is claim-blocked.
+    manager = client.app.state.jobs
+    manager._notify_owner(manager.get(job_id))
+    assert len(outbox) == 1
+
+
+def test_failed_analysis_email_humanizes_and_notes_the_free_retry(
+    app, outbox, monkeypatch
+):
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_no_strikes)
+    client = TestClient(app)
+    verified_password_signup(client, outbox, "kyle@example.com", "longenough")
+    outbox.clear()
+
+    upload_clip(client, extra={"notify": "on"})
+    wait_for_emails(outbox)
+
+    to, subject, body = outbox[0]
+    assert to == "kyle@example.com"
+    assert subject == "Your CaddieInsight analysis needs another clip"
+    # The humanized explanation, not the raw CLI-flavored pipeline error.
+    assert "No ball strikes could be heard" in body
+    assert "--strikes" not in body
+    assert "#filming-checklist" in body
+    # Failed uploads honestly never touch the allowance on a metered plan.
+    assert "never uses one of your monthly analyses" in body
+
+
+def test_no_completion_email_without_the_checkbox(app, outbox):
+    client = TestClient(app)
+    verified_password_signup(client, outbox, "kyle@example.com", "longenough")
+    outbox.clear()
+
+    job_id = upload_clip(client)  # checkbox left unticked
+    wait_for_terminal_job(client.app.state.jobs, job_id)
+    time.sleep(0.2)  # grace: any wrongly-scheduled email would land now
+    assert outbox == []
 
 
 # -- password reset --------------------------------------------------------

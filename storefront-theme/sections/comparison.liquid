@@ -6,21 +6,21 @@
   if pro_product != blank
     assign monthly_price = pro_product.price_min | money
     assign yearly_price = ''
-    assign lifetime_price = ''
+    assign founders_price = ''
     for variant in pro_product.variants
       assign variant_title = variant.title | downcase
-      if variant.sku == 'SL-PRO-LIFE' or variant_title contains 'lifetime'
-        assign lifetime_price = variant.price | money
-      elsif variant_title contains 'year' or variant_title contains 'annual'
+      if variant.sku == 'SL-PRO-LIFE'
+        assign founders_price = variant.price | money
+      elsif variant_title contains 'year' or variant_title contains 'annual' or variant_title contains 'season'
         assign yearly_price = variant.price | money
       endif
     endfor
     assign live_pro_price = monthly_price | append: '/mo'
     if yearly_price != blank
-      assign live_pro_price = live_pro_price | append: ' · ' | append: yearly_price | append: '/yr'
+      assign live_pro_price = live_pro_price | append: ' · ' | append: yearly_price | append: '/yr Season Pass'
     endif
-    if lifetime_price != blank
-      assign live_pro_price = live_pro_price | append: ' · ' | append: lifetime_price | append: ' lifetime'
+    if founders_price != blank
+      assign live_pro_price = live_pro_price | append: ' · ' | append: founders_price | append: ' Founders Pass'
     endif
   endif
 -%}
@@ -272,7 +272,7 @@
         { "type": "row", "settings": { "feature": "Matched training-aid recommendations", "free_value": "Included", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Annotated coach replay video", "free_value": "—", "pro_value": "Included" } },
         { "type": "row", "settings": { "feature": "Progress dashboard and trends", "free_value": "—", "pro_value": "Included" } },
-        { "type": "row", "settings": { "feature": "Price", "free_value": "$0", "pro_value": "$4.99/mo · $39.99/yr · $79.99 lifetime" } }
+        { "type": "row", "settings": { "feature": "Price", "free_value": "$0", "pro_value": "$9.99/mo · $69.99/yr Season Pass · $149 Founders Pass" } }
       ]
     }
   ]

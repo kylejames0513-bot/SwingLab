@@ -66,9 +66,9 @@ proof_cycle:
   enabled: true              # controlled first-stage rollout: write and show
                              # private result sidecars for new analyses only.
                              # Practice-data collection remains separately off.
-  practice_evidence_enabled: false
-                             # second-stage rollout: first observe the
-                             # read-only result surface, then enable
+  practice_evidence_enabled: true
+                             # second-stage rollout, activated after the
+                             # read-only result surface was observed live:
                              # self-reported practice receipts and declared
                              # normal-swing transfer checks. These never
                              # change the measurement verdict.
@@ -275,10 +275,15 @@ billing:
     SL-PRO-12MO: 365         # Add a SKU here and in Shopify to add a plan length.
     SL-PRO-LIFE: 36500       # lifetime = 100 years; the account page shows
                              # anything >50 years out as "Lifetime", not a date.
-  pro_price_monthly_text: "$4.99/month"
-  pro_price_annual_text: "$39.99/year — $3.33/month"
-  pro_price_lifetime_text: "$79.99 once — Pro for good"
-  pro_annual_badge_text: "Best value — save 33%"
+  shopify_variant_ids:       # Shopify variant id per /pricing card. Each Pro
+    monthly: "46811170177196"  # card's store CTA deep-links ?variant=<id> so
+    yearly: "46811170209964"   # checkout opens with the clicked plan already
+    lifetime: "46839745282220" # selected. An unset/empty id falls back to the
+                             # plain product page — never a guessed variant.
+  pro_price_monthly_text: "$9.99/month"
+  pro_price_annual_text: "$69.99/year — $5.83/month"
+  pro_price_lifetime_text: "$149 once — the Founders Pass"
+  pro_annual_badge_text: "Best value — save 42%"
                              # DISPLAY strings for /pricing only — the store or
                              # Stripe stays the source of truth for what is
                              # actually charged. Keep these matching the store;
@@ -291,6 +296,22 @@ billing:
                              # flag, and on a passes-only store that claim
                              # would be false (a "subscription" that never
                              # renews). Lifetime never gets a selling plan.
+
+allowances:
+  free_matched_refilm: true  # the free-tier proof loop. Every surface teaches
+                             # Film -> Practice -> Re-film, so a free account
+                             # that produced a coaching-ready baseline this
+                             # calendar month gets ONE more upload free within
+                             # 14 days of that baseline — provided the
+                             # declared context matches it (same club, same
+                             # handedness, same camera angle: the comparison
+                             # boundary the Proof Cycle already enforces). One
+                             # credit per calendar month; a mismatched context
+                             # uses the normal allowance rules; the first
+                             # rejected clip stays the usual courtesy re-film;
+                             # Pro accounts are unaffected. The bare-code
+                             # default is false — the same deliberate
+                             # difference as replay_pro_only.
 
 shopify_customer_sync:
   enabled: true              # outbound app-account -> Shopify customer sync.

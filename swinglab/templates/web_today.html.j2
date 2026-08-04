@@ -147,6 +147,22 @@
   }
 {% endblock %}
 {% block main %}
+  {% macro refilm_cta() %}
+    {# The proof-loop CTA never dead-ends: with allowance left it points at
+       the upload form, with the free matched re-film open it says so, and
+       only when both are truly gone does it name the honest ways out. #}
+    {% if analyses_left is not none and analyses_left <= 0 %}
+      {% if refilm_credit and refilm_credit.available %}
+        <a class="button secondary" href="/#upload-form">Re-film free — same club, same view</a>
+      {% elif user and not user.is_pro and pro_available %}
+        <a class="button secondary" href="/pricing">Allowance used — see Pro plans</a>
+      {% else %}
+        <span class="hint">Allowance used — your re-film unlocks on the 1st.</span>
+      {% endif %}
+    {% else %}
+      <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
+    {% endif %}
+  {% endmacro %}
   <div class="today-shell">
     {% if setup_saved %}<p class="success" role="status">Your setup is saved. Your caddie will use it to keep the next step clear and practical.</p>{% endif %}
     {% if practice_done %}<p class="success" role="status">Practice check-in saved. When you re-film, we’ll compare the next session to this focus.</p>{% endif %}
@@ -181,7 +197,7 @@
         {% if today_state == 'setup' %}
           <span class="state-pill state-pill--setup">Setup needed</span>
           <h2 id="next-move-title">Set up your first coaching loop</h2>
-          <p>Choose your club, goal, and realistic practice block so your guidance starts with the right context.</p>
+          <p>You can film right away — the upload asks for the club and camera angle it needs. Finishing your golfer setup (goal, practice block) makes the guidance fit your game.</p>
         {% elif today_state == 'empty' %}
           <span class="state-pill state-pill--empty">Ready to start</span>
           <h2 id="next-move-title">Film a baseline</h2>
@@ -219,8 +235,8 @@
       </div>
       <div class="next-move__actions">
         {% if today_state == 'setup' %}
-          <a class="button" data-primary-next-move href="/onboarding">Finish golfer setup</a>
-          <a class="next-move__secondary" href="/">Go to swing analysis</a>
+          <a class="button" data-primary-next-move href="/#upload-form">Film your first swing</a>
+          <a class="next-move__secondary" href="/onboarding">Finish golfer setup</a>
         {% elif today_state == 'empty' %}
           <a class="button" data-primary-next-move href="/#upload-form">Analyze my swing free</a>
         {% elif today_state in ('queued', 'processing') %}
@@ -287,7 +303,7 @@
               <div class="today-actions">
                 <button type="submit">{{ "Update today's practice receipt" if proof_cycle_practice_receipt else "Save practice receipt" }}</button>
                 {% if proof_cycle_practice_receipt %}<span class="success" role="status">Today's practice receipt is saved</span>{% endif %}
-                <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
+                {{ refilm_cta() }}
                 <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
               </div>
             </form>
@@ -306,7 +322,7 @@
             </div>
             <div class="today-actions">
               {% if latest_practiced %}<span class="success" role="status">Practice logged</span>{% else %}<form action="/practice/checkins" method="post"><input type="hidden" name="session_id" value="{{ latest_job.id }}"><button type="submit">I practiced this</button></form>{% endif %}
-              <a class="button secondary" href="/#upload-form">Practice, then re-film</a>
+              {{ refilm_cta() }}
               <a class="button secondary" href="/session/{{ latest_job.id }}">See full Caddie Brief</a>
             </div>
           {% endif %}
