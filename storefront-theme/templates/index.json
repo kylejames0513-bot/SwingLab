@@ -71,7 +71,7 @@
           "settings": {
             "number": "01",
             "title": "Choose the club",
-            "body": "Choose the club before upload: iron, wedge, hybrid, fairway wood, or driver. It stays with the report and next comparison. Wedge coaching remains neutral until shot intent and lie are captured.",
+            "body": "Choose the club before upload—iron, wedge, hybrid, fairway wood, or driver. It stays with the report and your next comparison, so coaching reflects the equipment you actually used.",
             "caption": "CLUB CONTEXT IS REQUIRED"
           }
         },
@@ -80,7 +80,7 @@
           "settings": {
             "number": "02",
             "title": "Film a repeatable view",
-            "body": "Set the phone at hip height with your full body in frame, then select the view before upload. Face-on supports movement coaching; down-the-line supports timing only. Save that setup for the next clip.",
+            "body": "Set your phone at hip height with your full body in frame, then select face-on or down-the-line before upload. Save that setup so your next clip is genuinely comparable.",
             "caption": "MATCH THE VIEW NEXT TIME"
           }
         },
@@ -89,7 +89,7 @@
           "settings": {
             "number": "03",
             "title": "Work one plan",
-            "body": "CaddieInsight ranks supported findings, brings one priority forward, and turns it into a drill with a measured pass mark. You leave with one clear range-session job instead of disconnected swing notes.",
+            "body": "CaddieInsight ranks supported findings, brings one priority forward, and pairs it with a focused drill, clear dosage, and measurable pass mark—one practical job for your next range session.",
             "caption": "ONE PRIORITY · ONE PASS MARK"
           }
         },
@@ -98,7 +98,7 @@
           "settings": {
             "number": "04",
             "title": "Re-film to prove it",
-            "body": "Use the same club and selected view, then repeat the hip-height, full-body setup. CaddieInsight verifies the saved club, handedness, and selected camera angle; height, distance, and framing remain part of your setup.",
+            "body": "Re-film with the same club and view. CaddieInsight verifies the saved club, handedness, and selected camera angle; height, distance, and framing remain part of your setup for a fair comparison.",
             "caption": "REPEAT THE CAPTURE SETUP"
           }
         }
@@ -112,7 +112,7 @@
       "settings": {
         "anchor": "how",
         "heading": "Film. Coach. Practice. Prove it.",
-        "footer_note": "CaddieInsight measures supported 2D phone-video movement and timing. It does not infer club path, face angle, launch, spin, carry, strike, or ball flight."
+        "footer_note": "Face-on supports movement coaching; down-the-line currently supports timing only. CaddieInsight estimates supported 2D movement and timing from phone video—not club path, face angle, launch, spin, carry, strike, or ball flight."
       }
     },
     "report": {

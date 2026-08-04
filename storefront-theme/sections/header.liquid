@@ -848,12 +848,14 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
     text-align: center;
   }
   .sl-member-rail__action {
-    min-height: 32px;
+    min-height: 44px;
     order: 3;
     margin-left: 0;
-    padding: 6px 10px;
+    padding: 10px 12px;
     font-size: 12px;
   }
+  .sl-header__cart { min-height: 44px; }
+  .sl-header__toggle { width: 44px; height: 44px; }
 }
 @media (max-width: 480px) {
   .shopify-section:has(> .sl-header--overlay) { margin-bottom: -60px; }
@@ -861,18 +863,19 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   .sl-header__inner,
   .sl-header--premium .sl-header__inner { min-height: 60px; gap: 8px; }
   .sl-header__logo-img { height: 25px; max-width: 154px; }
-  .sl-header__actions { gap: 6px; }
-  .sl-header__cart { min-height: 36px; padding: 5px 7px 5px 10px; font-size: 13px; }
+  .sl-header__actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    gap: 0;
+  }
+  .sl-header__cart { min-height: 44px; padding: 7px 8px 7px 11px; font-size: 13px; }
   .sl-header__cart-label { display: none; }
   .sl-header__cart-count { min-width: 20px; padding: 5px; }
-  .sl-header__toggle { width: 40px; height: 40px; padding: 9px; }
+  .sl-header__toggle { width: 44px; height: 44px; padding: 11px; order: -1; }
 }
 @media (max-width: 360px) {
   .sl-header { --sl-pad-x: 16px; }
-  .sl-header__logo {
-    left: 16px;
-    transform: none;
-  }
   .sl-header__logo-img { max-width: 128px; }
 }
 @media (prefers-reduced-motion: reduce) {

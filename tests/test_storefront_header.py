@@ -169,8 +169,18 @@ def test_storefront_keeps_mobile_actions_readable():
     tiny_mobile = HEADER.split("@media (max-width: 480px)", 1)[1].split(
         "@media (max-width: 360px)", 1
     )[0]
+    action_rule = tiny_mobile.split(".sl-header__actions {", 1)[1].split("}", 1)[0]
+    assert "width: 100%" in action_rule
+    assert "justify-content: space-between" in action_rule
+    assert ".sl-header__cart { min-height: 44px" in tiny_mobile
     assert ".sl-header__cart-label { display: none; }" in tiny_mobile
+    assert ".sl-header__toggle { width: 44px; height: 44px" in tiny_mobile
     assert "@media (max-width: 360px)" in HEADER
+    narrow_mobile = HEADER.split("@media (max-width: 360px)", 1)[1].split(
+        "@media (prefers-reduced-motion: reduce)", 1
+    )[0]
+    assert "left: 16px" not in narrow_mobile
+    assert "transform: none" not in narrow_mobile
     assert "@media (min-width: 981px) and (max-width: 1099px)" in HEADER
 
 
