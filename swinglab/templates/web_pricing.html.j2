@@ -119,12 +119,12 @@
   <div class="plans">
     <div class="card hero">
       {% if pro_annual_badge_text %}<span class="badge">{{ pro_annual_badge_text }}</span>{% endif %}
-      <h2>Pro — yearly</h2>
+      <h2>Pro — Season Pass</h2>
       <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
       <ul>
         <li>{% if pro_per_month <= 0 %}Unlimited swing analyses for a year{% else %}
           Up to {{ pro_per_month }} analyses a month for a year{% endif %}</li>
-        <li>Everything Pro includes, all season</li>
+        <li>Everything Pro includes, all season — and the off-season too</li>
         {% if replay_pro_only %}<li>Upgrade and re-film with your annotated coach replay</li>{% endif %}
         <li>One checkout covers the whole year — no monthly decision to remake</li>
       </ul>
@@ -153,15 +153,19 @@
       {% endif %}
     </div>
     {% if pro_store_url %}
-    {# The lifetime tier exists only as a store purchase (SL-PRO-LIFE) —
-       a Stripe-only install has no one-payment product to sell, so the
-       card would promise something its checkout can't deliver. #}
+    {# The Founders Pass exists only as a store purchase (it matches on
+       SKU SL-PRO-LIFE, never the variant title) — a Stripe-only install
+       has no one-payment product to sell, so the card would promise
+       something its checkout can't deliver. #}
     <div class="card">
-      <h2>Pro — lifetime</h2>
+      <h2>Pro — Founders Pass</h2>
       <p class="price">{{ pro_price_lifetime_text or "One payment" }}</p>
       <ul>
-        <li>One payment — Pro for as long as {{ brand.name }} runs</li>
-        <li>Everything Pro includes, forever</li>
+        <li>One payment — everything Pro includes, for as long as
+          {{ brand.name }} runs</li>
+        <li>Capped at the first 100 members — a lifetime product is only
+          honest if we can afford to keep running it, so we limit how
+          many exist</li>
         <li>Never renews, never expires</li>
       </ul>
       {{ pro_cta(pro_store_url_lifetime) }}
@@ -188,14 +192,14 @@
     {{ brand.name }} store, monthly and yearly Pro renew automatically —
     cancel anytime and Pro keeps running to the end of the period you've
     paid for. Bought as a one-time pass, a month is 31 days and a year is
-    365, and they simply expire. Lifetime is a single payment and never
-    renews. Prices shown here are display text; the store checkout is
+    365, and they simply expire. The Founders Pass is a single payment and
+    never renews. Prices shown here are display text; the store checkout is
     always the source of truth.</p>
   {% elif pro_store_url %}
   <p class="fineprint">How it works: nothing auto-renews. On the
     {{ brand.name }} store a month is a fixed 31-day pass and a year is
-    365 days — they simply expire, and quantities stack. Lifetime is a
-    single payment and never ends. Prices shown here are display text;
+    365 days — they simply expire, and quantities stack. The Founders Pass
+    is a single payment and never ends. Prices shown here are display text;
     the store checkout is always the source of truth.</p>
   {% else %}
   <p class="fineprint">Prices shown here are display text — checkout is

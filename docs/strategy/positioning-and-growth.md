@@ -43,7 +43,13 @@ Copy patterns to use (never naming competitors):
   against is coaching."
 - "We measure only what a phone can actually measure — and we say so."
 
-## 2. Pricing: current tiers read as toy-priced (owner decision required)
+## 2. Pricing: current tiers read as toy-priced
+
+**DECIDED AND SHIPPED 2026-08-03 (owner approved):** $9.99/mo · Season Pass
+$69.99/yr (featured, $5.83/mo, save 42%) · Founders Pass $149 once, capped at
+the first 100 members (manual cap — memberships carry no inventory quantity).
+Store variants, product description, storefront copy, and app pricing page
+all updated. The analysis below is retained as the rationale.
 
 Reference points (sourced in research run 2026-08-03):
 

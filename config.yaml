@@ -280,10 +280,10 @@ billing:
     yearly: "46811170209964"   # checkout opens with the clicked plan already
     lifetime: "46839745282220" # selected. An unset/empty id falls back to the
                              # plain product page — never a guessed variant.
-  pro_price_monthly_text: "$4.99/month"
-  pro_price_annual_text: "$39.99/year — $3.33/month"
-  pro_price_lifetime_text: "$79.99 once — Pro for good"
-  pro_annual_badge_text: "Best value — save 33%"
+  pro_price_monthly_text: "$9.99/month"
+  pro_price_annual_text: "$69.99/year — $5.83/month"
+  pro_price_lifetime_text: "$149 once — the Founders Pass"
+  pro_annual_badge_text: "Best value — save 42%"
                              # DISPLAY strings for /pricing only — the store or
                              # Stripe stays the source of truth for what is
                              # actually charged. Keep these matching the store;

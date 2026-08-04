@@ -588,10 +588,10 @@ def test_stripe_pricing_keeps_the_annual_led_offer(tmp_path, monkeypatch):
 
     html = client.get("/pricing").text
     assert html.count('action="/billing/checkout"') == 2
-    assert "Pro — yearly" in html
+    assert "Pro — Season Pass" in html
     assert "Pro — monthly" in html
-    assert html.index("Pro — yearly") < html.index("Pro — monthly")
-    assert "$39.99/year" in html
+    assert html.index("Pro — Season Pass") < html.index("Pro — monthly")
+    assert "$69.99/year" in html
     assert "Stripe shows the exact price, billing interval" in html
 
 

@@ -49,16 +49,16 @@ def test_defaults_pin_the_tier_ladder():
     assert skus["SL-PRO-12MO"] == 365
     assert skus["SL-PRO-LIFE"] == 36500
     assert DEFAULTS["billing"]["free_per_month"] == 1
-    assert DEFAULTS["billing"]["pro_price_monthly_text"] == "$4.99/month"
+    assert DEFAULTS["billing"]["pro_price_monthly_text"] == "$9.99/month"
     assert (
         DEFAULTS["billing"]["pro_price_annual_text"]
-        == "$39.99/year — $3.33/month"
+        == "$69.99/year — $5.83/month"
     )
     assert (
         DEFAULTS["billing"]["pro_price_lifetime_text"]
-        == "$79.99 once — Pro for good"
+        == "$149 once — the Founders Pass"
     )
-    assert DEFAULTS["billing"]["pro_annual_badge_text"] == "Best value — save 33%"
+    assert DEFAULTS["billing"]["pro_annual_badge_text"] == "Best value — save 42%"
     # Both gates ship OFF in bare-code defaults (white-label installs stay
     # ungated); the shipped config.yaml turns them on. Subscription copy is
     # also opt-in at the bare-code layer; CaddieInsight's shipped config
@@ -80,10 +80,13 @@ def test_shipped_config_pins_the_live_membership_ladder():
         "SL-PRO-12MO": 365,
         "SL-PRO-LIFE": 36500,
     }
-    assert billing["pro_price_monthly_text"] == "$4.99/month"
-    assert billing["pro_price_annual_text"] == "$39.99/year — $3.33/month"
-    assert billing["pro_price_lifetime_text"] == "$79.99 once — Pro for good"
-    assert billing["pro_annual_badge_text"] == "Best value — save 33%"
+    assert billing["pro_price_monthly_text"] == "$9.99/month"
+    assert billing["pro_price_annual_text"] == "$69.99/year — $5.83/month"
+    assert billing["pro_price_lifetime_text"] == "$149 once — the Founders Pass"
+    assert billing["pro_annual_badge_text"] == "Best value — save 42%"
+    # The badge claim is arithmetic, not marketing: $69.99/year against
+    # the $119.88 twelve months at $9.99 would cost really is 42% off.
+    assert round((1 - 69.99 / (9.99 * 12)) * 100) == 42
     assert billing["store_subscriptions"] is True
     # The /pricing cards deep-link these variants so checkout preselects
     # the plan that was clicked — they must match the live store.
@@ -219,15 +222,21 @@ def make_pricing_app(
 def test_pricing_page_shows_all_three_tiers(tmp_path, monkeypatch):
     client = TestClient(make_pricing_app(tmp_path, monkeypatch))
     html = client.get("/pricing").text
-    assert "$4.99/month" in html
-    assert "$39.99/year" in html
-    assert "$79.99 once" in html
-    assert "Best value" in html                     # the yearly hero badge
-    assert "Pro — lifetime" in html
+    assert "$9.99/month" in html
+    assert "$69.99/year" in html
+    assert "$149 once" in html
+    assert "Best value" in html                     # the Season Pass hero badge
+    assert "save 42%" in html                       # the honest savings math
+    assert "Pro — Season Pass" in html
+    assert "Pro — Founders Pass" in html
+    assert "first 100 members" in html              # the honesty cap, advertised
     # free_per_month defaults to 1 — the copy goes singular.
     assert "1 full swing analysis" in html
     # The old false claim is gone for good.
     assert "only difference is how often you can film" not in html
+    # No discount theatrics: no strikethrough compare-at price anywhere.
+    assert "was $" not in html
+    assert "<s>" not in html and "<del>" not in html
 
 
 def test_pricing_cards_deep_link_their_store_variants(tmp_path, monkeypatch):
@@ -264,12 +273,13 @@ def test_pricing_cards_fall_back_to_the_plain_product_page(app):
 
 
 def test_lifetime_card_needs_the_store(tmp_path, monkeypatch):
-    # Lifetime exists only as a store SKU — a Stripe-only install has no
-    # one-payment product, so the card must not promise one.
+    # The Founders Pass exists only as a store SKU (SL-PRO-LIFE) — a
+    # Stripe-only install has no one-payment product, so the card must
+    # not promise one.
     client = TestClient(make_pricing_app(tmp_path, monkeypatch, shopify=False))
     html = client.get("/pricing").text
-    assert "Pro — lifetime" not in html
-    assert "Pro — yearly" in html  # the rest of the ladder still renders
+    assert "Pro — Founders Pass" not in html
+    assert "Pro — Season Pass" in html  # the rest of the ladder still renders
 
 
 def test_annual_badge_is_a_display_string(tmp_path, monkeypatch):
@@ -283,8 +293,8 @@ def test_annual_badge_is_a_display_string(tmp_path, monkeypatch):
     cfg.billing["pro_annual_badge_text"] = ""
     app = create_app(cfg, sessions_dir=tmp_path / "sessions")
     html = TestClient(app).get("/pricing").text
-    assert "save 33%" not in html
-    assert "Pro — yearly" in html
+    assert "save 42%" not in html
+    assert "Pro — Season Pass" in html
 
 
 def test_pricing_page_advertises_gates_only_when_they_exist(

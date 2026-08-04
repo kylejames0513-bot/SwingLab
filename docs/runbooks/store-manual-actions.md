@@ -4,10 +4,15 @@ These actions could not be completed via the Admin API from the assistant
 session (missing `write_legal_policies` scope / permission-layer blocks).
 Everything here is paste-ready. Estimated total time: ~20 minutes.
 
-Completed via API already (2026-08-03): branded SKUs + Rotation Trainer price
-fix on Swing Path Mat (CI-MAT-OUT / CI-MAT-IN), Rotation Trainer (CI-ROT-YEL /
-CI-ROT-RED, Red corrected $38.99 → $28.99), Connection Ball (CI-CB-BLU /
-CI-CB-ORG / CI-CB-YEL), Arm Link (CI-ARM-BLK).
+Completed via API already (2026-08-03): branded SKUs on all six gear products
+(CI-MAT-* / CI-ROT-* / CI-CB-* / CI-ARM-* / CI-TT-* / CI-ROPE-*), Rotation
+Trainer Red price corrected $38.99 → $28.99, Pro repriced to the approved
+structure ($9.99 / Season Pass $69.99 / Founders Pass $149) with rewritten
+product description, Lifetime variant renamed Founders Pass, all Pro variants
+untracked (memberships are subscription-based — no quantity, per owner),
+`swinglab:tempo` tag added to Tempo Rope, Pro vendor set to CaddieInsight,
+Contact page filled + `contact` template assigned, About and FAQ pages
+updated to the new pricing.
 
 ## 1. Create the three missing legal policies
 
@@ -100,44 +105,28 @@ Online Store → Pages → Contact.
 <p>Unused gear returns within 30 days; unused Pro refunds within 14. The full details live on the <a href="/pages/shipping-returns">Shipping &amp; Returns page</a> and in our <a href="/policies/refund-policy">Refund Policy</a>.</p>
 ```
 
-## 3. Stop tracking inventory on Pro membership variants
+## 3. Founders Pass cap (manual, by owner decision)
 
-Products → CaddieInsight Pro → each variant (1 Month, 12 Months, Lifetime) →
-untick "Track quantity". The 12 Months variant currently shows −1 inventory;
-a digital membership must never be able to read "sold out."
+Memberships carry no inventory quantity (owner decision: subscription-based,
+no quantity). The "capped at the first 100 members" promise is therefore
+enforced by hand: watch Founders Pass sales (SKU `SL-PRO-LIFE`) and retire
+the variant once 100 have sold. The copy promises the cap — honor it.
 
-## 4. Finish the SKU cleanup (2 products the API layer blocked)
+## 4. Gear → report tag coverage
 
-- **Tempo Trainer** variants: Green → `CI-TT-GRN`, Red → `CI-TT-RED`,
-  Blue → `CI-TT-BLU`, Black → `CI-TT-BLK`.
-- **Tempo Rope** variants: Black → `CI-ROPE-BLK`, Blue → `CI-ROPE-BLU`,
-  Red → `CI-ROPE-RED`, Green → `CI-ROPE-GRN`, Yellow → `CI-ROPE-YEL`.
+No active product carries `swinglab:sway` or `swinglab:hip-slide` — either
+source aids for those flags (the archived Alignment Stick / Hip Band /
+Mirror products covered them) or soften the collection copy that promises
+tempo / sway / hip-slide / consistency mapping.
 
-## 5. Fix the gear → report tag mapping
+## 5. Gear inventory (leave it to DSers)
 
-The collection copy promises gear mapped to tempo / sway / hip-slide /
-consistency report flags, but:
+Gear quantities live at the `dsers-fulfillment-service` location and are
+managed by the DSers supplier sync — do not hand-edit them. Swing Path Mat
+"Outdoor Use" shows 0 available (hidden as sold out on the storefront):
+check the supplier in DSers or hide that variant.
 
-- **Tempo Rope** lacks the `swinglab:tempo` tag (add it — it is a tempo
-  trainer; the report matcher keys off `swinglab:*` tags).
-- No active product carries `swinglab:sway` or `swinglab:hip-slide` — either
-  source aids for those flags (the archived Alignment Stick / Hip Band /
-  Mirror products covered them) or soften the collection copy.
-
-## 6. Inventory sanity on dropship placeholders
-
-Tempo Rope Green/Yellow show 4,994 units; Rotation Trainer Red shows 911.
-Set realistic quantities (e.g. 25–50) so any future "only X left" logic and
-reports are honest. Swing Path Mat "Outdoor Use" is at 0 — restock or hide
-that variant.
-
-## 7. Vendor normalization
-
-CaddieInsight Pro product vendor is still "SwingLab" — change to
-"CaddieInsight" (Products → CaddieInsight Pro → Vendor). The six active gear
-products are already correct.
-
-## 8. Put a person on the About page (highest-leverage single edit)
+## 6. Put a person on the About page (highest-leverage single edit)
 
 The About page is well-written but faceless ("a small golf-tech studio…
 we"). For a one-person brand, the faceless "we" is the scam signal; the named
@@ -159,7 +148,7 @@ the drill it's matched to.</p>
 Also note: the About page hardcodes Pro prices ($4.99/$39.99/$79.99) — update
 that paragraph whenever pricing changes (see strategy doc pricing proposal).
 
-## 9. Create an "Accuracy & Limits" page (differentiator-compounding)
+## 7. Create an "Accuracy & Limits" page (differentiator-compounding)
 
 No competitor states what phone video cannot measure; publishing limits is the
 credibility play golf's most trusted brands use. Online Store → Pages → Add
@@ -190,7 +179,7 @@ the homepage. Paste:
 <p>Because the method depends on it. CaddieInsight prescribes one fix with a numeric pass mark and then verifies it against a matched re-film — twice — before calling it improved. Verification is only honest if the measurements are. Automated estimates from a single camera are not a substitute for instruction from a teaching professional, and every report carries that line too.</p>
 ```
 
-## 10. Housekeeping (5 minutes, optional but tidy)
+## 8. Housekeeping (5 minutes, optional but tidy)
 
 - Navigation: delete or repoint the default "Main menu" (contains a
   /collections/all Catalog link the theme never renders) and default

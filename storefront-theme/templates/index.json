@@ -172,7 +172,7 @@
             "title": "CaddieInsight Pro",
             "description": "Unlimited swing analyses, an annotated coach replay for every swing, and progress tracking across sessions so each range visit builds on the last.",
             "price_text": "",
-            "price_note": "Monthly $4.99 · Annual $39.99 · Lifetime $79.99",
+            "price_note": "Monthly $9.99 · Season Pass $69.99/yr · Founders Pass $149 (first 100)",
             "product": "swinglab-pro",
             "use_product_price": true,
             "member_visibility": "pro_offer",
@@ -277,7 +277,7 @@
           "settings": {
             "feature": "Price",
             "free_value": "$0",
-            "pro_value": "$4.99/mo · $39.99/yr · $79.99 lifetime"
+            "pro_value": "$9.99/mo · $69.99/yr Season Pass · $149 Founders Pass"
           }
         }
       },
@@ -378,6 +378,13 @@
             "answer": "One full swing analysis per calendar month, free forever. It produces the complete report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes. Pro adds unlimited filming, the annotated coach replay, and the progress dashboard."
           }
         },
+        "q_pricing": {
+          "type": "qa",
+          "settings": {
+            "question": "What are the Season Pass and Founders Pass?",
+            "answer": "The Season Pass is a full year of Pro for $69.99 — the same year month-to-month costs $119.88, so it saves an honest 42%. The Founders Pass is $149 once, includes everything in Pro for good, and never renews. Only the first 100 members can buy one: a lifetime product is only honest if the business can afford to keep running it, so we cap how many exist. Earlier lifetime purchases are grandfathered and keep everything."
+          }
+        },
         "q_pro_unlock": {
           "type": "qa",
           "settings": {
@@ -420,6 +427,7 @@
         "q_club",
         "q_history",
         "q_free",
+        "q_pricing",
         "q_pro_unlock",
         "q_lefty",
         "q_shipping",
