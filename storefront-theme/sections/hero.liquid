@@ -26,16 +26,18 @@
           alt: hero_image_alt }}
       </picture>
     {%- else -%}
+      {%- comment -%}
+        Theme webps are served whole via asset_url: the legacy sizing
+        filter does not process webp and emits the no-image placeholder.
+        Both files ship pre-optimized under ~110 KB.
+      {%- endcomment -%}
       <picture>
         <source
           media="(max-width: 749px)"
-          srcset="{{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '480x' }} 480w, {{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '750x' }} 750w, {{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '1000x' }} 1000w, {{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '1122x' }} 1122w"
-          sizes="100vw">
+          srcset="{{ 'caddieinsight-range-hero-mobile.webp' | asset_url }}">
         <img
           class="sl-hero__image"
-          src="{{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1672x' }}"
-          srcset="{{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '750x' }} 750w, {{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1100x' }} 1100w, {{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1400x' }} 1400w, {{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1672x' }} 1672w"
-          sizes="100vw"
+          src="{{ 'caddieinsight-range-hero-desktop.webp' | asset_url }}"
           width="1672"
           height="941"
           alt="{{ hero_image_alt | escape }}"
