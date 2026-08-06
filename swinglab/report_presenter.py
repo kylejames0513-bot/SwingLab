@@ -14,7 +14,7 @@ from typing import Literal, Mapping, Sequence, TypeAlias
 from .caddie_brief import CaddieBrief
 from .coaching import IssueCard, StrengthCard
 from .config import Config
-from .drills import Drill
+from .drills import Drill, drill_presentation
 from .report_view import (
     GUIDED_REPORT_PRESENTATION_VERSION,
     Angle,
@@ -328,7 +328,7 @@ class _TargetSpec:
 
 _TARGET_SPECS: Mapping[tuple[str, str], _TargetSpec] = {
     ("tempo", "tempo_ratio"): _TargetSpec("tempo_ratio", TargetComparator.COUNT_GTE, "tempo_warn_below", MeasurementUnit.RATIO, (4, 5)),
-    ("consistency", "tempo_ratio_std"): _TargetSpec("tempo_ratio_std", TargetComparator.LTE, "tempo_std_praise", MeasurementUnit.RATIO),
+    ("consistency", "tempo_ratio"): _TargetSpec("tempo_ratio_std", TargetComparator.LTE, "tempo_std_praise", MeasurementUnit.RATIO),
     ("sway", "head_sway_backswing_sw"): _TargetSpec("head_sway_backswing_sw", TargetComparator.ALL_LTE, "sway_warn_sw", MeasurementUnit.SHOULDER_WIDTHS),
     ("hip-slide", "hip_slide_backswing_sw"): _TargetSpec("hip_slide_backswing_sw", TargetComparator.ALL_LTE, "sway_warn_sw", MeasurementUnit.SHOULDER_WIDTHS),
     ("head-dip", "head_dip_sw"): _TargetSpec("head_dip_sw", TargetComparator.ALL_LTE, "head_dip_warn_sw", MeasurementUnit.SHOULDER_WIDTHS),
@@ -424,11 +424,19 @@ def _phases(context: ReportContext, priority: PhaseId, readable: int, *, improve
     return tuple(PhaseSummary(phase, labels[phase], PhaseStatus.PRIORITY if improve and phase is priority else PhaseStatus.STEADY, "Priority" if improve and phase is priority else "Steady", "Work on this movement." if improve and phase is priority else "Steady reference.", readable, (), (), phase.value.replace("_", "-"), phase is priority) for phase in phase_ids)
 
 
-def _practice(drill: Drill, alternatives: Sequence[Drill]) -> PracticePrescription:
-    steps = tuple(drill.protocol[:3])
-    if len(steps) != 3:
-        raise ValueError("A report drill requires exactly three opening steps")
-    return PracticePrescription("practice", drill.id, drill.name, drill.aim, steps, tuple(drill.protocol), "Use a safe, open practice station.", drill.aim, drill.dosage, drill.gear_note or None, None, None, tuple(DrillAlternative(item.id, item.name, item.aim, "alternative-drills") for item in alternatives))
+def _practice(
+    drill: Drill, alternatives: Sequence[Drill], cfg: Config
+) -> PracticePrescription:
+    presentation = drill_presentation(drill, cfg)
+    return PracticePrescription(
+        "practice", drill.id, drill.name, drill.aim,
+        presentation.summary_steps, tuple(drill.protocol), presentation.setup,
+        presentation.feel_cue, drill.dosage, presentation.equipment, None, None,
+        tuple(
+            DrillAlternative(item.id, item.name, item.aim, "alternative-drills")
+            for item in alternatives
+        ),
+    )
 
 
 def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportViewV1:
@@ -463,5 +471,5 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         context,
         Capabilities(True, source.visual_evidence.state == "rendered", False, False, False, True, bool(source.alternative_drills), False, True),
         tuple(source.media), (), next_move, source.visual_evidence,
-        _phases(context, next_move.category, readable, improve=mode is JourneyMode.IMPROVE), _practice(source.primary_drill, source.alternative_drills), protocol,
+        _phases(context, next_move.category, readable, improve=mode is JourneyMode.IMPROVE), _practice(source.primary_drill, source.alternative_drills, cfg), protocol,
     )

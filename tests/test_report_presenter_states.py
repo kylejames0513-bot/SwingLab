@@ -7,7 +7,7 @@ import pytest
 from swinglab.caddie_brief import CaddieBrief
 from swinglab.coaching import IssueCard, StrengthCard
 from swinglab.config import Config
-from swinglab.drills import Drill
+from swinglab.drills import Drill, MissingDrillPresentation, build_drills, drill_presentation
 from swinglab.report_presenter import (
     REASON_COPY,
     ReportContextInput,
@@ -38,6 +38,10 @@ def drill() -> Drill:
         ("Set up.", "Rehearse.", "Swing."), "5 reps",
         "legacy text must not be parsed", "swinglab:test",
     )
+
+
+def authored_drill() -> Drill:
+    return build_drills(Config().coaching)["sway"][0]
 
 
 def issue(flag: str = "sway", metric: str = "head_sway_backswing_sw") -> IssueCard:
@@ -76,7 +80,7 @@ def source(*, reasons: tuple[ReasonCode, ...] = (), focus: str | None = "sway", 
         brief(focus=focus, strength=strength),
         (issue(),) if focus else (),
         (StrengthCard(strength, "head_sway_backswing_sw", "Head sway", "Head sway stays steady."),) if strength else (),
-        drill(), (), evidence(), media, reasons, ("capture",), False, None,
+        authored_drill(), (), evidence(), media, reasons, ("capture",), False, None,
     )
 
 
@@ -101,6 +105,19 @@ def test_each_fatal_capture_reason_returns_only_safe_capture_recovery(reason):
     assert view.phases == ()
     assert not view.capabilities.focused_evidence
     assert not view.capabilities.gear
+
+
+def test_fatal_capture_reason_copy_has_unique_labels_and_corrections():
+    fatal = (
+        ReasonCode.CAMERA_ANGLE_MISMATCH,
+        ReasonCode.TRACKING_UNSTABLE,
+        ReasonCode.INSUFFICIENT_POSE_FRAMES,
+        ReasonCode.NO_READABLE_SWING,
+        ReasonCode.NO_RELIABLE_STRIKE_EVENT,
+        ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE,
+    )
+    assert len({REASON_COPY[reason].label for reason in fatal}) == len(fatal)
+    assert len({REASON_COPY[reason].remediation for reason in fatal}) == len(fatal)
 
 
 def test_reason_order_deduplicates_camera_tracking_frame_priority_then_limited():
@@ -156,3 +173,21 @@ def test_protect_next_move_uses_selected_strength_and_protect_eyebrow():
     assert view.next_move.observation == "Head sway stays steady."
     assert next(phase for phase in view.phases if phase.id is PhaseId.GOING_BACK).status.value == "steady"
     assert "legacy text" not in " ".join((view.next_move.title, view.next_move.observation, view.next_move.cue))
+
+
+def test_practice_uses_authored_summary_instead_of_first_three_legacy_steps():
+    selected = authored_drill()
+    view = build_report_view(source(), Config())
+    presentation = drill_presentation(selected, Config())
+    assert len(selected.protocol) == 4
+    assert view.practice.summary_steps == presentation.summary_steps
+    assert view.practice.summary_steps != selected.protocol[:3]
+    assert view.practice.setup == presentation.setup
+    assert view.practice.feel_cue == presentation.feel_cue
+    assert view.practice.equipment == presentation.equipment
+    assert view.practice.full_steps == selected.protocol
+
+
+def test_selected_drill_without_authored_presentation_fails_closed():
+    with pytest.raises(MissingDrillPresentation):
+        build_report_view(replace(source(), primary_drill=drill()), Config())
