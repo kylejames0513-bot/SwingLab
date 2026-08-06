@@ -6,11 +6,12 @@ import os
 import shutil
 import subprocess
 from dataclasses import replace
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import pytest
 
 from swinglab import report_artifacts as report_artifacts_module
+from swinglab.metrics import session_stats
 from swinglab.report_artifacts import (
     MAX_REPORT_CHECKSUMS_BYTES,
     MAX_REPORT_MANIFEST_BYTES,
@@ -39,12 +40,16 @@ from swinglab.report_view import (
     Entitlement,
     GUIDED_REPORT_PRESENTATION_VERSION,
     MAX_REPORT_VIEW_BYTES,
+    MediaEntry,
     MediaRole,
     ReportOutcome,
     report_view_from_dict,
+    report_view_to_dict,
     write_report_view,
 )
+from swinglab.report_presenter import build_report_document, prepare_report_input
 from tests.report_view_fixtures import report_view_payload
+from tests.test_report import branded_cfg, fake_swing, fake_video
 
 
 _REPORT_HTML_LIMIT = 8 * 1024 * 1024
@@ -119,6 +124,39 @@ def _valid_metrics_payload(
     }
 
 
+def _artifact_report_view_payload(name: str = "coaching-improve-clear") -> dict[str, object]:
+    payload = report_view_payload(name)
+    if payload["outcome"] == "coaching_ready":
+        capabilities = payload["capabilities"]
+        optional = payload["optional_sections"]
+        assert isinstance(capabilities, dict) and isinstance(optional, list)
+        capabilities["every_swing"] = False
+        payload["optional_sections"] = [
+            section
+            for section in optional
+            if not isinstance(section, dict) or section.get("id") != "every_swing"
+        ]
+        optional = payload["optional_sections"]
+        practice = payload["practice"]
+        assert isinstance(optional, list) and isinstance(practice, dict)
+        if capabilities.get("alternative_drills") and not any(
+            isinstance(section, dict) and section.get("id") == "alternative_drills"
+            for section in optional
+        ):
+            alternatives = practice["alternatives"]
+            assert isinstance(alternatives, list)
+            optional.append(
+                {
+                    "id": "alternative_drills",
+                    "label": "Alternative drills",
+                    "available": bool(alternatives),
+                    "locked": False,
+                    "item_count": len(alternatives),
+                }
+            )
+    return payload
+
+
 def _refresh_checksums(root: Path) -> None:
     checksums_path = root / REPORT_CHECKSUMS_FILENAME
     payload = _load_json(checksums_path)
@@ -146,7 +184,7 @@ def _build_bundle(
     root.mkdir()
     (root / "media").mkdir()
 
-    view_payload = payload if payload is not None else report_view_payload()
+    view_payload = payload if payload is not None else _artifact_report_view_payload()
     (root / "report.html").write_text(
         _valid_report_html(
             presentation=str(view_payload["presentation_version"]),
@@ -263,10 +301,10 @@ def _junction_or_skip(link: Path, target: Path) -> None:
 
 def _payload_with_media_role(role: str) -> tuple[dict[str, object], str]:
     if role == "capture_playback":
-        payload = report_view_payload("capture-only")
+        payload = _artifact_report_view_payload("capture-only")
         return payload, "playback-1"
 
-    payload = report_view_payload()
+    payload = _artifact_report_view_payload()
     if role == "priority_evidence":
         return payload, "focus-1"
     if role == "drill_illustration":
@@ -317,6 +355,25 @@ def _payload_with_media_role(role: str) -> tuple[dict[str, object], str]:
             }
         )
     return payload, key
+
+
+def _coaching_payload_with_swing_media() -> dict[str, object]:
+    payload, _ = _payload_with_media_role("key_positions")
+    capabilities = payload["capabilities"]
+    media = payload["media"]
+    assert isinstance(capabilities, dict) and isinstance(media, list)
+    capabilities["slow_motion"] = True
+    media.append(
+        {
+            "key": "slow-motion-1",
+            "role": "slow_motion",
+            "mime_type": "video/mp4",
+            "entitlement": "core",
+            "relative_path": "media/slow-motion-1.mp4",
+            "checksum_sha256": "0" * 64,
+        }
+    )
+    return payload
 
 
 def test_entitlement_snapshot_has_canonical_json_round_trip_and_strict_enum():
@@ -413,6 +470,75 @@ def test_validation_round_trip_covers_manifest_and_every_artifact_but_not_checks
     assert view.outcome is ReportOutcome.COACHING_READY
 
 
+def test_real_presenter_document_with_swing_media_validates_as_a_complete_bundle(
+    tmp_path: Path,
+):
+    cfg = branded_cfg()
+    swing = fake_swing(1, 2.0)
+    swing["overlay"] = None
+    swing["strip"] = "media/positions-1.jpg"
+    swing["slowmo"] = "media/slow-1.mp4"
+    evidence = report_view_from_dict(
+        report_view_payload("coaching-improve-clear")
+    ).visual_evidence
+    media = (
+        MediaEntry(
+            "focus-1",
+            MediaRole.PRIORITY_EVIDENCE,
+            "image/jpeg",
+            Entitlement.CORE,
+            "media/focus-1.jpg",
+            "a" * 64,
+        ),
+        MediaEntry(
+            "positions-1",
+            MediaRole.KEY_POSITIONS,
+            "image/jpeg",
+            Entitlement.CORE,
+            "media/positions-1.jpg",
+            "b" * 64,
+        ),
+        MediaEntry(
+            "slow-1",
+            MediaRole.SLOW_MOTION,
+            "video/mp4",
+            Entitlement.CORE,
+            "media/slow-1.mp4",
+            "c" * 64,
+        ),
+    )
+    source = prepare_report_input(
+        fake_video(),
+        [swing],
+        session_stats([swing["metrics"]]),
+        [],
+        "right",
+        cfg,
+        visual_evidence=evidence,
+        media=media,
+    )
+    document = build_report_document(source, cfg)
+    root = _build_bundle(
+        tmp_path,
+        payload=report_view_to_dict(document.view),
+        metrics_payload=_valid_metrics_payload(
+            deliverables={
+                "strip": "media/positions-1.jpg",
+                "slowmo": "media/slow-1.mp4",
+            }
+        ),
+    )
+
+    _, _, view = validate_staged_bundle(
+        root,
+        manifest_rel=REPORT_MANIFEST_FILENAME,
+        checksums_rel=REPORT_CHECKSUMS_FILENAME,
+    )
+
+    assert view.capabilities.every_swing is True
+    assert view.capabilities.slow_motion is True
+
+
 @pytest.mark.parametrize(
     "html",
     [
@@ -441,6 +567,47 @@ def test_validation_round_trip_covers_manifest_and_every_artifact_but_not_checks
     ],
 )
 def test_report_html_requires_one_exact_marker_matching_the_bundle(
+    tmp_path: Path, html: str
+):
+    root = _build_bundle(tmp_path)
+    (root / "report.html").write_text(html, encoding="utf-8")
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+@pytest.mark.parametrize(
+    "html",
+    [
+        _valid_report_html(
+            presentation=GUIDED_REPORT_PRESENTATION_VERSION,
+            outcome=ReportOutcome.COACHING_READY.value,
+        ).replace(
+            'name="caddieinsight-report-format"',
+            'NAME="caddieinsight-report-format"',
+            1,
+        ),
+        _valid_report_html(
+            presentation=GUIDED_REPORT_PRESENTATION_VERSION,
+            outcome=ReportOutcome.COACHING_READY.value,
+        ).replace(
+            'name="caddieinsight-report-format" content="caddie-brief-v1"',
+            "name='caddieinsight-report-format' content='caddie-brief-v1'",
+            1,
+        ),
+        " " * 8192
+        + _valid_report_html(
+            presentation=GUIDED_REPORT_PRESENTATION_VERSION,
+            outcome=ReportOutcome.COACHING_READY.value,
+        ),
+    ],
+)
+def test_report_html_markers_use_exact_compatibility_bytes_in_the_header(
     tmp_path: Path, html: str
 ):
     root = _build_bundle(tmp_path)
@@ -528,15 +695,95 @@ def test_metrics_deliverable_must_reference_a_declared_artifact(tmp_path: Path):
         )
 
 
-def test_metrics_overlay_is_optional_when_other_deliverables_are_declared(tmp_path: Path):
+def test_metrics_renderer_deliverables_may_all_be_absent(tmp_path: Path):
     root = _build_bundle(
         tmp_path,
+        metrics_payload=_valid_metrics_payload(deliverables={}),
+    )
+
+    validate_staged_bundle(
+        root,
+        manifest_rel=REPORT_MANIFEST_FILENAME,
+        checksums_rel=REPORT_CHECKSUMS_FILENAME,
+    )
+
+
+def test_metrics_deliverables_must_match_their_guided_media_roles(tmp_path: Path):
+    payload = _coaching_payload_with_swing_media()
+    root = _build_bundle(
+        tmp_path,
+        payload=payload,
         metrics_payload=_valid_metrics_payload(
             deliverables={
-                "strip": "media/focus-1.jpg",
-                "slowmo": "media/drill-1.jpg",
+                "strip": "media/slow-motion-1.mp4",
+                "slowmo": "media/key_positions-1.jpg",
             }
         ),
+    )
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_metrics_replay_deliverable_requires_coach_replay_media(tmp_path: Path):
+    payload = _coaching_payload_with_swing_media()
+    root = _build_bundle(
+        tmp_path,
+        payload=payload,
+        metrics_payload=_valid_metrics_payload(
+            deliverables={
+                "strip": "media/key_positions-1.jpg",
+                "slowmo": "media/slow-motion-1.mp4",
+                "replay": "media/slow-motion-1.mp4",
+            }
+        ),
+    )
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_metrics_rejects_guided_overlay_even_when_declared(tmp_path: Path):
+    payload = _coaching_payload_with_swing_media()
+    root = _build_bundle(
+        tmp_path,
+        payload=payload,
+        metrics_payload=_valid_metrics_payload(
+            deliverables={
+                "strip": "media/key_positions-1.jpg",
+                "overlay": "media/key_positions-1.jpg",
+                "slowmo": "media/slow-motion-1.mp4",
+            }
+        ),
+    )
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+@pytest.mark.parametrize(
+    "deliverables",
+    [{}, {"slowmo": "media/playback-1.mp4"}],
+)
+def test_capture_metrics_allow_empty_or_safe_playback_deliverables(
+    tmp_path: Path, deliverables: dict[str, str]
+):
+    root = _build_bundle(
+        tmp_path,
+        payload=_artifact_report_view_payload("capture-only"),
+        metrics_payload=_valid_metrics_payload(deliverables=deliverables),
     )
 
     validate_staged_bundle(
@@ -722,6 +969,89 @@ def test_windows_junction_detection_does_not_depend_on_path_is_junction(
     assert report_artifacts_module._is_link(link)
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Win32 handle cleanup is Windows-only")
+def test_win32_root_handle_closes_once_when_file_info_inspection_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _build_bundle(tmp_path)
+    opened: list[int] = []
+    closed: list[int] = []
+    real_open = report_artifacts_module._win_open
+    real_close = report_artifacts_module._win_close
+
+    def tracking_open(path: Path, *, directory: bool) -> int:
+        handle = real_open(path, directory=directory)
+        opened.append(handle)
+        return handle
+
+    def tracking_close(handle: int) -> None:
+        closed.append(handle)
+        real_close(handle)
+
+    def fail_info(handle: int):
+        raise OSError("injected GetFileInformationByHandle failure")
+
+    monkeypatch.setattr(report_artifacts_module, "_win_open", tracking_open)
+    monkeypatch.setattr(report_artifacts_module, "_win_close", tracking_close)
+    monkeypatch.setattr(report_artifacts_module, "_win_info", fail_info)
+
+    with pytest.raises(ReportArtifactValidationError):
+        with report_artifacts_module._PinnedBundleRoot(root):
+            pass
+
+    assert len(opened) == 1
+    close_count = closed.count(opened[0])
+    if close_count == 0:
+        real_close(opened[0])
+    assert close_count == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Win32 handle cleanup is Windows-only")
+def test_win32_child_handle_closes_once_when_final_path_inspection_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _build_bundle(tmp_path)
+    opened: list[int] = []
+    closed: list[int] = []
+    final_path_calls = 0
+    real_open = report_artifacts_module._win_open
+    real_close = report_artifacts_module._win_close
+    real_final_path = report_artifacts_module._win_final_path
+
+    def tracking_open(path: Path, *, directory: bool) -> int:
+        handle = real_open(path, directory=directory)
+        opened.append(handle)
+        return handle
+
+    def tracking_close(handle: int) -> None:
+        closed.append(handle)
+        real_close(handle)
+
+    def fail_child_final_path(handle: int) -> Path:
+        nonlocal final_path_calls
+        final_path_calls += 1
+        if final_path_calls == 2:
+            raise OSError("injected GetFinalPathNameByHandleW failure")
+        return real_final_path(handle)
+
+    monkeypatch.setattr(report_artifacts_module, "_win_open", tracking_open)
+    monkeypatch.setattr(report_artifacts_module, "_win_close", tracking_close)
+    monkeypatch.setattr(
+        report_artifacts_module, "_win_final_path", fail_child_final_path
+    )
+
+    with pytest.raises(ReportArtifactValidationError):
+        with report_artifacts_module._PinnedBundleRoot(root) as pinned:
+            with pinned.open_file(PurePosixPath("media/focus-1.jpg")):
+                pass
+
+    assert len(opened) >= 2
+    close_count = closed.count(opened[1])
+    if close_count == 0:
+        real_close(opened[1])
+    assert close_count == 1
+
+
 def test_undeclared_regular_file_is_rejected(tmp_path: Path):
     root = _build_bundle(tmp_path)
     (root / "private-debug.json").write_text("{}\n", encoding="utf-8")
@@ -857,6 +1187,21 @@ def test_unknown_formats_enums_versions_roles_entitlements_and_kinds_are_rejecte
         validate_staged_bundle(root, manifest_rel=REPORT_MANIFEST_FILENAME, checksums_rel=REPORT_CHECKSUMS_FILENAME)
 
 
+def test_unsupported_report_view_version_is_wrapped_at_the_artifact_boundary(tmp_path: Path):
+    root = _build_bundle(tmp_path)
+    payload = _view_payload(root)
+    payload["version"] = "report-view-v2"
+    _write_json(root / REPORT_VIEW_FILENAME, payload)
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
 def test_manifest_and_view_outcomes_must_match(tmp_path: Path):
     root = _build_bundle(tmp_path)
     payload = _manifest_payload(root)
@@ -964,8 +1309,151 @@ def test_slow_motion_file_requires_the_slow_motion_capability(tmp_path: Path):
         )
 
 
+@pytest.mark.parametrize("role,capability", [("slow_motion", "slow_motion"), ("coach_replay", "coach_replay")])
+def test_renderer_capability_requires_corresponding_media(
+    tmp_path: Path, role: str, capability: str
+):
+    payload = _artifact_report_view_payload()
+    capabilities = payload["capabilities"]
+    assert isinstance(capabilities, dict)
+    capabilities[capability] = True
+    if role == "coach_replay":
+        optional = payload["optional_sections"]
+        assert isinstance(optional, list)
+        optional.append(
+            {
+                "id": "replay",
+                "label": "Coach replay",
+                "available": True,
+                "locked": False,
+                "item_count": 1,
+            }
+        )
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_replay_section_count_must_match_rendered_replay_media(tmp_path: Path):
+    payload, _ = _payload_with_media_role("coach_replay")
+    optional = payload["optional_sections"]
+    assert isinstance(optional, list)
+    replay = next(item for item in optional if isinstance(item, dict) and item["id"] == "replay")
+    replay["item_count"] = 2
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_replay_section_cannot_claim_available_media_that_is_absent(tmp_path: Path):
+    payload = _artifact_report_view_payload()
+    optional = payload["optional_sections"]
+    assert isinstance(optional, list)
+    optional.append(
+        {
+            "id": "replay",
+            "label": "Coach replay",
+            "available": True,
+            "locked": False,
+            "item_count": 1,
+        }
+    )
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_locked_unrendered_replay_is_a_valid_absent_renderer_state(tmp_path: Path):
+    payload = _artifact_report_view_payload()
+    optional = payload["optional_sections"]
+    assert isinstance(optional, list)
+    optional.append(
+        {
+            "id": "replay",
+            "label": "Coach replay",
+            "available": False,
+            "locked": True,
+            "item_count": 0,
+        }
+    )
+    root = _build_bundle(tmp_path, payload=payload)
+
+    validate_staged_bundle(
+        root,
+        manifest_rel=REPORT_MANIFEST_FILENAME,
+        checksums_rel=REPORT_CHECKSUMS_FILENAME,
+    )
+
+
+def test_every_swing_capability_must_follow_its_available_section(tmp_path: Path):
+    payload = _artifact_report_view_payload()
+    capabilities = payload["capabilities"]
+    optional = payload["optional_sections"]
+    assert isinstance(capabilities, dict) and isinstance(optional, list)
+    optional.append(
+        {
+            "id": "every_swing",
+            "label": "Every swing",
+            "available": True,
+            "locked": False,
+            "item_count": 1,
+        }
+    )
+    capabilities["every_swing"] = False
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_every_swing_count_cannot_be_less_than_key_position_media_count(tmp_path: Path):
+    payload, _ = _payload_with_media_role("key_positions")
+    media = payload["media"]
+    optional = payload["optional_sections"]
+    assert isinstance(media, list) and isinstance(optional, list)
+    media.append(
+        {
+            "key": "key-positions-2",
+            "role": "key_positions",
+            "mime_type": "image/jpeg",
+            "entitlement": "core",
+            "relative_path": "media/key-positions-2.jpg",
+            "checksum_sha256": "0" * 64,
+        }
+    )
+    section = next(item for item in optional if isinstance(item, dict) and item["id"] == "every_swing")
+    section["item_count"] = 1
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
 def test_practice_illustration_reference_requires_drill_illustration_role(tmp_path: Path):
-    payload = report_view_payload()
+    payload = _artifact_report_view_payload()
     media = payload["media"]
     assert isinstance(media, list)
     row = next(item for item in media if isinstance(item, dict) and item["key"] == "drill-1")
@@ -982,10 +1470,41 @@ def test_practice_illustration_reference_requires_drill_illustration_role(tmp_pa
 
 
 def test_capture_guidance_safe_media_key_requires_capture_playback_role(tmp_path: Path):
-    payload = report_view_payload("capture-only")
+    payload = _artifact_report_view_payload("capture-only")
     media = payload["media"]
     assert isinstance(media, list) and isinstance(media[0], dict)
     media[0]["role"] = "video_poster"
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+@pytest.mark.parametrize("mutation", ["capability", "section"])
+def test_capture_only_rejects_coaching_depth_capabilities_and_sections(
+    tmp_path: Path, mutation: str
+):
+    payload = _artifact_report_view_payload("capture-only")
+    if mutation == "capability":
+        capabilities = payload["capabilities"]
+        assert isinstance(capabilities, dict)
+        capabilities["slow_motion"] = True
+    else:
+        optional = payload["optional_sections"]
+        assert isinstance(optional, list)
+        optional.append(
+            {
+                "id": "measurements",
+                "label": "Measurements",
+                "available": False,
+                "locked": False,
+                "item_count": 0,
+            }
+        )
     root = _build_bundle(tmp_path, payload=payload)
 
     with pytest.raises(ReportArtifactValidationError):
@@ -1013,7 +1532,7 @@ def test_key_positions_file_requires_unlocked_available_every_swing_section(tmp_
 
 
 def test_locked_unrendered_replay_cannot_be_declared_as_a_file(tmp_path: Path):
-    payload = report_view_payload()
+    payload = _artifact_report_view_payload()
     capabilities = payload["capabilities"]
     assert isinstance(capabilities, dict)
     capabilities["coach_replay"] = False
@@ -1186,6 +1705,39 @@ def test_published_lookup_performs_full_bundle_validation(tmp_path: Path):
 
     with pytest.raises(ReportArtifactValidationError):
         _load_bundle(root)
+
+
+def test_published_load_rejects_bundle_root_replacement_after_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _build_bundle(tmp_path)
+    replacement = tmp_path / "replacement-bundle"
+    shutil.copytree(root, replacement)
+    validated_original = tmp_path / "validated-original"
+    original_validate = report_artifacts_module.validate_staged_bundle
+    swapped = False
+
+    def validate_then_swap(*args: object, **kwargs: object):
+        nonlocal swapped
+        result = original_validate(*args, **kwargs)
+        try:
+            root.replace(validated_original)
+            replacement.replace(root)
+        except PermissionError as exc:
+            raise ReportArtifactValidationError(
+                "the pinned root blocked lexical replacement"
+            ) from exc
+        swapped = True
+        return result
+
+    monkeypatch.setattr(
+        report_artifacts_module, "validate_staged_bundle", validate_then_swap
+    )
+
+    with pytest.raises(ReportArtifactValidationError):
+        _load_bundle(root)
+    if os.name != "nt":
+        assert swapped
 
 
 def test_published_lookup_returns_validated_paths_and_parsed_contracts(tmp_path: Path):

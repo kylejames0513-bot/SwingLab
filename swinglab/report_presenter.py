@@ -34,6 +34,7 @@ from .report_view import (
     Hand,
     JourneyMode,
     MediaEntry,
+    MediaRole,
     MeasurementDetail,
     MeasurementUnit,
     NextMove,
@@ -692,14 +693,59 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
     label = REASON_COPY[reasons[0]].label if limited else "Clear read"
     target = build_refilm_target(source.brief, source.issues, source.strengths, cfg)
     protocol = RefilmProtocol("refilm", ("Use the same club, hand, camera angle, height, framing, and effort.",), target, "Re-film this drill", source.context.club is not None, True, True, True, True, True)
+    media = tuple(
+        entry
+        for entry in source.media
+        if not (source.replay_locked and entry.role is MediaRole.COACH_REPLAY)
+    )
+    phases = build_phase_summaries(source, cfg)
+    practice = _practice(source.primary_drill, source.alternative_drills, cfg)
+    replay_count = sum(entry.role is MediaRole.COACH_REPLAY for entry in media)
+    section_counts = (
+        (OptionalSectionId.EVERY_SWING, "Every swing", len(source.swings), False),
+        (OptionalSectionId.REPLAY, "Coach replay", replay_count, source.replay_locked),
+        (
+            OptionalSectionId.ALTERNATIVE_DRILLS,
+            "Alternative drills",
+            len(practice.alternatives),
+            False,
+        ),
+        (
+            OptionalSectionId.MEASUREMENTS,
+            "Measurements",
+            sum(len(phase.measurements) for phase in phases),
+            False,
+        ),
+        (
+            OptionalSectionId.GEAR,
+            "Gear",
+            1 if gear_shop_url(cfg) else 0,
+            False,
+        ),
+    )
+    optional_sections = tuple(
+        OptionalSection(section_id, section_label, count > 0, locked, count)
+        for section_id, section_label, count, locked in section_counts
+    )
+    optional_by_id = {section.id: section for section in optional_sections}
     return CoachingReportView(
         "report-view-v1", "structured", GUIDED_REPORT_PRESENTATION_VERSION,
         ReportOutcome.COACHING_READY, mode,
         Trust(TrustState.LIMITED if limited else TrustState.CLEAR, label, reasons, REASON_COPY[reasons[0]].explanation if limited else None),
         context,
-        Capabilities(True, source.visual_evidence.state == "rendered", False, False, False, True, bool(source.alternative_drills), False, True),
-        tuple(source.media), (), next_move, source.visual_evidence,
-        build_phase_summaries(source, cfg), _practice(source.primary_drill, source.alternative_drills, cfg), protocol,
+        Capabilities(
+            True,
+            source.visual_evidence.state == "rendered",
+            optional_by_id[OptionalSectionId.EVERY_SWING].available,
+            any(entry.role is MediaRole.SLOW_MOTION for entry in media),
+            bool(replay_count),
+            optional_by_id[OptionalSectionId.MEASUREMENTS].available,
+            optional_by_id[OptionalSectionId.ALTERNATIVE_DRILLS].available,
+            optional_by_id[OptionalSectionId.GEAR].available,
+            True,
+        ),
+        media, optional_sections, next_move, source.visual_evidence,
+        phases, practice, protocol,
     )
 
 
@@ -897,9 +943,22 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
          *source.session_details),
         glossary, limitations, gear, navigation,
     )
+    if capture_only:
+        return ReportDocument(
+            replace(view, optional_sections=()), depth, media_by_key
+        )
+
     section_counts = (
         (OptionalSectionId.EVERY_SWING, "Every swing", len(swings), False),
-        (OptionalSectionId.REPLAY, "Coach replay", sum(item.coach_replay_media_key is not None for item in swings), source.replay_locked and not capture_only),
+        (
+            OptionalSectionId.REPLAY,
+            "Coach replay",
+            sum(
+                entry.role is MediaRole.COACH_REPLAY
+                for entry in media_by_key.values()
+            ),
+            source.replay_locked,
+        ),
         (OptionalSectionId.SECONDARY_FINDINGS, "Secondary findings", len(findings), False),
         (OptionalSectionId.ALTERNATIVE_DRILLS, "Alternative drills", len(view.practice.alternatives) if view.practice else 0, False),
         (OptionalSectionId.MORE_STRENGTHS, "More strengths", len(strengths), False),
@@ -907,8 +966,31 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
         (OptionalSectionId.GLOSSARY, "Glossary", len(glossary), False),
         (OptionalSectionId.GEAR, "Gear", len(gear), False),
     )
-    view = replace(view, optional_sections=tuple(
+    optional_sections = tuple(
         OptionalSection(section_id, label, count > 0, locked, count)
         for section_id, label, count, locked in section_counts
-    ))
+    )
+    optional_by_id = {section.id: section for section in optional_sections}
+    capabilities = replace(
+        view.capabilities,
+        every_swing=optional_by_id[OptionalSectionId.EVERY_SWING].available,
+        slow_motion=any(
+            entry.role is MediaRole.SLOW_MOTION
+            for entry in media_by_key.values()
+        ),
+        coach_replay=any(
+            entry.role is MediaRole.COACH_REPLAY
+            for entry in media_by_key.values()
+        ),
+        measurements=optional_by_id[OptionalSectionId.MEASUREMENTS].available,
+        alternative_drills=optional_by_id[
+            OptionalSectionId.ALTERNATIVE_DRILLS
+        ].available,
+        gear=optional_by_id[OptionalSectionId.GEAR].available,
+    )
+    view = replace(
+        view,
+        capabilities=capabilities,
+        optional_sections=optional_sections,
+    )
     return ReportDocument(view, depth, media_by_key)

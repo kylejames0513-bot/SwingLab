@@ -124,6 +124,13 @@ def test_locked_replay_and_missing_posters_are_explicit_server_owned_states():
     assert detail.locked_replay_explanation
     assert detail.video_poster_media_key is None
     assert detail.print_playback_reference
+    assert document.view.capabilities.coach_replay is False
+    replay_section = next(
+        section for section in document.view.optional_sections if section.id.value == "replay"
+    )
+    assert replay_section.available is False
+    assert replay_section.locked is True
+    assert replay_section.item_count == 0
     for section in document.view.optional_sections:
         assert section.item_count == _depth_count(document, section.id.value)
 
@@ -147,6 +154,43 @@ def test_explicit_media_keys_are_preserved_without_filename_inference():
     assert detail.video_poster_media_key == "poster-one"
     assert detail.slow_motion_media_key == "slow-one"
     assert set(document.media_by_key) == {"poster-one", "slow-one"}
+    assert document.view.capabilities.slow_motion is True
+    every_swing = next(
+        section for section in document.view.optional_sections if section.id.value == "every_swing"
+    )
+    assert document.view.capabilities.every_swing is every_swing.available
+
+
+def test_document_capabilities_follow_final_media_and_available_sections():
+    cfg = branded_cfg()
+    swing = fake_swing(1, 2.0)
+    swing["overlay"] = None
+    swing["strip"] = "media/positions-one.jpg"
+    swing["slowmo"] = "media/slow-one.mp4"
+    swing["replay"] = "media/replay-one.mp4"
+    fixture = report_document_fixture()
+    media = (
+        MediaEntry("focus-1", MediaRole.PRIORITY_EVIDENCE, "image/jpeg", Entitlement.CORE, "media/focus-1.jpg", "a" * 64),
+        MediaEntry("positions-one", MediaRole.KEY_POSITIONS, "image/jpeg", Entitlement.CORE, "media/positions-one.jpg", "b" * 64),
+        MediaEntry("slow-one", MediaRole.SLOW_MOTION, "video/mp4", Entitlement.CORE, "media/slow-one.mp4", "c" * 64),
+        MediaEntry("replay-one", MediaRole.COACH_REPLAY, "video/mp4", Entitlement.PRO, "media/replay-one.mp4", "d" * 64),
+    )
+    source = prepare_report_input(
+        fake_video(), [swing], session_stats([swing["metrics"]]), [], "right", cfg,
+        media=media, visual_evidence=fixture.view.visual_evidence,
+    )
+
+    document = build_report_document(source, cfg)
+
+    sections = {section.id.value: section for section in document.view.optional_sections}
+    assert document.view.capabilities.every_swing is True
+    assert document.view.capabilities.slow_motion is True
+    assert document.view.capabilities.coach_replay is True
+    assert sections["every_swing"].available is True
+    assert sections["every_swing"].item_count == 1
+    assert sections["replay"].available is True
+    assert sections["replay"].locked is False
+    assert sections["replay"].item_count == 1
 
 
 def test_capture_only_document_exposes_only_explicit_safe_playback_media():
@@ -179,6 +223,10 @@ def test_capture_only_document_exposes_only_explicit_safe_playback_media():
     assert document.depth.glossary == ()
     assert document.depth.limitations == ()
     assert document.depth.gear == ()
+    assert document.view.optional_sections == ()
+    assert document.view.capabilities.every_swing is False
+    assert document.view.capabilities.slow_motion is False
+    assert document.view.capabilities.coach_replay is False
 
 
 @pytest.mark.parametrize("relative_path", [

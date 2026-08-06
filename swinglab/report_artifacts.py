@@ -10,7 +10,6 @@ import re
 import stat
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from html.parser import HTMLParser
 from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO, Iterator, Literal, cast
 
@@ -49,6 +48,7 @@ _HASH_CHUNK_BYTES = 1024 * 1024
 _REPORT_FILENAME = "report.html"
 _METRICS_FILENAME = "metrics.json"
 _REPORT_HTML_FORMAT = "caddie-brief-v1"
+_REPORT_HEADER_BYTES = 8192
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _WINDOWS_RESERVED_SEGMENTS = {
     "CON",
@@ -430,33 +430,38 @@ class _PinnedBundleRoot:
     def __init__(self, root: Path):
         self.path = root
         self._root_handle: int | None = None
+        self._root_identity: tuple[int, int] | None = None
 
     def __enter__(self) -> _PinnedBundleRoot:
         try:
             if os.name == "nt":
                 handle = _win_open(self.path, directory=True)
+                self._root_handle = handle
                 info = _win_info(handle)
                 if info.dwFileAttributes & _WIN_ATTR_REPARSE_POINT:
-                    _win_close(handle)
                     _err("report bundle root cannot be a reparse point")
                 if not info.dwFileAttributes & _WIN_ATTR_DIRECTORY:
-                    _win_close(handle)
                     _err("report bundle root must be a directory")
                 final = _win_final_path(handle)
                 if os.path.normcase(str(final)) != os.path.normcase(str(self.path)):
-                    _win_close(handle)
                     _err("report bundle root handle resolved to an unexpected path")
-                self._root_handle = handle
+                self._root_identity = (
+                    int(info.dwVolumeSerialNumber),
+                    (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow),
+                )
             else:
                 flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
                 handle = os.open(self.path, flags)
-                if not stat.S_ISDIR(os.fstat(handle).st_mode):
-                    os.close(handle)
-                    _err("report bundle root must be a directory")
                 self._root_handle = handle
+                root_info = os.fstat(handle)
+                if not stat.S_ISDIR(root_info.st_mode):
+                    _err("report bundle root must be a directory")
+                self._root_identity = (int(root_info.st_dev), int(root_info.st_ino))
         except ReportArtifactValidationError:
+            self.__exit__(None, None, None)
             raise
         except OSError as exc:
+            self.__exit__(None, None, None)
             raise ReportArtifactValidationError("report bundle root cannot be pinned") from exc
         return self
 
@@ -468,6 +473,55 @@ class _PinnedBundleRoot:
         else:
             os.close(self._root_handle)
         self._root_handle = None
+        self._root_identity = None
+
+    def verify_lexical_identity(self) -> None:
+        """Confirm the pinned directory still owns its lexical bundle path."""
+        if self._root_handle is None or self._root_identity is None:
+            _err("report bundle root is not pinned")
+        if os.name == "nt":
+            lexical_handle: int | None = None
+            try:
+                lexical_handle = _win_open(self.path, directory=True)
+                info = _win_info(lexical_handle)
+                if (
+                    info.dwFileAttributes & _WIN_ATTR_REPARSE_POINT
+                    or not info.dwFileAttributes & _WIN_ATTR_DIRECTORY
+                ):
+                    _err("published report bundle path changed type")
+                identity = (
+                    int(info.dwVolumeSerialNumber),
+                    (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow),
+                )
+                final = _win_final_path(lexical_handle)
+                if (
+                    identity != self._root_identity
+                    or os.path.normcase(str(final))
+                    != os.path.normcase(str(self.path))
+                ):
+                    _err("published report bundle lexical identity changed")
+            except ReportArtifactValidationError:
+                raise
+            except OSError as exc:
+                raise ReportArtifactValidationError(
+                    "published report bundle lexical identity cannot be verified"
+                ) from exc
+            finally:
+                if lexical_handle is not None:
+                    _win_close(lexical_handle)
+            return
+        try:
+            info = os.stat(self.path, follow_symlinks=False)
+        except OSError as exc:
+            raise ReportArtifactValidationError(
+                "published report bundle lexical identity cannot be verified"
+            ) from exc
+        if (
+            not stat.S_ISDIR(info.st_mode)
+            or _entry_is_reparse(info)
+            or (int(info.st_dev), int(info.st_ino)) != self._root_identity
+        ):
+            _err("published report bundle lexical identity changed")
 
     @contextmanager
     def _open_directory(self, relative: PurePosixPath | None) -> Iterator[tuple[int, Path]]:
@@ -483,24 +537,21 @@ class _PinnedBundleRoot:
                 current_path = current_path / part
                 if os.name == "nt":
                     child = _win_open(current_path, directory=True)
+                    handles.append(child)
                     info = _win_info(child)
                     if info.dwFileAttributes & _WIN_ATTR_REPARSE_POINT:
-                        _win_close(child)
                         _err("report bundle directory cannot be a reparse point")
                     if not info.dwFileAttributes & _WIN_ATTR_DIRECTORY:
-                        _win_close(child)
                         _err("report bundle path expected a directory")
                     final = _win_final_path(child)
                     if not _path_is_under(final, self.path):
-                        _win_close(child)
                         _err("report bundle directory handle escaped its root")
                 else:
                     flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
                     child = os.open(part, flags, dir_fd=current_handle)
+                    handles.append(child)
                     if not stat.S_ISDIR(os.fstat(child).st_mode):
-                        os.close(child)
                         _err("report bundle path expected a directory")
-                handles.append(child)
                 current_handle = child
             yield current_handle, current_path
         except ReportArtifactValidationError:
@@ -1029,8 +1080,10 @@ def _parse_report_view(raw: bytes) -> ReportViewV1:
     payload = _decode_json(raw, label="report view")
     try:
         view = report_view_from_dict(payload)
-    except UnsupportedReportViewVersion:
-        raise
+    except UnsupportedReportViewVersion as exc:
+        raise ReportArtifactValidationError(
+            "unsupported report view version"
+        ) from exc
     except ReportViewValidationError as exc:
         raise ReportArtifactValidationError("report view failed schema validation") from exc
     try:
@@ -1047,54 +1100,30 @@ def _load_view_from_validated_file(path: Path) -> ReportViewV1:
     return _parse_report_view(raw)
 
 
-class _ReportMarkerParser(HTMLParser):
-    def __init__(self) -> None:
-        super().__init__(convert_charrefs=True)
-        self.values: dict[str, list[str | None]] = {
-            "caddieinsight-report-format": [],
-            "caddieinsight-report-presentation": [],
-            "caddieinsight-report-outcome": [],
-        }
-
-    def handle_starttag(
-        self, tag: str, attrs: list[tuple[str, str | None]]
-    ) -> None:
-        if tag.casefold() != "meta":
-            return
-        names = [value for key, value in attrs if key.casefold() == "name"]
-        contents = [value for key, value in attrs if key.casefold() == "content"]
-        for name in names:
-            normalized_name = name.casefold() if isinstance(name, str) else None
-            if normalized_name in self.values:
-                self.values[cast(str, normalized_name)].append(
-                    contents[0] if len(contents) == 1 else None
-                )
-
-
 def _validate_report_html(
     raw: bytes, *, presentation_version: str, outcome: ReportOutcome
 ) -> None:
     try:
-        text = raw.decode("utf-8")
+        raw.decode("utf-8")
     except UnicodeDecodeError as exc:
         raise ReportArtifactValidationError("report HTML must be UTF-8") from exc
-    parser = _ReportMarkerParser()
-    try:
-        parser.feed(text)
-        parser.close()
-    except Exception as exc:
-        raise ReportArtifactValidationError("report HTML cannot be parsed") from exc
     expected = {
         "caddieinsight-report-format": _REPORT_HTML_FORMAT,
         "caddieinsight-report-presentation": presentation_version,
         "caddieinsight-report-outcome": outcome.value,
     }
+    header = raw[:_REPORT_HEADER_BYTES]
+    folded = raw.lower()
     for name, expected_value in expected.items():
-        if parser.values[name] != [expected_value]:
-            _err(f"report HTML {name} marker is missing, duplicated, or inconsistent")
+        name_bytes = name.encode("ascii")
+        marker = f'name="{name}" content="{expected_value}"'.encode("ascii")
+        if folded.count(name_bytes) != 1 or header.count(marker) != 1:
+            _err(
+                f"report HTML {name} marker is late, noncanonical, duplicated, or inconsistent"
+            )
 
 
-def _validate_metrics(raw: bytes, *, deliverable_paths: set[str]) -> None:
+def _validate_metrics(raw: bytes, *, view: ReportViewV1) -> None:
     payload = _expect_object(_decode_json(raw, label="metrics"), label="metrics")
     required = {
         "generator",
@@ -1159,6 +1188,16 @@ def _validate_metrics(raw: bytes, *, deliverable_paths: set[str]) -> None:
     if not isinstance(payload["disclaimer"], str):
         _err("metrics disclaimer must be a string")
 
+    expected_roles = (
+        {
+            "strip": MediaRole.KEY_POSITIONS,
+            "slowmo": MediaRole.SLOW_MOTION,
+            "replay": MediaRole.COACH_REPLAY,
+        }
+        if isinstance(view, CoachingReportView)
+        else {"slowmo": MediaRole.CAPTURE_PLAYBACK}
+    )
+    media_by_path = {entry.relative_path: entry for entry in view.media}
     for raw_swing in swings:
         swing = _expect_object(raw_swing, label="metrics swing")
         _expect_keys(swing, {"metrics", "notes", "deliverables"}, label="metrics swing")
@@ -1170,16 +1209,17 @@ def _validate_metrics(raw: bytes, *, deliverable_paths: set[str]) -> None:
         deliverables = _expect_object(
             swing["deliverables"], label="metrics swing deliverables"
         )
-        if not {"strip", "slowmo"}.issubset(deliverables):
-            _err("metrics swing must declare strip and slowmo deliverables")
-        if not set(deliverables).issubset({"strip", "overlay", "slowmo", "replay"}):
+        if "overlay" in deliverables:
+            _err("guided metrics cannot declare overlay deliverables")
+        if not set(deliverables).issubset(expected_roles):
             _err("metrics swing deliverable fields are invalid")
-        for value in deliverables.values():
+        for key, value in deliverables.items():
             relative = _safe_relative_path(
                 _expect_nonempty_string(value, label="metrics deliverable path")
             ).as_posix()
-            if relative not in deliverable_paths:
-                _err("metrics deliverable does not reference a declared artifact")
+            media = media_by_path.get(relative)
+            if media is None or media.role != expected_roles[key]:
+                _err("metrics deliverable does not match its report media role")
 
 
 def _single_kind(manifest: ReportBundleManifest, kind: str) -> ManifestArtifact:
@@ -1210,17 +1250,6 @@ def _validate_manifest_relationships(manifest: ReportBundleManifest) -> None:
     ]
     if len(media_keys) != len(set(media_keys)):
         _err("duplicate manifest media key")
-
-
-def _optional_replay_locked(view: ReportViewV1) -> bool:
-    replay = tuple(
-        section
-        for section in view.optional_sections
-        if section.id == OptionalSectionId.REPLAY
-    )
-    if len(replay) > 1:
-        _err("duplicate replay optional section")
-    return bool(replay and (replay[0].locked or not replay[0].available))
 
 
 _ROLE_ENTITLEMENTS = {
@@ -1286,21 +1315,18 @@ def _validate_media_relationships(
         if media.role in _VIDEO_ROLES and not media.mime_type.startswith("video/"):
             _err("report view video role has a non-video MIME type")
 
-    optional_by_id: dict[OptionalSectionId, object] = {}
+    optional_by_id: dict[OptionalSectionId, Any] = {}
     for section in view.optional_sections:
         if section.id in optional_by_id:
             _err("duplicate optional report section")
         optional_by_id[section.id] = section
-
-    def require_available_section(section_id: OptionalSectionId, *, role: str) -> None:
-        section = optional_by_id.get(section_id)
-        if (
-            section is None
-            or not getattr(section, "available")
-            or getattr(section, "locked")
-            or getattr(section, "item_count") <= 0
-        ):
-            _err(f"{role} media requires an unlocked available optional section")
+        if section.id == OptionalSectionId.REPLAY and section.locked:
+            if section.available or section.item_count != 0:
+                _err("locked replay section cannot claim rendered items")
+        elif section.locked:
+            _err("only the replay section can be locked")
+        elif section.available != (section.item_count > 0):
+            _err("optional section availability must match its item count")
 
     focused = tuple(entry for entry in view.media if entry.role == MediaRole.PRIORITY_EVIDENCE)
     if isinstance(view, CoachingReportView) and isinstance(view.visual_evidence, RenderedEvidence):
@@ -1318,24 +1344,43 @@ def _validate_media_relationships(
         _err("unrendered report cannot declare focused evidence media")
 
     replay_media = tuple(entry for entry in view.media if entry.role == MediaRole.COACH_REPLAY)
+    replay_section = optional_by_id.get(OptionalSectionId.REPLAY)
+    if view.capabilities.coach_replay != bool(replay_media):
+        _err("coach-replay capability and rendered media must agree")
     if replay_media:
-        if not view.capabilities.coach_replay or _optional_replay_locked(view):
-            _err("locked or unavailable coach replay cannot be declared as a file")
-        require_available_section(OptionalSectionId.REPLAY, role="coach replay")
+        if (
+            replay_section is None
+            or not replay_section.available
+            or replay_section.locked
+            or replay_section.item_count != len(replay_media)
+        ):
+            _err("coach-replay section must match rendered replay media")
+    elif replay_section is not None and (
+        replay_section.available or replay_section.item_count != 0
+    ):
+        _err("coach-replay section cannot claim absent media")
 
     key_positions = tuple(
         entry for entry in view.media if entry.role == MediaRole.KEY_POSITIONS
     )
-    if key_positions:
-        if not view.capabilities.every_swing:
-            _err("key-position media requires the every-swing capability")
-        require_available_section(OptionalSectionId.EVERY_SWING, role="key-position")
+    every_swing_section = optional_by_id.get(OptionalSectionId.EVERY_SWING)
+    every_swing_available = bool(
+        every_swing_section is not None and every_swing_section.available
+    )
+    if view.capabilities.every_swing != every_swing_available:
+        _err("every-swing capability must match its available section")
+    if key_positions and (
+        not every_swing_available
+        or every_swing_section.locked
+        or every_swing_section.item_count < len(key_positions)
+    ):
+        _err("key-position media exceeds the available every-swing section")
 
     slow_motion = tuple(
         entry for entry in view.media if entry.role == MediaRole.SLOW_MOTION
     )
-    if slow_motion and not view.capabilities.slow_motion:
-        _err("slow-motion media requires the slow-motion capability")
+    if view.capabilities.slow_motion != bool(slow_motion):
+        _err("slow-motion capability and rendered media must agree")
 
     drill_keys = {
         entry.key for entry in view.media if entry.role == MediaRole.DRILL_ILLUSTRATION
@@ -1350,6 +1395,25 @@ def _validate_media_relationships(
             _err("practice illustration references must use drill-illustration media")
         if any(entry.role == MediaRole.CAPTURE_PLAYBACK for entry in view.media):
             _err("coaching reports cannot contain capture-playback media")
+        capability_sections = {
+            "measurements": OptionalSectionId.MEASUREMENTS,
+            "alternative_drills": OptionalSectionId.ALTERNATIVE_DRILLS,
+            "gear": OptionalSectionId.GEAR,
+        }
+        for capability_name, section_id in capability_sections.items():
+            section = optional_by_id.get(section_id)
+            available = bool(section is not None and section.available)
+            if getattr(view.capabilities, capability_name) != available:
+                _err(f"{capability_name} capability must match its optional section")
+        alternatives = optional_by_id.get(OptionalSectionId.ALTERNATIVE_DRILLS)
+        if alternatives is not None and alternatives.item_count != len(
+            view.practice.alternatives
+        ):
+            _err("alternative-drill count does not match the practice contract")
+        measurements = optional_by_id.get(OptionalSectionId.MEASUREMENTS)
+        measurement_count = sum(len(phase.measurements) for phase in view.phases)
+        if measurements is not None and measurements.item_count != measurement_count:
+            _err("measurement count does not match the report phases")
     elif drill_keys:
         _err("capture-only reports cannot contain drill illustrations")
 
@@ -1357,6 +1421,20 @@ def _validate_media_relationships(
         entry.key for entry in view.media if entry.role == MediaRole.CAPTURE_PLAYBACK
     }
     if isinstance(view, CaptureOnlyReportView):
+        if view.optional_sections:
+            _err("capture-only reports cannot expose coaching optional sections")
+        if any(
+            (
+                view.capabilities.focused_evidence,
+                view.capabilities.every_swing,
+                view.capabilities.slow_motion,
+                view.capabilities.coach_replay,
+                view.capabilities.measurements,
+                view.capabilities.alternative_drills,
+                view.capabilities.gear,
+            )
+        ):
+            _err("capture-only reports cannot expose coaching capabilities")
         if capture_keys != set(view.capture_guidance.safe_media_keys):
             _err("capture guidance keys must identify capture-playback media")
         forbidden = {
@@ -1374,6 +1452,7 @@ def validate_staged_bundle(
     *,
     manifest_rel: str,
     checksums_rel: str,
+    _pinned_root: _PinnedBundleRoot | None = None,
 ) -> tuple[ReportBundleManifest, ReportBundleChecksums, ReportViewV1]:
     root = _resolved_directory(staging_dir, label="report bundle root")
     manifest_relative = _safe_relative_path(manifest_rel)
@@ -1383,7 +1462,9 @@ def validate_staged_bundle(
     if checksums_relative.as_posix() != REPORT_CHECKSUMS_FILENAME:
         _err("report checksums must use their canonical bundle path")
 
-    with _PinnedBundleRoot(root) as pinned:
+    def validate_with_pinned(
+        pinned: _PinnedBundleRoot,
+    ) -> tuple[ReportBundleManifest, ReportBundleChecksums, ReportViewV1]:
         manifest_read = _read_and_hash_pinned(
             pinned,
             manifest_relative,
@@ -1450,24 +1531,29 @@ def validate_staged_bundle(
             if result.raw is not None:
                 raw_by_path[relative_path] = result.raw
 
-    view = _parse_report_view(raw_by_path[REPORT_VIEW_FILENAME])
-    if view.presentation_version != manifest.presentation_version:
-        _err("manifest and report view presentation versions differ")
-    if view.outcome != manifest.outcome:
-        _err("manifest and report view outcomes differ")
-    _validate_report_html(
-        raw_by_path[_REPORT_FILENAME],
-        presentation_version=view.presentation_version,
-        outcome=view.outcome,
-    )
-    _validate_metrics(
-        raw_by_path[_METRICS_FILENAME],
-        deliverable_paths={
-            row.relative_path for row in manifest.artifacts if row.kind == "media"
-        },
-    )
-    _validate_media_relationships(view, manifest, checksum_by_path)
-    return manifest, checksums, view
+        view = _parse_report_view(raw_by_path[REPORT_VIEW_FILENAME])
+        if view.presentation_version != manifest.presentation_version:
+            _err("manifest and report view presentation versions differ")
+        if view.outcome != manifest.outcome:
+            _err("manifest and report view outcomes differ")
+        _validate_report_html(
+            raw_by_path[_REPORT_FILENAME],
+            presentation_version=manifest.presentation_version,
+            outcome=manifest.outcome,
+        )
+        _validate_metrics(
+            raw_by_path[_METRICS_FILENAME],
+            view=view,
+        )
+        _validate_media_relationships(view, manifest, checksum_by_path)
+        return manifest, checksums, view
+
+    if _pinned_root is not None:
+        if _pinned_root.path != root or _pinned_root._root_handle is None:
+            _err("provided pinned report root does not match the staging directory")
+        return validate_with_pinned(_pinned_root)
+    with _PinnedBundleRoot(root) as pinned:
+        return validate_with_pinned(pinned)
 
 
 def load_published_bundle(
@@ -1502,46 +1588,56 @@ def load_published_bundle(
     if paths["checksums"].name != REPORT_CHECKSUMS_FILENAME:
         _err("published checksums path is not canonical")
 
-    manifest, checksums, view = validate_staged_bundle(
-        root,
-        manifest_rel=REPORT_MANIFEST_FILENAME,
-        checksums_rel=REPORT_CHECKSUMS_FILENAME,
-    )
-    report_artifact = _single_kind(manifest, "report")
-    view_artifact = _single_kind(manifest, "report_view")
-    canonical_report = _join_under(root, _safe_relative_path(report_artifact.relative_path))
-    canonical_view = _join_under(root, _safe_relative_path(view_artifact.relative_path))
-    if paths["report"] != canonical_report or paths["report_view"] != canonical_view:
-        _err("published paths do not match their manifest-declared identities")
-    if paths["manifest"] != root / REPORT_MANIFEST_FILENAME:
-        _err("published manifest path does not match its canonical identity")
-    if paths["checksums"] != root / REPORT_CHECKSUMS_FILENAME:
-        _err("published checksums path does not match its canonical identity")
-
-    checksums_by_path = {entry.relative_path: entry for entry in checksums.files}
-    media_identities: list[tuple[str, _FileIdentity]] = []
-    for media in view.media:
-        checksum = checksums_by_path[media.relative_path]
-        _, _, digest, identity = _hash_declared_file(
+    with _PinnedBundleRoot(root) as pinned:
+        manifest, checksums, view = validate_staged_bundle(
             root,
-            _safe_relative_path(media.relative_path),
-            expected_size=checksum.size_bytes,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+            _pinned_root=pinned,
         )
-        if digest != checksum.sha256 or digest != media.checksum_sha256:
-            _err("published media changed during bundle loading")
-        media_identities.append((media.key, identity))
+        report_artifact = _single_kind(manifest, "report")
+        view_artifact = _single_kind(manifest, "report_view")
+        canonical_report = _join_under(
+            root, _safe_relative_path(report_artifact.relative_path)
+        )
+        canonical_view = _join_under(
+            root, _safe_relative_path(view_artifact.relative_path)
+        )
+        if paths["report"] != canonical_report or paths["report_view"] != canonical_view:
+            _err("published paths do not match their manifest-declared identities")
+        if paths["manifest"] != root / REPORT_MANIFEST_FILENAME:
+            _err("published manifest path does not match its canonical identity")
+        if paths["checksums"] != root / REPORT_CHECKSUMS_FILENAME:
+            _err("published checksums path does not match its canonical identity")
 
-    return PublishedReportBundle(
-        root,
-        paths["report"],
-        paths["report_view"],
-        paths["manifest"],
-        paths["checksums"],
-        view,
-        manifest,
-        checksums,
-        tuple(media_identities),
-    )
+        checksums_by_path = {entry.relative_path: entry for entry in checksums.files}
+        media_identities: list[tuple[str, _FileIdentity]] = []
+        for media in view.media:
+            checksum = checksums_by_path[media.relative_path]
+            result = _read_and_hash_pinned(
+                pinned,
+                _safe_relative_path(media.relative_path),
+                expected_size=checksum.size_bytes,
+            )
+            if (
+                result.digest != checksum.sha256
+                or result.digest != media.checksum_sha256
+            ):
+                _err("published media changed during bundle loading")
+            media_identities.append((media.key, result.identity))
+
+        pinned.verify_lexical_identity()
+        return PublishedReportBundle(
+            root,
+            paths["report"],
+            paths["report_view"],
+            paths["manifest"],
+            paths["checksums"],
+            view,
+            manifest,
+            checksums,
+            tuple(media_identities),
+        )
 
 
 def resolve_media_path(bundle: PublishedReportBundle, media_key: str) -> Path:
