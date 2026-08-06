@@ -3,11 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from swinglab import report_artifacts as report_artifacts_module
 from swinglab.report_artifacts import (
     MAX_REPORT_CHECKSUMS_BYTES,
     MAX_REPORT_MANIFEST_BYTES,
@@ -44,6 +47,9 @@ from swinglab.report_view import (
 from tests.report_view_fixtures import report_view_payload
 
 
+_REPORT_HTML_LIMIT = 8 * 1024 * 1024
+
+
 def _sha(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -73,6 +79,46 @@ def _artifact_bytes(root: Path, relative_path: str) -> bytes:
     return (root / Path(*relative_path.split("/"))).read_bytes()
 
 
+def _valid_report_html(*, presentation: str, outcome: str) -> str:
+    return (
+        "<html><head>"
+        '<meta name="caddieinsight-report-format" content="caddie-brief-v1">'
+        f'<meta name="caddieinsight-report-presentation" content="{presentation}">'
+        f'<meta name="caddieinsight-report-outcome" content="{outcome}">'
+        "</head><body>guided report</body></html>\n"
+    )
+
+
+def _valid_metrics_payload(
+    *, deliverables: dict[str, object] | None = None
+) -> dict[str, object]:
+    swings: list[dict[str, object]] = []
+    if deliverables is not None:
+        swings.append(
+            {
+                "metrics": {"swing": 1, "tempo_ratio": 3.0},
+                "notes": [],
+                "deliverables": deliverables,
+            }
+        )
+    return {
+        "generator": {"name": "CaddieInsight", "swinglab_version": "test"},
+        "video": {
+            "path": "synthetic.mov",
+            "duration_s": 1.0,
+            "width": 1920,
+            "height": 1080,
+            "fps": 30.0,
+            "rotation": 0,
+            "creation_time": None,
+        },
+        "swings": swings,
+        "session_stats": {},
+        "session_notes": [],
+        "disclaimer": "Single-camera estimates.",
+    }
+
+
 def _refresh_checksums(root: Path) -> None:
     checksums_path = root / REPORT_CHECKSUMS_FILENAME
     payload = _load_json(checksums_path)
@@ -93,15 +139,25 @@ def _build_bundle(
     tmp_path: Path,
     *,
     payload: dict[str, object] | None = None,
+    metrics_payload: dict[str, object] | None = None,
     root_name: str = "report-bundle-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 ) -> Path:
     root = tmp_path / root_name
     root.mkdir()
     (root / "media").mkdir()
-    (root / "report.html").write_text("<html>guided report</html>\n", encoding="utf-8")
-    (root / "metrics.json").write_text('{"swings":[]}\n', encoding="utf-8")
 
     view_payload = payload if payload is not None else report_view_payload()
+    (root / "report.html").write_text(
+        _valid_report_html(
+            presentation=str(view_payload["presentation_version"]),
+            outcome=str(view_payload["outcome"]),
+        ),
+        encoding="utf-8",
+    )
+    _write_json(
+        root / "metrics.json",
+        metrics_payload if metrics_payload is not None else _valid_metrics_payload(),
+    )
     media = view_payload["media"]
     assert isinstance(media, list)
     media_bytes: dict[str, bytes] = {}
@@ -190,6 +246,77 @@ def _symlink_or_skip(link: Path, target: Path, *, directory: bool = False) -> No
         link.symlink_to(target, target_is_directory=directory)
     except (OSError, NotImplementedError) as exc:
         pytest.skip(f"symlinks are unavailable: {exc}")
+
+
+def _junction_or_skip(link: Path, target: Path) -> None:
+    if os.name != "nt":
+        pytest.skip("Windows junctions are only available on Windows")
+    result = subprocess.run(
+        ["cmd", "/c", "mklink", "/J", str(link), str(target)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode:
+        pytest.skip(f"junctions are unavailable: {result.stderr or result.stdout}")
+
+
+def _payload_with_media_role(role: str) -> tuple[dict[str, object], str]:
+    if role == "capture_playback":
+        payload = report_view_payload("capture-only")
+        return payload, "playback-1"
+
+    payload = report_view_payload()
+    if role == "priority_evidence":
+        return payload, "focus-1"
+    if role == "drill_illustration":
+        return payload, "drill-1"
+
+    capabilities = payload["capabilities"]
+    optional_sections = payload["optional_sections"]
+    media = payload["media"]
+    assert isinstance(capabilities, dict)
+    assert isinstance(optional_sections, list)
+    assert isinstance(media, list)
+    key = f"{role}-1"
+    entitlement = "pro" if role == "coach_replay" else "core"
+    mime_type = "image/jpeg" if role in {"key_positions", "video_poster"} else "video/mp4"
+    suffix = ".jpg" if mime_type == "image/jpeg" else ".mp4"
+    media.append(
+        {
+            "key": key,
+            "role": role,
+            "mime_type": mime_type,
+            "entitlement": entitlement,
+            "relative_path": f"media/{key}{suffix}",
+            "checksum_sha256": "0" * 64,
+        }
+    )
+    if role == "key_positions":
+        capabilities["every_swing"] = True
+        optional_sections.append(
+            {
+                "id": "every_swing",
+                "label": "Every swing",
+                "available": True,
+                "locked": False,
+                "item_count": 1,
+            }
+        )
+    elif role == "slow_motion":
+        capabilities["slow_motion"] = True
+    elif role == "coach_replay":
+        capabilities["coach_replay"] = True
+        optional_sections.append(
+            {
+                "id": "replay",
+                "label": "Coach replay",
+                "available": True,
+                "locked": False,
+                "item_count": 1,
+            }
+        )
+    return payload, key
 
 
 def test_entitlement_snapshot_has_canonical_json_round_trip_and_strict_enum():
@@ -287,6 +414,156 @@ def test_validation_round_trip_covers_manifest_and_every_artifact_but_not_checks
 
 
 @pytest.mark.parametrize(
+    "html",
+    [
+        (
+            "<html><head>"
+            '<meta name="caddieinsight-report-presentation" content="guided-report-v1">'
+            '<meta name="caddieinsight-report-outcome" content="coaching_ready">'
+            "</head></html>\n"
+        ),
+        (
+            '<meta name="caddieinsight-report-format" content="caddie-brief-v1">'
+            '<meta name="caddieinsight-report-format" content="caddie-brief-v1">'
+            '<meta name="caddieinsight-report-presentation" content="guided-report-v1">'
+            '<meta name="caddieinsight-report-outcome" content="coaching_ready">\n'
+        ),
+        (
+            '<meta name="caddieinsight-report-format" content="caddie-brief-v1">'
+            '<meta name="caddieinsight-report-format" content="caddie-brief-v2">'
+            '<meta name="caddieinsight-report-presentation" content="guided-report-v1">'
+            '<meta name="caddieinsight-report-outcome" content="coaching_ready">\n'
+        ),
+        _valid_report_html(
+            presentation=GUIDED_REPORT_PRESENTATION_VERSION,
+            outcome=ReportOutcome.CAPTURE_ONLY.value,
+        ),
+    ],
+)
+def test_report_html_requires_one_exact_marker_matching_the_bundle(
+    tmp_path: Path, html: str
+):
+    root = _build_bundle(tmp_path)
+    (root / "report.html").write_text(html, encoding="utf-8")
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_report_html_read_is_bounded(tmp_path: Path):
+    root = _build_bundle(tmp_path)
+    (root / "report.html").write_bytes(b"<html>" + b" " * _REPORT_HTML_LIMIT + b"</html>")
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_metrics_must_be_json_without_duplicate_keys(tmp_path: Path):
+    root = _build_bundle(tmp_path)
+    (root / "metrics.json").write_text(
+        '{"generator":{},"generator":{},"video":{},"swings":[],'
+        '"session_stats":{},"session_notes":[],"disclaimer":"test"}\n',
+        encoding="utf-8",
+    )
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_metrics_json_read_is_bounded(tmp_path: Path):
+    root = _build_bundle(tmp_path)
+    (root / "metrics.json").write_bytes(b"{" + b" " * _REPORT_HTML_LIMIT + b"}")
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+@pytest.mark.parametrize("raw", [b"not json\n", _canonical({"swings": []})])
+def test_metrics_requires_json_and_the_core_schema(tmp_path: Path, raw: bytes):
+    root = _build_bundle(tmp_path)
+    (root / "metrics.json").write_bytes(raw)
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_metrics_deliverable_must_reference_a_declared_artifact(tmp_path: Path):
+    root = _build_bundle(
+        tmp_path,
+        metrics_payload=_valid_metrics_payload(
+            deliverables={"strip": "media/not-declared.png", "slowmo": "media/not-declared.mp4"}
+        ),
+    )
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_metrics_overlay_is_optional_when_other_deliverables_are_declared(tmp_path: Path):
+    root = _build_bundle(
+        tmp_path,
+        metrics_payload=_valid_metrics_payload(
+            deliverables={
+                "strip": "media/focus-1.jpg",
+                "slowmo": "media/drill-1.jpg",
+            }
+        ),
+    )
+
+    validate_staged_bundle(
+        root,
+        manifest_rel=REPORT_MANIFEST_FILENAME,
+        checksums_rel=REPORT_CHECKSUMS_FILENAME,
+    )
+
+
+def test_report_view_bytes_must_equal_the_canonical_codec_encoding(tmp_path: Path):
+    root = _build_bundle(tmp_path)
+    payload = _view_payload(root)
+    (root / REPORT_VIEW_FILENAME).write_text(
+        json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    _refresh_checksums(root)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+@pytest.mark.parametrize(
     "unsafe",
     [
         "/absolute.json",
@@ -317,6 +594,37 @@ def test_manifest_rejects_every_noncanonical_or_escaping_path(tmp_path: Path, un
             manifest_rel=REPORT_MANIFEST_FILENAME,
             checksums_rel=REPORT_CHECKSUMS_FILENAME,
         )
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    [
+        "CON/file.json",
+        "aux.txt",
+        "media./file.json",
+        "media /file.json",
+        "media/file.json.",
+        "media/file.json ",
+    ],
+)
+def test_windows_ambiguous_relative_path_segments_are_rejected_on_every_platform(
+    tmp_path: Path, unsafe: str
+):
+    manifest = ReportBundleManifest(
+        REPORT_MANIFEST_FORMAT,
+        "attempt-1",
+        GUIDED_REPORT_PRESENTATION_VERSION,
+        ReportOutcome.COACHING_READY,
+        (
+            ManifestArtifact(unsafe, "media", "unsafe", Entitlement.CORE, True),
+            ManifestArtifact("metrics.json", "metrics", None, None, True),
+            ManifestArtifact(REPORT_VIEW_FILENAME, "report_view", None, None, True),
+            ManifestArtifact("report.html", "report", None, None, True),
+        ),
+    )
+
+    with pytest.raises(ReportArtifactValidationError):
+        write_report_manifest(tmp_path / REPORT_MANIFEST_FILENAME, manifest)
 
 
 @pytest.mark.parametrize("collision", ["report.html", "REPORT.HTML"])
@@ -373,12 +681,66 @@ def test_symlinked_declared_parent_is_rejected_before_hashing(tmp_path: Path):
         validate_staged_bundle(root, manifest_rel=REPORT_MANIFEST_FILENAME, checksums_rel=REPORT_CHECKSUMS_FILENAME)
 
 
+def test_parent_replacement_between_validation_and_open_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _build_bundle(tmp_path)
+    outside = tmp_path / "outside-media"
+    shutil.copytree(root / "media", outside)
+    original_media = tmp_path / "original-media"
+    original_join = report_artifacts_module._join_under
+    swapped = False
+
+    def swap_after_join(bundle_root: Path, relative: object) -> Path:
+        nonlocal swapped
+        result = original_join(bundle_root, relative)
+        if not swapped and str(relative) == "media/focus-1.jpg":
+            (root / "media").replace(original_media)
+            _symlink_or_skip(root / "media", outside, directory=True)
+            swapped = True
+        return result
+
+    monkeypatch.setattr(report_artifacts_module, "_join_under", swap_after_join)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_windows_junction_detection_does_not_depend_on_path_is_junction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    target = tmp_path / "junction-target"
+    target.mkdir()
+    link = tmp_path / "junction-link"
+    _junction_or_skip(link, target)
+    monkeypatch.setattr(Path, "is_junction", lambda self: False, raising=False)
+
+    assert report_artifacts_module._is_link(link)
+
+
 def test_undeclared_regular_file_is_rejected(tmp_path: Path):
     root = _build_bundle(tmp_path)
     (root / "private-debug.json").write_text("{}\n", encoding="utf-8")
 
     with pytest.raises(ReportArtifactValidationError):
         validate_staged_bundle(root, manifest_rel=REPORT_MANIFEST_FILENAME, checksums_rel=REPORT_CHECKSUMS_FILENAME)
+
+
+@pytest.mark.parametrize("relative", ["work", "unexpected/one/two"])
+def test_undeclared_empty_directory_tree_is_rejected(tmp_path: Path, relative: str):
+    root = _build_bundle(tmp_path)
+    (root / Path(*relative.split("/"))).mkdir(parents=True)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
 
 
 def test_missing_declared_file_is_rejected(tmp_path: Path):
@@ -545,6 +907,111 @@ def test_rendered_coaching_rejects_noncore_or_wrong_role_focused_media(tmp_path:
         validate_staged_bundle(root, manifest_rel=REPORT_MANIFEST_FILENAME, checksums_rel=REPORT_CHECKSUMS_FILENAME)
 
 
+@pytest.mark.parametrize("role", [role.value for role in MediaRole])
+def test_each_media_role_accepts_its_coherent_relationships(tmp_path: Path, role: str):
+    payload, _ = _payload_with_media_role(role)
+    root = _build_bundle(tmp_path, payload=payload)
+
+    validate_staged_bundle(
+        root,
+        manifest_rel=REPORT_MANIFEST_FILENAME,
+        checksums_rel=REPORT_CHECKSUMS_FILENAME,
+    )
+
+
+@pytest.mark.parametrize(
+    "role,wrong_entitlement",
+    [
+        ("priority_evidence", "free"),
+        ("drill_illustration", "core"),
+        ("key_positions", "free"),
+        ("slow_motion", "free"),
+        ("coach_replay", "core"),
+        ("video_poster", "free"),
+        ("capture_playback", "free"),
+    ],
+)
+def test_each_media_role_rejects_the_wrong_entitlement(
+    tmp_path: Path, role: str, wrong_entitlement: str
+):
+    payload, key = _payload_with_media_role(role)
+    media = payload["media"]
+    assert isinstance(media, list)
+    row = next(item for item in media if isinstance(item, dict) and item["key"] == key)
+    row["entitlement"] = wrong_entitlement
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_slow_motion_file_requires_the_slow_motion_capability(tmp_path: Path):
+    payload, _ = _payload_with_media_role("slow_motion")
+    capabilities = payload["capabilities"]
+    assert isinstance(capabilities, dict)
+    capabilities["slow_motion"] = False
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_practice_illustration_reference_requires_drill_illustration_role(tmp_path: Path):
+    payload = report_view_payload()
+    media = payload["media"]
+    assert isinstance(media, list)
+    row = next(item for item in media if isinstance(item, dict) and item["key"] == "drill-1")
+    row["role"] = "video_poster"
+    row["entitlement"] = "core"
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_capture_guidance_safe_media_key_requires_capture_playback_role(tmp_path: Path):
+    payload = report_view_payload("capture-only")
+    media = payload["media"]
+    assert isinstance(media, list) and isinstance(media[0], dict)
+    media[0]["role"] = "video_poster"
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_key_positions_file_requires_unlocked_available_every_swing_section(tmp_path: Path):
+    payload, _ = _payload_with_media_role("key_positions")
+    optional = payload["optional_sections"]
+    assert isinstance(optional, list)
+    section = next(item for item in optional if isinstance(item, dict) and item["id"] == "every_swing")
+    section["locked"] = True
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
 def test_locked_unrendered_replay_cannot_be_declared_as_a_file(tmp_path: Path):
     payload = report_view_payload()
     capabilities = payload["capabilities"]
@@ -669,6 +1136,17 @@ def test_all_four_published_relative_paths_use_the_single_safe_parser(
     root = _build_bundle(tmp_path)
     rels = _persisted_rels(root)
     rels[field] = unsafe
+
+    with pytest.raises(ReportArtifactValidationError):
+        load_published_bundle(root.parent, **rels)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows path aliases are Windows-only")
+@pytest.mark.parametrize("field", ["report_rel", "report_view_rel", "manifest_rel", "checksums_rel"])
+def test_published_paths_reject_real_case_aliases(tmp_path: Path, field: str):
+    root = _build_bundle(tmp_path, root_name="report-bundle-AbCdEf0123456789abcdef0123456789")
+    rels = _persisted_rels(root)
+    rels[field] = rels[field].replace(root.name, root.name.swapcase(), 1)
 
     with pytest.raises(ReportArtifactValidationError):
         load_published_bundle(root.parent, **rels)
