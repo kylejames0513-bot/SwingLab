@@ -4,7 +4,7 @@
 
 **Goal:** Capture trustworthy per-swing evidence while landmarks exist, render one priority-matched visual or explicit unavailable variant, and publish the guided HTML/view/media bundle atomically with durable checksums, immutable job policy, safe recovery, and complete artifact lifecycle coverage.
 
-**Architecture:** The analysis loop keeps its current metric/coaching behavior but adds in-memory `EvidenceSnapshot` objects before work frames are removed. `swinglab/focused_evidence.py` consumes the already-selected presenter rule and snapshots; it never selects a new priority. `swinglab/report_bundle.py` builds a complete bundle inside a unique same-volume staging directory using an injected HTML-writer contract, validates it through `swinglab/report_artifacts.py`, atomically renames that directory to an opaque final bundle root, and returns paths that `JobManager` exposes only after one final SQLite transaction. Legacy jobs retain the current overlay/report path and are the default until the persisted presentation gate selects `guided-report-v1`; the web-presentation plan exclusively supplies and composes the real guided writer.
+**Architecture:** The analysis loop keeps its current metric/coaching behavior but adds in-memory `EvidenceSnapshot` objects before work frames are removed. `swinglab/focused_evidence.py` consumes the already-selected presenter rule and snapshots; it never selects a new priority. `swinglab/report_bundle.py` builds a complete bundle inside a unique same-volume staging directory using an injected HTML-writer contract, validates it through `swinglab/report_artifacts.py`, atomically publishes that directory with a platform-supported exclusive no-clobber sibling rename, and returns paths that `JobManager` exposes only after one final SQLite transaction. Legacy jobs retain the current overlay/report path and are the default until the persisted presentation gate selects `guided-report-v1`; the web-presentation plan exclusively supplies and composes the real guided writer.
 
 **Tech Stack:** Python 3.11 dataclasses and `StrEnum`, NumPy, Pillow, existing pose/events/metrics/report modules, SQLite WAL, SHA-256, canonical JSON, pytest.
 
@@ -14,7 +14,7 @@
 - Add one `DEFAULTS["report"]` mapping and `Config.report -> dict[str, Any]`. Only `cfg.report.get("guided_presentation_enabled") is True` selects guided output by default; bare defaults and shipped `config.yaml` remain false.
 - Persist `report_presentation_version` and `report_entitlements` when the job is created. Retries reuse them; a later config, account-plan, or cohort change affects future jobs only.
 - Guided version constants come from `swinglab.report_view`: `REPORT_VIEW_VERSION = "report-view-v1"` and `GUIDED_REPORT_PRESENTATION_VERSION = "guided-report-v1"`. Legacy remains `premium-coach-v2`.
-- Keep `metrics.json` compatible. Existing fields and legacy deliverables remain unchanged for legacy jobs; a guided job may omit the optional legacy `overlay` deliverable and adds no raw landmarks.
+- Keep `metrics.json` compatible. Existing fields and present legacy deliverables remain unchanged for legacy jobs. In guided jobs each strip, overlay, slow-motion, and replay key is optional when its artifact is absent; every present key is role-bound to one declared media artifact, guided overlay is rejected, and no raw landmarks are added.
 - Keep raw landmarks, landmark visibility, source filenames, absolute paths, work paths, and scratch identifiers out of `report-view.json`, bundle manifests, logs, and APIs.
 - A focused visual is core and never Pro-gated. Slow motion and coach replay retain their separate entitlement behavior.
 - A focused-renderer-only failure may become limited `UnavailableEvidence`. A priority metric/event/annotation-trust failure becomes capture-only. A view, HTML, manifest, checksum, or other required-media failure publishes no completed result.
@@ -25,7 +25,7 @@
 - Guided DTL reports render timing/rhythm evidence only and never call the legacy body-reference overlay. Legacy presentation retains its current overlay for rollback and historical compatibility.
 - Never label a synthetic full-body figure as an ideal or “where it should be.” Orange is observed, green is the address/start reference, and a separately labeled dashed line is the configured coaching boundary.
 - Missing detected audio may use an explicitly persisted manual strike method. It never falls back to a guessed impact frame.
-- Cleanup removes only a validated attempt/final bundle directory whose canonical manifest belongs to that attempt. Never broadly delete the report/session root.
+- Cleanup removes only a directly owned attempt proven by its staging owner marker or matching canonical manifest, or a valid unprotected final bundle whose canonical manifest ID matches its exact directory. Never broadly or recursively delete the report/session root.
 - The final job transaction assigns `DONE`, `report_rel`, `report_view_rel`, `report_manifest_rel`, `report_checksums_rel`, and `structured_report`. A failed/incomplete job keeps the rels null/flag false and the existing derived allowance logic treats it as unconsumed.
 - Proof Cycle remains a separately verified, non-blocking sidecar. It does not rewrite the immutable view or block a completed core bundle.
 - This plan defines only the guided `ReportHtmlWriter` injection boundary. Its
@@ -298,6 +298,8 @@
 - Create: `tests/test_report_bundle.py`
 - Create: `tests/test_report_bundle_recovery.py`
 - Modify: `swinglab/report.py:90-143,146-331`
+- Modify: `swinglab/report_presenter.py:280-323,485-503,670-703,715-914`
+- Modify: `tests/test_report_document.py`
 
 **Interfaces:**
 
@@ -310,10 +312,19 @@
   staging_dir: Path, work_dir: Path, media_dir: Path)` and
   `StagedReportBundle(attempt: ReportBundleAttempt, document: ReportDocument,
   report_path: Path, report_view_path: Path, manifest_path: Path,
-  checksums_path: Path)`.
+  checksums_path: Path, view: ReportViewV1, manifest: ReportBundleManifest,
+  checksums: ReportBundleChecksums)`. The final three fields are the exact
+  parsed objects returned by staged validation, not a second reconstruction.
 - Produces `begin_report_bundle(session_dir: Path, *, attempt_id: str | None =
   None) -> ReportBundleAttempt`. Directory names are
-  `.report-attempt-<32 lowercase hex>`.
+  `.report-attempt-<32 lowercase hex>`. It writes the bounded canonical
+  staging-only owner marker `.report-attempt-owner.json` with exact payload
+  `{"attempt_id":"<id>","format":"report-bundle-attempt-v1"}\n`.
+- Extends `ReportPresentationInput` only as needed for capture safety with
+  `brief: CaddieBrief | None` and `primary_drill: Drill | None`.
+  `prepare_report_input(...)` may return those fields null only when its supplied
+  reason codes contain a fatal capture reason and no Caddie Brief exists;
+  coaching-ready preparation without a brief remains an error.
 - Produces `build_report_bundle(attempt: ReportBundleAttempt, *, html_writer:
   ReportHtmlWriter, video: VideoInfo, swings: list[dict], stats: dict,
   session_notes: list[str],
@@ -324,15 +335,35 @@
 - Produces `publish_report_bundle(staged: StagedReportBundle) ->
   PublishedReportBundle`, `discard_report_bundle_attempt(attempt:
   ReportBundleAttempt) -> None`, and
-  `cleanup_abandoned_report_bundles(session_dir: Path) -> int`.
-- Final bundle directories are `report-bundle-<attempt_id>` and are created by
-  one same-volume `Path.replace` of the fully validated staging directory.
+  `cleanup_abandoned_report_bundles(session_dir: Path, *, protected_rels:
+  Sequence[str] | None = None) -> int`.
+- Final bundle directories are `report-bundle-<attempt_id>`. This task's one-
+  directory publication contract takes precedence over the older design spec's
+  per-file replace wording. Publication uses one platform-atomic, exclusive
+  no-clobber directory rename to a nonexistent sibling: a Windows no-replace
+  move, Linux `renameat2(..., RENAME_NOREPLACE)`, or macOS
+  `renamex_np(..., RENAME_EXCL)`. If that primitive or filesystem guarantee is
+  unavailable, fail closed; never fall back to overwrite-capable `Path.replace`,
+  `os.replace`, destination deletion, or a check-then-overwrite sequence.
+- Produces the private platform adapter
+  `_rename_report_bundle_noreplace(source: Path, destination: Path) -> None`.
+  Destination-exists, cross-device, unsupported-API/filesystem, and ambiguous
+  platform errors are core publication failures and never trigger a fallback.
+- Consumes Task 3's optional-deliverable validation contract: no strip,
+  overlay, slow-motion, or replay key is mandatory, but every present metrics
+  key must resolve to the uniquely role-matched view/manifest/checksum media row.
+- A non-null `protected_rels` is authoritative only when it is empty or consists
+  of complete four-rel groups using canonical report/view/manifest/checksum
+  filenames under one direct final root per group. Any partial, duplicate,
+  cross-root, unsafe, or noncanonical group fails closed before final cleanup.
 
 - [ ] Add failing build tests for clear face-on, clear DTL, limited secondary,
   limited renderer-unavailable, and capture-only. Assert the bundle contains
   compatible `metrics.json`, document HTML, `report-view.json`, manifest,
   checksums, and exactly the declared entitled media. Capture-only has no focused
-  evidence; DTL and all guided jobs have no legacy overlay.
+  evidence; DTL and all guided jobs have no legacy overlay. Add no-readable
+  capture-only cases with zero swings and partial metrics, and assert neither
+  case fabricates a Caddie Brief, drill, coaching diagnosis, or practice content.
 
 - [ ] Add `write_test_report_html(...)` in `tests/report_bundle_fixtures.py`.
   Its exact signature is `write_test_report_html(out_path: Path, document:
@@ -347,57 +378,101 @@
   fail and expect a limited unavailable view. Mock view write, HTML write,
   manifest write, checksum write, required focused file, and validation in turn;
   expect `CoreReportBundleError`, no final root, and no completed-looking paths.
-  Separately fail each non-core media renderer and assert its media entry is
-  absent, its capability/optional-section state is unavailable, and every other
-  declared artifact still validates; no unrelated media is substituted.
+  Pass absent strip, slow-motion, and replay inputs and assert Task 4 invokes no
+  such renderer, omits their paths/media, marks the matching capability and,
+  where defined, optional section unavailable, and substitutes no unrelated
+  asset. Independent renderer-failure injection belongs to Task 5, which owns
+  those renderer calls.
 
 - [ ] Add failing publication tests proving the staging/final parents have the
   same resolved filesystem/volume, validation occurs before rename, one directory
   rename publishes all files, and the returned rels resolve inside the final
   root. A reader given only the old job row cannot observe the new directory.
+  Race a pre-created destination and assert no-clobber failure preserves both
+  roots. Simulate an unsupported exclusive-rename API/filesystem and assert a
+  fail-closed result with no overwrite-capable fallback.
 
-- [ ] Add failing recovery tests for a crash before validation, after validation,
-  after final rename but before DB publication, and after a corrupt attacker
-  directory appears beside an attempt. Cleanup removes only a canonical
-  `.report-attempt-*` or unreferenced `report-bundle-*` whose internal
-  attempt/manifest IDs match; it refuses symlinks, malformed manifests, session
-  root, media root, current published rels, and unrelated files.
+- [ ] Add failing recovery tests for crashes before a manifest, after a matching
+  manifest replaces owner-marker authority, after validation, and after final
+  rename but before DB publication, plus a corrupt attacker directory beside an
+  attempt. A pre-manifest attempt is removable only when its bounded canonical
+  owner marker, exact lowercase directory name, resolved parent, directory type,
+  non-reparse state, and attempt ID all match. Once a matching manifest exists it
+  is the ownership authority; a marker still present after a crash must agree,
+  and the marker is never allowed in a validated/final bundle. Refuse malformed,
+  mismatched, ambiguous, symlinked, junction, session-root, media-root, and
+  unrelated targets.
 
-- [ ] Run `python -m pytest tests/test_report_bundle.py tests/test_report_bundle_recovery.py tests/test_report.py -q`; expect import failures for the orchestrator.
+- [ ] Add recovery tests for `protected_rels` semantics. `None` is conservative:
+  remove proven attempt directories only and preserve every final root. A non-
+  null complete snapshot, including an empty tuple, authorizes removal of valid
+  final roots not named by those safe session-relative rels. Assert a current
+  protected bundle survives, an empty authoritative snapshot removes a valid
+  renamed-but-unpublished bundle, and malformed/incomplete protection input
+  fails closed without deleting a final root.
+
+- [ ] Run `python -m pytest tests/test_report_bundle.py tests/test_report_bundle_recovery.py tests/test_report.py tests/test_report_document.py -q`; expect import failures for the orchestrator and capture-safe presenter contract.
 
 - [ ] Implement `begin_report_bundle` with `mkdir(exist_ok=False)` below the
   resolved session root. Put both `work` and `media` inside staging so no raw or
-  partial deliverable is ever beside the final bundle.
+  partial deliverable is ever beside the final bundle. Write the owner marker
+  canonically with a 4 KiB read bound; a marker-write failure creates no usable
+  attempt. The marker is staging ownership metadata, not a manifest artifact.
 
-- [ ] In `build_report_bundle`, call `prepare_report_input` once to freeze the
-  existing Caddie Brief/issues/drill. Map its `PriorityEvidenceRule`, select and
-  render focused evidence, then use `dataclasses.replace` to add the final
-  evidence/media/reasons before `build_report_document`. Do not call any priority
-  builder after representative selection.
+- [ ] In `build_report_bundle`, call `prepare_report_input` once as the sole
+  preparation boundary. For coaching, freeze its Caddie Brief/issues/drill, map
+  that brief's `PriorityEvidenceRule`, select and render focused evidence, then
+  use `dataclasses.replace` to add final evidence/media/reasons before
+  `build_report_document`. Do not call a priority builder after representative
+  selection. For fatal capture reason codes with no Caddie Brief, return an
+  honest capture-safe `ReportPresentationInput` with optional brief/primary drill
+  only as required, empty coaching collections, and no fabricated drill. A
+  coaching input without a brief still raises. `build_report_view` and
+  `build_report_document` must branch on fatal capture before dereferencing
+  coaching-only fields.
 
 - [ ] Call only the required `html_writer` argument to create `report.html`.
   Do not import `swinglab.report_html`, create a Jinja template, or provide a
   default renderer in this plan. Validate the returned path and report markers
   exactly like any other core artifact.
 
-- [ ] Change `write_metrics_json` deliverable assembly to include `overlay` only
-  when `swing.get("overlay")` is present. Legacy output remains byte-compatible;
-  guided output honestly omits a file it did not render.
+- [ ] Change `write_metrics_json` deliverable assembly so `strip`, `overlay`,
+  `slowmo`, and `replay` are each emitted only when that swing has a present
+  value, preserving their current insertion order. Legacy calls that supply the
+  current keys remain byte-for-byte compatible. Guided bundles reject rather
+  than declare an overlay. Every other present deliverable is mapped to exactly
+  one matching `MediaEntry`/manifest row (`strip -> key_positions`, `slowmo ->
+  slow_motion`, `replay -> coach_replay`) and the presenter derives capability
+  and optional-section availability from those actual roles. Missing strip,
+  slow-motion, or replay is an unavailable capability, not a Task-4 render call.
 
 - [ ] Write document/view/metrics/media, then manifest, then checksums. Call
   `validate_staged_bundle` and retain its parsed objects in the staged result.
-  On a core failure, remove only the validated attempt directory; if safe
-  validation cannot establish ownership, leave it for operator/recovery review
-  and raise.
+  After writing a matching canonical manifest, remove the owner marker before
+  writing checksums and strict topology validation; a crash before the manifest
+  remains marker-owned and a crash after it remains manifest-owned. On a core
+  failure, remove only an attempt whose applicable ownership proof is exact; if
+  ownership is ambiguous, leave it for operator/recovery review and raise.
 
-- [ ] Implement `publish_report_bundle` as one same-volume directory rename to
-  a previously nonexistent final root, then call `load_published_bundle` for
-  readback. If readback fails, leave the unreferenced final root for the scoped
-  recovery function and return no published result.
+- [ ] Implement `publish_report_bundle` by proving the source and nonexistent
+  destination are siblings beneath the same resolved parent/filesystem identity,
+  re-running staged validation immediately before publication, and requiring the
+  returned view/manifest/checksums to equal the retained staged objects. Perform
+  exactly one supported atomic no-clobber directory rename, then call the pinned
+  `load_published_bundle` readback. Never delete or overwrite a destination and
+  never retry through an overwrite-capable primitive. If readback fails, leave
+  the unreferenced final root for scoped cleanup and return no published result.
 
-- [ ] Rerun the three focused files; expect all pass.
+- [ ] Implement scoped recovery from direct children only. `protected_rels=None`
+  preserves all final roots; any non-null sequence is treated as the caller's
+  complete authoritative snapshot after every rel is safely parsed and mapped to
+  a direct final root. Remove only proven attempts or valid matching-ID finals
+  outside that protected set. `publish_report_bundle` itself never cleans a
+  failed-readback final.
 
-- [ ] Commit: `git add swinglab/report_bundle.py swinglab/report.py tests/report_bundle_fixtures.py tests/test_report_bundle.py tests/test_report_bundle_recovery.py tests/test_report.py && git commit -m "feat: publish atomic guided report bundles"`.
+- [ ] Rerun the four focused files; expect all pass.
+
+- [ ] Commit: `git add swinglab/report_bundle.py swinglab/report.py swinglab/report_presenter.py tests/report_bundle_fixtures.py tests/test_report_bundle.py tests/test_report_bundle_recovery.py tests/test_report.py tests/test_report_document.py && git commit -m "feat: publish atomic guided report bundles"`.
 
 ## Task 5: Integrate snapshots/bundles into the pipeline and enforce DTL/legacy boundaries
 
@@ -447,7 +522,17 @@
 - [ ] Add failing capture tests for angle mismatch, unstable tracking,
   insufficient pose frames, and no readable swing. Assert diagnosis/drills/
   overlays/replay/gear are absent and the previous capture-only outcome marker
-  remains compatible.
+  remains compatible. Include zero-swing and partial-metrics failures and assert
+  the pipeline passes fatal reason codes into Task 4's capture-safe preparation
+  path without synthesizing coaching facts.
+
+- [ ] Independently fail `strip.make_strip`, `slowmo.make_slowmo`, and optional
+  `annotate.make_replay` in guided pipeline tests. Each optional renderer failure
+  omits only its own swing path, `MediaEntry`, capability, and, where defined,
+  optional-section availability while every other declared artifact validates;
+  no unrelated media is substituted. These renderer injections belong here,
+  not in Task 4. Focused-evidence Pillow failure remains Task 4's limited
+  unavailable fallback.
 
 - [ ] Add failing legacy parity tests: default `analyze_video` still renders the
   existing overlay and accepts every current fake/signature; guided is selected
@@ -470,11 +555,15 @@
   `manual_strike`; audio detector means `detected_audio`. Pass it into every
   analyzed swing. Never infer the method from the resulting timestamp.
 
-- [ ] In guided mode begin the attempt before extracting audio/frames, route all
-  generated work/media into it, skip `overlay.make_overlay`, and call
-  `build_report_bundle(html_writer=guided_html_writer, ...)` and
-  `publish_report_bundle`. In legacy mode retain the current directories/calls
-  exactly.
+- [ ] In guided mode establish the analysis session as exactly
+  `_unique_dir(Path(out_dir) / video_path.stem)`, call `begin_report_bundle`
+  directly beneath that directory before extracting audio/frames, and route all
+  generated work and media inside the attempt. Create no guided legacy work or
+  media siblings, never call `overlay.make_overlay`, and call
+  `build_report_bundle(html_writer=guided_html_writer, ...)` followed by
+  `publish_report_bundle`. Missing strip/slow-motion/replay outputs remain absent
+  and are not rerendered by Task 4. Legacy mode retains current directories and
+  calls exactly.
 
 - [ ] Convert guided recoverable capture failures into an empty/partial metrics
   payload plus typed capture-only document. Keep video-too-long, invalid
@@ -553,6 +642,13 @@
   after bundle rename but before DB commit remains processing/requeued and never
   counts as a completed use twice.
 
+- [ ] Add failing retry-cleanup tests with direct analysis-session children,
+  excessive child counts, files, symlinks/junctions, and nested decoys beneath
+  `job.session_dir/out`. Assert only bounded direct non-reparse children are
+  considered, null structured rels translate to the authoritative empty tuple,
+  all four current rels protect their bundle, and incomplete/cross-child rels or
+  recursive-only candidates are preserved with a fail-closed result.
+
 - [ ] Run `python -m pytest tests/test_report_bundle_job_publication.py tests/test_replay_gate.py tests/test_disconnect.py tests/test_accounts.py tests/test_level_context.py -q`; expect schema/policy failures.
 
 - [ ] Add the one report config mapping/property and shipped false entry. Use a
@@ -566,12 +662,18 @@
 
 - [ ] In `_run`, pass new analyzer kwargs only for a guided job so current exact
   fake analyzer signatures remain compatible, including the manager's captured
-  `guided_html_writer`. Before retry call
-  `cleanup_abandoned_report_bundles(job.session_dir)`. After core files are
-  published, call `_complete_job`; only after that guarded transaction commits,
-  build the optional Proof sidecar. Proof failure remains non-blocking and does
-  not alter the done row or bundle checksums. Exclude the current job ID from
-  the prior-job collection so the just-completed row cannot compare to itself.
+  `guided_html_writer`. Before retry, enumerate only a bounded number of direct,
+  non-reparse analysis-session directory children beneath `job.session_dir/out`;
+  do not recursively search. For each child, translate the job row's complete
+  persisted structured rel snapshot into child-relative protected rels and call
+  `cleanup_abandoned_report_bundles(child, protected_rels=child_rels)`. A row
+  with all structured rels null supplies the authoritative empty tuple, allowing
+  a valid renamed-but-unpublished final to be reclaimed; unsafe, incomplete, or
+  cross-child rels fail closed. After core files are published, call
+  `_complete_job`; only after that guarded transaction commits, build the
+  optional Proof sidecar. Proof failure remains non-blocking and does not alter
+  the done row or bundle checksums. Exclude the current job ID from the prior-job
+  collection so the just-completed row cannot compare to itself.
 
 - [ ] Keep the immutable bundle closed to undeclared files. For structured jobs,
   make `proof_cycle_artifact_path(job)` resolve the separately verified private
