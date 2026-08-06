@@ -8,14 +8,17 @@ from __future__ import annotations
 
 import math
 import statistics
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
+from pathlib import PurePosixPath
+from types import MappingProxyType
 from typing import Literal, Mapping, Sequence, TypeAlias
 
-from .caddie_brief import CaddieBrief
-from .coaching import IssueCard, StrengthCard
+from .caddie_brief import CaddieBrief, build_caddie_brief, quality_warning, scope_metrics_for_angle
+from .coaching import IssueCard, StrengthCard, issue_cards, priority_rule_version, strength_cards
 from .config import Config
-from .drills import Drill, drill_presentation
-from .metrics import SwingMetrics, finite_float
+from .drills import Drill, drill_presentation, gear_shop_url, practice_plan
+from .ffmpeg import VideoInfo
+from .metrics import ANGLE_DTL, ANGLE_FACE_ON, SwingMetrics, finite_float, session_stats
 from .report_view import (
     GUIDED_REPORT_PRESENTATION_VERSION,
     Angle,
@@ -34,6 +37,8 @@ from .report_view import (
     MeasurementDetail,
     MeasurementUnit,
     NextMove,
+    OptionalSection,
+    OptionalSectionId,
     PhaseId,
     PhaseStatus,
     PhaseSummary,
@@ -313,7 +318,95 @@ class ReportPresentationInput:
     reason_codes: Sequence[ReasonCode]
     safe_media_keys: Sequence[str]
     replay_locked: bool
-    navigation: object | None
+    navigation: ReportNavigation | None
+    practice_blocks: Sequence[Mapping[str, object]] = ()
+    session_details: Sequence[LabelValue] = ()
+
+
+@dataclass(frozen=True)
+class ReportNavigation:
+    app_url: str | None
+    storefront_url: str | None
+    gear_collection_url: str | None
+
+
+@dataclass(frozen=True)
+class LabelValue:
+    key: str
+    label: str
+    value: str
+
+
+@dataclass(frozen=True)
+class GlossaryEntry:
+    term: str
+    definition: str
+
+
+@dataclass(frozen=True)
+class GearDetail:
+    key: str
+    label: str
+    description: str
+    url: str
+
+
+@dataclass(frozen=True)
+class FindingDetail:
+    key: str
+    title: str
+    summary: str
+    why: str
+    cue: str
+    measurement_detail_ids: tuple[str, ...]
+    detail_section_id: str
+
+
+@dataclass(frozen=True)
+class StrengthDetail:
+    key: str
+    title: str
+    summary: str
+    measurement_detail_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SwingDetail:
+    swing: int
+    summary: str
+    notes: tuple[str, ...]
+    measurements: tuple[LabelValue, ...]
+    key_positions_media_key: str | None
+    key_positions_alt_text: str | None
+    slow_motion_media_key: str | None
+    slow_motion_caption: str | None
+    coach_replay_media_key: str | None
+    coach_replay_caption: str | None
+    replay_locked: bool
+    locked_replay_explanation: str | None
+    video_poster_media_key: str | None
+    video_poster_alt_text: str | None
+    print_playback_reference: str
+
+
+@dataclass(frozen=True)
+class ReportDepthContent:
+    swings: tuple[SwingDetail, ...]
+    secondary_findings: tuple[FindingDetail, ...]
+    strengths: tuple[StrengthDetail, ...]
+    measurements: tuple[LabelValue, ...]
+    session_details: tuple[LabelValue, ...]
+    glossary: tuple[GlossaryEntry, ...]
+    limitations: tuple[str, ...]
+    gear: tuple[GearDetail, ...]
+    navigation: ReportNavigation
+
+
+@dataclass(frozen=True)
+class ReportDocument:
+    view: ReportViewV1
+    depth: ReportDepthContent
+    media_by_key: Mapping[str, MediaEntry]
 
 
 class UnsupportedRefilmTarget(ValueError):
@@ -390,7 +483,7 @@ def _ordered_reasons(reasons: Sequence[ReasonCode]) -> tuple[ReasonCode, ...]:
 
 
 def _context(source: ReportContextInput, readable: int) -> ReportContext:
-    angle = Angle(source.angle)
+    angle = Angle.FACE_ON if source.angle == ANGLE_FACE_ON else Angle(source.angle)
     hand = Hand(source.hand)
     club_label = None if source.club is None else ({"7i": "7 iron", "6i": "6 iron"}.get(source.club.lower(), source.club))
     return ReportContext(source.club, club_label, hand, angle, "Face-on" if angle is Angle.FACE_ON else "Down the line", source.detected_swings, readable, source.analysis_fps)
@@ -608,3 +701,206 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         tuple(source.media), (), next_move, source.visual_evidence,
         build_phase_summaries(source, cfg), _practice(source.primary_drill, source.alternative_drills, cfg), protocol,
     )
+
+
+def _explicit_media_key(value: object, media: Sequence[MediaEntry]) -> str | None:
+    if not isinstance(value, str) or not value:
+        return None
+    return next(
+        (entry.key for entry in media if value in {entry.key, entry.relative_path}),
+        None,
+    )
+
+
+def prepare_report_input(
+    video: VideoInfo,
+    swings: Sequence[dict[str, object]],
+    stats: Mapping[str, Mapping[str, float]],
+    session_notes: Sequence[str],
+    hand: str,
+    cfg: Config,
+    *,
+    angle: str = ANGLE_FACE_ON,
+    club: str | None = None,
+    level: str | None = None,
+    analysis_fps: float | None = None,
+    replay_locked: bool = False,
+    visual_evidence: EvidenceView | None = None,
+    media: Sequence[MediaEntry] = (),
+    reason_codes: Sequence[ReasonCode] = (),
+    safe_media_keys: Sequence[str] = (),
+    navigation: ReportNavigation | None = None,
+) -> ReportPresentationInput:
+    """Assemble report facts once, before either typed or legacy rendering."""
+    raw_metrics = [swing["metrics"] for swing in swings]
+    if not all(isinstance(metric, SwingMetrics) for metric in raw_metrics):
+        raise TypeError("Every swing must contain SwingMetrics")
+    scoped = scope_metrics_for_angle(raw_metrics, angle)  # type: ignore[arg-type]
+    scoped_stats = session_stats(scoped) if angle == ANGLE_DTL else stats
+    notes = [note for note in session_notes if isinstance(note, str)]
+    notes.extend(
+        note
+        for swing in swings
+        for note in (swing.get("notes") or ())
+        if isinstance(note, str)
+    )
+    rule = priority_rule_version(cfg)
+    brief = build_caddie_brief(
+        scoped, dict(scoped_stats), cfg,
+        warning=quality_warning(angle, notes), angle=angle, club=club,
+        rule_version=rule,
+    )
+    if brief is None:
+        raise ValueError("Report input requires a Caddie Brief")
+    issues = issue_cards(scoped, dict(scoped_stats), cfg, club=club, rule_version=rule)
+    strengths = strength_cards(scoped, cfg, dict(scoped_stats))
+    if rule == 2:
+        flags = [card.flag for card in issues]
+    else:
+        from .coaching import session_flags
+        flags = session_flags(scoped, dict(scoped_stats), cfg)
+    plan = practice_plan(flags if not brief.refilm_required else [], cfg)
+    primary = brief.drill or plan[0]["drills"][0]
+    alternatives = tuple(
+        drill
+        for block in plan
+        for drill in block["drills"]
+        if drill.id != primary.id
+    )
+    swing_sources = tuple(
+        ReportSwingSource(
+            metrics=metric.as_dict(),
+            notes=tuple(note for note in (swing.get("notes") or ()) if isinstance(note, str)),
+            key_positions_media_key=_explicit_media_key(swing.get("overlay") or swing.get("strip"), media),
+            key_positions_alt_text=f"Key positions for swing {metric.swing}",
+            slow_motion_media_key=_explicit_media_key(swing.get("slowmo"), media),
+            slow_motion_caption=f"Slow-motion playback for swing {metric.swing}",
+            coach_replay_media_key=None if replay_locked else _explicit_media_key(swing.get("replay"), media),
+            coach_replay_caption=f"Coach replay for swing {metric.swing}",
+            locked_replay_explanation=(
+                "Coach replay is available with Pro; the measured coaching remains available here."
+                if replay_locked else None
+            ),
+            video_poster_media_key=_explicit_media_key(swing.get("poster"), media),
+            video_poster_alt_text=f"Video poster for swing {metric.swing}",
+            print_playback_reference=(
+                f"Playback reference: swing {metric.swing} slow motion"
+            ),
+        )
+        for swing, metric in zip(swings, scoped)
+    )
+    return ReportPresentationInput(
+        ReportContextInput(
+            club, hand, Angle.FACE_ON.value if angle == ANGLE_FACE_ON else angle,
+            len(swings), analysis_fps,
+        ),
+        swing_sources, scoped_stats, tuple(session_notes), brief, tuple(issues),
+        tuple(strengths), primary, alternatives, visual_evidence, tuple(media),
+        tuple(reason_codes), tuple(safe_media_keys), replay_locked, navigation,
+        tuple(plan),
+        (
+            LabelValue("source", "Source video", video.path.name),
+            LabelValue("duration", "Duration", f"{video.duration_s:.2f} seconds"),
+            LabelValue("dimensions", "Display size", f"{video.display_width} x {video.display_height}"),
+            LabelValue("rotation", "Rotation metadata", f"{video.rotation} degrees"),
+            *((LabelValue("level", "Experience level", level),) if level else ()),
+        ),
+    )
+
+
+def _label_values(source: ReportPresentationInput, cfg: Config) -> tuple[LabelValue, ...]:
+    return tuple(
+        LabelValue(detail.id, detail.label, detail.plain_value)
+        for phase in build_phase_summaries(source, cfg)
+        for detail in phase.measurements
+    )
+
+
+def build_report_document(source: ReportPresentationInput, cfg: Config) -> ReportDocument:
+    """Build the complete server-owned document; renderers only lay it out."""
+    view = build_report_view(source, cfg)
+    media_by_key = MappingProxyType({entry.key: entry for entry in source.media})
+    if any(PurePosixPath(entry.relative_path).is_absolute() for entry in source.media):
+        raise ValueError("Report media paths must remain relative")
+    swings = tuple(
+        SwingDetail(
+            int(item.metrics.get("swing") or index), f"Swing {int(item.metrics.get('swing') or index)}",
+            item.notes,
+            tuple(
+                LabelValue(key, _METRICS[key].label, _METRICS[key].formatter.format(value))
+                for key, raw in item.metrics.items()
+                if key in _METRICS and (value := finite_float(raw)) is not None
+            ),
+            item.key_positions_media_key, item.key_positions_alt_text,
+            item.slow_motion_media_key, item.slow_motion_caption,
+            None if source.replay_locked else item.coach_replay_media_key,
+            item.coach_replay_caption, source.replay_locked,
+            item.locked_replay_explanation if source.replay_locked else None,
+            item.video_poster_media_key, item.video_poster_alt_text,
+            item.print_playback_reference or f"Playback reference: swing {index}",
+        )
+        for index, item in enumerate(source.swings, 1)
+    )
+    referenced = {
+        key for swing in swings for key in (
+            swing.key_positions_media_key, swing.slow_motion_media_key,
+            swing.coach_replay_media_key, swing.video_poster_media_key,
+        ) if key is not None
+    }
+    missing = referenced - media_by_key.keys()
+    if missing:
+        raise ValueError(f"Depth references unknown media keys: {sorted(missing)!r}")
+    posters = [swing.video_poster_media_key for swing in swings if swing.video_poster_media_key]
+    if len(posters) != len(set(posters)):
+        raise ValueError("Each video poster key must be distinct or explicitly null")
+    selected = source.brief.focus_flag
+    findings = tuple(
+        FindingDetail(card.flag, card.display_name, card.session_text, card.why,
+                      card.fix, (f"measurement-{card.metric}",), "secondary-findings")
+        for card in source.issues if card.flag != selected
+    )
+    strengths = tuple(
+        StrengthDetail(card.key, card.display_name, card.text,
+                       (f"measurement-{card.metric}",))
+        for card in source.strengths
+    )
+    measurements = _label_values(source, cfg)
+    glossary = tuple(
+        GlossaryEntry(meta.label, meta.explanation) for meta in _METRICS.values()
+    )
+    limitations = tuple(dict.fromkeys(
+        detail.limitation
+        for phase in build_phase_summaries(source, cfg)
+        for detail in phase.measurements
+        if detail.limitation
+    ))
+    navigation = source.navigation or ReportNavigation(None, None, gear_shop_url(cfg))
+    gear_url = gear_shop_url(cfg)
+    gear = (() if not gear_url else (GearDetail(
+        source.primary_drill.gear_tag, "Matched training aid",
+        source.primary_drill.gear_note or "Optional aid for this practice step.",
+        gear_url,
+    ),))
+    depth = ReportDepthContent(
+        swings, findings, strengths, measurements,
+        (LabelValue("hand", "Hand", source.context.hand),
+         LabelValue("angle", "Camera angle", source.context.angle),
+         LabelValue("swings", "Detected swings", str(source.context.detected_swings)),
+         *source.session_details),
+        glossary, limitations, gear, navigation,
+    )
+    section_counts = (
+        (OptionalSectionId.EVERY_SWING, "Every swing", len(swings), False),
+        (OptionalSectionId.REPLAY, "Coach replay", sum(item.coach_replay_media_key is not None for item in swings), source.replay_locked),
+        (OptionalSectionId.SECONDARY_FINDINGS, "Secondary findings", len(findings), False),
+        (OptionalSectionId.ALTERNATIVE_DRILLS, "Alternative drills", len(view.practice.alternatives) if view.practice else 0, False),
+        (OptionalSectionId.MORE_STRENGTHS, "More strengths", len(strengths), False),
+        (OptionalSectionId.MEASUREMENTS, "Measurements", len(measurements), False),
+        (OptionalSectionId.GLOSSARY, "Glossary", len(glossary), False),
+        (OptionalSectionId.GEAR, "Gear", len(gear), False),
+    )
+    view = replace(view, optional_sections=tuple(
+        OptionalSection(section_id, label, count > 0, locked, count)
+        for section_id, label, count, locked in section_counts
+    ))
+    return ReportDocument(view, depth, media_by_key)
