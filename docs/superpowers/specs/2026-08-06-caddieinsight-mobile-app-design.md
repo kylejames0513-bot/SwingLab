@@ -1,6 +1,6 @@
 # CaddieInsight Native Mobile App Design
 
-**Status:** Product design approved on 2026-08-06; written-spec review pending
+**Status:** Product design and written specification approved on 2026-08-06
 
 **Implementation target:** iOS and Android from one Expo/React Native client
 
@@ -20,6 +20,11 @@ identity, golfer profiles, jobs, analysis, reports, practice evidence, history,
 and entitlements. Apple App Store and Google Play purchases will join existing
 web and Shopify grants in one source-aware entitlement ledger. Physical golf
 gear remains a Shopify transaction and opens in Shopify's browser-hosted flow.
+A narrow recovery-control exception stores an append-only, non-PII revocation/
+erasure chain and cutover-baseline pointer at an independently protected off-
+volume destination. It prevents an old SQLite backup from resurrecting revoked
+credentials or erased data; it is not a migration of the database, reports,
+media, jobs, or other canonical application state to object storage.
 
 The first store release optimizes for coaching retention: a golfer completes an
 analysis, understands one priority, performs the prescribed practice, records a
@@ -62,8 +67,9 @@ The interactive design review approved these decisions:
 
 - Prove that activated golfers return and complete a measurable coaching loop.
 - Deliver an app with genuine native utility beyond the PWA: guided camera,
-  resilient backgroundable uploads, secure device credentials, push completion,
-  native billing, deep links, and platform-standard controls.
+  interruption-safe uploads that pause in the background and reconcile/resume
+  on foreground, secure device credentials, push completion, native billing,
+  deep links, and platform-standard controls.
 - Reuse the existing analysis and customer data rather than create parallel
   systems.
 - Keep every mobile addition backward compatible with the current web routes,
@@ -122,13 +128,34 @@ account recovery rotates the device credential. The account's existing
 `auth_epoch` behavior continues to invalidate older credentials after ownership
 recovery.
 
+Store review is the only exception to the normal one-time-code UX. Each provider
+gets its own synthetic user and reusable, protected review-only credential so a
+reviewer can bypass mailbox OTP/2-step friction. That credential can issue only a
+provider-, build-, installation-, and review-access-scoped bearer for its matching
+synthetic user. Its account/password hash lives outside normal user credentials;
+it never authenticates a real user or any browser, passwordless, OTP, or PWA path.
+Apple credentials are bounded to the active submission window and revoked after
+terminal review. Google keeps a standing Play App-access credential and demo
+account valid while the public listing requires sign-in; each bearer is still
+short-lived and build-scoped, and credential rotation is atomic with Play Console
+readback. Permanent Google cleanup requires delisting/App-access-field clearance,
+not merely one review becoming terminal. Neither provider affects the other.
+Review privacy controls re-verify this dedicated credential through a separate
+short-lived PKCE step-up because the synthetic account cannot receive email. If a
+reviewer deletes the synthetic account, its current private-data generation is
+recovery-fenced and purged; the provider credential survives independently, and a
+later still-authorized review login creates a fresh isolated synthetic generation
+from the immutable demo fixture. Review instructions disclose this special demo-
+account behavior. A real golfer account never regenerates after deletion.
+
 ### 6.2 Profile setup
 
-Required profile fields remain display name and goal. Experience level,
-handedness, preferred club, camera angle, practice duration, handicap range, and
-reduced-motion preference personalize defaults. Marketing consent remains
-separate and unchecked. Camera, media-library, and notification permissions are
-requested only when the corresponding feature is used.
+Required profile fields remain display name, goal, and preferred club, matching
+the existing server/browser `is_complete` contract. Experience level,
+handedness, camera angle, practice duration, handicap range, and reduced-motion
+preference personalize defaults. Marketing consent remains separate and
+unchecked. Camera, media-library, and notification permissions are requested
+only when the corresponding feature is used.
 
 ### 6.3 Today
 
@@ -179,7 +206,12 @@ resumable upload session:
    duplicate analysis.
 4. Complete the upload, verify the full digest server-side, and atomically create
    one analysis job.
-5. Delete the temporary local video only after the server confirms completion.
+5. After upload completion, retain the protected local source while analysis is
+   queued/running or a failure is still server-declared retryable; delete it only
+   after success, re-film, permanent failure, bounded retry expiry/exhaustion, or
+   explicit discard. The server includes immutable source media for queued,
+   running, and retryable-failed jobs in recoverable backup scope, so one
+   acknowledged upload does not depend solely on the phone.
 
 Incomplete upload sessions count against a small per-account active-upload limit,
 expire after 24 hours, and are cleaned on startup and by the existing maintenance
@@ -221,6 +253,15 @@ The server remains authoritative for plan capabilities and quota values. The
 client must render capabilities returned by the API rather than duplicate plan
 rules.
 
+### All authenticated accounts
+
+- Normal passwordless sign-in on another owned device, device list/revocation,
+  sign-out, and provider management.
+- Restore Purchases even when the current account is Free/lapsed, purchase
+  admission is off, or an existing store entitlement has not yet been recognized.
+- Regulatory/account privacy data export, swing-history reset, and account
+  deletion. These are account controls and are never a Pro report-export benefit.
+
 ### Free
 
 - Account, golfer profile, Today, and guided recording/import.
@@ -233,8 +274,8 @@ rules.
 
 - The configured higher analysis allowance.
 - Full practice program and evidence check-ins.
-- Matched comparisons, deeper progress, and available report/export surfaces.
-- Restore Purchases and cross-device access.
+- Matched comparisons, deeper progress, and any enhanced coaching/report export
+  surfaces the server enables, distinct from privacy data export.
 - Eligibility for later, separately released on-course functionality.
 
 The app does not create feature claims that the backend cannot fulfill.
@@ -291,14 +332,20 @@ layer so account/history invalidation can clear it consistently.
 The current `swinglab.web.app.create_app` remains the composition root. Mobile
 work extracts focused versioned routers and serializers from the large web
 module as needed, without changing current URLs or response shapes. Existing
-mobile-ready resources are reused:
+safe resources are reused and additive native serializers isolate browser-only
+diagnostics:
 
 - `/api/v1/me`;
-- golfer profile and Today;
-- owned sessions and Caddie Briefs;
+- golfer profile plus native `GET /api/v1/mobile/today`;
+- owned sessions and Caddie Briefs through
+  `GET /api/v1/mobile/sessions` and
+  `GET /api/v1/mobile/sessions/{session_id}`;
 - practice check-ins;
-- existing legacy session status/report routes; and
 - current mobile-device lifecycle records.
+
+Legacy browser `/api/v1/today`, `/api/v1/sessions`, and session-detail/status
+routes remain byte-for-byte compatible, but the native client never calls them
+because their browser contract may contain raw diagnostic log/error fields.
 
 Additive versioned resources provide native authentication exchange, resumable
 upload sessions, device push-token registration, app capabilities, and native
@@ -306,9 +353,11 @@ billing reconciliation. FastAPI's OpenAPI document generates checked-in
 TypeScript response/request types; a small hand-written transport layer owns
 authentication, idempotency, retries, and error translation.
 
-Every mutating mobile request that may be retried accepts an idempotency key.
-Database uniqueness and transaction boundaries—not only client behavior—prevent
-duplicate jobs, practice records, device registrations, and entitlement events.
+Every retryable mobile mutation uses either a stable `Idempotency-Key` or an
+explicitly tested protocol-specific conditional/idempotent contract (for example,
+upload offset plus checksum). Database uniqueness, preconditions, and transaction
+boundaries—not only client behavior—prevent duplicate jobs, practice records,
+device registrations, and entitlement events.
 
 ### 8.3 Production state boundary
 
@@ -319,12 +368,24 @@ release is blocked if measured load exceeds safe capacity. Moving canonical
 artifacts to object storage, jobs to durable leases, or records to Postgres
 requires a separately approved migration and rollback design.
 
+The approved exception is a least-privilege, append-only recovery-fence control
+store containing canonical non-PII HMAC records, an immutable chain head, and the
+verified cutover backup lineage/checkpoint. Setup is separately approval-gated
+and must prove conditional put/readback, head compare-and-swap/readback, full-
+chain recovery, and scratch restore before protected routes activate. Once any
+fenced credential/erasure state exists, successful head/chain readback is a
+permanent startup and restore prerequisite for the whole service; feature flags
+cannot downgrade to local-only success. Ordinary backup bundles and all media/
+database truth stay under the existing topology.
+
 ## 9. Authentication and device lifecycle
 
 - CaddieInsight identity remains authoritative. Shopify customer records link
   commerce but do not authenticate the native app and do not receive golf data.
-- A native credential is issued only after the existing email ownership proof
-  completes through a one-time, challenge-bound app link.
+- An ordinary golfer native credential is issued only after the existing email
+  ownership proof completes through a one-time, challenge-bound app link. The
+  provider-scoped synthetic review exception is the dedicated PKCE credential
+  flow in §6.1 and cannot authenticate a real user.
 - The raw credential is returned once, stored only in SecureStore/Keychain, and
   never logged, synced to analytics, or placed in general application state.
 - Native credentials remain account-owned, individually revocable, limited in
@@ -376,6 +437,18 @@ never deletes the golfer's account or history.
 Billing outages do not block free features. Store-management links use the
 platform's subscription-management surface.
 
+During Apple's bounded review window or Google's standing App-access lane, the
+matching review-scoped bearer gets a
+request-scoped Pro demo capability overlay so reviewers can inspect every gated
+feature without paying. The overlay is not an entitlement event, grant, purchase
+binding, renewal source, or transferable account state. Apple sandbox and Google
+provider-authoritative test-purchase verification remain separate, independently
+enabled isolated billing paths. Controlled Google License Testing proves the
+integration before submission and is closed before public review; the final
+Google reviewer gets demo access with purchase testing off because its Play OS
+identity is not the supplied app login. Apple may independently retain its
+sandbox purchase-review path.
+
 The client uses a maintained StoreKit 2 and Google Play Billing bridge, while the
 backend verifies both stores directly. A third-party subscription aggregator is
 not part of version 1 unless a separate review approves its cost, data handling,
@@ -386,16 +459,30 @@ failure boundary, and migration/exit plan.
 Native offline support is intentionally narrow:
 
 - A recorded or imported source may remain in app-private, backup-excluded local
-  storage while waiting for upload and is deleted after confirmed completion or
-  explicit discard. Platform file protection is enabled wherever supported.
+  storage through upload, queued/running analysis, and a bounded retryable-failure
+  window. It is deleted after success/re-film, permanent or exhausted/expired
+  failure, or a server-confirmed explicit discard. Platform file protection is
+  enabled wherever supported.
 - Upload offsets and non-secret job identifiers persist so interrupted work can
-  resume.
+  resume. Version 1 does not promise continued transfer while the app is
+  backgrounded: the current bounded chunk is canceled, durable state is saved,
+  and the server offset is reconciled before foreground resume.
 - The active drill, practice timer/checklist, and an unsent practice check-in may
   work offline and sync idempotently later.
 - Full reports, personal video, account pages, purchase state, and current
   entitlement require the network.
 - A `history_epoch` change clears all cached session, Brief, practice, progress,
-  and pending-write state before refetch.
+  and ordinary pending-write state before refetch. The only exception is the
+  bounded same-account reset replay envelope—purpose, original non-secret body,
+  and idempotency key with no coaching data—which survives only to recover an
+  already accepted lost terminal response and then deletes itself.
+- Before any credential/private-state read, API call, deep-link handling, or
+  private render, the app compares its immutable build environment and canonical
+  backend origin with a prior-install marker. A missing or changed marker starts
+  a crash-resumable fail-closed purge of credentials, operation envelopes,
+  staged media, cache, and installation identity, then requires fresh sign-in.
+  This prevents the shared store identity used by beta/production updates from
+  carrying staging data or credentials into production (or the reverse).
 - Device backups exclude credentials, staged swing media, and private caches.
 
 The app never presents stale cached content as a current coaching or billing
@@ -413,7 +500,8 @@ decision.
 | Upload digest mismatch | Reject completion and retain local source for one clean retry. | Restart the upload; repeated failure offers support. |
 | Queue delay | Show queue position and allow leaving the screen. | Push/deep-link on completion. |
 | Poor framing or low confidence | Withhold unsupported coaching and explain the capture problem. | Open the exact guided re-film checklist. |
-| Analysis failure | Translate the error, preserve no false result, and do not consume allowance under current server policy. | Retry when safe or contact support with a non-sensitive reference ID. |
+| Retryable analysis failure | Show the bounded server failure code and retry window; retain protected local/server source and preserve no false result. | Retry the same job idempotently before expiry, re-upload if restore lost only the server source, or discard explicitly. |
+| Permanent/exhausted analysis failure | Translate the bounded error, preserve no false result, and release retained source under the documented policy. | Record again or contact support with a non-sensitive reference ID. |
 | Purchase verification delay | Show **Confirming** and keep free features available. | Retry reconciliation or Restore Purchases. |
 | Existing external membership | Recognize the active source before offering a new purchase. | Show provider-specific management instructions. |
 | Expired/revoked credential | Clear private cache and explain that ownership must be verified again. | Continue with email. |
@@ -452,15 +540,31 @@ analysis or explicitly enables reminders. Version 1 supports:
 
 Notification content is generic. Deep links route through authenticated app
 navigation and re-check ownership on the server. Universal/app links also cover
-email sign-in, report share import where authorized, and store-review-safe public
-landing pages. Invalid, expired, or cross-account links open a safe explanation,
-not partial private data.
+email sign-in, owned analysis/Caddie Brief destinations, and store-review-safe
+public landing pages. Invalid, expired, or cross-account links open a safe
+explanation, not partial private data.
 
 Version 1 uses Expo Notifications and the Expo Push Service behind a backend
 adapter. Only generic payloads leave CaddieInsight. Expo push tokens are treated
 as device identifiers, deleted on sign-out/account deletion, and disclosed in
 the privacy policy. The adapter permits later direct APNs/FCM delivery without
 changing product code or notification semantics.
+
+Preview and production use the same public store application identity and the
+same Version 1 EAS project, so an Expo push token can survive an in-place app
+upgrade. Local environment purging is not a server-side revocation. Therefore
+staging push is a single bounded prelaunch proof lane: every message has an exact
+15-minute TTL, and before a production install can register or production push
+can enable, staging closes enqueue/send admission, drains guarded provider work,
+waits the full TTL plus clock-skew allowance after its last accepted send,
+recovery-fences and purges its registrations/outbox, and revokes its Expo sender
+credential. The upgraded client also dismisses presented notifications, cancels
+scheduled notifications, and clears the last response before adopting the new
+environment marker. A physical preview-to-production upgrade must prove the same
+token cannot be targeted by staging and can be registered only with production.
+Staging remains polling-only while Version 1 production is public; reopening
+preview push requires a separately designed isolated token namespace and release
+gate.
 
 ## 15. Telemetry and success measures
 
@@ -512,7 +616,8 @@ iteration and another controlled cohort; it never justifies an unsafe launch.
 - Permission denial and alternative paths.
 - Capture metadata and preflight validation.
 - Upload/job state persistence and recovery.
-- Auth cache clearing and `history_epoch` invalidation.
+- Auth cache clearing, environment-boundary purge, and `history_epoch`
+  invalidation.
 - Free/Pro capability rendering without hardcoded plan rules.
 - Accessibility labels, text scaling, reduced motion, contrast, and keyboard or
   switch-friendly interactions where the platform supports them.
@@ -533,9 +638,22 @@ Test representative current and minimum-supported iPhone and Android devices for
   web-payment path; and
 - export, swing-history reset, sign-out, device revocation, and account deletion.
 
-Every store build includes a functioning review account or an approved demo
-mode, precise review notes, reachable support/privacy URLs, current screenshots,
-and a reviewer-accessible production-like backend.
+Every production-review build submitted to a store provides a visible review-
+access path, precise review notes, reachable support/privacy URLs, current
+screenshots, and a reviewer-accessible production backend. Internal preview
+builds use the isolated staging backend and are never represented as submission
+builds. Apple and Google use different synthetic app accounts,
+different reusable credential records, different review-scoped bearers, and
+isolated intent/grant namespaces; they never share an app user identity. Each
+matching account receives temporary Pro demo access
+without a purchase. Store-review sandbox/test purchases are separately verified
+only for that provider's synthetic app identity, exact build, and bounded review
+window. No review credential or demo capability can bind or grant access to a
+real customer or affect the other provider. Apple review state is reconciled and
+purged before Apple ordinary purchase admission/publication. Google controlled
+License Testing and isolated purchase state are closed and purged before Google
+submission/publication, but its purchase-disabled demo credential, account, and
+Play App-access instructions remain continuously valid while the listing is active.
 
 ## 17. Release stages and rollback
 
@@ -550,6 +668,12 @@ Build native auth, app shell, coach-first surfaces, capture/import, resilient
 upload, push, and unified entitlements behind server flags. Store purchases use
 sandbox/test tracks only.
 
+Before enabling any credential revocation, browser/native erasure, or Shopify
+privacy path that depends on the recovery fence, separately approve/provision
+the control store, stop the service for the cutover-baseline backup/chain drill,
+and read back the accepted baseline. Retain older bundles as audit evidence but
+reject them for service restoration; this step does not move canonical app state.
+
 ### Stage 2: Internal alpha
 
 Use TestFlight internal testing and Google Play internal distribution across the
@@ -563,9 +687,13 @@ traffic. Evaluate the hard reliability gates and coaching-retention signals.
 
 ### Stage 4: Public store release
 
-Submit complete builds and publish gradually. Preserve the PWA and prior backend
-contract as rollback paths. Server flags can disable native purchases, push,
-resumable uploads, or individual screens without disabling the web product.
+Submit complete builds and use gradual rollout only where the provider supports
+it for that release type. Version 1 uses one manually approved launch to the
+preapproved storefront/country set when first-release percentage controls are not
+available; staged/phased percentages are reserved for later updates. Preserve the
+PWA and prior backend contract as rollback paths. Server flags can disable native
+purchases, push, resumable uploads, or individual screens without disabling the
+web product.
 
 Report release state separately:
 
