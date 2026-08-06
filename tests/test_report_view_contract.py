@@ -27,14 +27,14 @@ def test_coaching_phase_layout_is_angle_specific(angle, phases):
     payload = _coaching()
     payload["context"]["angle"] = angle
     payload["phases"] = [dict(payload["phases"][0], id=phase) for phase in phases]
-    with pytest.raises(Exception):
+    with pytest.raises(ReportViewValidationError):
         report_view_from_dict(payload)
 
 
 def test_coaching_rejects_duplicate_phase_ids():
     payload = _coaching()
     payload["phases"] = [payload["phases"][0], payload["phases"][0]]
-    with pytest.raises(Exception):
+    with pytest.raises(ReportViewValidationError):
         report_view_from_dict(payload)
 
 
@@ -46,7 +46,7 @@ def test_refilm_target_invariants(comparator, upper, successes, attempts):
     payload = _coaching()
     target = payload["refilm"]["target"]
     target.update(comparator=comparator, upper_threshold=upper, required_successes=successes, required_attempts=attempts)
-    with pytest.raises(Exception):
+    with pytest.raises(ReportViewValidationError):
         report_view_from_dict(payload)
 
 
@@ -100,6 +100,49 @@ def test_every_persisted_enum_rejects_invalid_member(path):
 ])
 def test_known_version_malformed_payloads_fail_closed(mutate):
     payload = _coaching(); mutate(payload)
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda p: p["visual_evidence"].pop("media_key"),
+    lambda p: _set(p, ("visual_evidence", "render_reasons"), ["focused_media_render_failed"]),
+    lambda p: _set(p, ("capture_guidance",), {"unexpected": True}),
+])
+def test_coaching_union_members_fail_closed(mutate):
+    payload = copy.deepcopy(report_view_payload("coaching-improve-clear")); mutate(payload)
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda p: _set(p, ("visual_evidence", "media_key"), "focus-1"),
+    lambda p: _set(p, ("visual_evidence", "render_reasons"), []),
+    lambda p: _set(p, ("visual_evidence", "render_reasons"), ["focused_media_render_failed", "tracking_unstable"]),
+])
+def test_unavailable_evidence_union_members_fail_closed(mutate):
+    payload = copy.deepcopy(report_view_payload("coaching-limited-visual-unavailable")); mutate(payload)
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
+
+
+def test_clear_coaching_rejects_unavailable_evidence():
+    payload = copy.deepcopy(report_view_payload("coaching-improve-clear"))
+    unavailable = report_view_payload("coaching-limited-visual-unavailable")["visual_evidence"]
+    payload["visual_evidence"] = unavailable
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
+
+
+@pytest.mark.parametrize("reason", ["no_readable_swing", "no_reliable_strike_event", "priority_evidence_unreliable"])
+def test_limited_coaching_rejects_fatal_reason(reason):
+    payload = copy.deepcopy(report_view_payload("coaching-limited-rendered")); payload["trust"]["reasons"] = [reason]
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
+
+
+@pytest.mark.parametrize("field, value", [
+    ("next_move", {"mode":"improve"}), ("visual_evidence", {"state":"rendered"}),
+    ("phases", [{"id":"setup"}]), ("practice", {"section_id":"practice"}),
+    ("refilm", {"section_id":"refilm"}),
+])
+def test_capture_only_rejects_all_coaching_content(field, value):
+    payload = copy.deepcopy(report_view_payload("capture-only")); payload[field] = value
     with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
 
 
