@@ -1,6 +1,6 @@
 # Guided Swing Report Redesign
 
-**Status:** Product design approved on 2026-08-06; written-spec review pending
+**Status:** Product design and written specification approved on 2026-08-06
 
 **Implementation target:** The existing Python report pipeline, authenticated web
 experience, and the native CaddieInsight mobile client
@@ -886,20 +886,26 @@ entitlement is modeled separately. The authenticated API projection removes
 owned report bundle. Raw `report-view.json` is never exposed through a generic
 file-serving route.
 
-### 12.9 Legacy API variant
+### 12.9 Owned API response union
 
-Legacy is an API response mode, not a persisted `report-view-v1` object:
+The route follows the mobile API's numeric resource-envelope convention. The
+embedded structured report keeps its independent `report-view-v1` schema
+version. `APIReportViewV1` is the same allowlisted report tree after each media
+entry drops `relative_path` and `checksum_sha256` and gains owned `url`,
+`expires_at`, and `locked` fields. Legacy is an API response mode, not a
+persisted report-view object:
 
 ```text
+StructuredReportResponse {
+  resource_version: 1
+  mode: "structured"
+  report_view: APIReportViewV1
+}
+
 LegacyReportResponse {
-  api_version: "report-view-api-v1"
+  resource_version: 1
   mode: "legacy"
-  structured_report: false
-  report_url: string                    // owned authorized route
-  capabilities: {
-    structured_report: false
-    legacy_report: true
-  }
+  legacy_report_url: string             // owned authorized route
 }
 ```
 
@@ -978,12 +984,12 @@ Provide this authenticated owned route:
 
 `GET /api/v1/sessions/{session_id}/report-view`
 
-For a new structured session, it returns `ReportViewModel v1` with owned media
-URLs and capability flags. For an old session, it returns an explicit legacy
-fallback containing the owned report URL and no invented structured fields.
-The legacy response follows `LegacyReportResponse`; it never claims
-`report-view-v1` support. A new capture-only session returns its structured
-capture-only variant and is not mistaken for legacy.
+For a new structured session, it returns `StructuredReportResponse` with owned
+media URLs and capability flags inside the projected report view. For an old
+session, it returns `LegacyReportResponse` with the owned report URL and no
+invented structured fields. The legacy response never claims `report-view-v1`
+support. A new capture-only session returns its structured capture-only variant
+and is not mistaken for legacy.
 
 Requirements:
 
@@ -1009,7 +1015,9 @@ Requirements:
 - Do not rewrite or backfill historical reports; their source frames and pose data
   may no longer exist.
 - Let historical sessions open through the existing owned legacy report route.
-- Regenerate the public synthetic sample when the presentation marker changes.
+- Prepare and validate the regenerated synthetic sample when the presentation
+  marker changes; change the served public sample only through its separate
+  activation and rollback switch.
 - Keep the report self-contained: no external font, stylesheet, or script
   dependency.
 - Preserve print/PDF behavior and expand optional detail in print.
