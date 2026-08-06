@@ -241,7 +241,7 @@ def report_view_to_dict(view:ReportViewV1)->dict[str,object]:
     _validate(view); return _jsonable(view)
 def write_report_view(path:Path,view:ReportViewV1)->Path:
     encoded=json.dumps(report_view_to_dict(view),sort_keys=True,separators=(",",":"),ensure_ascii=False,allow_nan=False)+"\n"
-    path.write_text(encoded,encoding="utf-8"); return path
+    path.write_bytes(encoded.encode("utf-8")); return path
 def load_report_view(path:Path)->ReportViewV1:
     with path.open("rb") as handle: raw=handle.read(MAX_REPORT_VIEW_BYTES+1)
     if len(raw)>MAX_REPORT_VIEW_BYTES:_err("report view exceeds maximum size")

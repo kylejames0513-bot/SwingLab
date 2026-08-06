@@ -1,13 +1,17 @@
 from __future__ import annotations
 
-import pytest
 import copy
+import json
+from pathlib import Path
+
+import pytest
 
 from swinglab.report_view import (
     ReportViewValidationError,
     UnsupportedReportViewVersion,
     report_view_from_dict,
     report_view_to_dict,
+    write_report_view,
 )
 from tests.report_view_fixtures import report_view_payload
 
@@ -160,6 +164,28 @@ def test_report_view_v1_fixtures_round_trip(name):
     payload = report_view_payload(name)
     view = report_view_from_dict(payload)
     assert report_view_to_dict(view) == payload
+
+
+def test_write_report_view_emits_exact_canonical_utf8_lf_bytes(tmp_path: Path):
+    payload = copy.deepcopy(report_view_payload("coaching-improve-clear"))
+    payload["context"]["angle_label"] = "Face-on café ⛳"
+    view = report_view_from_dict(payload)
+    expected = (
+        json.dumps(
+            report_view_to_dict(view),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode("utf-8")
+        + b"\n"
+    )
+    path = tmp_path / "report-view.json"
+
+    write_report_view(path, view)
+
+    assert path.read_bytes() == expected
+    assert b"\r\n" not in path.read_bytes()
 
 
 def test_unknown_report_view_version_fails_closed():
