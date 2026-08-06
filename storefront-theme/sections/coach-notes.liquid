@@ -1,6 +1,7 @@
 <section class="sl-coach" aria-labelledby="CoachNotes-{{ section.id }}">
   <div class="sl-wrap sl-reveal">
     <div class="sl-coach__head">
+      <p class="sl-coach__eyebrow">{{ 'homepage.coach.eyebrow' | t }}</p>
       <h2 id="CoachNotes-{{ section.id }}" class="sl-h2">{{ section.settings.heading | default: 'Coaching that shows its work' }}</h2>
       {%- if section.settings.sub != blank -%}
         <p class="sl-coach__sub">{{ section.settings.sub }}</p>
@@ -37,13 +38,21 @@
   margin-inline: auto;
   text-align: center;
 }
+.sl-coach__eyebrow {
+  margin: 0 0 18px;
+  color: var(--sl-orange);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+}
 .sl-coach__sub {
   margin: 12px auto 0;
   font-size: 16px;
   line-height: 1.55;
   color: var(--sl-ink-soft);
   max-width: 60ch;
-  text-align: left;
+  text-align: center;
   text-wrap: pretty;
 }
 .sl-coach__grid {

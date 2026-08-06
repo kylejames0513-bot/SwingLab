@@ -7,7 +7,7 @@
 
 <div class="sl-wrap sl-main-contact">
   <header class="sl-main-contact__head">
-    <p class="sl-eyebrow">{{ section.settings.eyebrow | default: 'Support' }}</p>
+    <p class="sl-eyebrow sl-main-contact__eyebrow">{{ section.settings.eyebrow | default: 'Support' }}</p>
     <h1 class="sl-main-contact__title">{{ section.settings.heading | default: page.title }}</h1>
     {%- if section.settings.intro != blank -%}
       <p class="sl-main-contact__intro">{{ section.settings.intro }}</p>
@@ -24,6 +24,7 @@
         {{ section.settings.success_text | default: 'Message received. A real person replies, usually within one business day.' }}
       </p>
     {%- else -%}
+      <p class="sl-mono-label sl-main-contact__form-label">Send a note</p>
       {%- if form.errors -%}
         <p class="sl-main-contact__errors" role="alert">
           {{ section.settings.error_text | default: 'Your message could not be sent. Please fix the highlighted field and try again.' }}
@@ -91,6 +92,15 @@
 
 .sl-main-contact__head { margin: 0 0 8px; }
 
+.sl-main-contact__eyebrow {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  color: var(--sl-orange);
+  margin-bottom: 10px;
+}
+
 .sl-main-contact__title {
   margin: 0;
   font-size: var(--sl-text-3xl);
@@ -122,6 +132,21 @@
   border-radius: var(--sl-radius-lg);
 }
 
+/* mono specimen label with a trailing hairline, pinning the form card */
+.sl-main-contact__form-label {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0;
+}
+
+.sl-main-contact__form-label::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--sl-border);
+}
+
 .sl-main-contact__field {
   display: grid;
   gap: 0;
@@ -129,6 +154,11 @@
 }
 
 .sl-main-contact__field .sl-input { width: 100%; }
+
+/* the focused field's label picks up the action green */
+.sl-main-contact__field:focus-within .sl-label {
+  color: var(--sl-green-btn);
+}
 
 .sl-main-contact__textarea {
   resize: vertical;
@@ -142,6 +172,11 @@
 
 .sl-main-contact__success {
   margin: 0;
+  padding: 16px 18px;
+  border: 1px solid rgba(26, 92, 56, 0.35);
+  border-left: 4px solid var(--sl-green-btn);
+  border-radius: var(--sl-radius-sm);
+  background: rgba(26, 92, 56, 0.07);
   font-size: 16px;
   font-weight: 600;
   color: var(--sl-green);
@@ -152,7 +187,7 @@
   margin: 0;
   padding: 12px 14px;
   border-left: 4px solid var(--sl-orange);
-  border-radius: 8px;
+  border-radius: var(--sl-radius-sm);
   background: #fff8ed;
   color: var(--sl-ink);
   font-size: 14.5px;

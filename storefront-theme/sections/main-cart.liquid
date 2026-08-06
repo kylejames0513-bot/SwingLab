@@ -7,13 +7,24 @@
     endif
   endfor
 -%}
-<div class="sl-wrap sl-cartpage">
+<div class="sl-wrap sl-cartpage sl-main-cart">
   <h1 class="sl-h2">{{ 'layout.cart.title' | t }}</h1>
 
   {%- if cart.item_count == 0 -%}
-    <p class="sl-empty">Your cart is empty.</p>
-    <a class="sl-btn sl-btn--primary" href="{{ routes.collections_url }}/swinglab-gear">Browse the gear</a>
+    <div class="sl-main-cart__empty">
+      <p class="sl-mono-label sl-main-cart__empty-kicker">Cart · 0 items</p>
+      <p class="sl-main-cart__empty-lede">Your cart is empty.</p>
+      <p class="sl-main-cart__empty-body">Add a training aid or a Pro plan and it will be waiting here.</p>
+      <div class="sl-main-cart__empty-actions">
+        <a class="sl-btn sl-btn--primary" href="{{ routes.collections_url }}/swinglab-gear">Browse the gear</a>
+        <a class="sl-btn sl-btn--outline" href="{{ routes.root_url }}#plans">See membership plans</a>
+      </div>
+    </div>
   {%- else -%}
+    <p class="sl-mono-label sl-main-cart__count">
+      {{ cart.item_count }}
+      {%- if cart.item_count == 1 %} item{% else %} items{% endif %} in the bag
+    </p>
     <form action="{{ routes.cart_url }}" method="post" id="cart">
       <div class="sl-cart-lines" role="list">
         {%- for item in cart.items -%}
@@ -21,7 +32,7 @@
           <div class="sl-cart-line" role="listitem">
             <a class="sl-cart-media" href="{{ item.url }}" tabindex="-1" aria-hidden="true">
               {%- if item.image -%}
-                {{ item.image | image_url: width: 168 | image_tag: loading: 'lazy', alt: line_alt }}
+                {{ item.image | image_url: width: 168 | image_tag: loading: 'lazy', alt: line_alt, widths: '84, 168', sizes: '84px' }}
               {%- else -%}
                 <div class="sl-placeholder" aria-hidden="true"></div>
               {%- endif -%}
@@ -60,10 +71,11 @@
       {%- endif -%}
 
       {%- if has_membership_line -%}
-        <div class="sl-note sl-main-cart__unlock">
+        <aside class="sl-note sl-main-cart__unlock">
+          <p class="sl-main-cart__unlock-label">Membership</p>
           <strong>{{ 'products.product.unlock_heading' | t }}</strong>
           <p>{{ 'products.product.unlock_body' | t }}</p>
-        </div>
+        </aside>
       {%- endif -%}
 
       <div class="sl-cart-foot">
@@ -75,9 +87,18 @@
           <button class="sl-btn sl-btn--primary" type="submit" name="checkout">Check out</button>
         </div>
         <ul class="sl-main-cart__trust" aria-label="Ordering assurance">
-          <li><a href="{{ returns_url }}">30-day returns on unused gear</a></li>
-          <li>Tracked shipping on every gear order</li>
-          <li>14-day refunds on unused Pro</li>
+          <li>
+            <svg class="sl-main-cart__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 5v6h6"/><path d="M4.6 15a8.5 8.5 0 1 0 1.6-8.6L2.5 11"/></svg>
+            <a href="{{ returns_url }}">30-day returns on unused gear</a>
+          </li>
+          <li>
+            <svg class="sl-main-cart__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/></svg>
+            <span>Tracked shipping on every gear order</span>
+          </li>
+          <li>
+            <svg class="sl-main-cart__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 22s7.5-3.8 7.5-9.5V5.2L12 2.5 4.5 5.2v7.3C4.5 18.2 12 22 12 22z"/><path d="m9 12 2 2 4-4.5"/></svg>
+            <span>14-day refunds on unused Pro</span>
+          </li>
         </ul>
       </div>
     </form>
@@ -85,20 +106,127 @@
 </div>
 
 {% stylesheet %}
+/* empty cart: one deliberate, illustration-free composition */
+.sl-main-cart__empty {
+  max-width: 560px;
+  margin: clamp(28px, 6vw, 52px) auto 0;
+  padding: clamp(32px, 5vw, 48px) var(--sl-card-inset);
+  text-align: center;
+  border: 1px dashed var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  background: var(--sl-bg-card);
+}
+
+.sl-main-cart__empty-kicker {
+  display: block;
+  margin: 0;
+}
+
+.sl-main-cart__empty-lede {
+  margin: 12px 0 0;
+  font-size: var(--sl-text-2xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  color: var(--sl-green);
+}
+
+.sl-main-cart__empty-body {
+  max-width: 38ch;
+  margin: 8px auto 0;
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--sl-ink-soft);
+}
+
+.sl-main-cart__empty-actions {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+/* line-count evidence label under the title */
+.sl-main-cart__count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 0 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-main-cart__count::before {
+  content: "";
+  width: 26px;
+  height: 1px;
+  background: var(--sl-border);
+}
+
+/* line rows: variant context set in measured mono */
+.sl-main-cart .sl-cart-variant {
+  margin: 5px 0 0;
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sl-ink-muted);
+}
+
+.sl-main-cart .sl-cart-title {
+  transition: color 0.18s ease;
+}
+
+.sl-main-cart .sl-cart-title:hover {
+  color: var(--sl-green-btn);
+}
+
+.sl-main-cart .sl-cart-remove {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  text-underline-offset: 3px;
+  transition: color 0.18s ease;
+}
+
+.sl-main-cart .sl-cart-remove:hover {
+  color: var(--sl-orange);
+}
+
+.sl-main-cart .sl-cart-line-price {
+  font-variant-numeric: tabular-nums;
+}
+
 .sl-main-cart__promo {
   max-width: 520px;
   margin: 24px 0 0;
   font-size: 14px;
 }
 
+/* membership unlock: a designed notice, not a paragraph */
 .sl-main-cart__unlock {
   max-width: 520px;
   margin: 24px 0 0;
   font-size: 14px;
 }
 
+.sl-main-cart__unlock-label {
+  margin: 0 0 6px;
+  font-family: var(--sl-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sl-orange);
+}
+
 .sl-main-cart__unlock strong {
+  display: block;
   color: var(--sl-green);
+  font-size: 15px;
+  letter-spacing: -0.01em;
 }
 
 .sl-main-cart__unlock p {
@@ -110,21 +238,29 @@
   margin-right: 8px;
 }
 
-/* compact reassurance row under the checkout actions */
+.sl-cart-subtotal strong {
+  font-variant-numeric: tabular-nums;
+}
+
+/* assurance strip: a quiet instrument panel under the checkout actions */
 .sl-main-cart__trust {
   list-style: none;
-  margin: 14px 0 0;
-  padding: 14px 0 0;
-  border-top: 1px solid var(--sl-border);
+  width: 100%;
+  margin: 18px 0 0;
+  padding: 14px var(--sl-dense-inset);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-bg-card);
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 8px 20px;
+  justify-content: space-between;
+  gap: 10px 20px;
 }
 
 .sl-main-cart__trust li {
-  position: relative;
-  padding-left: 15px;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
   font-family: var(--sl-font-mono);
   font-size: 11px;
   font-weight: 500;
@@ -134,15 +270,12 @@
   line-height: 1.6;
 }
 
-.sl-main-cart__trust li::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--sl-orange);
+.sl-main-cart__trust-icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 1px;
+  color: var(--sl-green-btn);
 }
 
 .sl-main-cart__trust a {
@@ -156,7 +289,20 @@
 
 @media (max-width: 600px) {
   .sl-main-cart__trust {
+    flex-direction: column;
     justify-content: flex-start;
+  }
+}
+
+@media (max-width: 749px) {
+  .sl-main-cart:has(.sl-main-cart__empty) {
+    text-align: center;
+  }
+  .sl-main-cart__count {
+    justify-content: center;
+  }
+  .sl-main-cart__empty-actions .sl-btn {
+    width: min(100%, 320px);
   }
 }
 {% endstylesheet %}

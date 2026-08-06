@@ -1,8 +1,8 @@
 {% paginate search.results by 12 %}
-<div class="sl-wrap sl-searchpage">
-  <header>
-    <p class="sl-eyebrow">Search</p>
-    <h1 class="sl-h2">{% if search.performed %}Search results{% else %}Search the store{% endif %}</h1>
+<div class="sl-wrap sl-searchpage sl-main-search">
+  <header class="sl-main-search__head">
+    <p class="sl-eyebrow sl-main-search__eyebrow">Search</p>
+    <h1 class="sl-main-search__title">{% if search.performed %}Search results{% else %}Search the store{% endif %}</h1>
   </header>
 
   <form action="{{ routes.search_url }}" method="get" role="search" class="sl-search-form">
@@ -13,7 +13,7 @@
   </form>
 
   {%- if search.performed -%}
-    <p class="sl-search-count">
+    <p class="sl-search-count sl-main-search__count">
       {{ search.results_count }}
       {% if search.results_count == 1 %}result{% else %}results{% endif %}
       for &ldquo;{{ search.terms | escape }}&rdquo;
@@ -36,7 +36,7 @@
     {%- endif -%}
 
     {%- if product_count > 0 -%}
-      <div class="sl-grid">
+      <div class="sl-grid sl-main-search__grid">
         {%- for item in search.results -%}
           {%- if item.object_type == 'product' -%}
             {% render 'product-card', product: item %}
@@ -50,7 +50,7 @@
         {%- for item in search.results -%}
           {%- unless item.object_type == 'product' -%}
             <a class="sl-result-card" href="{{ item.url }}">
-              <p class="sl-mono-label">{{ item.object_type }}</p>
+              <p class="sl-mono-label sl-main-search__result-type">{{ item.object_type }}</p>
               <h3 class="sl-main-search__result-title">{{ item.title }}</h3>
               {%- if item.content != blank -%}
                 <p class="sl-main-search__result-excerpt">{{ item.content | strip_html | truncatewords: 32 }}</p>
@@ -69,11 +69,82 @@
 {% endpaginate %}
 
 {% stylesheet %}
+.sl-main-search__head { margin: 0; }
+
+.sl-main-search__eyebrow {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  color: var(--sl-orange);
+  margin-bottom: 10px;
+}
+
+.sl-main-search__title {
+  margin: 0;
+  font-size: var(--sl-text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+  color: var(--sl-green);
+  text-wrap: balance;
+}
+
+/* result count as a measured evidence label with a leading tick */
+.sl-main-search__count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--sl-font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-main-search__count::before {
+  content: "";
+  width: 26px;
+  height: 1px;
+  background: var(--sl-border);
+}
+
+/* card accent: quiet arc under each title, kinetic on hover */
+.sl-main-search__grid .sl-pcard-title {
+  position: relative;
+  padding-bottom: 13px;
+}
+
+.sl-main-search__grid .sl-pcard-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 34px;
+  height: 7px;
+  border-top: 2px solid rgba(20, 71, 44, 0.3);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+
+.sl-main-search__grid .sl-pcard:hover .sl-pcard-title::after {
+  width: 56px;
+  border-top-color: var(--sl-orange);
+}
+
+.sl-main-search__grid .sl-pcard-price {
+  font-variant-numeric: tabular-nums;
+}
+
 .sl-main-search__other {
   display: grid;
   gap: 14px;
   margin-top: 30px;
   max-width: 720px;
+}
+
+.sl-main-search__result-type {
+  color: var(--sl-orange);
 }
 
 .sl-main-search__result-title {
@@ -83,11 +154,31 @@
   color: var(--sl-green);
 }
 
+.sl-result-card:hover .sl-main-search__result-title {
+  color: var(--sl-green-btn);
+}
+
 .sl-main-search__result-excerpt {
   margin: 6px 0 0;
   font-size: 14.5px;
   line-height: 1.55;
   color: var(--sl-ink-soft);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sl-main-search__grid .sl-pcard-title::after {
+    transition: width 0.22s ease, border-color 0.22s ease;
+  }
+}
+
+@media (max-width: 749px) {
+  .sl-main-search__count {
+    justify-content: center;
+  }
+  .sl-main-search__grid .sl-pcard-title::after {
+    left: 50%;
+    transform: translateX(-50%);
+  }
 }
 {% endstylesheet %}
 

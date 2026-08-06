@@ -55,6 +55,8 @@
   --sl-section-space-compact: clamp(52px, 6vw, 76px);
   --sl-heading-display: clamp(40px, 5vw, 64px);
   --sl-heading-support: clamp(32px, 4vw, 46px);
+  --sl-eyebrow-size: 11px;
+  --sl-eyebrow-track: 0.18em;
 
   --sl-shadow-card: 0 1px 2px rgba(15, 42, 27, 0.05), 0 12px 30px -14px rgba(15, 42, 27, 0.18);
   --sl-shadow-card-hover: 0 2px 4px rgba(15, 42, 27, 0.05), 0 18px 40px -16px rgba(15, 42, 27, 0.24);
@@ -105,6 +107,7 @@ img { max-width: 100%; display: block; }
 .sl-announcement :focus-visible,
 .sl-hero :focus-visible,
 .sl-report :focus-visible,
+.sl-plans :focus-visible,
 .sl-cta :focus-visible,
 .sl-footer :focus-visible {
   outline-color: #ffad62;

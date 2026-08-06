@@ -1,5 +1,6 @@
 <section id="{{ section.settings.anchor | default: 'faq' }}" class="sl-faq">
   <div class="sl-wrap sl-reveal">
+    <p class="sl-faq__eyebrow">{{ 'homepage.faq.eyebrow' | t }}</p>
     <h2 class="sl-h2">{{ section.settings.heading | default: 'Questions, answered' }}</h2>
     <div class="sl-faq__list">
       {%- for block in section.blocks -%}
@@ -43,6 +44,15 @@
 .sl-faq {
   padding-top: var(--sl-section-space-compact);
   padding-bottom: var(--sl-section-space-compact);
+}
+.sl-faq__eyebrow {
+  margin: 0 0 18px;
+  color: var(--sl-orange);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  text-align: center;
 }
 .sl-faq .sl-h2 { text-align: center; }
 .sl-faq__list {

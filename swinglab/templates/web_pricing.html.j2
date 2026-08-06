@@ -1,37 +1,217 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Pricing{% endblock %}
 {% block style %}
-  main { max-width: 1120px; }
-  .lead { max-width: 780px; margin: 0 auto 30px; text-align: center; }
+  main { max-width: 1160px; }
+  .lead { max-width: 800px; margin: 0 auto 34px; text-align: center; }
   .lead h1 { margin: 0 0 12px; color: var(--sl-green); font-size: clamp(2.25rem, 6vw, 4.25rem); line-height: .98; letter-spacing: -.052em; }
   .lead p { color: var(--sl-ink-soft); font-size: 1.02rem; max-width: 720px; margin: 0 auto; }
-  .compare-scroll { margin: 24px 0 32px; overflow-x: auto; border: 1px solid var(--sl-border); border-radius: var(--sl-radius-lg); background: #fff; box-shadow: var(--sl-shadow-sm); }
-  table.compare { width: 100%; min-width: 680px; border-collapse: collapse; background: white; }
-  .compare th, .compare td { padding: 10px 14px; border-bottom: 1px solid #eee;
-                             text-align: center; font-size: 0.95rem; }
-  .compare thead th { background: var(--primary); color: white; }
-  .compare tbody th { background: white; color: var(--sl-ink-soft); font-weight: 600; text-align: left; }
-  .compare tr:last-child td, .compare tr:last-child th { border-bottom: none; }
-  .compare .yes { color: var(--primary); font-weight: 600; }
-  .compare .no { color: var(--sl-ink-muted); }
-  .plans { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
-  .plans .card { min-width: 0; display: flex; flex-direction: column; }
-  .plans .card.hero { border: 2px solid var(--sl-green-btn); position: relative; box-shadow: var(--sl-shadow-lg); }
-  .badge { display: inline-block; background: var(--sl-green); color: white;
-           border-radius: 999px; padding: 3px 12px; font-size: 0.75rem;
-           font-weight: 700; letter-spacing: 0.02em; margin-bottom: 8px;
-           align-self: flex-start; }
-  .plans h2 { margin-top: 0; }
-  .plans .card.hero h2 { margin-top: 4px; }
-  .price { font-size: 1.75rem; font-weight: 800; color: var(--sl-green); }
-  ul { padding-left: 20px; color: var(--sl-ink-soft); flex: 1; }
-  li { margin: 8px 0; }
-  .card form, .card a.button { margin-top: auto; }
-  .card button { width: 100%; }
-  .fineprint { color: var(--sl-ink-muted); font-size: 0.85rem; margin-top: 20px; text-align: center; }
   .personal { text-align: center; color: var(--sl-ink-soft); font-size: 0.92rem;
-              margin: -6px 0 20px; }
-  @media (max-width: 760px) { .plans { grid-template-columns: 1fr; } }
+              margin: -12px 0 24px; }
+  .plans { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
+  .plans .card {
+    flex: 1 1 250px;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    padding: clamp(22px, 3.5vw, 30px);
+  }
+  .plans h2 { margin: 0 0 6px; color: var(--sl-green); font-size: 1.28rem; letter-spacing: -.02em; }
+  .price {
+    margin: 0 0 10px;
+    color: var(--sl-green);
+    font-size: 1.45rem;
+    font-weight: 800;
+    letter-spacing: -.025em;
+    font-variant-numeric: tabular-nums;
+  }
+  .plans ul {
+    flex: 1;
+    margin: 4px 0 16px;
+    padding: 0;
+    list-style: none;
+    align-content: start;
+    color: var(--sl-ink-soft);
+  }
+  .plans li {
+    position: relative;
+    margin: 0;
+    padding: 9px 0 9px 19px;
+    font-size: .92rem;
+    line-height: 1.5;
+  }
+  .plans li + li { border-top: 1px dashed var(--sl-border); }
+  .plans li::before {
+    content: "";
+    position: absolute;
+    left: 2px;
+    top: 1.28em;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--sl-green-btn);
+  }
+  .badge {
+    display: inline-flex;
+    width: fit-content;
+    margin: 0 0 14px;
+    padding: 5px 12px;
+    border-radius: 999px;
+    background: #75d59b;
+    color: #07130d;
+    font-family: var(--sl-font-mono);
+    font-size: .66rem;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .plans .card.hero {
+    flex-basis: 100%;
+    position: relative;
+    overflow: hidden;
+    display: grid;
+    grid-template-columns: minmax(0, 1.4fr) minmax(260px, .6fr);
+    gap: clamp(24px, 4vw, 56px);
+    align-items: center;
+    padding: clamp(26px, 4.5vw, 44px);
+    border: 1px solid rgba(255, 255, 255, .14);
+    border-radius: var(--sl-radius-xl);
+    background:
+      radial-gradient(circle at 86% 10%, rgba(255, 204, 142, .16), transparent 20rem),
+      var(--sl-premium-gradient);
+    color: #cfe0d5;
+    box-shadow: var(--sl-shadow-lg);
+  }
+  .plans .card.hero::after {
+    content: "";
+    position: absolute;
+    left: -84px;
+    bottom: -152px;
+    width: 300px;
+    height: 300px;
+    border: 1px solid rgba(255, 255, 255, .12);
+    border-radius: 50%;
+    pointer-events: none;
+  }
+  .card.hero .hero-plan__copy,
+  .card.hero .hero-plan__buy { position: relative; z-index: 1; }
+  .card.hero h2 { margin: 0 0 4px; color: #fff; font-size: clamp(1.6rem, 3vw, 2.2rem); letter-spacing: -.03em; }
+  .card.hero ul { margin-bottom: 0; color: #cfe0d5; }
+  .card.hero li + li { border-top-color: rgba(245, 242, 233, .16); }
+  .card.hero li::before { background: #75d59b; }
+  .hero-plan__buy {
+    padding: clamp(18px, 2.5vw, 24px);
+    border: 1px solid rgba(245, 242, 233, .2);
+    border-radius: var(--sl-radius-lg);
+    background: rgba(5, 16, 10, .6);
+    -webkit-backdrop-filter: blur(16px);
+    backdrop-filter: blur(16px);
+    box-shadow: 0 28px 60px -34px rgba(0, 0, 0, .85);
+  }
+  .hero-plan__label {
+    margin: 0 0 8px;
+    color: #ffad62;
+    font-family: var(--sl-font-mono);
+    font-size: .66rem;
+    font-weight: 500;
+    letter-spacing: .13em;
+    text-transform: uppercase;
+  }
+  .card.hero .price {
+    margin: 0;
+    color: #fff;
+    font-size: clamp(1.45rem, 2.4vw, 1.85rem);
+    line-height: 1.2;
+  }
+  .card.hero a.button,
+  .card.hero button {
+    width: 100%;
+    margin-top: 16px;
+    border-color: #f07a18;
+    background: #f07a18;
+    color: #07130d;
+    box-shadow: 0 16px 34px -20px rgba(240, 122, 24, .9);
+  }
+  .card.hero a.button:hover,
+  .card.hero button:hover {
+    border-color: #ff9a42;
+    background: #ff9a42;
+    color: #07130d;
+  }
+  .card.hero .hint { margin-top: 12px; color: rgba(245, 242, 233, .74); }
+  .card.hero .hint strong,
+  .card.hero .hint a { color: #fff; }
+  .card.founders { border-color: #d9c8b2; background: linear-gradient(180deg, #fffdfa, #fff7ec); }
+  .founders-cap {
+    width: fit-content;
+    margin: 0 0 12px;
+    padding: 5px 10px;
+    border: 1px solid #e5c9a4;
+    border-radius: 999px;
+    background: #fff3e4;
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: .64rem;
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .founders-note {
+    margin: 16px 0 0;
+    padding-top: 12px;
+    border-top: 1px dashed var(--sl-border-strong);
+    color: var(--sl-ink-muted);
+    font-size: .8rem;
+    line-height: 1.55;
+  }
+  .plans .card.quiet { background: transparent; border-color: var(--sl-border-strong); box-shadow: none; }
+  .plans .card form,
+  .plans .card:not(.hero) a.button { margin-top: auto; }
+  .plans .card a.button { text-align: center; }
+  .card button { width: 100%; }
+  .compare-section { margin-top: clamp(40px, 6vw, 64px); }
+  .compare-head { max-width: 680px; margin: 0 0 18px; }
+  .compare-head h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.5rem, 3vw, 2.1rem); letter-spacing: -.035em; line-height: 1.08; }
+  .compare-scroll {
+    overflow-x: auto;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  table.compare { width: 100%; min-width: 680px; border-collapse: collapse; }
+  .compare th, .compare td { padding: 13px 18px; border-bottom: 1px solid var(--sl-border);
+                             text-align: center; font-size: 0.92rem; }
+  .compare thead th {
+    padding: 12px 18px;
+    background: var(--sl-green);
+    color: var(--sl-green-ink);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 500;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .compare thead th:first-child { text-align: left; }
+  .compare tbody th { background: transparent; color: var(--sl-ink); font-weight: 600; text-align: left; font-size: .9rem; }
+  .compare tbody tr:nth-child(even) { background: rgba(20, 71, 44, .04); }
+  .compare td {
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: .8rem;
+    font-variant-numeric: tabular-nums;
+  }
+  .compare .yes { color: var(--sl-green-btn); font-weight: 700; }
+  .compare .no { color: var(--sl-ink-muted); }
+  .compare tr:last-child td, .compare tr:last-child th { border-bottom: none; }
+  .fineprint { max-width: 780px; margin: 16px auto 0; color: var(--sl-ink-muted); font-size: 0.82rem; text-align: center; line-height: 1.6; }
+  .compare-section + .fineprint { margin-top: 26px; padding-top: 18px; border-top: 1px dashed var(--sl-border-strong); }
+  @media (max-width: 980px) {
+    .plans .card.hero { grid-template-columns: 1fr; align-items: stretch; }
+  }
+  @media (max-width: 640px) {
+    .plans { flex-direction: column; }
+    .plans .card { flex-basis: auto; }
+  }
 {% endblock %}
 {% block main %}
   <div class="lead">
@@ -49,47 +229,6 @@
       swing event{% endif %}{% if progress_pro_only %},
       plus the progress dashboard that charts every metric session over
       session so you can watch a fix stick{% endif %}.</p>
-  </div>
-
-  <div class="compare-scroll" role="region" aria-label="Free and Pro feature comparison" tabindex="0">
-  <table class="compare">
-    <thead><tr><th scope="col">Feature</th><th scope="col">Free</th><th scope="col">Pro</th></tr></thead>
-    <tbody>
-    <tr>
-      <th scope="row">Swing analyses per month</th>
-      <td>{% if free_per_month <= 0 %}Unlimited{% elif free_matched_refilm %}{{ free_per_month }} + 1 matched re-film{% else %}{{ free_per_month }}{% endif %}</td>
-      <td class="yes">{{ "Unlimited" if pro_per_month <= 0 else pro_per_month }}</td>
-    </tr>
-    <tr>
-      <th scope="row">Coaching-ready clip: benchmarked motion metrics</th>
-      <td class="yes">Included</td><td class="yes">Included</td>
-    </tr>
-    <tr>
-      <th scope="row">Coaching-ready clip: key frames, slow motion, overlays</th>
-      <td class="yes">Included</td><td class="yes">Included</td>
-    </tr>
-    <tr>
-      <th scope="row">Coaching notes and a practice plan per coaching-ready session</th>
-      <td class="yes">Included</td><td class="yes">Included</td>
-    </tr>
-    <tr>
-      <th scope="row">Private session history</th>
-      <td class="yes">Included</td><td class="yes">Included</td>
-    </tr>
-    {% if replay_pro_only %}
-      <tr>
-        <th scope="row">&#128274; Annotated coach replay video</th>
-        <td>Upgrade and re-film</td><td class="yes">Included</td>
-      </tr>
-    {% endif %}
-    {% if progress_pro_only %}
-    <tr>
-      <th scope="row">&#128274; Progress dashboard &amp; trends</th>
-      <td class="no">&mdash;</td><td class="yes">Included</td>
-    </tr>
-    {% endif %}
-    </tbody>
-  </table>
   </div>
 
   {% if trend_line %}
@@ -118,17 +257,22 @@
   {%- endmacro %}
   <div class="plans">
     <div class="card hero">
-      {% if pro_annual_badge_text %}<span class="badge">{{ pro_annual_badge_text }}</span>{% endif %}
-      <h2>Pro — Season Pass</h2>
-      <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
-      <ul>
-        <li>{% if pro_per_month <= 0 %}Unlimited swing analyses for a year{% else %}
-          Up to {{ pro_per_month }} analyses a month for a year{% endif %}</li>
-        <li>Everything Pro includes, all season — and the off-season too</li>
-        {% if replay_pro_only %}<li>Upgrade and re-film with your annotated coach replay</li>{% endif %}
-        <li>One checkout covers the whole year — no monthly decision to remake</li>
-      </ul>
-      {{ pro_cta(pro_store_url_yearly) }}
+      <div class="hero-plan__copy">
+        {% if pro_annual_badge_text %}<span class="badge">{{ pro_annual_badge_text }}</span>{% endif %}
+        <h2>Pro — Season Pass</h2>
+        <ul>
+          <li>{% if pro_per_month <= 0 %}Unlimited swing analyses for a year{% else %}
+            Up to {{ pro_per_month }} analyses a month for a year{% endif %}</li>
+          <li>Everything Pro includes, all season — and the off-season too</li>
+          {% if replay_pro_only %}<li>Upgrade and re-film with your annotated coach replay</li>{% endif %}
+          <li>One checkout covers the whole year — no monthly decision to remake</li>
+        </ul>
+      </div>
+      <div class="hero-plan__buy">
+        <p class="hero-plan__label">A full year of Pro</p>
+        <p class="price">{{ pro_price_annual_text or "Unlimited" }}</p>
+        {{ pro_cta(pro_store_url_yearly) }}
+      </div>
     </div>
     <div class="card">
       <h2>Pro — monthly</h2>
@@ -157,21 +301,23 @@
        SKU SL-PRO-LIFE, never the variant title) — a Stripe-only install
        has no one-payment product to sell, so the card would promise
        something its checkout can't deliver. #}
-    <div class="card">
+    <div class="card founders">
+      <p class="founders-cap">Capped at the first 100 members</p>
       <h2>Pro — Founders Pass</h2>
       <p class="price">{{ pro_price_lifetime_text or "One payment" }}</p>
       <ul>
         <li>One payment — everything Pro includes, for as long as
           {{ brand.name }} runs</li>
-        <li>Capped at the first 100 members — a lifetime product is only
-          honest if we can afford to keep running it, so we limit how
-          many exist</li>
-        <li>Never renews, never expires</li>
+        <li>Never renews, never expires — Founders stay grandfathered
+          through every future price change</li>
       </ul>
       {{ pro_cta(pro_store_url_lifetime) }}
+      <p class="founders-note">A lifetime product is only honest if we can
+        afford to keep running it, so we limit how many Founders Passes
+        exist.</p>
     </div>
     {% endif %}
-    <div class="card">
+    <div class="card quiet">
       <h2>Free</h2>
       <p class="price">$0</p>
       <ul>
@@ -186,6 +332,53 @@
       {% if not user %}<a class="button" href="/">Sign up free</a>{% endif %}
     </div>
   </div>
+
+  <section class="compare-section" aria-labelledby="compare-title">
+    <div class="compare-head">
+      <p class="sl-eyebrow">Side by side</p>
+      <h2 id="compare-title">The same report engine on every plan.</h2>
+    </div>
+    <div class="compare-scroll" role="region" aria-label="Free and Pro feature comparison" tabindex="0">
+    <table class="compare">
+      <thead><tr><th scope="col">Feature</th><th scope="col">Free</th><th scope="col">Pro</th></tr></thead>
+      <tbody>
+      <tr>
+        <th scope="row">Swing analyses per month</th>
+        <td>{% if free_per_month <= 0 %}Unlimited{% elif free_matched_refilm %}{{ free_per_month }} + 1 matched re-film{% else %}{{ free_per_month }}{% endif %}</td>
+        <td class="yes">{{ "Unlimited" if pro_per_month <= 0 else pro_per_month }}</td>
+      </tr>
+      <tr>
+        <th scope="row">Coaching-ready clip: benchmarked motion metrics</th>
+        <td class="yes">Included</td><td class="yes">Included</td>
+      </tr>
+      <tr>
+        <th scope="row">Coaching-ready clip: key frames, slow motion, overlays</th>
+        <td class="yes">Included</td><td class="yes">Included</td>
+      </tr>
+      <tr>
+        <th scope="row">Coaching notes and a practice plan per coaching-ready session</th>
+        <td class="yes">Included</td><td class="yes">Included</td>
+      </tr>
+      <tr>
+        <th scope="row">Private session history</th>
+        <td class="yes">Included</td><td class="yes">Included</td>
+      </tr>
+      {% if replay_pro_only %}
+        <tr>
+          <th scope="row">&#128274; Annotated coach replay video</th>
+          <td>Upgrade and re-film</td><td class="yes">Included</td>
+        </tr>
+      {% endif %}
+      {% if progress_pro_only %}
+      <tr>
+        <th scope="row">&#128274; Progress dashboard &amp; trends</th>
+        <td class="no">&mdash;</td><td class="yes">Included</td>
+      </tr>
+      {% endif %}
+      </tbody>
+    </table>
+    </div>
+  </section>
 
   {% if pro_store_url and store_subscriptions %}
   <p class="fineprint">How renewal works: bought as a subscription on the

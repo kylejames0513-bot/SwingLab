@@ -1,8 +1,9 @@
 {%- assign contact_url = pages['contact'].url | default: '/pages/contact' -%}
-<div class="sl-wrap sl-404">
-  <p class="sl-eyebrow">Error 404</p>
+<div class="sl-wrap sl-404 sl-main-404">
+  <span class="sl-main-404__arc" aria-hidden="true"></span>
+  <p class="sl-eyebrow sl-main-404__eyebrow">Error 404</p>
   <h1 class="sl-main-404__title">{{ section.settings.heading | default: 'Out of bounds.' }}</h1>
-  <p class="sl-404-body">{{ section.settings.body | default: "This page isn't here. Take a drop and play on." }}</p>
+  <p class="sl-404-body sl-main-404__body">{{ section.settings.body | default: "This page isn't here. Take a drop and play on." }}</p>
   <div class="sl-404-actions">
     <a class="sl-btn sl-btn--primary" href="{{ routes.root_url }}">Back to the home page</a>
     <a class="sl-btn sl-btn--outline" href="{{ routes.collections_url }}/swinglab-gear">Browse the gear</a>
@@ -12,16 +13,47 @@
 </div>
 
 {% stylesheet %}
+/* one dashed ball-flight arc, the only ornament on the page */
+.sl-main-404__arc {
+  display: block;
+  width: 88px;
+  height: 44px;
+  margin: 0 auto 26px;
+  border: 1.5px dashed rgba(20, 71, 44, 0.4);
+  border-bottom: 0;
+  border-radius: 88px 88px 0 0;
+}
+
+.sl-main-404__eyebrow {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  color: var(--sl-orange);
+  margin-bottom: 14px;
+}
+
 .sl-main-404__title {
-  margin: 0;
-  font-size: var(--sl-text-4xl);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  max-width: 14ch;
+  margin: 0 auto;
+  font-size: var(--sl-heading-display);
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 0.98;
   color: var(--sl-green);
+  text-wrap: balance;
+}
+
+.sl-main-404__body {
+  max-width: 44ch;
+  margin-inline: auto;
+  font-size: var(--sl-text-lg);
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .sl-main-404__support {
-  margin: 22px 0 0;
+  margin: 26px 0 0;
   font-size: 14.5px;
   color: var(--sl-ink-soft);
 }
@@ -29,6 +61,12 @@
 .sl-main-404__support a {
   color: var(--sl-green-btn);
   font-weight: 700;
+}
+
+@media (max-width: 749px) {
+  .sl-404-actions .sl-btn {
+    width: min(100%, 320px);
+  }
 }
 {% endstylesheet %}
 

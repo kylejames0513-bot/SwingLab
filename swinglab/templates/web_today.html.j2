@@ -30,9 +30,9 @@
     margin: 0 0 7px;
     color: var(--sl-orange-text);
     font-family: var(--sl-font-mono);
-    font-size: .75rem;
+    font-size: .72rem;
     font-weight: 500;
-    letter-spacing: .09em;
+    letter-spacing: .12em;
     text-transform: uppercase;
   }
   .today-intro .today-kicker { color: var(--sl-premium-accent); }
@@ -55,7 +55,7 @@
     background: rgba(255, 254, 250, .88);
     box-shadow: var(--sl-shadow-sm);
   }
-  .today-metric__label { margin: 0 0 7px; color: var(--sl-ink-muted); font-size: .72rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+  .today-metric__label { margin: 0 0 7px; color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: .66rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; }
   .today-metric__value { margin: 0; color: var(--sl-green); font-size: clamp(1.05rem, 2vw, 1.3rem); font-weight: 800; }
   .today-metric__detail { margin: 4px 0 0; color: var(--sl-ink-soft); font-size: .84rem; }
   .next-move {
@@ -78,14 +78,14 @@
     display: inline-flex;
     align-items: center;
     width: fit-content;
-    padding: 5px 9px;
+    padding: 5px 10px;
     border-radius: 999px;
     background: #e7efe9;
     color: var(--sl-green);
     font-family: var(--sl-font-mono);
-    font-size: .68rem;
+    font-size: .66rem;
     font-weight: 500;
-    letter-spacing: .045em;
+    letter-spacing: .08em;
     text-transform: uppercase;
   }
   .state-pill--queued, .state-pill--processing { background: #e9eff5; color: #285170; }
@@ -105,7 +105,7 @@
   .dashboard-panel__header a { font-size: .85rem; font-weight: 700; white-space: nowrap; }
   .practice-lead { margin: -5px 0 18px; color: var(--sl-ink-soft); }
   .practice-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; margin: 17px 0; }
-  .practice-option { min-width: 0; height: 100%; padding: 14px; display: flex; flex-direction: column; border: 1px solid var(--sl-border-strong); border-radius: 11px; background: #fff; }
+  .practice-option { min-width: 0; height: 100%; padding: 14px; display: flex; flex-direction: column; border: 1px solid var(--sl-border-strong); border-radius: 12px; background: #fff; }
   .practice-option.selected { border: 2px solid var(--sl-green-btn); background: #f0f7f2; }
   .structured-practice .practice-option { flex-direction: row; gap: 9px; cursor: pointer; }
   .structured-practice .practice-option input { flex: 0 0 auto; margin-top: 5px; }
@@ -115,7 +115,7 @@
   .practice-option p { margin: 7px 0; color: var(--sl-ink-soft); font-size: .84rem; }
   .today-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 17px; }
   .today-actions form { margin: 0; }
-  .proof-note { margin: 0 0 20px; padding: 17px 18px; border: 1px solid #c9d9cd; border-radius: 13px; background: #f1f7f2; }
+  .proof-note { margin: 0 0 20px; padding: 17px 18px; border: 1px solid #c9d9cd; border-radius: var(--sl-radius-md); background: #f1f7f2; }
   .proof-note[data-proof-state="attention"] { border-color: #e5c5ad; background: #fff5eb; }
   .proof-note h3 { margin: 2px 0 7px; color: var(--sl-green); }
   .proof-note p { margin: 6px 0; color: var(--sl-ink-soft); font-size: .9rem; }
@@ -127,7 +127,7 @@
   .recent-session__detail { margin: 9px 0 0; color: var(--sl-ink-soft); font-size: .85rem; }
   .empty-note { margin: 0; padding: 17px; border: 1px dashed var(--sl-border-strong); border-radius: 12px; color: var(--sl-ink-soft); background: #fafaf6; }
   .success { margin: 0; padding: 12px 16px; border-left: 4px solid var(--sl-green-btn); border-radius: 7px; background: #e5f3ea; color: #124529; }
-  .loop-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 9px; padding: 5px 0 2px; color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: .74rem; text-transform: uppercase; letter-spacing: .05em; }
+  .loop-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 9px; padding: 5px 0 2px; color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
   .loop-strip strong { color: var(--sl-green); }
   .loop-strip__arrow { color: var(--sl-orange); }
   @media (max-width: 850px) {
