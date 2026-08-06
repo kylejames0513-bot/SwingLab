@@ -181,6 +181,10 @@ def _refilm(v:object)->RefilmProtocol:
     d=_obj(v,"refilm"); t=_obj(_field(d,"target"),"target"); checks=tuple(_str({"v":x},"v") for x in _seq(d,"checklist"))
     if not checks:_err("checklist must not be empty")
     target=RefilmTarget(_str(t,"text"),_str(t,"metric_id"),_enum(TargetComparator,_field(t,"comparator"),"comparator"),_num(t,"threshold"),_num(t,"upper_threshold",True),_enum(MeasurementUnit,_field(t,"unit"),"unit"),_int(t,"required_successes",1,True),_int(t,"required_attempts",1,True),_enum(TargetWindow,_field(t,"window"),"window"))
+    if target.comparator == TargetComparator.BETWEEN:
+        if target.upper_threshold is None or target.threshold >= target.upper_threshold: _err("between target requires ordered upper threshold")
+    elif target.upper_threshold is not None: _err("non-between target cannot carry upper threshold")
+    if target.required_successes is not None and target.required_attempts is not None and target.required_successes > target.required_attempts: _err("required_successes cannot exceed required_attempts")
     return RefilmProtocol(_literal(d,"section_id","refilm"),checks,target,_str(d,"primary_action_label"),_bool(d,"preserves_club"),_literal(d,"preserves_hand",True),_literal(d,"preserves_angle",True),_literal(d,"preserves_camera_height",True),_literal(d,"preserves_framing",True),_literal(d,"preserves_effort",True))
 def _capture(v:object)->CaptureGuidance:
     d=_obj(v,"capture_guidance"); checks=tuple(_str({"v":x},"v") for x in _seq(d,"checklist"))
@@ -199,6 +203,13 @@ def _validate(view:ReportViewV1)->None:
         if isinstance(view.visual_evidence,RenderedEvidence) and view.visual_evidence.media_key not in keys:_err("missing media reference")
         if view.practice.illustration_media_key is not None and view.practice.illustration_media_key not in keys:_err("missing media reference")
         if view.capture_guidance is not None:_err("coaching has no capture guidance")
+        phase_ids=tuple(phase.id for phase in view.phases); _unique(phase_ids,"phase")
+        if view.context.angle == Angle.FACE_ON:
+            expected=(PhaseId.SETUP,PhaseId.GOING_BACK,PhaseId.TRANSITION_DOWNSWING,PhaseId.IMPACT,PhaseId.FINISH)
+            if phase_ids != expected:_err("face-on coaching requires ordered five-phase layout")
+        else:
+            if phase_ids != (PhaseId.TIMING_RHYTHM,):_err("DTL coaching requires timing-rhythm layout")
+            if view.visual_evidence.kind not in (EvidenceKind.TEMPO_TIMELINE,):_err("DTL coaching cannot use body-reference evidence")
     else:
         if view.trust.state!=TrustState.REFILM_REQUIRED or view.journey_mode!=JourneyMode.CAPTURE_RETRY or view.phases:_err("capture-only union inconsistency")
         if any(x not in keys for x in view.capture_guidance.safe_media_keys):_err("missing media reference")
