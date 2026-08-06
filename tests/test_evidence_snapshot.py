@@ -91,6 +91,20 @@ def test_tracking_failure_and_target_uncertainty_are_separate_from_head_and_timi
     assert snap.target_confident is False
 
 
+def test_head_sway_requires_nose_but_head_dip_requires_ears_too():
+    observations = [
+        pose.PoseObservation(
+            make_landmarks(),
+            {i: .9 for i in pose.TRACKED} | {pose.LEFT_EAR: .49, pose.RIGHT_EAR: None},
+        )
+        for _ in range(12)
+    ]
+    snap = _snapshot(observations=observations)
+    assert snap.annotation_gates["head_sway_backswing_sw"].readable
+    assert snap.annotation_gates["head_sway_downswing_sw"].readable
+    assert not snap.annotation_gates["head_dip_sw"].readable
+
+
 def test_snapshot_copies_landmarks_and_finish_ankle_midpoints_immutably():
     event_lm = {event: make_landmarks() for event in EventId}
     observations = list(_observations())

@@ -147,18 +147,19 @@ def build_evidence_snapshot(
     snapshots = tuple(EventSnapshot(event, event_indices[event], round(event_times[event] * 1000), methods[event], labels[event]) for event in EventId)
 
     address, top, impact, finish = (event_indices[event] for event in EventId)
-    head = (pose.NOSE, pose.LEFT_EAR, pose.RIGHT_EAR)
+    head_sway = (pose.NOSE,)
+    head_height = (pose.NOSE, pose.LEFT_EAR, pose.RIGHT_EAR)
     hips = (pose.LEFT_HIP, pose.RIGHT_HIP)
     shoulders = (pose.LEFT_SHOULDER, pose.RIGHT_SHOULDER)
     ankles = (pose.LEFT_ANKLE, pose.RIGHT_ANKLE)
     lead_arm, _ = lead_trail_sides(hand)
     finish_window = tuple(range(max(0, finish), len(observations)))
     gates = {
-        "head_sway_backswing_sw": _gate("head_sway_backswing_sw", _visible(observations, head, (address, top)), hand_detail=False, poor=tracking_quality.poor),
-        "head_sway_downswing_sw": _gate("head_sway_downswing_sw", _visible(observations, head, (top, impact)), hand_detail=False, poor=tracking_quality.poor),
+        "head_sway_backswing_sw": _gate("head_sway_backswing_sw", _visible(observations, head_sway, (address, top)), hand_detail=False, poor=tracking_quality.poor),
+        "head_sway_downswing_sw": _gate("head_sway_downswing_sw", _visible(observations, head_sway, (top, impact)), hand_detail=False, poor=tracking_quality.poor),
         "hip_slide_backswing_sw": _gate("hip_slide_backswing_sw", _visible(observations, hips, (address, top)), hand_detail=False, poor=tracking_quality.poor),
         "hip_slide_downswing_sw": _gate("hip_slide_downswing_sw", _visible(observations, hips, (top, impact)), hand_detail=False, poor=tracking_quality.poor),
-        "head_dip_sw": _gate("head_dip_sw", _visible(observations, head, tuple(range(address, impact + 1))), hand_detail=False, poor=tracking_quality.poor),
+        "head_dip_sw": _gate("head_dip_sw", _visible(observations, head_height, tuple(range(address, impact + 1))), hand_detail=False, poor=tracking_quality.poor),
         "lead_arm_angle_deg": _gate("lead_arm_angle_deg", _visible(observations, lead_arm, (impact,)), hand_detail=True, poor=tracking_quality.poor),
         "shoulder_tilt_address_deg": _gate("shoulder_tilt_address_deg", _visible(observations, shoulders, (address,)), hand_detail=False, poor=tracking_quality.poor),
         "shoulder_tilt_impact_deg": _gate("shoulder_tilt_impact_deg", _visible(observations, shoulders, (impact,)), hand_detail=False, poor=tracking_quality.poor),
