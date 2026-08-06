@@ -90,84 +90,164 @@ def _crop(image: Image.Image, points: list[tuple[float, float]]) -> tuple[Image.
 
 def _point(lm, index, offset): return (float(lm[index][0] - offset[0]), float(lm[index][1] - offset[1]))
 
-def _required_indices(rule: PriorityEvidenceRule, snapshot: EvidenceSnapshot) -> list[int]:
-    if rule.kind is EvidenceKind.HIP_BOUNDARY or (rule.kind is EvidenceKind.STEADY_REFERENCE and "hip" in rule.metric_id): return [pose.LEFT_HIP, pose.RIGHT_HIP]
-    if rule.kind is EvidenceKind.LEAD_ARM_ANGLE or (rule.kind is EvidenceKind.STEADY_REFERENCE and "arm" in rule.metric_id): return list(lead_trail_sides(snapshot.hand)[0])
-    if rule.kind is EvidenceKind.SHOULDER_TILT or (rule.kind is EvidenceKind.STEADY_REFERENCE and "shoulder" in rule.metric_id): return [pose.LEFT_SHOULDER, pose.RIGHT_SHOULDER]
-    if rule.kind is EvidenceKind.FINISH_STABILITY or (rule.kind is EvidenceKind.STEADY_REFERENCE and "finish" in rule.metric_id): return [pose.LEFT_ANKLE, pose.RIGHT_ANKLE]
-    return [pose.NOSE]
+@dataclass(frozen=True)
+class _RenderContext:
+    image: Image.Image
+    draw: ImageDraw.ImageDraw
+    landmarks: pose.Landmarks
+    address: pose.Landmarks
+    offset: tuple[int, int]
+    orange: str
+    green: str
+    font: object
+    event: EventId
+    provenance: object
 
-def _render_body(rule: PriorityEvidenceRule, snapshot: EvidenceSnapshot, cfg: Config) -> tuple[Image.Image, str, str | None, str | None, str]:
-    event, _ = _phase_event(rule, snapshot)
-    lm = snapshot.event_landmarks.get(event)
+
+@dataclass(frozen=True)
+class _RenderResult:
+    image: Image.Image
+    observed: str
+    reference: str | None
+    boundary: str | None
+    alt: str
+    event: EventId
+    provenance: object
+
+
+def _prepare_render(rule: PriorityEvidenceRule, snapshot: EvidenceSnapshot, cfg: Config, required: Sequence[int], extra_points: Sequence[tuple[float, float]] = ()) -> _RenderContext:
+    event, provenance = _phase_event(rule, snapshot)
+    landmarks = snapshot.event_landmarks.get(event)
     address = snapshot.event_landmarks.get(EventId.ADDRESS)
-    path = snapshot.event_frames.get(event)
-    if lm is None or address is None or path is None:
+    source_path = snapshot.event_frames.get(event)
+    if landmarks is None or address is None or source_path is None:
         raise FocusedEvidenceRenderError("selected evidence pixels or landmarks unavailable")
-    required = _required_indices(rule, snapshot)
-    if any(index not in lm or index not in address for index in required):
+    if any(index not in landmarks or index not in address for index in required):
         raise FocusedEvidenceRenderError("required landmarks unavailable for focused annotation")
-    points = [tuple(lm[index]) for index in required] + [tuple(address[index]) for index in required]
-    if rule.kind is EvidenceKind.FINISH_STABILITY:
-        points.extend(snapshot.finish_ankle_midpoints)
+    crop_points = [tuple(landmarks[index]) for index in required]
+    crop_points.extend(tuple(address[index]) for index in required)
+    crop_points.extend(extra_points)
     try:
-        with Image.open(path) as source: image, offset = _crop(source.convert("RGB"), points)
-    except (OSError, ValueError) as exc: raise FocusedEvidenceRenderError(str(exc)) from exc
-    draw, orange, green = ImageDraw.Draw(image), cfg.overlay["captured_color"], cfg.overlay["corrected_color"]
-    font = load_font(18)
-    observed, reference, boundary = "Observed marker", "Address/start reference", None
-    if rule.kind is EvidenceKind.STEADY_REFERENCE and "head" not in rule.metric_id:
-        obs, start = _point(lm, required[0], offset), _point(address, required[0], offset)
-        draw_marker(draw, start, green); draw_marker(draw, obs, orange); draw_displacement_arrow(draw, start, obs, orange)
-        reference = "Measured phase reference"
-    elif rule.kind in (EvidenceKind.HEAD_BOUNDARY, EvidenceKind.STEADY_REFERENCE, EvidenceKind.HEAD_HEIGHT):
-        obs, start = _point(lm, pose.NOSE, offset), _point(address, pose.NOSE, offset)
-        draw_marker(draw, start, green); draw_marker(draw, obs, orange); draw_displacement_arrow(draw, start, obs, orange)
-        if rule.kind is EvidenceKind.HEAD_HEIGHT:
-            draw.line((start[0], start[1], start[0], obs[1]), fill=green, width=3); reference = "Address head-height reference"
-        elif snapshot.target_confident and rule.kind is EvidenceKind.HEAD_BOUNDARY:
-            x = start[0] + snapshot.target_direction * snapshot.shoulder_width_px * .35; draw_dashed_line(draw, (x, 10), (x, image.height - 10), green); draw.text((x + 8, 20), "Configured coaching boundary", fill=green, font=font); boundary = "Configured coaching boundary"
-    elif rule.kind is EvidenceKind.HIP_BOUNDARY:
-        obs = tuple((lm[pose.LEFT_HIP] + lm[pose.RIGHT_HIP]) / 2); start = tuple((address[pose.LEFT_HIP] + address[pose.RIGHT_HIP]) / 2)
-        obs, start = (obs[0]-offset[0], obs[1]-offset[1]), (start[0]-offset[0], start[1]-offset[1]); draw_marker(draw,start,green); draw_marker(draw,obs,orange); draw_displacement_arrow(draw,start,obs,orange)
-        if snapshot.target_confident: x=start[0]+snapshot.target_direction*snapshot.shoulder_width_px*.35; draw_dashed_line(draw,(x,10),(x,image.height-10),green); draw.text((x+8,20),"Configured coaching boundary",fill=green,font=font); boundary="Configured coaching boundary"
-    elif rule.kind is EvidenceKind.LEAD_ARM_ANGLE:
-        shoulder, elbow, wrist = lead_trail_sides(snapshot.hand)[0]
-        a,b,c = _point(lm, shoulder, offset), _point(lm, elbow, offset), _point(lm, wrist, offset)
-        draw.line((a,b,c), fill=orange, width=4); draw_marker(draw,b,orange); draw_angle_arc(draw,b,180,300,35,orange); reference="Tracked lead shoulder-elbow-wrist"
-    elif rule.kind is EvidenceKind.SHOULDER_TILT:
-        for source, color in ((address,green),(lm,orange)):
-            draw.line((_point(source,pose.LEFT_SHOULDER,offset),_point(source,pose.RIGHT_SHOULDER,offset)),fill=color,width=4)
-        reference="Address shoulder line"
-    elif rule.kind is EvidenceKind.FINISH_STABILITY:
-        points = [(x-offset[0], y-offset[1]) for x,y in snapshot.finish_ankle_midpoints]
-        if len(points) > 1: draw.line(points, fill=orange, width=3)
-        for point in points: draw_marker(draw,point,orange,5)
-        if points: draw_marker(draw,points[0],green,6); draw_marker(draw,points[-1],orange,7)
-        reference="Finish-start ankle midpoint"
-    if rule.kind is EvidenceKind.STEADY_REFERENCE:
-        observed, reference = "Observed steady baseline", "Measured phase reference"
-    draw.text((12,12), observed, fill=orange, font=font)
-    return image, observed, reference, boundary, f"Swing {snapshot.swing}, {event.value}, observed {observed.lower()}; {reference.lower()}{'; '+boundary.lower() if boundary else ''}; tracking {_tracking(snapshot)[0].value}; event method {_phase_event(rule, snapshot)[1].method.value}."
+        with Image.open(source_path) as source:
+            image, offset = _crop(source.convert("RGB"), crop_points)
+    except (OSError, ValueError) as exc:
+        raise FocusedEvidenceRenderError(str(exc)) from exc
+    return _RenderContext(image, ImageDraw.Draw(image), landmarks, address, offset,
+                          cfg.overlay["captured_color"], cfg.overlay["corrected_color"],
+                          load_font(18), event, provenance)
 
-def _render_tempo(snapshot: EvidenceSnapshot, selection: FocusedEvidenceSelection, cfg: Config) -> tuple[Image.Image, str]:
-    image = Image.new("RGB", (800, 220), "white"); draw = ImageDraw.Draw(image); font = load_font(18)
+
+def _body_result(snapshot: EvidenceSnapshot, ctx: _RenderContext, observed: str, reference: str | None, boundary: str | None) -> _RenderResult:
+    ctx.draw.text((12, 12), observed, fill=ctx.orange, font=ctx.font)
+    alt = (f"Swing {snapshot.swing}, {ctx.event.value}, observed {observed.lower()}; "
+           f"{reference.lower() if reference else 'no reference'}"
+           f"{'; ' + boundary.lower() if boundary else ''}; tracking {_tracking(snapshot)[0].value}; "
+           f"event method {ctx.provenance.method.value}.")
+    return _RenderResult(ctx.image, observed, reference, boundary, alt, ctx.event, ctx.provenance)
+
+
+def _render_head_boundary(rule, snapshot, selection, cfg):
+    ctx = _prepare_render(rule, snapshot, cfg, (pose.NOSE,))
+    observed, start = _point(ctx.landmarks, pose.NOSE, ctx.offset), _point(ctx.address, pose.NOSE, ctx.offset)
+    draw_marker(ctx.draw, start, ctx.green); draw_marker(ctx.draw, observed, ctx.orange); draw_displacement_arrow(ctx.draw, start, observed, ctx.orange)
+    boundary = None
+    if snapshot.target_confident:
+        x = start[0] + snapshot.target_direction * snapshot.shoulder_width_px * .35
+        draw_dashed_line(ctx.draw, (x, 10), (x, ctx.image.height - 10), ctx.green)
+        ctx.draw.text((x + 8, 20), "Configured coaching boundary", fill=ctx.green, font=ctx.font)
+        boundary = "Configured coaching boundary"
+    return _body_result(snapshot, ctx, "Observed head marker", "Address/start head reference", boundary)
+
+
+def _render_hip_boundary(rule, snapshot, selection, cfg):
+    ctx = _prepare_render(rule, snapshot, cfg, (pose.LEFT_HIP, pose.RIGHT_HIP))
+    observed_raw = (ctx.landmarks[pose.LEFT_HIP] + ctx.landmarks[pose.RIGHT_HIP]) / 2
+    start_raw = (ctx.address[pose.LEFT_HIP] + ctx.address[pose.RIGHT_HIP]) / 2
+    observed = (float(observed_raw[0] - ctx.offset[0]), float(observed_raw[1] - ctx.offset[1]))
+    start = (float(start_raw[0] - ctx.offset[0]), float(start_raw[1] - ctx.offset[1]))
+    draw_marker(ctx.draw, start, ctx.green); draw_marker(ctx.draw, observed, ctx.orange); draw_displacement_arrow(ctx.draw, start, observed, ctx.orange)
+    boundary = None
+    if snapshot.target_confident:
+        x = start[0] + snapshot.target_direction * snapshot.shoulder_width_px * .35
+        draw_dashed_line(ctx.draw, (x, 10), (x, ctx.image.height - 10), ctx.green)
+        ctx.draw.text((x + 8, 20), "Configured coaching boundary", fill=ctx.green, font=ctx.font)
+        boundary = "Configured coaching boundary"
+    return _body_result(snapshot, ctx, "Observed hip midpoint", "Address/start hip reference", boundary)
+
+
+def _render_head_height(rule, snapshot, selection, cfg):
+    ctx = _prepare_render(rule, snapshot, cfg, (pose.NOSE,))
+    observed, start = _point(ctx.landmarks, pose.NOSE, ctx.offset), _point(ctx.address, pose.NOSE, ctx.offset)
+    draw_marker(ctx.draw, start, ctx.green); draw_marker(ctx.draw, observed, ctx.orange); draw_displacement_arrow(ctx.draw, start, observed, ctx.orange)
+    ctx.draw.line((start[0], start[1], start[0], observed[1]), fill=ctx.green, width=3)
+    return _body_result(snapshot, ctx, "Observed head-height marker", "Address head-height reference", None)
+
+
+def _render_lead_arm_angle(rule, snapshot, selection, cfg):
+    shoulder, elbow, wrist = lead_trail_sides(snapshot.hand)[0]
+    ctx = _prepare_render(rule, snapshot, cfg, (shoulder, elbow, wrist))
+    a, b, c = (_point(ctx.landmarks, index, ctx.offset) for index in (shoulder, elbow, wrist))
+    ctx.draw.line((a, b, c), fill=ctx.orange, width=4)
+    draw_marker(ctx.draw, b, ctx.orange); draw_angle_arc(ctx.draw, b, 180, 300, 35, ctx.orange)
+    return _body_result(snapshot, ctx, "Observed lead-arm angle", "Tracked lead shoulder-elbow-wrist", None)
+
+
+def _render_shoulder_tilt(rule, snapshot, selection, cfg):
+    ctx = _prepare_render(rule, snapshot, cfg, (pose.LEFT_SHOULDER, pose.RIGHT_SHOULDER))
+    ctx.draw.line((_point(ctx.address, pose.LEFT_SHOULDER, ctx.offset), _point(ctx.address, pose.RIGHT_SHOULDER, ctx.offset)), fill=ctx.green, width=4)
+    ctx.draw.line((_point(ctx.landmarks, pose.LEFT_SHOULDER, ctx.offset), _point(ctx.landmarks, pose.RIGHT_SHOULDER, ctx.offset)), fill=ctx.orange, width=4)
+    return _body_result(snapshot, ctx, "Observed impact shoulder line", "Address shoulder line", None)
+
+
+def _render_finish_stability(rule, snapshot, selection, cfg):
+    if not snapshot.finish_ankle_midpoints:
+        raise FocusedEvidenceRenderError("finish midpoint path unavailable")
+    ctx = _prepare_render(rule, snapshot, cfg, (pose.LEFT_ANKLE, pose.RIGHT_ANKLE), snapshot.finish_ankle_midpoints)
+    path = [(float(x - ctx.offset[0]), float(y - ctx.offset[1])) for x, y in snapshot.finish_ankle_midpoints]
+    if len(path) > 1:
+        ctx.draw.line(path, fill=ctx.orange, width=3)
+    for point in path:
+        draw_marker(ctx.draw, point, ctx.orange, 5)
+    draw_marker(ctx.draw, path[0], ctx.green, 6)
+    draw_marker(ctx.draw, path[-1], ctx.orange, 7)
+    return _body_result(snapshot, ctx, "Observed finish endpoint", "Finish-start ankle midpoint", None)
+
+
+def _render_steady_reference(rule, snapshot, selection, cfg):
+    if "hip" in rule.metric_id:
+        required = (pose.LEFT_HIP, pose.RIGHT_HIP)
+    elif "arm" in rule.metric_id:
+        required = lead_trail_sides(snapshot.hand)[0]
+    elif "shoulder" in rule.metric_id:
+        required = (pose.LEFT_SHOULDER, pose.RIGHT_SHOULDER)
+    elif "finish" in rule.metric_id:
+        required = (pose.LEFT_ANKLE, pose.RIGHT_ANKLE)
+    else:
+        required = (pose.NOSE,)
+    ctx = _prepare_render(rule, snapshot, cfg, required)
+    observed, start = _point(ctx.landmarks, required[0], ctx.offset), _point(ctx.address, required[0], ctx.offset)
+    draw_marker(ctx.draw, start, ctx.green); draw_marker(ctx.draw, observed, ctx.orange); draw_displacement_arrow(ctx.draw, start, observed, ctx.orange)
+    return _body_result(snapshot, ctx, "Observed steady baseline strength", "Measured phase reference", None)
+
+
+def _render_tempo(rule, snapshot, selection, cfg):
+    image = Image.new("RGB", (900, 260), "white"); draw = ImageDraw.Draw(image); font = load_font(16)
+    color = cfg.overlay["captured_color"]
     event_rows = [(event.label, event.timestamp_ms) for event in snapshot.events]
-    draw_labeled_timeline(draw,event_rows,y=100,color=cfg.overlay["captured_color"],font=font)
-    methods = ", ".join(f"{event.label}: {event.method.value}" for event in snapshot.events)
-    facts = f"backswing {snapshot.metrics.backswing_s:.2f}s; downswing {snapshot.metrics.downswing_s:.2f}s; ratio {snapshot.metrics.tempo_ratio:.2f}; consistency {selection.tempo_ratio_std if selection.tempo_ratio_std is not None else 'unavailable'}"
-    draw.text((30, 15), "Observed timing timeline", fill=cfg.overlay["captured_color"], font=font)
-    draw.text((30, 40), methods, fill=cfg.overlay["captured_color"], font=font)
-    draw.text((30, 170), facts, fill=cfg.overlay["captured_color"], font=font)
-    return image, f"Swing {snapshot.swing} timing timeline with observed timing reference: {methods}; {facts}. Tracking {_tracking(snapshot)[0].value}."
-
-def _render_head_boundary(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
-def _render_hip_boundary(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
-def _render_head_height(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
-def _render_lead_arm_angle(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
-def _render_shoulder_tilt(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
-def _render_finish_stability(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
-def _render_steady_reference(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+    draw_labeled_timeline(draw, event_rows, y=135, color=color, font=font)
+    method_labels = [f"{event.label}: {event.method.value}" for event in snapshot.events]
+    for index, label in enumerate(method_labels):
+        draw.text((30 + (index % 2) * 430, 38 + (index // 2) * 24), label, fill=color, font=font)
+    consistency = f"{selection.tempo_ratio_std:.2f}" if selection.tempo_ratio_std is not None else "unavailable"
+    facts = f"backswing {snapshot.metrics.backswing_s:.2f}s; downswing {snapshot.metrics.downswing_s:.2f}s; ratio {snapshot.metrics.tempo_ratio:.2f}; consistency {consistency}"
+    draw.text((30, 12), "Observed timing timeline", fill=color, font=font)
+    draw.text((30, 220), facts, fill=color, font=font)
+    methods = ", ".join(method_labels)
+    provenance = _event(snapshot, EventId.ADDRESS)
+    if provenance is None:
+        raise FocusedEvidenceRenderError("timing evidence lacks address provenance")
+    alt = f"Swing {snapshot.swing} timing timeline with observed timing reference: {methods}; {facts}. Tracking {_tracking(snapshot)[0].value}."
+    return _RenderResult(image, "Observed timing events", "Event timing reference", None, alt, EventId.ADDRESS, provenance)
 RENDERERS = {
     EvidenceKind.HEAD_BOUNDARY: _render_head_boundary, EvidenceKind.HIP_BOUNDARY: _render_hip_boundary,
     EvidenceKind.HEAD_HEIGHT: _render_head_height, EvidenceKind.TEMPO_TIMELINE: _render_tempo,
@@ -180,15 +260,11 @@ def render_focused_evidence(selection: FocusedEvidenceSelection, *, out_path: Pa
     if snapshot is None: raise FocusedEvidenceRenderError("no selected snapshot")
     if angle == "dtl" and rule.kind is not EvidenceKind.TEMPO_TIMELINE: raise UnsupportedFocusedEvidence("DTL supports timing evidence only")
     if "\\" in relative_path or PurePosixPath(relative_path).is_absolute() or ".." in PurePosixPath(relative_path).parts: raise FocusedEvidenceRenderError("unsafe relative media path")
-    if rule.kind is EvidenceKind.TEMPO_TIMELINE:
-        image, alt = _render_tempo(snapshot,selection,cfg); observed, reference, boundary = "Observed timing events", "Event timing reference", None
-        event, provenance = EventId.ADDRESS, _event(snapshot, EventId.ADDRESS)
-    else:
-        image, observed, reference, boundary, alt = RENDERERS[rule.kind](rule,snapshot,cfg); event, provenance = _phase_event(rule,snapshot)
-    try: saved = save_branded(image,out_path,cfg); digest = hashlib.sha256(saved.read_bytes()).hexdigest()
+    result = RENDERERS[rule.kind](rule, snapshot, selection, cfg)
+    try: saved = save_branded(result.image,out_path,cfg); digest = hashlib.sha256(saved.read_bytes()).hexdigest()
     except (OSError, ValueError) as exc: raise FocusedEvidenceRenderError(str(exc)) from exc
     tracking, reasons = _tracking(snapshot)
-    evidence = RenderedEvidence(rule.kind,"rendered",snapshot.swing,rule.phase,provenance.method,provenance.timestamp_ms,tuple(EventProvenance(item.event,item.method,item.timestamp_ms,item.label) for item in snapshot.events),tracking,reasons,(),observed,reference,boundary,selection.annotation_readable_swings,selection.triggered_swings,None,"Focused evidence from the selected swing.",alt,"priority-evidence")
+    evidence = RenderedEvidence(rule.kind,"rendered",snapshot.swing,rule.phase,result.provenance.method,result.provenance.timestamp_ms,tuple(EventProvenance(item.event,item.method,item.timestamp_ms,item.label) for item in snapshot.events),tracking,reasons,(),result.observed,result.reference,result.boundary,selection.annotation_readable_swings,selection.triggered_swings,None,"Focused evidence from the selected swing.",result.alt,"priority-evidence")
     media = MediaEntry("priority-evidence",MediaRole.PRIORITY_EVIDENCE,"image/png",Entitlement.CORE,relative_path,digest)
     return FocusedEvidenceArtifact(evidence,media,saved)
 
