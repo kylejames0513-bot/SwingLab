@@ -161,11 +161,19 @@ def _render_tempo(snapshot: EvidenceSnapshot, selection: FocusedEvidenceSelectio
     draw.text((30, 170), facts, fill=cfg.overlay["captured_color"], font=font)
     return image, f"Swing {snapshot.swing} timing timeline with observed timing reference: {methods}; {facts}. Tracking {_tracking(snapshot)[0].value}."
 
-def _body_entry(rule, snapshot, cfg):
-    return _render_body(rule, snapshot, cfg)
-
-RENDERERS = {kind: _body_entry for kind in EvidenceKind if kind is not EvidenceKind.TEMPO_TIMELINE}
-RENDERERS[EvidenceKind.TEMPO_TIMELINE] = _render_tempo
+def _render_head_boundary(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+def _render_hip_boundary(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+def _render_head_height(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+def _render_lead_arm_angle(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+def _render_shoulder_tilt(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+def _render_finish_stability(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+def _render_steady_reference(rule, snapshot, cfg): return _render_body(rule, snapshot, cfg)
+RENDERERS = {
+    EvidenceKind.HEAD_BOUNDARY: _render_head_boundary, EvidenceKind.HIP_BOUNDARY: _render_hip_boundary,
+    EvidenceKind.HEAD_HEIGHT: _render_head_height, EvidenceKind.TEMPO_TIMELINE: _render_tempo,
+    EvidenceKind.LEAD_ARM_ANGLE: _render_lead_arm_angle, EvidenceKind.SHOULDER_TILT: _render_shoulder_tilt,
+    EvidenceKind.FINISH_STABILITY: _render_finish_stability, EvidenceKind.STEADY_REFERENCE: _render_steady_reference,
+}
 
 def render_focused_evidence(selection: FocusedEvidenceSelection, *, out_path: Path, relative_path: str, cfg: Config, angle: str = "face_on") -> FocusedEvidenceArtifact:
     snapshot, rule = selection.snapshot, selection.rule

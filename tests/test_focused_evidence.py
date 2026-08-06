@@ -94,3 +94,8 @@ def test_tempo_exposes_methods_durations_ratio_and_consistency(tmp_path):
     selection = select_focused_evidence(rule=rule, snapshots=(snapshot,), stats={"tempo_ratio": {"mean": 3.0, "std": .18}})
     artifact = render_focused_evidence(selection, out_path=tmp_path / "tempo.png", relative_path="media/tempo.png", cfg=Config(), angle="dtl")
     assert "opening_baseline" in artifact.evidence.alt_text and "backswing" in artifact.evidence.alt_text and "0.18" in artifact.evidence.alt_text
+
+
+def test_renderer_dispatch_covers_every_evidence_kind():
+    from swinglab.focused_evidence import RENDERERS
+    assert set(RENDERERS) == set(EvidenceKind)
