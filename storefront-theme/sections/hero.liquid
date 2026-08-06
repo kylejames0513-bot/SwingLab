@@ -1,7 +1,9 @@
 {%- liquid
+  # The dusk-range campaign pair ships with the theme as immutable webp
+  # assets; an image picker still lets a reviewed release swap the art.
   assign hero_image_label = 'homepage.hero.image_label' | t
-  assign hero_image = section.settings.image | default: images['caddieinsight-premium-range-hero-0852e38d.png']
-  assign hero_mobile_image = section.settings.mobile_image | default: images['caddieinsight-premium-range-hero-mobile-2e4ee946.png']
+  assign hero_image = section.settings.image
+  assign hero_mobile_image = section.settings.mobile_image
   assign hero_image_alt = hero_image_label
 -%}
 
@@ -24,7 +26,23 @@
           alt: hero_image_alt }}
       </picture>
     {%- else -%}
-      <div class="sl-hero__fallback" aria-hidden="true"></div>
+      <picture>
+        <source
+          media="(max-width: 749px)"
+          srcset="{{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '480x' }} 480w, {{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '750x' }} 750w, {{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '1000x' }} 1000w, {{ 'caddieinsight-range-hero-mobile.webp' | asset_img_url: '1122x' }} 1122w"
+          sizes="100vw">
+        <img
+          class="sl-hero__image"
+          src="{{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1672x' }}"
+          srcset="{{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '750x' }} 750w, {{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1100x' }} 1100w, {{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1400x' }} 1400w, {{ 'caddieinsight-range-hero-desktop.webp' | asset_img_url: '1672x' }} 1672w"
+          sizes="100vw"
+          width="1672"
+          height="941"
+          alt="{{ hero_image_alt | escape }}"
+          loading="eager"
+          fetchpriority="high"
+          decoding="async">
+      </picture>
     {%- endif -%}
   </figure>
 
@@ -125,15 +143,11 @@
   inset: 0;
   margin: 0;
 }
-.sl-hero__image,
-.sl-hero__fallback {
+.sl-hero__image {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center;
-}
-.sl-hero__fallback {
-  background: radial-gradient(circle at 72% 42%, rgba(240, 122, 24, 0.22), transparent 24%), linear-gradient(135deg, #0f2d1e, #050c08);
 }
 .sl-hero__inner {
   position: relative;
@@ -285,7 +299,7 @@
   align-self: center;
   text-align: center;
   border: 1px solid rgba(245, 242, 233, 0.2);
-  border-radius: 22px;
+  border-radius: var(--sl-radius-lg);
   background: rgba(5, 16, 10, 0.68);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
@@ -318,7 +332,7 @@
   margin-top: 16px;
   overflow: hidden;
   border: 1px solid rgba(245, 242, 233, 0.1);
-  border-radius: 15px;
+  border-radius: var(--sl-radius);
   background:
     linear-gradient(rgba(255, 255, 255, 0.035) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px),
@@ -486,8 +500,8 @@
     { "type": "text", "id": "chip2", "label": "Proof point 2", "default": "NO CARD" },
     { "type": "text", "id": "chip3", "label": "Proof point 3", "default": "CLUB SAVED" },
     { "type": "text", "id": "fine_print", "label": "Fine print", "default": "Supported 2D movement and timing estimates from phone video." },
-    { "type": "image_picker", "id": "image", "label": "Desktop hero image", "info": "Use the approved wide premium range artwork." },
-    { "type": "image_picker", "id": "mobile_image", "label": "Mobile hero image", "info": "Use the approved portrait companion artwork." },
+    { "type": "image_picker", "id": "image", "label": "Desktop hero image", "info": "Leave blank to use the packaged dusk-range artwork (caddieinsight-range-hero-desktop.webp)." },
+    { "type": "image_picker", "id": "mobile_image", "label": "Mobile hero image", "info": "Leave blank to use the packaged portrait companion (caddieinsight-range-hero-mobile.webp)." },
     { "type": "text", "id": "signal_club", "label": "Sample club", "default": "Iron" },
     { "type": "text", "id": "signal_priority", "label": "Sample priority", "default": "Lead-hip control" },
     { "type": "text", "id": "signal_target", "label": "Sample target", "default": "One pass mark" }

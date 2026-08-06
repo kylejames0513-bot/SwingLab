@@ -31,10 +31,13 @@
     <section class="sl-wrap sl-related-products" aria-label="{{ section.settings.heading | default: 'Related products' | escape }}">
       <div class="sl-related-products__inner">
         <header class="sl-related-products__head">
-          <h2 class="sl-h2">{{ section.settings.heading | default: 'Pairs with your practice plan' }}</h2>
-          <a class="sl-related-products__all" href="{{ rel_collection.url }}">View all training gear</a>
+          <div class="sl-related-products__head-copy">
+            <p class="sl-related-products__eyebrow">{{ section.settings.eyebrow | default: 'Related gear' }}</p>
+            <h2 class="sl-h2">{{ section.settings.heading | default: 'Pairs with your practice plan' }}</h2>
+          </div>
+          <a class="sl-related-products__all" href="{{ rel_collection.url }}">View all training gear<span class="sl-related-products__all-arrow" aria-hidden="true">→</span></a>
         </header>
-        <div class="sl-grid">{{ rel_cards }}</div>
+        <div class="sl-grid sl-related-products__grid">{{ rel_cards }}</div>
       </div>
     </section>
   {%- endif -%}
@@ -58,8 +61,23 @@
   flex-wrap: wrap;
 }
 
+.sl-related-products__head-copy { min-width: 0; }
+
+.sl-related-products__eyebrow {
+  margin: 0 0 10px;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
+  color: var(--sl-orange);
+}
+
 .sl-related-products__all {
   min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--sl-font-mono);
   font-size: 12px;
   font-weight: 500;
@@ -67,6 +85,53 @@
   text-transform: uppercase;
   text-decoration: none;
   color: var(--sl-green-btn);
+  transition: color 0.18s ease;
+}
+
+.sl-related-products__all:hover {
+  color: var(--sl-orange);
+}
+
+.sl-related-products__all-arrow {
+  display: inline-block;
+}
+
+/* card accent: quiet arc under each title, kinetic on hover */
+.sl-related-products__grid .sl-pcard-title {
+  position: relative;
+  padding-bottom: 13px;
+}
+
+.sl-related-products__grid .sl-pcard-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 34px;
+  height: 7px;
+  border-top: 2px solid rgba(20, 71, 44, 0.3);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+
+.sl-related-products__grid .sl-pcard:hover .sl-pcard-title::after {
+  width: 56px;
+  border-top-color: var(--sl-orange);
+}
+
+.sl-related-products__grid .sl-pcard-price {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sl-related-products__grid .sl-pcard-title::after {
+    transition: width 0.22s ease, border-color 0.22s ease;
+  }
+  .sl-related-products__all-arrow {
+    transition: transform 0.18s ease;
+  }
+  .sl-related-products__all:hover .sl-related-products__all-arrow {
+    transform: translateX(3px);
+  }
 }
 
 @media (max-width: 749px) {
@@ -78,9 +143,11 @@
     text-align: center;
   }
   .sl-related-products__all {
-    display: inline-flex;
-    align-items: center;
     justify-content: center;
+  }
+  .sl-related-products__grid .sl-pcard-title::after {
+    left: 50%;
+    transform: translateX(-50%);
   }
 }
 {% endstylesheet %}
@@ -89,6 +156,12 @@
 {
   "name": "Related products",
   "settings": [
+    {
+      "type": "text",
+      "id": "eyebrow",
+      "label": "Eyebrow",
+      "default": "Related gear"
+    },
     {
       "type": "text",
       "id": "heading",

@@ -597,8 +597,29 @@
     box-shadow: 0 14px 28px -16px rgba(9, 50, 29, .72);
   }
   main button:disabled { background: #bbb; border-color: #bbb; box-shadow: none; cursor: default; transform: none; }
+  main button:active, a.button:active { transform: translateY(0); box-shadow: 0 6px 16px -12px rgba(9, 50, 29, .6); }
   a.button.secondary { background: transparent; color: var(--sl-green); border-color: var(--sl-border-strong); box-shadow: none; }
   a.button.secondary:hover { background: var(--sl-bg-card); border-color: var(--sl-green); color: var(--sl-green); }
+  {# Zero-specificity control baseline: every page inherits one input/select
+     look, and any page-level rule (even a bare element selector) still wins. #}
+  :where(main input[type=text], main input[type=email], main input[type=password],
+         main input[type=search], main input[type=number], main select, main textarea) {
+    width: 100%;
+    min-height: 48px;
+    padding: 11px 13px;
+    box-sizing: border-box;
+    border: 1.5px solid var(--sl-control-border);
+    border-radius: 10px;
+    background: #fff;
+    color: var(--sl-ink);
+    font: inherit;
+  }
+  :where(main input:focus, main select:focus, main textarea:focus) {
+    border-color: var(--sl-green-btn);
+    outline: 3px solid rgba(26, 92, 56, .16);
+    outline-offset: 1px;
+  }
+  :where(main input[type=checkbox], main input[type=radio]) { accent-color: var(--sl-green-btn); }
   .hint { color: var(--sl-ink-soft); font-size: 0.88rem; margin-top: 4px; }
   .bar { background: #e6e3dc; border-radius: 6px; height: 14px; margin: 14px 0 6px; }
   .bar > div { background: var(--accent); border-radius: 6px; height: 100%;
@@ -677,7 +698,7 @@
     .sl-header__toggle { display: flex; }
     .sl-header__logo { font-size: 18px; }
     .sl-header__logo-img { height: 28px; max-width: 175px; object-fit: contain; }
-    .sl-header__cart { min-height: 38px; }
+    .sl-header__cart { min-height: 44px; }
     main { margin-top: 32px; padding: 0 18px; }
     .sl-app-footer__inner { grid-template-columns: 1fr 1fr; }
     .sl-app-footer__brand { grid-column: 1 / -1; }

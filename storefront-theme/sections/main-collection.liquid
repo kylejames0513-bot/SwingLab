@@ -4,7 +4,7 @@
 
 {%- if collection.image -%}
   <div class="sl-main-collection__banner">
-    {{ collection.image | image_url: width: 2600 | image_tag: class: 'sl-main-collection__banner-img', alt: banner_alt, loading: 'eager' }}
+    {{ collection.image | image_url: width: 2600 | image_tag: class: 'sl-main-collection__banner-img', alt: banner_alt, loading: 'eager', widths: '750, 1100, 1600, 2200, 2600', sizes: '100vw' }}
     <div class="sl-main-collection__banner-inner">
       <div class="sl-wrap">
         <p class="sl-mono-label sl-main-collection__kicker">Collection</p>
@@ -17,12 +17,13 @@
 <div class="sl-wrap sl-collection{% if collection.image %} sl-main-collection--bannered{% endif %}">
   {%- unless collection.image -%}
     <header class="sl-collection-head">
+      <p class="sl-mono-label sl-main-collection__kicker sl-main-collection__kicker--light">Collection</p>
       <h1 class="sl-h2">{{ collection.title }}</h1>
     </header>
   {%- endunless -%}
 
   {%- if collection.description != blank -%}
-    <div class="sl-collection-desc sl-rte">{{ collection.description }}</div>
+    <div class="sl-collection-desc sl-rte sl-main-collection__desc">{{ collection.description }}</div>
   {%- endif -%}
 
   <p class="sl-mono-label sl-main-collection__count">
@@ -31,7 +32,7 @@
   </p>
 
   {%- if collection.products.size > 0 -%}
-    <div class="sl-grid">
+    <div class="sl-grid sl-main-collection__grid">
       {%- for product in collection.products -%}
         {% render 'product-card', product: product %}
       {%- endfor -%}
@@ -120,9 +121,71 @@
 /* bannerless heading wrapper (header element carries no default margin) */
 .sl-collection-head { margin: 0; }
 
-.sl-main-collection__count {
+.sl-main-collection__kicker--light {
   display: block;
-  margin: 20px 0 0;
+  margin: 0 0 10px;
+  color: var(--sl-orange);
+}
+
+.sl-main-collection__desc {
+  max-width: 62ch;
+}
+
+/* product count as a measured evidence label with a leading tick */
+.sl-main-collection__count {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 22px 0 0;
+}
+
+.sl-main-collection__count::before {
+  content: "";
+  width: 26px;
+  height: 1px;
+  background: var(--sl-border);
+}
+
+/* card accent: quiet arc under each title, kinetic on hover */
+.sl-main-collection__grid .sl-pcard-title {
+  position: relative;
+  padding-bottom: 13px;
+}
+
+.sl-main-collection__grid .sl-pcard-title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 34px;
+  height: 7px;
+  border-top: 2px solid rgba(20, 71, 44, 0.3);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+
+.sl-main-collection__grid .sl-pcard:hover .sl-pcard-title::after {
+  width: 56px;
+  border-top-color: var(--sl-orange);
+}
+
+.sl-main-collection__grid .sl-pcard-price {
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sl-main-collection__grid .sl-pcard-title::after {
+    transition: width 0.22s ease, border-color 0.22s ease;
+  }
+}
+
+@media (max-width: 749px) {
+  .sl-main-collection__count {
+    justify-content: center;
+  }
+  .sl-main-collection__grid .sl-pcard-title::after {
+    left: 50%;
+    transform: translateX(-50%);
+  }
 }
 {% endstylesheet %}
 

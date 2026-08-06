@@ -354,7 +354,11 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--sl-border);
-  transition: background-color .24s ease, border-color .24s ease, box-shadow .24s ease, backdrop-filter .24s ease;
+  transition:
+    background-color .32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    border-color .32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    box-shadow .32s cubic-bezier(0.22, 0.61, 0.36, 1),
+    backdrop-filter .32s cubic-bezier(0.22, 0.61, 0.36, 1);
 }
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   .sl-header { background: var(--sl-bg); }
@@ -400,12 +404,21 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   text-decoration: none;
   white-space: nowrap;
   cursor: pointer;
+  transition: background-color .16s ease, color .16s ease;
 }
 .sl-header__link:hover,
 .sl-header__dropdown-trigger:hover,
 .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
   background: var(--sl-bg-card);
   color: var(--sl-green-btn);
+}
+.sl-header__link:focus-visible,
+.sl-header__dropdown-trigger:focus-visible,
+.sl-header__search:focus-visible,
+.sl-header__cart:focus-visible,
+.sl-header__cta:focus-visible,
+.sl-header__toggle:focus-visible {
+  outline-offset: 2px;
 }
 .sl-header__link.is-current {
   background: var(--sl-orange-soft);
@@ -435,17 +448,18 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   gap: 2px;
   background: var(--sl-bg-card);
   border: 1px solid var(--sl-border);
-  border-radius: 14px;
+  border-radius: var(--sl-radius);
   box-shadow: 0 18px 42px -24px rgba(15, 42, 27, 0.42);
 }
 .sl-header__dropdown-menu--right { right: 0; left: auto; }
 .sl-header__dropdown-menu a {
   padding: 10px 12px;
-  border-radius: 9px;
+  border-radius: var(--sl-radius-sm);
   color: var(--sl-ink);
   font-size: 14px;
   font-weight: 600;
   text-decoration: none;
+  transition: background-color .16s ease, color .16s ease;
 }
 .sl-header__dropdown-menu a:hover {
   background: var(--sl-orange-soft);
@@ -541,9 +555,13 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   border-radius: 50%;
   color: var(--sl-green);
   text-decoration: none;
-  transition: border-color .15s ease, color .15s ease;
+  transition: border-color .16s ease, color .16s ease, background-color .16s ease;
 }
-.sl-header__search:hover { border-color: var(--sl-orange); color: var(--sl-orange); }
+.sl-header__search:hover {
+  border-color: var(--sl-orange);
+  color: var(--sl-orange);
+  background: var(--sl-orange-soft);
+}
 .sl-header__search svg { display: block; }
 .sl-header__cart {
   min-height: 40px;
@@ -559,9 +577,13 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   line-height: 1;
   text-decoration: none;
   white-space: nowrap;
-  transition: border-color .15s ease, color .15s ease;
+  transition: border-color .16s ease, color .16s ease, background-color .16s ease;
 }
-.sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange); }
+.sl-header__cart:hover {
+  border-color: var(--sl-orange);
+  color: var(--sl-orange);
+  background: var(--sl-orange-soft);
+}
 .sl-header__cart-count {
   min-width: 22px;
   padding: 5px 6px;
@@ -764,6 +786,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
 .sl-header--premium .sl-header__cart:hover {
   border-color: #ff9a42;
   color: #ffb06b;
+  background: rgba(255, 255, 255, 0.07);
 }
 .sl-header--premium .sl-header__search {
   border-color: rgba(245, 242, 233, 0.48);
@@ -772,6 +795,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
 .sl-header--premium .sl-header__search:hover {
   border-color: #ff9a42;
   color: #ffb06b;
+  background: rgba(255, 255, 255, 0.07);
 }
 .sl-header--premium .sl-header__cart-count {
   background: #f07a18;
@@ -917,6 +941,10 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
 }
 @media (prefers-reduced-motion: reduce) {
   .sl-header { transition: none; }
+  .sl-header__link,
+  .sl-header__dropdown-trigger,
+  .sl-header__search,
+  .sl-header__cart { transition: none; }
   .sl-header__chevron { transition: none; }
   .sl-menu[open] .sl-menu__panel { animation: none; }
 }

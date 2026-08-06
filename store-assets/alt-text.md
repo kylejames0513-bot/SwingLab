@@ -1,0 +1,19 @@
+# Alt text — membership card series and range hero
+
+One line of descriptive alt text per shipped image, written the way we
+talk: say what is in the picture, claim nothing the picture does not show.
+Theme agents binding these files via `asset_url` should carry the alt text
+through unchanged.
+
+| File in `storefront-theme/assets/` | Alt text |
+| --- | --- |
+| `caddieinsight-founders-card-v2.png` | Illustrated Founders Pass membership card in deep green with an orange swing arc, marked $149 one payment, first 100 members, never renews. |
+| `caddieinsight-pro-card-v2.png` | Golfer in a green polo finishing a swing at a driving range at sunrise, with a phone on a small tripod filming from behind. |
+| `caddieinsight-free-card-v2.png` | Golfer on a quiet practice tee setting a phone on a hip-height tripod beside a ball and one iron before filming a swing. |
+| `caddieinsight-range-hero-desktop.webp` | Golfer holding a follow-through on a driving range at dusk, a warm light trail tracing the club path, with a phone on a tripod filming beside him. |
+| `caddieinsight-range-hero-mobile.webp` | Portrait view of a golfer at follow-through on a dusk driving range, a light trail tracing the club path and a phone on a tripod filming. |
+
+The Pro and Free card scenes are AI-generated campaign photography (see
+`prompts/caddieinsight-membership-card-v2.md`); the people shown are not
+customers and the alt text does not present them as such. The Founders
+card is generated as code by `founders_card.py`.

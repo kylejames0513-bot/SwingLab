@@ -38,8 +38,20 @@
               {%- endif -%}
             </div>
             <div class="sl-gear__body">
+              {%- liquid
+                # mirror the product-card snippet: prefilter swinglab: tags, cap at two chips
+                assign gear_flag_str = ''
+                for tag in product.tags
+                  assign gt = tag | downcase | strip
+                  assign gt_prefix = gt | slice: 0, 9
+                  if gt_prefix == 'swinglab:'
+                    assign gear_flag_str = gear_flag_str | append: gt | append: ','
+                  endif
+                endfor
+                assign gear_flag_tags = gear_flag_str | split: ','
+              -%}
               {%- capture flag_chips -%}
-                {%- for tag in product.tags -%}
+                {%- for tag in gear_flag_tags limit: 2 -%}
                   {%- capture flag_label -%}
                     {%- render 'swinglab-tag-label', tag: tag -%}
                   {%- endcapture -%}
@@ -120,17 +132,21 @@
   overflow: hidden;
   box-shadow: var(--sl-shadow-card);
 }
-.sl-gear__media { line-height: 0; }
+.sl-gear__media {
+  line-height: 0;
+  overflow: hidden;
+  border-bottom: 1px solid var(--sl-border);
+}
 .sl-gear__media img {
   width: 100%;
   height: auto; /* the img width/height attributes otherwise defeat the crop */
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1;
   object-fit: cover;
   display: block;
 }
 .sl-gear__media-empty {
   width: 100%;
-  aspect-ratio: 4 / 3;
+  aspect-ratio: 1;
   background: repeating-linear-gradient(45deg, #e7ede6, #e7ede6 14px, #dde5db 14px, #dde5db 28px);
 }
 .sl-gear__body {
@@ -146,29 +162,47 @@
 .sl-gear__chips {
   display: flex;
   flex-wrap: wrap;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 6px;
 }
 .sl-gear__chips .sl-chip {
-  font-size: 10.5px;
-  padding: 4px 10px;
+  font-size: 10px;
+  padding: 3px 10px;
 }
 .sl-gear__title {
+  position: relative;
   margin: 2px 0 0;
+  padding-bottom: 13px;
   font-size: 18px;
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--sl-green);
-  text-align: center;
+}
+/* card accent: quiet arc under the title, kinetic on hover */
+.sl-gear__title::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 34px;
+  height: 7px;
+  border-top: 2px solid rgba(20, 71, 44, 0.3);
+  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+}
+.sl-gear__card:hover .sl-gear__title {
+  color: var(--sl-green-btn);
+}
+.sl-gear__card:hover .sl-gear__title::after {
+  width: 56px;
+  border-top-color: var(--sl-orange);
 }
 .sl-gear__price {
   margin: auto 0 0;
   padding-top: 8px;
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
-  color: var(--sl-ink);
-  text-align: center;
+  color: var(--sl-ink-soft);
 }
 .sl-gear__cell--empty { grid-column: 1 / -1; }
 .sl-gear__cell--empty code {
@@ -198,10 +232,17 @@
     align-items: center;
     text-align: center;
   }
+  .sl-gear__chips { justify-content: center; }
+  .sl-gear__title::after {
+    left: 50%;
+    transform: translateX(-50%);
+  }
   .sl-gear__cell--empty { text-align: center; }
 }
 @media (prefers-reduced-motion: no-preference) {
   .sl-gear__card { transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease; }
+  .sl-gear__title { transition: color .22s ease; }
+  .sl-gear__title::after { transition: width .22s ease, border-color .22s ease; }
   .sl-gear__card:hover {
     transform: translateY(-4px);
     box-shadow: var(--sl-shadow-card-hover);

@@ -1,6 +1,7 @@
 {%- liquid
   # Live Pro pricing for the "Price" row, with graceful fallback to the
   # static block text when the product or a named variant cannot resolve.
+  # Variants match by SKU first; lifetime access is always SKU SL-PRO-LIFE.
   assign pro_product = all_products['swinglab-pro']
   assign live_pro_price = ''
   if pro_product != blank
@@ -11,22 +12,25 @@
       assign variant_title = variant.title | downcase
       if variant.sku == 'SL-PRO-LIFE'
         assign founders_price = variant.price | money
-      elsif variant_title contains 'year' or variant_title contains 'annual' or variant_title contains 'season'
+      elsif variant.sku == 'SL-PRO-12MO'
+        assign yearly_price = variant.price | money
+      elsif yearly_price == '' and variant_title contains 'year' or variant_title contains 'annual' or variant_title contains 'season'
         assign yearly_price = variant.price | money
       endif
     endfor
     assign live_pro_price = monthly_price | append: '/mo'
     if yearly_price != blank
-      assign live_pro_price = live_pro_price | append: ' · ' | append: yearly_price | append: '/yr Season Pass'
+      assign live_pro_price = live_pro_price | append: ' · Season Pass ' | append: yearly_price | append: '/yr'
     endif
     if founders_price != blank
-      assign live_pro_price = live_pro_price | append: ' · ' | append: founders_price | append: ' Founders Pass'
+      assign live_pro_price = live_pro_price | append: ' · Founders Pass ' | append: founders_price
     endif
   endif
 -%}
 <section id="{{ section.settings.anchor | default: 'compare' }}" class="sl-compare" data-app-upgrade-section>
   <div class="sl-wrap sl-reveal">
     <div class="sl-compare__head">
+      <p class="sl-compare__eyebrow">{{ 'homepage.comparison.eyebrow' | t }}</p>
       <h2 class="sl-h2">
         <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Compare Free and Pro.' }}</span>
         <span data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_heading' | t }}</span>
@@ -102,6 +106,14 @@
   gap: 18px;
   text-align: center;
 }
+.sl-compare__eyebrow {
+  margin: 0;
+  color: var(--sl-orange);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+}
 .sl-compare .sl-h2 {
   max-width: 13ch;
   margin-inline: auto;
@@ -116,7 +128,7 @@
   font-size: 16px;
   line-height: 1.55;
   color: var(--sl-ink-soft);
-  text-align: left;
+  text-align: center;
   max-width: 60ch;
   text-wrap: pretty;
 }
@@ -125,7 +137,7 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid #ded8cc;
-  border-radius: 22px;
+  border-radius: var(--sl-radius-lg);
   background: rgba(255, 253, 249, 0.88);
   box-shadow: 0 24px 60px -46px rgba(15, 42, 27, 0.5);
 }
@@ -177,6 +189,20 @@
 }
 .sl-compare__table tbody tr:last-child td.sl-compare__pro {
   border-radius: 0 0 10px 10px;
+}
+/* evidence-table reading: the row under the pointer lifts quietly */
+.sl-compare__table tbody tr:hover th,
+.sl-compare__table tbody tr:hover td {
+  background: rgba(20, 71, 44, 0.05);
+}
+.sl-compare__table tbody tr:hover td.sl-compare__pro {
+  background: rgba(232, 114, 12, 0.1);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sl-compare__table tbody th,
+  .sl-compare__table tbody td {
+    transition: background-color 0.14s ease;
+  }
 }
 .sl-compare__actions {
   width: min(100%, 440px);

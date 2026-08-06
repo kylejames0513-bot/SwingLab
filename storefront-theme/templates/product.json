@@ -6,12 +6,15 @@
         "flags_label": "Recommended for",
         "trust_1": "Ships in 1–2 business days, tracked",
         "trust_2": "30-day returns on unused gear",
-        "trust_3": "Matched to your report’s practice focus"
+        "trust_3": "Matched to your report’s practice focus",
+        "founders_label": "First 100 members · Never renews",
+        "founders_body": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep."
       }
     },
     "related": {
       "type": "related-products",
       "settings": {
+        "eyebrow": "Related gear",
         "heading": "Pairs with your practice plan",
         "collection": "swinglab-gear",
         "max_products": 4,

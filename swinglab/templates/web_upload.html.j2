@@ -55,7 +55,7 @@
     font-family: var(--sl-font-mono);
     font-size: .72rem;
     font-weight: 500;
-    letter-spacing: .13em;
+    letter-spacing: .12em;
     text-transform: uppercase;
   }
   .upload-hero h1 {
@@ -156,7 +156,7 @@
     margin: 0;
     color: var(--sl-orange-text);
     font-family: var(--sl-font-mono);
-    font-size: .7rem;
+    font-size: .72rem;
     font-weight: 500;
     letter-spacing: .12em;
     text-transform: uppercase;
@@ -170,6 +170,7 @@
   .usage-panel p,
   .usage-panel .hint { margin: 0; }
   .usage-panel p + p { margin-top: 8px; }
+  .usage-panel__kicker { margin: 0 0 6px; }
   .usage-panel .error { font-weight: 700; }
   .trend-note {
     padding: 10px 13px;
@@ -258,7 +259,7 @@
     gap: 11px;
     align-items: flex-start;
     border: 1px solid var(--upload-line);
-    border-radius: 11px;
+    border-radius: 12px;
     background: white;
     font-weight: 400;
     line-height: 1.45;
@@ -302,7 +303,7 @@
     font-weight: 800;
   }
   .drop:hover,
-  .drop:focus-visible { border-color: var(--sl-orange); background: var(--upload-warm); outline: none; }
+  .drop:focus-visible { border-color: var(--sl-orange); background: var(--upload-warm); }
   .drop.dragover { border-color: var(--sl-orange); background: var(--upload-warm); transform: translateY(-2px); }
   .drop.has-file { border-style: solid; border-color: var(--sl-green-btn); background: var(--upload-wash); color: var(--sl-ink); }
   .drop input[type=file] { display: none; }
@@ -311,7 +312,7 @@
     margin-top: 20px;
     padding: 16px;
     border: 1px solid #dbd2c4;
-    border-radius: 13px;
+    border-radius: var(--sl-radius-md);
     background: var(--upload-warm);
   }
   .check { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; }
@@ -321,7 +322,7 @@
   details.advanced {
     margin-top: 20px;
     border: 1px solid var(--upload-line);
-    border-radius: 13px;
+    border-radius: var(--sl-radius-md);
     background: white;
   }
   details.advanced > summary {
@@ -360,6 +361,31 @@
   .sidebar-card ul { margin: 14px 0 0; padding-left: 20px; color: var(--sl-ink-soft); }
   .sidebar-card li { padding-left: 3px; line-height: 1.5; }
   .sidebar-card li + li { margin-top: 9px; }
+  .sidebar-card .checklist {
+    margin: 14px 0 0;
+    padding: 0;
+    list-style: none;
+    counter-reset: filmstep;
+  }
+  .sidebar-card .checklist li {
+    position: relative;
+    margin: 0;
+    padding: 10px 0 10px 34px;
+    line-height: 1.5;
+    counter-increment: filmstep;
+  }
+  .sidebar-card .checklist li + li { margin-top: 0; border-top: 1px dashed var(--upload-line); }
+  .sidebar-card .checklist li::before {
+    content: "0" counter(filmstep);
+    position: absolute;
+    left: 0;
+    top: 12px;
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 500;
+    letter-spacing: .08em;
+  }
   .sidebar-card--dark { border-color: var(--sl-green); background: var(--sl-green); color: white; }
   .sidebar-card--dark .section-kicker { color: var(--sl-premium-accent); }
   .sidebar-card--dark h3 { color: white; }
@@ -493,6 +519,7 @@
 
         {% if quota_left is defined and quota_left is not none %}
         <div class="usage-panel" role="status">
+          <p class="section-kicker usage-panel__kicker">Monthly allowance</p>
           {% if quota_left > 0 %}
           <p class="hint"><strong>{{ quota_left }} analys{{ "es" if quota_left != 1 else "is" }} left</strong>
             this month{% if user and not user.is_pro and pro_available %} —
@@ -735,7 +762,7 @@
         <section class="sidebar-card" id="filming-checklist">
           <p class="section-kicker">Before you upload</p>
           <h2>Filming checklist</h2>
-          <ul>
+          <ol class="checklist">
             <li><strong>Sound on.</strong> Swings are found by the crack of impact.</li>
             <li><strong>Whole body in frame</strong>, head to feet, through the finish.</li>
             <li><strong>Phone at hip height</strong>, a few steps back.</li>
@@ -743,7 +770,7 @@
             <li><strong>Keep the full clip.</strong> Dead time between swings is fine.</li>
             <li><strong>Film face-on</strong> for the full report. Down-the-line
               clips receive tempo and rhythm only for now.</li>
-          </ul>
+          </ol>
         </section>
       </aside>
     </div>

@@ -78,11 +78,20 @@
     "plans": {
       "eyebrow": "CHOOSE YOUR PACE",
       "member_heading": "Your Free plan is active. Go Pro when repetition matters.",
-      "member_subheading": "Keep your complete monthly report, or move to unlimited sessions, coach replay, and progress tracking."
+      "member_subheading": "Keep your complete monthly report, or move to unlimited sessions, coach replay, and progress tracking.",
+      "save_chip": "Save {{ percent }}%",
+      "permo": "{{ amount }}/mo equivalent"
     },
     "comparison": {
+      "eyebrow": "EVERY PLAN, LINE BY LINE",
       "member_heading": "Your Free plan compared with Pro.",
       "member_subheading": "Your account is already active. Upgrade only when unlimited sessions, coach replay, and progress tracking are worth it to you."
+    },
+    "coach": {
+      "eyebrow": "INSIDE THE COACHING"
+    },
+    "faq": {
+      "eyebrow": "BEFORE YOU FILM"
     },
     "report": {
       "eyebrow": "INSIDE THE REPORT",

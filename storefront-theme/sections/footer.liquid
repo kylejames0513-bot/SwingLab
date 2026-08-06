@@ -139,14 +139,14 @@
 .sl-footer__grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 36px;
-  padding-bottom: clamp(32px, 5vw, 56px);
+  gap: 34px;
+  padding-bottom: clamp(30px, 5vw, 52px);
 }
 @media (min-width: 640px) {
   .sl-footer__grid { grid-template-columns: repeat(2, 1fr); }
 }
 @media (min-width: 980px) {
-  .sl-footer__grid { grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 32px; }
+  .sl-footer__grid { grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 28px; }
 }
 .sl-footer__brand { max-width: 340px; }
 .sl-footer__wordmark {
@@ -174,7 +174,7 @@
 .sl-footer__col {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 9px;
   align-items: flex-start;
 }
 .sl-footer__head {
@@ -190,8 +190,17 @@
   color: #b7c5ba;
   text-decoration: none;
   font-size: 14.5px;
+  text-underline-offset: 4px;
+  transition: color .15s ease;
 }
-.sl-footer__link:hover { color: var(--sl-green-ink); }
+.sl-footer__link:hover {
+  color: var(--sl-green-ink);
+  text-decoration: underline;
+  text-decoration-color: rgba(240, 122, 24, 0.7);
+}
+@media (prefers-reduced-motion: reduce) {
+  .sl-footer__link { transition: none; }
+}
 .sl-footer__newsletter {
   border-top: 1px solid rgba(159, 176, 164, 0.18);
   padding: 26px 0 28px;
@@ -242,15 +251,28 @@
 }
 .sl-footer__policies {
   border-top: 1px solid rgba(159, 176, 164, 0.18);
-  padding: 20px 0 24px;
+  padding: 18px 0 22px;
 }
 .sl-footer__policies-list {
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 10px 22px;
+  gap: 8px 26px;
   list-style: none;
+}
+/* the policy row is a deliberate specimen strip, not an afterthought */
+.sl-footer__policies-list .sl-footer__link {
+  font-family: var(--sl-font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--sl-footer-ink);
+}
+.sl-footer__policies-list .sl-footer__link:hover {
+  color: var(--sl-green-ink);
+  text-decoration-color: rgba(240, 122, 24, 0.7);
 }
 .sl-footer__fine {
   border-top: 1px solid rgba(159, 176, 164, 0.18);

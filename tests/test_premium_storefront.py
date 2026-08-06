@@ -30,6 +30,23 @@ def png_dimensions(path: Path) -> tuple[int, int]:
     return struct.unpack(">II", header[16:24])
 
 
+def webp_dimensions(path: Path) -> tuple[int, int]:
+    data = path.read_bytes()
+    assert data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+    chunk = data[12:16]
+    if chunk == b"VP8X":
+        return (
+            int.from_bytes(data[24:27], "little") + 1,
+            int.from_bytes(data[27:30], "little") + 1,
+        )
+    if chunk == b"VP8 ":
+        width, height = struct.unpack("<HH", data[26:30])
+        return width & 0x3FFF, height & 0x3FFF
+    assert chunk == b"VP8L"
+    bits = int.from_bytes(data[21:25], "little")
+    return (bits & 0x3FFF) + 1, ((bits >> 14) & 0x3FFF) + 1
+
+
 def test_storefront_leads_with_the_evidence_loop_and_real_sample():
     hero = INDEX["sections"]["hero"]["settings"]
 
@@ -68,6 +85,7 @@ def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
     candidates = (
         "caddieinsight-pro-card-v2.png",
         "caddieinsight-free-card-v2.png",
+        "caddieinsight-founders-card-v2.png",
     )
 
     for filename in candidates:
@@ -78,20 +96,25 @@ def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
 
 def test_membership_card_media_labels_make_each_plan_unmistakable():
     plans = INDEX["sections"]["plans"]["blocks"]
-    product_grid = source("sections/product-grid.liquid")
+    plans_band = source("sections/plans-band.liquid")
 
-    assert plans["pro"]["settings"]["image"] == (
-        "shopify://shop_images/caddieinsight-pro-card-v2.png"
-    )
-    assert plans["free"]["settings"]["image"] == (
-        "shopify://shop_images/caddieinsight-free-card-v2.png"
-    )
-    assert plans["pro"]["settings"]["image_label"] == "CaddieInsight Pro"
-    assert plans["free"]["settings"]["image_label"] == "CaddieInsight Free"
-    assert "assign image_label = b.image_label | default: title" in product_grid
-    assert 'class="sl-card__media-label" aria-hidden="true"' in product_grid
-    assert ".sl-card__media-label" in product_grid
-    assert "position: absolute" in product_grid
+    assert plans["monthly"]["settings"]["image_label"] == "Pro · Monthly"
+    assert plans["season"]["settings"]["image_label"] == "Pro · Season Pass"
+    assert plans["founders"]["settings"]["image_label"] == "Founders Pass"
+    assert plans["free"]["settings"]["name"] == "CaddieInsight Free"
+    assert "assign media_label = b.image_label | default: b.name" in plans_band
+    assert 'class="sl-plans__media-label" aria-hidden="true"' in plans_band
+    assert ".sl-plans__media-label" in plans_band
+    assert "position: absolute" in plans_band
+    for asset_name in (
+        "caddieinsight-pro-card-v2.png",
+        "caddieinsight-founders-card-v2.png",
+        "caddieinsight-free-card-v2.png",
+    ):
+        assert asset_name in plans_band, f"Card art not bound: {asset_name}"
+        theme_asset = THEME / "assets" / asset_name
+        assert theme_asset.is_file()
+        assert png_dimensions(theme_asset) == (1536, 1024)
 
 
 def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
@@ -102,14 +125,16 @@ def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
     assert how["settings"]["anchor"] == "how"
     assert report["settings"]["anchor"] == "report"
     assert plans["settings"]["anchor"] == "plans"
-    assert plans["block_order"] == ["pro", "free"]
-    assert plans["blocks"]["pro"]["settings"]["featured"] is True
-    assert plans["blocks"]["free"]["settings"]["featured"] is False
+    assert plans["block_order"] == ["monthly", "season", "founders", "free"]
+    assert plans["blocks"]["season"]["settings"]["featured"] is True
+    assert plans["blocks"]["monthly"]["settings"]["featured"] is False
+    assert plans["blocks"]["founders"]["settings"]["featured"] is False
+    assert plans["blocks"]["free"]["type"] == "free_band"
     assert '<div class="sl-report__inner sl-wrap">' in source(
         "sections/report-feature.liquid"
     )
     assert '<p class="sl-how__eyebrow">' in source("sections/how-it-works.liquid")
-    assert "sl-card--featured" in source("sections/product-grid.liquid")
+    assert "sl-plans__card--featured" in source("sections/plans-band.liquid")
 
 
 def test_storefront_makes_club_and_capture_context_part_of_the_product():
@@ -191,9 +216,15 @@ def test_product_behavior_cards_are_not_presented_as_quotes_or_testimonials():
 
 def test_storefront_cards_stay_balanced_across_responsive_layouts():
     plans = INDEX["sections"]["plans"]
+    paid_plans = [
+        key
+        for key in plans["block_order"]
+        if plans["blocks"][key]["type"] == "plan"
+    ]
+    assert len(paid_plans) == 3
     plan_words = [
         len(plans["blocks"][key]["settings"]["description"].split())
-        for key in plans["block_order"]
+        for key in paid_plans
     ]
     assert max(plan_words) - min(plan_words) <= 3
 
@@ -211,12 +242,10 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
     ]
     assert max(coach_words) - min(coach_words) <= 2
 
-    plans_source = source("sections/product-grid.liquid")
-    assert (
-        "grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr))"
-        in plans_source
-    )
-    assert "aspect-ratio: 20 / 13" in plans_source
+    plans_source = source("sections/plans-band.liquid")
+    assert "grid-template-columns: repeat(3, minmax(0, 1fr))" in plans_source
+    assert "grid-template-columns: minmax(0, 1fr)" in plans_source
+    assert "aspect-ratio: 3 / 2" in plans_source
     assert "height: 100%" in plans_source
 
     how_source = source("sections/how-it-works.liquid")
@@ -323,7 +352,7 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
 
     left_flow_surfaces = {
         "sections/how-it-works.liquid": ".sl-step",
-        "sections/product-grid.liquid": ".sl-card__body",
+        "sections/plans-band.liquid": ".sl-plans__card-body",
         "sections/gear-showcase.liquid": ".sl-gear__body",
         "sections/coach-notes.liquid": ".sl-coach__card",
     }
@@ -378,10 +407,11 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
 
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():
+    binary_suffixes = {".png", ".webp", ".jpg", ".jpeg", ".gif", ".woff", ".woff2"}
     all_theme_text = "\n".join(
         path.read_text(encoding="utf-8")
         for path in THEME.rglob("*")
-        if path.is_file()
+        if path.is_file() and path.suffix.lower() not in binary_suffixes
     ).lower()
 
     for forbidden in (
@@ -445,7 +475,7 @@ def test_storefront_account_and_pro_actions_follow_the_app_session():
     how = source("sections/how-it-works.liquid")
     hero = source("sections/hero.liquid")
     comparison = source("sections/comparison.liquid")
-    plans = source("sections/product-grid.liquid")
+    plans = source("sections/plans-band.liquid")
     banner = source("sections/cta-banner.liquid")
     product = source("sections/main-product.liquid")
     product_card = source("snippets/product-card.liquid")
@@ -502,14 +532,34 @@ def test_storefront_uses_immutable_release_artwork_references():
     report_source = source("sections/report-feature.liquid")
     readme = source("README.md")
 
-    assert hero["image"] == f"shopify://shop_images/{DESKTOP_HERO_NAME}"
-    assert hero["mobile_image"] == f"shopify://shop_images/{MOBILE_HERO_NAME}"
-    assert f"images['{DESKTOP_HERO_NAME}']" in hero_source
-    assert f"images['{MOBILE_HERO_NAME}']" in hero_source
+    # The hero binds the packaged webp campaign pair by immutable asset
+    # name; the image pickers stay empty so theme-owned art is what ships.
+    assert "image" not in hero
+    assert "mobile_image" not in hero
+    assert hero_source.count("'caddieinsight-range-hero-desktop.webp'") >= 2
+    assert hero_source.count("'caddieinsight-range-hero-mobile.webp'") >= 1
     assert "images['caddieinsight-report-preview-136534a.png']" in report_source
     assert "images['report-keyframes.png']" not in report_source
     assert "immutable, release-specific Shopify File names" in readme
 
+    expected_theme_webps = {
+        "caddieinsight-range-hero-desktop.webp": (
+            (1672, 941),
+            "db5cab06d63517ddf90218e00e28a975b4b344d79277dfbc7fc4fdd2fa2e75b7",
+        ),
+        "caddieinsight-range-hero-mobile.webp": (
+            (1122, 1402),
+            "778fa0bd0a007e8b07c4ff20884e16763a9071256b5349088554a1e17b11d197",
+        ),
+    }
+    for filename, (dimensions, expected_sha256) in expected_theme_webps.items():
+        asset = THEME / "assets" / filename
+        assert asset.is_file()
+        assert webp_dimensions(asset) == dimensions
+        assert hashlib.sha256(asset.read_bytes()).hexdigest() == expected_sha256
+
+    # The approved source PNG pair stays archived and hash-pinned in
+    # store-assets/out as the release record behind the webp conversions.
     expected_assets = {
         DESKTOP_HERO_NAME: (
             (1672, 941),

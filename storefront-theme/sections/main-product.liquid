@@ -34,14 +34,19 @@
 
 <div class="sl-wrap sl-product{% if is_membership %} sl-product--pro{% endif %}">
   <div class="sl-product-media">
-    {%- if product.featured_media -%}
-      {{ product.featured_media | image_url: width: 1400 | image_tag: class: 'sl-product-img', alt: main_alt, id: 'sl-main-image' }}
-    {%- else -%}
-      <div class="sl-placeholder sl-product-img" aria-hidden="true"></div>
-    {%- endif -%}
+    <div class="sl-main-product__frame">
+      {%- if product.featured_media -%}
+        {{ product.featured_media | image_url: width: 1400 | image_tag: class: 'sl-product-img', alt: main_alt, id: 'sl-main-image', widths: '480, 720, 960, 1400', sizes: '(min-width: 960px) min(50vw, 560px), calc(100vw - 48px)' }}
+      {%- else -%}
+        <div class="sl-placeholder sl-product-img" aria-hidden="true"></div>
+      {%- endif -%}
+      {%- if is_membership == false and product.type != blank -%}
+        <span class="sl-main-product__media-label" aria-hidden="true">{{ product.type | escape }}</span>
+      {%- endif -%}
+    </div>
 
     {%- if product.media.size > 1 -%}
-      <div class="sl-product-thumbs">
+      <div class="sl-product-thumbs sl-main-product__thumbs">
         {%- for media in product.media -%}
           {%- assign thumb_alt = media.alt | default: product.title -%}
           <button type="button" class="sl-thumb{% if media.id == product.featured_media.id %} is-active{% endif %}"
@@ -49,7 +54,7 @@
                   data-alt="{{ thumb_alt | escape }}"
                   aria-label="{{ 'products.product.show_image' | t: number: forloop.index }}"
                   aria-pressed="{% if media.id == product.featured_media.id %}true{% else %}false{% endif %}">
-            {{ media | image_url: width: 200 | image_tag: loading: 'lazy', alt: thumb_alt }}
+            {{ media | image_url: width: 200 | image_tag: loading: 'lazy', alt: thumb_alt, widths: '104, 144, 200', sizes: '66px' }}
           </button>
         {%- endfor -%}
       </div>
@@ -57,13 +62,13 @@
   </div>
 
   <div class="sl-product-info">
-    {%- if product.type != blank -%}<p class="sl-eyebrow">{{ product.type }}</p>{%- endif -%}
+    {%- if product.type != blank -%}<p class="sl-eyebrow sl-main-product__eyebrow">{{ product.type }}</p>{%- endif -%}
     <h1 class="sl-product-title">{{ product.title }}</h1>
 
     {%- if is_membership -%}
       {%- comment -%} ------- CaddieInsight Pro membership experience ------- {%- endcomment -%}
       <p class="sl-product-kicker">{{ 'products.product.pro_kicker' | t }}</p>
-      <p class="sl-price" id="sl-price" role="status" aria-live="polite" aria-atomic="true">{{ current.price | money }}</p>
+      <p class="sl-price sl-main-product__price-pro" id="sl-price" role="status" aria-live="polite" aria-atomic="true">{{ current.price | money }}</p>
 
       <ul class="sl-product-benefits" aria-label="{{ 'products.product.includes' | t }}">
         <li>{{ 'products.product.benefit_unlimited' | t }}</li>
@@ -82,8 +87,9 @@
                       {% if variant.id == current.id %}selected{% endif %}
                       {% unless variant.available %}disabled{% endunless %}
                       data-price="{{ variant.price | money }}"
+                      data-sku="{{ variant.sku | escape }}"
                       data-available="{{ variant.available }}">
-                {{ variant.title }} - {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
+                {{ variant.title }} – {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
               </option>
             {%- endfor -%}
           </select>
@@ -147,6 +153,11 @@
           </fieldset>
         {%- endif -%}
         </div>
+
+        <aside class="sl-main-product__founders" id="sl-founders-note"{% unless current_is_lifetime %} hidden{% endunless %}>
+          <p class="sl-main-product__founders-label">{{ section.settings.founders_label | default: 'First 100 members · Never renews' }}</p>
+          <p class="sl-main-product__founders-body">{{ section.settings.founders_body | default: 'One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.' }}</p>
+        </aside>
 
         {%- for variant in product.variants -%}
           {%- assign variant_is_lifetime = false -%}
@@ -240,7 +251,7 @@
         <span class="sl-badge-save" id="sl-badge-save"{% unless has_compare %} hidden{% endunless %}>{%- if has_compare -%}Save {{ save_pct }}%{%- endif -%}</span>
       </p>
 
-      {% form 'product', product, class: 'sl-product-form' %}
+      {% form 'product', product, class: 'sl-product-form sl-main-product__gear-form' %}
         {%- if product.variants.size > 1 -%}
           <label class="sl-label" for="sl-variant">Options</label>
           <select name="id" id="sl-variant" class="sl-select">
@@ -255,7 +266,7 @@
                       data-price="{{ variant.price | money }}"
                       data-available="{{ variant.available }}"
                       {% if variant.compare_at_price > variant.price %}data-compare="{{ variant.compare_at_price | money }}" data-save="{{ v_save }}"{% endif %}>
-                {{ variant.title }} - {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
+                {{ variant.title }} – {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
               </option>
             {%- endfor -%}
           </select>
@@ -263,29 +274,49 @@
           <input type="hidden" name="id" value="{{ current.id }}">
         {%- endif -%}
 
-        <div class="sl-main-product__qty">
-          <label class="sl-label" for="sl-qty">Quantity</label>
-          <input id="sl-qty" class="sl-qty" type="number" name="quantity" value="1" min="1" inputmode="numeric">
-        </div>
+        <div class="sl-main-product__buy">
+          <div class="sl-main-product__qty">
+            <label class="sl-label" for="sl-qty">Quantity</label>
+            <input id="sl-qty" class="sl-qty" type="number" name="quantity" value="1" min="1" inputmode="numeric">
+          </div>
 
-        <button type="submit" class="sl-btn sl-btn--primary sl-add"
-                data-add-label="{{ 'products.product.add_to_cart' | t | escape }}"
-                data-sold-out-label="{{ 'products.product.sold_out' | t | escape }}"
-                {% unless current.available %}disabled{% endunless %}>
-          {% if current.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
-        </button>
+          <button type="submit" class="sl-btn sl-btn--primary sl-add"
+                  data-add-label="{{ 'products.product.add_to_cart' | t | escape }}"
+                  data-sold-out-label="{{ 'products.product.sold_out' | t | escape }}"
+                  {% unless current.available %}disabled{% endunless %}>
+            {% if current.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
+          </button>
+        </div>
         {{ form | payment_button }}
       {% endform %}
 
       <ul class="sl-main-product__trust" aria-label="Ordering details">
-        {%- if section.settings.trust_1 != blank -%}<li>{{ section.settings.trust_1 }}</li>{%- endif -%}
-        {%- if section.settings.trust_2 != blank -%}<li>{{ section.settings.trust_2 }}</li>{%- endif -%}
-        {%- if section.settings.trust_3 != blank -%}<li>{{ section.settings.trust_3 }}</li>{%- endif -%}
+        {%- if section.settings.trust_1 != blank -%}
+          <li>
+            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/></svg>
+            <span>{{ section.settings.trust_1 }}</span>
+          </li>
+        {%- endif -%}
+        {%- if section.settings.trust_2 != blank -%}
+          <li>
+            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 5v6h6"/><path d="M4.6 15a8.5 8.5 0 1 0 1.6-8.6L2.5 11"/></svg>
+            <span>{{ section.settings.trust_2 }}</span>
+          </li>
+        {%- endif -%}
+        {%- if section.settings.trust_3 != blank -%}
+          <li>
+            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V7m0 10v3.5M3.5 12H7m10 0h3.5"/></svg>
+            <span>{{ section.settings.trust_3 }}</span>
+          </li>
+        {%- endif -%}
       </ul>
     {%- endif -%}
 
     {%- if product.description != blank -%}
-      <div class="sl-product-desc sl-rte">{{ product.description }}</div>
+      <div class="sl-product-desc sl-main-product__desc">
+        <p class="sl-mono-label sl-main-product__desc-label">{% if is_membership %}Membership details{% else %}Product notes{% endif %}</p>
+        <div class="sl-rte">{{ product.description }}</div>
+      </div>
     {%- endif -%}
   </div>
 </div>
@@ -364,6 +395,7 @@
     var priceCompare = document.getElementById('sl-price-compare');
     var saveBadge = document.getElementById('sl-badge-save');
     var planContainer = document.getElementById('sl-selling-plan-options');
+    var foundersNote = document.getElementById('sl-founders-note');
     var addButton = document.querySelector('.sl-product-form .sl-add');
     var planSelections = {};
 
@@ -410,6 +442,7 @@
         if (!opt) return;
         renderSellingPlans(opt.value);
         updateAddButton(opt);
+        if (foundersNote) foundersNote.hidden = (opt.dataset.sku || '') !== 'SL-PRO-LIFE';
         if (price && opt.dataset.price) price.textContent = opt.dataset.price;
         if (priceCurrent && opt.dataset.price) priceCurrent.textContent = opt.dataset.price;
         if (priceCompare && saveBadge) {
@@ -433,6 +466,7 @@
         main.src = btn.dataset.full;
         main.alt = btn.dataset.alt || '';
         main.removeAttribute('srcset');
+        main.removeAttribute('sizes');
         thumbs.forEach(function (thumb) {
           var selected = thumb === btn;
           thumb.classList.toggle('is-active', selected);
@@ -455,6 +489,89 @@
 
 .sl-product-media { min-width: 0; }
 
+.sl-main-product__eyebrow {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  color: var(--sl-orange);
+  margin-bottom: 10px;
+}
+
+/* gallery: one framed window, image zooms quietly inside the crop */
+.sl-main-product__frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  background: var(--sl-bg-card);
+  line-height: 0;
+  box-shadow: var(--sl-shadow-card);
+}
+
+.sl-main-product__frame .sl-product-img {
+  border: 0;
+  border-radius: 0;
+}
+
+.sl-main-product__media-label {
+  position: absolute;
+  z-index: 1;
+  top: 14px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  min-height: 29px;
+  max-width: calc(100% - 28px);
+  padding: 0 10px;
+  overflow: hidden;
+  border: 1px solid rgba(245, 242, 233, 0.34);
+  border-radius: 999px;
+  background: rgba(7, 19, 13, 0.78);
+  box-shadow: 0 10px 24px -12px rgba(7, 19, 13, 0.9);
+  color: #f5f2e9;
+  font-family: var(--sl-font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+  pointer-events: none;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+/* thumbnail rail: quiet at rest, unmistakable when active */
+.sl-main-product__thumbs {
+  margin-top: 14px;
+  gap: 10px;
+}
+
+.sl-main-product__thumbs .sl-thumb {
+  border: 1.5px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-bg-card);
+  padding: 2px;
+  opacity: 0.8;
+}
+
+.sl-main-product__thumbs .sl-thumb img {
+  border-radius: calc(var(--sl-radius-sm) - 3px);
+}
+
+.sl-main-product__thumbs .sl-thumb:hover {
+  opacity: 1;
+  border-color: rgba(20, 71, 44, 0.45);
+}
+
+.sl-main-product__thumbs .sl-thumb.is-active {
+  opacity: 1;
+  border-color: var(--sl-green-btn);
+  box-shadow: 0 0 0 1px var(--sl-green-btn);
+}
+
 /* ---- gear / apparel ---- */
 .sl-main-product__flags {
   display: flex;
@@ -469,6 +586,7 @@
   align-items: baseline;
   flex-wrap: wrap;
   gap: 4px 10px;
+  font-variant-numeric: tabular-nums;
 }
 
 .sl-main-product__price .sl-price-compare {
@@ -484,8 +602,31 @@
   display: none !important;
 }
 
+/* buy zone: quantity, add-to-cart, and the payment button share one column */
+.sl-main-product__buy {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  width: min(100%, 440px);
+}
+
+.sl-main-product__buy .sl-add {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .sl-main-product__qty .sl-qty {
   display: block;
+  width: 84px;
+}
+
+@media (min-width: 750px) {
+  .sl-main-product__gear-form .sl-select { width: min(100%, 440px); }
+}
+
+.sl-product-form .shopify-payment-button {
+  width: 100%;
+  max-width: min(100%, 440px);
 }
 
 .sl-main-product__trust {
@@ -500,8 +641,9 @@
 }
 
 .sl-main-product__trust li {
-  position: relative;
-  padding-left: 20px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   font-family: var(--sl-font-mono);
   font-size: 11.5px;
   font-weight: 500;
@@ -511,15 +653,21 @@
   line-height: 1.6;
 }
 
-.sl-main-product__trust li::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 6px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--sl-orange);
+.sl-main-product__trust-icon {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 2px;
+  color: var(--sl-green-btn);
+}
+
+/* ---- description ---- */
+.sl-main-product__desc-label {
+  margin: 0 0 14px;
+}
+
+.sl-main-product__desc .sl-rte {
+  max-width: 60ch;
 }
 
 /* ---- Pro membership ---- */
@@ -529,6 +677,14 @@
   font-size: 18px;
   line-height: 1.55;
   color: var(--sl-ink-soft);
+}
+
+.sl-main-product__price-pro {
+  font-size: clamp(28px, 2.6vw, 36px);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 20px;
 }
 
 .sl-product-benefits {
@@ -545,7 +701,7 @@
   position: relative;
   padding: 12px 14px 12px 38px;
   border: 1px solid var(--sl-border);
-  border-radius: 8px;
+  border-radius: var(--sl-radius-sm);
   background: rgba(255, 253, 249, 0.72);
   color: var(--sl-ink-soft);
   line-height: 1.4;
@@ -566,12 +722,6 @@
   width: 100%;
 }
 
-/* accelerated checkout renders directly under the add-to-cart button */
-.sl-product-form .shopify-payment-button {
-  width: 100%;
-  max-width: min(100%, 340px);
-}
-
 .sl-product--pro .sl-product-form .shopify-payment-button {
   max-width: 520px;
 }
@@ -583,6 +733,7 @@
 .sl-product--pro .sl-product-info .sl-select,
 .sl-product--pro .sl-add,
 .sl-product--pro .sl-plan-set,
+.sl-product--pro .sl-main-product__founders,
 .sl-product--pro .sl-product-note {
   width: 100%;
   max-width: 520px;
@@ -609,9 +760,14 @@
   padding: 13px 14px;
   margin-top: 10px;
   border: 1.5px solid var(--sl-border);
-  border-radius: 8px;
+  border-radius: var(--sl-radius-sm);
   background: var(--sl-bg-card);
   cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.sl-plan-option:hover {
+  border-color: rgba(20, 71, 44, 0.45);
 }
 
 .sl-plan-option:has(input:checked) {
@@ -640,13 +796,43 @@
   line-height: 1.35;
 }
 
+/* Founders Pass framing: the terms of the cap, stated like a spec */
+.sl-main-product__founders {
+  margin: 4px 0 2px;
+  padding: 14px 16px;
+  border: 1px solid rgba(232, 114, 12, 0.38);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-orange-soft);
+}
+
+.sl-main-product__founders[hidden] {
+  display: none !important;
+}
+
+.sl-main-product__founders-label {
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: 10.5px;
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--sl-orange);
+}
+
+.sl-main-product__founders-body {
+  margin: 6px 0 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+}
+
 .sl-product-note {
   max-width: 520px;
   margin: 18px 0 24px;
   padding: 18px;
   border-left: 4px solid var(--sl-orange);
   background: #fff8ed;
-  border-radius: 8px;
+  border-radius: var(--sl-radius-sm);
 }
 
 .sl-product-note strong {
@@ -661,6 +847,18 @@
 
 .sl-product-note a {
   font-weight: 700;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .sl-main-product__frame .sl-product-img {
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .sl-main-product__frame:hover .sl-product-img {
+    transform: scale(1.035);
+  }
+  .sl-main-product__thumbs .sl-thumb {
+    transition: border-color 0.18s ease, opacity 0.18s ease;
+  }
 }
 
 @media (max-width: 749px) {
@@ -679,6 +877,7 @@
   .sl-product--pro .sl-product-note,
   .sl-product--pro .sl-product-benefits,
   .sl-product--pro .sl-product-form,
+  .sl-product--pro .sl-main-product__founders,
   .sl-product-note,
   .sl-main-product__trust {
     margin-inline: auto;
@@ -686,6 +885,12 @@
   .sl-main-product__flags,
   .sl-main-product__price {
     justify-content: center;
+  }
+  .sl-main-product__buy {
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
   }
   .sl-main-product__qty {
     display: flex;
@@ -695,7 +900,16 @@
   .sl-product-note { text-align: center; }
   .sl-product-benefits,
   .sl-plan-set,
+  .sl-main-product__founders,
   .sl-main-product__trust { text-align: left; }
+  .sl-main-product__media-label {
+    top: 12px;
+    left: 50%;
+    max-width: calc(100% - 24px);
+    transform: translateX(-50%);
+    text-align: center;
+  }
+  .sl-main-product__desc-label { text-align: center; }
 }
 {% endstylesheet %}
 
@@ -718,19 +932,39 @@
       "type": "text",
       "id": "trust_1",
       "label": "Trust line 1",
-      "default": "Ships in 1–2 business days, tracked"
+      "default": "Ships in 1–2 business days, tracked",
+      "info": "Paired with the parcel icon."
     },
     {
       "type": "text",
       "id": "trust_2",
       "label": "Trust line 2",
-      "default": "30-day returns on unused gear"
+      "default": "30-day returns on unused gear",
+      "info": "Paired with the returns icon."
     },
     {
       "type": "text",
       "id": "trust_3",
       "label": "Trust line 3",
-      "default": "Matched to your report’s practice focus"
+      "default": "Matched to your report’s practice focus",
+      "info": "Paired with the target icon."
+    },
+    {
+      "type": "header",
+      "content": "Membership products"
+    },
+    {
+      "type": "text",
+      "id": "founders_label",
+      "label": "Founders Pass mono label",
+      "default": "First 100 members · Never renews"
+    },
+    {
+      "type": "textarea",
+      "id": "founders_body",
+      "label": "Founders Pass note",
+      "default": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
+      "info": "Shown only while the Founders Pass variant (SKU SL-PRO-LIFE) is selected."
     }
   ]
 }

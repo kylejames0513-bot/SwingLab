@@ -14,8 +14,6 @@
         "chip2": "NO CARD",
         "chip3": "CLUB SAVED",
         "fine_print": "Supported 2D movement and timing estimates from phone video.",
-        "image": "shopify://shop_images/caddieinsight-premium-range-hero-0852e38d.png",
-        "mobile_image": "shopify://shop_images/caddieinsight-premium-range-hero-mobile-2e4ee946.png",
         "signal_club": "Iron",
         "signal_priority": "Lead-hip control",
         "signal_target": "One pass mark"
@@ -163,54 +161,81 @@
       }
     },
     "plans": {
-      "type": "product-grid",
+      "type": "plans-band",
       "blocks": {
-        "pro": {
-          "type": "product_card",
+        "monthly": {
+          "type": "plan",
           "settings": {
-            "badge": "MEMBERSHIP",
-            "title": "CaddieInsight Pro",
-            "description": "Unlimited swing analyses, an annotated coach replay for every swing, and progress tracking across sessions so each range visit builds on the last.",
-            "price_text": "",
-            "price_note": "Monthly $9.99 · Season Pass $69.99/yr · Founders Pass $149 (first 100)",
-            "product": "swinglab-pro",
-            "use_product_price": true,
-            "member_visibility": "pro_offer",
-            "image": "shopify://shop_images/caddieinsight-pro-card-v2.png",
-            "image_label": "CaddieInsight Pro",
-            "placeholder_label": "pro membership art",
-            "warm_placeholder": false,
-            "featured": true
+            "plan": "monthly",
+            "badge": "MEMBERSHIP · MONTHLY",
+            "name": "Pro Monthly",
+            "price_text": "$9.99",
+            "term": "/mo",
+            "description": "Unlimited swing analyses, annotated coach replay, and progress tracking, billed month to month so you can start and stop freely.",
+            "note": "RENEWS MONTHLY · CANCEL ANYTIME",
+            "cta_label": "Go Pro monthly",
+            "featured": false,
+            "show_save": false,
+            "image_label": "Pro · Monthly"
+          }
+        },
+        "season": {
+          "type": "plan",
+          "settings": {
+            "plan": "season",
+            "badge": "MEMBERSHIP · SEASON",
+            "name": "Season Pass",
+            "price_text": "$69.99",
+            "term": "/yr",
+            "description": "Every Pro feature for a full year in one payment, the same coaching engine from first thaw to final round.",
+            "note": "12 MONTHS OF PRO · ONE PAYMENT",
+            "cta_label": "Get the Season Pass",
+            "featured": true,
+            "show_save": true,
+            "image_label": "Pro · Season Pass"
+          }
+        },
+        "founders": {
+          "type": "plan",
+          "settings": {
+            "plan": "founders",
+            "badge": "MEMBERSHIP · FOUNDERS",
+            "name": "Founders Pass",
+            "price_text": "$149",
+            "term": "one payment",
+            "description": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
+            "note": "FIRST 100 MEMBERS · NEVER RENEWS",
+            "cta_label": "Get the Founders Pass",
+            "featured": false,
+            "show_save": false,
+            "image_label": "Founders Pass"
           }
         },
         "free": {
-          "type": "product_card",
+          "type": "free_band",
           "settings": {
-            "badge": "FREE PLAN",
-            "title": "Try CaddieInsight Free",
-            "description": "One complete swing analysis each month, with saved club context, coaching priorities, and a measurable practice plan. No card required.",
+            "name": "CaddieInsight Free",
+            "description": "One full analysis and one matched re-film each month, with saved club context and a measurable practice plan.",
             "price_text": "$0",
-            "price_note": "No card required",
+            "note": "NO CARD REQUIRED",
+            "cta_label": "Start free",
             "url": "https://app.caddieinsight.com/signup",
-            "use_product_price": false,
-            "member_visibility": "signed_out",
-            "image": "shopify://shop_images/caddieinsight-free-card-v2.png",
-            "image_label": "CaddieInsight Free",
-            "placeholder_label": "free plan report strip",
-            "warm_placeholder": false,
-            "featured": false
+            "member_visibility": "signed_out"
           }
         }
       },
       "block_order": [
-        "pro",
+        "monthly",
+        "season",
+        "founders",
         "free"
       ],
       "settings": {
         "anchor": "plans",
         "heading": "Start free. Go Pro when repetition matters.",
         "subheading": "The coaching engine stays the same. Pro removes the monthly limit and adds replay plus progress tracking.",
-        "membership_section": true
+        "membership_section": true,
+        "footnote": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup."
       }
     },
     "comparison": {
@@ -277,7 +302,7 @@
           "settings": {
             "feature": "Price",
             "free_value": "$0",
-            "pro_value": "$9.99/mo · $69.99/yr Season Pass · $149 Founders Pass"
+            "pro_value": "$9.99/mo · Season Pass $69.99/yr · Founders Pass $149"
           }
         }
       },
