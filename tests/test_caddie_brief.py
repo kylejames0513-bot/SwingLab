@@ -77,6 +77,12 @@ def test_protect_brief_records_the_exact_selected_strength_card():
     assert brief.strength == selected.text
 
 
+def test_improve_brief_does_not_replace_the_selected_issue_with_a_strength_key():
+    brief = brief_for(metric(tempo_ratio=2.0))
+    assert brief.focus_flag == FLAG_TEMPO
+    assert brief.strength_key is None
+
+
 def test_history_never_changes_the_report_priority():
     current = metric(tempo_ratio=2.0, head_dip_sw=0.50)
     brief = brief_for(
