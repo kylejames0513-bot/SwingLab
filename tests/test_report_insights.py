@@ -5,6 +5,8 @@ from __future__ import annotations
 from swinglab.config import Config
 from swinglab.metrics import ANGLE_DTL, ANGLE_FACE_ON
 from swinglab.report_insights import build_swing_breakdown
+from swinglab.report_presenter import measurement_detail
+from swinglab.metrics import session_stats
 from tests.test_metrics_depth import make_metrics
 
 
@@ -140,3 +142,12 @@ def test_unreadable_context_is_named_instead_of_guessed():
     assert by_key["stance"].status == "Not measured"
     assert by_key["hand-speed"].status == "Not measured"
     assert "instead of guessing" in by_key["stance"].limit
+
+
+def test_guided_measurement_keeps_legacy_stance_fact_without_reusing_legacy_taxonomy():
+    metrics = [complete_metric(stance_width_sw=0.95)]
+    legacy = next(card for card in build_swing_breakdown(metrics, Config(), angle=ANGLE_FACE_ON) if card.key == "stance")
+    guided = measurement_detail("stance_width_sw", metrics, session_stats(metrics), Config())
+    assert guided is not None
+    assert "0.95" in legacy.summary
+    assert guided.numeric_value == 0.95

@@ -15,9 +15,11 @@ from .caddie_brief import CaddieBrief
 from .coaching import IssueCard, StrengthCard
 from .config import Config
 from .drills import Drill, drill_presentation
+from .metrics import SwingMetrics, finite_float
 from .report_view import (
     GUIDED_REPORT_PRESENTATION_VERSION,
     Angle,
+    BenchmarkRelation,
     Capabilities,
     CaptureGuidance,
     CaptureOnlyReportView,
@@ -29,6 +31,7 @@ from .report_view import (
     Hand,
     JourneyMode,
     MediaEntry,
+    MeasurementDetail,
     MeasurementUnit,
     NextMove,
     PhaseId,
@@ -418,10 +421,123 @@ def _phase_for_metric(metric: str) -> PhaseId:
     return PhaseId.FINISH
 
 
-def _phases(context: ReportContext, priority: PhaseId, readable: int, *, improve: bool) -> tuple[PhaseSummary, ...]:
-    phase_ids = (PhaseId.TIMING_RHYTHM,) if context.angle is Angle.DTL else (PhaseId.SETUP, PhaseId.GOING_BACK, PhaseId.TRANSITION_DOWNSWING, PhaseId.IMPACT, PhaseId.FINISH)
-    labels = {PhaseId.SETUP: "Setup", PhaseId.GOING_BACK: "Going back", PhaseId.TRANSITION_DOWNSWING: "Transition and downswing", PhaseId.IMPACT: "Impact", PhaseId.FINISH: "Finish", PhaseId.TIMING_RHYTHM: "Timing and rhythm"}
-    return tuple(PhaseSummary(phase, labels[phase], PhaseStatus.PRIORITY if improve and phase is priority else PhaseStatus.STEADY, "Priority" if improve and phase is priority else "Steady", "Work on this movement." if improve and phase is priority else "Steady reference.", readable, (), (), phase.value.replace("_", "-"), phase is priority) for phase in phase_ids)
+@dataclass(frozen=True)
+class _MetricMetadata:
+    label: str
+    phase: PhaseId
+    unit: MeasurementUnit
+    benchmark_relation: BenchmarkRelation
+    coach_key: str | None
+    formatter: str
+    explanation: str
+    limitation: str
+
+
+_METRICS: Mapping[str, _MetricMetadata] = {
+    "stance_width_sw": _MetricMetadata("Stance width", PhaseId.SETUP, MeasurementUnit.SHOULDER_WIDTHS, BenchmarkRelation.CONTEXT_ONLY, None, "{:.2f} shoulder widths", "This is your setup reference for comparable re-films.", "Setup context only; it is not graded good or bad."),
+    "backswing_s": _MetricMetadata("Backswing time", PhaseId.GOING_BACK, MeasurementUnit.SECONDS, BenchmarkRelation.NONE, None, "{:.2f} seconds", "This is the measured time from takeaway to the top.", "Timing is estimated from the detected swing events."),
+    "head_sway_backswing_sw": _MetricMetadata("Head movement going back", PhaseId.GOING_BACK, MeasurementUnit.SHOULDER_WIDTHS, BenchmarkRelation.ABOVE, "sway_warn_sw", "{:.2f} shoulder widths", "This is the head's sideways movement from setup to the top.", "Single-camera measurement; re-film face-on for this detail."),
+    "hip_slide_backswing_sw": _MetricMetadata("Hip movement going back", PhaseId.GOING_BACK, MeasurementUnit.SHOULDER_WIDTHS, BenchmarkRelation.ABOVE, "sway_warn_sw", "{:.2f} shoulder widths", "This is the hips' sideways movement from setup to the top.", "Single-camera measurement; re-film face-on for this detail."),
+    "tempo_ratio": _MetricMetadata("Tempo ratio", PhaseId.TRANSITION_DOWNSWING, MeasurementUnit.RATIO, BenchmarkRelation.BELOW, "tempo_warn_below", "{:.1f}:1", "This compares backswing time with downswing time.", "Timing is estimated from the detected swing events."),
+    "tempo_ratio_std": _MetricMetadata("Tempo consistency", PhaseId.TIMING_RHYTHM, MeasurementUnit.RATIO, BenchmarkRelation.BELOW, "tempo_std_praise", "{:.2f}", "This is the swing-to-swing spread in tempo ratio.", "Requires more than one readable swing."),
+    "downswing_s": _MetricMetadata("Downswing time", PhaseId.TRANSITION_DOWNSWING, MeasurementUnit.SECONDS, BenchmarkRelation.NONE, None, "{:.2f} seconds", "This is the measured time from the top to estimated impact.", "Timing is estimated from the detected swing events."),
+    "downswing_hand_speed_sw_s": _MetricMetadata("Hand movement", PhaseId.TRANSITION_DOWNSWING, MeasurementUnit.SHOULDER_WIDTHS_PER_SECOND, BenchmarkRelation.CONTEXT_ONLY, None, "{:.2f} shoulder widths per second", "This is projected hand movement during the downswing.", "Context only, not clubhead speed or ball speed."),
+    "strike_s": _MetricMetadata("Estimated impact", PhaseId.IMPACT, MeasurementUnit.SECONDS, BenchmarkRelation.NONE, None, "{:.2f} seconds", "This is the estimated time of impact in the swing window.", "Impact is estimated, not directly observed."),
+    "head_dip_sw": _MetricMetadata("Head dip", PhaseId.IMPACT, MeasurementUnit.SHOULDER_WIDTHS, BenchmarkRelation.ABOVE, "head_dip_warn_sw", "{:.2f} shoulder widths", "This is the measured head drop from setup to impact.", "Single-camera measurement; re-film face-on for this detail."),
+    "lead_arm_angle_deg": _MetricMetadata("Lead-arm shape", PhaseId.IMPACT, MeasurementUnit.DEGREES, BenchmarkRelation.BELOW, "lead_arm_warn_deg", "{:.0f} degrees", "This is the lead-arm angle at estimated impact.", "Camera-view angle only; it is not a 3D joint angle."),
+    "shoulder_tilt_impact_deg": _MetricMetadata("Shoulder tilt", PhaseId.IMPACT, MeasurementUnit.DEGREES, BenchmarkRelation.BELOW, "shoulder_tilt_impact_min_deg", "{:.0f} degrees", "This is shoulder tilt at estimated impact.", "Camera-view angle only; it is not a 3D joint angle."),
+    "finish_balance_sw": _MetricMetadata("Finish-base stability", PhaseId.FINISH, MeasurementUnit.SHOULDER_WIDTHS, BenchmarkRelation.ABOVE, "finish_balance_warn_sw", "{:.2f} shoulder widths", "This is ankle-midpoint drift during the finish hold.", "It measures base drift, not every foot movement or pressure shift."),
+}
+
+_FACE_ON_PHASES = (PhaseId.SETUP, PhaseId.GOING_BACK, PhaseId.TRANSITION_DOWNSWING, PhaseId.IMPACT, PhaseId.FINISH)
+_DTL_METRICS = ("backswing_s", "downswing_s", "tempo_ratio", "tempo_ratio_std")
+_PHASE_LABELS = {PhaseId.SETUP: "Setup", PhaseId.GOING_BACK: "Going back", PhaseId.TRANSITION_DOWNSWING: "Transition & downswing", PhaseId.IMPACT: "Impact", PhaseId.FINISH: "Finish", PhaseId.TIMING_RHYTHM: "Timing & rhythm"}
+_LATERAL_METRICS = frozenset({"head_sway_backswing_sw", "hip_slide_backswing_sw"})
+
+
+def _mean_metric(metric_id: str, metrics: Sequence[SwingMetrics], stats: Mapping[str, Mapping[str, float]]) -> float | None:
+    if metric_id == "tempo_ratio_std":
+        return finite_float(stats.get("tempo_ratio", {}).get("std"))
+    stat_value = finite_float(stats.get(metric_id, {}).get("mean"))
+    if stat_value is not None:
+        return stat_value
+    values = [value for metric in metrics if (value := finite_float(getattr(metric, metric_id, None))) is not None]
+    return math.fsum(values) / len(values) if values else None
+
+
+def measurement_detail(metric_id: str, metrics: Sequence[SwingMetrics], stats: Mapping[str, Mapping[str, float]], cfg: Config, *, angle: str = "face_on") -> MeasurementDetail | None:
+    """Present one supported metric without re-running motion analysis."""
+    if angle == "dtl" and metric_id not in _DTL_METRICS:
+        return None
+    meta = _METRICS.get(metric_id)
+    if meta is None:
+        return None
+    value = _mean_metric(metric_id, metrics, stats)
+    if value is None:
+        return MeasurementDetail(f"measurement-{metric_id}", meta.label, "Not measured", None, meta.unit, meta.benchmark_relation, None, None, None, "This measurement was not available from the readable swings.", meta.limitation)
+    benchmark = finite_float(cfg.coaching.get(meta.coach_key)) if meta.coach_key else None
+    benchmark_label = None if benchmark is None else f"Configured line: {benchmark:g}"
+    return MeasurementDetail(f"measurement-{metric_id}", meta.label, meta.formatter.format(value), value, meta.unit, meta.benchmark_relation, benchmark, None, benchmark_label, meta.explanation, meta.limitation)
+
+
+def _selected_metric(source: ReportPresentationInput) -> str | None:
+    if source.brief.focus_flag is not None:
+        selected = next((item for item in source.issues if item.flag == source.brief.focus_flag), None)
+        return selected.metric if selected else None
+    if source.brief.strength_key is not None:
+        selected = next((item for item in source.strengths if item.key == source.brief.strength_key), None)
+        return selected.metric if selected else None
+    return None
+
+
+def _phase_status(source: ReportPresentationInput, phase: PhaseId, measurements: tuple[MeasurementDetail, ...], *, protect: bool) -> PhaseStatus:
+    selected = _selected_metric(source)
+    if protect and selected is not None and _phase_for_metric(selected) is phase:
+        return PhaseStatus.STEADY
+    if not any(detail.numeric_value is not None for detail in measurements):
+        return PhaseStatus.NOT_MEASURED
+    if not protect and selected is not None and _phase_for_metric(selected) is phase:
+        return PhaseStatus.PRIORITY
+    if any(item.metric != selected and _METRICS.get(item.metric, None) and _METRICS[item.metric].phase is phase for item in source.issues):
+        return PhaseStatus.REVIEW_LATER
+    if all(detail.benchmark_relation is BenchmarkRelation.CONTEXT_ONLY for detail in measurements if detail.numeric_value is not None):
+        return PhaseStatus.BASELINE
+    return PhaseStatus.STEADY
+
+
+def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple[PhaseSummary, ...]:
+    """Map supported facts into the fixed camera-angle phase layout."""
+    is_dtl = source.context.angle == "dtl"
+    phase_ids = (PhaseId.TIMING_RHYTHM,) if is_dtl else _FACE_ON_PHASES
+    protect = source.brief.focus_flag is None
+    selected = _selected_metric(source)
+    uncertain_direction = any(not metric.target_confident for metric in source.swings)
+    summaries: list[PhaseSummary] = []
+    for phase in phase_ids:
+        metric_ids = _DTL_METRICS if is_dtl else tuple(metric_id for metric_id, meta in _METRICS.items() if meta.phase is phase)
+        details = tuple(detail for metric_id in metric_ids if (detail := measurement_detail(metric_id, source.swings, source.stats, cfg, angle=source.context.angle)) is not None)
+        status = _phase_status(source, phase, details, protect=protect)
+        unavailable: list[ReasonCode] = []
+        supported = any(detail.numeric_value is not None for detail in details)
+        if supported and any(detail.numeric_value is None for detail in details):
+            unavailable.append(ReasonCode.SECONDARY_METRIC_UNAVAILABLE)
+        if uncertain_direction and any(metric_id in _LATERAL_METRICS for metric_id in metric_ids):
+            unavailable.append(ReasonCode.TARGET_DIRECTION_UNCERTAIN)
+        expanded = (selected is not None and ((not is_dtl and _phase_for_metric(selected) is phase) or (is_dtl and selected in _DTL_METRICS)))
+        if status is PhaseStatus.PRIORITY:
+            status_label, summary = "Priority", "Work on this movement."
+        elif protect and expanded:
+            status_label, summary = "Steady", "Strength to protect. Keep this movement familiar."
+        elif status is PhaseStatus.REVIEW_LATER:
+            status_label, summary = "Review later", "A secondary measured issue is available to revisit."
+        elif status is PhaseStatus.BASELINE:
+            status_label, summary = "Baseline", "Context for comparable re-films."
+        elif status is PhaseStatus.NOT_MEASURED:
+            status_label, summary = "Not measured", "This phase was not measured from the readable swings."
+        else:
+            status_label, summary = "Steady", "Measured values are steady."
+        summaries.append(PhaseSummary(phase, _PHASE_LABELS[phase], status, status_label, summary, len(source.swings), details, tuple(unavailable), f"phase-{phase.value}", expanded))
+    return tuple(summaries)
 
 
 def _practice(
@@ -471,5 +587,5 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         context,
         Capabilities(True, source.visual_evidence.state == "rendered", False, False, False, True, bool(source.alternative_drills), False, True),
         tuple(source.media), (), next_move, source.visual_evidence,
-        _phases(context, next_move.category, readable, improve=mode is JourneyMode.IMPROVE), _practice(source.primary_drill, source.alternative_drills, cfg), protocol,
+        build_phase_summaries(source, cfg), _practice(source.primary_drill, source.alternative_drills, cfg), protocol,
     )
