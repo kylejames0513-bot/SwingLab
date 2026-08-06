@@ -9,7 +9,9 @@ from swinglab.metrics import ANGLE_DTL, SwingMetrics, session_stats
 from swinglab.report_presenter import (
     ReportContextInput,
     ReportPresentationInput,
+    ReportSwingSource,
     build_phase_summaries,
+    build_report_view,
     measurement_detail,
 )
 from swinglab.report_view import JourneyMode, PhaseId, PhaseStatus, ReasonCode
@@ -124,3 +126,40 @@ def test_target_direction_uncertainty_removes_directional_language_without_unmea
     assert "toward" not in going_back.measurements[1].explanation.lower()
     assert "away" not in going_back.measurements[1].explanation.lower()
     assert tempo is not None and tempo.numeric_value == 3.0
+
+
+def test_phase_builder_reads_production_report_swing_source_mappings_without_session_means():
+    wrapped = ReportSwingSource(
+        {"backswing_s": 0.9, "downswing_s": 0.3, "tempo_ratio": 3.0,
+         "head_sway_backswing_sw": 0.2, "hip_slide_backswing_sw": None,
+         "target_confident": False}, (),
+    )
+    source = report_source([complete_metrics()])
+    source = ReportPresentationInput(
+        source.context, (wrapped,), {}, source.session_notes, source.brief,
+        source.issues, source.strengths, source.primary_drill,
+        source.alternative_drills, source.visual_evidence, source.media,
+        source.reason_codes, source.safe_media_keys, source.replay_locked,
+        source.navigation,
+    )
+    phases = {phase.id: phase for phase in build_phase_summaries(source, Config())}
+    assert phases[PhaseId.TRANSITION_DOWNSWING].measurements[0].numeric_value == 3.0
+    assert phases[PhaseId.GOING_BACK].measurements[2].numeric_value is None
+    assert ReasonCode.TARGET_DIRECTION_UNCERTAIN in phases[PhaseId.GOING_BACK].unavailable_reasons
+
+
+def test_dtl_selected_tempo_uses_timing_rhythm_for_improve_and_protect():
+    improve_source = report_source(
+        [complete_metrics()], angle=ANGLE_DTL, focus="tempo",
+        issues=(issue("tempo", "tempo_ratio"),),
+    )
+    improve = build_report_view(improve_source, Config())
+    assert improve.next_move.category is PhaseId.TIMING_RHYTHM
+    assert improve.phases[0].status is PhaseStatus.PRIORITY
+    assert improve.phases[0].expanded_by_default is True
+
+    protect_source = report_source([complete_metrics()], angle=ANGLE_DTL, focus=None, strength="tempo")
+    protect = build_report_view(protect_source, Config())
+    assert protect.next_move.category is PhaseId.TIMING_RHYTHM
+    assert protect.phases[0].status is PhaseStatus.STEADY
+    assert protect.phases[0].expanded_by_default is True

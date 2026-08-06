@@ -455,17 +455,29 @@ _PHASE_LABELS = {PhaseId.SETUP: "Setup", PhaseId.GOING_BACK: "Going back", Phase
 _LATERAL_METRICS = frozenset({"head_sway_backswing_sw", "hip_slide_backswing_sw"})
 
 
-def _mean_metric(metric_id: str, metrics: Sequence[SwingMetrics], stats: Mapping[str, Mapping[str, float]]) -> float | None:
+def _source_metric_value(swing: SwingMetrics | ReportSwingSource, metric_id: str) -> float | None:
+    if isinstance(swing, ReportSwingSource):
+        return finite_float(swing.metrics.get(metric_id))
+    return finite_float(getattr(swing, metric_id, None))
+
+
+def _target_direction_confident(swing: SwingMetrics | ReportSwingSource) -> bool:
+    if isinstance(swing, ReportSwingSource):
+        return swing.metrics.get("target_confident", True) is not False
+    return getattr(swing, "target_confident", True) is not False
+
+
+def _mean_metric(metric_id: str, metrics: Sequence[SwingMetrics | ReportSwingSource], stats: Mapping[str, Mapping[str, float]]) -> float | None:
     if metric_id == "tempo_ratio_std":
         return finite_float(stats.get("tempo_ratio", {}).get("std"))
     stat_value = finite_float(stats.get(metric_id, {}).get("mean"))
     if stat_value is not None:
         return stat_value
-    values = [value for metric in metrics if (value := finite_float(getattr(metric, metric_id, None))) is not None]
+    values = [value for metric in metrics if (value := _source_metric_value(metric, metric_id)) is not None]
     return math.fsum(values) / len(values) if values else None
 
 
-def measurement_detail(metric_id: str, metrics: Sequence[SwingMetrics], stats: Mapping[str, Mapping[str, float]], cfg: Config, *, angle: str = "face_on") -> MeasurementDetail | None:
+def measurement_detail(metric_id: str, metrics: Sequence[SwingMetrics | ReportSwingSource], stats: Mapping[str, Mapping[str, float]], cfg: Config, *, angle: str = "face_on") -> MeasurementDetail | None:
     """Present one supported metric without re-running motion analysis."""
     if angle == "dtl" and metric_id not in _DTL_METRICS:
         return None
@@ -490,13 +502,20 @@ def _selected_metric(source: ReportPresentationInput) -> str | None:
     return None
 
 
+def _selected_phase(metric_id: str, *, angle: str) -> PhaseId:
+    if angle == "dtl" and metric_id in _DTL_METRICS:
+        return PhaseId.TIMING_RHYTHM
+    return _phase_for_metric(metric_id)
+
+
 def _phase_status(source: ReportPresentationInput, phase: PhaseId, measurements: tuple[MeasurementDetail, ...], *, protect: bool) -> PhaseStatus:
     selected = _selected_metric(source)
-    if protect and selected is not None and _phase_for_metric(selected) is phase:
+    selected_phase = _selected_phase(selected, angle=source.context.angle) if selected else None
+    if protect and selected_phase is phase:
         return PhaseStatus.STEADY
     if not any(detail.numeric_value is not None for detail in measurements):
         return PhaseStatus.NOT_MEASURED
-    if not protect and selected is not None and _phase_for_metric(selected) is phase:
+    if not protect and selected_phase is phase:
         return PhaseStatus.PRIORITY
     if any(item.metric != selected and _METRICS.get(item.metric, None) and _METRICS[item.metric].phase is phase for item in source.issues):
         return PhaseStatus.REVIEW_LATER
@@ -511,7 +530,7 @@ def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple
     phase_ids = (PhaseId.TIMING_RHYTHM,) if is_dtl else _FACE_ON_PHASES
     protect = source.brief.focus_flag is None
     selected = _selected_metric(source)
-    uncertain_direction = any(not metric.target_confident for metric in source.swings)
+    uncertain_direction = any(not _target_direction_confident(metric) for metric in source.swings)
     summaries: list[PhaseSummary] = []
     for phase in phase_ids:
         metric_ids = _DTL_METRICS if is_dtl else tuple(metric_id for metric_id, meta in _METRICS.items() if meta.phase is phase)
@@ -523,7 +542,7 @@ def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple
             unavailable.append(ReasonCode.SECONDARY_METRIC_UNAVAILABLE)
         if uncertain_direction and any(metric_id in _LATERAL_METRICS for metric_id in metric_ids):
             unavailable.append(ReasonCode.TARGET_DIRECTION_UNCERTAIN)
-        expanded = (selected is not None and ((not is_dtl and _phase_for_metric(selected) is phase) or (is_dtl and selected in _DTL_METRICS)))
+        expanded = selected is not None and _selected_phase(selected, angle=source.context.angle) is phase
         if status is PhaseStatus.PRIORITY:
             status_label, summary = "Priority", "Work on this movement."
         elif protect and expanded:
@@ -572,10 +591,10 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
     assert selected_metric is not None and source.visual_evidence is not None
     mode = JourneyMode.IMPROVE if selected_issue is not None else JourneyMode.PROTECT
     if selected_issue is not None:
-        next_move = NextMove(mode, selected_issue.flag, _phase_for_metric(selected_issue.metric), "Work on now", selected_issue.display_name, selected_issue.why, selected_issue.fix, None, "practice", "refilm")
+        next_move = NextMove(mode, selected_issue.flag, _selected_phase(selected_issue.metric, angle=source.context.angle), "Work on now", selected_issue.display_name, selected_issue.why, selected_issue.fix, None, "practice", "refilm")
     else:
         assert selected_strength is not None
-        next_move = NextMove(mode, selected_strength.key, _phase_for_metric(selected_strength.metric), "Protect this", selected_strength.display_name, selected_strength.text, "Repeat the same motion under the same setup.", None, "practice", "refilm")
+        next_move = NextMove(mode, selected_strength.key, _selected_phase(selected_strength.metric, angle=source.context.angle), "Protect this", selected_strength.display_name, selected_strength.text, "Repeat the same motion under the same setup.", None, "practice", "refilm")
     limited = bool(reasons)
     label = REASON_COPY[reasons[0]].label if limited else "Clear read"
     target = build_refilm_target(source.brief, source.issues, source.strengths, cfg)
