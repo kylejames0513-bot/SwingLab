@@ -29,3 +29,6 @@ store-assets/*.ttf
 
 # Local Superpowers brainstorming screens and session state.
 /.superpowers/
+
+# Isolated implementation worktrees.
+/.worktrees/
