@@ -45,6 +45,71 @@ def test_missing_scores_count_as_visible():
     assert pose.core_visibility_ok(vis)
 
 
+class _RawPoint:
+    def __init__(self, x, y, visibility=None):
+        self.x, self.y, self.visibility = x, y, visibility
+
+
+class _Result:
+    def __init__(self, raw):
+        self.pose_landmarks = [raw]
+
+
+class _Landmarker:
+    def __init__(self, raw):
+        self.raw = raw
+
+    def detect(self, _img):
+        return _Result(self.raw)
+
+
+class _Image:
+    width, height = 1000, 1000
+
+
+def _tracker(raw):
+    tracker = object.__new__(pose.PoseTracker)
+    tracker._mp = type("MP", (), {"Image": type("I", (), {"create_from_file": staticmethod(lambda _: _Image())})})
+    tracker._landmarker = _Landmarker(raw)
+    return tracker
+
+
+def _raw_pose(*, wrist=0.8, elbow=0.7, core=0.9):
+    lm = make_landmarks()
+    return [
+        _RawPoint(*(lm.get(i, lm[pose.NOSE]) / 1000), visibility=(
+            wrist if i in (pose.LEFT_WRIST, pose.RIGHT_WRIST) else
+            elbow if i in (pose.LEFT_ELBOW, pose.RIGHT_ELBOW) else core
+        ))
+        for i in range(33)
+    ]
+
+
+def test_observation_retains_wrist_and_elbow_visibility():
+    observation = _tracker(_raw_pose()).detect_observation("frame.png")
+    assert observation is not None
+    assert observation.visibility[pose.LEFT_WRIST] == 0.8
+    assert observation.visibility[pose.RIGHT_ELBOW] == 0.7
+    assert set(observation.visibility) == set(pose.TRACKED)
+
+
+def test_observation_rejects_low_visibility_core_like_legacy_detect():
+    raw = _raw_pose(core=0.49)
+    tracker = _tracker(raw)
+    assert tracker.detect_observation("frame.png") is None
+    assert tracker.detect("frame.png") is None
+
+
+def test_detect_remains_landmark_compatibility_wrapper():
+    tracker = _tracker(_raw_pose())
+    observation = tracker.detect_observation("frame.png")
+    assert observation is not None
+    legacy = tracker.detect("frame.png")
+    assert legacy is not None
+    assert set(legacy) == set(observation.landmarks)
+    np.testing.assert_array_equal(legacy[pose.LEFT_WRIST], observation.landmarks[pose.LEFT_WRIST])
+
+
 # -- tracking_quality on synthetic landmark sequences ------------------------
 
 SW = 100.0  # make_landmarks' shoulder width in px

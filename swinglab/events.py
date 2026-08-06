@@ -8,6 +8,7 @@ which is what makes numbers comparable across camera distances.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import StrEnum
 
 import numpy as np
 
@@ -17,8 +18,17 @@ from .frames import FrameSet
 ADDRESS_FRAMES = 6  # frames used for the address baseline
 
 
+class EventFailure(StrEnum):
+    INSUFFICIENT_POSE_FRAMES = "insufficient_pose_frames"
+    NO_READABLE_SWING = "no_readable_swing"
+
+
 class EventError(RuntimeError):
     """Raised when a swing window doesn't contain a usable swing."""
+
+    def __init__(self, reason: EventFailure, message: str):
+        super().__init__(message)
+        self.reason = reason
 
 
 @dataclass
@@ -51,7 +61,7 @@ def detect_events(
     ana = cfg.analysis
     valid = [i for i, lm in enumerate(tracked) if lm is not None]
     if len(valid) < ADDRESS_FRAMES + 2:
-        raise EventError(
+        raise EventError(EventFailure.INSUFFICIENT_POSE_FRAMES,
             f"Only {len(valid)} usable pose frames in window — need at least "
             f"{ADDRESS_FRAMES + 2}. Is the golfer fully in frame?"
         )
@@ -68,7 +78,7 @@ def detect_events(
         )
     )
     if shoulder_width <= 0:
-        raise EventError("Degenerate shoulder width at address.")
+        raise EventError(EventFailure.INSUFFICIENT_POSE_FRAMES, "Degenerate shoulder width at address.")
     baseline = np.median(
         np.stack([pose.hand_centroid(tracked[i]) for i in first]), axis=0
     )
@@ -84,7 +94,7 @@ def detect_events(
             takeaway_idx = i
             break
     if takeaway_idx is None:
-        raise EventError(
+        raise EventError(EventFailure.NO_READABLE_SWING,
             "No takeaway found before impact — the hands never left the "
             "address position."
         )
@@ -92,7 +102,7 @@ def detect_events(
     # top of backswing: highest hand centroid (minimum image y) before impact
     pre_impact = [i for i in valid if takeaway_idx <= i < impact_idx]
     if not pre_impact:
-        raise EventError("No tracked frames between takeaway and impact.")
+        raise EventError(EventFailure.NO_READABLE_SWING, "No tracked frames between takeaway and impact.")
     top_idx = min(pre_impact, key=lambda i: pose.hand_centroid(tracked[i])[1])
 
     return SwingEvents(
