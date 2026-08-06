@@ -4,6 +4,7 @@ import pytest
 import copy
 
 from swinglab.report_view import (
+    ReportViewValidationError,
     UnsupportedReportViewVersion,
     report_view_from_dict,
     report_view_to_dict,
@@ -12,7 +13,10 @@ from tests.report_view_fixtures import report_view_payload
 
 
 def _coaching():
-    return copy.deepcopy(report_view_payload("coaching-limited-rendered"))
+    payload = copy.deepcopy(report_view_payload("coaching-limited-rendered"))
+    payload["phases"][0]["measurements"] = [{"id":"metric","label":"Metric","plain_value":"1","numeric_value":1,"unit":"count","benchmark_relation":"none","benchmark_value":None,"benchmark_upper_value":None,"benchmark_label":None,"explanation":"Measured.","limitation":""}]
+    payload["optional_sections"] = [{"id":"measurements","label":"Measurements","available":True,"locked":False,"item_count":0}]
+    return payload
 
 
 @pytest.mark.parametrize("angle, phases", [
@@ -44,6 +48,59 @@ def test_refilm_target_invariants(comparator, upper, successes, attempts):
     target.update(comparator=comparator, upper_threshold=upper, required_successes=successes, required_attempts=attempts)
     with pytest.raises(Exception):
         report_view_from_dict(payload)
+
+
+def _set(payload, path, value):
+    target = payload
+    for key in path[:-1]: target = target[key]
+    target[path[-1]] = value
+
+
+def _valid_dtl():
+    payload = _coaching()
+    payload["context"]["angle"] = "dtl"
+    payload["phases"] = [dict(payload["phases"][0], id="timing_rhythm")]
+    payload["visual_evidence"].update(kind="tempo_timeline", phase="timing_rhythm")
+    return payload
+
+
+def test_dtl_accepts_only_timeline_evidence_and_timing_phase():
+    assert report_view_from_dict(_valid_dtl()).context.angle.value == "dtl"
+    payload = _valid_dtl(); payload["visual_evidence"]["kind"] = "head_boundary"
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
+
+
+@pytest.mark.parametrize("path", [
+    ("outcome",), ("journey_mode",), ("trust", "state"), ("context", "hand"), ("context", "angle"),
+    ("next_move", "category"), ("visual_evidence", "kind"), ("visual_evidence", "phase_method"),
+    ("visual_evidence", "events", 0, "event"), ("visual_evidence", "tracking_state"),
+    ("visual_evidence", "tracking_reasons", 0), ("phases", 0, "status"),
+    ("phases", 0, "measurements", 0, "unit"), ("phases", 0, "measurements", 0, "benchmark_relation"),
+    ("refilm", "target", "comparator"), ("refilm", "target", "window"),
+    ("optional_sections", 0, "id"), ("media", 0, "role"), ("media", 0, "entitlement"),
+])
+def test_every_persisted_enum_rejects_invalid_member(path):
+    payload = _coaching()
+    _set(payload, path, "not-an-enum-member")
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
+
+
+@pytest.mark.parametrize("mutate", [
+    lambda p: _set(p, ("context", "analysis_fps"), float("nan")),
+    lambda p: _set(p, ("visual_evidence", "timestamp_ms"), -1),
+    lambda p: _set(p, ("visual_evidence", "swing"), 0),
+    lambda p: _set(p, ("context", "detected_swings"), -1),
+    lambda p: _set(p, ("practice", "summary_steps", 0), ""),
+    lambda p: p["media"].append(copy.deepcopy(p["media"][0])),
+    lambda p: p["trust"].update(reasons=["secondary_metric_unavailable", "secondary_metric_unavailable"]),
+    lambda p: p["phases"].append(copy.deepcopy(p["phases"][0])),
+    lambda p: _set(p, ("media", 0, "relative_path"), "../escape.jpg"),
+    lambda p: _set(p, ("visual_evidence", "media_key"), "missing"),
+    lambda p: _set(p, ("capture_guidance",), {}),
+])
+def test_known_version_malformed_payloads_fail_closed(mutate):
+    payload = _coaching(); mutate(payload)
+    with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
 
 
 @pytest.mark.parametrize(
