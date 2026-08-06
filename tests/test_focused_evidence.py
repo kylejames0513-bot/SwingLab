@@ -44,6 +44,16 @@ def test_selector_keeps_metric_and_image_on_same_selected_swing(tmp_path):
     assert selection.snapshot.metrics.head_sway_backswing_sw == .6
 
 
+def test_selector_uses_canonical_session_mean_and_counts_threshold_crossings(tmp_path):
+    from swinglab.focused_evidence import select_focused_evidence
+    one, two = _snapshot(tmp_path, 1, value=.2), _snapshot(tmp_path, 2, value=.8)
+    rule = replace(_rule(), selection_basis="session_mean")
+    selection = select_focused_evidence(rule=rule, snapshots=(one, two), stats={rule.metric_id: {"mean": .75}})
+    assert selection.snapshot is two and selection.session_value == .75
+    threshold = select_focused_evidence(rule=_rule(), snapshots=(one, two), stats={})
+    assert threshold.triggered_swings == 1
+
+
 def test_selector_distinguishes_no_visual_from_fatal_metric_and_event(tmp_path):
     from swinglab.focused_evidence import select_focused_evidence
     unreadable = _snapshot(tmp_path, eligible=False)
@@ -75,3 +85,12 @@ def test_dtl_allows_only_timing_and_never_body_language(tmp_path):
     assert "timeline" in text and "toward" not in text and "away" not in text
     with pytest.raises(UnsupportedFocusedEvidence):
         render_focused_evidence(FocusedEvidenceSelection(_rule(), snapshot, 1, 1, None, None), out_path=tmp_path / "body.png", relative_path="media/body.png", cfg=Config(), angle="dtl")
+
+
+def test_tempo_exposes_methods_durations_ratio_and_consistency(tmp_path):
+    from swinglab.focused_evidence import select_focused_evidence, render_focused_evidence
+    snapshot = _snapshot(tmp_path)
+    rule = _rule(EvidenceKind.TEMPO_TIMELINE, "tempo_ratio", None)
+    selection = select_focused_evidence(rule=rule, snapshots=(snapshot,), stats={"tempo_ratio": {"mean": 3.0, "std": .18}})
+    artifact = render_focused_evidence(selection, out_path=tmp_path / "tempo.png", relative_path="media/tempo.png", cfg=Config(), angle="dtl")
+    assert "opening_baseline" in artifact.evidence.alt_text and "backswing" in artifact.evidence.alt_text and "0.18" in artifact.evidence.alt_text

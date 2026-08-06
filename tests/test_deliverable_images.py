@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 
 from swinglab.config import Config
+from swinglab.report_view import Entitlement, MediaRole
 from swinglab.overlay import make_overlay
 from swinglab.strip import make_strip
 from tests.conftest import make_landmarks
@@ -88,3 +89,16 @@ def test_watermark_applied_when_enabled(tmp_path):
     plain = np.asarray(Image.open(out_plain).convert("RGB"))
     assert marked.shape == plain.shape
     assert np.any(marked != plain)  # the watermark changed pixels
+
+
+def test_focused_artifact_media_is_core_and_hashes_saved_bytes(tmp_path):
+    from swinglab.focused_evidence import FocusedEvidenceArtifact
+    from hashlib import sha256
+    from swinglab.report_view import MediaEntry
+    path = tmp_path / "evidence.png"
+    Image.new("RGB", (4, 4), "white").save(path)
+    media = MediaEntry("priority-evidence", MediaRole.PRIORITY_EVIDENCE, "image/png", Entitlement.CORE, "media/evidence.png", sha256(path.read_bytes()).hexdigest())
+    artifact = FocusedEvidenceArtifact(None, media, path)  # type: ignore[arg-type]
+    assert artifact.media.entitlement is Entitlement.CORE
+    assert artifact.media.role is MediaRole.PRIORITY_EVIDENCE
+    assert artifact.media.checksum_sha256 == sha256(artifact.path.read_bytes()).hexdigest()

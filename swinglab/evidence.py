@@ -51,6 +51,10 @@ class EvidenceSnapshot:
     shoulder_width_px: float
     hand: Literal["right", "left"]
 
+    def __post_init__(self) -> None:
+        if self.hand not in {"right", "left"}:
+            raise ValueError("hand must be 'right' or 'left'")
+
 
 def _copy_landmarks(landmarks: pose.Landmarks | None) -> pose.Landmarks | None:
     if landmarks is None:
