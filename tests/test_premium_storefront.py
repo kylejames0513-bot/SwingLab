@@ -536,8 +536,12 @@ def test_storefront_uses_immutable_release_artwork_references():
     # name; the image pickers stay empty so theme-owned art is what ships.
     assert "image" not in hero
     assert "mobile_image" not in hero
-    assert hero_source.count("'caddieinsight-range-hero-desktop.webp'") >= 2
+    assert hero_source.count("'caddieinsight-range-hero-desktop.webp'") >= 1
     assert hero_source.count("'caddieinsight-range-hero-mobile.webp'") >= 1
+    # Webp theme assets must be served whole: asset_img_url has no webp
+    # support and renders the no-image placeholder in production.
+    assert "asset_img_url" not in hero_source
+    assert hero_source.count("| asset_url") >= 2
     assert "images['caddieinsight-report-preview-136534a.png']" in report_source
     assert "images['report-keyframes.png']" not in report_source
     assert "immutable, release-specific Shopify File names" in readme
