@@ -77,6 +77,14 @@ def test_protect_brief_records_the_exact_selected_strength_card():
     assert brief.strength == selected.text
 
 
+def test_clean_brief_never_selects_a_context_only_strength_for_protection():
+    metrics = [metric()]
+    brief = brief_for(*metrics)
+    selected = strength_cards(metrics, Config())
+    assert brief.strength_key in {card.key for card in selected}
+    assert brief.strength_key not in {"stance-width", "hand-speed"}
+
+
 def test_improve_brief_does_not_replace_the_selected_issue_with_a_strength_key():
     brief = brief_for(metric(tempo_ratio=2.0))
     assert brief.focus_flag == FLAG_TEMPO

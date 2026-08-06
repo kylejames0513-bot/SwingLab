@@ -9,12 +9,44 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass
-from typing import Literal, Sequence, TypeAlias
+from typing import Literal, Mapping, Sequence, TypeAlias
 
 from .caddie_brief import CaddieBrief
-from .coaching import IssueCard
+from .coaching import IssueCard, StrengthCard
 from .config import Config
-from .report_view import EvidenceKind, EventId, PhaseId
+from .drills import Drill
+from .report_view import (
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    Angle,
+    Capabilities,
+    CaptureGuidance,
+    CaptureOnlyReportView,
+    CoachingReportView,
+    DrillAlternative,
+    EvidenceKind,
+    EvidenceView,
+    EventId,
+    Hand,
+    JourneyMode,
+    MediaEntry,
+    MeasurementUnit,
+    NextMove,
+    PhaseId,
+    PhaseStatus,
+    PhaseSummary,
+    PracticePrescription,
+    ReasonCode,
+    RefilmProtocol,
+    RefilmTarget,
+    ReportContext,
+    ReportOutcome,
+    ReportViewV1,
+    TargetComparator,
+    TargetWindow,
+    TrackingState,
+    Trust,
+    TrustState,
+)
 
 
 SelectionBasis: TypeAlias = Literal[
@@ -196,3 +228,240 @@ def select_representative_swing(
     if basis in {"consistency_median", "maintenance_median"}:
         return _closest(rows, _median([row.metric_value for row in rows]))
     raise ValueError(f"Unsupported selection basis {basis!r}")
+
+
+@dataclass(frozen=True)
+class ReasonCopy:
+    label: str
+    explanation: str
+    remediation: str
+
+
+# This text is intentionally user-facing.  ReasonCode remains a server-side
+# contract and must never leak into a golfer's report.
+REASON_COPY: Mapping[ReasonCode, ReasonCopy] = {
+    ReasonCode.CAMERA_ANGLE_MISMATCH: ReasonCopy("Camera angle needs a reset", "The selected camera angle does not match what the clip appears to show, so the movement measurements are not safe to coach from.", "Choose the angle that matches the clip, or record a new clip from that view."),
+    ReasonCode.TRACKING_UNSTABLE: ReasonCopy("Body tracking did not stay steady", "The body track moved or dropped too much during the swing for a dependable coaching read.", "Re-film with your full body clear, steady lighting, and nobody else in frame."),
+    ReasonCode.INSUFFICIENT_POSE_FRAMES: ReasonCopy("Too little of the swing was readable", "There were not enough usable body frames across the swing to measure the motion honestly.", "Keep the whole body in frame from address through finish and re-film."),
+    ReasonCode.NO_READABLE_SWING: ReasonCopy("No complete swing was readable", "This clip did not contain a usable full swing for the report to measure.", "Choose a clip with one full swing, from setup through the finish."),
+    ReasonCode.NO_RELIABLE_STRIKE_EVENT: ReasonCopy("Impact could not be located reliably", "The report could not place impact confidently enough to judge an impact-based movement.", "Re-film with a clear strike and less background noise or obstruction."),
+    ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE: ReasonCopy("The main coaching read is not dependable", "The measurement chosen for the next move was not reliable enough to support a swing change.", "Re-film the same setup with the full motion visible before practicing a correction."),
+    ReasonCode.SECONDARY_METRIC_UNAVAILABLE: ReasonCopy("One supporting measurement is unavailable", "The main coaching read is usable, but a secondary measurement could not be completed.", "Use the current next move, then re-film with the full body visible for a more complete read."),
+    ReasonCode.TARGET_DIRECTION_UNCERTAIN: ReasonCopy("Target direction is uncertain", "The main pattern is readable, but left-versus-right direction could not be confirmed from this clip.", "Keep the target line and full follow-through visible on the next recording."),
+    ReasonCode.HAND_LANDMARKS_UNRELIABLE: ReasonCopy("Hand detail is limited", "The body movement is readable, but the hand landmarks were not steady enough for every supporting detail.", "Re-film with clear hands and club grip visible against a simple background."),
+    ReasonCode.EVENT_ESTIMATE_LIMITED: ReasonCopy("Swing timing is estimated", "The movement is usable, but one timing point was estimated rather than observed directly.", "Use a clear full-speed recording with the strike and finish in frame."),
+    ReasonCode.FOCUSED_MEDIA_RENDER_FAILED: ReasonCopy("Focused replay is unavailable", "The measurement remains usable, but its focused visual replay could not be prepared.", "Use the coaching step now and re-film later if you want the focused replay."),
+}
+
+_REASON_ORDER = (
+    ReasonCode.CAMERA_ANGLE_MISMATCH,
+    ReasonCode.TRACKING_UNSTABLE,
+    ReasonCode.INSUFFICIENT_POSE_FRAMES,
+    ReasonCode.NO_READABLE_SWING,
+    ReasonCode.NO_RELIABLE_STRIKE_EVENT,
+    ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE,
+    ReasonCode.SECONDARY_METRIC_UNAVAILABLE,
+    ReasonCode.TARGET_DIRECTION_UNCERTAIN,
+    ReasonCode.HAND_LANDMARKS_UNRELIABLE,
+    ReasonCode.EVENT_ESTIMATE_LIMITED,
+    ReasonCode.FOCUSED_MEDIA_RENDER_FAILED,
+)
+_FATAL_REASONS = frozenset(_REASON_ORDER[:6])
+
+
+@dataclass(frozen=True)
+class ReportContextInput:
+    club: str | None
+    hand: str
+    angle: str
+    detected_swings: int
+    analysis_fps: float | None
+
+
+@dataclass(frozen=True)
+class ReportSwingSource:
+    metrics: Mapping[str, float | None]
+    notes: tuple[str, ...]
+    key_positions_media_key: str | None = None
+    key_positions_alt_text: str | None = None
+    slow_motion_media_key: str | None = None
+    slow_motion_caption: str | None = None
+    coach_replay_media_key: str | None = None
+    coach_replay_caption: str | None = None
+    locked_replay_explanation: str | None = None
+    video_poster_media_key: str | None = None
+    video_poster_alt_text: str | None = None
+    print_playback_reference: str | None = None
+
+
+@dataclass(frozen=True)
+class ReportPresentationInput:
+    context: ReportContextInput
+    swings: Sequence[ReportSwingSource]
+    stats: Mapping[str, Mapping[str, float]]
+    session_notes: Sequence[str]
+    brief: CaddieBrief
+    issues: Sequence[IssueCard]
+    strengths: Sequence[StrengthCard]
+    primary_drill: Drill
+    alternative_drills: Sequence[Drill]
+    visual_evidence: EvidenceView | None
+    media: Sequence[MediaEntry]
+    reason_codes: Sequence[ReasonCode]
+    safe_media_keys: Sequence[str]
+    replay_locked: bool
+    navigation: object | None
+
+
+class UnsupportedRefilmTarget(ValueError):
+    """No explicit, measurable target is authored for the chosen priority."""
+
+
+@dataclass(frozen=True)
+class _TargetSpec:
+    metric_id: str
+    comparator: TargetComparator
+    coach_key: str | None
+    unit: MeasurementUnit
+    successes: tuple[int, int] | None = None
+
+
+_TARGET_SPECS: Mapping[tuple[str, str], _TargetSpec] = {
+    ("tempo", "tempo_ratio"): _TargetSpec("tempo_ratio", TargetComparator.COUNT_GTE, "tempo_warn_below", MeasurementUnit.RATIO, (4, 5)),
+    ("consistency", "tempo_ratio_std"): _TargetSpec("tempo_ratio_std", TargetComparator.LTE, "tempo_std_praise", MeasurementUnit.RATIO),
+    ("sway", "head_sway_backswing_sw"): _TargetSpec("head_sway_backswing_sw", TargetComparator.ALL_LTE, "sway_warn_sw", MeasurementUnit.SHOULDER_WIDTHS),
+    ("hip-slide", "hip_slide_backswing_sw"): _TargetSpec("hip_slide_backswing_sw", TargetComparator.ALL_LTE, "sway_warn_sw", MeasurementUnit.SHOULDER_WIDTHS),
+    ("head-dip", "head_dip_sw"): _TargetSpec("head_dip_sw", TargetComparator.ALL_LTE, "head_dip_warn_sw", MeasurementUnit.SHOULDER_WIDTHS),
+    ("arm-extension", "lead_arm_angle_deg"): _TargetSpec("lead_arm_angle_deg", TargetComparator.COUNT_GTE, "lead_arm_warn_deg", MeasurementUnit.DEGREES, (4, 5)),
+    ("shoulder-tilt", "shoulder_tilt_impact_deg"): _TargetSpec("shoulder_tilt_impact_deg", TargetComparator.ALL_GTE, "shoulder_tilt_impact_min_deg", MeasurementUnit.DEGREES),
+    ("shoulder-tilt", "shoulder_tilt_delta_deg"): _TargetSpec("shoulder_tilt_delta_deg", TargetComparator.ALL_GTE, None, MeasurementUnit.DEGREES),
+    ("balance", "finish_balance_sw"): _TargetSpec("finish_balance_sw", TargetComparator.ALL_LTE, "finish_balance_warn_sw", MeasurementUnit.SHOULDER_WIDTHS),
+}
+
+
+def _target_text(spec: _TargetSpec, threshold: float) -> str:
+    unit = {MeasurementUnit.RATIO: ":1", MeasurementUnit.DEGREES: " degrees", MeasurementUnit.SHOULDER_WIDTHS: " shoulder widths"}[spec.unit]
+    number = f"{threshold:g}{unit}"
+    if spec.comparator in (TargetComparator.COUNT_GTE, TargetComparator.ALL_GTE):
+        phrase = f"at or above {number}"
+    else:
+        phrase = f"at or below {number}"
+    if spec.successes:
+        return f"Reach {phrase} on {spec.successes[0]} of {spec.successes[1]} swings."
+    return f"Keep the session {phrase}."
+
+
+def build_refilm_target(
+    brief: CaddieBrief,
+    issues: Sequence[IssueCard],
+    strengths: Sequence[StrengthCard],
+    cfg: Config,
+) -> RefilmTarget:
+    """Build targets only from explicit metric mappings and live config."""
+    if brief.focus_flag is not None:
+        selected = next((item for item in issues if item.flag == brief.focus_flag), None)
+        if selected is None:
+            raise UnsupportedRefilmTarget("The selected issue has no report card")
+        pair = (selected.flag, selected.metric)
+    elif brief.strength_key is not None:
+        selected_strength = next((item for item in strengths if item.key == brief.strength_key), None)
+        if selected_strength is None:
+            raise UnsupportedRefilmTarget("The selected strength has no report card")
+        pair = (selected_strength.key, selected_strength.metric)
+    else:
+        raise UnsupportedRefilmTarget("The report has no selected target")
+    spec = _TARGET_SPECS.get(pair)
+    if spec is None:
+        raise UnsupportedRefilmTarget(f"No explicit re-film target for {pair!r}")
+    threshold = 0.0 if spec.coach_key is None else float(cfg.coaching[spec.coach_key])
+    successes, attempts = spec.successes if spec.successes else (None, None)
+    return RefilmTarget(
+        _target_text(spec, threshold), spec.metric_id, spec.comparator, threshold,
+        None, spec.unit, successes, attempts, TargetWindow.SESSION,
+    )
+
+
+def _ordered_reasons(reasons: Sequence[ReasonCode]) -> tuple[ReasonCode, ...]:
+    present = set(reasons)
+    return tuple(reason for reason in _REASON_ORDER if reason in present)
+
+
+def _context(source: ReportContextInput, readable: int) -> ReportContext:
+    angle = Angle(source.angle)
+    hand = Hand(source.hand)
+    club_label = None if source.club is None else ({"7i": "7 iron", "6i": "6 iron"}.get(source.club.lower(), source.club))
+    return ReportContext(source.club, club_label, hand, angle, "Face-on" if angle is Angle.FACE_ON else "Down the line", source.detected_swings, readable, source.analysis_fps)
+
+
+def _capture_only(source: ReportPresentationInput, context: ReportContext, reasons: tuple[ReasonCode, ...]) -> CaptureOnlyReportView:
+    primary = next((reason for reason in reasons if reason in _FATAL_REASONS), ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE)
+    copy = REASON_COPY[primary]
+    allowed = tuple(key for key in source.safe_media_keys if any(media.key == key for media in source.media))
+    media = tuple(media for media in source.media if media.key in allowed)
+    guidance = CaptureGuidance(primary, copy.label, copy.explanation, copy.remediation, ("Place the phone on a stable support.", "Keep the full body and club visible from address through finish.", "Record one clear swing in even light."), allowed, "refilm", "Re-film a clear swing", "choose_video", "Choose another clip")
+    return CaptureOnlyReportView(
+        "report-view-v1", "structured", GUIDED_REPORT_PRESENTATION_VERSION,
+        ReportOutcome.CAPTURE_ONLY, JourneyMode.CAPTURE_RETRY,
+        Trust(TrustState.REFILM_REQUIRED, copy.label, reasons, copy.explanation),
+        context, Capabilities(True, False, False, False, False, False, False, False, True),
+        media, (), None, None, (), None, None, guidance,
+    )
+
+
+def _phase_for_metric(metric: str) -> PhaseId:
+    if metric in {"head_sway_backswing_sw", "hip_slide_backswing_sw"}:
+        return PhaseId.GOING_BACK
+    if metric in {"tempo_ratio", "tempo_ratio_std"}:
+        return PhaseId.TRANSITION_DOWNSWING
+    if metric in {"head_dip_sw", "lead_arm_angle_deg", "shoulder_tilt_impact_deg", "shoulder_tilt_delta_deg"}:
+        return PhaseId.IMPACT
+    return PhaseId.FINISH
+
+
+def _phases(context: ReportContext, priority: PhaseId, readable: int, *, improve: bool) -> tuple[PhaseSummary, ...]:
+    phase_ids = (PhaseId.TIMING_RHYTHM,) if context.angle is Angle.DTL else (PhaseId.SETUP, PhaseId.GOING_BACK, PhaseId.TRANSITION_DOWNSWING, PhaseId.IMPACT, PhaseId.FINISH)
+    labels = {PhaseId.SETUP: "Setup", PhaseId.GOING_BACK: "Going back", PhaseId.TRANSITION_DOWNSWING: "Transition and downswing", PhaseId.IMPACT: "Impact", PhaseId.FINISH: "Finish", PhaseId.TIMING_RHYTHM: "Timing and rhythm"}
+    return tuple(PhaseSummary(phase, labels[phase], PhaseStatus.PRIORITY if improve and phase is priority else PhaseStatus.STEADY, "Priority" if improve and phase is priority else "Steady", "Work on this movement." if improve and phase is priority else "Steady reference.", readable, (), (), phase.value.replace("_", "-"), phase is priority) for phase in phase_ids)
+
+
+def _practice(drill: Drill, alternatives: Sequence[Drill]) -> PracticePrescription:
+    steps = tuple(drill.protocol[:3])
+    if len(steps) != 3:
+        raise ValueError("A report drill requires exactly three opening steps")
+    return PracticePrescription("practice", drill.id, drill.name, drill.aim, steps, tuple(drill.protocol), "Use a safe, open practice station.", drill.aim, drill.dosage, drill.gear_note or None, None, None, tuple(DrillAlternative(item.id, item.name, item.aim, "alternative-drills") for item in alternatives))
+
+
+def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportViewV1:
+    """Turn trusted server decisions into a complete, typed report union."""
+    reasons = _ordered_reasons(source.reason_codes)
+    selected_issue = next((item for item in source.issues if item.flag == source.brief.focus_flag), None)
+    selected_strength = next((item for item in source.strengths if item.key == source.brief.strength_key), None)
+    selected_metric = selected_issue.metric if selected_issue else selected_strength.metric if selected_strength else None
+    readable = source.visual_evidence.readable_swings if source.visual_evidence is not None else 0
+    context = _context(source.context, readable)
+    priority_missing = source.brief.refilm_required or selected_metric is None or source.visual_evidence is None or source.visual_evidence.tracking_state is TrackingState.UNAVAILABLE
+    if priority_missing and ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE not in reasons:
+        reasons = _ordered_reasons((*reasons, ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE))
+    if any(reason in _FATAL_REASONS for reason in reasons):
+        return _capture_only(source, context, reasons)
+
+    assert selected_metric is not None and source.visual_evidence is not None
+    mode = JourneyMode.IMPROVE if selected_issue is not None else JourneyMode.PROTECT
+    if selected_issue is not None:
+        next_move = NextMove(mode, selected_issue.flag, _phase_for_metric(selected_issue.metric), "Work on now", selected_issue.display_name, selected_issue.why, selected_issue.fix, None, "practice", "refilm")
+    else:
+        assert selected_strength is not None
+        next_move = NextMove(mode, selected_strength.key, _phase_for_metric(selected_strength.metric), "Protect this", selected_strength.display_name, selected_strength.text, "Repeat the same motion under the same setup.", None, "practice", "refilm")
+    limited = bool(reasons)
+    label = REASON_COPY[reasons[0]].label if limited else "Clear read"
+    target = build_refilm_target(source.brief, source.issues, source.strengths, cfg)
+    protocol = RefilmProtocol("refilm", ("Use the same club, hand, camera angle, height, framing, and effort.",), target, "Re-film this drill", source.context.club is not None, True, True, True, True, True)
+    return CoachingReportView(
+        "report-view-v1", "structured", GUIDED_REPORT_PRESENTATION_VERSION,
+        ReportOutcome.COACHING_READY, mode,
+        Trust(TrustState.LIMITED if limited else TrustState.CLEAR, label, reasons, REASON_COPY[reasons[0]].explanation if limited else None),
+        context,
+        Capabilities(True, source.visual_evidence.state == "rendered", False, False, False, True, bool(source.alternative_drills), False, True),
+        tuple(source.media), (), next_move, source.visual_evidence,
+        _phases(context, next_move.category, readable, improve=mode is JourneyMode.IMPROVE), _practice(source.primary_drill, source.alternative_drills), protocol,
+    )

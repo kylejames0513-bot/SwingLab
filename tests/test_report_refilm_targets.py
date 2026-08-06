@@ -1,0 +1,67 @@
+from __future__ import annotations
+
+from dataclasses import replace
+
+import pytest
+
+from swinglab.caddie_brief import CaddieBrief
+from swinglab.coaching import IssueCard, StrengthCard
+from swinglab.config import Config
+from swinglab.drills import Drill
+from swinglab.report_presenter import UnsupportedRefilmTarget, build_refilm_target
+from swinglab.report_view import MeasurementUnit, TargetComparator, TargetWindow
+
+
+def brief(*, focus: str | None, strength: str | None = None) -> CaddieBrief:
+    return CaddieBrief(None, strength, focus, "Priority", None, None, "Why.", "Cue.", Drill("d", "Drill", "Aim", ("one",), "5", "do not parse me", "swinglab:test"), None, None, 0, 0, focus is None, False)
+
+
+def card(flag: str, metric: str) -> IssueCard:
+    return IssueCard(flag, metric, "Priority", "SW", (), None, "session", "", None, "", "higher", "warn", "Why.", "Cue.", (), ())
+
+
+@pytest.mark.parametrize("flag, metric, comparator, coach_key, unit, successes", (
+    ("tempo", "tempo_ratio", TargetComparator.COUNT_GTE, "tempo_warn_below", MeasurementUnit.RATIO, (4, 5)),
+    ("consistency", "tempo_ratio_std", TargetComparator.LTE, "tempo_std_praise", MeasurementUnit.RATIO, None),
+    ("sway", "head_sway_backswing_sw", TargetComparator.ALL_LTE, "sway_warn_sw", MeasurementUnit.SHOULDER_WIDTHS, None),
+    ("hip-slide", "hip_slide_backswing_sw", TargetComparator.ALL_LTE, "sway_warn_sw", MeasurementUnit.SHOULDER_WIDTHS, None),
+    ("head-dip", "head_dip_sw", TargetComparator.ALL_LTE, "head_dip_warn_sw", MeasurementUnit.SHOULDER_WIDTHS, None),
+    ("arm-extension", "lead_arm_angle_deg", TargetComparator.COUNT_GTE, "lead_arm_warn_deg", MeasurementUnit.DEGREES, (4, 5)),
+    ("shoulder-tilt", "shoulder_tilt_impact_deg", TargetComparator.ALL_GTE, "shoulder_tilt_impact_min_deg", MeasurementUnit.DEGREES, None),
+    ("shoulder-tilt", "shoulder_tilt_delta_deg", TargetComparator.ALL_GTE, None, MeasurementUnit.DEGREES, None),
+    ("balance", "finish_balance_sw", TargetComparator.ALL_LTE, "finish_balance_warn_sw", MeasurementUnit.SHOULDER_WIDTHS, None),
+))
+def test_issue_family_refilm_targets_are_explicit_and_configured(flag, metric, comparator, coach_key, unit, successes):
+    cfg = Config()
+    target = build_refilm_target(brief(focus=flag), (card(flag, metric),), (), cfg)
+    expected = 0.0 if coach_key is None else cfg.coaching[coach_key]
+    assert (target.metric_id, target.comparator, target.threshold, target.unit, target.window) == (metric, comparator, expected, unit, TargetWindow.SESSION)
+    assert (target.required_successes, target.required_attempts) == successes if successes else (None, None)
+    assert f"{expected:g}" in target.text
+
+
+def test_target_text_and_structured_threshold_stay_in_sync_after_config_retune():
+    cfg = Config()
+    cfg.coaching["sway_warn_sw"] = 0.47
+    target = build_refilm_target(brief(focus="sway"), (card("sway", "head_sway_backswing_sw"),), (), cfg)
+    assert target.threshold == 0.47
+    assert "0.47" in target.text
+
+
+def test_protect_uses_targetable_selected_strength_mapping():
+    target = build_refilm_target(
+        brief(focus=None, strength="tempo"), (),
+        (StrengthCard("tempo", "tempo_ratio", "Tempo", "steady"),), Config(),
+    )
+    assert target.metric_id == "tempo_ratio"
+    assert target.comparator is TargetComparator.COUNT_GTE
+    assert (target.required_successes, target.required_attempts) == (4, 5)
+
+
+@pytest.mark.parametrize("metric", ("stance_width_sw", "downswing_hand_speed_sw_s"))
+def test_context_only_strength_cannot_receive_a_manufactured_target(metric):
+    with pytest.raises(UnsupportedRefilmTarget):
+        build_refilm_target(
+            brief(focus=None, strength="context"), (),
+            (StrengthCard("context", metric, "Context", "context only"),), Config(),
+        )
