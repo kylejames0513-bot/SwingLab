@@ -8,7 +8,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from swinglab.coaching import praise_notes
+from swinglab.coaching import praise_notes, strength_cards
 from swinglab.config import Config
 from swinglab.metrics import SwingMetrics, session_stats
 from tests.test_metrics_depth import all_flags_metrics, make_metrics
@@ -95,6 +95,17 @@ def test_praise_tracks_config_thresholds():
     ms = [make_metrics(1)]
     text = " ".join(praise_notes(ms, cfg))
     assert "Head sway" not in text and "Hip slide" not in text
+
+
+def test_strength_cards_preserve_praise_text_and_order():
+    metrics = [make_metrics(1), make_metrics(2)]
+    cards = strength_cards(metrics, Config())
+    assert [card.text for card in cards] == praise_notes(metrics, Config())
+    assert [card.key for card in cards] == [
+        "sway", "tempo", "hip-slide", "head-dip", "arm-extension",
+        "shoulder-tilt", "balance", "consistency",
+    ]
+    assert all(card.metric and card.display_name for card in cards)
 
 
 # ------------------------------------------------------- report structure

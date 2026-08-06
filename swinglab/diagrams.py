@@ -397,6 +397,10 @@ _SCENES = [
 ]
 
 DRILL_SCENES: dict[str, Scene] = {s.drill_id: s for s in _SCENES}
+_SCENE_ALIASES = {
+    "rhythm-baseline-refilm": "tempo-three-beat-count",
+    "readability-baseline-refilm": "clean-baseline-refilm",
+}
 
 
 def _colors(brand: dict) -> tuple[str, str]:
@@ -417,7 +421,7 @@ def _props_svg(scene: Scene, primary: str, accent: str) -> str:
 def drill_diagram(drill_id: str, brand: dict) -> str:
     """Static instructional setup view for a drill (raises KeyError for an
     unknown drill_id — callers only ask for ids from drills.DRILLS)."""
-    scene = DRILL_SCENES[drill_id]
+    scene = DRILL_SCENES[_SCENE_ALIASES.get(drill_id, drill_id)]
     primary, accent = _colors(brand)
     return (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" '
@@ -438,7 +442,7 @@ def drill_animation(drill_id: str, brand: dict) -> str:
     keyframes, namespaced ``sl-{key}-…`` per drill so many animations can
     share one page. Duplicate animations of the same drill emit
     byte-identical CSS — redundant but harmless by design."""
-    scene = DRILL_SCENES[drill_id]
+    scene = DRILL_SCENES[_SCENE_ALIASES.get(drill_id, drill_id)]
     primary, accent = _colors(brand)
     key = _anim_key(drill_id)
     n = len(scene.poses)

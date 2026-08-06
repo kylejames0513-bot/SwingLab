@@ -16,7 +16,7 @@ from .coaching import (
     DTL_SESSION_NOTE,
     IssueCard,
     issue_cards,
-    praise_notes,
+    strength_cards,
 )
 from .config import Config
 from .drills import Drill, practice_plan
@@ -48,6 +48,7 @@ class CaddieBrief:
     """The smallest useful coaching decision for a completed session."""
 
     strength: str | None
+    strength_key: str | None
     focus_flag: str | None
     focus_name: str
     focus_value: str | None
@@ -108,7 +109,7 @@ def build_caddie_brief(
         club=club,
         rule_version=rule_version,
     )
-    strengths = praise_notes(all_metrics, cfg, stats)
+    strengths = strength_cards(all_metrics, cfg, stats)
     prior = previous_flag_counts or {}
 
     focus: IssueCard | None = cards[0] if cards else None
@@ -136,7 +137,8 @@ def build_caddie_brief(
         else:
             maintenance_drill = drill
         return CaddieBrief(
-            strength=strengths[0] if strengths else None,
+            strength=strengths[0].text if strengths else None,
+            strength_key=strengths[0].key if strengths else None,
             focus_flag=None,
             focus_name=(
                 "Protect your tempo baseline"
@@ -194,7 +196,8 @@ def build_caddie_brief(
         )
 
     return CaddieBrief(
-        strength=strengths[0] if strengths else None,
+        strength=strengths[0].text if strengths else None,
+        strength_key=None,
         focus_flag=focus.flag,
         focus_name=focus.display_name,
         focus_value=_focus_value(focus, all_metrics),
@@ -377,7 +380,7 @@ def rhythm_maintenance_drill(cfg: Config) -> Drill:
     """Maintenance action limited to a trustworthy tempo/rhythm read."""
     tempo_warn = float(cfg.coaching["tempo_warn_below"])
     return Drill(
-        id="tempo-three-beat-count",
+        id="rhythm-baseline-refilm",
         name="Rhythm baseline re-film",
         aim="Keep the tempo this camera angle can measure honestly.",
         protocol=(
@@ -397,7 +400,7 @@ def rhythm_maintenance_drill(cfg: Config) -> Drill:
 def readability_maintenance_drill() -> Drill:
     """Capture action when clean-but-partial fields cannot form a baseline."""
     return Drill(
-        id="clean-baseline-refilm",
+        id="readability-baseline-refilm",
         name="Complete baseline re-film",
         aim="Capture enough readable motion before treating this as a baseline.",
         protocol=(
@@ -455,6 +458,7 @@ def _refilm_brief(warning: str) -> CaddieBrief:
     """One safe next action when the measurements cannot support coaching."""
     return CaddieBrief(
         strength=None,
+        strength_key=None,
         focus_flag=None,
         focus_name="Get a trustworthy baseline",
         focus_value=None,

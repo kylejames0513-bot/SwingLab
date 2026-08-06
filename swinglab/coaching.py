@@ -183,11 +183,19 @@ def swing_notes(m: SwingMetrics, cfg: Config) -> list[str]:
     return notes
 
 
-def praise_notes(
+@dataclass(frozen=True)
+class StrengthCard:
+    key: str
+    metric: str
+    display_name: str
+    text: str
+
+
+def strength_cards(
     all_metrics: list[SwingMetrics],
     cfg: Config,
     stats: dict[str, dict[str, float]] | None = None,
-) -> list[str]:
+) -> list[StrengthCard]:
     """One short positive line per metric family that was measured AND came
     in inside its threshold this session — the mirror of the warn notes,
     same voice, same honest numbers. Returns [] when nothing qualifies:
@@ -196,7 +204,7 @@ def praise_notes(
     coach = cfg.coaching
     if stats is None:
         stats = session_stats(all_metrics)
-    notes: list[str] = []
+    cards: list[StrengthCard] = []
 
     def measured(attr: str) -> list[float]:
         return [
@@ -205,45 +213,50 @@ def praise_notes(
 
     sway = measured("head_sway_backswing_sw")
     if sway and max(sway) <= coach["sway_warn_sw"]:
-        notes.append(
+        cards.append(StrengthCard(
+            "sway", "head_sway_backswing_sw", "Head sway",
             f"Head sway peaks at {max(sway):.2f} shoulder widths going back — "
             f"inside the {coach['sway_warn_sw']:.2f} line. The turn is staying "
             "centered over the ball."
-        )
+        ))
 
     tempo = measured("tempo_ratio")
     if tempo and min(tempo) >= coach["tempo_warn_below"]:
-        notes.append(
+        cards.append(StrengthCard(
+            "tempo", "tempo_ratio", "Tempo",
             f"Tempo holds at {min(tempo):.2f}:1 or better on every measured "
             "swing — at "
             f"or above the {coach['tempo_warn_below']:.1f}:1 line, moving "
             f"toward the {coach['tempo_target']:.1f}:1 reference. The "
             "backswing is getting time to finish."
-        )
+        ))
 
     slide = measured("hip_slide_backswing_sw")
     if slide and max(slide) <= coach["sway_warn_sw"]:
-        notes.append(
+        cards.append(StrengthCard(
+            "hip-slide", "hip_slide_backswing_sw", "Hip slide",
             f"Hip slide stays at {max(slide):.2f} shoulder widths or less in "
             f"the backswing — inside the {coach['sway_warn_sw']:.2f} line. "
             "The hips are turning, not drifting."
-        )
+        ))
 
     dip = measured("head_dip_sw")
     if dip and max(dip) <= coach["head_dip_warn_sw"]:
-        notes.append(
+        cards.append(StrengthCard(
+            "head-dip", "head_dip_sw", "Head dip",
             f"Head dip tops out at {max(dip):.2f} shoulder widths into impact "
             f"— inside the {coach['head_dip_warn_sw']:.2f} line. Height is "
             "holding through the strike."
-        )
+        ))
 
     arm = measured("lead_arm_angle_deg")
     if arm and min(arm) >= coach["lead_arm_warn_deg"]:
-        notes.append(
+        cards.append(StrengthCard(
+            "arm-extension", "lead_arm_angle_deg", "Lead arm",
             f"Lead arm stays at {min(arm):.0f}\N{DEGREE SIGN} or straighter at "
             f"impact (180\N{DEGREE SIGN} is straight) — width through the "
             "ball is there."
-        )
+        ))
 
     tilt_measured = measured("shoulder_tilt_impact_deg")
     tilt_fired = any(
@@ -255,19 +268,21 @@ def praise_notes(
         for m in all_metrics
     )
     if tilt_measured and not tilt_fired:
-        notes.append(
+        cards.append(StrengthCard(
+            "shoulder-tilt", "shoulder_tilt_impact_deg", "Shoulder tilt",
             f"Shoulder tilt holds at {min(tilt_measured):.0f}\N{DEGREE SIGN} "
             "or more at impact — the trail shoulder is working down through "
             "the ball."
-        )
+        ))
 
     bal = measured("finish_balance_sw")
     if bal and max(bal) <= coach["finish_balance_warn_sw"]:
-        notes.append(
+        cards.append(StrengthCard(
+            "balance", "finish_balance_sw", "Finish balance",
             f"Finish drift stays at {max(bal):.2f} shoulder widths or less — "
             "the swing is ending somewhere the body can hold. Keep holding "
             "every finish."
-        )
+        ))
 
     tempo_stats = stats.get("tempo_ratio")
     if (
@@ -275,13 +290,23 @@ def praise_notes(
         and tempo_stats is not None
         and tempo_stats["std"] < coach["tempo_std_praise"]
     ):
-        notes.append(
+        cards.append(StrengthCard(
+            "consistency", "tempo_ratio", "Swing-to-swing consistency",
             f"Tempo is consistent swing to swing (\N{PLUS-MINUS SIGN}"
             f"{tempo_stats['std']:.2f}) — same clock every time. That's an "
             "asset worth protecting."
-        )
+        ))
 
-    return notes
+    return cards
+
+
+def praise_notes(
+    all_metrics: list[SwingMetrics],
+    cfg: Config,
+    stats: dict[str, dict[str, float]] | None = None,
+) -> list[str]:
+    """The legacy praise text view of the typed strengths."""
+    return [card.text for card in strength_cards(all_metrics, cfg, stats)]
 
 
 def flag_keys(
