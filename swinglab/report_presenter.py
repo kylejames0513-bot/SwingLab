@@ -9,7 +9,7 @@ from __future__ import annotations
 import math
 import statistics
 from dataclasses import dataclass, replace
-from pathlib import PurePosixPath
+from pathlib import PurePosixPath, PureWindowsPath
 from types import MappingProxyType
 from typing import Literal, Mapping, Sequence, TypeAlias
 
@@ -799,7 +799,6 @@ def prepare_report_input(
         tuple(reason_codes), tuple(safe_media_keys), replay_locked, navigation,
         tuple(plan),
         (
-            LabelValue("source", "Source video", video.path.name),
             LabelValue("duration", "Duration", f"{video.duration_s:.2f} seconds"),
             LabelValue("dimensions", "Display size", f"{video.display_width} x {video.display_height}"),
             LabelValue("rotation", "Rotation metadata", f"{video.rotation} degrees"),
@@ -819,24 +818,33 @@ def _label_values(source: ReportPresentationInput, cfg: Config) -> tuple[LabelVa
 def build_report_document(source: ReportPresentationInput, cfg: Config) -> ReportDocument:
     """Build the complete server-owned document; renderers only lay it out."""
     view = build_report_view(source, cfg)
-    media_by_key = MappingProxyType({entry.key: entry for entry in source.media})
-    if any(PurePosixPath(entry.relative_path).is_absolute() for entry in source.media):
+    media_by_key = MappingProxyType({entry.key: entry for entry in view.media})
+    if any(
+        PurePosixPath(entry.relative_path).is_absolute()
+        or PureWindowsPath(entry.relative_path).is_absolute()
+        for entry in source.media
+    ):
         raise ValueError("Report media paths must remain relative")
+    capture_only = view.outcome is ReportOutcome.CAPTURE_ONLY
+
+    def allowed(key: str | None) -> str | None:
+        return key if key is not None and key in media_by_key else None
+
     swings = tuple(
         SwingDetail(
             int(item.metrics.get("swing") or index), f"Swing {int(item.metrics.get('swing') or index)}",
-            item.notes,
-            tuple(
+            () if capture_only else item.notes,
+            () if capture_only else tuple(
                 LabelValue(key, _METRICS[key].label, _METRICS[key].formatter.format(value))
                 for key, raw in item.metrics.items()
                 if key in _METRICS and (value := finite_float(raw)) is not None
             ),
-            item.key_positions_media_key, item.key_positions_alt_text,
-            item.slow_motion_media_key, item.slow_motion_caption,
-            None if source.replay_locked else item.coach_replay_media_key,
-            item.coach_replay_caption, source.replay_locked,
-            item.locked_replay_explanation if source.replay_locked else None,
-            item.video_poster_media_key, item.video_poster_alt_text,
+            allowed(item.key_positions_media_key), item.key_positions_alt_text,
+            allowed(item.slow_motion_media_key), item.slow_motion_caption,
+            None if source.replay_locked or capture_only else allowed(item.coach_replay_media_key),
+            item.coach_replay_caption, source.replay_locked and not capture_only,
+            item.locked_replay_explanation if source.replay_locked and not capture_only else None,
+            allowed(item.video_poster_media_key), item.video_poster_alt_text,
             item.print_playback_reference or f"Playback reference: swing {index}",
         )
         for index, item in enumerate(source.swings, 1)
@@ -854,21 +862,21 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
     if len(posters) != len(set(posters)):
         raise ValueError("Each video poster key must be distinct or explicitly null")
     selected = source.brief.focus_flag
-    findings = tuple(
+    findings = () if capture_only else tuple(
         FindingDetail(card.flag, card.display_name, card.session_text, card.why,
                       card.fix, (f"measurement-{card.metric}",), "secondary-findings")
         for card in source.issues if card.flag != selected
     )
-    strengths = tuple(
+    strengths = () if capture_only else tuple(
         StrengthDetail(card.key, card.display_name, card.text,
                        (f"measurement-{card.metric}",))
         for card in source.strengths
     )
-    measurements = _label_values(source, cfg)
-    glossary = tuple(
+    measurements = () if capture_only else _label_values(source, cfg)
+    glossary = () if capture_only else tuple(
         GlossaryEntry(meta.label, meta.explanation) for meta in _METRICS.values()
     )
-    limitations = tuple(dict.fromkeys(
+    limitations = () if capture_only else tuple(dict.fromkeys(
         detail.limitation
         for phase in build_phase_summaries(source, cfg)
         for detail in phase.measurements
@@ -876,7 +884,7 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
     ))
     navigation = source.navigation or ReportNavigation(None, None, gear_shop_url(cfg))
     gear_url = gear_shop_url(cfg)
-    gear = (() if not gear_url else (GearDetail(
+    gear = (() if capture_only or not gear_url else (GearDetail(
         source.primary_drill.gear_tag, "Matched training aid",
         source.primary_drill.gear_note or "Optional aid for this practice step.",
         gear_url,
@@ -891,7 +899,7 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
     )
     section_counts = (
         (OptionalSectionId.EVERY_SWING, "Every swing", len(swings), False),
-        (OptionalSectionId.REPLAY, "Coach replay", sum(item.coach_replay_media_key is not None for item in swings), source.replay_locked),
+        (OptionalSectionId.REPLAY, "Coach replay", sum(item.coach_replay_media_key is not None for item in swings), source.replay_locked and not capture_only),
         (OptionalSectionId.SECONDARY_FINDINGS, "Secondary findings", len(findings), False),
         (OptionalSectionId.ALTERNATIVE_DRILLS, "Alternative drills", len(view.practice.alternatives) if view.practice else 0, False),
         (OptionalSectionId.MORE_STRENGTHS, "More strengths", len(strengths), False),

@@ -1,6 +1,10 @@
 from __future__ import annotations
 
-from pathlib import PurePosixPath
+import dataclasses
+from collections.abc import Mapping, Sequence
+from pathlib import Path, PurePosixPath
+
+import pytest
 
 from swinglab.caddie_brief import build_caddie_brief, scope_metrics_for_angle
 from swinglab.coaching import issue_cards, priority_rule_version, strength_cards
@@ -15,6 +19,22 @@ from swinglab.report_presenter import (
 )
 from tests.report_view_fixtures import report_document_fixture
 from tests.test_report import branded_cfg, fake_swing, fake_video
+
+
+def _typed_strings(value):
+    if isinstance(value, str):
+        return (value,)
+    if dataclasses.is_dataclass(value):
+        return tuple(
+            item
+            for field in dataclasses.fields(value)
+            for item in _typed_strings(getattr(value, field.name))
+        )
+    if isinstance(value, Mapping):
+        return tuple(item for child in value.values() for item in _typed_strings(child))
+    if isinstance(value, Sequence):
+        return tuple(item for child in value for item in _typed_strings(child))
+    return ()
 
 
 def _depth_count(document: ReportDocument, section_id: str) -> int:
@@ -92,9 +112,11 @@ def test_document_boundary_owns_complete_prescription_navigation_and_paths():
 def test_locked_replay_and_missing_posters_are_explicit_server_owned_states():
     cfg = branded_cfg()
     swings = [fake_swing(1, 2.0)]
+    evidence = report_document_fixture().view.visual_evidence
     source = prepare_report_input(
         fake_video(), swings, session_stats([swings[0]["metrics"]]), [], "right", cfg,
         replay_locked=True, navigation=ReportNavigation("/app", None, None),
+        visual_evidence=evidence,
     )
     document = build_report_document(source, cfg)
     detail = document.depth.swings[0]
@@ -115,12 +137,94 @@ def test_explicit_media_keys_are_preserved_without_filename_inference():
         MediaEntry("poster-one", MediaRole.VIDEO_POSTER, "image/jpeg", Entitlement.CORE, "media/poster-one.jpg", "a" * 64),
         MediaEntry("slow-one", MediaRole.SLOW_MOTION, "video/mp4", Entitlement.CORE, "media/slow-one.mp4", "b" * 64),
     )
+    evidence = report_document_fixture().view.visual_evidence
     source = prepare_report_input(
         fake_video(), [swing], session_stats([swing["metrics"]]), [], "right", cfg,
-        media=media,
+        media=media, visual_evidence=evidence,
     )
     document = build_report_document(source, cfg)
     detail = document.depth.swings[0]
     assert detail.video_poster_media_key == "poster-one"
     assert detail.slow_motion_media_key == "slow-one"
     assert set(document.media_by_key) == {"poster-one", "slow-one"}
+
+
+def test_capture_only_document_exposes_only_explicit_safe_playback_media():
+    cfg = branded_cfg()
+    swing = fake_swing(1, 2.0)
+    swing["slowmo"] = "media/safe.mp4"
+    swing["overlay"] = "media/unsafe.jpg"
+    swing["poster"] = "media/unsafe-poster.jpg"
+    media = (
+        MediaEntry("safe", MediaRole.CAPTURE_PLAYBACK, "video/mp4", Entitlement.CORE, "media/safe.mp4", "a" * 64),
+        MediaEntry("unsafe", MediaRole.KEY_POSITIONS, "image/jpeg", Entitlement.CORE, "media/unsafe.jpg", "b" * 64),
+        MediaEntry("unsafe-poster", MediaRole.VIDEO_POSTER, "image/jpeg", Entitlement.CORE, "media/unsafe-poster.jpg", "c" * 64),
+    )
+    source = prepare_report_input(
+        fake_video(), [swing], session_stats([swing["metrics"]]),
+        ["Tracking was unstable; numbers may be off."], "right", cfg,
+        media=media, safe_media_keys=("safe",),
+    )
+    document = build_report_document(source, cfg)
+    assert document.view.outcome.value == "capture_only"
+    assert set(document.media_by_key) == {"safe"}
+    detail = document.depth.swings[0]
+    assert detail.slow_motion_media_key == "safe"
+    assert detail.key_positions_media_key is None
+    assert detail.video_poster_media_key is None
+    assert detail.coach_replay_media_key is None
+    assert document.depth.secondary_findings == ()
+    assert document.depth.strengths == ()
+    assert document.depth.measurements == ()
+    assert document.depth.glossary == ()
+    assert document.depth.limitations == ()
+    assert document.depth.gear == ()
+
+
+@pytest.mark.parametrize("relative_path", [
+    "/private/x.jpg",
+    r"C:\private\x.jpg",
+    r"\\server\private\x.jpg",
+])
+def test_document_rejects_absolute_media_paths_on_all_platforms(relative_path):
+    cfg = branded_cfg()
+    swing = fake_swing(1, 2.0)
+    media = (MediaEntry("bad", MediaRole.SLOW_MOTION, "video/mp4", Entitlement.CORE, relative_path, "a" * 64),)
+    source = prepare_report_input(
+        fake_video(), [swing], session_stats([swing["metrics"]]), [], "right", cfg,
+        media=media,
+    )
+    with pytest.raises(ValueError, match="relative"):
+        build_report_document(source, cfg)
+
+
+def test_document_never_exposes_the_source_video_filename():
+    cfg = branded_cfg()
+    swing = fake_swing(1, 2.0)
+    video = dataclasses.replace(fake_video(), path=Path("customer-secret-2026.mov"))
+    source = prepare_report_input(
+        video, [swing], session_stats([swing["metrics"]]), [], "right", cfg,
+    )
+    document = build_report_document(source, cfg)
+    assert "customer-secret-2026" not in repr(document)
+
+
+def test_production_document_owns_priority_prescription_target_and_navigation():
+    cfg = branded_cfg()
+    swing = fake_swing(1, 2.0)
+    navigation = ReportNavigation("/app", "/shop", "/shop/gear")
+    fixture = report_document_fixture()
+    source = prepare_report_input(
+        fake_video(), [swing], session_stats([swing["metrics"]]), [], "right", cfg,
+        navigation=navigation, visual_evidence=fixture.view.visual_evidence,
+        media=tuple(fixture.media_by_key.values()),
+    )
+    document = build_report_document(source, cfg)
+    assert document.view.next_move.title == source.brief.focus_name
+    assert document.view.practice.full_steps == source.primary_drill.protocol
+    assert document.view.refilm.target.text
+    assert document.depth.navigation == navigation
+    strings = _typed_strings(document)
+    assert strings.count(document.view.next_move.title) == 1
+    assert strings.count(document.view.refilm.target.text) == 1
+    assert all(strings.count(step) == 1 for step in document.view.practice.full_steps)

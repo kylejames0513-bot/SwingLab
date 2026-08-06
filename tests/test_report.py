@@ -3,6 +3,7 @@ changing brand name/colors in config changes the report with no code edits."""
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
 from pathlib import Path
@@ -11,6 +12,20 @@ from swinglab.config import Config
 from swinglab.ffmpeg import VideoInfo
 from swinglab.metrics import SwingMetrics, session_stats
 from swinglab.report import write_metrics_json, write_report_html
+
+
+def test_write_report_html_keeps_the_complete_legacy_signature():
+    signature = inspect.signature(write_report_html)
+    assert tuple(signature.parameters) == (
+        "out_path", "video", "swings", "stats", "session_notes", "hand", "cfg",
+        "angle", "club", "level", "sample_banner", "analysis_fps", "replay_locked",
+    )
+    assert signature.parameters["angle"].default == "face-on"
+    assert signature.parameters["club"].default is None
+    assert signature.parameters["level"].default is None
+    assert signature.parameters["sample_banner"].default is None
+    assert signature.parameters["analysis_fps"].default is None
+    assert signature.parameters["replay_locked"].default is False
 
 
 def fake_video() -> VideoInfo:
