@@ -129,14 +129,21 @@ def _artifact_report_view_payload(name: str = "coaching-improve-clear") -> dict[
     if payload["outcome"] == "coaching_ready":
         capabilities = payload["capabilities"]
         optional = payload["optional_sections"]
+        context = payload["context"]
         assert isinstance(capabilities, dict) and isinstance(optional, list)
-        capabilities["every_swing"] = False
-        payload["optional_sections"] = [
-            section
-            for section in optional
-            if not isinstance(section, dict) or section.get("id") != "every_swing"
-        ]
-        optional = payload["optional_sections"]
+        assert isinstance(context, dict)
+        detected_swings = context["detected_swings"]
+        assert isinstance(detected_swings, int)
+        capabilities["every_swing"] = detected_swings > 0
+        optional.append(
+            {
+                "id": "every_swing",
+                "label": "Every swing",
+                "available": detected_swings > 0,
+                "locked": False,
+                "item_count": detected_swings,
+            }
+        )
         practice = payload["practice"]
         assert isinstance(optional, list) and isinstance(practice, dict)
         if capabilities.get("alternative_drills") and not any(
@@ -330,18 +337,7 @@ def _payload_with_media_role(role: str) -> tuple[dict[str, object], str]:
             "checksum_sha256": "0" * 64,
         }
     )
-    if role == "key_positions":
-        capabilities["every_swing"] = True
-        optional_sections.append(
-            {
-                "id": "every_swing",
-                "label": "Every swing",
-                "available": True,
-                "locked": False,
-                "item_count": 1,
-            }
-        )
-    elif role == "slow_motion":
+    if role == "slow_motion":
         capabilities["slow_motion"] = True
     elif role == "coach_replay":
         capabilities["coach_replay"] = True
@@ -1405,14 +1401,10 @@ def test_every_swing_capability_must_follow_its_available_section(tmp_path: Path
     capabilities = payload["capabilities"]
     optional = payload["optional_sections"]
     assert isinstance(capabilities, dict) and isinstance(optional, list)
-    optional.append(
-        {
-            "id": "every_swing",
-            "label": "Every swing",
-            "available": True,
-            "locked": False,
-            "item_count": 1,
-        }
+    section = next(
+        item
+        for item in optional
+        if isinstance(item, dict) and item["id"] == "every_swing"
     )
     capabilities["every_swing"] = False
     root = _build_bundle(tmp_path, payload=payload)
@@ -1452,6 +1444,86 @@ def test_every_swing_count_cannot_be_less_than_key_position_media_count(tmp_path
         )
 
 
+def test_every_swing_count_must_equal_detected_swing_count(tmp_path: Path):
+    payload = _artifact_report_view_payload()
+    capabilities = payload["capabilities"]
+    optional = payload["optional_sections"]
+    context = payload["context"]
+    assert isinstance(capabilities, dict)
+    assert isinstance(optional, list)
+    assert isinstance(context, dict) and context["detected_swings"] == 3
+    section = next(
+        item
+        for item in optional
+        if isinstance(item, dict) and item["id"] == "every_swing"
+    )
+    assert capabilities["every_swing"] is True
+    section["item_count"] = 999
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_nonempty_alternative_drills_require_matching_section_and_capability(
+    tmp_path: Path,
+):
+    payload = _artifact_report_view_payload()
+    capabilities = payload["capabilities"]
+    optional = payload["optional_sections"]
+    practice = payload["practice"]
+    assert isinstance(capabilities, dict)
+    assert isinstance(optional, list)
+    assert isinstance(practice, dict)
+    assert isinstance(practice["alternatives"], list) and practice["alternatives"]
+    capabilities["alternative_drills"] = False
+    payload["optional_sections"] = [
+        section
+        for section in optional
+        if not isinstance(section, dict) or section.get("id") != "alternative_drills"
+    ]
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_phase_measurements_require_matching_section_and_capability(tmp_path: Path):
+    payload = _artifact_report_view_payload()
+    capabilities = payload["capabilities"]
+    optional = payload["optional_sections"]
+    phases = payload["phases"]
+    assert isinstance(capabilities, dict)
+    assert isinstance(optional, list)
+    assert isinstance(phases, list)
+    assert any(
+        isinstance(phase, dict) and phase.get("measurements")
+        for phase in phases
+    )
+    capabilities["measurements"] = False
+    payload["optional_sections"] = [
+        section
+        for section in optional
+        if not isinstance(section, dict) or section.get("id") != "measurements"
+    ]
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
 def test_practice_illustration_reference_requires_drill_illustration_role(tmp_path: Path):
     payload = _artifact_report_view_payload()
     media = payload["media"]
@@ -1474,6 +1546,23 @@ def test_capture_guidance_safe_media_key_requires_capture_playback_role(tmp_path
     media = payload["media"]
     assert isinstance(media, list) and isinstance(media[0], dict)
     media[0]["role"] = "video_poster"
+    root = _build_bundle(tmp_path, payload=payload)
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_staged_bundle(
+            root,
+            manifest_rel=REPORT_MANIFEST_FILENAME,
+            checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        )
+
+
+def test_capture_guidance_rejects_duplicate_safe_media_keys(tmp_path: Path):
+    payload = _artifact_report_view_payload("capture-only")
+    capture_guidance = payload["capture_guidance"]
+    assert isinstance(capture_guidance, dict)
+    safe_media_keys = capture_guidance["safe_media_keys"]
+    assert safe_media_keys == ["playback-1"]
+    safe_media_keys.append("playback-1")
     root = _build_bundle(tmp_path, payload=payload)
 
     with pytest.raises(ReportArtifactValidationError):

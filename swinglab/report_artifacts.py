@@ -1328,6 +1328,25 @@ def _validate_media_relationships(
         elif section.available != (section.item_count > 0):
             _err("optional section availability must match its item count")
 
+    def require_content_section(
+        section_id: OptionalSectionId,
+        capability_name: str,
+        expected_count: int,
+        *,
+        label: str,
+    ) -> Any:
+        section = optional_by_id.get(section_id)
+        expected_available = expected_count > 0
+        if (
+            section is None
+            or section.locked
+            or section.available != expected_available
+            or section.item_count != expected_count
+            or getattr(view.capabilities, capability_name) != expected_available
+        ):
+            _err(f"{label} section must match report content")
+        return section
+
     focused = tuple(entry for entry in view.media if entry.role == MediaRole.PRIORITY_EVIDENCE)
     if isinstance(view, CoachingReportView) and isinstance(view.visual_evidence, RenderedEvidence):
         if len(focused) != 1 or focused[0].key != view.visual_evidence.media_key:
@@ -1363,18 +1382,15 @@ def _validate_media_relationships(
     key_positions = tuple(
         entry for entry in view.media if entry.role == MediaRole.KEY_POSITIONS
     )
-    every_swing_section = optional_by_id.get(OptionalSectionId.EVERY_SWING)
-    every_swing_available = bool(
-        every_swing_section is not None and every_swing_section.available
-    )
-    if view.capabilities.every_swing != every_swing_available:
-        _err("every-swing capability must match its available section")
-    if key_positions and (
-        not every_swing_available
-        or every_swing_section.locked
-        or every_swing_section.item_count < len(key_positions)
-    ):
-        _err("key-position media exceeds the available every-swing section")
+    if isinstance(view, CoachingReportView):
+        every_swing_section = require_content_section(
+            OptionalSectionId.EVERY_SWING,
+            "every_swing",
+            view.context.detected_swings,
+            label="every-swing",
+        )
+        if len(key_positions) > every_swing_section.item_count:
+            _err("key-position media exceeds the available every-swing section")
 
     slow_motion = tuple(
         entry for entry in view.media if entry.role == MediaRole.SLOW_MOTION
@@ -1395,25 +1411,23 @@ def _validate_media_relationships(
             _err("practice illustration references must use drill-illustration media")
         if any(entry.role == MediaRole.CAPTURE_PLAYBACK for entry in view.media):
             _err("coaching reports cannot contain capture-playback media")
-        capability_sections = {
-            "measurements": OptionalSectionId.MEASUREMENTS,
-            "alternative_drills": OptionalSectionId.ALTERNATIVE_DRILLS,
-            "gear": OptionalSectionId.GEAR,
-        }
-        for capability_name, section_id in capability_sections.items():
-            section = optional_by_id.get(section_id)
-            available = bool(section is not None and section.available)
-            if getattr(view.capabilities, capability_name) != available:
-                _err(f"{capability_name} capability must match its optional section")
-        alternatives = optional_by_id.get(OptionalSectionId.ALTERNATIVE_DRILLS)
-        if alternatives is not None and alternatives.item_count != len(
-            view.practice.alternatives
-        ):
-            _err("alternative-drill count does not match the practice contract")
-        measurements = optional_by_id.get(OptionalSectionId.MEASUREMENTS)
         measurement_count = sum(len(phase.measurements) for phase in view.phases)
-        if measurements is not None and measurements.item_count != measurement_count:
-            _err("measurement count does not match the report phases")
+        require_content_section(
+            OptionalSectionId.ALTERNATIVE_DRILLS,
+            "alternative_drills",
+            len(view.practice.alternatives),
+            label="alternative-drill",
+        )
+        require_content_section(
+            OptionalSectionId.MEASUREMENTS,
+            "measurements",
+            measurement_count,
+            label="measurement",
+        )
+        gear = optional_by_id.get(OptionalSectionId.GEAR)
+        gear_available = bool(gear is not None and gear.available)
+        if view.capabilities.gear != gear_available:
+            _err("gear capability must match its optional section")
     elif drill_keys:
         _err("capture-only reports cannot contain drill illustrations")
 
@@ -1435,7 +1449,10 @@ def _validate_media_relationships(
             )
         ):
             _err("capture-only reports cannot expose coaching capabilities")
-        if capture_keys != set(view.capture_guidance.safe_media_keys):
+        safe_media_keys = view.capture_guidance.safe_media_keys
+        if len(safe_media_keys) != len(set(safe_media_keys)):
+            _err("capture guidance contains duplicate safe media keys")
+        if capture_keys != set(safe_media_keys):
             _err("capture guidance keys must identify capture-playback media")
         forbidden = {
             MediaRole.PRIORITY_EVIDENCE,
