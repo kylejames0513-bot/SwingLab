@@ -165,11 +165,15 @@ def test_lead_arm_uses_handed_elbow_for_line_and_arc(tmp_path, monkeypatch, hand
 def test_shoulder_tilt_draws_distinct_address_green_and_impact_orange(tmp_path, monkeypatch):
     from swinglab import focused_evidence as focused
     snapshot = _snapshot(tmp_path)
-    address = dict(snapshot.event_landmarks[EventId.ADDRESS]); impact = dict(snapshot.event_landmarks[EventId.TOP])
+    address = dict(snapshot.event_landmarks[EventId.ADDRESS]); impact = dict(snapshot.event_landmarks[EventId.IMPACT])
     address[pose.LEFT_SHOULDER], address[pose.RIGHT_SHOULDER] = np.array([300., 300.]), np.array([500., 300.])
     impact[pose.LEFT_SHOULDER], impact[pose.RIGHT_SHOULDER] = np.array([310., 340.]), np.array([510., 280.])
-    snapshot = replace(snapshot, event_landmarks=MappingProxyType({**snapshot.event_landmarks, EventId.ADDRESS: address, EventId.TOP: impact}))
-    lines = []
+    snapshot = replace(snapshot, event_landmarks=MappingProxyType({**snapshot.event_landmarks, EventId.ADDRESS: address, EventId.IMPACT: impact}))
+    lines, offsets = [], []
+    real_crop = focused._crop
+    def recording_crop(image, points):
+        cropped, offset = real_crop(image, points); offsets.append(offset); return cropped, offset
+    monkeypatch.setattr(focused, "_crop", recording_crop)
     class Recorder:
         def __init__(self, wrapped): self.wrapped = wrapped
         def line(self, xy, **kwargs): lines.append((xy, kwargs.get("fill"))); return self.wrapped.line(xy, **kwargs)
@@ -177,10 +181,13 @@ def test_shoulder_tilt_draws_distinct_address_green_and_impact_orange(tmp_path, 
     real_draw = focused.ImageDraw.Draw
     monkeypatch.setattr(focused.ImageDraw, "Draw", lambda image: Recorder(real_draw(image)))
     cfg = Config()
-    focused.render_focused_evidence(focused.FocusedEvidenceSelection(_rule(EvidenceKind.SHOULDER_TILT, "shoulder_tilt_delta_deg"), snapshot, 1, 1, 1, None), out_path=tmp_path / "shoulders.png", relative_path="media/shoulders.png", cfg=cfg)
-    shoulder_lines = [(xy, color) for xy, color in lines if color in {cfg.overlay["corrected_color"], cfg.overlay["captured_color"]} and len(xy) == 2]
-    assert any(color == cfg.overlay["corrected_color"] and xy[0][1] == xy[1][1] for xy, color in shoulder_lines)
-    assert any(color == cfg.overlay["captured_color"] and xy[0][1] != xy[1][1] for xy, color in shoulder_lines)
+    rule = _rule(EvidenceKind.SHOULDER_TILT, "shoulder_tilt_delta_deg", EventId.IMPACT)
+    focused.render_focused_evidence(focused.FocusedEvidenceSelection(rule, snapshot, 1, 1, 1, None), out_path=tmp_path / "shoulders.png", relative_path="media/shoulders.png", cfg=cfg)
+    offset = offsets[0]
+    address_line = tuple((float(address[index][0] - offset[0]), float(address[index][1] - offset[1])) for index in (pose.LEFT_SHOULDER, pose.RIGHT_SHOULDER))
+    impact_line = tuple((float(impact[index][0] - offset[0]), float(impact[index][1] - offset[1])) for index in (pose.LEFT_SHOULDER, pose.RIGHT_SHOULDER))
+    assert (address_line, cfg.overlay["corrected_color"]) in lines
+    assert (impact_line, cfg.overlay["captured_color"]) in lines
 
 
 def test_finish_path_is_ordered_and_crop_contains_every_endpoint(tmp_path, monkeypatch):
