@@ -141,8 +141,9 @@ def _render_body(rule: PriorityEvidenceRule, snapshot: EvidenceSnapshot, cfg: Co
         reference="Address shoulder line"
     elif rule.kind is EvidenceKind.FINISH_STABILITY:
         points = [(x-offset[0], y-offset[1]) for x,y in snapshot.finish_ankle_midpoints]
+        if len(points) > 1: draw.line(points, fill=orange, width=3)
         for point in points: draw_marker(draw,point,orange,5)
-        if points: draw_marker(draw,points[0],green,6)
+        if points: draw_marker(draw,points[0],green,6); draw_marker(draw,points[-1],orange,7)
         reference="Finish-start ankle midpoint"
     if rule.kind is EvidenceKind.STEADY_REFERENCE:
         observed, reference = "Observed steady baseline", "Measured phase reference"
@@ -156,8 +157,15 @@ def _render_tempo(snapshot: EvidenceSnapshot, selection: FocusedEvidenceSelectio
     methods = ", ".join(f"{event.label}: {event.method.value}" for event in snapshot.events)
     facts = f"backswing {snapshot.metrics.backswing_s:.2f}s; downswing {snapshot.metrics.downswing_s:.2f}s; ratio {snapshot.metrics.tempo_ratio:.2f}; consistency {selection.tempo_ratio_std if selection.tempo_ratio_std is not None else 'unavailable'}"
     draw.text((30, 15), "Observed timing timeline", fill=cfg.overlay["captured_color"], font=font)
+    draw.text((30, 40), methods, fill=cfg.overlay["captured_color"], font=font)
     draw.text((30, 170), facts, fill=cfg.overlay["captured_color"], font=font)
     return image, f"Swing {snapshot.swing} timing timeline with observed timing reference: {methods}; {facts}. Tracking {_tracking(snapshot)[0].value}."
+
+def _body_entry(rule, snapshot, cfg):
+    return _render_body(rule, snapshot, cfg)
+
+RENDERERS = {kind: _body_entry for kind in EvidenceKind if kind is not EvidenceKind.TEMPO_TIMELINE}
+RENDERERS[EvidenceKind.TEMPO_TIMELINE] = _render_tempo
 
 def render_focused_evidence(selection: FocusedEvidenceSelection, *, out_path: Path, relative_path: str, cfg: Config, angle: str = "face_on") -> FocusedEvidenceArtifact:
     snapshot, rule = selection.snapshot, selection.rule
@@ -168,7 +176,7 @@ def render_focused_evidence(selection: FocusedEvidenceSelection, *, out_path: Pa
         image, alt = _render_tempo(snapshot,selection,cfg); observed, reference, boundary = "Observed timing events", "Event timing reference", None
         event, provenance = EventId.ADDRESS, _event(snapshot, EventId.ADDRESS)
     else:
-        image, observed, reference, boundary, alt = _render_body(rule,snapshot,cfg); event, provenance = _phase_event(rule,snapshot)
+        image, observed, reference, boundary, alt = RENDERERS[rule.kind](rule,snapshot,cfg); event, provenance = _phase_event(rule,snapshot)
     try: saved = save_branded(image,out_path,cfg); digest = hashlib.sha256(saved.read_bytes()).hexdigest()
     except (OSError, ValueError) as exc: raise FocusedEvidenceRenderError(str(exc)) from exc
     tracking, reasons = _tracking(snapshot)
