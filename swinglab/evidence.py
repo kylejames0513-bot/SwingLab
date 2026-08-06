@@ -6,7 +6,7 @@ import math
 from dataclasses import dataclass
 from pathlib import Path
 from types import MappingProxyType
-from typing import Mapping, Sequence
+from typing import Literal, Mapping, Sequence
 
 import numpy as np
 
@@ -49,6 +49,7 @@ class EvidenceSnapshot:
     target_direction: int
     target_confident: bool
     shoulder_width_px: float
+    hand: Literal["right", "left"]
 
 
 def _copy_landmarks(landmarks: pose.Landmarks | None) -> pose.Landmarks | None:
@@ -124,6 +125,8 @@ def build_evidence_snapshot(
     shoulder_width = float(events.shoulder_width_px)
     if not math.isfinite(shoulder_width) or shoulder_width <= 0:
         raise ValueError("shoulder width must be finite and positive")
+    if hand not in {"right", "left"}:
+        raise ValueError("hand must be 'right' or 'left'")
 
     event_indices = {
         EventId.ADDRESS: events.address_idx,
@@ -177,5 +180,5 @@ def build_evidence_snapshot(
         finish_ankle_midpoints=_finish_midpoints(frameset, observations, finish_idx, copied_frames.get(EventId.FINISH)),
         annotation_gates=MappingProxyType(gates), tracking_quality=tracking_quality,
         target_direction=metrics.target_direction, target_confident=metrics.target_confident,
-        shoulder_width_px=shoulder_width,
+        shoulder_width_px=shoulder_width, hand=hand,
     )

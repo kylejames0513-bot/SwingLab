@@ -121,3 +121,13 @@ def test_rejects_nonpositive_or_nonfinite_shoulder_width():
     for width in (0.0, -1.0, math.inf, math.nan):
         with pytest.raises(ValueError, match="shoulder width"):
             _snapshot(events=SwingEvents(1, 3, 5, 7, 1., 1., 1., 1.5, width, np.array([1., 2.])))
+
+
+@pytest.mark.parametrize("hand", ["right", "left"])
+def test_snapshot_retains_validated_handedness(hand):
+    assert _snapshot(hand=hand).hand == hand
+
+
+def test_snapshot_rejects_unknown_handedness():
+    with pytest.raises(ValueError, match="hand"):
+        _snapshot(hand="ambidextrous")
