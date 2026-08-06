@@ -30,6 +30,29 @@ def test_clean_session_praises_every_measured_family():
     assert "consistent swing to swing" in text
 
 
+def test_legacy_praise_output_is_byte_for_byte_stable():
+    metrics = [make_metrics(1), make_metrics(2)]
+    assert praise_notes(metrics, Config()) == [
+        "Head sway peaks at 0.10 shoulder widths going back — inside the "
+        "0.35 line. The turn is staying centered over the ball.",
+        "Tempo holds at 3.00:1 or better on every measured swing — at or "
+        "above the 2.4:1 line, moving toward the 3.0:1 reference. The "
+        "backswing is getting time to finish.",
+        "Hip slide stays at 0.10 shoulder widths or less in the backswing — "
+        "inside the 0.35 line. The hips are turning, not drifting.",
+        "Head dip tops out at 0.10 shoulder widths into impact — inside the "
+        "0.25 line. Height is holding through the strike.",
+        "Lead arm stays at 170° or straighter at impact (180° is straight) "
+        "— width through the ball is there.",
+        "Shoulder tilt holds at 12° or more at impact — the trail shoulder "
+        "is working down through the ball.",
+        "Finish drift stays at 0.05 shoulder widths or less — the swing is "
+        "ending somewhere the body can hold. Keep holding every finish.",
+        "Tempo is consistent swing to swing (±0.00) — same clock every "
+        "time. That's an asset worth protecting.",
+    ]
+
+
 def test_all_flagged_session_gets_zero_praise():
     ms = all_flags_metrics()  # every family breached at least once
     assert praise_notes(ms, Config()) == []
