@@ -83,6 +83,11 @@
       "logo": {{ schema_logo | image_url: width: 480 | prepend: 'https:' | json }}{% endif %}
     }
   </script>
+  {%- comment -%}
+    The SearchAction target is built in an assign tag: literal braces in
+    the placeholder break Shopify's parser inside output markup.
+  {%- endcomment -%}
+  {%- assign search_action_target = shop.url | append: routes.search_url | append: '?q={search_term_string}' -%}
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
@@ -91,7 +96,7 @@
       "url": {{ shop.url | json }},
       "potentialAction": {
         "@type": "SearchAction",
-        "target": {{ shop.url | append: routes.search_url | append: '?q={search_term_string}' | json }},
+        "target": {{ search_action_target | json }},
         "query-input": "required name=search_term_string"
       }
     }
