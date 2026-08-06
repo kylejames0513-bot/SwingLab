@@ -96,6 +96,23 @@
   .security-note { padding: 13px 15px; border-radius: 10px; background: var(--sl-surface-soft); color: var(--sl-ink-soft); font-size: .88rem; }
   .store-status { padding: 14px 15px; border: 1px solid #c9d9cd; border-radius: 11px; background: #f1f7f2; color: var(--sl-ink-soft); }
   .store-status strong { color: var(--sl-green); }
+  #mobile-token-form { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 9px; }
+  #mobile-token-form input {
+    flex: 1 1 180px; padding: 9px 12px; border: 1px solid var(--sl-border);
+    border-radius: 9px; font: inherit; background: #fff; color: var(--sl-ink);
+  }
+  #mobile-token-form .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  #mobile-token-reveal { margin-top: 13px; padding: 13px; border: 1px dashed var(--sl-border); border-radius: 11px; background: #fbfaf7; }
+  #mobile-token-reveal p { margin: 0 0 8px; font-size: .87rem; }
+  #mobile-token-reveal code {
+    display: block; padding: 9px 11px; margin-bottom: 9px; border-radius: 8px;
+    background: #10241a; color: #f7f5f0; font-size: .8rem; word-break: break-all;
+    user-select: all; -webkit-user-select: all;
+  }
+  .mobile-revoke {
+    border: 0; padding: 0; background: none; color: #8a2820; font: inherit;
+    font-size: inherit; cursor: pointer; text-decoration: underline;
+  }
   .danger-card { border-color: #e2c3be; background: linear-gradient(135deg, #fffefa, #fff8f6); }
   .danger-card .sl-eyebrow { color: #8a2820; }
   .danger-card h2 { color: #741f19; }
@@ -240,6 +257,46 @@
         </div>
       </section>
 
+      {% if mobile_api_enabled %}
+        <section class="account-card" aria-labelledby="mobile-heading">
+          <header class="account-card__header">
+            <p class="sl-eyebrow">iPhone app</p>
+            <h2 id="mobile-heading">Mobile app</h2>
+            <p>Pair the CaddieInsight iPhone app with a device token. Each token is shown once and can be revoked here any time.</p>
+          </header>
+          {% if mobile_devices %}
+            <dl class="account-facts" id="mobile-device-list">
+              {% for device in mobile_devices %}
+                <div class="account-row">
+                  <dt>{{ device.label }}</dt>
+                  <dd>
+                    {% if device.last_used %}Last used {{ device.last_used }}{% else %}Added {{ device.created }}{% endif %}
+                    · <button type="button" class="mobile-revoke" data-selector="{{ device.selector }}">Remove</button>
+                  </dd>
+                </div>
+              {% endfor %}
+            </dl>
+          {% else %}
+            <p class="hint">No devices connected yet.</p>
+          {% endif %}
+          <div class="account-subsection">
+            <h3>Add this device</h3>
+            <p class="hint">Name the device, create its token, then paste the token into the app's Connect screen along with this site's address.</p>
+            <form id="mobile-token-form">
+              <label for="mobile-label" class="sr-only">Device name</label>
+              <input id="mobile-label" name="label" type="text" maxlength="60" required placeholder="e.g. Kyle's iPhone" autocomplete="off">
+              <button type="submit">Create device token</button>
+            </form>
+            <p class="error" id="mobile-token-error" role="alert" hidden></p>
+            <div id="mobile-token-reveal" hidden>
+              <p><strong>Copy this token now — it won't be shown again.</strong></p>
+              <code id="mobile-token-value"></code>
+              <button type="button" id="mobile-token-copy">Copy token</button>
+            </div>
+          </div>
+        </section>
+      {% endif %}
+
       <section class="account-card" aria-labelledby="preferences-heading">
         <header class="account-card__header">
           <p class="sl-eyebrow">Communication</p>
@@ -302,4 +359,94 @@
       {% endif %}
     </div>
   </div>
+
+  {% if mobile_api_enabled %}
+    <script>
+    (function () {
+      var form = document.getElementById("mobile-token-form");
+      if (!form) return;
+      var errorEl = document.getElementById("mobile-token-error");
+      var reveal = document.getElementById("mobile-token-reveal");
+      var valueEl = document.getElementById("mobile-token-value");
+
+      function showError(message) {
+        errorEl.textContent = message;
+        errorEl.hidden = false;
+      }
+
+      function detailFrom(response, fallback) {
+        return response.json().then(function (payload) {
+          return (payload && payload.detail) || fallback;
+        }, function () { return fallback; });
+      }
+
+      form.addEventListener("submit", function (event) {
+        event.preventDefault();
+        errorEl.hidden = true;
+        var label = document.getElementById("mobile-label").value.trim();
+        if (!label) return;
+        var button = form.querySelector("button[type=submit]");
+        button.disabled = true;
+        fetch("/api/v1/mobile-tokens", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ label: label })
+        }).then(function (response) {
+          if (!response.ok) {
+            return detailFrom(response, "Could not create the token.").then(showError);
+          }
+          return response.json().then(function (payload) {
+            valueEl.textContent = payload.token;
+            reveal.hidden = false;
+            form.hidden = true;
+          });
+        }).catch(function () {
+          showError("Network problem — try again.");
+        }).finally(function () {
+          button.disabled = false;
+        });
+      });
+
+      document.getElementById("mobile-token-copy").addEventListener("click", function () {
+        var copy = this;
+        var text = valueEl.textContent;
+        (navigator.clipboard
+          ? navigator.clipboard.writeText(text)
+          : Promise.reject()
+        ).then(function () {
+          copy.textContent = "Copied";
+        }, function () {
+          // Clipboard blocked — leave the token selected for a manual copy.
+          var range = document.createRange();
+          range.selectNodeContents(valueEl);
+          var selection = window.getSelection();
+          selection.removeAllRanges();
+          selection.addRange(range);
+        });
+      });
+
+      Array.prototype.forEach.call(
+        document.querySelectorAll(".mobile-revoke"),
+        function (button) {
+          button.addEventListener("click", function () {
+            if (!window.confirm("Remove this device? The app using it stops working immediately.")) return;
+            button.disabled = true;
+            fetch("/api/v1/mobile-tokens/" + encodeURIComponent(button.getAttribute("data-selector")), {
+              method: "DELETE"
+            }).then(function (response) {
+              if (!response.ok) {
+                button.disabled = false;
+                return detailFrom(response, "Could not remove the device.").then(showError);
+              }
+              window.location.reload();
+            }).catch(function () {
+              button.disabled = false;
+              showError("Network problem — try again.");
+            });
+          });
+        }
+      );
+    })();
+    </script>
+  {% endif %}
 {% endblock %}

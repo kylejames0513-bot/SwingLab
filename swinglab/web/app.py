@@ -2314,11 +2314,35 @@ def create_app(
                         raw_history_flash.get("cleanup_pending")
                     ),
                 }
+        mobile_api_enabled = bool(cfg.web.get("require_account"))
         return render(
             "web_account.html.j2",
             request,
             usage=manager.usage_this_month(user.id),
             quota_left=quota_left(user),
+            mobile_api_enabled=mobile_api_enabled,
+            mobile_devices=(
+                [
+                    {
+                        "selector": token.selector,
+                        "label": token.label,
+                        "created": time.strftime(
+                            "%b %d, %Y", time.localtime(token.created_at)
+                        ),
+                        "last_used": (
+                            time.strftime(
+                                "%b %d, %Y", time.localtime(token.last_used_at)
+                            )
+                            if token.last_used_at
+                            else None
+                        ),
+                    }
+                    for token in users.list_mobile_api_tokens(user.id)
+                    if token.active
+                ]
+                if mobile_api_enabled
+                else []
+            ),
             upgraded="upgraded" in request.query_params,
             shopify_connected="shopify_connected" in request.query_params,
             password_added="password_added" in request.query_params,
