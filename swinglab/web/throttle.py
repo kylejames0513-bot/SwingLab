@@ -23,6 +23,7 @@ are wired up in app.py.
 from __future__ import annotations
 
 import math
+import re
 import sqlite3
 import threading
 import time
@@ -30,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .mobile_schema import (
+    HMACDigest,
     MobileStateDomain,
     VersionedHMAC,
     ensure_mobile_rate_limit_schema,
@@ -109,12 +111,14 @@ _KEYED_RATE_DOMAINS: dict[str, MobileStateDomain] = {
     "auth-exchange-ip": MobileStateDomain.AUTH_EXCHANGE_CLIENT_IP,
     "auth-exchange-email": MobileStateDomain.AUTH_EXCHANGE_NORMALIZED_EMAIL_RATE,
     "review-auth-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
-    "review-auth-account": MobileStateDomain.REVIEW_AUTH_ACCOUNT,
     "review-auth-start-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
-    "review-auth-start-account": MobileStateDomain.REVIEW_AUTH_ACCOUNT,
     "review-auth-exchange-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
-    "review-auth-exchange-account": MobileStateDomain.REVIEW_AUTH_ACCOUNT,
 }
+_PROTECTED_KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_PROTECTED_DIGEST = re.compile(r"[0-9a-f]{64}")
+_PreparedRateEntry = tuple[
+    str, int, float, tuple[tuple[str, str], ...], str, str
+]
 
 
 class KeyedThrottle:
@@ -156,9 +160,7 @@ class KeyedThrottle:
         if not isinstance(entries, list) or not 1 <= len(entries) <= 8:
             raise ValueError("Between one and eight keyed rate entries are required.")
         observed_at = time.time() if now is None else float(now)
-        prepared: list[
-            tuple[str, int, float, tuple[tuple[str, str], ...], str, str]
-        ] = []
+        prepared: list[_PreparedRateEntry] = []
         seen_domains: set[str] = set()
         for domain, raw_key, limit, window_s in entries:
             if domain in seen_domains:
@@ -186,6 +188,98 @@ class KeyedThrottle:
                     current_digest,
                 )
             )
+
+        return self._consume_prepared(prepared, observed_at=observed_at)
+
+    def consume_review_account(
+        self,
+        *,
+        phase: str,
+        client_ip: str,
+        account_candidates: tuple[HMACDigest, ...],
+        account_current: HMACDigest,
+        ip_limit: int,
+        account_limit: int,
+        window_s: float,
+        now: float | None = None,
+    ) -> MultiRateLimitDecision:
+        """Atomically debit one raw review IP and one protected account key.
+
+        This deliberately narrow entry point is the only path that accepts an
+        already-protected key. It prevents review-account digests persisted in
+        challenges from being HMACed a second time while keeping the general
+        throttle API raw-key-only.
+        """
+
+        try:
+            ip_domain, account_domain = {
+                "start": ("review-auth-start-ip", "review-auth-start-account"),
+                "exchange": (
+                    "review-auth-exchange-ip",
+                    "review-auth-exchange-account",
+                ),
+            }[phase]
+        except (KeyError, TypeError) as exc:
+            raise ValueError("A closed review rate-limit phase is required.") from exc
+        if not isinstance(client_ip, str) or not client_ip:
+            raise ValueError("A bounded positive keyed rate key is required.")
+        for limit in (ip_limit, account_limit):
+            if not isinstance(limit, int) or not 1 <= limit <= 100_000:
+                raise ValueError("A bounded positive keyed rate limit is required.")
+        if not 1 <= float(window_s) <= 86400:
+            raise ValueError("A bounded keyed rate window is required.")
+        if not isinstance(account_candidates, tuple) or not account_candidates:
+            raise ValueError("Protected review-account candidates are required.")
+        if (
+            any(
+                not isinstance(item, HMACDigest)
+                for item in account_candidates
+            )
+            or not isinstance(account_current, HMACDigest)
+        ):
+            raise ValueError("Protected review-account candidates are invalid.")
+        protected = tuple((item.key_id, item.digest) for item in account_candidates)
+        if (
+            any(
+                _PROTECTED_KEY_ID.fullmatch(item.key_id) is None
+                or _PROTECTED_DIGEST.fullmatch(item.digest) is None
+                for item in account_candidates
+            )
+            or len({item.key_id for item in account_candidates})
+            != len(account_candidates)
+            or (account_current.key_id, account_current.digest) not in protected
+        ):
+            raise ValueError("Protected review-account candidates are invalid.")
+        self._keyring.require_key_ids(item.key_id for item in account_candidates)
+        ip_hmac_domain = _KEYED_RATE_DOMAINS[ip_domain]
+        ip_candidates = self._keyring.candidates(ip_hmac_domain, client_ip)
+        ip_current_id, ip_current_digest = self._keyring.digest(
+            ip_hmac_domain, client_ip
+        )
+        prepared: list[_PreparedRateEntry] = [
+            (
+                ip_domain,
+                ip_limit,
+                float(window_s),
+                tuple((item.key_id, item.digest) for item in ip_candidates),
+                ip_current_id,
+                ip_current_digest,
+            ),
+            (
+                account_domain,
+                account_limit,
+                float(window_s),
+                protected,
+                account_current.key_id,
+                account_current.digest,
+            ),
+        ]
+        observed_at = time.time() if now is None else float(now)
+        return self._consume_prepared(prepared, observed_at=observed_at)
+
+    def _consume_prepared(
+        self, prepared: list[_PreparedRateEntry], *, observed_at: float
+    ) -> MultiRateLimitDecision:
 
         with self._lock:
             try:

@@ -11,6 +11,7 @@ import hashlib
 import hmac
 import json
 import logging
+import math
 import re
 import sqlite3
 import threading
@@ -87,11 +88,23 @@ class CredentialMutationLease:
         user_id: str,
         selector: str,
         auth_epoch: int,
+        review_provider: str | None,
+        review_build: str | None,
+        review_expires_at: float | None,
+        review_credential_hmac_key_id: str | None,
+        review_credential_hmac: str | None,
+        review_lane_revision: int | None,
     ) -> None:
         self._guard = guard
         self.user_id = user_id
         self.selector = selector
         self.auth_epoch = int(auth_epoch)
+        self.review_provider = review_provider
+        self.review_build = review_build
+        self.review_expires_at = review_expires_at
+        self.review_credential_hmac_key_id = review_credential_hmac_key_id
+        self.review_credential_hmac = review_credential_hmac
+        self.review_lane_revision = review_lane_revision
         self._cancel = threading.Event()
         self._released = False
 
@@ -121,20 +134,56 @@ class CredentialMutationLease:
         global admission -> UserStore ordering.
         """
 
-        if self._released:
+        if self._released or self._cancel.is_set():
             raise CredentialMutationRejected("The credential lease is closed.")
         observed_at = time.time() if now is None else float(now)
         row = user_store._conn.execute(
             "SELECT token.user_id, token.auth_epoch, token.expires_at,"
             " token.revoked_at, token.state, token.fenced_at,"
+            " token.review_provider, token.review_build,"
+            " token.review_expires_at, token.review_credential_hmac_key_id,"
+            " token.review_credential_hmac, token.review_lane_revision,"
             " COALESCE(owner.auth_epoch, 0) AS owner_auth_epoch"
             " FROM mobile_api_tokens AS token"
             " JOIN users AS owner ON owner.id = token.user_id"
             " WHERE token.selector = ?",
             (self.selector,),
         ).fetchone()
+        scope_valid = False
+        if row is not None:
+            if self.review_provider is None:
+                scope_valid = all(
+                    row[name] is None
+                    for name in (
+                        "review_provider",
+                        "review_build",
+                        "review_expires_at",
+                        "review_credential_hmac_key_id",
+                        "review_credential_hmac",
+                        "review_lane_revision",
+                    )
+                )
+            else:
+                try:
+                    scope_valid = (
+                        str(row["review_provider"]) == self.review_provider
+                        and str(row["review_build"]) == self.review_build
+                        and float(row["review_expires_at"])
+                        == float(self.review_expires_at)
+                        and math.isfinite(float(row["review_expires_at"]))
+                        and float(row["review_expires_at"]) > observed_at
+                        and str(row["review_credential_hmac_key_id"])
+                        == self.review_credential_hmac_key_id
+                        and str(row["review_credential_hmac"])
+                        == self.review_credential_hmac
+                        and int(row["review_lane_revision"])
+                        == self.review_lane_revision
+                    )
+                except (TypeError, ValueError):
+                    scope_valid = False
         if (
-            row is None
+            self._cancel.is_set()
+            or row is None
             or str(row["user_id"]) != self.user_id
             or int(row["auth_epoch"]) != self.auth_epoch
             or int(row["owner_auth_epoch"]) != self.auth_epoch
@@ -142,6 +191,7 @@ class CredentialMutationLease:
             or row["revoked_at"] is not None
             or str(row["state"]) != "active"
             or row["fenced_at"] is not None
+            or not scope_valid
         ):
             raise CredentialMutationRejected(
                 "The authenticated mobile credential changed."
@@ -194,6 +244,37 @@ class CredentialMutationGuard:
             raise CredentialMutationRejected(
                 "An active bearer credential is required."
             )
+        review_scope = (
+            auth_context.review_provider,
+            auth_context.review_build,
+            auth_context.review_expires_at,
+            auth_context.review_credential_hmac_key_id,
+            auth_context.review_credential_hmac,
+            auth_context.review_lane_revision,
+        )
+        if auth_context.review_provider is None:
+            valid_scope = all(value is None for value in review_scope)
+        else:
+            valid_scope = (
+                isinstance(auth_context.review_provider, str)
+                and bool(auth_context.review_provider)
+                and isinstance(auth_context.review_build, str)
+                and bool(auth_context.review_build)
+                and not isinstance(auth_context.review_expires_at, bool)
+                and isinstance(auth_context.review_expires_at, (int, float))
+                and math.isfinite(float(auth_context.review_expires_at))
+                and isinstance(auth_context.review_credential_hmac_key_id, str)
+                and bool(auth_context.review_credential_hmac_key_id)
+                and isinstance(auth_context.review_credential_hmac, str)
+                and bool(auth_context.review_credential_hmac)
+                and not isinstance(auth_context.review_lane_revision, bool)
+                and isinstance(auth_context.review_lane_revision, int)
+                and auth_context.review_lane_revision >= 1
+            )
+        if not valid_scope:
+            raise CredentialMutationRejected(
+                "The mobile credential review scope is incomplete."
+            )
         with self._condition:
             state = self._states.setdefault(
                 auth_context.selector,
@@ -208,6 +289,14 @@ class CredentialMutationGuard:
                 user_id=auth_context.user.id,
                 selector=auth_context.selector,
                 auth_epoch=auth_context.auth_epoch,
+                review_provider=auth_context.review_provider,
+                review_build=auth_context.review_build,
+                review_expires_at=auth_context.review_expires_at,
+                review_credential_hmac_key_id=(
+                    auth_context.review_credential_hmac_key_id
+                ),
+                review_credential_hmac=auth_context.review_credential_hmac,
+                review_lane_revision=auth_context.review_lane_revision,
             )
             state.leases.add(lease)
             return lease
@@ -676,6 +765,12 @@ class MobileSignOutService:
             via_bearer=True,
             selector=principal.selector,
             auth_epoch=principal.auth_epoch,
+            review_provider=principal.review_provider,
+            review_build=principal.review_build,
+            review_expires_at=principal.review_expires_at,
+            review_credential_hmac_key_id=principal.review_credential_hmac_key_id,
+            review_credential_hmac=principal.review_credential_hmac,
+            review_lane_revision=principal.review_lane_revision,
         )
         lease: CredentialMutationLease | None = None
 

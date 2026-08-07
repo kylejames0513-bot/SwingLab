@@ -21,6 +21,9 @@ class MobileAuthContext:
     review_provider: str | None = None
     review_build: str | None = None
     review_expires_at: float | None = None
+    review_credential_hmac_key_id: str | None = None
+    review_credential_hmac: str | None = None
+    review_lane_revision: int | None = None
 
 
 class MobileAuthError(HTTPException):
@@ -147,6 +150,9 @@ def resolve_mobile_auth(
             review_provider=principal.review_provider,
             review_build=principal.review_build,
             review_expires_at=principal.review_expires_at,
+            review_credential_hmac_key_id=principal.review_credential_hmac_key_id,
+            review_credential_hmac=principal.review_credential_hmac,
+            review_lane_revision=principal.review_lane_revision,
         )
     user = _cookie_user(request, users)
     if user is None:
@@ -193,6 +199,9 @@ def require_mobile_bearer(
         review_provider=principal.review_provider,
         review_build=principal.review_build,
         review_expires_at=principal.review_expires_at,
+        review_credential_hmac_key_id=principal.review_credential_hmac_key_id,
+        review_credential_hmac=principal.review_credential_hmac,
+        review_lane_revision=principal.review_lane_revision,
     )
 
 

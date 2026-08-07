@@ -47,6 +47,7 @@ import errno
 import hashlib
 import hmac
 import json
+import math
 import os
 import re
 import secrets
@@ -231,6 +232,8 @@ _MOBILE_API_TOKEN_LAST_USED_WRITE_INTERVAL_S = 60
 _MOBILE_API_TOKEN_DUMMY_HASH = hashlib.sha256(
     b"caddieinsight-mobile-token-dummy"
 ).hexdigest()
+_MOBILE_REVIEW_HMAC_KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
+_MOBILE_REVIEW_HMAC_DIGEST = re.compile(r"[0-9a-f]{64}")
 
 _SHOPIFY_PRIVACY_LOCKS_GUARD = threading.Lock()
 _SHOPIFY_PRIVACY_LOCKS: dict[str, threading.Lock] = {}
@@ -4330,6 +4333,21 @@ class UserStore:
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
+                # A retained known challenge continues to debit the account
+                # bucket even after expiry. Reuse the oldest matching protected
+                # anchor so failures cannot alternate old and new challenge IDs
+                # to split one logical account window after key rotation.
+                anchor_row = self._conn.execute(
+                    "SELECT account_hmac_key_id, account_hmac"
+                    " FROM mobile_review_auth_challenges"
+                    " WHERE purpose = 'review_signin' AND ("
+                    + account_clause
+                    + ") ORDER BY created_at, challenge_id LIMIT 1",
+                    account_values,
+                ).fetchone()
+                if anchor_row is not None:
+                    account_key_id = str(anchor_row["account_hmac_key_id"])
+                    account_hmac = str(anchor_row["account_hmac"])
                 ip_rows = self._conn.execute(
                     "SELECT expires_at FROM mobile_review_auth_challenges"
                     " WHERE consumed_at IS NULL AND expires_at > ? AND ("
@@ -6014,6 +6032,38 @@ class UserStore:
                 "SELECT * FROM users WHERE id = ?",
                 (token_row["user_id"],),
             ).fetchone()
+            review_fields = (
+                token_row["review_provider"],
+                token_row["review_build"],
+                token_row["review_expires_at"],
+                token_row["review_credential_hmac_key_id"],
+                token_row["review_credential_hmac"],
+                token_row["review_lane_revision"],
+            )
+            if all(value is None for value in review_fields):
+                review_scope_valid = True
+            elif any(value is None for value in review_fields):
+                review_scope_valid = False
+            else:
+                try:
+                    review_scope_valid = (
+                        str(token_row["review_provider"]) in ("apple", "google")
+                        and bool(str(token_row["review_build"]))
+                        and math.isfinite(float(token_row["review_expires_at"]))
+                        and float(token_row["review_expires_at"]) > observed_at
+                        and _MOBILE_REVIEW_HMAC_KEY_ID.fullmatch(
+                            str(token_row["review_credential_hmac_key_id"])
+                        )
+                        is not None
+                        and _MOBILE_REVIEW_HMAC_DIGEST.fullmatch(
+                            str(token_row["review_credential_hmac"])
+                        )
+                        is not None
+                        and type(token_row["review_lane_revision"]) is int
+                        and int(token_row["review_lane_revision"]) >= 1
+                    )
+                except (TypeError, ValueError):
+                    review_scope_valid = False
             if (
                 user is None
                 or token_row["revoked_at"] is not None
@@ -6021,6 +6071,7 @@ class UserStore:
                 or int(token_row["auth_epoch"]) != int(user["auth_epoch"] or 0)
                 or str(token_row["state"]) != "active"
                 or token_row["fenced_at"] is not None
+                or not review_scope_valid
                 or (
                     token_row["review_expires_at"] is not None
                     and float(token_row["review_expires_at"]) <= observed_at

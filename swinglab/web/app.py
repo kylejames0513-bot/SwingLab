@@ -673,7 +673,7 @@ def create_app(
             keyring=users._mobile_state_hmac,
             recovery_fence_ledger=recovery_fence_ledger,
             settings=native_auth_settings,
-            public_base_url=os.environ.get("PUBLIC_BASE_URL"),
+            public_base_url=mobile_public_origin,
             brand_name=str(cfg.brand["name"]),
             shopify_sync_eligible=lambda email: shopify_sync_eligible(email),
             on_success=lambda user: queue_shopify_sync(user),

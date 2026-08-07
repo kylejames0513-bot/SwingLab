@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor
 import pytest
 
 from swinglab.web.mobile_schema import (
+    HMACDigest,
     MOBILE_STATE_GENERATIONS,
     MobileStateDomain,
     VersionedHMAC,
@@ -187,6 +188,132 @@ def test_keyed_throttle_debits_two_keys_all_or_none(tmp_path):
     assert denied.allowed is False
     assert denied.retry_after_seconds == 899
     assert other_email.allowed is True
+
+
+@pytest.mark.parametrize(
+    "domain", ["review-auth-start-account", "review-auth-exchange-account"]
+)
+def test_generic_keyed_throttle_rejects_protected_review_account_domains(
+    tmp_path, domain
+):
+    throttle = KeyedThrottle(tmp_path / "throttle.sqlite", _keyring())
+    try:
+        with pytest.raises(ValueError, match="Unsupported keyed rate-limit domain"):
+            throttle.consume(domain, "current:" + "a" * 64, 5, 900, now=10)
+        assert throttle._conn.execute(
+            "SELECT COUNT(*) FROM mobile_rate_limit_events"
+        ).fetchone()[0] == 0
+    finally:
+        throttle.close()
+
+
+def test_review_account_throttle_rejects_malformed_or_foreign_anchors_without_debit(
+    tmp_path,
+):
+    throttle = KeyedThrottle(tmp_path / "throttle.sqlite", _keyring())
+    try:
+        with pytest.raises(ValueError, match="Protected review-account candidates"):
+            throttle.consume_review_account(
+                phase="start",
+                client_ip="203.0.113.11",
+                account_candidates=("not-a-digest",),
+                account_current=HMACDigest("current", "a" * 64),
+                ip_limit=5,
+                account_limit=5,
+                window_s=900,
+                now=10,
+            )
+        foreign = HMACDigest("foreign", "b" * 64)
+        with pytest.raises(RuntimeError, match="missing referenced key"):
+            throttle.consume_review_account(
+                phase="exchange",
+                client_ip="203.0.113.11",
+                account_candidates=(foreign,),
+                account_current=foreign,
+                ip_limit=5,
+                account_limit=5,
+                window_s=900,
+                now=10,
+            )
+        assert throttle._conn.execute(
+            "SELECT COUNT(*) FROM mobile_rate_limit_events"
+        ).fetchone()[0] == 0
+    finally:
+        throttle.close()
+
+
+def test_protected_review_account_denial_does_not_debit_a_new_client_ip(tmp_path):
+    keyring = _keyring()
+    throttle = KeyedThrottle(tmp_path / "throttle.sqlite", keyring)
+    candidates = keyring.candidates(
+        MobileStateDomain.REVIEW_AUTH_ACCOUNT, "reviewer-account"
+    )
+    try:
+        first = throttle.consume_review_account(
+            phase="exchange",
+            client_ip="203.0.113.12",
+            account_candidates=candidates,
+            account_current=candidates[0],
+            ip_limit=5,
+            account_limit=1,
+            window_s=900,
+            now=10,
+        )
+        denied = throttle.consume_review_account(
+            phase="exchange",
+            client_ip="203.0.113.13",
+            account_candidates=candidates,
+            account_current=candidates[0],
+            ip_limit=5,
+            account_limit=1,
+            window_s=900,
+            now=11,
+        )
+        counts = throttle._conn.execute(
+            "SELECT domain, COUNT(*) FROM mobile_rate_limit_events"
+            " GROUP BY domain ORDER BY domain"
+        ).fetchall()
+    finally:
+        throttle.close()
+
+    assert first.allowed is True
+    assert denied.allowed is False
+    assert [tuple(row) for row in counts] == [
+        ("review-auth-exchange-account", 1),
+        ("review-auth-exchange-ip", 1),
+    ]
+
+
+def test_protected_review_account_insert_failure_rolls_back_ip_debit(tmp_path):
+    keyring = _keyring()
+    throttle = KeyedThrottle(tmp_path / "throttle.sqlite", keyring)
+    candidates = keyring.candidates(
+        MobileStateDomain.REVIEW_AUTH_ACCOUNT, "reviewer-account"
+    )
+    throttle._conn.execute(
+        "CREATE TRIGGER fail_review_account_rate_insert"
+        " BEFORE INSERT ON mobile_rate_limit_events"
+        " WHEN NEW.domain = 'review-auth-exchange-account'"
+        " BEGIN SELECT RAISE(ABORT, 'synthetic insert failure'); END"
+    )
+    throttle._conn.commit()
+    try:
+        with pytest.raises(sqlite3.IntegrityError):
+            throttle.consume_review_account(
+                phase="exchange",
+                client_ip="203.0.113.14",
+                account_candidates=candidates,
+                account_current=candidates[0],
+                ip_limit=5,
+                account_limit=5,
+                window_s=900,
+                now=10,
+            )
+        assert throttle._conn.execute(
+            "SELECT COUNT(*) FROM mobile_rate_limit_events"
+        ).fetchone()[0] == 0
+    finally:
+        throttle.close()
 
 
 def test_keyed_throttle_rolls_back_every_debit_on_insert_failure(tmp_path):

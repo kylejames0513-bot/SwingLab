@@ -608,13 +608,13 @@ class MobileAuthService:
                 raise
         return True
 
-    def _activate_replacement(self, row: sqlite3.Row) -> None:
+    def _activate_replacement(self, row: sqlite3.Row) -> bool:
         activated_at = float(self._now())
         with self._users._lock:
             try:
                 self._users._conn.execute("BEGIN IMMEDIATE")
                 current = self._users._conn.execute(
-                    "SELECT phase FROM mobile_auth_exchange_journals"
+                    "SELECT * FROM mobile_auth_exchange_journals"
                     " WHERE exchange_id = ?",
                     (row["exchange_id"],),
                 ).fetchone()
@@ -624,7 +624,7 @@ class MobileAuthService:
                     )
                 if str(current["phase"]) != "prior_recovery_fenced":
                     self._users._conn.commit()
-                    return
+                    return True
                 prior_selector = row["prior_selector"]
                 if prior_selector is not None:
                     prior = self._users._conn.execute(
@@ -641,6 +641,27 @@ class MobileAuthService:
                         raise MobileNativeAuthUnavailable(
                             "A replacement cannot activate before prior revocation."
                         )
+                if str(current["purpose"]) == "review":
+                    replacement = self._users._conn.execute(
+                        "SELECT expires_at, review_expires_at"
+                        " FROM mobile_api_tokens WHERE selector = ? AND user_id = ?"
+                        " AND auth_epoch = ?",
+                        (
+                            current["replacement_selector"],
+                            current["user_id"],
+                            current["auth_epoch"],
+                        ),
+                    ).fetchone()
+                    if (
+                        replacement is None
+                        or current["review_expires_at"] is None
+                        or float(current["review_expires_at"]) <= activated_at
+                        or replacement["review_expires_at"] is None
+                        or float(replacement["review_expires_at"]) <= activated_at
+                        or float(replacement["expires_at"]) <= activated_at
+                    ):
+                        self._users._conn.commit()
+                        return False
                 cursor = self._users._conn.execute(
                     "UPDATE mobile_api_tokens SET state = 'active'"
                     " WHERE selector = ? AND user_id = ? AND auth_epoch = ?"
@@ -668,6 +689,175 @@ class MobileAuthService:
                 if self._users._conn.in_transaction:
                     self._users._conn.rollback()
                 raise
+        return True
+
+    def _cancel_expired_review_replacement(
+        self, row: sqlite3.Row
+    ) -> bool | None:
+        """Terminalize an expired review replacement after prior recovery.
+
+        ``None`` means a cooperative selector drain has not completed yet;
+        ``False`` means the journal remains eligible for normal activation.
+        """
+
+        if str(row["purpose"]) != "review" or str(row["phase"]) not in (
+            "prior_recovery_fenced",
+            "replacement_active",
+        ):
+            return False
+        observed_at = float(self._now())
+        with self._users._lock:
+            current = self._users._conn.execute(
+                "SELECT * FROM mobile_auth_exchange_journals WHERE exchange_id = ?",
+                (row["exchange_id"],),
+            ).fetchone()
+            replacement = self._users._conn.execute(
+                "SELECT expires_at, review_expires_at FROM mobile_api_tokens"
+                " WHERE selector = ? AND user_id = ?",
+                (row["replacement_selector"], row["user_id"]),
+            ).fetchone()
+        if current is None:
+            raise MobileNativeAuthUnavailable(
+                "A native authentication journal disappeared."
+            )
+        if str(current["phase"]) == "complete":
+            return True
+        review_expires_at = current["review_expires_at"]
+        expired = (
+            review_expires_at is None
+            or float(review_expires_at) <= observed_at
+            or replacement is None
+            or replacement["review_expires_at"] is None
+            or float(replacement["review_expires_at"]) <= observed_at
+            or float(replacement["expires_at"]) <= observed_at
+        )
+        if not expired:
+            return False
+
+        close = self._guard.close_selector(str(current["replacement_selector"]))
+        if not close.drain(timeout_seconds=self._drain_timeout_seconds):
+            return None
+
+        with self._users._lock:
+            try:
+                self._users._conn.execute("BEGIN IMMEDIATE")
+                current = self._users._conn.execute(
+                    "SELECT * FROM mobile_auth_exchange_journals"
+                    " WHERE exchange_id = ?",
+                    (row["exchange_id"],),
+                ).fetchone()
+                if current is None:
+                    raise MobileNativeAuthUnavailable(
+                        "A native authentication journal disappeared."
+                    )
+                phase = str(current["phase"])
+                if phase == "complete":
+                    self._users._conn.commit()
+                    return True
+                if phase not in ("prior_recovery_fenced", "replacement_active"):
+                    self._users._conn.commit()
+                    return False
+                prior_selector = current["prior_selector"]
+                if prior_selector is not None:
+                    if (
+                        type(current["recovery_sequence"]) is not int
+                        or int(current["recovery_sequence"]) < 1
+                        or not isinstance(current["recovery_record_hash"], str)
+                        or _SHA256.fullmatch(str(current["recovery_record_hash"]))
+                        is None
+                    ):
+                        raise MobileNativeAuthUnavailable(
+                            "An expired replacement lacks prior recovery readback."
+                        )
+                    prior = self._users._conn.execute(
+                        "SELECT state, revoked_at, fenced_at FROM mobile_api_tokens"
+                        " WHERE selector = ? AND user_id = ?",
+                        (prior_selector, current["user_id"]),
+                    ).fetchone()
+                    if prior is not None and (
+                        str(prior["state"]) != "fenced"
+                        or prior["revoked_at"] is None
+                        or prior["fenced_at"] is None
+                    ):
+                        raise MobileNativeAuthUnavailable(
+                            "An expired replacement cannot restore its prior credential."
+                        )
+                replacement = self._users._conn.execute(
+                    "SELECT expires_at, review_expires_at FROM mobile_api_tokens"
+                    " WHERE selector = ? AND user_id = ? AND auth_epoch = ?",
+                    (
+                        current["replacement_selector"],
+                        current["user_id"],
+                        current["auth_epoch"],
+                    ),
+                ).fetchone()
+                review_expires_at = current["review_expires_at"]
+                expired = (
+                    review_expires_at is None
+                    or float(review_expires_at) <= observed_at
+                    or replacement is None
+                    or replacement["review_expires_at"] is None
+                    or float(replacement["review_expires_at"]) <= observed_at
+                    or float(replacement["expires_at"]) <= observed_at
+                )
+                if not expired:
+                    raise MobileNativeAuthUnavailable(
+                        "A review replacement expiry changed during cancellation."
+                    )
+                if replacement is not None:
+                    self._users._conn.execute(
+                        "UPDATE mobile_api_tokens SET revoked_at = COALESCE(revoked_at, ?),"
+                        " state = 'fenced', fenced_at = COALESCE(fenced_at, ?)"
+                        " WHERE selector = ? AND user_id = ? AND auth_epoch = ?",
+                        (
+                            observed_at,
+                            observed_at,
+                            current["replacement_selector"],
+                            current["user_id"],
+                            current["auth_epoch"],
+                        ),
+                    )
+                    self._users._conn.execute(
+                        "DELETE FROM mobile_api_tokens WHERE selector = ?"
+                        " AND user_id = ? AND auth_epoch = ?",
+                        (
+                            current["replacement_selector"],
+                            current["user_id"],
+                            current["auth_epoch"],
+                        ),
+                    )
+                self._users._conn.execute(
+                    "INSERT OR IGNORE INTO mobile_auth_exchange_receipts"
+                    " (exchange_id, purpose, challenge_id, replacement_selector,"
+                    " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+                    " completed_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        current["exchange_id"],
+                        current["purpose"],
+                        current["challenge_id"],
+                        current["replacement_selector"],
+                        current["idempotency_hmac_key_id"],
+                        current["idempotency_hmac"],
+                        current["request_hash"],
+                        observed_at,
+                        current["expires_at"],
+                    ),
+                )
+                cursor = self._users._conn.execute(
+                    "UPDATE mobile_auth_exchange_journals SET phase = 'complete',"
+                    " updated_at = ? WHERE exchange_id = ? AND phase = ?",
+                    (observed_at, current["exchange_id"], phase),
+                )
+                if cursor.rowcount != 1:
+                    raise MobileNativeAuthUnavailable(
+                        "An expired review exchange changed unexpectedly."
+                    )
+                self._users._conn.commit()
+            except Exception:
+                if self._users._conn.in_transaction:
+                    self._users._conn.rollback()
+                raise
+        return True
 
     def _complete(self, row: sqlite3.Row) -> None:
         completed_at = float(self._now())
@@ -732,9 +922,27 @@ class MobileAuthService:
                         return None
                     continue
                 if phase == "prior_recovery_fenced":
-                    self._activate_replacement(row)
+                    cancelled = self._cancel_expired_review_replacement(row)
+                    if cancelled is None:
+                        return None
+                    if cancelled:
+                        continue
+                    if not self._activate_replacement(row):
+                        cancelled = self._cancel_expired_review_replacement(row)
+                        if cancelled is None:
+                            return None
+                        if cancelled:
+                            continue
+                        raise MobileNativeAuthUnavailable(
+                            "An expired review replacement could not be cancelled."
+                        )
                     continue
                 if phase == "replacement_active":
+                    cancelled = self._cancel_expired_review_replacement(row)
+                    if cancelled is None:
+                        return None
+                    if cancelled:
+                        continue
                     self._complete(row)
                     continue
                 raise MobileNativeAuthUnavailable(

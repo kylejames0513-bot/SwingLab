@@ -348,6 +348,34 @@ def test_native_start_is_generic_and_sends_grouped_code_with_pkce_link(
         assert "https://app.example/app/auth/callback?challenge_id=" in html_body
 
 
+def test_native_email_link_uses_the_same_canonical_origin_as_health(
+    tmp_path, monkeypatch
+):
+    messages = []
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://APP.Example:443/")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <noreply@example.com>")
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp://mail.example")
+    monkeypatch.setattr(
+        mailer,
+        "send",
+        lambda *args, **kwargs: messages.append((*args, kwargs.get("html_body"))),
+    )
+    app = _make_app(tmp_path)
+    try:
+        with TestClient(app) as client:
+            health = client.get("/healthz").json()
+            _start(client)
+        assert health["mobile_public_origin"] == "https://app.example"
+        assert len(messages) == 1
+        for _recipient, _subject, text_body, html_body in messages:
+            assert "https://app.example/app/auth/callback?challenge_id=" in text_body
+            assert "https://app.example/app/auth/callback?challenge_id=" in html_body
+            assert "APP.Example:443" not in text_body
+            assert "APP.Example:443" not in html_body
+    finally:
+        _close_app_resources(app)
+
+
 def test_exchange_is_single_use_and_exact_lost_response_replays_raw_token(
     tmp_path, monkeypatch
 ):

@@ -13,8 +13,11 @@ pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from swinglab.config import Config
+from swinglab.api.auth import MobileAuthContext
 from swinglab.web.app import create_app
+from swinglab.web.credential_mutations import CredentialMutationRejected
 from swinglab.web.mobile_schema import VersionedHMAC
+from swinglab.web.recovery_fence_ledger import RecoveryFenceError
 from swinglab.web.review_auth import (
     APPLICATION_ID_POLICY_REVISION,
     AppIdentityHeaders,
@@ -26,7 +29,12 @@ from swinglab.web.review_auth import (
     resolve_mobile_deployment_environment,
     validate_review_auth_settings,
 )
-from swinglab.web.users import UserStore, hash_password, verify_password
+from swinglab.web.users import (
+    MOBILE_API_TOKEN_PREFIX,
+    UserStore,
+    hash_password,
+    verify_password,
+)
 
 
 IDEMPOTENCY_KEY = "0123456789abcdef0123456789abcdef"
@@ -43,6 +51,7 @@ def _challenge(verifier: str = VERIFIER) -> str:
 class FakeRecoveryFenceLedger:
     def __init__(self) -> None:
         self.events = []
+        self.outage = False
 
     def load_chain_snapshot(self):
         return SimpleNamespace(
@@ -51,6 +60,8 @@ class FakeRecoveryFenceLedger:
         )
 
     def append_and_publish(self, event):
+        if self.outage:
+            raise RecoveryFenceError("synthetic recovery outage")
         self.events.append(event)
         return SimpleNamespace(
             sequence=len(self.events) + 1,
@@ -66,9 +77,11 @@ class FakeReviewAdmission:
         self.start_calls = 0
         self.exchange_calls = 0
         self.recheck_calls = 0
+        self.lane_calls = 0
         self.open = True
 
     def any_lane_active(self) -> bool:
+        self.lane_calls += 1
         return self.open and bool(self.records)
 
     def match_start(self, *, provider, account, identity, now):
@@ -203,6 +216,17 @@ def _make_app(tmp_path, admission):
     return app, apple, google
 
 
+def _create_review_app(sessions, keyring, admission, *, cfg=None, ledger=None):
+    return create_app(
+        cfg or _config(),
+        sessions,
+        start_background_workers=False,
+        mobile_state_hmac=keyring,
+        recovery_fence_ledger=ledger or FakeRecoveryFenceLedger(),
+        review_auth_admission=admission,
+    )
+
+
 def _close(app) -> None:
     app.state.jobs.close()
     app.state.throttle.close()
@@ -326,6 +350,56 @@ def test_lane_cannot_activate_after_startup_skipped_recovery_gate(tmp_path):
         _close(app)
 
 
+def test_exposed_lane_parses_identity_before_dynamic_availability(tmp_path):
+    holder = {}
+
+    def factory(apple, google):
+        value = _admission(apple, google)
+        holder["admission"] = value
+        return value
+
+    app, _, _ = _make_app(tmp_path, factory)
+    try:
+        holder["admission"].open = False
+        calls_before_request = holder["admission"].lane_calls
+        missing = _headers()
+        missing.pop("X-CaddieInsight-App-Build")
+        with TestClient(app) as client:
+            response = _start(client, headers=missing)
+        assert response.status_code == 422
+        assert holder["admission"].lane_calls == calls_before_request
+        assert app.state.users._conn.execute(
+            "SELECT COUNT(*) FROM mobile_review_auth_challenges"
+        ).fetchone()[0] == 0
+    finally:
+        _close(app)
+
+
+def test_exchange_identity_mismatch_never_reaches_credential_admission(tmp_path):
+    holder = {}
+
+    def factory(apple, google):
+        value = _admission(apple, google)
+        holder["admission"] = value
+        return value
+
+    app, _, _ = _make_app(tmp_path, factory)
+    try:
+        with TestClient(app) as client:
+            started = _start(client)
+            calls_before_exchange = holder["admission"].exchange_calls
+            rejected = _exchange(
+                client,
+                started.json()["challenge_id"],
+                headers=_headers(build="43"),
+            )
+        assert rejected.status_code == 401
+        assert rejected.json()["code"] == "authentication_rejected"
+        assert holder["admission"].exchange_calls == calls_before_exchange
+    finally:
+        _close(app)
+
+
 def test_identity_headers_fail_before_admission_or_state(tmp_path):
     holder = {}
 
@@ -406,6 +480,98 @@ def test_review_exchange_is_scoped_replayable_and_rechecked(tmp_path):
         _close(app)
 
 
+def test_lane_close_cancels_an_existing_review_mutation_lease_before_commit(tmp_path):
+    holder = {}
+
+    def factory(apple, google):
+        value = _admission(apple, google)
+        holder["admission"] = value
+        return value
+
+    app, _, _ = _make_app(tmp_path, factory)
+    try:
+        with TestClient(app) as client:
+            exchanged = _exchange(client, _start(client).json()["challenge_id"])
+            principal = app.state.users.authenticate_mobile_api_principal(
+                exchanged.json()["access_token"]
+            )
+            assert principal is not None
+            context = MobileAuthContext(
+                user=principal.user,
+                via_bearer=True,
+                selector=principal.selector,
+                auth_epoch=principal.auth_epoch,
+                review_provider=principal.review_provider,
+                review_build=principal.review_build,
+                review_expires_at=principal.review_expires_at,
+                review_credential_hmac_key_id=(
+                    principal.review_credential_hmac_key_id
+                ),
+                review_credential_hmac=principal.review_credential_hmac,
+                review_lane_revision=principal.review_lane_revision,
+            )
+            lease = app.state.credential_mutation_guard.admit(context)
+            holder["admission"].open = False
+
+            rejected = client.get(
+                "/api/v1/me",
+                headers={"Authorization": f"Bearer {exchanged.json()['access_token']}"},
+            )
+            assert rejected.status_code == 401
+            assert lease.cancellation_requested is True
+            assert app.state.users._conn.execute(
+                "SELECT revoked_at FROM mobile_api_tokens WHERE selector = ?",
+                (principal.selector,),
+            ).fetchone()[0] is None
+
+            with app.state.users._lock:
+                app.state.users._conn.execute("BEGIN IMMEDIATE")
+                try:
+                    with pytest.raises(CredentialMutationRejected):
+                        lease.validate_locked(app.state.users)
+                finally:
+                    app.state.users._conn.rollback()
+            lease.release()
+            assert client.get(
+                "/api/v1/me",
+                headers={"Authorization": f"Bearer {exchanged.json()['access_token']}"},
+            ).status_code == 401
+            assert app.state.users._conn.execute(
+                "SELECT revoked_at FROM mobile_api_tokens WHERE selector = ?",
+                (principal.selector,),
+            ).fetchone()[0] is not None
+    finally:
+        _close(app)
+
+
+@pytest.mark.parametrize(
+    ("column", "value"),
+    (("review_provider", None), ("review_expires_at", float("inf"))),
+)
+def test_partial_or_nonfinite_review_scope_never_becomes_an_ordinary_bearer(
+    tmp_path, column, value
+):
+    app, _, _ = _make_app(tmp_path, _admission)
+    try:
+        with TestClient(app) as client:
+            exchanged = _exchange(client, _start(client).json()["challenge_id"])
+            token = exchanged.json()["access_token"]
+            principal = app.state.users.authenticate_mobile_api_principal(token)
+            assert principal is not None
+            app.state.users._conn.execute(
+                f"UPDATE mobile_api_tokens SET {column} = ? WHERE selector = ?",
+                (value, principal.selector),
+            )
+            app.state.users._conn.commit()
+
+            rejected = client.get(
+                "/api/v1/me", headers={"Authorization": f"Bearer {token}"}
+            )
+        assert rejected.status_code == 401
+    finally:
+        _close(app)
+
+
 def test_unknown_and_wrong_password_are_generic_and_secrets_are_not_persisted(tmp_path):
     app, _, _ = _make_app(tmp_path, _admission)
     try:
@@ -437,6 +603,199 @@ def test_unknown_and_wrong_password_are_generic_and_secrets_are_not_persisted(tm
             IDEMPOTENCY_KEY,
         ):
             assert secret not in dump
+    finally:
+        _close(app)
+
+
+def test_review_start_account_throttle_uses_protected_candidates_across_rotation(
+    tmp_path,
+):
+    sessions = tmp_path / "sessions"
+    old_keyring = VersionedHMAC("k1", {"k1": b"1" * 32})
+    apple, google = _seed_review_users(sessions, old_keyring)
+    cfg = _config()
+    cfg.web["review_auth_starts_per_15_minutes_per_account"] = 1
+    first_app = _create_review_app(
+        sessions, old_keyring, _admission(apple, google), cfg=cfg
+    )
+    try:
+        with TestClient(first_app) as client:
+            assert _start(client).status_code == 202
+        challenge_key = first_app.state.users._conn.execute(
+            "SELECT account_hmac_key_id, account_hmac"
+            " FROM mobile_review_auth_challenges"
+        ).fetchone()
+        rate_key = first_app.state.users._conn.execute(
+            "SELECT key_id, key_digest FROM mobile_rate_limit_events"
+            " WHERE domain = 'review-auth-start-account'"
+        ).fetchone()
+        assert tuple(rate_key) == tuple(challenge_key)
+    finally:
+        _close(first_app)
+
+    rotated_keyring = VersionedHMAC(
+        "k2", {"k1": b"1" * 32, "k2": b"2" * 32}
+    )
+    restarted_app = _create_review_app(
+        sessions, rotated_keyring, _admission(apple, google), cfg=cfg
+    )
+    try:
+        with TestClient(restarted_app) as client:
+            denied = _start(client)
+        assert denied.status_code == 429
+        assert denied.json()["code"] == "rate_limited"
+        assert restarted_app.state.users._conn.execute(
+            "SELECT COUNT(*) FROM mobile_rate_limit_events"
+            " WHERE domain = 'review-auth-start-ip'"
+        ).fetchone()[0] == 1
+    finally:
+        _close(restarted_app)
+
+
+def test_known_review_exchange_account_throttle_keeps_its_rotation_anchor(tmp_path):
+    sessions = tmp_path / "sessions"
+    old_keyring = VersionedHMAC("k1", {"k1": b"1" * 32})
+    apple, google = _seed_review_users(sessions, old_keyring)
+    cfg = _config()
+    cfg.web["review_auth_failed_exchanges_per_15_minutes_per_account"] = 1
+    first_app = _create_review_app(
+        sessions, old_keyring, _admission(apple, google), cfg=cfg
+    )
+    try:
+        with TestClient(first_app) as client:
+            challenge_id = _start(client).json()["challenge_id"]
+            rejected = _exchange(client, challenge_id, password="wrong-password")
+        assert rejected.status_code == 401
+        challenge_key = first_app.state.users._conn.execute(
+            "SELECT account_hmac_key_id, account_hmac"
+            " FROM mobile_review_auth_challenges WHERE challenge_id = ?",
+            (challenge_id,),
+        ).fetchone()
+        rate_key = first_app.state.users._conn.execute(
+            "SELECT key_id, key_digest FROM mobile_rate_limit_events"
+            " WHERE domain = 'review-auth-exchange-account'"
+        ).fetchone()
+        assert tuple(rate_key) == tuple(challenge_key)
+    finally:
+        _close(first_app)
+
+    rotated_keyring = VersionedHMAC(
+        "k2", {"k1": b"1" * 32, "k2": b"2" * 32}
+    )
+    restarted_app = _create_review_app(
+        sessions, rotated_keyring, _admission(apple, google), cfg=cfg
+    )
+    try:
+        with TestClient(restarted_app) as client:
+            limited = _exchange(client, challenge_id, password="wrong-password")
+        assert limited.status_code == 429
+        assert limited.json()["code"] == "rate_limited"
+    finally:
+        _close(restarted_app)
+
+
+def test_old_and_new_rotation_challenges_share_one_exchange_account_window(tmp_path):
+    sessions = tmp_path / "sessions"
+    old_keyring = VersionedHMAC("k1", {"k1": b"1" * 32})
+    apple, google = _seed_review_users(sessions, old_keyring)
+    cfg = _config()
+    cfg.web["review_auth_failed_exchanges_per_15_minutes_per_account"] = 2
+    first_app = _create_review_app(
+        sessions, old_keyring, _admission(apple, google), cfg=cfg
+    )
+    try:
+        with TestClient(first_app) as client:
+            old_challenge = _start(client).json()["challenge_id"]
+            first = _exchange(client, old_challenge, password="wrong-password")
+        assert first.status_code == 401
+    finally:
+        _close(first_app)
+
+    rotated_keyring = VersionedHMAC(
+        "k2", {"k1": b"1" * 32, "k2": b"2" * 32}
+    )
+    restarted_app = _create_review_app(
+        sessions, rotated_keyring, _admission(apple, google), cfg=cfg
+    )
+    try:
+        with TestClient(restarted_app) as client:
+            new_challenge = _start(
+                client,
+                verifier="s" * 43,
+                installation_id="22222222-2222-4222-8222-222222222222",
+            ).json()["challenge_id"]
+            second = _exchange(
+                client,
+                new_challenge,
+                password="wrong-password",
+                verifier="s" * 43,
+                idempotency_key="2" * 32,
+            )
+            limited = _exchange(
+                client,
+                old_challenge,
+                password="wrong-password",
+                idempotency_key="3" * 32,
+            )
+        assert second.status_code == 401
+        assert limited.status_code == 429
+        assert limited.json()["code"] == "rate_limited"
+        anchors = restarted_app.state.users._conn.execute(
+            "SELECT DISTINCT account_hmac_key_id, account_hmac"
+            " FROM mobile_review_auth_challenges"
+            " WHERE challenge_id IN (?, ?)",
+            (old_challenge, new_challenge),
+        ).fetchall()
+        assert len(anchors) == 1
+    finally:
+        _close(restarted_app)
+
+
+def test_expired_known_review_challenge_debits_account_and_ip_without_admission(
+    tmp_path,
+):
+    holder = {}
+
+    def factory(apple, google):
+        value = _admission(apple, google)
+        holder["admission"] = value
+        return value
+
+    cfg = _config()
+    cfg.web["review_auth_failed_exchanges_per_15_minutes_per_account"] = 1
+    sessions = tmp_path / "sessions"
+    keyring = _keyring()
+    apple, google = _seed_review_users(sessions, keyring)
+    app = _create_review_app(sessions, keyring, factory(apple, google), cfg=cfg)
+    try:
+        with TestClient(app) as client:
+            challenge_id = _start(client).json()["challenge_id"]
+            app.state.users._conn.execute(
+                "UPDATE mobile_review_auth_challenges SET expires_at = ?"
+                " WHERE challenge_id = ?",
+                (app.state.review_auth_service._now() - 1, challenge_id),
+            )
+            app.state.users._conn.commit()
+            calls_before = holder["admission"].exchange_calls
+            first = _exchange(client, challenge_id, password="wrong-password")
+            limited = _exchange(
+                client,
+                challenge_id,
+                password="wrong-password",
+                idempotency_key="4" * 32,
+            )
+        assert first.status_code == 401
+        assert limited.status_code == 429
+        assert holder["admission"].exchange_calls == calls_before
+        domains = app.state.users._conn.execute(
+            "SELECT domain, COUNT(*) FROM mobile_rate_limit_events"
+            " WHERE domain LIKE 'review-auth-exchange-%'"
+            " GROUP BY domain ORDER BY domain"
+        ).fetchall()
+        assert [tuple(row) for row in domains] == [
+            ("review-auth-exchange-account", 1),
+            ("review-auth-exchange-ip", 1),
+        ]
     finally:
         _close(app)
 
@@ -622,6 +981,302 @@ def test_expired_review_purge_waits_for_nonterminal_exchange(tmp_path):
         ).fetchone() is None
     finally:
         _close(app)
+
+
+def test_expired_pending_review_replacement_terminalizes_after_recovery_readback(
+    tmp_path,
+):
+    sessions = tmp_path / "sessions"
+    keyring = VersionedHMAC(
+        "k1", {"k1": b"k" * 32, "entitlements-k1": b"e" * 32}
+    )
+    apple, google = _seed_review_users(sessions, keyring)
+    ledger = FakeRecoveryFenceLedger()
+    app = _create_review_app(
+        sessions, keyring, _admission(apple, google), ledger=ledger
+    )
+    replacement_selector = ""
+    old_token = ""
+    pending_challenge = ""
+    try:
+        with TestClient(app) as client:
+            first = _exchange(client, _start(client).json()["challenge_id"])
+            assert first.status_code == 201
+            old_token = first.json()["access_token"]
+
+            pending_verifier = "p" * 43
+            pending_challenge = _start(
+                client, verifier=pending_verifier
+            ).json()["challenge_id"]
+            ledger.outage = True
+            pending = _exchange(
+                client,
+                pending_challenge,
+                verifier=pending_verifier,
+                idempotency_key="5" * 32,
+            )
+            assert pending.status_code == 202
+            journal = app.state.users._conn.execute(
+                "SELECT * FROM mobile_auth_exchange_journals"
+                " WHERE exchange_id = ?",
+                (pending.json()["exchange_id"],),
+            ).fetchone()
+            assert journal["phase"] == "prepared"
+            replacement_selector = str(journal["replacement_selector"])
+            expired_at = app.state.review_auth_service._now() - 1
+            app.state.users._conn.execute(
+                "UPDATE mobile_api_tokens SET expires_at = ?, review_expires_at = ?"
+                " WHERE selector = ?",
+                (expired_at, expired_at, replacement_selector),
+            )
+            app.state.users._conn.execute(
+                "UPDATE mobile_auth_exchange_journals SET review_expires_at = ?"
+                " WHERE exchange_id = ?",
+                (expired_at, journal["exchange_id"]),
+            )
+            app.state.users._conn.commit()
+    finally:
+        _close(app)
+
+    ledger.outage = False
+    resumed = _create_review_app(
+        sessions, keyring, _admission(apple, google), ledger=ledger
+    )
+    try:
+        row = resumed.state.users._conn.execute(
+            "SELECT phase, prior_selector, replacement_selector"
+            " FROM mobile_auth_exchange_journals"
+            " WHERE challenge_id = ?",
+            (pending_challenge,),
+        ).fetchone()
+        assert row["phase"] == "complete"
+        assert resumed.state.users._conn.execute(
+            "SELECT 1 FROM mobile_api_tokens WHERE selector = ?",
+            (replacement_selector,),
+        ).fetchone() is None
+        prior = resumed.state.users._conn.execute(
+            "SELECT state, revoked_at, fenced_at FROM mobile_api_tokens"
+            " WHERE selector = ?",
+            (row["prior_selector"],),
+        ).fetchone()
+        assert tuple(prior)[:1] == ("fenced",)
+        assert prior["revoked_at"] is not None and prior["fenced_at"] is not None
+        assert resumed.state.users.authenticate_mobile_api_principal(old_token) is None
+        assert len(ledger.events) == 1
+
+        with TestClient(resumed) as client:
+            terminal = _exchange(
+                client,
+                pending_challenge,
+                verifier="p" * 43,
+                idempotency_key="5" * 32,
+            )
+            terminal_replay = _exchange(
+                client,
+                pending_challenge,
+                verifier="p" * 43,
+                idempotency_key="5" * 32,
+            )
+            fresh_verifier = "q" * 43
+            fresh = _start(client, verifier=fresh_verifier)
+            completed = _exchange(
+                client,
+                fresh.json()["challenge_id"],
+                verifier=fresh_verifier,
+                idempotency_key="6" * 32,
+            )
+        assert terminal.status_code == 409
+        assert terminal.json()["code"] == "exchange_conflict"
+        assert terminal_replay.status_code == 409
+        assert terminal_replay.json() == terminal.json()
+        assert completed.status_code == 201
+    finally:
+        _close(resumed)
+
+
+def test_expired_prior_fenced_review_replacement_cancels_without_republishing(
+    tmp_path, monkeypatch
+):
+    sessions = tmp_path / "sessions"
+    keyring = VersionedHMAC(
+        "k1", {"k1": b"k" * 32, "entitlements-k1": b"e" * 32}
+    )
+    apple, google = _seed_review_users(sessions, keyring)
+    ledger = FakeRecoveryFenceLedger()
+    app = _create_review_app(
+        sessions, keyring, _admission(apple, google), ledger=ledger
+    )
+    exchange_id = ""
+    replacement_selector = ""
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            assert _exchange(
+                client, _start(client).json()["challenge_id"]
+            ).status_code == 201
+            verifier = "u" * 43
+            challenge_id = _start(client, verifier=verifier).json()["challenge_id"]
+
+            def crash_after_prior_readback(_row):
+                raise RuntimeError("synthetic post-readback crash")
+
+            monkeypatch.setattr(
+                app.state.mobile_auth_service,
+                "_activate_replacement",
+                crash_after_prior_readback,
+            )
+            crashed = _exchange(
+                client,
+                challenge_id,
+                verifier=verifier,
+                idempotency_key="7" * 32,
+            )
+        assert crashed.status_code == 500
+        journal = app.state.users._conn.execute(
+            "SELECT * FROM mobile_auth_exchange_journals"
+            " WHERE challenge_id = ?",
+            (challenge_id,),
+        ).fetchone()
+        assert journal["phase"] == "prior_recovery_fenced"
+        assert len(ledger.events) == 1
+        exchange_id = str(journal["exchange_id"])
+        replacement_selector = str(journal["replacement_selector"])
+        expired_at = app.state.review_auth_service._now() - 1
+        app.state.users._conn.execute(
+            "UPDATE mobile_api_tokens SET expires_at = ?, review_expires_at = ?"
+            " WHERE selector = ?",
+            (expired_at, expired_at, replacement_selector),
+        )
+        app.state.users._conn.execute(
+            "UPDATE mobile_auth_exchange_journals SET review_expires_at = ?"
+            " WHERE exchange_id = ?",
+            (expired_at, exchange_id),
+        )
+        app.state.users._conn.commit()
+    finally:
+        _close(app)
+
+    resumed = _create_review_app(
+        sessions, keyring, _admission(apple, google), ledger=ledger
+    )
+    try:
+        assert resumed.state.users._conn.execute(
+            "SELECT phase FROM mobile_auth_exchange_journals"
+            " WHERE exchange_id = ?",
+            (exchange_id,),
+        ).fetchone()[0] == "complete"
+        assert resumed.state.users._conn.execute(
+            "SELECT 1 FROM mobile_api_tokens WHERE selector = ?",
+            (replacement_selector,),
+        ).fetchone() is None
+        assert len(ledger.events) == 1
+    finally:
+        _close(resumed)
+
+
+def test_expired_active_review_replacement_is_deleted_after_precomplete_crash(
+    tmp_path, monkeypatch
+):
+    sessions = tmp_path / "sessions"
+    keyring = VersionedHMAC(
+        "k1", {"k1": b"k" * 32, "entitlements-k1": b"e" * 32}
+    )
+    apple, google = _seed_review_users(sessions, keyring)
+    ledger = FakeRecoveryFenceLedger()
+    app = _create_review_app(
+        sessions, keyring, _admission(apple, google), ledger=ledger
+    )
+    challenge_id = ""
+    replacement_selector = ""
+    replacement_token = ""
+    prior_selector = ""
+    try:
+        with TestClient(app, raise_server_exceptions=False) as client:
+            assert _exchange(
+                client, _start(client).json()["challenge_id"]
+            ).status_code == 201
+            verifier = "v" * 43
+            challenge_id = _start(client, verifier=verifier).json()["challenge_id"]
+
+            def crash_before_completion(_row):
+                raise RuntimeError("synthetic pre-completion crash")
+
+            monkeypatch.setattr(
+                app.state.mobile_auth_service, "_complete", crash_before_completion
+            )
+            crashed = _exchange(
+                client,
+                challenge_id,
+                verifier=verifier,
+                idempotency_key="8" * 32,
+            )
+        assert crashed.status_code == 500
+        journal = app.state.users._conn.execute(
+            "SELECT * FROM mobile_auth_exchange_journals"
+            " WHERE challenge_id = ?",
+            (challenge_id,),
+        ).fetchone()
+        assert journal["phase"] == "replacement_active"
+        assert len(ledger.events) == 1
+        replacement_selector = str(journal["replacement_selector"])
+        prior_selector = str(journal["prior_selector"])
+        secret = app.state.users._native_token_secret(verifier, challenge_id)
+        replacement_token = f"{MOBILE_API_TOKEN_PREFIX}{replacement_selector}.{secret}"
+        assert (
+            app.state.users.authenticate_mobile_api_principal(replacement_token)
+            is not None
+        )
+        expired_at = app.state.review_auth_service._now() - 1
+        app.state.users._conn.execute(
+            "UPDATE mobile_api_tokens SET expires_at = ?, review_expires_at = ?"
+            " WHERE selector = ?",
+            (expired_at, expired_at, replacement_selector),
+        )
+        app.state.users._conn.execute(
+            "UPDATE mobile_auth_exchange_journals SET review_expires_at = ?"
+            " WHERE exchange_id = ?",
+            (expired_at, journal["exchange_id"]),
+        )
+        app.state.users._conn.commit()
+    finally:
+        _close(app)
+
+    resumed = _create_review_app(
+        sessions, keyring, _admission(apple, google), ledger=ledger
+    )
+    try:
+        journal = resumed.state.users._conn.execute(
+            "SELECT phase FROM mobile_auth_exchange_journals"
+            " WHERE challenge_id = ?",
+            (challenge_id,),
+        ).fetchone()
+        assert journal["phase"] == "complete"
+        assert resumed.state.users._conn.execute(
+            "SELECT 1 FROM mobile_api_tokens WHERE selector = ?",
+            (replacement_selector,),
+        ).fetchone() is None
+        prior = resumed.state.users._conn.execute(
+            "SELECT state, revoked_at, fenced_at FROM mobile_api_tokens"
+            " WHERE selector = ?",
+            (prior_selector,),
+        ).fetchone()
+        assert tuple(prior)[:1] == ("fenced",)
+        assert prior["revoked_at"] is not None and prior["fenced_at"] is not None
+        assert (
+            resumed.state.users.authenticate_mobile_api_principal(replacement_token)
+            is None
+        )
+        assert len(ledger.events) == 1
+        with TestClient(resumed) as client:
+            terminal = _exchange(
+                client,
+                challenge_id,
+                verifier="v" * 43,
+                idempotency_key="8" * 32,
+            )
+        assert terminal.status_code == 409
+        assert terminal.json()["code"] == "exchange_conflict"
+    finally:
+        _close(resumed)
 
 
 def test_app_identity_is_immutable():

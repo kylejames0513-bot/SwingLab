@@ -339,6 +339,15 @@ def install_mobile_routes(
                 headers=no_store,
             ) from exc
 
+    def _require_review_exposure() -> None:
+        if not review_auth_service.exposed_at_startup():
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Review authentication is not enabled.",
+                headers=no_store,
+            )
+
     def _require_review_lane() -> None:
         try:
             available = review_auth_service.available()
@@ -384,8 +393,9 @@ def install_mobile_routes(
     async def mobile_review_start(request: Request):
         # Default deny precedes even header/body parsing and therefore performs
         # no challenge write, credential lookup, or provider operation.
-        _require_review_lane()
+        _require_review_exposure()
         identity = _review_identity(request)
+        _require_review_lane()
         payload = await _native_auth_payload(request, NativeReviewAuthStartRequest)
         try:
             started = review_auth_service.start(
@@ -471,8 +481,9 @@ def install_mobile_routes(
         },
     )
     async def mobile_review_exchange(request: Request):
-        _require_review_lane()
+        _require_review_exposure()
         identity = _review_identity(request)
+        _require_review_lane()
         payload = await _native_auth_payload(request, NativeReviewAuthExchangeRequest)
         idempotency_values = request.headers.getlist("idempotency-key")
         if len(idempotency_values) != 1:

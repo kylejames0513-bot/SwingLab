@@ -33,7 +33,7 @@ from .mobile_auth import (
     _safe_client_ip,
 )
 from .credential_mutations import CredentialMutationGuard
-from .mobile_schema import MobileStateDomain, VersionedHMAC
+from .mobile_schema import HMACDigest, MobileStateDomain, VersionedHMAC
 from .throttle import KeyedThrottle
 from .users import (
     MobileAPITokenLimitError,
@@ -121,6 +121,8 @@ def canonical_mobile_public_origin(value: str | None, environment: str) -> str |
         or not hostname
         or parsed.username is not None
         or parsed.password is not None
+        or "?" in value
+        or "#" in value
         or parsed.query
         or parsed.fragment
         or parsed.path not in ("", "/")
@@ -365,6 +367,11 @@ class ReviewAuthService:
         self._activated_at_startup = activated_at_startup
         self._now = time.time
 
+    def exposed_at_startup(self) -> bool:
+        """Return the process-lifetime route exposure latch without I/O."""
+
+        return self._activated_at_startup
+
     def available(self) -> bool:
         # Activation is deliberately one-way for a process lifetime. A lane
         # that was closed during startup cannot open after the recovery gate
@@ -406,10 +413,6 @@ class ReviewAuthService:
             )
         return self._throttle, self._keyring
 
-    @staticmethod
-    def _rate_account_key(key_id: str, digest: str) -> str:
-        return f"{key_id}:{digest}"
-
     def start(
         self,
         *,
@@ -440,20 +443,20 @@ class ReviewAuthService:
         now = float(self._now())
         self.purge_expired(now=now)
         ip = _safe_client_ip(client_ip)
+        account_candidates = keyring.candidates(
+            MobileStateDomain.REVIEW_AUTH_ACCOUNT, normalized_account
+        )
         account_key_id, account_hmac = keyring.digest(
             MobileStateDomain.REVIEW_AUTH_ACCOUNT, normalized_account
         )
-        account_rate_key = self._rate_account_key(account_key_id, account_hmac)
-        decision = throttle.consume_many(
-            [
-                ("review-auth-start-ip", ip, self.settings.starts_per_ip, AUTH_WINDOW_SECONDS),
-                (
-                    "review-auth-start-account",
-                    account_rate_key,
-                    self.settings.starts_per_account,
-                    AUTH_WINDOW_SECONDS,
-                ),
-            ],
+        decision = throttle.consume_review_account(
+            phase="start",
+            client_ip=ip,
+            account_candidates=account_candidates,
+            account_current=HMACDigest(account_key_id, account_hmac),
+            ip_limit=self.settings.starts_per_ip,
+            account_limit=self.settings.starts_per_account,
+            window_s=AUTH_WINDOW_SECONDS,
             now=now,
         )
         if not decision.allowed:
@@ -504,26 +507,28 @@ class ReviewAuthService:
         now: float,
     ) -> None:
         throttle, _ = self._require_dependencies()
-        entries = [
-            (
+        if challenge is None:
+            decision = throttle.consume(
                 "review-auth-exchange-ip",
                 client_ip,
                 self.settings.failed_exchanges_per_ip,
                 AUTH_WINDOW_SECONDS,
+                now=now,
             )
-        ]
-        if challenge is not None:
-            entries.append(
-                (
-                    "review-auth-exchange-account",
-                    self._rate_account_key(
-                        challenge.account_hmac_key_id, challenge.account_hmac
-                    ),
-                    self.settings.failed_exchanges_per_account,
-                    AUTH_WINDOW_SECONDS,
-                )
+        else:
+            account_anchor = HMACDigest(
+                challenge.account_hmac_key_id, challenge.account_hmac
             )
-        decision = throttle.consume_many(entries, now=now)
+            decision = throttle.consume_review_account(
+                phase="exchange",
+                client_ip=client_ip,
+                account_candidates=(account_anchor,),
+                account_current=account_anchor,
+                ip_limit=self.settings.failed_exchanges_per_ip,
+                account_limit=self.settings.failed_exchanges_per_account,
+                window_s=AUTH_WINDOW_SECONDS,
+                now=now,
+            )
         if not decision.allowed:
             raise MobileNativeAuthRateLimited(decision.retry_after_seconds)
 
@@ -579,10 +584,17 @@ class ReviewAuthService:
         verifier = self._users._validate_mobile_auth_verifier(code_verifier)
         if (
             challenge is None
+            or challenge.expires_at <= now
             or not isinstance(password, str)
             or not password
             or len(password) > 1024
         ):
+            self._debit_failure(client_ip=ip, challenge=challenge, now=now)
+            raise MobileNativeAuthRejected("Invalid review authentication.")
+        if identity != challenge.identity:
+            self._users.record_mobile_review_signin_failure(
+                challenge.challenge_id, now=now
+            )
             self._debit_failure(client_ip=ip, challenge=challenge, now=now)
             raise MobileNativeAuthRejected("Invalid review authentication.")
         if verifier is None or not hmac.compare_digest(
