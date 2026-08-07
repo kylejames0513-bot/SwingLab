@@ -296,6 +296,20 @@ _MOBILE_TOKEN_BASE_COLUMNS = {
     "revoked_at",
 }
 
+_MOBILE_TOKEN_BASE_DDL = """
+CREATE TABLE mobile_api_tokens (
+    selector TEXT PRIMARY KEY,
+    token_hash TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    auth_epoch INTEGER NOT NULL,
+    label TEXT NOT NULL,
+    created_at REAL NOT NULL,
+    last_used_at REAL,
+    expires_at REAL NOT NULL,
+    revoked_at REAL
+)
+"""
+
 _MOBILE_TOKEN_ADDITIVE_COLUMNS: tuple[tuple[str, str], ...] = (
     ("installation_key", "installation_key TEXT"),
     ("installation_key_version", "installation_key_version TEXT"),
@@ -714,6 +728,111 @@ _INDEX_DDL = {
     for name, (table, columns) in _GENERATION_ONE_INDEXES.items()
 }
 
+
+@dataclass(frozen=True)
+class _TableShape:
+    columns: tuple[tuple[str, str, bool, str | None, int, int], ...]
+    checks: tuple[str, ...]
+    unique_indexes: tuple[tuple[str, tuple[str, ...]], ...]
+
+
+def _check_constraints(sql: str) -> tuple[str, ...]:
+    """Extract normalized CHECK bodies while respecting nested parentheses."""
+
+    constraints: list[str] = []
+    search_from = 0
+    upper_sql = sql.upper()
+    while True:
+        check_at = upper_sql.find("CHECK", search_from)
+        if check_at < 0:
+            break
+        opening = check_at + len("CHECK")
+        while opening < len(sql) and sql[opening].isspace():
+            opening += 1
+        if opening >= len(sql) or sql[opening] != "(":
+            search_from = opening
+            continue
+        depth = 0
+        quote: str | None = None
+        index = opening
+        while index < len(sql):
+            character = sql[index]
+            if quote is not None:
+                if character == quote:
+                    if index + 1 < len(sql) and sql[index + 1] == quote:
+                        index += 1
+                    else:
+                        quote = None
+            elif character in ("'", '"'):
+                quote = character
+            elif character == "(":
+                depth += 1
+            elif character == ")":
+                depth -= 1
+                if depth == 0:
+                    constraints.append(
+                        re.sub(r"\s+", "", sql[opening + 1:index])
+                    )
+                    search_from = index + 1
+                    break
+            index += 1
+        else:
+            raise RuntimeError("Malformed generation-1 mobile CHECK constraint.")
+    return tuple(sorted(constraints))
+
+
+def _table_shape(connection: sqlite3.Connection, table: str) -> _TableShape:
+    sql_row = connection.execute(
+        "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone()
+    sql = str(sql_row[0]) if sql_row is not None and sql_row[0] is not None else ""
+    unique_indexes = tuple(
+        sorted(
+            (
+                str(row[3]),
+                _index_columns(connection, str(row[1])),
+            )
+            for row in connection.execute(f"PRAGMA index_list({table})")
+            if bool(row[2]) and str(row[3]) != "pk"
+        )
+    )
+    return _TableShape(
+        columns=tuple(
+            (
+                str(row[1]),
+                str(row[2]).upper(),
+                bool(row[3]),
+                str(row[4]) if row[4] is not None else None,
+                int(row[5]),
+                int(row[6]),
+            )
+            for row in connection.execute(f"PRAGMA table_xinfo({table})")
+        ),
+        checks=_check_constraints(sql),
+        unique_indexes=unique_indexes,
+    )
+
+
+def _canonical_generation_one_table_shapes() -> dict[str, _TableShape]:
+    reference = sqlite3.connect(":memory:")
+    try:
+        reference.execute(_MOBILE_TOKEN_BASE_DDL)
+        for _name, ddl in _MOBILE_TOKEN_ADDITIVE_COLUMNS:
+            reference.execute(f"ALTER TABLE mobile_api_tokens ADD COLUMN {ddl}")
+        for ddl in _GENERATION_ONE_TABLE_DDL.values():
+            reference.execute(ddl)
+        return {
+            table: _table_shape(reference, table)
+            for table in _GENERATION_ONE_REQUIRED_COLUMNS
+        }
+    finally:
+        reference.close()
+
+
+_GENERATION_ONE_TABLE_SHAPES = _canonical_generation_one_table_shapes()
+
+
 _HMAC_COLUMN_PAIRS: tuple[tuple[str, str, str], ...] = (
     ("mobile_api_tokens", "installation_key_version", "installation_key"),
     (
@@ -871,13 +990,12 @@ def _table_columns(connection: sqlite3.Connection, table: str) -> tuple[str, ...
 
 
 def _validate_required_columns(connection: sqlite3.Connection) -> None:
-    for table, required in _GENERATION_ONE_REQUIRED_COLUMNS.items():
-        actual = set(_table_columns(connection, table))
-        missing = sorted(set(required) - actual)
-        if missing:
+    for table, expected in _GENERATION_ONE_TABLE_SHAPES.items():
+        actual = _table_shape(connection, table)
+        if actual != expected:
             raise RuntimeError(
                 f"Incompatible generation-1 mobile schema for {table}; "
-                f"missing column(s): {', '.join(missing)}."
+                "the exact table shape is required."
             )
 
 
@@ -935,6 +1053,22 @@ def referenced_mobile_state_key_ids(connection: sqlite3.Connection) -> set[str]:
         if mismatched is not None:
             raise RuntimeError(
                 f"Incomplete HMAC key/digest pair in {table}.{key_column}."
+            )
+        invalid = connection.execute(
+            f"SELECT 1 FROM {table} WHERE {key_column} IS NOT NULL AND ("
+            f" typeof({key_column}) != 'text'"
+            f" OR length({key_column}) NOT BETWEEN 1 AND 64"
+            f" OR substr({key_column}, 1, 1) GLOB '[^A-Za-z0-9]'"
+            f" OR {key_column} GLOB '*[^A-Za-z0-9._-]*'"
+            f" OR typeof({digest_column}) != 'text'"
+            f" OR length({digest_column}) != 64"
+            f" OR {digest_column} GLOB '*[^0-9a-f]*'"
+            ") LIMIT 1"
+        ).fetchone()
+        if invalid is not None:
+            raise RuntimeError(
+                f"Persisted invalid HMAC key ID or digest in "
+                f"{table}.{key_column}."
             )
         referenced.update(
             str(row[0])

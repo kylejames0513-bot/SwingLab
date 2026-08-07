@@ -329,6 +329,33 @@ def test_keyed_throttle_rejects_same_named_wrong_lookup_index(tmp_path):
         KeyedThrottle(db_path, _keyring())
 
 
+@pytest.mark.parametrize(
+    ("raw_key", "limit"),
+    [
+        ("", 1),
+        ("203.0.113.12", 0),
+        ("203.0.113.12", -1),
+    ],
+)
+def test_keyed_throttle_rejects_empty_keys_and_nonpositive_limits(
+    tmp_path, raw_key, limit
+):
+    """Catches an invalid keyed-rate entry turning into an unconditional allow."""
+
+    throttle = KeyedThrottle(tmp_path / "invalid-entry.sqlite", _keyring())
+    try:
+        with pytest.raises(ValueError, match="bounded positive"):
+            throttle.consume(
+                "auth-start-ip",
+                raw_key,
+                limit=limit,
+                window_s=900,
+                now=1,
+            )
+    finally:
+        throttle.close()
+
+
 def test_user_store_adds_complete_generation_one_schema_to_legacy_database(tmp_path):
     """Catches an additive migration omitting a required table, column, or index."""
 
@@ -379,6 +406,29 @@ def test_user_store_rejects_partial_generation_one_table(tmp_path):
     connection.close()
 
     with pytest.raises(RuntimeError, match="mobile_auth_challenges"):
+        UserStore(db_path, mobile_state_hmac=_keyring())
+
+
+def test_user_store_rejects_weakened_generation_one_table_shape(tmp_path):
+    """Catches name-only validation accepting nullable TEXT lifecycle columns."""
+
+    db_path = tmp_path / "weakened-table.sqlite"
+    users = UserStore(db_path, mobile_state_hmac=_keyring())
+    users.close()
+    columns = MOBILE_STATE_GENERATIONS[1].required_columns[
+        "mobile_auth_challenges"
+    ]
+    connection = sqlite3.connect(db_path)
+    connection.execute("DROP TABLE mobile_auth_challenges")
+    connection.execute(
+        "CREATE TABLE mobile_auth_challenges ("
+        + ", ".join(f"{column} TEXT" for column in columns)
+        + ")"
+    )
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(RuntimeError, match="mobile_auth_challenges.*shape"):
         UserStore(db_path, mobile_state_hmac=_keyring())
 
 
@@ -435,6 +485,23 @@ def test_startup_requires_every_live_mobile_state_hmac_key_even_when_features_of
         ] == ["retired"]
     finally:
         reopened.close()
+
+
+def test_startup_rejects_malformed_persisted_hmac_digest(tmp_path):
+    """Catches configured key coverage accepting a non-SHA-256 digest encoding."""
+
+    db_path = tmp_path / "malformed-digest.sqlite"
+    users = UserStore(db_path, mobile_state_hmac=_keyring())
+    users._conn.execute(
+        "INSERT INTO mobile_rate_limit_events"
+        " (domain, key_id, key_digest, occurred_at) VALUES (?, ?, ?, ?)",
+        ("auth-start-ip", "current", "x", 10.0),
+    )
+    users._conn.commit()
+    users.close()
+
+    with pytest.raises(RuntimeError, match="invalid HMAC key ID or digest"):
+        UserStore(db_path, mobile_state_hmac=_keyring())
 
 
 def test_mobile_state_summary_records_counts_domains_phases_and_schema_digests(tmp_path):

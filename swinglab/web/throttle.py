@@ -164,9 +164,9 @@ class KeyedThrottle:
                 hmac_domain = _KEYED_RATE_DOMAINS[domain]
             except KeyError as exc:
                 raise ValueError("Unsupported keyed rate-limit domain.") from exc
-            if not raw_key or limit <= 0:
-                continue
-            if not isinstance(limit, int) or limit > 100_000:
+            if not isinstance(raw_key, str) or not raw_key:
+                raise ValueError("A bounded positive keyed rate key is required.")
+            if not isinstance(limit, int) or not 1 <= limit <= 100_000:
                 raise ValueError("A bounded positive keyed rate limit is required.")
             if not 1 <= float(window_s) <= 86400:
                 raise ValueError("A bounded keyed rate window is required.")
@@ -182,8 +182,6 @@ class KeyedThrottle:
                     current_digest,
                 )
             )
-        if not prepared:
-            return MultiRateLimitDecision(True)
 
         with self._lock:
             try:
