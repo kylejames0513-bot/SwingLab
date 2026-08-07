@@ -8,9 +8,11 @@ read-only evidence and mutates only a second uniquely named working tree.
 from __future__ import annotations
 
 import hashlib
+import hmac
 import math
 import os
 import re
+import secrets
 import sqlite3
 import time
 import uuid
@@ -20,6 +22,7 @@ from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Mapping
 
 from swinglab.web.mobile_schema import (
+    MOBILE_STATE_GENERATIONS,
     MobileStateDomain,
     VersionedHMAC,
     detect_mobile_state_generation,
@@ -50,6 +53,7 @@ from .core import (
     _is_link_or_reparse,
     _join_under,
     _load_and_verify_manifest_snapshot,
+    _load_json_bytes,
     _read_regular_file_snapshot,
     _safe_relative_path,
     _sha256_file,
@@ -78,85 +82,29 @@ class RetainedRestoreEvidence:
     file_sha256: tuple[tuple[str, str], ...]
 
 
-_MANDATORY_RESTORED_CREDENTIAL_TABLES = (
-    "mobile_api_tokens",
-    "mobile_auth_challenges",
-    "mobile_review_auth_challenges",
-    "mobile_auth_exchange_journals",
-    "mobile_auth_exchange_receipts",
-    "mobile_signout_journals",
-    "mobile_signout_receipts",
-    "mobile_device_revoke_journals",
-    "mobile_device_revoke_receipts",
-    "email_codes",
-    "signup_intents",
-    "shopify_customer_account_oauth_states",
-    "shopify_customer_account_browser_sessions",
-)
-
-# Extension registrations are deletion authority, so explicitly exclude every
-# known preserved identity, entitlement, history, commerce, and recovery table.
-_PROTECTED_RESTORED_TABLES = frozenset(
-    {
-        "users",
-        "jobs",
-        "pro_grants",
-        "shopify_orders",
-        "gear_orders",
-        "auth_attempts",
-        "shopify_sync_control",
-        "shopify_privacy_event_fences",
-        "shopify_redacted_order_fences",
-        "shopify_privacy_requests",
-        "shopify_customer_tombstones",
-        "shopify_pending_customer_links",
-        "analysis_usage_monthly",
-        "history_reset_operations",
-        "golfer_profiles",
-        "practice_checkins",
-        "product_events",
-        "proof_cycle_practice_evidence",
-        "proof_cycle_transfer_checks",
-        "lifecycle_email_sends",
-        "mobile_recovery_fence_checkpoints",
-        "mobile_recovery_baseline_journals",
-        "mobile_recovery_accepted_baselines",
-        "mobile_restore_credential_reset_markers",
-        "mobile_rate_limit_events",
-    }
-)
-
-
 @dataclass(frozen=True)
 class RestoredCredentialTableRegistry:
-    additional_table_names: tuple[str, ...] = ()
+    generation: int
     table_names: tuple[str, ...] = field(init=False)
 
     def __post_init__(self) -> None:
-        additions = self.additional_table_names
-        if not isinstance(additions, tuple) or any(
-            not isinstance(table, str)
-            or re.fullmatch(r"[a-z_][a-z0-9_]{0,127}", table) is None
-            for table in additions
+        generation = self.generation
+        if (
+            isinstance(generation, bool)
+            or not isinstance(generation, int)
+            or generation not in MOBILE_STATE_GENERATIONS
         ):
-            raise ValueError("Restore credential table registration is invalid.")
-        if len(set(additions)) != len(additions):
-            raise ValueError("Restore credential table registration is invalid.")
-        mandatory = set(_MANDATORY_RESTORED_CREDENTIAL_TABLES)
-        if mandatory.intersection(additions):
-            raise ValueError("A mandatory credential table cannot be re-registered.")
-        if _PROTECTED_RESTORED_TABLES.intersection(additions) or any(
-            table.startswith("sqlite_") for table in additions
-        ):
-            raise ValueError("A protected restore table cannot be registered.")
+            raise ValueError(
+                "Restore credential tables must come from a generation-owned registry."
+            )
         object.__setattr__(
             self,
             "table_names",
-            _MANDATORY_RESTORED_CREDENTIAL_TABLES + additions,
+            MOBILE_STATE_GENERATIONS[generation].restored_credential_tables,
         )
 
 
-DEFAULT_RESTORED_CREDENTIAL_TABLES = RestoredCredentialTableRegistry()
+DEFAULT_RESTORED_CREDENTIAL_TABLES = RestoredCredentialTableRegistry(1)
 
 
 @dataclass(frozen=True)
@@ -183,6 +131,7 @@ class ServiceRestoreResult:
     retained_restore_dir: Path
     working_dir: Path
     credential_reset_marker_id: str
+    readiness_receipt: str = field(repr=False)
 
 
 @dataclass(frozen=True)
@@ -191,28 +140,118 @@ class RetainedBackupKeyUsageAudit:
     by_key_id: tuple[tuple[str, tuple[str, ...]], ...]
 
 
-def _durably_publish_readiness(path: Path, body: bytes) -> None:
-    existed_before = path.exists() or _is_link_or_reparse(path)
+_READINESS_COMMIT_FORMAT = "caddieinsight-service-restore-readiness-commit/v1"
+_READINESS_RECEIPT = re.compile(r"[0-9a-f]{64}")
+
+
+def _readiness_commit_path(path: Path) -> Path:
+    return path.with_name(f"{path.stem}.commit{path.suffix}")
+
+
+def _readiness_path_sha256(path: Path) -> str:
+    canonical_path = os.path.normcase(str(path.resolve(strict=False)))
+    return hashlib.sha256(canonical_path.encode("utf-8")).hexdigest()
+
+
+def _accept_service_restore_readiness(
+    path: Path,
+    receipt: str | None,
+) -> dict[str, object]:
+    """Validate the only authoritative readiness representation."""
+
+    if not isinstance(receipt, str) or _READINESS_RECEIPT.fullmatch(receipt) is None:
+        raise BackupError("A service-restore readiness receipt is required.")
+    commit_path = _readiness_commit_path(path)
+    if any(
+        _is_link_or_reparse(candidate) or not candidate.is_file()
+        for candidate in (path, commit_path)
+    ):
+        raise BackupError("Service-restore readiness evidence is missing or unsafe.")
+    try:
+        marker_bytes = _read_regular_file_snapshot(path)
+        commit_bytes = _read_regular_file_snapshot(commit_path)
+        marker = _load_json_bytes(marker_bytes)
+    except BackupError:
+        raise BackupError(
+            "Service-restore readiness evidence is missing or unsafe."
+        ) from None
+    marker_sha256 = hashlib.sha256(marker_bytes).hexdigest()
+    receipt_sha256 = hashlib.sha256(receipt.encode("ascii")).hexdigest()
+    expected_commit = _canonical_json(
+        {
+            "format": _READINESS_COMMIT_FORMAT,
+            "marker_sha256": marker_sha256,
+            "marker_path_sha256": _readiness_path_sha256(path),
+            "receipt_sha256": receipt_sha256,
+        }
+    )
+    if (
+        _canonical_json(marker) != marker_bytes
+        or not hmac.compare_digest(commit_bytes, expected_commit)
+    ):
+        raise BackupError("Service-restore readiness evidence did not authenticate.")
+    return marker
+
+
+def _discard_failed_readiness_artifacts(*paths: Path) -> None:
+    """Best-effort diagnostics cleanup; receipt withholding is authoritative."""
+
+    changed = False
+    for path in paths:
+        try:
+            present = path.exists() or _is_link_or_reparse(path)
+        except Exception:
+            continue
+        if not present:
+            continue
+        try:
+            path.unlink()
+            changed = True
+            continue
+        except OSError:
+            quarantine = path.with_name(
+                f".{path.name}.failed-{uuid.uuid4().hex}"
+            )
+        try:
+            os.replace(path, quarantine)
+            changed = True
+        except OSError:
+            pass
+    if changed and paths:
+        try:
+            _fsync_directory(paths[0].parent)
+        except Exception:
+            pass
+
+
+def _durably_publish_readiness(path: Path, body: bytes) -> str:
+    commit_path = _readiness_commit_path(path)
+    if (
+        _is_link_or_reparse(path)
+        or _is_link_or_reparse(commit_path)
+        or path.exists()
+        or commit_path.exists()
+        or _is_link_or_reparse(path.parent)
+        or not path.parent.is_dir()
+    ):
+        raise BackupError("The service-restore readiness path is unsafe.")
+    receipt = secrets.token_hex(32)
+    commit_body = _canonical_json(
+        {
+            "format": _READINESS_COMMIT_FORMAT,
+            "marker_sha256": hashlib.sha256(body).hexdigest(),
+            "marker_path_sha256": _readiness_path_sha256(path),
+            "receipt_sha256": hashlib.sha256(receipt.encode("ascii")).hexdigest(),
+        }
+    )
     try:
         _durable_atomic_write(path, body, immutable=True)
+        _durable_atomic_write(commit_path, commit_body, immutable=True)
+        _accept_service_restore_readiness(path, receipt)
     except Exception:
-        if not existed_before and (path.exists() or _is_link_or_reparse(path)):
-            try:
-                path.unlink()
-            except OSError:
-                quarantine = path.with_name(
-                    f".{path.name}.failed-{uuid.uuid4().hex}"
-                )
-                try:
-                    os.replace(path, quarantine)
-                except OSError:
-                    pass
-            if not path.exists() and not _is_link_or_reparse(path):
-                try:
-                    _fsync_directory(path.parent)
-                except Exception:
-                    pass
+        _discard_failed_readiness_artifacts(path, commit_path)
         raise BackupError("The service-restore readiness marker was not published.") from None
+    return receipt
 
 
 def audit_retained_backup_key_usage(
@@ -467,15 +506,42 @@ def _marker_id(source_backup_id: str, source_lineage_id: str | None) -> str:
     return hashlib.sha256(material).hexdigest()
 
 
+def _restored_credential_table_inventory(
+    connection: sqlite3.Connection,
+) -> tuple[tuple[str, str], ...]:
+    try:
+        generation = detect_mobile_state_generation(connection)
+    except (RuntimeError, sqlite3.Error) as exc:
+        raise BackupError(
+            "The restored credential schema generation is invalid."
+        ) from exc
+    registry = RestoredCredentialTableRegistry(generation)
+    existing: dict[str, str] = {}
+    for row in connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'"
+    ):
+        actual = str(row[0])
+        key = actual.casefold()
+        prior = existing.setdefault(key, actual)
+        if prior != actual:
+            raise BackupError("SQLite table names are not canonical.")
+    return tuple(
+        (expected, existing[expected.casefold()])
+        for expected in registry.table_names
+        if expected.casefold() in existing
+    )
+
+
+def _quoted_sqlite_identifier(value: str) -> str:
+    return '"' + value.replace('"', '""') + '"'
+
+
 def prepare_restored_auth_state(
     connection: sqlite3.Connection,
     *,
     source_backup_id: str,
     source_lineage_id: str | None,
     now: float,
-    credential_tables: RestoredCredentialTableRegistry = (
-        DEFAULT_RESTORED_CREDENTIAL_TABLES
-    ),
 ) -> RestoreCredentialReset:
     """Invalidate all restored credentials in one idempotent IMMEDIATE txn."""
 
@@ -494,8 +560,6 @@ def prepare_restored_auth_state(
         or now < 0
     ):
         raise BackupError("The restore preparation time is invalid.")
-    if not isinstance(credential_tables, RestoredCredentialTableRegistry):
-        raise TypeError("A RestoredCredentialTableRegistry is required.")
     if connection.in_transaction:
         raise BackupError("Restore credential preparation requires no outer transaction.")
 
@@ -518,18 +582,12 @@ def prepare_restored_auth_state(
         users_reset = connection.execute(
             "UPDATE users SET auth_epoch = auth_epoch + 1, password_hash = ''"
         ).rowcount
-        existing_tables = {
-            str(row[0])
-            for row in connection.execute(
-                "SELECT name FROM sqlite_master WHERE type = 'table'"
-            )
-        }
         deleted: list[tuple[str, int]] = []
-        for table in credential_tables.table_names:
-            if table not in existing_tables:
-                continue
-            count = connection.execute(f'DELETE FROM "{table}"').rowcount
-            deleted.append((table, count))
+        for expected, actual in _restored_credential_table_inventory(connection):
+            count = connection.execute(
+                f"DELETE FROM {_quoted_sqlite_identifier(actual)}"
+            ).rowcount
+            deleted.append((expected, count))
         connection.execute(
             "INSERT INTO mobile_restore_credential_reset_markers "
             "(marker_id, source_backup_id, source_lineage_id, prepared_at) "
@@ -574,18 +632,11 @@ def _restored_user_epoch_snapshot(
 def _validate_restored_auth_reset_postconditions(
     connection: sqlite3.Connection,
     *,
-    credential_tables: RestoredCredentialTableRegistry,
     expected_user_epochs: tuple[tuple[str, int], ...],
 ) -> None:
-    existing_tables = {
-        str(row[0])
-        for row in connection.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        )
-    }
-    for table in credential_tables.table_names:
-        if table in existing_tables and connection.execute(
-            f'SELECT COUNT(*) FROM "{table}"'
+    for _expected, actual in _restored_credential_table_inventory(connection):
+        if connection.execute(
+            f"SELECT COUNT(*) FROM {_quoted_sqlite_identifier(actual)}"
         ).fetchone()[0] != 0:
             raise BackupError("The restored credential reset was not preserved.")
     current = connection.execute(
@@ -1010,16 +1061,11 @@ def prepare_service_restore(
     ledger: object,
     keyring: VersionedHMAC,
     reconcilers: Mapping[str, RecoveryRecordReconciler] | None = None,
-    credential_tables: RestoredCredentialTableRegistry = (
-        DEFAULT_RESTORED_CREDENTIAL_TABLES
-    ),
     now: float | None = None,
 ) -> ServiceRestoreResult:
     """Prepare—but never promote—one service-eligible disposable sessions tree."""
 
     prepared_at = time.time() if now is None else now
-    if not isinstance(credential_tables, RestoredCredentialTableRegistry):
-        raise TypeError("A RestoredCredentialTableRegistry is required.")
     evidence = retain_verified_restore_evidence(bundle_dir, scratch_root)
     mobile_state = evidence.manifest.get("mobile_state")
     recovery_fence = evidence.manifest.get("recovery_fence")
@@ -1064,7 +1110,6 @@ def prepare_service_restore(
             source_backup_id=str(evidence.manifest["backup_id"]),
             source_lineage_id=lineage_id,
             now=float(prepared_at),
-            credential_tables=credential_tables,
         )
         expected_user_epochs = _restored_user_epoch_snapshot(connection)
         _apply_recovery_chain(
@@ -1076,7 +1121,6 @@ def prepare_service_restore(
         )
         _validate_restored_auth_reset_postconditions(
             connection,
-            credential_tables=credential_tables,
             expected_user_epochs=expected_user_epochs,
         )
         validate_mobile_state_schema(connection)
@@ -1124,7 +1168,10 @@ def prepare_service_restore(
         "promoted": False,
     }
     ready_path = working_dir / "service-restore-ready.json"
-    _durably_publish_readiness(ready_path, _canonical_json(readiness))
+    readiness_receipt = _durably_publish_readiness(
+        ready_path,
+        _canonical_json(readiness),
+    )
     return ServiceRestoreResult(
         ready=True,
         backup_id=str(evidence.manifest["backup_id"]),
@@ -1137,6 +1184,7 @@ def prepare_service_restore(
         retained_restore_dir=evidence.restore_dir,
         working_dir=working_dir,
         credential_reset_marker_id=reset.marker_id,
+        readiness_receipt=readiness_receipt,
     )
 
 

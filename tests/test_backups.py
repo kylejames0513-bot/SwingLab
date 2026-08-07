@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import importlib
 import json
+import re
 import sqlite3
 import stat
 import threading
@@ -28,6 +30,7 @@ from swinglab.backups.store import S3Settings, download_bundle, upload_bundle
 from swinglab.cli import main
 from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
 from swinglab.web.mobile_schema import (
+    MOBILE_STATE_GENERATIONS,
     VersionedHMAC,
     ensure_mobile_state_schema,
     mobile_state_summary,
@@ -1702,7 +1705,43 @@ def test_manifest_parse_and_checksum_use_one_authenticated_byte_snapshot(
         core_module.load_and_verify_manifest(bundle)
 
 
-def test_readiness_publisher_leaves_no_final_marker_on_fsync_failure(
+def _readiness_is_accepted(module, ready_path: Path, receipt: str | None) -> bool:
+    acceptance = getattr(module, "_accept_service_restore_readiness", None)
+    if acceptance is None:
+        return ready_path.is_file()
+    try:
+        acceptance(ready_path, receipt)
+    except (BackupError, TypeError, ValueError):
+        return False
+    return True
+
+
+def test_readiness_publication_returns_a_restart_stable_acceptance_receipt(
+    tmp_path,
+):
+    module = _restore_service_module()
+    ready_path = tmp_path / "service-restore-ready.json"
+    body = b'{"ready":true}\n'
+
+    receipt = module._durably_publish_readiness(ready_path, body)
+
+    assert isinstance(receipt, str) and re.fullmatch(r"[0-9a-f]{64}", receipt)
+    commit_path = tmp_path / "service-restore-ready.commit.json"
+    assert commit_path.is_file()
+    assert receipt.encode("ascii") not in ready_path.read_bytes()
+    assert receipt.encode("ascii") not in commit_path.read_bytes()
+    restarted_module = importlib.reload(module)
+    assert _readiness_is_accepted(restarted_module, ready_path, receipt)
+    replay_root = tmp_path / "replayed-candidate"
+    replay_root.mkdir()
+    replay_path = replay_root / ready_path.name
+    replay_commit_path = replay_root / commit_path.name
+    replay_path.write_bytes(ready_path.read_bytes())
+    replay_commit_path.write_bytes(commit_path.read_bytes())
+    assert not _readiness_is_accepted(restarted_module, replay_path, receipt)
+
+
+def test_readiness_publisher_leaves_no_authoritative_marker_on_file_fsync_failure(
     tmp_path, monkeypatch
 ):
     module = _restore_service_module()
@@ -1720,7 +1759,7 @@ def test_readiness_publisher_leaves_no_final_marker_on_fsync_failure(
     assert not list(tmp_path.glob("*.tmp"))
 
 
-def test_readiness_publisher_removes_final_marker_after_parent_fsync_failure(
+def test_readiness_publisher_denies_marker_after_parent_fsync_failure(
     tmp_path, monkeypatch
 ):
     module = _restore_service_module()
@@ -1737,11 +1776,152 @@ def test_readiness_publisher_removes_final_marker_after_parent_fsync_failure(
 
     monkeypatch.setattr(ledger_module, "_fsync_directory", fail_parent_fsync)
 
+    receipt = None
     with pytest.raises(BackupError, match="readiness"):
         module._durably_publish_readiness(ready_path, b'{"ready":true}\n')
 
     assert existed_when_fsync_failed == [True]
-    assert not ready_path.exists()
+    assert not _readiness_is_accepted(module, ready_path, receipt)
+
+
+def test_readiness_denial_survives_unlink_and_quarantine_failures(
+    tmp_path, monkeypatch
+):
+    module = _restore_service_module()
+    from swinglab.web import recovery_fence_ledger as ledger_module
+
+    ready_path = tmp_path / "service-restore-ready.json"
+    original_unlink = Path.unlink
+    original_replace = module.os.replace
+    unlink_attempted = []
+    quarantine_attempted = []
+
+    def fail_parent_fsync(_path):
+        raise ledger_module.RecoveryFenceError("synthetic post-rename fsync failure")
+
+    def fail_ready_unlink(path, *args, **kwargs):
+        if path == ready_path:
+            unlink_attempted.append(path)
+            raise OSError("synthetic readiness unlink failure")
+        return original_unlink(path, *args, **kwargs)
+
+    def fail_quarantine_replace(source, destination):
+        if Path(source) == ready_path and ".failed-" in Path(destination).name:
+            quarantine_attempted.append(Path(source))
+            raise OSError("synthetic readiness quarantine failure")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(ledger_module, "_fsync_directory", fail_parent_fsync)
+    monkeypatch.setattr(Path, "unlink", fail_ready_unlink)
+    monkeypatch.setattr(module.os, "replace", fail_quarantine_replace)
+
+    with pytest.raises(BackupError, match="readiness"):
+        module._durably_publish_readiness(ready_path, b'{"ready":true}\n')
+
+    assert ready_path.exists()
+    assert unlink_attempted == [ready_path]
+    assert quarantine_attempted == [ready_path]
+    assert not _readiness_is_accepted(module, ready_path, None)
+
+
+def test_readiness_denial_survives_cleanup_fsync_reappearance(
+    tmp_path, monkeypatch
+):
+    module = _restore_service_module()
+    from swinglab.web import recovery_fence_ledger as ledger_module
+
+    ready_path = tmp_path / "service-restore-ready.json"
+    body = b'{"ready":true}\n'
+    cleanup_fsync_attempted = []
+
+    def fail_publish_fsync(_path):
+        raise ledger_module.RecoveryFenceError("synthetic post-rename fsync failure")
+
+    def fail_cleanup_fsync(_path):
+        cleanup_fsync_attempted.append(_path)
+        ready_path.write_bytes(body)
+        raise ledger_module.RecoveryFenceError("synthetic cleanup fsync failure")
+
+    monkeypatch.setattr(ledger_module, "_fsync_directory", fail_publish_fsync)
+    monkeypatch.setattr(module, "_fsync_directory", fail_cleanup_fsync, raising=False)
+
+    with pytest.raises(BackupError, match="readiness"):
+        module._durably_publish_readiness(ready_path, body)
+
+    assert ready_path.exists()
+    assert cleanup_fsync_attempted == [tmp_path]
+    assert not _readiness_is_accepted(module, ready_path, None)
+
+
+def test_readiness_rejects_a_preexisting_broken_link(tmp_path):
+    module = _restore_service_module()
+    ready_path = tmp_path / "service-restore-ready.json"
+    try:
+        ready_path.symlink_to(tmp_path / "missing-readiness-target")
+    except OSError:
+        pytest.skip("File symlinks are unavailable on this test host.")
+
+    with pytest.raises(BackupError, match="readiness"):
+        module._durably_publish_readiness(ready_path, b'{"ready":true}\n')
+
+    assert not _readiness_is_accepted(module, ready_path, None)
+
+
+def test_commit_post_rename_failure_rejects_leftovers_after_module_restart(
+    tmp_path, monkeypatch
+):
+    module = _restore_service_module()
+    from swinglab.web import recovery_fence_ledger as ledger_module
+
+    ready_path = tmp_path / "service-restore-ready.json"
+    commit_path = tmp_path / "service-restore-ready.commit.json"
+    original_fsync_directory = ledger_module._fsync_directory
+    original_unlink = Path.unlink
+    original_replace = module.os.replace
+    directory_fsync_calls = 0
+    cleanup_unlink_attempts = []
+    cleanup_quarantine_attempts = []
+
+    def fail_commit_parent_fsync(path):
+        nonlocal directory_fsync_calls
+        directory_fsync_calls += 1
+        if directory_fsync_calls == 2:
+            raise ledger_module.RecoveryFenceError(
+                "synthetic commit post-rename fsync failure"
+            )
+        return original_fsync_directory(path)
+
+    def fail_readiness_unlink(path, *args, **kwargs):
+        if path in {ready_path, commit_path}:
+            cleanup_unlink_attempts.append(path)
+            raise OSError("synthetic readiness cleanup unlink failure")
+        return original_unlink(path, *args, **kwargs)
+
+    def fail_readiness_quarantine(source, destination):
+        if Path(source) in {ready_path, commit_path} and ".failed-" in Path(
+            destination
+        ).name:
+            cleanup_quarantine_attempts.append(Path(source))
+            raise OSError("synthetic readiness cleanup quarantine failure")
+        return original_replace(source, destination)
+
+    monkeypatch.setattr(
+        ledger_module,
+        "_fsync_directory",
+        fail_commit_parent_fsync,
+    )
+    monkeypatch.setattr(Path, "unlink", fail_readiness_unlink)
+    monkeypatch.setattr(module.os, "replace", fail_readiness_quarantine)
+
+    with pytest.raises(BackupError, match="readiness"):
+        module._durably_publish_readiness(ready_path, b'{"ready":true}\n')
+
+    assert ready_path.exists()
+    assert commit_path.exists()
+    assert cleanup_unlink_attempts == [ready_path, commit_path]
+    assert cleanup_quarantine_attempts == [ready_path, commit_path]
+    restarted_module = importlib.reload(module)
+    assert not _readiness_is_accepted(restarted_module, ready_path, "0" * 64)
 
 
 def _insert_dummy_required_row(connection: sqlite3.Connection, table: str) -> None:
@@ -1772,18 +1952,22 @@ def _insert_dummy_required_row(connection: sqlite3.Connection, table: str) -> No
     )
 
 
-def _seed_registered_credential_rows(connection, registry) -> None:
-    for table in registry.table_names:
+def _seed_registered_credential_rows(connection, table_names) -> None:
+    for table in table_names:
         if connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0:
             _insert_dummy_required_row(connection, table)
 
 
-def test_empty_credential_extensions_retain_the_mandatory_purge_set():
+def test_restore_credential_registry_is_owned_by_the_schema_generation():
     module = _restore_service_module()
 
-    registry = module.RestoredCredentialTableRegistry(())
+    registry = module.RestoredCredentialTableRegistry(1)
 
-    assert registry.table_names == module.DEFAULT_RESTORED_CREDENTIAL_TABLES.table_names
+    assert registry.generation == 1
+    assert (
+        registry.table_names
+        == MOBILE_STATE_GENERATIONS[1].restored_credential_tables
+    )
     assert {
         "mobile_api_tokens",
         "mobile_auth_challenges",
@@ -1800,8 +1984,8 @@ def test_empty_credential_extensions_still_purge_and_audit_mandatory_rows(
     module = _restore_service_module()
     _sessions, connection = synthetic_sessions
     ensure_mobile_state_schema(connection)
-    registry = module.RestoredCredentialTableRegistry(())
-    _seed_registered_credential_rows(connection, module.DEFAULT_RESTORED_CREDENTIAL_TABLES)
+    credential_tables = MOBILE_STATE_GENERATIONS[1].restored_credential_tables
+    _seed_registered_credential_rows(connection, credential_tables)
     connection.commit()
 
     module.prepare_restored_auth_state(
@@ -1809,12 +1993,11 @@ def test_empty_credential_extensions_still_purge_and_audit_mandatory_rows(
         source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
         source_lineage_id=BASELINE_LINEAGE_ID,
         now=CAPTURED_AT.timestamp(),
-        credential_tables=registry,
     )
 
     assert all(
         connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
-        for table in module.DEFAULT_RESTORED_CREDENTIAL_TABLES.table_names
+        for table in credential_tables
     )
     expected_epochs = module._restored_user_epoch_snapshot(connection)
     _insert_dummy_required_row(connection, "mobile_api_tokens")
@@ -1822,12 +2005,11 @@ def test_empty_credential_extensions_still_purge_and_audit_mandatory_rows(
     with pytest.raises(BackupError, match="credential reset"):
         module._validate_restored_auth_reset_postconditions(
             connection,
-            credential_tables=registry,
             expected_user_epochs=expected_epochs,
         )
 
 
-def test_future_credential_extension_is_additively_purged_and_audited(
+def test_non_generation_credential_table_cannot_gain_deletion_authority(
     synthetic_sessions,
 ):
     module = _restore_service_module()
@@ -1836,43 +2018,51 @@ def test_future_credential_extension_is_additively_purged_and_audited(
     connection.execute(
         "CREATE TABLE future_auth_sessions (session_id TEXT PRIMARY KEY)"
     )
-    registry = module.RestoredCredentialTableRegistry(("future_auth_sessions",))
-    _seed_registered_credential_rows(connection, registry)
+    connection.execute("INSERT INTO future_auth_sessions VALUES ('preserved')")
     connection.commit()
+
+    with pytest.raises(ValueError, match="generation-owned"):
+        module.RestoredCredentialTableRegistry(("future_auth_sessions",))
 
     module.prepare_restored_auth_state(
         connection,
         source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
         source_lineage_id=BASELINE_LINEAGE_ID,
         now=CAPTURED_AT.timestamp(),
-        credential_tables=registry,
     )
 
     assert connection.execute(
         "SELECT COUNT(*) FROM future_auth_sessions"
-    ).fetchone()[0] == 0
+    ).fetchone()[0] == 1
     assert connection.execute(
         "SELECT COUNT(*) FROM mobile_api_tokens"
     ).fetchone()[0] == 0
-    expected_epochs = module._restored_user_epoch_snapshot(connection)
-    connection.execute("INSERT INTO future_auth_sessions VALUES ('resurrected')")
-    connection.commit()
-    with pytest.raises(BackupError, match="credential reset"):
-        module._validate_restored_auth_reset_postconditions(
-            connection,
-            credential_tables=registry,
-            expected_user_epochs=expected_epochs,
-        )
-
-
 @pytest.mark.parametrize(
     "protected_table",
     [
         "users",
+        "jobs",
         "pro_grants",
-        "analysis_usage_monthly",
-        "practice_checkins",
         "shopify_orders",
+        "gear_orders",
+        "auth_attempts",
+        "shopify_sync_control",
+        "shopify_privacy_event_fences",
+        "shopify_redacted_order_fences",
+        "shopify_privacy_requests",
+        "shopify_customer_tombstones",
+        "shopify_pending_customer_links",
+        "shopify_customer_backfill_binding",
+        "analysis_usage_monthly",
+        "history_reset_operations",
+        "golfer_profiles",
+        "practice_checkins",
+        "product_events",
+        "proof_cycle_practice_evidence",
+        "proof_cycle_transfer_checks",
+        "lifecycle_email_sends",
+        "mobile_recovery_fence_checkpoints",
+        "mobile_recovery_baseline_journals",
         "mobile_recovery_accepted_baselines",
         "mobile_rate_limit_events",
         "mobile_restore_credential_reset_markers",
@@ -1880,13 +2070,44 @@ def test_future_credential_extension_is_additively_purged_and_audited(
         "sqlite_sequence",
     ],
 )
-def test_credential_extensions_reject_protected_or_mandatory_tables(
+def test_caller_names_cannot_enter_generation_owned_credential_registry(
     protected_table,
 ):
     module = _restore_service_module()
 
-    with pytest.raises(ValueError, match="protected|mandatory"):
+    with pytest.raises(ValueError, match="protected|mandatory|generation-owned"):
         module.RestoredCredentialTableRegistry((protected_table,))
+
+
+def test_mixed_case_mandatory_credential_table_is_purged_and_audited(
+    synthetic_sessions,
+):
+    module = _restore_service_module()
+    _sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.executescript(
+        'ALTER TABLE email_codes RENAME TO email_codes_temporary;'
+        'ALTER TABLE email_codes_temporary RENAME TO "Email_Codes";'
+    )
+    _insert_dummy_required_row(connection, "Email_Codes")
+    connection.commit()
+
+    module.prepare_restored_auth_state(
+        connection,
+        source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
+        source_lineage_id=BASELINE_LINEAGE_ID,
+        now=CAPTURED_AT.timestamp(),
+    )
+
+    assert connection.execute("SELECT COUNT(*) FROM email_codes").fetchone()[0] == 0
+    expected_epochs = module._restored_user_epoch_snapshot(connection)
+    _insert_dummy_required_row(connection, "Email_Codes")
+    connection.commit()
+    with pytest.raises(BackupError, match="credential reset"):
+        module._validate_restored_auth_reset_postconditions(
+            connection,
+            expected_user_epochs=expected_epochs,
+        )
 
 
 def test_prepare_restored_auth_state_is_transactional_idempotent_and_preserving(
@@ -1899,6 +2120,15 @@ def test_prepare_restored_auth_state_is_transactional_idempotent_and_preserving(
         "UPDATE users SET email_verified_at = ?, auth_epoch = 7, history_epoch = 3 "
         "WHERE id = 'user-synthetic'",
         (20.0,),
+    )
+    connection.execute(
+        "CREATE TABLE shopify_customer_backfill_binding ("
+        "id INTEGER PRIMARY KEY CHECK (id = 1), store_domain TEXT NOT NULL, "
+        "shop_gid TEXT NOT NULL, bound_at REAL NOT NULL)"
+    )
+    connection.execute(
+        "INSERT INTO shopify_customer_backfill_binding VALUES (1, ?, ?, ?)",
+        ("example.myshopify.com", "gid://shopify/Shop/1", 19.0),
     )
     credential_tables = (
         "mobile_api_tokens",
@@ -1950,6 +2180,14 @@ def test_prepare_restored_auth_state_is_transactional_idempotent_and_preserving(
         "SELECT coaching_eligible, refilm_rejections FROM analysis_usage_monthly"
     ).fetchone() == before_history
     assert connection.execute("SELECT COUNT(*) FROM shopify_orders").fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT store_domain, shop_gid, bound_at "
+        "FROM shopify_customer_backfill_binding WHERE id = 1"
+    ).fetchone() == (
+        "example.myshopify.com",
+        "gid://shopify/Shop/1",
+        19.0,
+    )
     assert connection.execute("SELECT COUNT(*) FROM email_codes").fetchone()[0] == 0
     assert connection.execute("SELECT COUNT(*) FROM auth_attempts").fetchone()[0] == 1
     assert all(
@@ -2164,7 +2402,10 @@ def test_service_restore_prepares_only_disposable_copy_and_reconciles_full_chain
     assert result.lineage_id == BASELINE_LINEAGE_ID
     assert result.head_record_hash == chain.records[-1].record_hash
     assert result.retained_restore_dir != result.working_dir
-    assert (result.working_dir / "service-restore-ready.json").is_file()
+    ready_path = result.working_dir / "service-restore-ready.json"
+    assert ready_path.is_file()
+    assert (result.working_dir / "service-restore-ready.commit.json").is_file()
+    assert _readiness_is_accepted(module, ready_path, result.readiness_receipt)
     retained = sqlite3.connect(result.retained_restore_dir / DATABASE_BUNDLE_PATH)
     working = sqlite3.connect(result.working_dir / "swinglab.db")
     try:

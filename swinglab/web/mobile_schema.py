@@ -1034,6 +1034,49 @@ class MobileStateGeneration:
     required_indexes: dict[str, tuple[str, tuple[str, ...]]]
     required_triggers: dict[str, str]
     required_views: tuple[str, ...]
+    restored_credential_tables: tuple[str, ...]
+
+    def __post_init__(self) -> None:
+        credential_tables = self.restored_credential_tables
+        if (
+            len({table.casefold() for table in credential_tables})
+            != len(credential_tables)
+            or any(
+                re.fullmatch(r"[a-z_][a-z0-9_]{0,127}", table) is None
+                for table in credential_tables
+            )
+        ):
+            raise ValueError("A mobile-state credential registry is invalid.")
+        for table in credential_tables:
+            if table in _LEGACY_RESTORED_CREDENTIAL_TABLES:
+                continue
+            if not table.startswith("mobile_") or table not in self.required_columns:
+                raise ValueError(
+                    "A restored credential table must be generation-owned."
+                )
+
+
+# Frozen exceptions for shipped pre-mobile credential schemas. New credential
+# tables must be generation-owned mobile_* tables, never additions here.
+_LEGACY_RESTORED_CREDENTIAL_TABLES = (
+    "email_codes",
+    "signup_intents",
+    "shopify_customer_account_oauth_states",
+    "shopify_customer_account_browser_sessions",
+)
+
+_GENERATION_ONE_RESTORED_CREDENTIAL_TABLES = (
+    "mobile_api_tokens",
+    "mobile_auth_challenges",
+    "mobile_review_auth_challenges",
+    "mobile_auth_exchange_journals",
+    "mobile_auth_exchange_receipts",
+    "mobile_signout_journals",
+    "mobile_signout_receipts",
+    "mobile_device_revoke_journals",
+    "mobile_device_revoke_receipts",
+    *_LEGACY_RESTORED_CREDENTIAL_TABLES,
+)
 
 
 MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
@@ -1045,6 +1088,10 @@ MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
         required_indexes=_MOBILE_TOKEN_BASE_INDEXES,
         required_triggers={},
         required_views=(),
+        restored_credential_tables=(
+            "mobile_api_tokens",
+            *_LEGACY_RESTORED_CREDENTIAL_TABLES,
+        ),
     ),
     1: MobileStateGeneration(
         generation=1,
@@ -1055,6 +1102,7 @@ MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
         },
         required_triggers={},
         required_views=(),
+        restored_credential_tables=_GENERATION_ONE_RESTORED_CREDENTIAL_TABLES,
     )
 }
 
