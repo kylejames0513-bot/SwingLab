@@ -12,6 +12,7 @@ import stat
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -710,13 +711,88 @@ def create_backup(
 
 
 def _load_json(path: Path) -> dict[str, Any]:
+    return _load_json_bytes(_read_regular_file_snapshot(path))
+
+
+def _unsafe_file_metadata(metadata: os.stat_result) -> bool:
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return (
+        not stat.S_ISREG(metadata.st_mode)
+        or stat.S_ISLNK(metadata.st_mode)
+        or bool(getattr(metadata, "st_file_attributes", 0) & reparse_flag)
+    )
+
+
+def _file_identity(metadata: os.stat_result) -> tuple[int, int]:
+    return int(metadata.st_dev), int(metadata.st_ino)
+
+
+def _read_regular_file_snapshot(path: Path) -> bytes:
+    """Capture one stable regular-file identity without following links."""
+
+    descriptor: int | None = None
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        before = os.lstat(path)
+        if _unsafe_file_metadata(before):
+            raise BackupError(
+                "A required backup metadata file is missing or invalid."
+            )
+        flags = (
+            os.O_RDONLY
+            | getattr(os, "O_BINARY", 0)
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        descriptor = os.open(path, flags)
+        opened = os.fstat(descriptor)
+        if (
+            _unsafe_file_metadata(opened)
+            or _file_identity(opened) != _file_identity(before)
+        ):
+            raise BackupError(
+                "A required backup metadata file changed while being opened."
+            )
+        chunks: list[bytes] = []
+        while chunk := os.read(descriptor, 1024 * 1024):
+            chunks.append(chunk)
+        after = os.lstat(path)
+        body = b"".join(chunks)
+        if (
+            _unsafe_file_metadata(after)
+            or _file_identity(after) != _file_identity(opened)
+            or before.st_size != opened.st_size
+            or opened.st_size != after.st_size
+            or len(body) != opened.st_size
+            or before.st_mtime_ns != opened.st_mtime_ns
+            or opened.st_mtime_ns != after.st_mtime_ns
+        ):
+            raise BackupError(
+                "A required backup metadata file changed while being read."
+            )
+        return body
+    except BackupError:
+        raise
+    except (FileNotFoundError, OSError) as exc:
+        raise BackupError("A required backup metadata file is missing or invalid.") from exc
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _load_json_bytes(body: bytes) -> dict[str, Any]:
+    try:
+        value = json.loads(body.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError) as exc:
         raise BackupError("A required backup metadata file is missing or invalid.") from exc
     if not isinstance(value, dict):
         raise BackupError("Backup metadata must be a JSON object.")
     return value
+
+
+@dataclass(frozen=True)
+class _VerifiedManifestSnapshot:
+    manifest: dict[str, Any]
+    manifest_sha256: str
+    complete_sha256: str
 
 
 def _nonnegative_count(value: object) -> bool:
@@ -922,7 +998,9 @@ def _verify_mobile_state_attestation(
         connection.close()
 
 
-def load_and_verify_manifest(bundle_dir: Path) -> dict[str, Any]:
+def _load_and_verify_manifest_snapshot(
+    bundle_dir: Path,
+) -> _VerifiedManifestSnapshot:
     expanded_bundle = bundle_dir.expanduser()
     if _is_link_or_reparse(expanded_bundle):
         raise BackupError("The backup bundle cannot be a symlink or reparse point.")
@@ -936,14 +1014,16 @@ def load_and_verify_manifest(bundle_dir: Path) -> dict[str, Any]:
         for path in (manifest_path, complete_path)
     ):
         raise BackupError("Backup metadata is missing, linked, or not a regular file.")
-    manifest = _load_json(manifest_path)
-    complete = _load_json(complete_path)
+    manifest_bytes = _read_regular_file_snapshot(manifest_path)
+    manifest = _load_json_bytes(manifest_bytes)
+    complete_bytes = _read_regular_file_snapshot(complete_path)
+    complete = _load_json_bytes(complete_bytes)
     if manifest.get("format") != FORMAT or complete.get("format") != FORMAT:
         raise BackupError("Unsupported backup format.")
     backup_id = validate_backup_id(str(manifest.get("backup_id", "")))
     if complete.get("backup_id") != backup_id:
         raise BackupError("Backup completion metadata does not match the manifest.")
-    manifest_sha256, _ = _sha256_file(manifest_path)
+    manifest_sha256 = hashlib.sha256(manifest_bytes).hexdigest()
     if complete.get("manifest_sha256") != manifest_sha256:
         raise BackupError("Backup manifest checksum verification failed.")
 
@@ -985,7 +1065,15 @@ def load_and_verify_manifest(bundle_dir: Path) -> dict[str, Any]:
             backup_id=backup_id,
             database_sha256=str(database.get("sha256", "")),
         )
-    return manifest
+    return _VerifiedManifestSnapshot(
+        manifest=manifest,
+        manifest_sha256=manifest_sha256,
+        complete_sha256=hashlib.sha256(complete_bytes).hexdigest(),
+    )
+
+
+def load_and_verify_manifest(bundle_dir: Path) -> dict[str, Any]:
+    return _load_and_verify_manifest_snapshot(bundle_dir).manifest
 
 
 def verify_bundle_files(bundle_dir: Path, manifest: dict[str, Any]) -> None:

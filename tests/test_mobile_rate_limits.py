@@ -580,23 +580,18 @@ def test_mobile_state_summary_records_counts_domains_phases_and_schema_digests(t
         users.close()
 
 
-def test_mobile_state_schema_digest_covers_actual_indexes(tmp_path):
-    """Catches attestation hashing a hard-coded index list instead of SQLite state."""
+def test_mobile_state_schema_rejects_an_unregistered_actual_index(tmp_path):
+    """An index outside the closed generation must not become trusted state."""
 
     users = UserStore(tmp_path / "schema-digest.sqlite", mobile_state_hmac=_keyring())
     try:
-        before = mobile_state_summary(users._conn)["schema_sha256"][
-            "mobile_rate_limit_events"
-        ]
         users._conn.execute(
             "CREATE INDEX mobile_rate_limit_events_domain_time"
             " ON mobile_rate_limit_events(domain, occurred_at)"
         )
         users._conn.commit()
-        after = mobile_state_summary(users._conn)["schema_sha256"][
-            "mobile_rate_limit_events"
-        ]
-        assert after != before
+        with pytest.raises(RuntimeError, match="Unknown or unsupported"):
+            mobile_state_summary(users._conn)
     finally:
         users.close()
 

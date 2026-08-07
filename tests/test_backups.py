@@ -1394,6 +1394,77 @@ def test_partial_generation_one_schema_cannot_be_backed_up(
         create_backup(sessions, tmp_path / "partial-mobile", now=CAPTURED_AT)
 
 
+def test_generation_zero_rejects_an_unknown_future_mobile_table(
+    synthetic_sessions,
+):
+    _sessions, connection = synthetic_sessions
+    connection.execute(
+        "CREATE TABLE mobile_future_credentials (credential_id TEXT PRIMARY KEY)"
+    )
+    connection.commit()
+
+    with pytest.raises(RuntimeError, match="unknown|unsupported"):
+        core_module.detect_mobile_state_generation(connection)
+
+
+@pytest.mark.parametrize(
+    "ddl",
+    [
+        "CREATE TABLE mobile_future_credentials (credential_id TEXT PRIMARY KEY)",
+        "CREATE TABLE Mobile_Future_Credentials (credential_id TEXT PRIMARY KEY)",
+        "CREATE INDEX future_token_lookup ON mobile_api_tokens(user_id)",
+        "CREATE TRIGGER future_token_cleanup AFTER DELETE ON mobile_api_tokens "
+        "BEGIN SELECT 1; END",
+        "CREATE VIEW mobile_future_credentials_view AS "
+        "SELECT selector FROM mobile_api_tokens",
+    ],
+    ids=[
+        "table",
+        "case-folded-table",
+        "coupled-index",
+        "coupled-trigger",
+        "mobile-view",
+    ],
+)
+def test_generation_one_rejects_unregistered_mobile_schema_objects(
+    tmp_path, synthetic_sessions, ddl
+):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.execute(ddl)
+    connection.commit()
+
+    with pytest.raises(RuntimeError, match="unknown|unsupported"):
+        core_module.detect_mobile_state_generation(connection)
+    with pytest.raises(BackupError, match="mobile state"):
+        create_backup(
+            sessions,
+            tmp_path / "unknown-mobile-object-bundle",
+            now=CAPTURED_AT,
+        )
+
+
+def test_known_mobile_generations_remain_detectable(synthetic_sessions):
+    _sessions, connection = synthetic_sessions
+
+    assert core_module.detect_mobile_state_generation(connection) == 0
+    ensure_mobile_state_schema(connection)
+    assert core_module.detect_mobile_state_generation(connection) == 1
+
+
+def test_registered_mobile_index_must_keep_its_declared_shape(synthetic_sessions):
+    _sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.executescript(
+        "DROP INDEX mobile_api_tokens_user_active;"
+        "CREATE INDEX mobile_api_tokens_user_active ON mobile_api_tokens(user_id);"
+    )
+    connection.commit()
+
+    with pytest.raises(RuntimeError, match="unknown|unsupported"):
+        core_module.detect_mobile_state_generation(connection)
+
+
 def _insert_baseline_journal(connection: sqlite3.Connection) -> None:
     connection.execute(
         "INSERT INTO mobile_recovery_baseline_journals "
@@ -1598,6 +1669,39 @@ def test_working_copy_rejects_changed_retained_manifest_metadata(
     assert not list(scratch.glob("service-working-*"))
 
 
+def test_manifest_parse_and_checksum_use_one_authenticated_byte_snapshot(
+    tmp_path, synthetic_sessions, monkeypatch
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest_a = _create_bundle(tmp_path, sessions)
+    manifest_b = json.loads(json.dumps(manifest_a))
+    manifest_b["created_at"] = "2026-07-27T12:00:01+00:00"
+    manifest_b_bytes = _canonical(manifest_b)
+    complete_b_bytes = _canonical(
+        {
+            "format": manifest_b["format"],
+            "backup_id": manifest_b["backup_id"],
+            "manifest_sha256": hashlib.sha256(manifest_b_bytes).hexdigest(),
+        }
+    )
+    original_loads = core_module.json.loads
+    parse_count = 0
+
+    def replace_bundle_after_manifest_parse(*args, **kwargs):
+        nonlocal parse_count
+        value = original_loads(*args, **kwargs)
+        parse_count += 1
+        if parse_count == 1:
+            (bundle / MANIFEST_FILE).write_bytes(manifest_b_bytes)
+            (bundle / COMPLETE_FILE).write_bytes(complete_b_bytes)
+        return value
+
+    monkeypatch.setattr(core_module.json, "loads", replace_bundle_after_manifest_parse)
+
+    with pytest.raises(BackupError, match="checksum"):
+        core_module.load_and_verify_manifest(bundle)
+
+
 def test_readiness_publisher_leaves_no_final_marker_on_fsync_failure(
     tmp_path, monkeypatch
 ):
@@ -1614,6 +1718,30 @@ def test_readiness_publisher_leaves_no_final_marker_on_fsync_failure(
 
     assert not ready_path.exists()
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_readiness_publisher_removes_final_marker_after_parent_fsync_failure(
+    tmp_path, monkeypatch
+):
+    module = _restore_service_module()
+    from swinglab.web import recovery_fence_ledger as ledger_module
+
+    ready_path = tmp_path / "service-restore-ready.json"
+    existed_when_fsync_failed = []
+
+    def fail_parent_fsync(_path):
+        existed_when_fsync_failed.append(ready_path.exists())
+        raise ledger_module.RecoveryFenceError(
+            "synthetic post-rename directory fsync failure"
+        )
+
+    monkeypatch.setattr(ledger_module, "_fsync_directory", fail_parent_fsync)
+
+    with pytest.raises(BackupError, match="readiness"):
+        module._durably_publish_readiness(ready_path, b'{"ready":true}\n')
+
+    assert existed_when_fsync_failed == [True]
+    assert not ready_path.exists()
 
 
 def _insert_dummy_required_row(connection: sqlite3.Connection, table: str) -> None:
@@ -1642,6 +1770,123 @@ def _insert_dummy_required_row(connection: sqlite3.Connection, table: str) -> No
     connection.execute(
         f'INSERT INTO "{table}" ({quoted}) VALUES ({placeholders})', values
     )
+
+
+def _seed_registered_credential_rows(connection, registry) -> None:
+    for table in registry.table_names:
+        if connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0:
+            _insert_dummy_required_row(connection, table)
+
+
+def test_empty_credential_extensions_retain_the_mandatory_purge_set():
+    module = _restore_service_module()
+
+    registry = module.RestoredCredentialTableRegistry(())
+
+    assert registry.table_names == module.DEFAULT_RESTORED_CREDENTIAL_TABLES.table_names
+    assert {
+        "mobile_api_tokens",
+        "mobile_auth_challenges",
+        "email_codes",
+        "signup_intents",
+        "shopify_customer_account_oauth_states",
+        "shopify_customer_account_browser_sessions",
+    }.issubset(registry.table_names)
+
+
+def test_empty_credential_extensions_still_purge_and_audit_mandatory_rows(
+    synthetic_sessions,
+):
+    module = _restore_service_module()
+    _sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    registry = module.RestoredCredentialTableRegistry(())
+    _seed_registered_credential_rows(connection, module.DEFAULT_RESTORED_CREDENTIAL_TABLES)
+    connection.commit()
+
+    module.prepare_restored_auth_state(
+        connection,
+        source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
+        source_lineage_id=BASELINE_LINEAGE_ID,
+        now=CAPTURED_AT.timestamp(),
+        credential_tables=registry,
+    )
+
+    assert all(
+        connection.execute(f'SELECT COUNT(*) FROM "{table}"').fetchone()[0] == 0
+        for table in module.DEFAULT_RESTORED_CREDENTIAL_TABLES.table_names
+    )
+    expected_epochs = module._restored_user_epoch_snapshot(connection)
+    _insert_dummy_required_row(connection, "mobile_api_tokens")
+    connection.commit()
+    with pytest.raises(BackupError, match="credential reset"):
+        module._validate_restored_auth_reset_postconditions(
+            connection,
+            credential_tables=registry,
+            expected_user_epochs=expected_epochs,
+        )
+
+
+def test_future_credential_extension_is_additively_purged_and_audited(
+    synthetic_sessions,
+):
+    module = _restore_service_module()
+    _sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.execute(
+        "CREATE TABLE future_auth_sessions (session_id TEXT PRIMARY KEY)"
+    )
+    registry = module.RestoredCredentialTableRegistry(("future_auth_sessions",))
+    _seed_registered_credential_rows(connection, registry)
+    connection.commit()
+
+    module.prepare_restored_auth_state(
+        connection,
+        source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
+        source_lineage_id=BASELINE_LINEAGE_ID,
+        now=CAPTURED_AT.timestamp(),
+        credential_tables=registry,
+    )
+
+    assert connection.execute(
+        "SELECT COUNT(*) FROM future_auth_sessions"
+    ).fetchone()[0] == 0
+    assert connection.execute(
+        "SELECT COUNT(*) FROM mobile_api_tokens"
+    ).fetchone()[0] == 0
+    expected_epochs = module._restored_user_epoch_snapshot(connection)
+    connection.execute("INSERT INTO future_auth_sessions VALUES ('resurrected')")
+    connection.commit()
+    with pytest.raises(BackupError, match="credential reset"):
+        module._validate_restored_auth_reset_postconditions(
+            connection,
+            credential_tables=registry,
+            expected_user_epochs=expected_epochs,
+        )
+
+
+@pytest.mark.parametrize(
+    "protected_table",
+    [
+        "users",
+        "pro_grants",
+        "analysis_usage_monthly",
+        "practice_checkins",
+        "shopify_orders",
+        "mobile_recovery_accepted_baselines",
+        "mobile_rate_limit_events",
+        "mobile_restore_credential_reset_markers",
+        "mobile_api_tokens",
+        "sqlite_sequence",
+    ],
+)
+def test_credential_extensions_reject_protected_or_mandatory_tables(
+    protected_table,
+):
+    module = _restore_service_module()
+
+    with pytest.raises(ValueError, match="protected|mandatory"):
+        module.RestoredCredentialTableRegistry((protected_table,))
 
 
 def test_prepare_restored_auth_state_is_transactional_idempotent_and_preserving(

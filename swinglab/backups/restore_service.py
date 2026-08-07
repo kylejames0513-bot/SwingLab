@@ -14,7 +14,7 @@ import re
 import sqlite3
 import time
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Mapping
@@ -36,6 +36,7 @@ from swinglab.web.recovery_fence_ledger import (
     ValidatedRecoveryChain,
     VerifiedBackupFacts,
     _durable_atomic_write,
+    _fsync_directory,
 )
 
 from .core import (
@@ -48,6 +49,8 @@ from .core import (
     _copy_and_hash,
     _is_link_or_reparse,
     _join_under,
+    _load_and_verify_manifest_snapshot,
+    _read_regular_file_snapshot,
     _safe_relative_path,
     _sha256_file,
     create_backup,
@@ -75,35 +78,85 @@ class RetainedRestoreEvidence:
     file_sha256: tuple[tuple[str, str], ...]
 
 
+_MANDATORY_RESTORED_CREDENTIAL_TABLES = (
+    "mobile_api_tokens",
+    "mobile_auth_challenges",
+    "mobile_review_auth_challenges",
+    "mobile_auth_exchange_journals",
+    "mobile_auth_exchange_receipts",
+    "mobile_signout_journals",
+    "mobile_signout_receipts",
+    "mobile_device_revoke_journals",
+    "mobile_device_revoke_receipts",
+    "email_codes",
+    "signup_intents",
+    "shopify_customer_account_oauth_states",
+    "shopify_customer_account_browser_sessions",
+)
+
+# Extension registrations are deletion authority, so explicitly exclude every
+# known preserved identity, entitlement, history, commerce, and recovery table.
+_PROTECTED_RESTORED_TABLES = frozenset(
+    {
+        "users",
+        "jobs",
+        "pro_grants",
+        "shopify_orders",
+        "gear_orders",
+        "auth_attempts",
+        "shopify_sync_control",
+        "shopify_privacy_event_fences",
+        "shopify_redacted_order_fences",
+        "shopify_privacy_requests",
+        "shopify_customer_tombstones",
+        "shopify_pending_customer_links",
+        "analysis_usage_monthly",
+        "history_reset_operations",
+        "golfer_profiles",
+        "practice_checkins",
+        "product_events",
+        "proof_cycle_practice_evidence",
+        "proof_cycle_transfer_checks",
+        "lifecycle_email_sends",
+        "mobile_recovery_fence_checkpoints",
+        "mobile_recovery_baseline_journals",
+        "mobile_recovery_accepted_baselines",
+        "mobile_restore_credential_reset_markers",
+        "mobile_rate_limit_events",
+    }
+)
+
+
 @dataclass(frozen=True)
 class RestoredCredentialTableRegistry:
-    table_names: tuple[str, ...]
+    additional_table_names: tuple[str, ...] = ()
+    table_names: tuple[str, ...] = field(init=False)
 
     def __post_init__(self) -> None:
-        if len(set(self.table_names)) != len(self.table_names) or any(
-            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", table) is None
-            for table in self.table_names
+        additions = self.additional_table_names
+        if not isinstance(additions, tuple) or any(
+            not isinstance(table, str)
+            or re.fullmatch(r"[a-z_][a-z0-9_]{0,127}", table) is None
+            for table in additions
         ):
             raise ValueError("Restore credential table registration is invalid.")
+        if len(set(additions)) != len(additions):
+            raise ValueError("Restore credential table registration is invalid.")
+        mandatory = set(_MANDATORY_RESTORED_CREDENTIAL_TABLES)
+        if mandatory.intersection(additions):
+            raise ValueError("A mandatory credential table cannot be re-registered.")
+        if _PROTECTED_RESTORED_TABLES.intersection(additions) or any(
+            table.startswith("sqlite_") for table in additions
+        ):
+            raise ValueError("A protected restore table cannot be registered.")
+        object.__setattr__(
+            self,
+            "table_names",
+            _MANDATORY_RESTORED_CREDENTIAL_TABLES + additions,
+        )
 
 
-DEFAULT_RESTORED_CREDENTIAL_TABLES = RestoredCredentialTableRegistry(
-    (
-        "mobile_api_tokens",
-        "mobile_auth_challenges",
-        "mobile_review_auth_challenges",
-        "mobile_auth_exchange_journals",
-        "mobile_auth_exchange_receipts",
-        "mobile_signout_journals",
-        "mobile_signout_receipts",
-        "mobile_device_revoke_journals",
-        "mobile_device_revoke_receipts",
-        "email_codes",
-        "signup_intents",
-        "shopify_customer_account_oauth_states",
-        "shopify_customer_account_browser_sessions",
-    )
-)
+DEFAULT_RESTORED_CREDENTIAL_TABLES = RestoredCredentialTableRegistry()
 
 
 @dataclass(frozen=True)
@@ -139,9 +192,26 @@ class RetainedBackupKeyUsageAudit:
 
 
 def _durably_publish_readiness(path: Path, body: bytes) -> None:
+    existed_before = path.exists() or _is_link_or_reparse(path)
     try:
         _durable_atomic_write(path, body, immutable=True)
     except Exception:
+        if not existed_before and (path.exists() or _is_link_or_reparse(path)):
+            try:
+                path.unlink()
+            except OSError:
+                quarantine = path.with_name(
+                    f".{path.name}.failed-{uuid.uuid4().hex}"
+                )
+                try:
+                    os.replace(path, quarantine)
+                except OSError:
+                    pass
+            if not path.exists() and not _is_link_or_reparse(path):
+                try:
+                    _fsync_directory(path.parent)
+                except Exception:
+                    pass
         raise BackupError("The service-restore readiness marker was not published.") from None
 
 
@@ -242,9 +312,15 @@ def _verify_evidence_metadata(
         (COMPLETE_FILE, evidence.complete_sha256),
     ):
         path = _join_under(root, _safe_relative_path(name))
-        if _is_link_or_reparse(path) or not path.is_file():
-            raise BackupError("Retained restore metadata is missing or unsafe.")
-        if _sha256_file(path)[0] != expected_sha256:
+        try:
+            actual_sha256 = hashlib.sha256(
+                _read_regular_file_snapshot(path)
+            ).hexdigest()
+        except BackupError:
+            raise BackupError(
+                "Retained restore metadata is missing or unsafe."
+            ) from None
+        if actual_sha256 != expected_sha256:
             raise BackupError("Retained restore metadata changed after validation.")
 
 
@@ -254,11 +330,12 @@ def retain_verified_restore_evidence(
     """Extract one verified bundle and freeze every evidence file read-only."""
 
     expanded_bundle = bundle_dir.expanduser()
-    manifest = load_and_verify_manifest(expanded_bundle)
+    metadata = _load_and_verify_manifest_snapshot(expanded_bundle)
+    manifest = metadata.manifest
     bundle_dir = expanded_bundle.resolve()
     verify_bundle_files(bundle_dir, manifest)
-    manifest_sha256, _ = _sha256_file(bundle_dir / MANIFEST_FILE)
-    complete_sha256, _ = _sha256_file(bundle_dir / COMPLETE_FILE)
+    manifest_sha256 = metadata.manifest_sha256
+    complete_sha256 = metadata.complete_sha256
     bundle_hashes = _verify_manifest_files(
         bundle_dir, manifest, sessions_layout=False
     )
@@ -285,10 +362,12 @@ def retain_verified_restore_evidence(
             path.chmod(0o400)
         (restore_dir / MANIFEST_FILE).chmod(0o400)
         (restore_dir / COMPLETE_FILE).chmod(0o400)
-        verify_bundle_files(bundle_dir, manifest)
+        final_metadata = _load_and_verify_manifest_snapshot(bundle_dir)
+        verify_bundle_files(bundle_dir, final_metadata.manifest)
         if (
-            _sha256_file(bundle_dir / MANIFEST_FILE)[0] != manifest_sha256
-            or _sha256_file(bundle_dir / COMPLETE_FILE)[0] != complete_sha256
+            final_metadata.manifest != manifest
+            or final_metadata.manifest_sha256 != manifest_sha256
+            or final_metadata.complete_sha256 != complete_sha256
             or _verify_manifest_files(
                 bundle_dir, manifest, sessions_layout=False
             )
@@ -1136,6 +1215,10 @@ class ImmutableBundleBaselineBackupVerifier:
     def _facts(
         bundle_dir: Path, manifest: dict[str, object], *, lineage_id: str
     ) -> VerifiedBackupFacts:
+        metadata = _load_and_verify_manifest_snapshot(bundle_dir)
+        if metadata.manifest != manifest:
+            raise BackupError("The baseline bundle manifest identity changed.")
+        manifest = metadata.manifest
         verify_bundle_files(bundle_dir, manifest)
         extension = manifest.get("recovery_fence")
         mobile_state = manifest.get("mobile_state")
@@ -1148,7 +1231,7 @@ class ImmutableBundleBaselineBackupVerifier:
             or mobile_state.get("generation") != 1
         ):
             raise BackupError("The baseline bundle lineage facts are invalid.")
-        manifest_sha256, _ = _sha256_file(bundle_dir / MANIFEST_FILE)
+        manifest_sha256 = metadata.manifest_sha256
         database = manifest["database"]
         assert isinstance(database, dict)
         database_sha256 = str(database["sha256"])

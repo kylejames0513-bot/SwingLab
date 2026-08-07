@@ -723,6 +723,13 @@ _GENERATION_ONE_INDEXES: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
 }
 
+_MOBILE_TOKEN_BASE_INDEXES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "mobile_api_tokens_user_active": (
+        "mobile_api_tokens",
+        ("user_id", "auth_epoch", "expires_at", "revoked_at"),
+    ),
+}
+
 _INDEX_DDL = {
     name: f"CREATE INDEX IF NOT EXISTS {name} ON {table}({', '.join(columns)})"
     for name, (table, columns) in _GENERATION_ONE_INDEXES.items()
@@ -1025,6 +1032,8 @@ class MobileStateGeneration:
     generation: int
     required_columns: dict[str, tuple[str, ...]]
     required_indexes: dict[str, tuple[str, tuple[str, ...]]]
+    required_triggers: dict[str, str]
+    required_views: tuple[str, ...]
 
 
 MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
@@ -1033,12 +1042,19 @@ MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
         required_columns={
             "mobile_api_tokens": tuple(sorted(_MOBILE_TOKEN_BASE_COLUMNS))
         },
-        required_indexes={},
+        required_indexes=_MOBILE_TOKEN_BASE_INDEXES,
+        required_triggers={},
+        required_views=(),
     ),
     1: MobileStateGeneration(
         generation=1,
         required_columns=_GENERATION_ONE_REQUIRED_COLUMNS,
-        required_indexes=_GENERATION_ONE_INDEXES,
+        required_indexes={
+            **_MOBILE_TOKEN_BASE_INDEXES,
+            **_GENERATION_ONE_INDEXES,
+        },
+        required_triggers={},
+        required_views=(),
     )
 }
 
@@ -1057,10 +1073,105 @@ def _validate_required_columns(connection: sqlite3.Connection) -> None:
             )
 
 
+def _validate_mobile_schema_object_inventory(
+    connection: sqlite3.Connection,
+    generation: int,
+) -> None:
+    """Reject mobile-state objects not registered in the closed generation."""
+
+    contract = MOBILE_STATE_GENERATIONS[generation]
+    allowed_tables = {table.casefold() for table in contract.required_columns}
+    allowed_indexes = {
+        name.casefold(): (table, columns)
+        for name, (table, columns) in contract.required_indexes.items()
+    }
+    allowed_triggers = {
+        name.casefold(): table.casefold()
+        for name, table in contract.required_triggers.items()
+    }
+    allowed_views = {name.casefold() for name in contract.required_views}
+    seen_indexes: set[str] = set()
+    seen_triggers: set[str] = set()
+    seen_views: set[str] = set()
+    for object_type, name, table_name, sql in connection.execute(
+        "SELECT type, name, tbl_name, sql FROM sqlite_master "
+        "WHERE type IN ('table', 'index', 'trigger', 'view')"
+    ):
+        object_type = str(object_type)
+        name = str(name)
+        table_name = str(table_name)
+        sql_text = str(sql or "")
+        name_key = name.casefold()
+        table_key = table_name.casefold()
+        if name_key.startswith("sqlite_"):
+            if (
+                object_type == "index"
+                and name_key.startswith("sqlite_autoindex_")
+                and table_key in allowed_tables
+            ):
+                continue
+            if not name_key.startswith("sqlite_autoindex_mobile_"):
+                continue
+        references_mobile_state = bool(
+            re.search(r"\bmobile_[A-Za-z0-9_]+\b", sql_text, re.IGNORECASE)
+        )
+        is_mobile_object = (
+            name_key.startswith("mobile_")
+            or table_key.startswith("mobile_")
+            or table_key in allowed_tables
+            or (
+                object_type in {"trigger", "view"}
+                and references_mobile_state
+            )
+        )
+        if not is_mobile_object:
+            continue
+        if object_type == "table" and name_key in allowed_tables:
+            continue
+        if object_type == "index" and name_key in allowed_indexes:
+            expected_table, expected_columns = allowed_indexes[name_key]
+            try:
+                _validate_index_shape(
+                    connection,
+                    name,
+                    expected_table,
+                    expected_columns,
+                )
+            except RuntimeError:
+                pass
+            else:
+                seen_indexes.add(name_key)
+                continue
+        if (
+            object_type == "trigger"
+            and allowed_triggers.get(name_key) == table_key
+        ):
+            seen_triggers.add(name_key)
+            continue
+        if object_type == "view" and name_key in allowed_views:
+            seen_views.add(name_key)
+            continue
+        raise RuntimeError(
+            "Unknown or unsupported mobile-state schema object exists."
+        )
+    if (
+        seen_indexes != set(allowed_indexes)
+        or seen_triggers != set(allowed_triggers)
+        or seen_views != allowed_views
+    ):
+        raise RuntimeError(
+            "A required mobile-state schema object is missing or incompatible."
+        )
+
+
 def validate_mobile_state_schema(connection: sqlite3.Connection) -> None:
     _validate_required_columns(connection)
     for index, (table, expected_columns) in _GENERATION_ONE_INDEXES.items():
         _validate_index_shape(connection, index, table, expected_columns)
+    _validate_mobile_schema_object_inventory(
+        connection,
+        MOBILE_STATE_SCHEMA_GENERATION,
+    )
 
 
 def detect_mobile_state_generation(connection: sqlite3.Connection) -> int:
@@ -1099,6 +1210,7 @@ def detect_mobile_state_generation(connection: sqlite3.Connection) -> int:
             raise RuntimeError(
                 "Incompatible generation-0 mobile schema; unknown token columns exist."
             )
+        _validate_mobile_schema_object_inventory(connection, 0)
         return 0
 
     validate_mobile_state_schema(connection)
