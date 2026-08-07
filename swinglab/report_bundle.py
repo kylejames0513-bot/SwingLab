@@ -403,14 +403,88 @@ def _win_validate_handle(
     return identity
 
 
+def _require_posix_delete_capabilities() -> int:
+    directory = getattr(os, "O_DIRECTORY", None)
+    if not isinstance(directory, int) or directory == 0:
+        raise CoreReportBundleError("POSIX O_DIRECTORY support is required for owned deletion")
+    no_follow = getattr(os, "O_NOFOLLOW", None)
+    if not isinstance(no_follow, int) or no_follow == 0:
+        raise CoreReportBundleError("POSIX O_NOFOLLOW support is required for owned deletion")
+    required_dir_fd = (os.open, os.stat, os.unlink, os.rmdir)
+    dir_fd_support = getattr(os, "supports_dir_fd", frozenset())
+    if any(function not in dir_fd_support for function in required_dir_fd):
+        raise CoreReportBundleError("POSIX dir_fd support is required for owned deletion")
+    follow_support = getattr(os, "supports_follow_symlinks", frozenset())
+    if os.stat not in follow_support:
+        raise CoreReportBundleError(
+            "POSIX no-follow stat support is required for owned deletion"
+        )
+    return os.O_RDONLY | directory | no_follow
+
+
+def _posix_rename_to_quarantine_noreplace(
+    source_parent_fd: int,
+    source_name: str,
+    anchor_fd: int,
+    quarantine_name: str,
+) -> None:
+    source = os.fsencode(source_name)
+    destination = os.fsencode(quarantine_name)
+    if sys.platform.startswith("linux"):
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameat2 = getattr(libc, "renameat2", None)
+        if renameat2 is None:
+            raise CoreReportBundleError(
+                "Linux renameat2 RENAME_NOREPLACE is required for owned deletion"
+            )
+        renameat2.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        renameat2.restype = ctypes.c_int
+        if renameat2(source_parent_fd, source, anchor_fd, destination, 1) != 0:
+            error = ctypes.get_errno()
+            raise OSError(error, "descriptor-relative quarantine rename failed")
+        return
+    if sys.platform == "darwin":
+        libc = ctypes.CDLL(None, use_errno=True)
+        renameatx = getattr(libc, "renameatx_np", None)
+        if renameatx is None:
+            raise CoreReportBundleError(
+                "macOS renameatx_np RENAME_EXCL is required for owned deletion"
+            )
+        renameatx.argtypes = [
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_int,
+            ctypes.c_char_p,
+            ctypes.c_uint,
+        ]
+        renameatx.restype = ctypes.c_int
+        if renameatx(source_parent_fd, source, anchor_fd, destination, 0x00000004) != 0:
+            error = ctypes.get_errno()
+            raise OSError(error, "descriptor-relative quarantine rename failed")
+        return
+    raise CoreReportBundleError(
+        "platform has no descriptor-relative exclusive quarantine rename"
+    )
+
+
 class _PinnedOwnedTree:
     """Plan and delete one owned tree without releasing its ancestry."""
 
-    def __init__(self, root: Path):
+    def __init__(self, root: Path, *, session_anchor: Path):
         self.root = root.absolute()
+        self.session_anchor = session_anchor.absolute()
         self.entries: list[_OwnedEntry] = []
         self._parent_handle: int | None = None
         self._parent_identity: tuple[int, int] | None = None
+        self._posix_anchor_handle: int | None = None
+        self._posix_anchor_identity: tuple[int, int] | None = None
+        self._posix_ancestors: list[_OwnedEntry] = []
 
     @property
     def entry_count(self) -> int:
@@ -428,6 +502,11 @@ class _PinnedOwnedTree:
         except OSError as exc:
             self.__exit__(None, None, None)
             raise CoreReportBundleError("owned report tree cannot be pinned safely") from exc
+        except (AttributeError, NotImplementedError, TypeError) as exc:
+            self.__exit__(None, None, None)
+            raise CoreReportBundleError(
+                "owned report platform capabilities are unavailable"
+            ) from exc
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
@@ -440,6 +519,22 @@ class _PinnedOwnedTree:
                 pass
             entry.handle = None
         self.entries.clear()
+        for entry in reversed(self._posix_ancestors):
+            if entry.handle is None:
+                continue
+            try:
+                os.close(entry.handle)
+            except OSError:
+                pass
+            entry.handle = None
+        self._posix_ancestors.clear()
+        if self._posix_anchor_handle is not None:
+            try:
+                os.close(self._posix_anchor_handle)
+            except OSError:
+                pass
+        self._posix_anchor_handle = None
+        self._posix_anchor_identity = None
         if self._parent_handle is not None:
             try:
                 _win_close_owned(self._parent_handle) if os.name == "nt" else os.close(self._parent_handle)
@@ -453,19 +548,106 @@ class _PinnedOwnedTree:
             raise CoreReportBundleError("owned report tree exceeds its traversal bound")
 
     def _enter_posix(self) -> None:
-        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-        parent = self.root.parent
-        self._parent_handle = os.open(parent, flags)
-        parent_info = os.fstat(self._parent_handle)
-        if not stat.S_ISDIR(parent_info.st_mode) or _is_reparse_info(parent_info):
-            raise CoreReportBundleError("owned report parent cannot be pinned as a plain directory")
-        self._parent_identity = (int(parent_info.st_dev), int(parent_info.st_ino))
-        root_handle = os.open(self.root.name, flags, dir_fd=self._parent_handle)
-        root_info = os.fstat(root_handle)
+        flags = _require_posix_delete_capabilities()
+        try:
+            relative = self.root.relative_to(self.session_anchor)
+        except ValueError as exc:
+            raise CoreReportBundleError(
+                "owned report tree is outside its trusted session anchor"
+            ) from exc
+        if not relative.parts:
+            raise CoreReportBundleError("trusted session anchor cannot be a deletion target")
+
+        anchor_handle = os.open(self.session_anchor, flags)
+        self._posix_anchor_handle = anchor_handle
+        anchor_info = os.fstat(anchor_handle)
+        lexical_anchor = os.stat(self.session_anchor, follow_symlinks=False)
+        if (
+            not stat.S_ISDIR(anchor_info.st_mode)
+            or _is_reparse_info(anchor_info)
+            or stat.S_ISLNK(lexical_anchor.st_mode)
+            or _is_reparse_info(lexical_anchor)
+            or (int(anchor_info.st_dev), int(anchor_info.st_ino))
+            != (int(lexical_anchor.st_dev), int(lexical_anchor.st_ino))
+        ):
+            raise CoreReportBundleError(
+                "trusted session anchor cannot be pinned as one plain directory"
+            )
+        self._posix_anchor_identity = (int(anchor_info.st_dev), int(anchor_info.st_ino))
+
+        parent_handle = anchor_handle
+        parent_path = self.session_anchor
+        for name in relative.parts[:-1]:
+            info = os.stat(name, dir_fd=parent_handle, follow_symlinks=False)
+            if (
+                _is_reparse_info(info)
+                or stat.S_ISLNK(info.st_mode)
+                or not stat.S_ISDIR(info.st_mode)
+            ):
+                raise CoreReportBundleError(
+                    "owned report ancestor is not one plain directory"
+                )
+            handle = os.open(name, flags, dir_fd=parent_handle)
+            try:
+                pinned = os.fstat(handle)
+            except OSError:
+                os.close(handle)
+                raise
+            if (
+                int(info.st_dev),
+                int(info.st_ino),
+                stat.S_IFMT(info.st_mode),
+            ) != (
+                int(pinned.st_dev),
+                int(pinned.st_ino),
+                stat.S_IFMT(pinned.st_mode),
+            ):
+                os.close(handle)
+                raise CoreReportBundleError(
+                    "owned report ancestor changed while being pinned"
+                )
+            ancestor = _OwnedEntry(
+                parent_path / name,
+                name,
+                parent_handle,
+                info.st_mode,
+                int(info.st_dev),
+                int(info.st_ino),
+                handle,
+            )
+            self._posix_ancestors.append(ancestor)
+            parent_handle = handle
+            parent_path = ancestor.path
+
+        root_name = relative.parts[-1]
+        root_lexical = os.stat(root_name, dir_fd=parent_handle, follow_symlinks=False)
+        if (
+            _is_reparse_info(root_lexical)
+            or stat.S_ISLNK(root_lexical.st_mode)
+            or not stat.S_ISDIR(root_lexical.st_mode)
+        ):
+            raise CoreReportBundleError("owned report root is not one plain directory")
+        root_handle = os.open(root_name, flags, dir_fd=parent_handle)
+        try:
+            root_info = os.fstat(root_handle)
+        except OSError:
+            os.close(root_handle)
+            raise
+        if (
+            int(root_lexical.st_dev),
+            int(root_lexical.st_ino),
+            stat.S_IFMT(root_lexical.st_mode),
+        ) != (
+            int(root_info.st_dev),
+            int(root_info.st_ino),
+            stat.S_IFMT(root_info.st_mode),
+        ):
+            os.close(root_handle)
+            raise CoreReportBundleError("owned report root changed while being pinned")
         root_entry = _OwnedEntry(
             self.root,
-            self.root.name,
-            self._parent_handle,
+            root_name,
+            parent_handle,
             root_info.st_mode,
             int(root_info.st_dev),
             int(root_info.st_ino),
@@ -497,9 +679,13 @@ class _PinnedOwnedTree:
             child_path = entry.path / name
             child_handle = None
             if stat.S_ISDIR(info.st_mode):
-                flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+                flags = _require_posix_delete_capabilities()
                 child_handle = os.open(name, flags, dir_fd=entry.handle)
-                pinned_info = os.fstat(child_handle)
+                try:
+                    pinned_info = os.fstat(child_handle)
+                except OSError:
+                    os.close(child_handle)
+                    raise
                 if (int(info.st_dev), int(info.st_ino)) != (
                     int(pinned_info.st_dev), int(pinned_info.st_ino)
                 ):
@@ -599,27 +785,87 @@ class _PinnedOwnedTree:
             raise
         except OSError as exc:
             raise CoreReportBundleError("owned report tree changed before deletion") from exc
+        except (AttributeError, NotImplementedError, TypeError) as exc:
+            raise CoreReportBundleError(
+                "owned report validation capabilities are unavailable"
+            ) from exc
 
     def _validate_posix(self) -> None:
-        assert self._parent_handle is not None and self._parent_identity is not None
-        parent_info = os.stat(self.root.parent, follow_symlinks=False)
-        pinned_parent = os.fstat(self._parent_handle)
-        if (
-            _is_reparse_info(parent_info)
-            or stat.S_ISLNK(parent_info.st_mode)
-            or not stat.S_ISDIR(parent_info.st_mode)
-            or (int(parent_info.st_dev), int(parent_info.st_ino)) != self._parent_identity
-            or (int(pinned_parent.st_dev), int(pinned_parent.st_ino)) != self._parent_identity
-        ):
-            raise CoreReportBundleError("owned report parent changed before deletion")
         for entry in self.entries:
-            info = os.stat(entry.name, dir_fd=entry.parent_handle, follow_symlinks=False)
-            if not _same_entry(info, entry):
-                raise CoreReportBundleError("owned report entry changed before deletion")
-            if entry.handle is not None:
-                pinned = os.fstat(entry.handle)
-                if not _same_entry(pinned, entry):
-                    raise CoreReportBundleError("pinned owned directory changed before deletion")
+            self._validate_posix_source(entry)
+
+    def _validate_posix_anchor(self) -> None:
+        if self._posix_anchor_handle is None or self._posix_anchor_identity is None:
+            raise CoreReportBundleError("trusted session anchor is not pinned")
+        lexical = os.stat(self.session_anchor, follow_symlinks=False)
+        pinned = os.fstat(self._posix_anchor_handle)
+        if (
+            _is_reparse_info(lexical)
+            or stat.S_ISLNK(lexical.st_mode)
+            or not stat.S_ISDIR(lexical.st_mode)
+            or (int(lexical.st_dev), int(lexical.st_ino))
+            != self._posix_anchor_identity
+            or (int(pinned.st_dev), int(pinned.st_ino))
+            != self._posix_anchor_identity
+        ):
+            raise CoreReportBundleError("trusted session anchor changed before deletion")
+
+    def _posix_directory_records(self) -> dict[Path, _OwnedEntry]:
+        records = {entry.path: entry for entry in self._posix_ancestors}
+        records.update(
+            (entry.path, entry)
+            for entry in self.entries
+            if stat.S_ISDIR(entry.mode)
+        )
+        return records
+
+    def _validate_posix_source(self, entry: _OwnedEntry) -> None:
+        self._validate_posix_anchor()
+        assert self._posix_anchor_handle is not None
+        try:
+            relative = entry.path.relative_to(self.session_anchor)
+        except ValueError as exc:
+            raise CoreReportBundleError(
+                "owned report entry escaped its trusted session anchor"
+            ) from exc
+        if not relative.parts:
+            raise CoreReportBundleError("trusted session anchor cannot be deleted")
+        directories = self._posix_directory_records()
+        parent_handle = self._posix_anchor_handle
+        current_path = self.session_anchor
+        for name in relative.parts[:-1]:
+            current_path = current_path / name
+            record = directories.get(current_path)
+            if record is None or record.handle is None:
+                raise CoreReportBundleError(
+                    "owned report lexical ancestor is no longer pinned"
+                )
+            info = os.stat(name, dir_fd=parent_handle, follow_symlinks=False)
+            if not _same_entry(info, record):
+                raise CoreReportBundleError(
+                    "owned report lexical ancestor changed before deletion"
+                )
+            pinned = os.fstat(record.handle)
+            if not _same_entry(pinned, record):
+                raise CoreReportBundleError(
+                    "pinned owned report ancestor changed before deletion"
+                )
+            if record.parent_handle != parent_handle:
+                raise CoreReportBundleError(
+                    "owned report ancestor handle chain is inconsistent"
+                )
+            parent_handle = record.handle
+        if entry.parent_handle != parent_handle:
+            raise CoreReportBundleError("owned report source parent is not its lexical parent")
+        source = os.stat(entry.name, dir_fd=parent_handle, follow_symlinks=False)
+        if not _same_entry(source, entry):
+            raise CoreReportBundleError("owned report source changed before quarantine")
+        if entry.handle is not None:
+            pinned = os.fstat(entry.handle)
+            if not _same_entry(pinned, entry):
+                raise CoreReportBundleError(
+                    "pinned owned report directory changed before quarantine"
+                )
 
     def _validate_windows(self) -> None:
         assert self._parent_handle is not None and self._parent_identity is not None
@@ -673,6 +919,7 @@ class _PinnedOwnedTree:
             raise CoreReportBundleError("owned report preservation target changed before deletion")
         if not already_validated:
             self.validate()
+            _after_owned_tree_validation((self,))
         for entry in reversed(self.entries):
             if entry.path in kept:
                 continue
@@ -692,22 +939,53 @@ class _PinnedOwnedTree:
                         raise OSError(ctypes.get_last_error(), "cannot mark owned report entry for deletion")
                     _win_close_owned(entry.handle)
                     entry.handle = None
-                elif stat.S_ISDIR(entry.mode):
-                    os.rmdir(entry.name, dir_fd=entry.parent_handle)
                 else:
-                    os.unlink(entry.name, dir_fd=entry.parent_handle)
+                    self._delete_posix_entry(entry)
             except CoreReportBundleError:
                 raise
             except OSError as exc:
                 raise CoreReportBundleError("owned report entry could not be deleted safely") from exc
+
+    def _delete_posix_entry(self, entry: _OwnedEntry) -> None:
+        self._validate_posix_source(entry)
+        if self._posix_anchor_handle is None:
+            raise CoreReportBundleError("trusted session anchor is not pinned")
+        quarantine = f".report-delete-quarantine-{uuid.uuid4().hex}"
+        # If the source parent relocates after validation, renameat still moves
+        # this exact preflighted child back beneath the trusted anchor. A raced
+        # replacement fails the identity check and remains as recovery evidence.
+        _posix_rename_to_quarantine_noreplace(
+            entry.parent_handle,
+            entry.name,
+            self._posix_anchor_handle,
+            quarantine,
+        )
+        quarantined = os.stat(
+            quarantine,
+            dir_fd=self._posix_anchor_handle,
+            follow_symlinks=False,
+        )
+        if not _same_entry(quarantined, entry):
+            raise CoreReportBundleError(
+                "quarantined report entry has an ambiguous identity; evidence was preserved"
+            )
+        self._validate_posix_anchor()
+        if stat.S_ISDIR(entry.mode):
+            os.rmdir(quarantine, dir_fd=self._posix_anchor_handle)
+        else:
+            os.unlink(quarantine, dir_fd=self._posix_anchor_handle)
 
 
 def _after_owned_tree_plans(plans: Sequence[_PinnedOwnedTree]) -> None:
     """Test seam after all handles are pinned and before any deletion begins."""
 
 
-def _delete_exact_owned_file(root: Path, target: Path) -> None:
-    with _PinnedOwnedTree(root) as plan:
+def _after_owned_tree_validation(plans: Sequence[_PinnedOwnedTree]) -> None:
+    """Test seam after validation and before the first destructive step."""
+
+
+def _delete_exact_owned_file(root: Path, target: Path, *, session_anchor: Path) -> None:
+    with _PinnedOwnedTree(root, session_anchor=session_anchor) as plan:
         _after_owned_tree_plans((plan,))
         matches = [entry for entry in plan.entries if entry.path == target.absolute()]
         if not matches:
@@ -742,7 +1020,10 @@ def discard_report_bundle_attempt(attempt: ReportBundleAttempt) -> None:
     if _is_reparse(attempt.staging_dir, info) or not stat.S_ISDIR(info.st_mode):
         raise CoreReportBundleError("report attempt target is not an owned plain directory")
     _attempt_ownership(attempt.staging_dir, attempt.attempt_id)
-    with _PinnedOwnedTree(attempt.staging_dir) as plan:
+    with _PinnedOwnedTree(
+        attempt.staging_dir,
+        session_anchor=attempt.session_dir,
+    ) as plan:
         _after_owned_tree_plans((plan,))
         plan.delete_preserving()
 
@@ -884,7 +1165,10 @@ def _capture_media_and_prune(
             )
         normalized.append(swing)
 
-    with _PinnedOwnedTree(attempt.media_dir) as plan:
+    with _PinnedOwnedTree(
+        attempt.media_dir,
+        session_anchor=attempt.session_dir,
+    ) as plan:
         files = {entry.path for entry in plan.entries if stat.S_ISREG(entry.mode)}
         if not kept.issubset(files):
             raise CoreReportBundleError("safe capture playback changed before pruning")
@@ -926,12 +1210,17 @@ def _append_reason(reasons: Sequence[ReasonCode], reason: ReasonCode) -> tuple[R
 
 def _remove_work_and_empty_media(attempt: ReportBundleAttempt) -> None:
     with ExitStack() as stack:
-        work = stack.enter_context(_PinnedOwnedTree(attempt.work_dir))
-        media = stack.enter_context(_PinnedOwnedTree(attempt.media_dir))
+        work = stack.enter_context(
+            _PinnedOwnedTree(attempt.work_dir, session_anchor=attempt.session_dir)
+        )
+        media = stack.enter_context(
+            _PinnedOwnedTree(attempt.media_dir, session_anchor=attempt.session_dir)
+        )
         plans = (work, media)
         _after_owned_tree_plans(plans)
         for plan in plans:
             plan.validate()
+        _after_owned_tree_validation(plans)
         work.delete_preserving(already_validated=True)
         if media.entry_count == 1:
             media.delete_preserving(already_validated=True)
@@ -1045,7 +1334,11 @@ def build_report_bundle(
                                 angle=source.context.angle,
                             )
                         except FocusedEvidenceRenderError:
-                            _delete_exact_owned_file(attempt.media_dir, focused_path)
+                            _delete_exact_owned_file(
+                                attempt.media_dir,
+                                focused_path,
+                                session_anchor=attempt.session_dir,
+                            )
                             visual = build_unavailable_evidence(
                                 selection,
                                 observation="The selected measurement remains usable, but its focused visual is unavailable.",
@@ -1331,7 +1624,9 @@ def cleanup_abandoned_report_bundles(
                     raise CoreReportBundleError(
                         "final report manifest ID does not match its exact directory"
                     )
-            plan = stack.enter_context(_PinnedOwnedTree(path))
+            plan = stack.enter_context(
+                _PinnedOwnedTree(path, session_anchor=session)
+            )
             cumulative_entries += plan.entry_count
             if cumulative_entries > _MAX_RECOVERY_PLANNED_ENTRIES:
                 raise CoreReportBundleError(
@@ -1342,6 +1637,7 @@ def cleanup_abandoned_report_bundles(
         _after_owned_tree_plans(tuple(plans))
         for plan in plans:
             plan.validate()
+        _after_owned_tree_validation(tuple(plans))
         for plan in plans:
             plan.delete_preserving(already_validated=True)
         return len(plans)

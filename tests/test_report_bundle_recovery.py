@@ -300,6 +300,122 @@ def test_recovery_refuses_nested_ancestor_swap_before_any_candidate_deletion(tmp
     assert second.staging_dir.is_dir()
 
 
+def test_recovery_refuses_nested_relocation_after_validation_before_first_delete(
+    tmp_path, monkeypatch
+):
+    from swinglab import report_bundle
+
+    session = _session(tmp_path)
+    attempt = begin_report_bundle(session, attempt_id="e" * 32)
+    nested = attempt.work_dir / "nested"
+    nested.mkdir()
+    (nested / "owned.txt").write_text("owned", encoding="utf-8")
+    moved = tmp_path / "moved-after-validation"
+    outside = tmp_path / "outside-replacement"
+    outside.mkdir()
+    sentinel = outside / "outside-sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+
+    def relocate(plans):
+        try:
+            nested.rename(moved)
+        except OSError as exc:
+            raise CoreReportBundleError("pinned platform refused post-validation relocation") from exc
+        try:
+            nested.symlink_to(outside, target_is_directory=True)
+        except OSError as exc:
+            raise CoreReportBundleError("post-validation replacement could not be installed") from exc
+
+    monkeypatch.setattr(
+        report_bundle,
+        "_after_owned_tree_validation",
+        relocate,
+        raising=False,
+    )
+    with pytest.raises(CoreReportBundleError):
+        cleanup_abandoned_report_bundles(session)
+    assert sentinel.read_text(encoding="utf-8") == "keep"
+
+
+@pytest.mark.parametrize(
+    ("missing", "message"),
+    [
+        ("O_DIRECTORY", "O_DIRECTORY"),
+        ("O_NOFOLLOW", "O_NOFOLLOW"),
+        ("dir_fd", "dir_fd"),
+    ],
+)
+def test_posix_delete_capability_check_fails_closed_when_required_support_is_missing(
+    monkeypatch, missing, message
+):
+    from swinglab import report_bundle
+
+    monkeypatch.setattr(report_bundle.os, "O_DIRECTORY", 0x10000, raising=False)
+    monkeypatch.setattr(report_bundle.os, "O_NOFOLLOW", 0x20000, raising=False)
+    monkeypatch.setattr(
+        report_bundle.os,
+        "supports_dir_fd",
+        {
+            report_bundle.os.open,
+            report_bundle.os.stat,
+            report_bundle.os.unlink,
+            report_bundle.os.rmdir,
+        },
+    )
+    monkeypatch.setattr(
+        report_bundle.os,
+        "supports_follow_symlinks",
+        {report_bundle.os.stat},
+    )
+    if missing == "dir_fd":
+        monkeypatch.setattr(report_bundle.os, "supports_dir_fd", set())
+    else:
+        monkeypatch.delattr(report_bundle.os, missing, raising=False)
+    with pytest.raises(CoreReportBundleError, match=message):
+        report_bundle._require_posix_delete_capabilities()
+
+
+@pytest.mark.parametrize(
+    ("platform", "symbol"),
+    [("linux", "renameat2"), ("darwin", "renameatx_np")],
+)
+def test_posix_quarantine_rename_fails_closed_without_exclusive_libc_symbol(
+    monkeypatch, platform, symbol
+):
+    from swinglab import report_bundle
+
+    monkeypatch.setattr(report_bundle.sys, "platform", platform)
+    monkeypatch.setattr(report_bundle.ctypes, "CDLL", lambda *args, **kwargs: object())
+    with pytest.raises(CoreReportBundleError, match=symbol):
+        report_bundle._posix_rename_to_quarantine_noreplace(11, "owned", 22, "quarantine")
+
+
+@pytest.mark.parametrize(
+    ("platform", "symbol", "flag"),
+    [("linux", "renameat2", 1), ("darwin", "renameatx_np", 0x00000004)],
+)
+def test_posix_quarantine_rename_is_descriptor_relative_and_exclusive(
+    monkeypatch, platform, symbol, flag
+):
+    from swinglab import report_bundle
+
+    calls = []
+
+    class Rename:
+        argtypes = None
+        restype = None
+
+        def __call__(self, *args):
+            calls.append(args)
+            return 0
+
+    library = type("Library", (), {symbol: Rename()})()
+    monkeypatch.setattr(report_bundle.sys, "platform", platform)
+    monkeypatch.setattr(report_bundle.ctypes, "CDLL", lambda *args, **kwargs: library)
+    report_bundle._posix_rename_to_quarantine_noreplace(11, "owned", 22, "quarantine")
+    assert calls == [(11, b"owned", 22, b"quarantine", flag)]
+
+
 def test_recovery_direct_entry_limit_counts_unrelated_children_before_planning(tmp_path, monkeypatch):
     from swinglab import report_bundle
 
