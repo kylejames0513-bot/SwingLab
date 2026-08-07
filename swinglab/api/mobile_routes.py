@@ -22,6 +22,8 @@ from .contracts import (
     NativeAuthExchangeSuccessResponse,
     NativeAuthStartRequest,
     NativeAuthStartResponse,
+    NativeReviewAuthExchangeRequest,
+    NativeReviewAuthStartRequest,
     NativeSignOutPendingResponse,
 )
 from .errors import MobileAPIHTTPError
@@ -40,10 +42,16 @@ from ..web.mobile_auth import (
     MobileNativeAuthUnavailable,
 )
 from ..web.users import MobileAPITokenLimitError
+from ..web.review_auth import (
+    ReviewAuthService,
+    parse_app_identity_headers,
+)
 
 
 MOBILE_EMAIL_START_ROUTE_NAME = "mobile.auth.email_start"
 MOBILE_EMAIL_EXCHANGE_ROUTE_NAME = "mobile.auth.email_exchange"
+MOBILE_REVIEW_START_ROUTE_NAME = "mobile.auth.review_start"
+MOBILE_REVIEW_EXCHANGE_ROUTE_NAME = "mobile.auth.review_exchange"
 MOBILE_SIGN_OUT_ROUTE_NAME = "mobile.auth.sign_out"
 MOBILE_AUTH_CALLBACK_ROUTE_NAME = "mobile.auth.callback"
 _MOBILE_BEARER_SCHEME = HTTPBearer(
@@ -83,11 +91,28 @@ def install_mobile_routes(
     *,
     sign_out_service: MobileSignOutService,
     email_auth_service: MobileAuthService,
+    review_auth_service: ReviewAuthService,
     native_email_auth_enabled: bool,
+    mobile_deployment_environment: str,
     client_ip_resolver: Callable[[Request], str | None],
     require_account: bool,
 ) -> None:
     no_store = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+    identity_parameters = [
+        {
+            "name": name,
+            "in": "header",
+            "required": True,
+            "schema": {"type": "string"},
+        }
+        for name in (
+            "X-CaddieInsight-Environment",
+            "X-CaddieInsight-Platform",
+            "X-CaddieInsight-App-Version",
+            "X-CaddieInsight-App-Build",
+            "X-CaddieInsight-Application-Id",
+        )
+    ]
 
     @app.post(
         "/api/v1/auth/email/start",
@@ -288,6 +313,245 @@ def install_mobile_routes(
                 503,
                 "auth_unavailable",
                 "Native authentication is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            )
+        response = NativeAuthExchangeSuccessResponse(
+            status="authenticated",
+            access_token=exchanged.access_token,
+            expires_at=exchanged.expires_at,
+        )
+        return JSONResponse(
+            response.model_dump(mode="json"), status_code=201, headers=no_store
+        )
+
+    def _review_identity(request: Request):
+        try:
+            return parse_app_identity_headers(
+                request,
+                deployment_environment=mobile_deployment_environment,
+            )
+        except MobileNativeAuthInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                422,
+                "invalid_app_identity",
+                "Invalid application identity.",
+                headers=no_store,
+            ) from exc
+
+    def _require_review_lane() -> None:
+        try:
+            available = review_auth_service.available()
+        except MobileNativeAuthUnavailable as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "auth_unavailable",
+                "Review authentication is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            ) from exc
+        if not available:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Review authentication is not enabled.",
+                headers=no_store,
+            )
+
+    @app.post(
+        "/api/v1/auth/review/start",
+        name=MOBILE_REVIEW_START_ROUTE_NAME,
+        status_code=202,
+        response_model=NativeAuthStartResponse,
+        responses={
+            404: {"model": APIError},
+            422: {"model": APIError},
+            429: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": NativeReviewAuthStartRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": identity_parameters,
+        },
+    )
+    async def mobile_review_start(request: Request):
+        # Default deny precedes even header/body parsing and therefore performs
+        # no challenge write, credential lookup, or provider operation.
+        _require_review_lane()
+        identity = _review_identity(request)
+        payload = await _native_auth_payload(request, NativeReviewAuthStartRequest)
+        try:
+            started = review_auth_service.start(
+                provider=payload.provider,
+                account=payload.account,
+                identity=identity,
+                code_challenge=payload.code_challenge,
+                installation_id=payload.installation_id,
+                device_label=payload.device_label,
+                client_ip=client_ip_resolver(request),
+            )
+        except MobileNativeAuthRateLimited as exc:
+            retry_after = str(exc.retry_after_seconds)
+            raise MobileAPIHTTPError(
+                429,
+                "rate_limited",
+                "Too many authentication attempts.",
+                retryable=True,
+                headers={**no_store, "Retry-After": retry_after},
+            ) from exc
+        except MobileNativeAuthInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                422,
+                "validation_error",
+                "Invalid request.",
+                headers=no_store,
+            ) from exc
+        except MobileNativeAuthUnavailable as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "auth_unavailable",
+                "Review authentication is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            ) from exc
+        response = NativeAuthStartResponse(
+            challenge_id=started.challenge_id,
+            expires_at=started.expires_at,
+        )
+        return JSONResponse(
+            response.model_dump(mode="json"), status_code=202, headers=no_store
+        )
+
+    @app.post(
+        "/api/v1/auth/review/exchange",
+        name=MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
+        status_code=201,
+        response_model=NativeAuthExchangeSuccessResponse,
+        responses={
+            202: {"model": NativeAuthExchangePendingResponse},
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+            429: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": NativeReviewAuthExchangeRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": [
+                *identity_parameters,
+                {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "required": True,
+                    "description": "Exactly 32 hexadecimal characters (128 bits).",
+                    "schema": {
+                        "type": "string",
+                        "minLength": 32,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Fa-f]{32}$",
+                    },
+                },
+            ],
+        },
+    )
+    async def mobile_review_exchange(request: Request):
+        _require_review_lane()
+        identity = _review_identity(request)
+        payload = await _native_auth_payload(request, NativeReviewAuthExchangeRequest)
+        idempotency_values = request.headers.getlist("idempotency-key")
+        if len(idempotency_values) != 1:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            )
+        try:
+            exchanged = review_auth_service.exchange(
+                challenge_id=payload.challenge_id,
+                password=payload.password,
+                code_verifier=payload.code_verifier,
+                idempotency_key=idempotency_values[0],
+                identity=identity,
+                client_ip=client_ip_resolver(request),
+            )
+        except MobileNativeAuthRateLimited as exc:
+            retry_after = str(exc.retry_after_seconds)
+            raise MobileAPIHTTPError(
+                429,
+                "rate_limited",
+                "Too many authentication attempts.",
+                retryable=True,
+                headers={**no_store, "Retry-After": retry_after},
+            ) from exc
+        except MobileNativeAuthRejected as exc:
+            raise MobileAPIHTTPError(
+                401,
+                "authentication_rejected",
+                "Invalid review authentication.",
+                headers=no_store,
+            ) from exc
+        except MobileNativeAuthConflict as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "exchange_conflict",
+                "The authentication exchange conflicts.",
+                headers=no_store,
+            ) from exc
+        except MobileAPITokenLimitError as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "device_limit",
+                "This account has reached its device limit.",
+                headers=no_store,
+            ) from exc
+        except MobileNativeAuthInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                422,
+                "validation_error",
+                "Invalid request.",
+                headers=no_store,
+            ) from exc
+        except MobileNativeAuthUnavailable as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "auth_unavailable",
+                "Review authentication is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            ) from exc
+        if exchanged.pending:
+            response = NativeAuthExchangePendingResponse(
+                exchange_id=exchanged.exchange_id,
+                status="pending",
+                retry_after_seconds=exchanged.retry_after_seconds,
+            )
+            return JSONResponse(
+                response.model_dump(mode="json"),
+                status_code=202,
+                headers={**no_store, "Retry-After": str(exchanged.retry_after_seconds)},
+            )
+        if exchanged.access_token is None or exchanged.expires_at is None:
+            raise MobileAPIHTTPError(
+                503,
+                "auth_unavailable",
+                "Review authentication is temporarily unavailable.",
                 retryable=True,
                 headers=no_store,
             )

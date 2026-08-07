@@ -1009,23 +1009,28 @@ class RecoveryFenceLedger:
         expected_chain_hmac = head["chain_hmac"]
         seen_keys: set[str] = set()
         reverse_chain: list[PublishedRecoveryRecord] = []
+        prefetched: tuple[str, PublishedRecoveryRecord] | None = None
         while True:
             if current_key in seen_keys:
                 raise RecoveryFenceError("The recovery-fence chain contains a cycle.")
             seen_keys.add(current_key)
             if len(seen_keys) > 1_000_000:
                 raise RecoveryFenceError("The recovery-fence chain exceeds its bound.")
-            try:
-                remote_record = self._remote.read_record(current_key)
-            except RecoveryFenceStoreError as exc:
-                raise RecoveryFenceError(
-                    "A recovery-fence immutable record is missing."
-                ) from exc
-            record = _validate_record(
-                remote_record.body,
-                keyring=self._keyring,
-                expected_key=current_key,
-            )
+            if prefetched is not None and prefetched[0] == current_key:
+                record = prefetched[1]
+                prefetched = None
+            else:
+                try:
+                    remote_record = self._remote.read_record(current_key)
+                except RecoveryFenceStoreError as exc:
+                    raise RecoveryFenceError(
+                        "A recovery-fence immutable record is missing."
+                    ) from exc
+                record = _validate_record(
+                    remote_record.body,
+                    keyring=self._keyring,
+                    expected_key=current_key,
+                )
             if (
                 record.sequence != expected_sequence
                 or record.record_hash != expected_hash
@@ -1071,6 +1076,7 @@ class RecoveryFenceLedger:
             )
             expected_chain_key = parsed_predecessor.chain_hmac_key_id
             expected_chain_hmac = parsed_predecessor.chain_hmac
+            prefetched = (current_key, parsed_predecessor)
         chain = tuple(reversed(reverse_chain))
         event_ids: dict[str, PublishedRecoveryRecord] = {}
         for record in chain:

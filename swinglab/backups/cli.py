@@ -212,12 +212,7 @@ def run_recovery_fence_command(
     service_restorer=None,
     composition_factory=None,
 ) -> int:
-    """Run only with explicit approvals and injected verified evidence adapters.
-
-    Gate 3B intentionally supplies no default initializer. Gate 3C must compose
-    the real immutable-backup verifier and scratch-restore verifier before this
-    command can create or accept a baseline.
-    """
+    """Run only with explicit approvals and verified evidence adapters."""
 
     if not _enabled("CADDIE_RECOVERY_FENCE_ENABLED"):
         print(
@@ -270,8 +265,8 @@ def run_recovery_fence_command(
         ):
             if composition_factory is None or getattr(args, "operator_root", None) is None:
                 raise BackupError(
-                    "Gate 3C verified-backup and exact scratch-restore composition "
-                    "is not available; no service state was changed."
+                    "Verified-backup and exact scratch-restore composition is not "
+                    "available; no service state was changed."
                 )
             composition = composition_factory(args)
             initializer = initializer or getattr(composition, "initializer", None)

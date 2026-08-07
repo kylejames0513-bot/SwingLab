@@ -13,9 +13,21 @@ below therefore means required for the stated production capability.
 | --- | --- | --- | --- |
 | `PORT` | Non-secret | Supplied by Railway or another platform | The container command and health check default to port 8000. |
 | `SWINGLAB_SECRET` | Secret | Accounts are enabled, as in the shipped config | A random key is generated at each start, so login sessions do not survive restarts. |
-| `PUBLIC_BASE_URL` | Non-secret | Canonical production links, Stripe redirects, or digest email links are used | Request-derived URLs are used where possible; digest links cannot be generated reliably. |
+| `CADDIEINSIGHT_MOBILE_DEPLOYMENT_ENVIRONMENT` | Non-secret | Staging or production mobile/review behavior is deployed | The closed default is `development`; only `development`, `staging`, or `production` is accepted. |
+| `PUBLIC_BASE_URL` | Non-secret | Staging/production mobile startup, canonical links, Stripe redirects, or digest email links are used | Staging/production startup rejects a missing or non-HTTPS canonical origin. |
 
 `PUBLIC_BASE_URL` is the application origin, not the Shopify storefront.
+For mobile policy it must contain only one HTTPS origin: no userinfo, path,
+query, or fragment. Neither Host/Forwarded nor native request headers can
+change the configured environment or origin. `/healthz` reads back the closed
+environment, normalized origin, application-ID policy revision, and the active
+environment's non-secret allowed IDs. Policy revision 1 is:
+
+| Environment | Allowed iOS/Android application IDs |
+| --- | --- |
+| `development` | `com.caddieinsight.app.dev` |
+| `staging` | `com.caddieinsight.app`, `com.caddieinsight.app.staging` |
+| `production` | `com.caddieinsight.app` |
 
 ## Recovery-fence protected settings
 
@@ -48,19 +60,26 @@ conditional headers and fails closed when an emulator silently ignores them.
 `MOBILE_STATE_HMAC_KEYRING` remains a different protected secret: its retained
 keys validate the record HMAC chain and must cover every referenced key ID.
 
-Gate 3B does not activate web-startup I/O. The default CLI composition also
-refuses baseline initialization until Gate 3C supplies an immutable-backup
-verifier and exact scratch-restore verifier.
+The web process composes this dedicated provider only when startup policy
+requires it. A pristine development database with every dependent feature off
+makes zero recovery-provider calls. In staging or production, an enabled
+account/native/review/history-reset/privacy surface, recovery rows, or a
+nonterminal revocation requires the accepted scratch-proven baseline, dedicated
+credentials, immutable-record and conditional-HEAD readback, and validation of
+the current chain before workers or routes are constructed. Missing or stale
+state fails startup closed. Reserved push/review record kinds also fail closed
+until their owning subsystem supplies a reconciler.
 
 ## Native email authentication
 
 Native email authentication remains off unless
 `web.mobile_native_auth_enabled` is exactly `true`. Enabling it requires a
-canonical HTTPS `PUBLIC_BASE_URL`, `MOBILE_STATE_HMAC_KEYRING`, and an injected
-recovery-fence ledger whose current chain begins with the accepted cutover
-baseline. Startup fails closed if any recovery dependency or readback is
-unavailable. Email delivery additionally uses the transport settings documented
-below.
+canonical HTTPS `PUBLIC_BASE_URL`, `MOBILE_STATE_HMAC_KEYRING`, and a verified
+recovery-fence chain whose current chain begins with the accepted cutover
+baseline. Production and staging compose that chain from the dedicated
+`CADDIE_RECOVERY_FENCE_*` settings; injection is a development-test seam only.
+Startup fails closed if any recovery dependency or readback is unavailable.
+Email delivery additionally uses the transport settings documented below.
 
 The shipped/default abuse controls are strict positive integers. Invalid types,
 zero, or values outside these closed ranges stop startup:
@@ -73,6 +92,27 @@ zero, or values outside these closed ranges stop startup:
 | `web.mobile_auth_failed_exchanges_per_15_minutes_per_email` | 10 | 1–50 |
 | `web.mobile_auth_live_challenges_per_ip` | 20 | 1–100 |
 | `web.mobile_auth_live_challenges_per_email` | 3 | 1–20 |
+
+## Store-review authentication
+
+Review authentication has no environment flag or reviewer credential in this
+repository. Its shipped admission provider always denies and performs no state
+write. Entitlements Task 5 must inject an active Apple/Google lane that matches
+the exact immutable app identity and verifies a separate provider-scoped scrypt
+credential. Reviewer account names, password hashes, supported-build state,
+and credential details do not belong in YAML, process environment, or health
+output.
+
+The independent review abuse controls are strict integers from 1 through 100:
+
+| YAML setting | Default | Allowed range |
+| --- | ---: | ---: |
+| `web.review_auth_starts_per_15_minutes_per_ip` | 20 | 1–100 |
+| `web.review_auth_starts_per_15_minutes_per_account` | 5 | 1–100 |
+| `web.review_auth_failed_exchanges_per_15_minutes_per_ip` | 20 | 1–100 |
+| `web.review_auth_failed_exchanges_per_15_minutes_per_account` | 10 | 1–100 |
+| `web.review_auth_live_challenges_per_ip` | 20 | 1–100 |
+| `web.review_auth_live_challenges_per_account` | 3 | 1–100 |
 
 ## Shopify purchase bridge
 

@@ -110,6 +110,10 @@ _KEYED_RATE_DOMAINS: dict[str, MobileStateDomain] = {
     "auth-exchange-email": MobileStateDomain.AUTH_EXCHANGE_NORMALIZED_EMAIL_RATE,
     "review-auth-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
     "review-auth-account": MobileStateDomain.REVIEW_AUTH_ACCOUNT,
+    "review-auth-start-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
+    "review-auth-start-account": MobileStateDomain.REVIEW_AUTH_ACCOUNT,
+    "review-auth-exchange-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
+    "review-auth-exchange-account": MobileStateDomain.REVIEW_AUTH_ACCOUNT,
 }
 
 

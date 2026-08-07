@@ -488,7 +488,7 @@ class MobileAuthService:
         with self._users._lock:
             row = self._users._conn.execute(
                 "SELECT * FROM mobile_auth_exchange_journals"
-                " WHERE exchange_id = ? AND purpose = 'email'",
+                " WHERE exchange_id = ?",
                 (exchange_id,),
             ).fetchone()
         if row is None:
@@ -690,9 +690,10 @@ class MobileAuthService:
                     "INSERT OR IGNORE INTO mobile_auth_exchange_receipts"
                     " (exchange_id, purpose, challenge_id, replacement_selector,"
                     " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
-                    " completed_at, expires_at) VALUES (?, 'email', ?, ?, ?, ?, ?, ?, ?)",
+                    " completed_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         current["exchange_id"],
+                        current["purpose"],
                         current["challenge_id"],
                         current["replacement_selector"],
                         current["idempotency_hmac_key_id"],
@@ -739,6 +740,13 @@ class MobileAuthService:
                 raise MobileNativeAuthUnavailable(
                     "A native authentication journal phase is invalid."
                 )
+
+    def advance_exchange(
+        self, exchange_id: str
+    ) -> MobileAuthExchangeJournal | None:
+        """Advance an email or admission-proven review exchange journal."""
+
+        return self._advance(exchange_id)
 
     def resume_nonterminal(self) -> None:
         """Complete every durable exchange before workers or requests start."""

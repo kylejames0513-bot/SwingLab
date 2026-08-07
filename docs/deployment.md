@@ -107,20 +107,29 @@ incident; it is never undone as a routine rollback shortcut.
 
 ## Recovery-fence cutover ordering
 
-Deploy the generation-1 schema and recovery-fence code with dependent native
-routes held and with no recovery-fence startup composition. The shipped
-configuration currently exposes browser history reset, so wiring the pure
-startup policy before an accepted baseline exists would deliberately fail
-startup and is not a safe release order.
+The web composition now enforces the recovery gate before `JobManager`, workers,
+or routes exist. Because the shipped configuration exposes account and history
+surfaces, a staging/production process without an accepted baseline will fail
+startup by design. Do not make the first strict-environment deployment the
+baseline initializer.
 
-Gate 3C must next compose the real immutable-backup and scratch-restore proof
-providers. Only an explicitly approved offline operation may then prepare one
-lineage, bind the verified manifest and its exact lowercase database snapshot
-SHA-256, prove that value is exactly `baseline_db_checkpoint`, publish/read back
-the immutable genesis record and conditional `HEAD`,
-verify the exact scratch restore, and mark that same journal accepted. Activate
-dependent routes or fail-closed startup reconciliation only after the accepted
-baseline and current-chain readback are independently verified.
+Keep the existing web release serving while an explicitly approved offline
+operator process runs `recovery-fence-ledger initialize-baseline` against the
+same persistent database. That operation must prepare one lineage, create and
+read back the immutable backup, bind its exact lowercase database SHA-256 as
+`baseline_db_checkpoint`, publish/read back genesis plus conditional `HEAD`,
+complete the exact scratch service-restore proof, and mark that same journal
+accepted. Then deploy this web composition with the explicit
+`CADDIEINSIGHT_MOBILE_DEPLOYMENT_ENVIRONMENT=staging|production`, canonical
+HTTPS `PUBLIC_BASE_URL`, dedicated recovery-fence credentials, and the complete
+retained `MOBILE_STATE_HMAC_KEYRING`.
+
+Before traffic, verify `/healthz` reports the intended closed mobile environment,
+normalized public origin, application-ID policy revision/list, and expected
+native-auth status. Startup must read and apply every newer remote token revoke
+before a request can authenticate. An unreconciled reserved push/review record,
+missing record/key, stale head, provider outage, or missing accepted proof is a
+deployment stop—not a reason to bypass the gate.
 
 ## Native email-auth activation
 
@@ -137,6 +146,23 @@ Rollback turns the endpoint flag off, but must retain the HMAC keyring and
 recovery-fence access until every nonterminal auth rotation is complete.
 Feature-off startup deliberately resumes those journals before workers or
 route admission; removing recovery access is not a safe rollback.
+
+## Store-review auth activation
+
+The shipped review admission is default-deny, so the documented review routes
+remain `404` even when native email auth is enabled. Entitlements Task 5 owns the
+provider-specific Apple submission window, standing Google App-access record,
+dedicated credential hash, exact supported builds, and recovery reconciler.
+Activate a lane only after that composition is present, its exact identity tuple
+matches the intended submitted build, and startup validates the accepted remote
+chain. Lane activation is latched at process startup; opening a lane that was
+closed at startup requires a fresh recovery-validated deployment. Do not place
+reviewer accounts or passwords in YAML/environment values;
+do not expose lane state in `/healthz`.
+
+Closing a lane must make the admission recheck fail. Review bearers are then
+rejected and revoked on their next authenticated request; their short-lived
+scope expiry remains authoritative even if cleanup is delayed.
 
 Do not enable horizontal replicas while recovery state, SQLite, filesystem
 artifacts, and worker coordination remain process/local-volume based. The root

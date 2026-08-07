@@ -299,6 +299,35 @@ class NativeAuthExchangeRequest(ContractModel):
     )
 
 
+class NativeReviewAuthStartRequest(ContractModel):
+    provider: Literal["apple", "google"]
+    account: str = Field(min_length=1, max_length=160)
+    code_challenge: str = Field(
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+    installation_id: str = Field(
+        min_length=36,
+        max_length=36,
+        pattern=(
+            r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+            r"[0-9a-f]{4}-[0-9a-f]{12}$"
+        ),
+    )
+    device_label: str = Field(min_length=1, max_length=80)
+
+
+class NativeReviewAuthExchangeRequest(ContractModel):
+    challenge_id: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=1024)
+    code_verifier: str = Field(
+        min_length=43,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._~-]{43,128}$",
+    )
+
+
 class NativeAuthExchangeSuccessResponse(ContractModel):
     resource_version: Literal[1] = 1
     status: Literal["authenticated"]

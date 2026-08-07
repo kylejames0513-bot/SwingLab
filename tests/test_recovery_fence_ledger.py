@@ -231,6 +231,24 @@ def test_validated_chain_snapshot_binds_the_exact_head_etag_without_reread(tmp_p
     assert ledger.load_chain() == snapshot.records
 
 
+def test_chain_validation_reads_each_immutable_record_once(tmp_path):
+    module, remote, ledger = _ledger(tmp_path)
+    ledger.append_and_publish(_baseline_event(module))
+    ledger.append_and_publish(
+        module.TokenRevokeEvent.from_raw(
+            event_id=str(uuid.uuid4()),
+            cutoff_at=20.0,
+            selector="one-read-selector",
+            stored_token_verifier="one-read-verifier",
+            keyring=_keyring(),
+        )
+    )
+    remote.calls.clear()
+
+    assert len(ledger.load_chain_snapshot().records) == 2
+    assert [call[0] for call in remote.calls].count("read_record") == 2
+
+
 def test_missing_head_record_key_or_hmac_key_fails_closed(tmp_path):
     module, remote, ledger = _ledger(tmp_path)
     with pytest.raises(module.RecoveryFenceError, match="HEAD|baseline"):
@@ -1351,7 +1369,7 @@ def test_cli_is_inert_without_gate_or_all_approvals(monkeypatch, capsys, tmp_pat
             "--confirm-scratch-restore",
         ]
     ) == 1
-    assert "Gate 3C" in capsys.readouterr().err
+    assert "Verified-backup and exact scratch-restore" in capsys.readouterr().err
     assert not (tmp_path / ".recovery-fence.lock").exists()
 
 

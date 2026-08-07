@@ -96,6 +96,8 @@ from ..api.errors import install_mobile_error_handlers
 from ..api.mobile_routes import (
     MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
     MOBILE_EMAIL_START_ROUTE_NAME,
+    MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
+    MOBILE_REVIEW_START_ROUTE_NAME,
     MOBILE_SIGN_OUT_ROUTE_NAME,
     install_mobile_routes,
 )
@@ -164,6 +166,17 @@ from .mobile_auth import (
     MobileAuthService,
     validate_mobile_native_auth_settings,
 )
+from .review_auth import (
+    APPLICATION_ID_POLICY_REVISION,
+    DenyReviewAuthAdmission,
+    ReviewAuthAdmission,
+    ReviewAuthService,
+    allowed_application_ids,
+    canonical_mobile_public_origin,
+    resolve_mobile_deployment_environment,
+    validate_review_auth_settings,
+)
+from .recovery_startup import compose_web_recovery_fence
 from .throttle import KeyedThrottle, Throttle
 from .users import (
     MobileAPIToken,
@@ -574,11 +587,27 @@ def create_app(
     mobile_state_hmac: VersionedHMAC | None = None,
     recovery_fence_ledger: RecoveryFencePublisher | None = None,
     credential_mutation_guard: CredentialMutationGuard | None = None,
+    review_auth_admission: ReviewAuthAdmission | None = None,
     sign_out_drain_timeout_seconds: float = 0.25,
     sign_out_extensions: tuple[SignOutExtension, ...] = (),
 ) -> FastAPI:
     cfg = cfg or Config.load()
+    mobile_deployment_environment = resolve_mobile_deployment_environment()
     native_auth_settings = validate_mobile_native_auth_settings(cfg.web)
+    try:
+        mobile_public_origin = canonical_mobile_public_origin(
+            os.environ.get("PUBLIC_BASE_URL"), mobile_deployment_environment
+        )
+    except ValueError as exc:
+        if native_auth_settings.enabled:
+            from .mobile_auth import MobileNativeAuthUnavailable
+
+            raise MobileNativeAuthUnavailable(
+                "Native authentication requires a canonical HTTPS PUBLIC_BASE_URL."
+            ) from exc
+        raise
+    review_auth_settings = validate_review_auth_settings(cfg.web)
+    review_auth_admission = review_auth_admission or DenyReviewAuthAdmission()
     shopify_sync_settings = shopify_customer_sync.validate_sync_settings(
         cfg.shopify_customer_sync
     )
@@ -604,6 +633,24 @@ def create_app(
         sessions_dir / "swinglab.db",
         mobile_state_hmac=mobile_state_hmac,
     )
+    try:
+        review_lane_active = review_auth_admission.any_lane_active() is True
+        recovery_startup = compose_web_recovery_fence(
+            users=users,
+            sessions_dir=sessions_dir,
+            web_config=cfg.web,
+            deployment_environment=mobile_deployment_environment,
+            keyring=users._mobile_state_hmac,
+            injected_ledger=recovery_fence_ledger,
+            review_lane_active=review_lane_active,
+            shopify_privacy_webhooks_enabled=(
+                shopify_billing.webhook_endpoint_enabled()
+            ),
+        )
+        recovery_fence_ledger = recovery_startup.ledger
+    except Exception:
+        users.close()
+        raise
     mutation_guard = credential_mutation_guard or CredentialMutationGuard()
     sign_out_service = MobileSignOutService(
         users,
@@ -632,11 +679,25 @@ def create_app(
             on_success=lambda user: queue_shopify_sync(user),
             drain_timeout_seconds=sign_out_drain_timeout_seconds,
         )
+        review_auth_service = ReviewAuthService(
+            users,
+            mobile_keyed_throttle,
+            mobile_auth_service,
+            mutation_guard,
+            admission=review_auth_admission,
+            keyring=users._mobile_state_hmac,
+            recovery_fence_ledger=recovery_fence_ledger,
+            settings=review_auth_settings,
+            activated_at_startup=review_lane_active,
+        )
         mobile_auth_service.verify_enabled_recovery_readiness()
+        review_auth_service.verify_enabled_recovery_readiness()
         # Crash journals are independent of auth/push/privacy feature flags.
         # Resume them before JobManager recovery, workers, or route admission.
         sign_out_service.resume_nonterminal()
         mobile_auth_service.resume_nonterminal()
+        if review_auth_service.available():
+            review_auth_service.purge_expired()
     except Exception:
         if mobile_keyed_throttle is not None:
             mobile_keyed_throttle.close()
@@ -661,6 +722,11 @@ def create_app(
     app.state.credential_mutation_guard = mutation_guard
     app.state.sign_out_service = sign_out_service
     app.state.mobile_auth_service = mobile_auth_service
+    app.state.review_auth_service = review_auth_service
+    app.state.review_auth_admission = review_auth_admission
+    app.state.mobile_deployment_environment = mobile_deployment_environment
+    app.state.mobile_public_origin = mobile_public_origin
+    app.state.recovery_startup = recovery_startup
     app.state.mobile_keyed_throttle = mobile_keyed_throttle
     if mobile_keyed_throttle is not None:
         app.router.add_event_handler("shutdown", mobile_keyed_throttle.close)
@@ -669,6 +735,8 @@ def create_app(
         {
             MOBILE_EMAIL_START_ROUTE_NAME,
             MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
+            MOBILE_REVIEW_START_ROUTE_NAME,
+            MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
             MOBILE_SIGN_OUT_ROUTE_NAME,
         },
     )
@@ -676,7 +744,9 @@ def create_app(
         app,
         sign_out_service=sign_out_service,
         email_auth_service=mobile_auth_service,
+        review_auth_service=review_auth_service,
         native_email_auth_enabled=native_auth_settings.enabled,
+        mobile_deployment_environment=mobile_deployment_environment,
         client_ip_resolver=client_ip,
         require_account=bool(cfg.web.get("require_account")),
     )
@@ -821,7 +891,11 @@ def create_app(
         """
 
         context = resolve_mobile_auth(
-            request, users, bool(cfg.web.get("require_account"))
+            request,
+            users,
+            bool(cfg.web.get("require_account")),
+            review_auth_admission,
+            mutation_guard,
         )
         return context.user, context.via_bearer
 
@@ -4798,6 +4872,14 @@ def create_app(
                 **manager.counts(),
                 "disk_free_mb": shutil.disk_usage(sessions_dir).free // (1024 * 1024),
                 "sessions_count": manager.sessions_count(),
+                "mobile_deployment_environment": mobile_deployment_environment,
+                "mobile_public_origin": mobile_public_origin,
+                "mobile_allowed_application_ids": list(
+                    allowed_application_ids(mobile_deployment_environment)
+                ),
+                "mobile_application_id_policy_revision": (
+                    APPLICATION_ID_POLICY_REVISION
+                ),
                 "history_cleanup_pending": (
                     manager.history_cleanup_pending_count()
                 ),

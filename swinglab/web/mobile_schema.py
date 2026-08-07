@@ -104,7 +104,11 @@ class VersionedHMAC:
             "keys",
         }:
             raise ValueError("MOBILE_STATE_HMAC_KEYRING has an unsupported shape.")
-        if payload["version"] != 1 or not isinstance(payload["keys"], dict):
+        if (
+            type(payload["version"]) is not int
+            or payload["version"] != 1
+            or not isinstance(payload["keys"], dict)
+        ):
             raise ValueError("MOBILE_STATE_HMAC_KEYRING version 1 is required.")
         decoded: dict[str, bytes] = {}
         for key_id, encoded in payload["keys"].items():

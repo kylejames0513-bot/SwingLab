@@ -113,6 +113,7 @@ def test_mobile_state_hmac_domain_set_is_closed_and_every_digest_is_distinct():
     "payload",
     [
         "{}",
+        '{"version":true,"current_key_id":"current","keys":{"current":"Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2M="}}',
         '{"version":1,"current_key_id":"missing","keys":{}}',
         '{"version":1,"current_key_id":"current","keys":{"current":"c2hvcnQ="}}',
         '{"version":2,"current_key_id":"current","keys":{"current":"Y2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2NjY2M="}}',

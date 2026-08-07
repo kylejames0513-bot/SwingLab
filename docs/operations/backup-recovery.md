@@ -547,7 +547,7 @@ Every item below is still a production action and is not authorized by Stage 0B:
 No production backup should be called operational until a completed remote
 generation and successful scratch drill are both recorded.
 
-## Recovery-fence ledger (Gate 3B contract)
+## Recovery-fence ledger
 
 The recovery-fence ledger is not part of an ordinary point-in-time backup. It
 uses a dedicated protected object prefix with exactly two key families:
@@ -592,10 +592,12 @@ swinglab recovery-fence-ledger initialize-baseline ...
 
 The command is approval-gated and otherwise inert. It requires the erasure
 inventory, held dependent routes, fresh immutable backup, and scratch restore
-approvals. Gate 3B intentionally ships without the real evidence adapters, so
-the command currently refuses without touching the ledger. Gate 3C will inject
-the verified manifest facts and exact scratch proof; operator flags never
-substitute for that proof.
+approvals, explicit non-overlapping sessions/operator roots, backup-writer and
+restore-reader identities, the dedicated recovery-fence identity, and the full
+retained HMAC keyring. The production composition creates and uploads a fresh
+immutable bundle, downloads and verifies the same bytes, prepares the exact
+service-restorable scratch state, and accepts only its measured proof. Operator
+flags never substitute for manifest or scratch evidence.
 
 The durable journal is
 `lineage_prepared -> backup_verified -> record_published -> head_published ->
@@ -605,6 +607,14 @@ manifest `database.sha256`; the initializer rejects independently supplied
 values that differ, and it is never guessed from SQLite WAL state.
 No dependent route may be activated until `accepted` exists and the complete
 remote chain validates.
+
+Every post-cutover backup carries a `recovery_fence` manifest declaration bound
+to the accepted lineage, baseline backup, baseline manifest hash, schema
+generation, and database checkpoint. Ordinary evidence verification rejects a
+bundle whose database contains baseline journal/accepted rows but whose
+declaration was stripped. `restore-to-service` additionally rejects any
+pre-cutover or wrong-lineage candidate before it prepares the disposable service
+copy; it never promotes that copy into the live sessions tree.
 
 To disable offline operation, unset `CADDIE_RECOVERY_FENCE_ENABLED`; do not
 delete `HEAD`, immutable records, local checkpoints, or retained HMAC keys.
@@ -620,3 +630,26 @@ credentials does not rotate record HMACs. Retain each
 `MOBILE_STATE_HMAC_KEYRING` key until no live row, ledger record, or retained
 backup references its key ID. Never log either credential set or provider error
 details.
+
+### Web startup reconciliation
+
+Staging and production use the same dedicated settings to validate the current
+remote `HEAD` and immutable predecessor chain before `JobManager`, background
+workers, or routes are created. The locally accepted scratch proof must match
+the immutable genesis. Every remote record newer than the local checkpoint is
+applied before authentication; token-revoke records therefore survive a local
+point-in-time rollback. The checkpoint advances only after the full chain and
+application result are durable.
+
+The closed record-kind set also reserves `review_access_revision` and
+`push_environment_cutoff`. Until Entitlements Task 5 or Push Task 7 supplies the
+corresponding owned reconciler, encountering either kind stops startup. Never
+skip, delete, or manually advance past an unknown/reserved record to restore
+availability.
+
+A pristine development database with no recovery rows, no nonterminal
+revocation, and all dependent features off makes no provider call. This
+development convenience is not an activation path: staging/production account,
+native auth, review, history-reset, or Shopify privacy behavior requires the
+accepted baseline, dedicated credentials, and current-chain readback. An
+explicit injected ledger exists only for development tests.

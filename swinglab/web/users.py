@@ -762,6 +762,12 @@ class MobileAPIPrincipal:
     selector: str
     auth_epoch: int
     installation_key: str | None
+    review_provider: str | None = None
+    review_build: str | None = None
+    review_expires_at: float | None = None
+    review_credential_hmac_key_id: str | None = None
+    review_credential_hmac: str | None = None
+    review_lane_revision: int | None = None
 
 
 @dataclass(frozen=True)
@@ -4261,6 +4267,210 @@ class UserStore:
             send_required=True,
         )
 
+    def begin_mobile_review_signin(
+        self,
+        *,
+        provider: str,
+        identity,
+        account: str,
+        matched_user_id: str | None,
+        code_challenge: object,
+        installation_id: object,
+        device_label: object,
+        client_ip: str,
+        live_challenges_per_ip: int,
+        live_challenges_per_account: int,
+        now: float | None = None,
+    ) -> MobileAuthChallenge:
+        """Persist a generic review challenge using only protected identities."""
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        if provider not in ("apple", "google"):
+            raise ValueError("A supported review provider is required.")
+        from .review_auth import AppIdentityHeaders
+
+        if not isinstance(identity, AppIdentityHeaders):
+            raise ValueError("An immutable application identity is required.")
+        if not isinstance(account, str) or not account:
+            raise ValueError("A review account is required.")
+        normalized_challenge = self._validate_mobile_auth_code_challenge(
+            code_challenge
+        )
+        installation = self._normalize_mobile_auth_installation(installation_id)
+        label = self._normalize_mobile_api_token_label(device_label)
+        if not isinstance(client_ip, str) or not client_ip:
+            raise ValueError("A client address is required.")
+        observed_at = time.time() if now is None else float(now)
+        account_candidates = keyring.candidates(
+            MobileStateDomain.REVIEW_AUTH_ACCOUNT, account
+        )
+        account_key_id, account_hmac = keyring.digest(
+            MobileStateDomain.REVIEW_AUTH_ACCOUNT, account
+        )
+        ip_candidates = keyring.candidates(
+            MobileStateDomain.REVIEW_AUTH_CLIENT_IP, client_ip
+        )
+        ip_key_id, ip_hmac = keyring.digest(
+            MobileStateDomain.REVIEW_AUTH_CLIENT_IP, client_ip
+        )
+        installation_candidates = keyring.candidates(
+            MobileStateDomain.INSTALLATION_ID, installation
+        )
+        installation_key_id, installation_hmac = keyring.digest(
+            MobileStateDomain.INSTALLATION_ID, installation
+        )
+        account_clause, account_values = self._mobile_auth_candidate_clause(
+            "account_hmac_key_id", "account_hmac", account_candidates
+        )
+        ip_clause, ip_values = self._mobile_auth_candidate_clause(
+            "start_ip_hmac_key_id", "start_ip_hmac", ip_candidates
+        )
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                ip_rows = self._conn.execute(
+                    "SELECT expires_at FROM mobile_review_auth_challenges"
+                    " WHERE consumed_at IS NULL AND expires_at > ? AND ("
+                    + ip_clause
+                    + ") ORDER BY expires_at",
+                    (observed_at, *ip_values),
+                ).fetchall()
+                account_rows = self._conn.execute(
+                    "SELECT expires_at FROM mobile_review_auth_challenges"
+                    " WHERE consumed_at IS NULL AND expires_at > ? AND ("
+                    + account_clause
+                    + ") ORDER BY expires_at",
+                    (observed_at, *account_values),
+                ).fetchall()
+                denied: list[float] = []
+                if len(ip_rows) >= live_challenges_per_ip:
+                    denied.append(float(ip_rows[0]["expires_at"]))
+                if len(account_rows) >= live_challenges_per_account:
+                    denied.append(float(account_rows[0]["expires_at"]))
+                if denied:
+                    self._conn.commit()
+                    raise MobileAuthChallengeLimit(
+                        max(1, int(min(denied) - observed_at + 0.999))
+                    )
+                resolved_user_id = None
+                if isinstance(matched_user_id, str) and matched_user_id:
+                    row = self._conn.execute(
+                        "SELECT id FROM users WHERE id = ?", (matched_user_id,)
+                    ).fetchone()
+                    if row is not None:
+                        resolved_user_id = str(row["id"])
+                challenge_id = str(uuid.uuid4())
+                expires_at = observed_at + MOBILE_AUTH_CHALLENGE_TTL_S
+                self._conn.execute(
+                    "INSERT INTO mobile_review_auth_challenges"
+                    " (challenge_id, purpose, provider, deployment_environment,"
+                    " platform, app_version, app_build, application_id,"
+                    " matched_user_id, account_hmac_key_id, account_hmac,"
+                    " start_ip_hmac_key_id, start_ip_hmac, code_challenge,"
+                    " installation_hmac_key_id, installation_hmac, device_label,"
+                    " created_at, expires_at, consumed_at, attempts)"
+                    " VALUES (?, 'review_signin', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                    " ?, ?, ?, ?, ?, ?, NULL, 0)",
+                    (
+                        challenge_id,
+                        provider,
+                        identity.environment,
+                        identity.platform,
+                        identity.app_version,
+                        identity.app_build,
+                        identity.application_id,
+                        resolved_user_id,
+                        account_key_id,
+                        account_hmac,
+                        ip_key_id,
+                        ip_hmac,
+                        normalized_challenge,
+                        installation_key_id,
+                        installation_hmac,
+                        label,
+                        observed_at,
+                        expires_at,
+                    ),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return MobileAuthChallenge(
+            challenge_id=challenge_id,
+            expires_at=expires_at,
+            email_code="",
+            send_required=False,
+        )
+
+    def mobile_review_auth_challenge(self, challenge_id: object):
+        if not isinstance(challenge_id, str) or len(challenge_id) > 64:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM mobile_review_auth_challenges"
+                " WHERE challenge_id = ? AND purpose = 'review_signin'",
+                (challenge_id,),
+            ).fetchone()
+        if row is None:
+            return None
+        from .review_auth import AppIdentityHeaders, ReviewAuthChallengeBinding
+
+        return ReviewAuthChallengeBinding(
+            challenge_id=str(row["challenge_id"]),
+            provider=str(row["provider"]),
+            identity=AppIdentityHeaders(
+                environment=str(row["deployment_environment"]),
+                platform=str(row["platform"]),
+                app_version=str(row["app_version"]),
+                app_build=str(row["app_build"]),
+                application_id=str(row["application_id"]),
+            ),
+            matched_user_id=(
+                str(row["matched_user_id"])
+                if row["matched_user_id"] is not None
+                else None
+            ),
+            account_hmac_key_id=str(row["account_hmac_key_id"]),
+            account_hmac=str(row["account_hmac"]),
+            code_challenge=str(row["code_challenge"]),
+            expires_at=float(row["expires_at"]),
+        )
+
+    def record_mobile_review_signin_failure(
+        self, challenge_id: str, *, now: float | None = None
+    ) -> None:
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT attempts, expires_at, consumed_at"
+                    " FROM mobile_review_auth_challenges WHERE challenge_id = ?"
+                    " AND purpose = 'review_signin'",
+                    (challenge_id,),
+                ).fetchone()
+                if row is not None and row["consumed_at"] is None:
+                    attempts = min(MOBILE_AUTH_MAX_ATTEMPTS, int(row["attempts"]) + 1)
+                    burned = (
+                        attempts >= MOBILE_AUTH_MAX_ATTEMPTS
+                        or float(row["expires_at"]) <= observed_at
+                    )
+                    self._conn.execute(
+                        "UPDATE mobile_review_auth_challenges SET attempts = ?,"
+                        " consumed_at = CASE WHEN ? THEN ? ELSE consumed_at END"
+                        " WHERE challenge_id = ? AND consumed_at IS NULL",
+                        (attempts, int(burned), observed_at, challenge_id),
+                    )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
     def mobile_auth_challenge_email(self, challenge_id: object) -> str | None:
         if not isinstance(challenge_id, str) or len(challenge_id) > 64:
             return None
@@ -4802,7 +5012,488 @@ class UserStore:
             expires_at=replay_expires_at,
         )
 
+    @staticmethod
+    def _mobile_review_exchange_request_hash(
+        *,
+        challenge_id: str,
+        installation_hmac_key_id: str,
+        installation_hmac: str,
+        replacement_selector: str,
+        password_proof_hmac_key_id: str,
+        password_proof_hmac: str,
+        pkce_proof_hmac_key_id: str,
+        pkce_proof_hmac: str,
+        idempotency_hmac_key_id: str,
+        idempotency_hmac: str,
+        review_provider: str,
+        review_build: str,
+        review_expires_at: float,
+        review_credential_hmac_key_id: str,
+        review_credential_hmac: str,
+        review_lane_revision: int,
+    ) -> str:
+        canonical = json.dumps(
+            {
+                "challenge_id": challenge_id,
+                "idempotency_hmac": idempotency_hmac,
+                "idempotency_hmac_key_id": idempotency_hmac_key_id,
+                "installation_hmac": installation_hmac,
+                "installation_hmac_key_id": installation_hmac_key_id,
+                "operation": "mobile-review-auth-exchange-v1",
+                "password_proof_hmac": password_proof_hmac,
+                "password_proof_hmac_key_id": password_proof_hmac_key_id,
+                "pkce_proof_hmac": pkce_proof_hmac,
+                "pkce_proof_hmac_key_id": pkce_proof_hmac_key_id,
+                "replacement_selector": replacement_selector,
+                "review_build": review_build,
+                "review_credential_hmac": review_credential_hmac,
+                "review_credential_hmac_key_id": review_credential_hmac_key_id,
+                "review_expires_at": review_expires_at,
+                "review_lane_revision": review_lane_revision,
+                "review_provider": review_provider,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("ascii")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _assert_mobile_review_exchange_replay_locked(
+        self,
+        row: sqlite3.Row,
+        *,
+        password: str,
+        code_verifier: object,
+        idempotency: bytes,
+        grant,
+        now: float,
+    ) -> MobileAuthExchangeJournal:
+        keyring = self._mobile_state_hmac
+        verifier = self._validate_mobile_auth_verifier(code_verifier)
+        token_scope = self._conn.execute(
+            "SELECT review_lane_revision FROM mobile_api_tokens"
+            " WHERE selector = ? AND user_id = ?",
+            (row["replacement_selector"], row["user_id"]),
+        ).fetchone()
+        if (
+            keyring is None
+            or verifier is None
+            or token_scope is None
+            or float(row["expires_at"]) <= now
+            or row["review_provider"] != grant.provider
+            or row["user_id"] != grant.user_id
+            or row["review_credential_hmac_key_id"]
+            != grant.credential_hmac_key_id
+            or row["review_credential_hmac"] != grant.credential_hmac
+            or int(token_scope["review_lane_revision"] or 0)
+            != grant.lane_revision
+        ):
+            raise MobileAuthExchangeConflict(
+                "The review authentication exchange conflicts."
+            )
+        try:
+            password_proof = keyring.digest_with_key(
+                str(row["code_proof_hmac_key_id"]),
+                MobileStateDomain.REVIEW_AUTH_PASSWORD_PROOF,
+                password,
+            )
+            pkce_proof = keyring.digest_with_key(
+                str(row["pkce_verifier_proof_hmac_key_id"]),
+                MobileStateDomain.REVIEW_AUTH_PKCE_VERIFIER_PROOF,
+                verifier,
+            )
+            idempotency_hmac = keyring.digest_with_key(
+                str(row["idempotency_hmac_key_id"]),
+                MobileStateDomain.REVIEW_AUTH_IDEMPOTENCY,
+                idempotency,
+            )
+        except KeyError as exc:
+            raise RuntimeError(str(exc)) from exc
+        request_hash = self._mobile_review_exchange_request_hash(
+            challenge_id=str(row["challenge_id"]),
+            installation_hmac_key_id=str(row["installation_hmac_key_id"]),
+            installation_hmac=str(row["installation_hmac"]),
+            replacement_selector=str(row["replacement_selector"]),
+            password_proof_hmac_key_id=str(row["code_proof_hmac_key_id"]),
+            password_proof_hmac=password_proof,
+            pkce_proof_hmac_key_id=str(row["pkce_verifier_proof_hmac_key_id"]),
+            pkce_proof_hmac=pkce_proof,
+            idempotency_hmac_key_id=str(row["idempotency_hmac_key_id"]),
+            idempotency_hmac=idempotency_hmac,
+            review_provider=str(row["review_provider"]),
+            review_build=str(row["review_build"]),
+            review_expires_at=float(row["review_expires_at"]),
+            review_credential_hmac_key_id=str(
+                row["review_credential_hmac_key_id"]
+            ),
+            review_credential_hmac=str(row["review_credential_hmac"]),
+            review_lane_revision=int(token_scope["review_lane_revision"]),
+        )
+        exact = all(
+            (
+                hmac.compare_digest(password_proof, str(row["code_proof_hmac"])),
+                hmac.compare_digest(
+                    pkce_proof, str(row["pkce_verifier_proof_hmac"])
+                ),
+                hmac.compare_digest(
+                    idempotency_hmac, str(row["idempotency_hmac"])
+                ),
+                hmac.compare_digest(request_hash, str(row["request_hash"])),
+            )
+        )
+        if not exact:
+            raise MobileAuthExchangeConflict(
+                "The review authentication exchange conflicts."
+            )
+        return self._mobile_auth_journal_from_row(row)
+
+    def _commit_mobile_review_proof_failure_locked(
+        self, challenge: sqlite3.Row, *, now: float
+    ) -> None:
+        attempts = min(MOBILE_AUTH_MAX_ATTEMPTS, int(challenge["attempts"]) + 1)
+        burned = attempts >= MOBILE_AUTH_MAX_ATTEMPTS
+        cursor = self._conn.execute(
+            "UPDATE mobile_review_auth_challenges SET attempts = ?,"
+            " consumed_at = CASE WHEN ? THEN ? ELSE consumed_at END"
+            " WHERE challenge_id = ? AND consumed_at IS NULL",
+            (attempts, int(burned), now, challenge["challenge_id"]),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("A review authentication attempt changed unexpectedly.")
+        self._conn.commit()
+        raise MobileAuthChallengeRejected("Invalid review authentication.")
+
+    def prepare_mobile_review_signin_exchange(
+        self,
+        challenge_id: object,
+        password: object,
+        code_verifier: object,
+        idempotency_key: object,
+        *,
+        grant,
+        now: float | None = None,
+    ) -> MobileAuthExchangeJournal:
+        """Prepare one admission-proven, scoped review bearer atomically."""
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        if not isinstance(challenge_id, str) or len(challenge_id) > 64:
+            raise MobileAuthChallengeRejected("Invalid review authentication.")
+        if not isinstance(password, str) or not password or len(password) > 1024:
+            raise MobileAuthChallengeRejected("Invalid review authentication.")
+        verifier = self._validate_mobile_auth_verifier(code_verifier)
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT * FROM mobile_auth_exchange_journals"
+                    " WHERE purpose = 'review' AND challenge_id = ?",
+                    (challenge_id,),
+                ).fetchone()
+                if existing is not None:
+                    journal = self._assert_mobile_review_exchange_replay_locked(
+                        existing,
+                        password=password,
+                        code_verifier=code_verifier,
+                        idempotency=idempotency,
+                        grant=grant,
+                        now=observed_at,
+                    )
+                    self._conn.commit()
+                    return journal
+                challenge = self._conn.execute(
+                    "SELECT * FROM mobile_review_auth_challenges"
+                    " WHERE challenge_id = ? AND purpose = 'review_signin'",
+                    (challenge_id,),
+                ).fetchone()
+                if (
+                    challenge is None
+                    or challenge["consumed_at"] is not None
+                    or float(challenge["expires_at"]) <= observed_at
+                    or int(challenge["attempts"]) >= MOBILE_AUTH_MAX_ATTEMPTS
+                    or verifier is None
+                    or challenge["matched_user_id"] != grant.user_id
+                    or challenge["provider"] != grant.provider
+                ):
+                    raise MobileAuthChallengeRejected(
+                        "Invalid review authentication."
+                    )
+                if not hmac.compare_digest(
+                    self._mobile_auth_pkce_challenge(verifier),
+                    str(challenge["code_challenge"]),
+                ):
+                    self._commit_mobile_review_proof_failure_locked(
+                        challenge, now=observed_at
+                    )
+                idempotency_candidates = keyring.candidates(
+                    MobileStateDomain.REVIEW_AUTH_IDEMPOTENCY, idempotency
+                )
+                idem_clause, idem_values = self._mobile_auth_candidate_clause(
+                    "idempotency_hmac_key_id",
+                    "idempotency_hmac",
+                    idempotency_candidates,
+                )
+                for table in (
+                    "mobile_auth_exchange_journals",
+                    "mobile_auth_exchange_receipts",
+                ):
+                    collision = self._conn.execute(
+                        f"SELECT 1 FROM {table} WHERE (" + idem_clause + ") LIMIT 1",
+                        idem_values,
+                    ).fetchone()
+                    if collision is not None:
+                        raise MobileAuthExchangeConflict(
+                            "The review authentication exchange conflicts."
+                        )
+                user = self._conn.execute(
+                    "SELECT * FROM users WHERE id = ?", (grant.user_id,)
+                ).fetchone()
+                if user is None:
+                    raise MobileAuthChallengeRejected(
+                        "Invalid review authentication."
+                    )
+                cross_provider = self._conn.execute(
+                    "SELECT 1 FROM mobile_api_tokens WHERE user_id = ?"
+                    " AND review_provider IS NOT NULL AND review_provider != ?"
+                    " UNION ALL SELECT 1 FROM mobile_review_auth_challenges"
+                    " WHERE matched_user_id = ? AND provider != ? LIMIT 1",
+                    (
+                        grant.user_id,
+                        grant.provider,
+                        grant.user_id,
+                        grant.provider,
+                    ),
+                ).fetchone()
+                if cross_provider is not None:
+                    raise MobileAuthChallengeRejected(
+                        "Invalid review authentication."
+                    )
+                auth_epoch = int(user["auth_epoch"] or 0)
+                active_rows = self._conn.execute(
+                    "SELECT selector, token_hash, installation_key_version,"
+                    " installation_key FROM mobile_api_tokens"
+                    " WHERE user_id = ? AND auth_epoch = ?"
+                    " AND revoked_at IS NULL AND expires_at > ?"
+                    " AND (review_expires_at IS NULL OR review_expires_at > ?)"
+                    " AND state = 'active' AND fenced_at IS NULL"
+                    " ORDER BY created_at DESC, selector",
+                    (grant.user_id, auth_epoch, observed_at, observed_at),
+                ).fetchall()
+                matching_rows = [
+                    row
+                    for row in active_rows
+                    if row["installation_key_version"]
+                    == challenge["installation_hmac_key_id"]
+                    and row["installation_key"] == challenge["installation_hmac"]
+                ]
+                if len(matching_rows) > 1:
+                    raise RuntimeError(
+                        "One installation has multiple active credentials."
+                    )
+                prior_row = matching_rows[0] if matching_rows else None
+                prior_selector = (
+                    str(prior_row["selector"]) if prior_row is not None else None
+                )
+                if prior_selector is None and len(active_rows) >= MOBILE_API_TOKEN_ACTIVE_LIMIT:
+                    raise MobileAPITokenLimitError(
+                        "You already have 5 active mobile devices. Revoke one"
+                        " before adding another."
+                    )
+                replacement_selector = ""
+                for _ in range(5):
+                    candidate = secrets.token_urlsafe(MOBILE_API_TOKEN_SELECTOR_BYTES)
+                    if self._conn.execute(
+                        "SELECT 1 FROM mobile_api_tokens WHERE selector = ?",
+                        (candidate,),
+                    ).fetchone() is None:
+                        replacement_selector = candidate
+                        break
+                if not replacement_selector:
+                    raise RuntimeError("Could not allocate a mobile token selector.")
+                token_secret = self._native_token_secret(verifier, challenge_id)
+                token_hash = self._mobile_api_token_hash(
+                    replacement_selector, token_secret
+                )
+                token_expires_at = min(
+                    observed_at + MOBILE_API_TOKEN_TTL_S,
+                    float(grant.bearer_expires_at),
+                )
+                password_key_id, password_proof = keyring.digest(
+                    MobileStateDomain.REVIEW_AUTH_PASSWORD_PROOF, password
+                )
+                pkce_key_id, pkce_proof = keyring.digest(
+                    MobileStateDomain.REVIEW_AUTH_PKCE_VERIFIER_PROOF, verifier
+                )
+                idempotency_key_id, idempotency_hmac = keyring.digest(
+                    MobileStateDomain.REVIEW_AUTH_IDEMPOTENCY, idempotency
+                )
+                verifier_source = (
+                    str(prior_row["token_hash"])
+                    if prior_row is not None
+                    else token_hash
+                )
+                token_verifier_key_id, token_verifier_hmac = keyring.digest(
+                    MobileStateDomain.RECOVERY_TOKEN_VERIFIER, verifier_source
+                )
+                request_hash = self._mobile_review_exchange_request_hash(
+                    challenge_id=challenge_id,
+                    installation_hmac_key_id=str(
+                        challenge["installation_hmac_key_id"]
+                    ),
+                    installation_hmac=str(challenge["installation_hmac"]),
+                    replacement_selector=replacement_selector,
+                    password_proof_hmac_key_id=password_key_id,
+                    password_proof_hmac=password_proof,
+                    pkce_proof_hmac_key_id=pkce_key_id,
+                    pkce_proof_hmac=pkce_proof,
+                    idempotency_hmac_key_id=idempotency_key_id,
+                    idempotency_hmac=idempotency_hmac,
+                    review_provider=str(grant.provider),
+                    review_build=str(challenge["app_build"]),
+                    review_expires_at=token_expires_at,
+                    review_credential_hmac_key_id=str(
+                        grant.credential_hmac_key_id
+                    ),
+                    review_credential_hmac=str(grant.credential_hmac),
+                    review_lane_revision=int(grant.lane_revision),
+                )
+                exchange_id = str(uuid.uuid4())
+                replay_expires_at = max(
+                    float(challenge["expires_at"]), observed_at
+                ) + MOBILE_AUTH_REPLAY_TTL_S
+                self._conn.execute(
+                    "INSERT INTO mobile_api_tokens"
+                    " (selector, token_hash, user_id, auth_epoch, label, created_at,"
+                    " last_used_at, expires_at, revoked_at, installation_key,"
+                    " installation_key_version, state, fenced_at, review_provider,"
+                    " review_build, review_expires_at, review_credential_hmac_key_id,"
+                    " review_credential_hmac, review_lane_revision)"
+                    " VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, 'inactive', NULL,"
+                    " ?, ?, ?, ?, ?, ?)",
+                    (
+                        replacement_selector,
+                        token_hash,
+                        grant.user_id,
+                        auth_epoch,
+                        str(challenge["device_label"]),
+                        observed_at,
+                        token_expires_at,
+                        str(challenge["installation_hmac"]),
+                        str(challenge["installation_hmac_key_id"]),
+                        grant.provider,
+                        str(challenge["app_build"]),
+                        token_expires_at,
+                        grant.credential_hmac_key_id,
+                        grant.credential_hmac,
+                        grant.lane_revision,
+                    ),
+                )
+                if prior_selector is not None:
+                    cursor = self._conn.execute(
+                        "UPDATE mobile_api_tokens SET state = 'fenced',"
+                        " fenced_at = COALESCE(fenced_at, ?)"
+                        " WHERE selector = ? AND user_id = ? AND auth_epoch = ?"
+                        " AND revoked_at IS NULL AND expires_at > ?"
+                        " AND state = 'active' AND fenced_at IS NULL",
+                        (
+                            observed_at,
+                            prior_selector,
+                            grant.user_id,
+                            auth_epoch,
+                            observed_at,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise MobileAuthChallengeRejected(
+                            "Invalid review authentication."
+                        )
+                self._conn.execute(
+                    "INSERT INTO mobile_auth_exchange_journals"
+                    " (exchange_id, purpose, challenge_id, user_id, auth_epoch, phase,"
+                    " installation_hmac_key_id, installation_hmac, prior_selector,"
+                    " replacement_selector, token_verifier_hmac_key_id,"
+                    " token_verifier_hmac, code_proof_hmac_key_id, code_proof_hmac,"
+                    " pkce_verifier_proof_hmac_key_id, pkce_verifier_proof_hmac,"
+                    " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+                    " review_provider, review_build, review_expires_at,"
+                    " review_credential_hmac_key_id, review_credential_hmac,"
+                    " created_at, updated_at, expires_at)"
+                    " VALUES (?, 'review', ?, ?, ?, 'prepared', ?, ?, ?, ?, ?, ?, ?, ?,"
+                    " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        exchange_id,
+                        challenge_id,
+                        grant.user_id,
+                        auth_epoch,
+                        str(challenge["installation_hmac_key_id"]),
+                        str(challenge["installation_hmac"]),
+                        prior_selector,
+                        replacement_selector,
+                        token_verifier_key_id,
+                        token_verifier_hmac,
+                        password_key_id,
+                        password_proof,
+                        pkce_key_id,
+                        pkce_proof,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        grant.provider,
+                        str(challenge["app_build"]),
+                        token_expires_at,
+                        grant.credential_hmac_key_id,
+                        grant.credential_hmac,
+                        observed_at,
+                        observed_at,
+                        replay_expires_at,
+                    ),
+                )
+                self._conn.execute(
+                    "UPDATE mobile_review_auth_challenges SET consumed_at = ?,"
+                    " password_proof_hmac_key_id = ?, password_proof_hmac = ?,"
+                    " pkce_verifier_proof_hmac_key_id = ?,"
+                    " pkce_verifier_proof_hmac = ?, idempotency_hmac_key_id = ?,"
+                    " idempotency_hmac = ? WHERE challenge_id = ?"
+                    " AND consumed_at IS NULL",
+                    (
+                        observed_at,
+                        password_key_id,
+                        password_proof,
+                        pkce_key_id,
+                        pkce_proof,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        challenge_id,
+                    ),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return MobileAuthExchangeJournal(
+            exchange_id=exchange_id,
+            challenge_id=challenge_id,
+            user_id=str(grant.user_id),
+            auth_epoch=auth_epoch,
+            phase="prepared",
+            prior_selector=prior_selector,
+            replacement_selector=replacement_selector,
+            created_at=observed_at,
+            expires_at=replay_expires_at,
+        )
+
     def recover_mobile_email_exchange_credential(
+        self,
+        journal: MobileAuthExchangeJournal,
+        code_verifier: object,
+    ) -> tuple[str, float]:
+        return self.recover_mobile_exchange_credential(journal, code_verifier)
+
+    def recover_mobile_exchange_credential(
         self,
         journal: MobileAuthExchangeJournal,
         code_verifier: object,
@@ -4847,7 +5538,7 @@ class UserStore:
         with self._lock:
             rows = self._conn.execute(
                 "SELECT exchange_id FROM mobile_auth_exchange_journals"
-                " WHERE purpose = 'email' AND phase != 'complete'"
+                " WHERE phase != 'complete'"
                 " ORDER BY created_at, exchange_id"
             ).fetchall()
         return [str(row["exchange_id"]) for row in rows]
@@ -4898,6 +5589,112 @@ class UserStore:
                 ):
                     cursor = self._conn.execute(statement, parameters)
                     deleted += int(cursor.rowcount)
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return deleted
+
+    def expired_mobile_review_token_selectors(
+        self, *, now: float | None = None, batch_size: int = 250
+    ) -> list[str]:
+        if not 1 <= int(batch_size) <= 10_000:
+            raise ValueError("A bounded review-auth purge batch is required.")
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT selector FROM mobile_api_tokens"
+                " WHERE review_expires_at IS NOT NULL AND review_expires_at <= ?"
+                " AND revoked_at IS NULL ORDER BY review_expires_at, selector LIMIT ?",
+                (observed_at, int(batch_size)),
+            ).fetchall()
+        return [str(row["selector"]) for row in rows]
+
+    def purge_expired_mobile_review_auth_state(
+        self,
+        *,
+        now: float | None = None,
+        batch_size: int = 250,
+        revocable_selectors: tuple[str, ...] = (),
+    ) -> int:
+        """Bound review metadata and make expired scoped selectors visibly dead."""
+
+        if not 1 <= int(batch_size) <= 10_000:
+            raise ValueError("A bounded review-auth purge batch is required.")
+        observed_at = time.time() if now is None else float(now)
+        deleted = self.purge_expired_mobile_auth_state(
+            now=observed_at, batch_size=batch_size
+        )
+        cutoff = observed_at - MOBILE_AUTH_REPLAY_TTL_S
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                if revocable_selectors:
+                    if len(revocable_selectors) > int(batch_size) or any(
+                        not self._valid_mobile_api_token_component(
+                            selector, minimum=16, maximum=64
+                        )
+                        for selector in revocable_selectors
+                    ):
+                        raise ValueError("Invalid expired review selector set.")
+                    keyring = self._mobile_state_hmac
+                    if keyring is None:
+                        raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+                    deletable: list[str] = []
+                    for selector in dict.fromkeys(revocable_selectors):
+                        direct_journal = self._conn.execute(
+                            "SELECT 1 FROM mobile_auth_exchange_journals"
+                            " WHERE phase != 'complete' AND"
+                            " (prior_selector = ? OR replacement_selector = ?)"
+                            " UNION ALL SELECT 1 FROM mobile_device_revoke_journals"
+                            " WHERE phase != 'complete' AND"
+                            " (initiator_selector = ? OR target_selector = ?) LIMIT 1",
+                            (selector, selector, selector, selector),
+                        ).fetchone()
+                        if direct_journal is not None:
+                            continue
+                        selector_candidates = keyring.candidates(
+                            MobileStateDomain.RECOVERY_SELECTOR, selector
+                        )
+                        selector_clause, selector_values = (
+                            self._mobile_auth_candidate_clause(
+                                "selector_hmac_key_id",
+                                "selector_hmac",
+                                selector_candidates,
+                            )
+                        )
+                        signout_journal = self._conn.execute(
+                            "SELECT 1 FROM mobile_signout_journals"
+                            " WHERE phase != 'complete' AND ("
+                            + selector_clause
+                            + ") LIMIT 1",
+                            selector_values,
+                        ).fetchone()
+                        if signout_journal is None:
+                            deletable.append(selector)
+                    if deletable:
+                        placeholders = ",".join("?" for _ in deletable)
+                        cursor = self._conn.execute(
+                            "DELETE FROM mobile_api_tokens"
+                            " WHERE review_expires_at IS NOT NULL"
+                            " AND review_expires_at <= ? AND selector IN ("
+                            + placeholders
+                            + ")",
+                            (observed_at, *deletable),
+                        )
+                        deleted += int(cursor.rowcount)
+                cursor = self._conn.execute(
+                    "DELETE FROM mobile_review_auth_challenges WHERE rowid IN ("
+                    " SELECT challenge.rowid FROM mobile_review_auth_challenges challenge"
+                    " WHERE challenge.expires_at <= ? AND NOT EXISTS ("
+                    "  SELECT 1 FROM mobile_auth_exchange_journals journal"
+                    "  WHERE journal.challenge_id = challenge.challenge_id"
+                    "  AND journal.phase != 'complete')"
+                    " ORDER BY challenge.expires_at LIMIT ?)",
+                    (cutoff, int(batch_size)),
+                )
+                deleted += int(cursor.rowcount)
                 self._conn.commit()
             except Exception:
                 if self._conn.in_transaction:
@@ -5017,6 +5814,10 @@ class UserStore:
                 and int(row["auth_epoch"]) == current_auth_epoch
                 and str(row["state"]) == "active"
                 and row["fenced_at"] is None
+                and (
+                    row["review_expires_at"] is None
+                    or float(row["review_expires_at"]) > now
+                )
             ),
         )
 
@@ -5136,7 +5937,8 @@ class UserStore:
                 return []
             rows = self._conn.execute(
                 "SELECT selector, user_id, auth_epoch, label, created_at,"
-                " last_used_at, expires_at, revoked_at, state, fenced_at"
+                " last_used_at, expires_at, revoked_at, state, fenced_at,"
+                " review_expires_at"
                 " FROM mobile_api_tokens WHERE user_id = ?"
                 " ORDER BY created_at DESC, selector",
                 (user_id,),
@@ -5219,6 +6021,10 @@ class UserStore:
                 or int(token_row["auth_epoch"]) != int(user["auth_epoch"] or 0)
                 or str(token_row["state"]) != "active"
                 or token_row["fenced_at"] is not None
+                or (
+                    token_row["review_expires_at"] is not None
+                    and float(token_row["review_expires_at"]) <= observed_at
+                )
             ):
                 return None
 
@@ -5263,6 +6069,36 @@ class UserStore:
             installation_key=(
                 str(token_row["installation_key"])
                 if token_row["installation_key"] is not None
+                else None
+            ),
+            review_provider=(
+                str(token_row["review_provider"])
+                if token_row["review_provider"] is not None
+                else None
+            ),
+            review_build=(
+                str(token_row["review_build"])
+                if token_row["review_build"] is not None
+                else None
+            ),
+            review_expires_at=(
+                float(token_row["review_expires_at"])
+                if token_row["review_expires_at"] is not None
+                else None
+            ),
+            review_credential_hmac_key_id=(
+                str(token_row["review_credential_hmac_key_id"])
+                if token_row["review_credential_hmac_key_id"] is not None
+                else None
+            ),
+            review_credential_hmac=(
+                str(token_row["review_credential_hmac"])
+                if token_row["review_credential_hmac"] is not None
+                else None
+            ),
+            review_lane_revision=(
+                int(token_row["review_lane_revision"])
+                if token_row["review_lane_revision"] is not None
                 else None
             ),
         )

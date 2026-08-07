@@ -1662,6 +1662,39 @@ def test_later_manifest_binds_the_accepted_genesis_manifest_hash(
     }
 
 
+def test_post_cutover_bundle_cannot_strip_recovery_fence_attestation(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.execute(
+        "INSERT INTO mobile_recovery_accepted_baselines "
+        "(lineage_id, baseline_backup_id, minimum_backup_created_at, "
+        "manifest_sha256, schema_generation, baseline_db_checkpoint, accepted_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            BASELINE_LINEAGE_ID,
+            "20260727T110000Z-aaaaaaaaaaaa",
+            CAPTURED_AT.timestamp() - 3600,
+            "d" * 64,
+            1,
+            "e" * 64,
+            CAPTURED_AT.timestamp() - 3500,
+        ),
+    )
+    connection.commit()
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    manifest.pop("recovery_fence")
+    _rewrite_completion(bundle, manifest)
+    scratch = tmp_path / "stripped-recovery-fence-scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="recovery fence declaration is missing"):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
 def test_generation_zero_cannot_be_declared_as_a_cutover_baseline(
     tmp_path, synthetic_sessions
 ):

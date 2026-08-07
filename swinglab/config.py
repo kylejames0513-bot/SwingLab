@@ -183,6 +183,12 @@ DEFAULTS: dict[str, Any] = {
         "mobile_auth_failed_exchanges_per_15_minutes_per_email": 10,
         "mobile_auth_live_challenges_per_ip": 20,
         "mobile_auth_live_challenges_per_email": 3,
+        "review_auth_starts_per_15_minutes_per_ip": 20,
+        "review_auth_starts_per_15_minutes_per_account": 5,
+        "review_auth_failed_exchanges_per_15_minutes_per_ip": 20,
+        "review_auth_failed_exchanges_per_15_minutes_per_account": 10,
+        "review_auth_live_challenges_per_ip": 20,
+        "review_auth_live_challenges_per_account": 3,
         # Bare-code default is an open, no-login instance; the shipped
         # config.yaml turns accounts on.
         "require_account": False,

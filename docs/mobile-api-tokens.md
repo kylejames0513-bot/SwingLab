@@ -27,6 +27,41 @@ readback succeeds, exchange returns a credential-free `202 pending`; the old
 token remains rejected and the replacement remains inactive. Crash startup
 resumes this journal even when the feature flag has since been turned off.
 
+## Store-review access
+
+`POST /api/v1/auth/review/start` and
+`POST /api/v1/auth/review/exchange` provide the same PKCE-bound, recovery-fenced
+token contract for an explicitly configured Apple or Google review lane. The
+shipped `ReviewAuthAdmission` denies every lane, so both routes return `404`
+and write nothing until the entitlements subsystem injects an active lane.
+Review start sends no email and returns the same no-store `202` shape for a
+matching or unknown account. Exchange uses a dedicated provider-scoped scrypt
+credential—not a golfer password—and returns one generic `401` for bad proof.
+
+Both calls require exactly one of each immutable identity header:
+
+- `X-CaddieInsight-Environment`
+- `X-CaddieInsight-Platform`
+- `X-CaddieInsight-App-Version`
+- `X-CaddieInsight-App-Build`
+- `X-CaddieInsight-Application-Id`
+
+Missing, duplicated, comma-joined, padded, malformed, or policy-mismatched
+members are rejected before admission or persistence. Application-ID policy
+revision 1 allows `com.caddieinsight.app.dev` in development,
+`com.caddieinsight.app.staging` or `com.caddieinsight.app` in staging, and only
+`com.caddieinsight.app` in production. The server-owned deployment environment
+and canonical origin are never inferred from request headers or Host.
+
+A successful exchange issues an ordinary installation-bound token with a
+short-lived provider/build scope. Every authenticated request rechecks that
+scope; expiry, lane closure, revision/credential mismatch, or account epoch
+rotation rejects and revokes it. Expired review tokens are removed from the
+live-device count before issuance. The ordinary five-device cap remains
+unchanged, and ordinary email/browser-issued tokens have null review scope.
+Raw review accounts, passwords, PKCE verifiers, idempotency keys, and bearer
+secrets are not retained in configuration, health output, or auth tables.
+
 ## Issue and manage a device
 
 From an authenticated same-origin browser session, the compatibility management

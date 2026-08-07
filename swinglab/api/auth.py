@@ -18,6 +18,9 @@ class MobileAuthContext:
     via_bearer: bool
     selector: str | None
     auth_epoch: int
+    review_provider: str | None = None
+    review_build: str | None = None
+    review_expires_at: float | None = None
 
 
 class MobileAuthError(HTTPException):
@@ -85,8 +88,40 @@ def _cookie_user(request: Request, users: UserStore) -> User | None:
     return user
 
 
+def _recheck_review_principal(
+    users: UserStore, principal, admission, credential_mutation_guard=None
+):
+    if principal.review_provider is None:
+        return principal
+    if admission is None:
+        close = (
+            credential_mutation_guard.close_selector(principal.selector)
+            if credential_mutation_guard is not None
+            else None
+        )
+        if close is None or close.drain(timeout_seconds=0.25):
+            users.revoke_mobile_api_token(principal.user.id, principal.selector)
+        return None
+    from ..web.review_auth import review_scope_is_active
+
+    if not review_scope_is_active(admission, principal):
+        close = (
+            credential_mutation_guard.close_selector(principal.selector)
+            if credential_mutation_guard is not None
+            else None
+        )
+        if close is None or close.drain(timeout_seconds=0.25):
+            users.revoke_mobile_api_token(principal.user.id, principal.selector)
+        return None
+    return principal
+
+
 def resolve_mobile_auth(
-    request: Request, users: UserStore, require_account: bool
+    request: Request,
+    users: UserStore,
+    require_account: bool,
+    review_auth_admission=None,
+    credential_mutation_guard=None,
 ) -> MobileAuthContext:
     """Resolve bearer-or-cookie auth, never falling back after Authorization."""
 
@@ -95,6 +130,13 @@ def resolve_mobile_auth(
     bearer = mobile_bearer_token(request)
     if bearer is not None:
         principal = users.authenticate_mobile_api_principal(bearer)
+        if principal is not None:
+            principal = _recheck_review_principal(
+                users,
+                principal,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
         if principal is None:
             raise mobile_bearer_unauthorized()
         return MobileAuthContext(
@@ -102,6 +144,9 @@ def resolve_mobile_auth(
             via_bearer=True,
             selector=principal.selector,
             auth_epoch=principal.auth_epoch,
+            review_provider=principal.review_provider,
+            review_build=principal.review_build,
+            review_expires_at=principal.review_expires_at,
         )
     user = _cookie_user(request, users)
     if user is None:
@@ -115,7 +160,11 @@ def resolve_mobile_auth(
 
 
 def require_mobile_bearer(
-    request: Request, users: UserStore, require_account: bool
+    request: Request,
+    users: UserStore,
+    require_account: bool,
+    review_auth_admission=None,
+    credential_mutation_guard=None,
 ) -> MobileAuthContext:
     """Require explicit native bearer auth before an unsafe mobile mutation."""
 
@@ -127,6 +176,13 @@ def require_mobile_bearer(
             "bearer_required", "A mobile access token is required."
         )
     principal = users.authenticate_mobile_api_principal(bearer)
+    if principal is not None:
+        principal = _recheck_review_principal(
+            users,
+            principal,
+            review_auth_admission,
+            credential_mutation_guard,
+        )
     if principal is None:
         raise mobile_bearer_unauthorized()
     return MobileAuthContext(
@@ -134,6 +190,9 @@ def require_mobile_bearer(
         via_bearer=True,
         selector=principal.selector,
         auth_epoch=principal.auth_epoch,
+        review_provider=principal.review_provider,
+        review_build=principal.review_build,
+        review_expires_at=principal.review_expires_at,
     )
 
 

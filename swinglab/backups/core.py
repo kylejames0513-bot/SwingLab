@@ -946,10 +946,36 @@ def _verify_recovery_fence_attestation(
     db_path: Path, manifest: dict[str, Any]
 ) -> None:
     declared = manifest.get("recovery_fence")
-    if declared is None:
-        return
     connection = _read_only_connection(db_path)
     try:
+        if declared is None:
+            required_tables = {
+                "mobile_recovery_baseline_journals",
+                "mobile_recovery_accepted_baselines",
+            }
+            present_tables = {
+                str(row[0])
+                for row in connection.execute(
+                    "SELECT name FROM sqlite_master WHERE type = 'table'"
+                    " AND name IN (?, ?)",
+                    tuple(sorted(required_tables)),
+                ).fetchall()
+            }
+            if not present_tables:
+                return
+            if present_tables != required_tables:
+                raise BackupError(
+                    "The backup recovery fence attestation is invalid."
+                )
+            protected_rows = connection.execute(
+                "SELECT (SELECT COUNT(*) FROM mobile_recovery_baseline_journals)"
+                " + (SELECT COUNT(*) FROM mobile_recovery_accepted_baselines)"
+            ).fetchone()[0]
+            if protected_rows:
+                raise BackupError(
+                    "The backup recovery fence declaration is missing."
+                )
+            return
         accepted = connection.execute(
             "SELECT lineage_id, baseline_backup_id, manifest_sha256, "
             "schema_generation, baseline_db_checkpoint FROM "
