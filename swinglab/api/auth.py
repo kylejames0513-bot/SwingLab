@@ -112,9 +112,18 @@ def require_mobile_bearer(
 ) -> MobileAuthContext:
     """Require explicit native bearer auth before an unsafe mobile mutation."""
 
-    context = resolve_mobile_auth(request, users, require_account)
-    if not context.via_bearer:
+    if not require_account:
+        raise HTTPException(404, "Account API is not enabled.")
+    bearer = _mobile_bearer_token(request)
+    if bearer is None:
         raise MobileAuthError(
             "bearer_required", "A mobile access token is required."
         )
-    return context
+    principal = users.authenticate_mobile_api_principal(bearer)
+    if principal is None:
+        raise mobile_bearer_unauthorized()
+    return MobileAuthContext(
+        user=principal.user,
+        via_bearer=True,
+        selector=principal.selector,
+    )

@@ -88,3 +88,43 @@ def test_native_unsafe_write_requires_bearer_without_cookie_fallback(unsafe_nati
     assert hostile_origin.status_code == 200
     assert hostile_origin.json()["user_id"] == owner.id
     assert writes == [owner.id, owner.id]
+
+
+def test_native_bearer_only_rejection_never_reads_or_mutates_cookie_session(
+    unsafe_native_route,
+):
+    """Catches a bearer-only rejection authenticating or clearing an ambient cookie."""
+    app, writes = unsafe_native_route
+    anonymous = TestClient(app)
+    missing = anonymous.post("/_test/native-write")
+    assert missing.status_code == 401
+    assert missing.json() == {
+        "resource_version": 1,
+        "code": "bearer_required",
+        "message": "A mobile access token is required.",
+        "retryable": False,
+        "reference_id": None,
+    }
+    assert missing.headers["www-authenticate"] == "Bearer"
+    assert writes == []
+
+    browser = TestClient(app)
+    signup(browser)
+    user = app.state.users.get_by_email("golfer@example.com")
+    assert user is not None
+    stale_cookie = browser.cookies.get("session")
+    assert stale_cookie
+    app.state.users.set_password(user.id, "replacement-password")
+
+    stale = browser.post("/_test/native-write")
+    assert stale.status_code == 401
+    assert stale.json() == {
+        "resource_version": 1,
+        "code": "bearer_required",
+        "message": "A mobile access token is required.",
+        "retryable": False,
+        "reference_id": None,
+    }
+    assert "set-cookie" not in stale.headers
+    assert browser.cookies.get("session") == stale_cookie
+    assert writes == []
