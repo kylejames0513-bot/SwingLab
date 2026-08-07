@@ -32,7 +32,7 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -72,7 +72,7 @@ from ..report_bundle import (
     CoreReportBundleError,
     GuidedReportRendererUnavailable,
     ReportHtmlWriter,
-    cleanup_abandoned_report_bundles,
+    prepare_abandoned_report_bundle_cleanup,
 )
 from ..report_view import GUIDED_REPORT_PRESENTATION_VERSION
 from . import mailer
@@ -1044,12 +1044,17 @@ class JobManager:
                 )
             )
 
-        cleaned = 0
-        for child, child_rels in plans:
-            cleaned += cleanup_abandoned_report_bundles(
-                child, protected_rels=child_rels
-            )
-        return cleaned
+        with ExitStack() as stack:
+            prepared = [
+                stack.enter_context(
+                    prepare_abandoned_report_bundle_cleanup(
+                        child,
+                        protected_rels=child_rels,
+                    )
+                )
+                for child, child_rels in plans
+            ]
+            return sum(cleanup.execute() for cleanup in prepared)
 
     def _run(self, job: Job, video_path: Path) -> None:
         def log(message: str) -> None:

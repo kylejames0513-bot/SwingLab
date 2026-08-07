@@ -685,6 +685,37 @@ def test_retry_protects_complete_persisted_bundle_and_reclaims_other_final(
     assert not abandoned.report_path.parent.exists()
 
 
+def test_retry_prepares_every_analysis_child_before_deleting_an_earlier_bundle(
+    tmp_path: Path,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    removable = _guided_result(
+        job,
+        tmp_path,
+        attempt_id="d" * 32,
+        analysis_name="a-valid",
+    )
+    malformed_session = job.session_dir / "out" / "z-malformed"
+    malformed = malformed_session / (".report-attempt-" + "e" * 32)
+    malformed.mkdir(parents=True)
+    (malformed / ".report-attempt-owner.json").write_text(
+        "{}\n", encoding="utf-8"
+    )
+
+    with pytest.raises(CoreReportBundleError, match="ownership marker"):
+        manager._cleanup_retry_report_bundles(job)
+
+    assert removable.report_path.parent.is_dir()
+    assert malformed.is_dir()
+
+
 @pytest.mark.parametrize(
     "damage",
     ["partial", "unsafe", "duplicate", "cross-child", "recursive"],

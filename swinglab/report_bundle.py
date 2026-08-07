@@ -10,10 +10,10 @@ import re
 import stat
 import sys
 import uuid
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Protocol, Sequence
+from typing import Iterator, Protocol, Sequence
 
 from .config import Config
 from .evidence import EvidenceSnapshot
@@ -1583,11 +1583,29 @@ def _protected_roots(protected_rels: Sequence[str]) -> frozenset[str]:
     return frozenset(groups)
 
 
-def cleanup_abandoned_report_bundles(
+@dataclass
+class _PreparedReportBundleCleanup:
+    plans: tuple[_PinnedOwnedTree, ...]
+    active: bool = True
+    executed: bool = False
+
+    def execute(self) -> int:
+        if not self.active:
+            raise CoreReportBundleError("prepared report cleanup is no longer pinned")
+        if self.executed:
+            raise CoreReportBundleError("prepared report cleanup already executed")
+        self.executed = True
+        for plan in self.plans:
+            plan.delete_preserving(already_validated=True)
+        return len(self.plans)
+
+
+@contextmanager
+def prepare_abandoned_report_bundle_cleanup(
     session_dir: Path,
     *,
     protected_rels: Sequence[str] | None = None,
-) -> int:
+) -> Iterator[_PreparedReportBundleCleanup]:
     session = _resolved_plain_directory(Path(session_dir), label="session root")
     protected = None if protected_rels is None else _protected_roots(protected_rels)
     child_names: list[str] = []
@@ -1652,6 +1670,20 @@ def cleanup_abandoned_report_bundles(
         for plan in plans:
             plan.validate()
         _after_owned_tree_validation(tuple(plans))
-        for plan in plans:
-            plan.delete_preserving(already_validated=True)
-        return len(plans)
+        prepared = _PreparedReportBundleCleanup(tuple(plans))
+        try:
+            yield prepared
+        finally:
+            prepared.active = False
+
+
+def cleanup_abandoned_report_bundles(
+    session_dir: Path,
+    *,
+    protected_rels: Sequence[str] | None = None,
+) -> int:
+    with prepare_abandoned_report_bundle_cleanup(
+        session_dir,
+        protected_rels=protected_rels,
+    ) as prepared:
+        return prepared.execute()
