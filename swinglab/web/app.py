@@ -76,6 +76,22 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import ClientDisconnect
 
 from .. import sample
+from ..api.contracts import (
+    BriefResponse,
+    IdentityResponse,
+    LegacySessionResponse,
+    LegacySessionsResponse,
+    LegacyTodayResponse,
+    MobileSessionResponse,
+    MobileTodayResponse,
+    MobileTokenIssueResponse,
+    MobileTokenListResponse,
+    MobileTokenRevokeResponse,
+    NativeEventResponse,
+    PracticeCheckinResponse,
+    ProfileResponse,
+)
+from ..api.errors import install_mobile_error_handlers
 from ..caddie_brief import (
     build_caddie_brief_from_payload,
     payload_has_coachable_data,
@@ -178,6 +194,62 @@ HISTORY_RESET_SESSION_KEY = "history_reset_confirmation"
 HISTORY_RESET_FLASH_KEY = "history_reset_flash"
 HISTORY_SESSION_EPOCH_KEY = "history_epoch"
 HISTORY_RESET_CONFIRMATION = "START OVER"
+
+
+def serialize_mobile_session(job: Job, owner: User) -> MobileSessionResponse:
+    """Return the allowlisted native view of one owned analysis session."""
+    if job.user_id != owner.id:
+        raise ValueError("A mobile session must belong to its authenticated owner.")
+    failure = None
+    if job.status == FAILED:
+        failure = {
+            "code": "processing",
+            "retryable": False,
+            "message": "This analysis could not be completed.",
+        }
+    return MobileSessionResponse(
+        id=job.id,
+        status=job.status,
+        created_at=job.as_dict()["created_at"],
+        source_name=job.source_name,
+        hand=job.hand,
+        angle=job.angle,
+        club=job.club,
+        level=job.level,
+        fast=job.fast,
+        swings_done=job.swings_done,
+        swings_total=job.swings_total,
+        queue_position=None,
+        report_url=(
+            f"/session/{job.id}/files/{job.report_rel}"
+            if job.status == DONE and job.report_rel
+            else None
+        ),
+        failure=failure,
+    )
+
+
+def serialize_mobile_today(
+    *,
+    profile: dict | None,
+    latest_session: Job | None,
+    owner: User,
+    caddie_brief: dict | None,
+    practice_plan: list[dict],
+    practice_checked_in: bool,
+) -> MobileTodayResponse:
+    """Build a native dashboard without embedding the legacy job payload."""
+    return MobileTodayResponse(
+        profile=profile,
+        latest_session=(
+            serialize_mobile_session(latest_session, owner)
+            if latest_session is not None
+            else None
+        ),
+        caddie_brief=caddie_brief,
+        practice_plan=practice_plan,
+        practice_checked_in=practice_checked_in,
+    )
 HISTORY_RESET_NONCE_TTL_S = 10 * 60
 HISTORY_RESET_RECENT_AUTH_S = 15 * 60
 PASSWORD_ADDED_REAUTH_SESSION_KEY = "password_added_requires_reauth"
@@ -480,6 +552,7 @@ def create_app(
     *,
     shopify_admin_client: shopify_admin.ShopifyAdminClient | None = None,
     start_shopify_sync_worker: bool = True,
+    start_background_workers: bool = True,
 ) -> FastAPI:
     cfg = cfg or Config.load()
     shopify_sync_settings = shopify_customer_sync.validate_sync_settings(
@@ -504,7 +577,12 @@ def create_app(
     # Users first: the job runner needs the store to decide the coach-replay
     # Pro gate (billing.replay_pro_only) at analysis time.
     users = UserStore(sessions_dir / "swinglab.db")
-    manager = JobManager(sessions_dir, cfg, user_store=users)
+    manager = JobManager(
+        sessions_dir,
+        cfg,
+        user_store=users,
+        recover_interrupted=start_background_workers,
+    )
     throttle = Throttle(sessions_dir / "swinglab.db")
     code_send_locks: dict[
         tuple[str, str], tuple[threading.Lock, int]
@@ -513,7 +591,11 @@ def create_app(
     app = FastAPI(title=f"{cfg.brand['name']} — swing analysis")
     app.state.jobs = manager
     app.state.users = users
+    app.state.throttle = throttle
     app.state.cfg = cfg
+    # No existing resource route opts into the native error envelope yet.
+    # Future native handlers must be named explicitly before registration.
+    install_mobile_error_handlers(app, frozenset())
     static_dir = Path(__file__).parent / "static"
     # Static assets contain only versioned public brand imagery and the
     # install shell (icon + service worker), never a report, user data, or
@@ -575,7 +657,7 @@ def create_app(
     app.state.shopify_admin_client = shopify_admin_client
     app.state.shopify_sync = shopify_sync_coordinator
     if shopify_sync_coordinator is not None:
-        if start_shopify_sync_worker:
+        if start_background_workers and start_shopify_sync_worker:
             app.router.add_event_handler(
                 "startup", shopify_sync_coordinator.start
             )
@@ -4098,7 +4180,7 @@ def create_app(
         payload["resource_version"] = 1
         return payload
 
-    @app.get("/api/v1/me")
+    @app.get("/api/v1/me", response_model=IdentityResponse)
     def api_v1_me(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4116,7 +4198,7 @@ def create_app(
             }
         )
 
-    @app.get("/api/v1/mobile-tokens")
+    @app.get("/api/v1/mobile-tokens", response_model=MobileTokenListResponse)
     def api_v1_mobile_tokens(request: Request):
         """List a browser owner's non-secret device token metadata."""
 
@@ -4131,7 +4213,7 @@ def create_app(
             }
         )
 
-    @app.post("/api/v1/mobile-tokens")
+    @app.post("/api/v1/mobile-tokens", response_model=MobileTokenIssueResponse)
     async def api_v1_issue_mobile_token(request: Request):
         """Issue a device token once to an authenticated same-origin browser."""
 
@@ -4163,7 +4245,9 @@ def create_app(
             status_code=201,
         )
 
-    @app.delete("/api/v1/mobile-tokens/{selector}")
+    @app.delete(
+        "/api/v1/mobile-tokens/{selector}", response_model=MobileTokenRevokeResponse
+    )
     def api_v1_revoke_mobile_token(selector: str, request: Request):
         user = mobile_token_management_user(request)
         if not users.revoke_mobile_api_token(user.id, selector):
@@ -4172,7 +4256,7 @@ def create_app(
             raise HTTPException(404, "Mobile device not found.")
         return no_store_json({"resource_version": 1, "revoked": True})
 
-    @app.get("/api/v1/profile")
+    @app.get("/api/v1/profile", response_model=ProfileResponse)
     def api_v1_profile(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4182,7 +4266,7 @@ def create_app(
             }
         )
 
-    @app.put("/api/v1/profile")
+    @app.put("/api/v1/profile", response_model=ProfileResponse)
     async def api_v1_update_profile(request: Request):
         user, via_bearer = api_v1_auth(request)
         if not via_bearer and not _same_origin_form_post(request):
@@ -4232,7 +4316,7 @@ def create_app(
             {"resource_version": 1, "profile": profile_payload(profile)}
         )
 
-    @app.get("/api/v1/today")
+    @app.get("/api/v1/today", response_model=LegacyTodayResponse)
     def api_v1_today(request: Request):
         user, _ = api_v1_auth(request)
         profile = users.get_golfer_profile(user.id)
@@ -4256,7 +4340,7 @@ def create_app(
             }
         )
 
-    @app.get("/api/v1/sessions")
+    @app.get("/api/v1/sessions", response_model=LegacySessionsResponse)
     def api_v1_sessions(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4269,7 +4353,7 @@ def create_app(
             }
         )
 
-    @app.get("/api/v1/sessions/{job_id}")
+    @app.get("/api/v1/sessions/{job_id}", response_model=LegacySessionResponse)
     def api_v1_session(job_id: str, request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4278,7 +4362,7 @@ def create_app(
             )
         )
 
-    @app.get("/api/v1/sessions/{job_id}/brief")
+    @app.get("/api/v1/sessions/{job_id}/brief", response_model=BriefResponse)
     def api_v1_session_brief(job_id: str, request: Request):
         user, _ = api_v1_auth(request)
         job = get_job_or_404(job_id, request, authenticated_user=user)
@@ -4291,7 +4375,7 @@ def create_app(
             {"resource_version": 1, "caddie_brief": caddie_brief_payload(brief)}
         )
 
-    @app.get("/api/v1/practice-checkins")
+    @app.get("/api/v1/practice-checkins", response_model=PracticeCheckinResponse)
     def api_v1_practice_checkins(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4307,7 +4391,7 @@ def create_app(
             }
         )
 
-    @app.post("/api/v1/practice-checkins")
+    @app.post("/api/v1/practice-checkins", response_model=PracticeCheckinResponse)
     async def api_v1_practice_checkin(request: Request):
         user, via_bearer = api_v1_auth(request)
         if not via_bearer and not _same_origin_form_post(request):
@@ -4347,7 +4431,7 @@ def create_app(
             }
         )
 
-    @app.post("/api/v1/events")
+    @app.post("/api/v1/events", response_model=NativeEventResponse)
     async def api_v1_product_event(request: Request):
         # Event capture is intentionally not a bearer-token capability: it is
         # a browser telemetry surface with its existing same-origin guard.
@@ -4730,10 +4814,18 @@ def create_app(
     # Weekly practice-plan digest: hourly daemon thread, started ONLY when
     # Email is configured AND web.digest_enabled is on — otherwise None and
     # zero behavior (see digest.py for the consent + claim-before-send rules).
-    app.state.digest_thread = digest.start_scheduler(manager, users, cfg, secret)
+    app.state.digest_thread = (
+        digest.start_scheduler(manager, users, cfg, secret)
+        if start_background_workers
+        else None
+    )
     # Pro expiry reminder: daily daemon thread, transactional — gated only on
     # email delivery being configured (the digest kill-switch and consent
     # flags do not apply; see digest.py, bottom).
-    app.state.pro_expiry_thread = digest.start_pro_expiry_scheduler(users, cfg)
+    app.state.pro_expiry_thread = (
+        digest.start_pro_expiry_scheduler(users, cfg)
+        if start_background_workers
+        else None
+    )
 
     return app

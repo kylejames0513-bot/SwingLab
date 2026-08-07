@@ -216,7 +216,14 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, sessions_dir: Path, cfg: Config, user_store=None):
+    def __init__(
+        self,
+        sessions_dir: Path,
+        cfg: Config,
+        user_store=None,
+        *,
+        recover_interrupted: bool = True,
+    ):
         """``user_store`` (a swinglab.web.users.UserStore, duck-typed on
         ``.get(user_id)``) lets the runner check the owner's plan at
         analysis time for the coach-replay Pro gate. None — the default,
@@ -224,6 +231,7 @@ class JobManager:
         self.sessions_dir = sessions_dir
         self.cfg = cfg
         self._users = user_store
+        self._closed = False
         sessions_dir.mkdir(parents=True, exist_ok=True)
         # One re-entrant lock serializes the single-replica job state machine,
         # including the short filesystem/SQLite two-phase history reset.  The
@@ -285,7 +293,20 @@ class JobManager:
         self._recover_history_operations()
         self._import_legacy_sessions()
         self._cleanup_expired()
-        self._requeue_interrupted()
+        if recover_interrupted:
+            self.recover_interrupted()
+
+    def close(self) -> None:
+        """Release every thread-pool and SQLite resource exactly once."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+        # Analyses persist through this connection, so wait for the pool before
+        # closing it rather than racing a background write.
+        self._pool.shutdown(wait=True, cancel_futures=True)
+        with self._lock:
+            self._conn.close()
 
     # -- lookup -----------------------------------------------------------
     def get(self, job_id: str) -> Job | None:
@@ -1576,7 +1597,18 @@ class JobManager:
         """The uploaded video (saved as source.<ext> by the web layer)."""
         return next(job.session_dir.glob("source.*"), None)
 
-    def _requeue_interrupted(self) -> None:
+    def recover_interrupted(
+        self, *, blocked_user_ids: frozenset[str] = frozenset()
+    ) -> None:
+        """Resume interrupted work, excluding owners held by the caller."""
+        if blocked_user_ids:
+            self._requeue_interrupted(blocked_user_ids=blocked_user_ids)
+        else:
+            self._requeue_interrupted()
+
+    def _requeue_interrupted(
+        self, *, blocked_user_ids: frozenset[str] = frozenset()
+    ) -> None:
         """Re-run jobs that were queued or running when the process died."""
         with self._lock:
             rows = self._conn.execute(
@@ -1585,6 +1617,8 @@ class JobManager:
             ).fetchall()
         for row in rows:
             job = self._from_row(row)
+            if job.user_id in blocked_user_ids:
+                continue
             video = self._source_path(job)
             if video is None:
                 job.status = FAILED

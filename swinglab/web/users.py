@@ -830,6 +830,7 @@ class PasswordAddConflict(RuntimeError):
 class UserStore:
     def __init__(self, db_path: str | Path):
         self._lock = threading.Lock()
+        self._closed = False
         self._db_path = Path(db_path)
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
@@ -1200,6 +1201,14 @@ class UserStore:
             except Exception:
                 self._conn.rollback()
                 raise
+
+    def close(self) -> None:
+        """Release this store's SQLite connection exactly once."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._conn.close()
 
     def _prepare_shopify_sync_schema(self, initialize_statuses: bool) -> None:
         """Initialize sync state and add the customer-ID uniqueness guard.

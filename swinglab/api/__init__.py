@@ -12,12 +12,21 @@ if TYPE_CHECKING:
 
 
 def create_app(
-    cfg: Config | None = None, sessions_dir: str | Path = "sessions"
+    cfg: Config | None = None,
+    sessions_dir: str | Path = "sessions",
+    *,
+    start_shopify_sync_worker: bool = True,
+    start_background_workers: bool = True,
 ) -> "FastAPI":
     """Create the existing FastAPI application through the API boundary."""
     from ..web.app import create_app as _create_app
 
-    return _create_app(cfg=cfg, sessions_dir=sessions_dir)
+    return _create_app(
+        cfg=cfg,
+        sessions_dir=sessions_dir,
+        start_shopify_sync_worker=start_shopify_sync_worker,
+        start_background_workers=start_background_workers,
+    )
 
 
 __all__ = ["create_app"]

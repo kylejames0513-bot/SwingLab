@@ -48,6 +48,19 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+      - name: Verify frozen OpenAPI contract
+        run: |
+          python scripts/export_openapi.py --output "$RUNNER_TEMP/openapi.check.json"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          expected = Path("docs/api/openapi-v1.json").read_bytes()
+          actual = (Path(os.environ["RUNNER_TEMP"]) / "openapi.check.json").read_bytes()
+          if actual != expected:
+              raise SystemExit("OpenAPI snapshot is stale; regenerate docs/api/openapi-v1.json locally.")
+          PY
+
   container-smoke:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

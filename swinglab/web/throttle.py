@@ -40,9 +40,18 @@ CREATE INDEX IF NOT EXISTS auth_attempts_lookup ON auth_attempts(bucket, key, ts
 class Throttle:
     def __init__(self, db_path: str | Path):
         self._lock = threading.Lock()
+        self._closed = False
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         with self._lock:
             self._conn.executescript(_SCHEMA)
+
+    def close(self) -> None:
+        """Release this throttle's SQLite connection exactly once."""
+        with self._lock:
+            if self._closed:
+                return
+            self._closed = True
+            self._conn.close()
 
     def allow(
         self, bucket: str, key: str | None, limit: int, window_s: float,

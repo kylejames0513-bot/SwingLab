@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -14,8 +15,21 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from swinglab.config import Config
+from swinglab.api.contracts import (
+    IdentityResponse,
+    LegacySessionResponse,
+    LegacySessionsResponse,
+    LegacyTodayResponse,
+    MobileTokenIssueResponse,
+    MobileTokenListResponse,
+    MobileTokenRevokeResponse,
+    NativeEventResponse,
+    PracticeCheckinResponse,
+    ProfileResponse,
+)
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
+from swinglab.web.jobs import JobManager
 from swinglab.web.users import UserStore
 from tests.test_web import fake_analyze_ok
 
@@ -175,7 +189,7 @@ def test_account_passwordless_and_api_routes_are_stable(contract_app):
         )
     }
 
-    assert actual == ACCOUNT_AND_API_ROUTES
+    assert ACCOUNT_AND_API_ROUTES <= actual
 
 
 def test_sqlite_state_remains_in_sessions_swinglab_db(contract_app):
@@ -198,6 +212,53 @@ def test_sqlite_state_remains_in_sessions_swinglab_db(contract_app):
         )
     }
     assert {"jobs", "users", "auth_attempts"} <= tables
+
+
+def test_app_owned_resources_close_idempotently_without_worker_or_sqlite_leaks(tmp_path):
+    """Catches contract export leaving an executor or SQLite handle behind."""
+    app = create_app(
+        Config(), tmp_path / "sessions", start_background_workers=False
+    )
+    known_workers = set(threading.enumerate())
+    app.state.jobs._pool.submit(lambda: None).result()
+    owned_workers = set(threading.enumerate()) - known_workers
+    for resource in (app.state.jobs, app.state.users, app.state.throttle):
+        resource.close()
+        resource.close()
+
+    assert not [
+        thread
+        for thread in owned_workers
+        if thread.name.startswith("swinglab-worker") and thread.is_alive()
+    ]
+    with pytest.raises(Exception):
+        app.state.jobs._conn.execute("SELECT 1")
+
+
+def test_job_manager_can_defer_interrupted_recovery(tmp_path, monkeypatch):
+    """Catches contract-only app construction from submitting recovered work."""
+    calls: list[object] = []
+    monkeypatch.setattr(
+        JobManager, "_requeue_interrupted", lambda self: calls.append(self)
+    )
+    manager = JobManager(tmp_path / "sessions", Config(), recover_interrupted=False)
+    try:
+        assert calls == []
+    finally:
+        manager.close()
+
+
+def test_job_manager_recovers_interrupted_work_by_default(tmp_path, monkeypatch):
+    """Catches a default startup that silently stops recovering prior work."""
+    calls: list[object] = []
+    monkeypatch.setattr(
+        JobManager, "_requeue_interrupted", lambda self: calls.append(self)
+    )
+    manager = JobManager(tmp_path / "sessions", Config())
+    try:
+        assert calls == [manager]
+    finally:
+        manager.close()
 
 
 def test_api_response_keys_are_stable(contract_app):
@@ -247,6 +308,49 @@ def test_api_response_keys_are_stable(contract_app):
         "swings_done",
         "swings_total",
     }
+
+
+def test_typed_v1_success_bodies_validate_against_the_frozen_models(contract_app):
+    """Catches a JSONResponse bypassing its declared OpenAPI response model."""
+    client = TestClient(contract_app)
+    _signup(client, "typed-v1@example.com")
+    user = _user(client, "typed-v1@example.com")
+    job = contract_app.state.jobs.create_session(
+        source_name="typed.mov",
+        hand="right",
+        angle="face-on",
+        club="driver",
+        level="improving",
+        fast=True,
+        user_id=user.id,
+    )
+    origin = {"Origin": "http://testserver"}
+
+    responses = [
+        (IdentityResponse, client.get("/api/v1/me")),
+        (ProfileResponse, client.get("/api/v1/profile")),
+        (LegacyTodayResponse, client.get("/api/v1/today")),
+        (LegacySessionsResponse, client.get("/api/v1/sessions")),
+        (LegacySessionResponse, client.get(f"/api/v1/sessions/{job.id}")),
+        (PracticeCheckinResponse, client.get("/api/v1/practice-checkins")),
+        (MobileTokenListResponse, client.get("/api/v1/mobile-tokens", headers=origin)),
+        (NativeEventResponse, client.post("/api/v1/events", headers=origin, json={"event": "landing_view"})),
+    ]
+    token = client.post(
+        "/api/v1/mobile-tokens", headers=origin, json={"label": "contract phone"}
+    )
+    responses.append((MobileTokenIssueResponse, token))
+    selector = token.json()["device"]["selector"]
+    responses.append(
+        (
+            MobileTokenRevokeResponse,
+            client.delete(f"/api/v1/mobile-tokens/{selector}", headers=origin),
+        )
+    )
+
+    for model, response in responses:
+        assert response.is_success, response.text
+        model.model_validate(response.json())
 
 
 def test_valid_signed_payload_has_path_parity(contract_app):
