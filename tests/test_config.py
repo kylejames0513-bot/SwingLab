@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from swinglab.config import DEFAULTS, Config
 
 
@@ -88,3 +90,59 @@ def test_matched_refilm_credit_defaults_off_and_ships_on():
 
     assert cfg.allowances["free_matched_refilm"] is True
     assert Config().allowances["free_matched_refilm"] is False
+
+
+def test_guided_sample_defaults_and_shipped_config_stay_off():
+    assert DEFAULTS["report"]["guided_presentation_enabled"] is False
+    assert DEFAULTS["report"]["guided_sample_enabled"] is False
+    assert Config().report["guided_presentation_enabled"] is False
+    assert Config().report["guided_sample_enabled"] is False
+
+    shipped = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+
+    assert shipped.report["guided_presentation_enabled"] is False
+    assert shipped.report["guided_sample_enabled"] is False
+
+
+def test_guided_sample_flag_deep_merges_without_replacing_report_policy(
+    tmp_path,
+):
+    path = tmp_path / "config.yaml"
+    path.write_text("report:\n  guided_sample_enabled: true\n", encoding="utf-8")
+
+    cfg = Config.load(path)
+
+    assert cfg.report.get("guided_sample_enabled") is True
+    assert cfg.report["guided_presentation_enabled"] is False
+
+
+@pytest.mark.parametrize(
+    ("yaml_value", "strictly_enabled"),
+    (("true", True), ("'true'", False), ("1", False), ("'1'", False)),
+)
+def test_guided_sample_activation_requires_literal_yaml_boolean(
+    tmp_path, yaml_value: str, strictly_enabled: bool
+):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        f"report:\n  guided_sample_enabled: {yaml_value}\n",
+        encoding="utf-8",
+    )
+
+    cfg = Config.load(path)
+
+    assert (cfg.report.get("guided_sample_enabled") is True) is strictly_enabled
+    assert cfg.report["guided_presentation_enabled"] is False
+
+
+def test_missing_guided_sample_flag_deep_merges_to_false(tmp_path):
+    path = tmp_path / "config.yaml"
+    path.write_text(
+        "report:\n  guided_presentation_enabled: false\n",
+        encoding="utf-8",
+    )
+
+    cfg = Config.load(path)
+
+    assert cfg.report["guided_sample_enabled"] is False
+    assert cfg.report["guided_presentation_enabled"] is False

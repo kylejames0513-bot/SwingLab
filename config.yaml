@@ -68,6 +68,10 @@ report:
                              # only after the production writer is composed.
                              # Set false to roll new jobs back to legacy;
                              # persisted jobs keep their assigned presentation.
+  guided_sample_enabled: false
+                             # Separate public-sample preview gate. Set true
+                             # only after sample QA; false restores the legacy
+                             # sample without changing customer-job reports.
 
 proof_cycle:
   enabled: true              # controlled first-stage rollout: write and show

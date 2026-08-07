@@ -75,6 +75,10 @@ DEFAULTS: dict[str, Any] = {
         # operator supplies the literal boolean True. Existing and malformed
         # configuration stays on the legacy presentation for safe rollback.
         "guided_presentation_enabled": False,
+        # The public synthetic sample has its own rollout boundary. Only the
+        # literal boolean True selects the guided sample; false or malformed
+        # values keep the established legacy sample for immediate rollback.
+        "guided_sample_enabled": False,
     },
     "proof_cycle": {
         # A deliberately separate product policy from the coaching thresholds:

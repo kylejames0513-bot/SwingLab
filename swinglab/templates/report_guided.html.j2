@@ -344,7 +344,7 @@
     {% set measurement = evidence.supporting_measurement %}
     <section class="next-move" data-report-block="next-move"
              data-canonical="priority" aria-labelledby="report-title">
-      <p class="eyebrow">{{ view.next_move.eyebrow }}</p>
+      <p class="eyebrow">Your next move · {{ view.next_move.eyebrow }}</p>
       {% if view.next_move.mode == "protect" %}
       <p class="strength-label">Strength to protect</p>
       {% endif %}
