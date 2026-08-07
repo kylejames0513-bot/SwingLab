@@ -65,7 +65,7 @@ from ..report_artifacts import (
     REPORT_MANIFEST_FILENAME,
     REPORT_VIEW_FILENAME,
     ReportEntitlementSnapshot,
-    load_published_bundle,
+    open_job_published_bundle,
     validate_persisted_report_policy,
 )
 from ..report_bundle import (
@@ -591,39 +591,22 @@ class JobManager:
             return _COMPLETION_CORRUPT
 
         try:
-            values = tuple(
-                row[name]
-                for name in (
-                    "report_rel",
-                    "report_view_rel",
-                    "report_manifest_rel",
-                    "report_checksums_rel",
+            with open_job_published_bundle(
+                self.sessions_dir,
+                job_id=row["id"],
+                report_rel=row["report_rel"],
+                report_view_rel=row["report_view_rel"],
+                manifest_rel=row["report_manifest_rel"],
+                checksums_rel=row["report_checksums_rel"],
+            ) as pinned:
+                validate_persisted_report_policy(
+                    pinned.bundle,
+                    report_presentation_version=row[
+                        "report_presentation_version"
+                    ],
+                    report_entitlements_json=row["report_entitlements_json"],
                 )
-            )
-            child_name, direct_rels = self._parse_structured_report_rels(values)
-            if child_name is None:
-                raise CoreReportBundleError(
-                    "completed structured report rels are missing"
-                )
-            safe_id = self._validate_job_id(row["id"])
-            sessions_root = self.sessions_dir.resolve(strict=True)
-            job_root = (self.sessions_dir / safe_id).resolve(strict=True)
-            if job_root.parent != sessions_root:
-                raise CoreReportBundleError("structured job root escapes sessions")
-            analysis_session = (job_root / "out" / child_name).resolve(strict=True)
-            analysis_session.relative_to(job_root)
-            bundle = load_published_bundle(
-                analysis_session,
-                report_rel=direct_rels[0],
-                report_view_rel=direct_rels[1],
-                manifest_rel=direct_rels[2],
-                checksums_rel=direct_rels[3],
-            )
-            validate_persisted_report_policy(
-                bundle,
-                report_presentation_version=row["report_presentation_version"],
-                report_entitlements_json=row["report_entitlements_json"],
-            )
+                outcome = pinned.bundle.view.outcome
         except Exception:
             # This is a read-side trust decision, not a worker failure. Keep it
             # fail-closed even for an unexpected malformed row or filesystem
@@ -634,9 +617,9 @@ class JobManager:
                 exc_info=True,
             )
             return _COMPLETION_CORRUPT
-        if bundle.view.outcome == ReportOutcome.COACHING_READY:
+        if outcome == ReportOutcome.COACHING_READY:
             return _COMPLETION_COACHING
-        if bundle.view.outcome == ReportOutcome.CAPTURE_ONLY:
+        if outcome == ReportOutcome.CAPTURE_ONLY:
             return _COMPLETION_CAPTURE
         return _COMPLETION_CORRUPT
 
@@ -1596,6 +1579,65 @@ class JobManager:
             raise ValueError(f"{label} is not a file")
         return relative.as_posix()
 
+    def _structured_result_rels(
+        self, job: Job, result: SessionResult
+    ) -> tuple[str, str, str, str]:
+        """Derive persisted guided paths lexically without following ancestry."""
+
+        def absolute(path: object, *, label: str) -> Path:
+            try:
+                return Path(os.path.abspath(os.fspath(path)))
+            except (TypeError, ValueError, OSError) as exc:
+                raise ValueError(f"{label} is invalid") from exc
+
+        if not isinstance(job.id, str):
+            raise ValueError("structured report job id is invalid")
+        sessions_root = absolute(self.sessions_dir, label="sessions root")
+        expected_job_root = absolute(
+            sessions_root / job.id, label="structured job root"
+        )
+        if (
+            str(expected_job_root.parent) != str(sessions_root)
+            or expected_job_root.name != job.id
+        ):
+            raise ValueError("structured report job id is invalid")
+        job_root = absolute(job.session_dir, label="structured job root")
+        if str(job_root) != str(expected_job_root):
+            raise ValueError("structured job root is not canonical")
+
+        analysis = absolute(result.session_dir, label="analysis session")
+        try:
+            analysis_relative = analysis.relative_to(job_root)
+        except ValueError as exc:
+            raise ValueError(
+                "analysis session is not contained by the job session"
+            ) from exc
+        if (
+            len(analysis_relative.parts) != 2
+            or analysis_relative.parts[0] != "out"
+        ):
+            raise ValueError("analysis session does not use canonical layout")
+
+        labels_and_paths = (
+            ("report path", result.report_path),
+            ("report view path", result.report_view_path),
+            ("report manifest path", result.manifest_path),
+            ("report checksums path", result.checksums_path),
+        )
+        rels: list[str] = []
+        for label, path in labels_and_paths:
+            if path is None:
+                raise ValueError(f"{label} is required")
+            artifact = absolute(path, label=label)
+            try:
+                direct_relative = artifact.relative_to(analysis)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{label} does not use the direct analysis session"
+                ) from exc
+            rels.append((analysis_relative / direct_relative).as_posix())
+        return rels[0], rels[1], rels[2], rels[3]
+
     @staticmethod
     def _publication_row_matches(
         row: sqlite3.Row | None,
@@ -1628,63 +1670,48 @@ class JobManager:
             guided = False
         else:  # pragma: no cover - enum exhaustiveness guard
             assert_never(presentation)
-        report_rel = self._result_rel(job, result.report_path, label="report path")
+        entitlements_json = job.report_entitlements.to_json()
+        legacy_available_json = ReportEntitlementSnapshot("available").to_json()
+        now = time.time()
+        committed = False
+
+        publication_stack = ExitStack()
+        pinned_bundle = None
+        report_rel: str
         report_view_rel: str | None = None
         report_manifest_rel: str | None = None
         report_checksums_rel: str | None = None
         if guided:
             if result.structured_report is not True:
                 raise ValueError("guided completion requires a structured report")
-            report_view_rel = self._result_rel(
-                job, result.report_view_path, label="report view path"
-            )
-            report_manifest_rel = self._result_rel(
-                job, result.manifest_path, label="report manifest path"
-            )
-            report_checksums_rel = self._result_rel(
-                job, result.checksums_path, label="report checksums path"
-            )
-            try:
-                job_root = job.session_dir.resolve(strict=True)
-                analysis_session = Path(result.session_dir).resolve(strict=True)
-                analysis_relative = analysis_session.relative_to(job_root)
-                if (
-                    len(analysis_relative.parts) != 2
-                    or analysis_relative.parts[0] != "out"
-                ):
-                    raise ValueError("analysis session does not use canonical layout")
-                direct_rels = tuple(
-                    Path(path).resolve(strict=True)
-                    .relative_to(analysis_session)
-                    .as_posix()
-                    for path in (
-                        result.report_path,
-                        result.report_view_path,
-                        result.manifest_path,
-                        result.checksums_path,
-                    )
+            structured_rels = self._structured_result_rels(job, result)
+            pinned_bundle = publication_stack.enter_context(
+                open_job_published_bundle(
+                    self.sessions_dir,
+                    job_id=job.id,
+                    report_rel=structured_rels[0],
+                    report_view_rel=structured_rels[1],
+                    manifest_rel=structured_rels[2],
+                    checksums_rel=structured_rels[3],
                 )
-            except (OSError, ValueError) as exc:
-                raise ValueError(
-                    "structured report paths do not use their direct analysis session"
-                ) from exc
-            bundle = load_published_bundle(
-                analysis_session,
-                report_rel=direct_rels[0],
-                report_view_rel=direct_rels[1],
-                manifest_rel=direct_rels[2],
-                checksums_rel=direct_rels[3],
             )
-            if bundle.manifest.presentation_version != job.report_presentation_version:
-                raise ValueError("published report presentation does not match the job")
+            (
+                report_rel,
+                report_view_rel,
+                report_manifest_rel,
+                report_checksums_rel,
+            ) = pinned_bundle.report_rels
         elif result.structured_report:
             raise ValueError("legacy completion cannot publish a structured report")
+        else:
+            report_rel = self._result_rel(job, result.report_path, label="report path")
 
-        entitlements_json = job.report_entitlements.to_json()
-        legacy_available_json = ReportEntitlementSnapshot("available").to_json()
-        now = time.time()
-        committed = False
-        with self._lock:
+        with publication_stack, self._lock:
+            if pinned_bundle is not None and (
+                pinned_bundle.bundle.manifest.presentation_version
+                != job.report_presentation_version
+            ):
+                raise ValueError("published report presentation does not match the job")
             self._conn.execute("BEGIN IMMEDIATE")
             try:
                 row = self._conn.execute(
@@ -1696,7 +1723,7 @@ class JobManager:
                     raise RuntimeError("job is no longer processing")
                 persisted_entitlements = (
                     validate_persisted_report_policy(
-                        bundle,
+                        pinned_bundle.bundle,
                         report_presentation_version=row[
                             "report_presentation_version"
                         ],
@@ -1717,6 +1744,8 @@ class JobManager:
                     or persisted_entitlements != job.report_entitlements
                 ):
                     raise RuntimeError("persisted report policy changed during analysis")
+                if pinned_bundle is not None:
+                    pinned_bundle.verify_lexical_identity()
                 cursor = self._conn.execute(
                     "UPDATE jobs SET status = ?, updated_at = ?, error = NULL,"
                     " report_rel = ?, report_view_rel = ?, report_manifest_rel = ?,"

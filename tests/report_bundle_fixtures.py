@@ -1,8 +1,15 @@
 from __future__ import annotations
 
 import html
+import os
+import stat
+import subprocess
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
+from typing import Iterator
+
+import pytest
 
 from swinglab.config import Config
 from swinglab.report import REPORT_FORMAT_VERSION
@@ -10,6 +17,90 @@ from swinglab.report_presenter import ReportDocument
 from swinglab.report_view import ReasonCode
 from tests.test_focused_evidence import _snapshot
 from tests.test_report import branded_cfg, fake_swing, fake_video
+
+
+@contextmanager
+def temporary_directory_redirect(
+    temporary_root: Path,
+    original: Path,
+    target: Path,
+    *,
+    saved_sentinel_rel: str = ".saved-tree-sentinel",
+    target_sentinel_rel: str = ".target-tree-sentinel",
+) -> Iterator[Path]:
+    """Replace one tmp-only directory with a redirect and restore it safely."""
+
+    root = Path(os.path.abspath(temporary_root))
+    original = Path(os.path.abspath(original))
+    target = Path(os.path.abspath(target))
+    saved = original.with_name(f"{original.name}.saved-for-redirect")
+    for candidate in (original, target, saved):
+        try:
+            candidate.relative_to(root)
+        except ValueError as exc:
+            raise AssertionError("redirect fixture paths must stay under tmp_path") from exc
+    if target == original or target.is_relative_to(original):
+        raise AssertionError("redirect target must be separate from the moved tree")
+    if saved.exists() or os.path.lexists(saved):
+        raise AssertionError("redirect fixture saved sibling already exists")
+
+    for path, label in ((original, "original"), (target, "target")):
+        info = os.lstat(path)
+        reparse = int(getattr(info, "st_file_attributes", 0)) & int(
+            getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        )
+        if not stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode) or reparse:
+            raise AssertionError(f"redirect fixture {label} must be a plain directory")
+
+    def sentinel(path: Path, relative: str, payload: bytes) -> tuple[Path, bytes]:
+        rel = Path(relative)
+        if rel.is_absolute() or ".." in rel.parts:
+            raise AssertionError("redirect fixture sentinel must be relative")
+        result = path / rel
+        if not result.exists():
+            result.write_bytes(payload)
+        if not result.is_file():
+            raise AssertionError("redirect fixture sentinel must be a regular file")
+        return result, result.read_bytes()
+
+    original_sentinel, original_bytes = sentinel(
+        original, saved_sentinel_rel, b"saved tree sentinel\n"
+    )
+    target_sentinel, target_bytes = sentinel(
+        target, target_sentinel_rel, b"target tree sentinel\n"
+    )
+    original.replace(saved)
+    redirect_created = False
+    try:
+        if os.name == "nt":
+            completed = subprocess.run(
+                ["cmd", "/c", "mklink", "/J", str(original), str(target)],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            if completed.returncode != 0:
+                pytest.skip(
+                    "junction creation is unavailable: "
+                    + (completed.stderr or completed.stdout).strip()
+                )
+        else:
+            try:
+                original.symlink_to(target, target_is_directory=True)
+            except (OSError, NotImplementedError) as exc:
+                pytest.skip(f"directory symlinks are unavailable: {exc}")
+        redirect_created = True
+        yield saved
+    finally:
+        if redirect_created and os.path.lexists(original):
+            if os.name == "nt":
+                os.rmdir(original)
+            else:
+                original.unlink()
+        if saved.exists() and not os.path.lexists(original):
+            saved.replace(original)
+        assert (original / original_sentinel.relative_to(original)).read_bytes() == original_bytes
+        assert target_sentinel.read_bytes() == target_bytes
 
 
 def write_test_report_html(

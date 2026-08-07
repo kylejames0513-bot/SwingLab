@@ -49,6 +49,7 @@ from swinglab.report_view import (
     write_report_view,
 )
 from swinglab.report_presenter import build_report_document, prepare_report_input
+from tests.report_bundle_fixtures import temporary_directory_redirect
 from tests.report_view_fixtures import report_view_payload
 from tests.test_report import branded_cfg, fake_swing, fake_video
 
@@ -285,6 +286,19 @@ def _persisted_rels(root: Path) -> dict[str, str]:
 
 def _load_bundle(root: Path):
     return load_published_bundle(root.parent, **_persisted_rels(root))
+
+
+def _job_bundle_layout(
+    tmp_path: Path,
+) -> tuple[Path, str, Path, Path, dict[str, str]]:
+    sessions = tmp_path / "sessions"
+    job_id = "job-a"
+    analysis = sessions / job_id / "out" / "source"
+    analysis.mkdir(parents=True)
+    root = _build_bundle(analysis)
+    direct = _persisted_rels(root)
+    full = {name: f"out/source/{value}" for name, value in direct.items()}
+    return sessions, job_id, analysis, root, full
 
 
 def _symlink_or_skip(link: Path, target: Path, *, directory: bool = False) -> None:
@@ -1819,6 +1833,297 @@ def test_report_view_json_read_is_bounded(tmp_path: Path):
 
     with pytest.raises(ReportArtifactValidationError):
         validate_staged_bundle(root, manifest_rel=REPORT_MANIFEST_FILENAME, checksums_rel=REPORT_CHECKSUMS_FILENAME)
+
+
+def test_job_bundle_loader_returns_canonical_rels_and_matches_direct_loader(
+    tmp_path: Path,
+):
+    sessions, job_id, analysis, _root, full = _job_bundle_layout(tmp_path)
+    direct = load_published_bundle(
+        analysis,
+        **{
+            name: value.removeprefix("out/source/")
+            for name, value in full.items()
+        },
+    )
+    expected_rels = tuple(full.values())
+
+    with report_artifacts_module.open_job_published_bundle(
+        sessions, job_id=job_id, **full
+    ) as pinned:
+        assert pinned.report_rels == expected_rels
+        assert pinned.bundle.view == direct.view
+        assert pinned.bundle.manifest == direct.manifest
+        assert pinned.bundle.checksums == direct.checksums
+        pinned.verify_lexical_identity()
+
+
+def test_job_bundle_loader_rejects_redirected_job_root(tmp_path: Path):
+    sessions, job_id, _analysis, _root, full = _job_bundle_layout(tmp_path)
+    original = sessions / job_id
+    target = tmp_path / "donor-job"
+    shutil.copytree(original, target)
+
+    with temporary_directory_redirect(tmp_path, original, target):
+        with pytest.raises(ReportArtifactValidationError):
+            with report_artifacts_module.open_job_published_bundle(
+                sessions, job_id=job_id, **full
+            ):
+                pass
+
+
+def test_job_bundle_loader_rejects_redirected_out_root(tmp_path: Path):
+    sessions, job_id, _analysis, _root, full = _job_bundle_layout(tmp_path)
+    original = sessions / job_id / "out"
+    target = tmp_path / "donor-out"
+    shutil.copytree(original, target)
+
+    with temporary_directory_redirect(tmp_path, original, target):
+        with pytest.raises(ReportArtifactValidationError):
+            with report_artifacts_module.open_job_published_bundle(
+                sessions, job_id=job_id, **full
+            ):
+                pass
+
+
+def test_job_bundle_loader_rejects_redirected_analysis_child(tmp_path: Path):
+    sessions, job_id, analysis, _root, full = _job_bundle_layout(tmp_path)
+    target = tmp_path / "donor-analysis"
+    shutil.copytree(analysis, target)
+
+    with temporary_directory_redirect(tmp_path, analysis, target):
+        with pytest.raises(ReportArtifactValidationError):
+            with report_artifacts_module.open_job_published_bundle(
+                sessions, job_id=job_id, **full
+            ):
+                pass
+
+
+def test_job_bundle_loader_rejects_redirected_bundle_root(tmp_path: Path):
+    sessions, job_id, _analysis, root, full = _job_bundle_layout(tmp_path)
+    target = tmp_path / "donor-bundle"
+    shutil.copytree(root, target)
+
+    with temporary_directory_redirect(
+        tmp_path,
+        root,
+        target,
+        saved_sentinel_rel="report.html",
+        target_sentinel_rel=REPORT_VIEW_FILENAME,
+    ):
+        with pytest.raises(ReportArtifactValidationError):
+            with report_artifacts_module.open_job_published_bundle(
+                sessions, job_id=job_id, **full
+            ):
+                pass
+
+
+@pytest.mark.parametrize(
+    "damage",
+    [
+        "nontext",
+        "absolute",
+        "empty",
+        "dot",
+        "parent",
+        "backslash",
+        "colon",
+        "reserved",
+        "trailing-dot",
+        "trailing-space",
+        "nested-analysis",
+        "wrong-out-case",
+        "wrong-bundle-case",
+        "wrong-filename-case",
+        "duplicate",
+        "cross-child",
+        "cross-bundle",
+        "noncanonical-filename",
+    ],
+)
+def test_job_bundle_loader_rejects_noncanonical_job_relative_rels(
+    tmp_path: Path, damage: str
+):
+    sessions, job_id, _analysis, root, full = _job_bundle_layout(tmp_path)
+    values: list[object] = list(full.values())
+    prefix = f"out/source/{root.name}/"
+    if damage == "nontext":
+        values[0] = Path(str(values[0]))
+    elif damage == "absolute":
+        values[0] = "/" + str(values[0])
+    elif damage == "empty":
+        values[0] = ""
+    elif damage == "dot":
+        values[0] = str(values[0]).replace("out/source/", "out/./source/", 1)
+    elif damage == "parent":
+        values[0] = str(values[0]).replace("out/source/", "out/source/../", 1)
+    elif damage == "backslash":
+        values[0] = str(values[0]).replace("out/source/", "out\\source\\", 1)
+    elif damage == "colon":
+        values[0] = str(values[0]).replace("out/source/", "out/source:/", 1)
+    elif damage == "reserved":
+        values = [str(value).replace("out/source/", "out/CON/", 1) for value in values]
+    elif damage == "trailing-dot":
+        values = [str(value).replace("out/source/", "out/source./", 1) for value in values]
+    elif damage == "trailing-space":
+        values = [str(value).replace("out/source/", "out/source /", 1) for value in values]
+    elif damage == "nested-analysis":
+        values = [str(value).replace("out/source/", "out/outer/source/", 1) for value in values]
+    elif damage == "wrong-out-case":
+        values = [str(value).replace("out/", "Out/", 1) for value in values]
+    elif damage == "wrong-bundle-case":
+        values = [str(value).replace(root.name, root.name.replace("a", "A", 1), 1) for value in values]
+    elif damage == "wrong-filename-case":
+        values[0] = str(values[0]).replace("report.html", "REPORT.HTML")
+    elif damage == "duplicate":
+        values[1] = values[0]
+    elif damage == "cross-child":
+        values[1] = str(values[1]).replace("out/source/", "out/source-2/", 1)
+    elif damage == "cross-bundle":
+        values[2] = str(values[2]).replace(root.name, "report-bundle-" + "b" * 32, 1)
+    else:
+        values[0] = prefix + "index.html"
+
+    with pytest.raises(ReportArtifactValidationError):
+        with report_artifacts_module.open_job_published_bundle(
+            sessions,
+            job_id=job_id,
+            report_rel=values[0],
+            report_view_rel=values[1],
+            manifest_rel=values[2],
+            checksums_rel=values[3],
+        ):
+            pass
+
+
+def test_job_bundle_loader_detects_lexical_replacement_while_pinned(
+    tmp_path: Path,
+):
+    sessions, job_id, analysis, _root, full = _job_bundle_layout(tmp_path)
+    original_sentinel = analysis / ".original-analysis-sentinel"
+    original_sentinel.write_bytes(b"original analysis\n")
+    replacement = tmp_path / "replacement-analysis"
+    shutil.copytree(analysis, replacement)
+    replacement_sentinel = replacement / ".replacement-analysis-sentinel"
+    replacement_sentinel.write_bytes(b"replacement analysis\n")
+    saved = analysis.with_name("source.saved-for-replacement")
+    moved_original = False
+    installed_replacement = False
+
+    with report_artifacts_module.open_job_published_bundle(
+        sessions, job_id=job_id, **full
+    ) as pinned:
+        try:
+            try:
+                analysis.replace(saved)
+                moved_original = True
+                replacement.replace(analysis)
+                installed_replacement = True
+            except PermissionError:
+                assert os.name == "nt"
+            else:
+                with pytest.raises(ReportArtifactValidationError):
+                    pinned.verify_lexical_identity()
+        finally:
+            if installed_replacement:
+                analysis.replace(replacement)
+            if moved_original:
+                saved.replace(analysis)
+
+    assert original_sentinel.read_bytes() == b"original analysis\n"
+    assert replacement_sentinel.read_bytes() == b"replacement analysis\n"
+
+
+def test_job_bundle_loader_closes_partial_handle_chain_on_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    sessions, job_id, _analysis, _root, full = _job_bundle_layout(tmp_path)
+    opened: list[int] = []
+    closed: list[int] = []
+
+    if os.name == "nt":
+        real_open = report_artifacts_module._win_open
+        real_close = report_artifacts_module._win_close
+        calls = 0
+
+        def tracking_open(path: Path, *, directory: bool) -> int:
+            nonlocal calls
+            calls += 1
+            if calls == 4:
+                raise OSError("injected partial job-chain open failure")
+            handle = real_open(path, directory=directory)
+            opened.append(handle)
+            return handle
+
+        def tracking_close(handle: int) -> None:
+            closed.append(handle)
+            real_close(handle)
+
+        monkeypatch.setattr(report_artifacts_module, "_win_open", tracking_open)
+        monkeypatch.setattr(report_artifacts_module, "_win_close", tracking_close)
+    else:
+        real_open = os.open
+        real_close = os.close
+        calls = 0
+
+        def tracking_open(
+            path: str | bytes | os.PathLike[str],
+            flags: int,
+            mode: int = 0o777,
+            *,
+            dir_fd: int | None = None,
+        ) -> int:
+            nonlocal calls
+            calls += 1
+            if calls == 4:
+                raise OSError("injected partial job-chain open failure")
+            handle = real_open(path, flags, mode, dir_fd=dir_fd)
+            opened.append(handle)
+            return handle
+
+        def tracking_close(handle: int) -> None:
+            closed.append(handle)
+            real_close(handle)
+
+        monkeypatch.setattr(report_artifacts_module.os, "open", tracking_open)
+        monkeypatch.setattr(report_artifacts_module.os, "close", tracking_close)
+        monkeypatch.setattr(
+            report_artifacts_module.os,
+            "supports_dir_fd",
+            set(os.supports_dir_fd) | {tracking_open},
+        )
+
+    try:
+        with pytest.raises(ReportArtifactValidationError):
+            with report_artifacts_module.open_job_published_bundle(
+                sessions, job_id=job_id, **full
+            ):
+                pass
+    finally:
+        leaked = [handle for handle in opened if closed.count(handle) == 0]
+        for handle in leaked:
+            real_close(handle)
+
+    assert opened
+    assert all(closed.count(handle) == 1 for handle in opened)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX capability gate")
+@pytest.mark.parametrize("missing", ["O_DIRECTORY", "O_NOFOLLOW", "dir_fd"])
+def test_job_bundle_loader_fails_closed_without_posix_directory_capability(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, missing: str
+):
+    sessions, job_id, _analysis, _root, full = _job_bundle_layout(tmp_path)
+    if missing in ("O_DIRECTORY", "O_NOFOLLOW"):
+        monkeypatch.setattr(report_artifacts_module.os, missing, 0, raising=False)
+    else:
+        monkeypatch.setattr(report_artifacts_module.os, "supports_dir_fd", set())
+
+    with pytest.raises(ReportArtifactValidationError):
+        with report_artifacts_module.open_job_published_bundle(
+            sessions, job_id=job_id, **full
+        ):
+            pass
 
 
 @pytest.mark.parametrize("field", ["report_rel", "report_view_rel", "manifest_rel", "checksums_rel"])

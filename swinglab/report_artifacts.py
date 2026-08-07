@@ -11,7 +11,7 @@ import stat
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO, Iterator, Literal, cast
+from typing import Any, BinaryIO, Callable, Iterator, Literal, cast
 
 from .report_view import (
     GUIDED_REPORT_PRESENTATION_VERSION,
@@ -51,6 +51,7 @@ _REPORT_HTML_FORMAT = "caddie-brief-v1"
 _REPORT_HEADER_BYTES = 8192
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
 _PUBLISHED_ROOT_PATTERN = re.compile(r"report-bundle-([0-9a-f]{32})\Z")
+_JOB_ID_PATTERN = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
 _WINDOWS_RESERVED_SEGMENTS = {
     "CON",
     "PRN",
@@ -196,6 +197,32 @@ class PublishedReportBundle:
     )
 
 
+def _unbound_job_bundle_verifier() -> None:
+    _err("job report bundle is not pinned")
+
+
+@dataclass(frozen=True)
+class PinnedJobReportBundle:
+    bundle: PublishedReportBundle
+    report_rels: tuple[str, str, str, str]
+    _verifier: Callable[[], None] = field(
+        default=_unbound_job_bundle_verifier,
+        repr=False,
+        compare=False,
+    )
+
+    def verify_lexical_identity(self) -> None:
+        self._verifier()
+
+
+@dataclass(frozen=True)
+class _ParsedJobReportPaths:
+    analysis_child: str
+    bundle_name: str
+    full_rels: tuple[str, str, str, str]
+    direct_rels: tuple[str, str, str, str]
+
+
 def _err(message: str) -> None:
     raise ReportArtifactValidationError(message)
 
@@ -274,6 +301,68 @@ def _safe_relative_path(value: str) -> PurePosixPath:
     ):
         _err("report bundle contains an unsafe relative path")
     return candidate
+
+
+def _safe_job_id(value: object) -> str:
+    if not isinstance(value, str) or _JOB_ID_PATTERN.fullmatch(value) is None:
+        _err("structured report job id is unsafe")
+    if (
+        value.endswith((".", " "))
+        or value.split(".", 1)[0].upper() in _WINDOWS_RESERVED_SEGMENTS
+    ):
+        _err("structured report job id is unsafe")
+    return value
+
+
+def _parse_job_report_paths(
+    *,
+    report_rel: object,
+    report_view_rel: object,
+    manifest_rel: object,
+    checksums_rel: object,
+) -> _ParsedJobReportPaths:
+    values = (report_rel, report_view_rel, manifest_rel, checksums_rel)
+    if any(not isinstance(value, str) for value in values):
+        _err("structured report paths must be strings")
+    strings = cast(tuple[str, str, str, str], values)
+    if len(set(strings)) != 4 or len({value.casefold() for value in strings}) != 4:
+        _err("structured report paths must be distinct")
+
+    expected_names = (
+        _REPORT_FILENAME,
+        REPORT_VIEW_FILENAME,
+        REPORT_MANIFEST_FILENAME,
+        REPORT_CHECKSUMS_FILENAME,
+    )
+    parsed = tuple(_safe_relative_path(value) for value in strings)
+    for path, expected_name in zip(parsed, expected_names):
+        if (
+            len(path.parts) != 4
+            or path.parts[0] != "out"
+            or path.parts[3] != expected_name
+        ):
+            _err("structured report path is not canonical")
+
+    children = {path.parts[1] for path in parsed}
+    bundle_names = {path.parts[2] for path in parsed}
+    if len(children) != 1 or len(bundle_names) != 1:
+        _err("structured report paths must share one analysis bundle")
+    child = next(iter(children))
+    if len(_safe_relative_path(child).parts) != 1:
+        _err("structured report analysis child is unsafe")
+    bundle_name = next(iter(bundle_names))
+    if _PUBLISHED_ROOT_PATTERN.fullmatch(bundle_name) is None:
+        _err("structured report bundle root is not canonical")
+
+    full_rels = cast(
+        tuple[str, str, str, str],
+        tuple(path.as_posix() for path in parsed),
+    )
+    direct_rels = cast(
+        tuple[str, str, str, str],
+        tuple(PurePosixPath(bundle_name, name).as_posix() for name in expected_names),
+    )
+    return _ParsedJobReportPaths(child, bundle_name, full_rels, direct_rels)
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:
@@ -417,6 +506,13 @@ if os.name == "nt":
         return Path(value)
 
 
+    def _win_identity(info: _WinByHandleFileInformation) -> tuple[int, int]:
+        return (
+            int(info.dwVolumeSerialNumber),
+            (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow),
+        )
+
+
 def _path_is_under(path: Path, root: Path) -> bool:
     try:
         common = os.path.commonpath((os.path.normcase(str(path)), os.path.normcase(str(root))))
@@ -425,104 +521,284 @@ def _path_is_under(path: Path, root: Path) -> bool:
     return common == os.path.normcase(str(root))
 
 
+def _absolute_lexical(path: object, *, label: str) -> Path:
+    try:
+        return Path(os.path.abspath(os.fspath(path)))
+    except (TypeError, ValueError, OSError) as exc:
+        raise ReportArtifactValidationError(f"{label} is invalid") from exc
+
+
+def _posix_directory_flags() -> int:
+    directory = getattr(os, "O_DIRECTORY", 0)
+    no_follow = getattr(os, "O_NOFOLLOW", 0)
+    supports_dir_fd = getattr(os, "supports_dir_fd", frozenset())
+    supports_follow = getattr(os, "supports_follow_symlinks", frozenset())
+    if (
+        not directory
+        or not no_follow
+        or os.open not in supports_dir_fd
+        or os.stat not in supports_dir_fd
+        or os.stat not in supports_follow
+    ):
+        _err("POSIX no-follow descriptor traversal is unavailable")
+    return os.O_RDONLY | int(directory) | int(no_follow)
+
+
+def _directory_stat_identity(info: os.stat_result, *, label: str) -> tuple[int, int]:
+    if stat.S_ISLNK(info.st_mode) or _entry_is_reparse(info):
+        _err(f"{label} cannot be a link or reparse point")
+    if not stat.S_ISDIR(info.st_mode):
+        _err(f"{label} must be a directory")
+    return int(info.st_dev), int(info.st_ino)
+
+
+def _close_directory_handle(handle: int) -> None:
+    if os.name == "nt":
+        _win_close(handle)
+    else:
+        os.close(handle)
+
+
+def _open_pinned_directory(
+    path: Path,
+    *,
+    parent_handle: int | None,
+    name: str | None,
+    label: str,
+) -> tuple[int, tuple[int, int]]:
+    handle: int | None = None
+    try:
+        if os.name == "nt":
+            if name is not None:
+                if path.name != name:
+                    _err(f"{label} path is not canonical")
+                _assert_exact_child_name(path.parent, name)
+            lexical = os.lstat(path)
+            _directory_stat_identity(lexical, label=label)
+            handle = _win_open(path, directory=True)
+            opened = _win_info(handle)
+            if opened.dwFileAttributes & _WIN_ATTR_REPARSE_POINT:
+                _err(f"{label} cannot be a reparse point")
+            if not opened.dwFileAttributes & _WIN_ATTR_DIRECTORY:
+                _err(f"{label} must be a directory")
+            identity = _win_identity(opened)
+            if int(lexical.st_ino) != identity[1]:
+                _err(f"{label} changed while it was pinned")
+            final = _win_final_path(handle)
+            if os.path.normcase(os.path.abspath(str(final))) != os.path.normcase(
+                os.path.abspath(str(path))
+            ):
+                _err(f"{label} handle resolved to an unexpected path")
+            return handle, identity
+
+        flags = _posix_directory_flags()
+        if parent_handle is None:
+            lexical = os.stat(path, follow_symlinks=False)
+            handle = os.open(path, flags)
+        else:
+            if name is None:
+                _err(f"{label} child name is missing")
+            lexical = os.stat(
+                name,
+                dir_fd=parent_handle,
+                follow_symlinks=False,
+            )
+            handle = os.open(name, flags, dir_fd=parent_handle)
+        lexical_identity = _directory_stat_identity(lexical, label=label)
+        opened = os.fstat(handle)
+        opened_identity = _directory_stat_identity(opened, label=label)
+        if lexical_identity != opened_identity:
+            _err(f"{label} changed while it was pinned")
+        return handle, opened_identity
+    except ReportArtifactValidationError:
+        if handle is not None:
+            _close_directory_handle(handle)
+        raise
+    except OSError as exc:
+        if handle is not None:
+            _close_directory_handle(handle)
+        raise ReportArtifactValidationError(f"{label} cannot be pinned") from exc
+
+
+@dataclass(frozen=True)
+class _PinnedDirectoryEntry:
+    path: Path
+    name: str | None
+    handle: int
+    identity: tuple[int, int]
+
+
+class _PinnedJobDirectoryChain:
+    """Own the read-only sessions/job/out/analysis handle chain."""
+
+    def __init__(self, sessions_dir: Path, *, job_id: object, analysis_child: str):
+        self.sessions_path = _absolute_lexical(sessions_dir, label="sessions root")
+        self.job_id = _safe_job_id(job_id)
+        child_path = _safe_relative_path(analysis_child)
+        if len(child_path.parts) != 1:
+            _err("structured report analysis child is unsafe")
+        self.analysis_child = analysis_child
+        self._entries: list[_PinnedDirectoryEntry] = []
+
+    @property
+    def analysis_path(self) -> Path:
+        if len(self._entries) != 4:
+            _err("structured report analysis directory is not pinned")
+        return self._entries[-1].path
+
+    @property
+    def analysis_handle(self) -> int:
+        if len(self._entries) != 4:
+            _err("structured report analysis directory is not pinned")
+        return self._entries[-1].handle
+
+    def __enter__(self) -> _PinnedJobDirectoryChain:
+        paths = (
+            (self.sessions_path, None, "sessions root"),
+            (self.sessions_path / self.job_id, self.job_id, "structured job root"),
+            (
+                self.sessions_path / self.job_id / "out",
+                "out",
+                "structured job out root",
+            ),
+            (
+                self.sessions_path / self.job_id / "out" / self.analysis_child,
+                self.analysis_child,
+                "structured analysis child",
+            ),
+        )
+        try:
+            for path, name, label in paths:
+                parent_handle = self._entries[-1].handle if self._entries else None
+                handle, identity = _open_pinned_directory(
+                    path,
+                    parent_handle=parent_handle,
+                    name=name,
+                    label=label,
+                )
+                self._entries.append(
+                    _PinnedDirectoryEntry(path, name, handle, identity)
+                )
+        except Exception:
+            self.__exit__(None, None, None)
+            raise
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        first_error: OSError | None = None
+        while self._entries:
+            entry = self._entries.pop()
+            try:
+                _close_directory_handle(entry.handle)
+            except OSError as close_error:  # pragma: no cover - OS close failure
+                if first_error is None:
+                    first_error = close_error
+        if first_error is not None:
+            raise first_error
+
+    def verify_lexical_identity(self) -> None:
+        if len(self._entries) != 4:
+            _err("structured report directory chain is not pinned")
+        for index, entry in enumerate(self._entries):
+            parent_handle = self._entries[index - 1].handle if index else None
+            verification_handle: int | None = None
+            try:
+                verification_handle, lexical_identity = _open_pinned_directory(
+                    entry.path,
+                    parent_handle=parent_handle,
+                    name=entry.name,
+                    label="published structured directory",
+                )
+                if os.name == "nt":
+                    pinned_identity = _win_identity(_win_info(entry.handle))
+                else:
+                    pinned_identity = _directory_stat_identity(
+                        os.fstat(entry.handle),
+                        label="published structured directory",
+                    )
+                if (
+                    lexical_identity != entry.identity
+                    or pinned_identity != entry.identity
+                ):
+                    _err("published structured directory lexical identity changed")
+            finally:
+                if verification_handle is not None:
+                    _close_directory_handle(verification_handle)
+
+
 class _PinnedBundleRoot:
     """Keep the root and each traversed ancestor open while a file is consumed."""
 
-    def __init__(self, root: Path):
-        self.path = root
+    def __init__(
+        self,
+        root: Path,
+        *,
+        parent_handle: int | None = None,
+        root_name: str | None = None,
+    ):
+        self.path = _absolute_lexical(root, label="report bundle root")
+        self._parent_handle = parent_handle
+        self._root_name = root_name
         self._root_handle: int | None = None
         self._root_identity: tuple[int, int] | None = None
 
     def __enter__(self) -> _PinnedBundleRoot:
         try:
-            if os.name == "nt":
-                handle = _win_open(self.path, directory=True)
-                self._root_handle = handle
-                info = _win_info(handle)
-                if info.dwFileAttributes & _WIN_ATTR_REPARSE_POINT:
-                    _err("report bundle root cannot be a reparse point")
-                if not info.dwFileAttributes & _WIN_ATTR_DIRECTORY:
-                    _err("report bundle root must be a directory")
-                final = _win_final_path(handle)
-                if os.path.normcase(str(final)) != os.path.normcase(str(self.path)):
-                    _err("report bundle root handle resolved to an unexpected path")
-                self._root_identity = (
-                    int(info.dwVolumeSerialNumber),
-                    (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow),
-                )
-            else:
-                flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
-                handle = os.open(self.path, flags)
-                self._root_handle = handle
-                root_info = os.fstat(handle)
-                if not stat.S_ISDIR(root_info.st_mode):
-                    _err("report bundle root must be a directory")
-                self._root_identity = (int(root_info.st_dev), int(root_info.st_ino))
+            handle, identity = _open_pinned_directory(
+                self.path,
+                parent_handle=self._parent_handle,
+                name=self._root_name,
+                label="report bundle root",
+            )
+            self._root_handle = handle
+            self._root_identity = identity
         except ReportArtifactValidationError:
-            self.__exit__(None, None, None)
             raise
-        except OSError as exc:
-            self.__exit__(None, None, None)
-            raise ReportArtifactValidationError("report bundle root cannot be pinned") from exc
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
         if self._root_handle is None:
             return
-        if os.name == "nt":
-            _win_close(self._root_handle)
-        else:
-            os.close(self._root_handle)
-        self._root_handle = None
-        self._root_identity = None
+        handle = self._root_handle
+        try:
+            _close_directory_handle(handle)
+        finally:
+            self._root_handle = None
+            self._root_identity = None
 
     def verify_lexical_identity(self) -> None:
         """Confirm the pinned directory still owns its lexical bundle path."""
         if self._root_handle is None or self._root_identity is None:
             _err("report bundle root is not pinned")
-        if os.name == "nt":
-            lexical_handle: int | None = None
-            try:
-                lexical_handle = _win_open(self.path, directory=True)
-                info = _win_info(lexical_handle)
-                if (
-                    info.dwFileAttributes & _WIN_ATTR_REPARSE_POINT
-                    or not info.dwFileAttributes & _WIN_ATTR_DIRECTORY
-                ):
-                    _err("published report bundle path changed type")
-                identity = (
-                    int(info.dwVolumeSerialNumber),
-                    (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow),
-                )
-                final = _win_final_path(lexical_handle)
-                if (
-                    identity != self._root_identity
-                    or os.path.normcase(str(final))
-                    != os.path.normcase(str(self.path))
-                ):
-                    _err("published report bundle lexical identity changed")
-            except ReportArtifactValidationError:
-                raise
-            except OSError as exc:
-                raise ReportArtifactValidationError(
-                    "published report bundle lexical identity cannot be verified"
-                ) from exc
-            finally:
-                if lexical_handle is not None:
-                    _win_close(lexical_handle)
-            return
+        lexical_handle: int | None = None
         try:
-            info = os.stat(self.path, follow_symlinks=False)
+            lexical_handle, lexical_identity = _open_pinned_directory(
+                self.path,
+                parent_handle=self._parent_handle,
+                name=self._root_name,
+                label="published report bundle root",
+            )
+            if os.name == "nt":
+                pinned_identity = _win_identity(_win_info(self._root_handle))
+            else:
+                pinned_identity = _directory_stat_identity(
+                    os.fstat(self._root_handle),
+                    label="published report bundle root",
+                )
+            if (
+                lexical_identity != self._root_identity
+                or pinned_identity != self._root_identity
+            ):
+                _err("published report bundle lexical identity changed")
+        except ReportArtifactValidationError:
+            raise
         except OSError as exc:
             raise ReportArtifactValidationError(
                 "published report bundle lexical identity cannot be verified"
             ) from exc
-        if (
-            not stat.S_ISDIR(info.st_mode)
-            or _entry_is_reparse(info)
-            or (int(info.st_dev), int(info.st_ino)) != self._root_identity
-        ):
-            _err("published report bundle lexical identity changed")
+        finally:
+            if lexical_handle is not None:
+                _close_directory_handle(lexical_handle)
 
     @contextmanager
     def _open_directory(self, relative: PurePosixPath | None) -> Iterator[tuple[int, Path]]:
@@ -548,7 +824,7 @@ class _PinnedBundleRoot:
                     if not _path_is_under(final, self.path):
                         _err("report bundle directory handle escaped its root")
                 else:
-                    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+                    flags = _posix_directory_flags()
                     child = os.open(part, flags, dir_fd=current_handle)
                     handles.append(child)
                     if not stat.S_ISDIR(os.fstat(child).st_mode):
@@ -595,7 +871,8 @@ class _PinnedBundleRoot:
                     )
                     raw_handle = None
                 else:
-                    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+                    _posix_directory_flags()
+                    flags = os.O_RDONLY | int(getattr(os, "O_NOFOLLOW", 0))
                     fd = os.open(name, flags, dir_fd=parent_handle)
                 handle = os.fdopen(fd, "rb")
                 try:
@@ -1472,7 +1749,11 @@ def validate_staged_bundle(
     checksums_rel: str,
     _pinned_root: _PinnedBundleRoot | None = None,
 ) -> tuple[ReportBundleManifest, ReportBundleChecksums, ReportViewV1]:
-    root = _resolved_directory(staging_dir, label="report bundle root")
+    root = (
+        _absolute_lexical(staging_dir, label="report bundle root")
+        if _pinned_root is not None
+        else _resolved_directory(staging_dir, label="report bundle root")
+    )
     manifest_relative = _safe_relative_path(manifest_rel)
     checksums_relative = _safe_relative_path(checksums_rel)
     if manifest_relative.as_posix() != REPORT_MANIFEST_FILENAME:
@@ -1574,6 +1855,61 @@ def validate_staged_bundle(
         return validate_with_pinned(pinned)
 
 
+def _load_published_bundle_from_pinned(
+    pinned: _PinnedBundleRoot,
+    *,
+    paths: dict[str, Path],
+    attempt_id: str,
+) -> PublishedReportBundle:
+    root = pinned.path
+    manifest, checksums, view = validate_staged_bundle(
+        root,
+        manifest_rel=REPORT_MANIFEST_FILENAME,
+        checksums_rel=REPORT_CHECKSUMS_FILENAME,
+        _pinned_root=pinned,
+    )
+    if manifest.attempt_id != attempt_id:
+        _err("published report bundle root does not match its manifest attempt")
+    report_artifact = _single_kind(manifest, "report")
+    view_artifact = _single_kind(manifest, "report_view")
+    report_relative = _safe_relative_path(report_artifact.relative_path)
+    view_relative = _safe_relative_path(view_artifact.relative_path)
+    canonical_report = root.joinpath(*report_relative.parts)
+    canonical_view = root.joinpath(*view_relative.parts)
+    if paths["report"] != canonical_report or paths["report_view"] != canonical_view:
+        _err("published paths do not match their manifest-declared identities")
+    if paths["manifest"] != root / REPORT_MANIFEST_FILENAME:
+        _err("published manifest path does not match its canonical identity")
+    if paths["checksums"] != root / REPORT_CHECKSUMS_FILENAME:
+        _err("published checksums path does not match its canonical identity")
+
+    checksums_by_path = {entry.relative_path: entry for entry in checksums.files}
+    media_identities: list[tuple[str, _FileIdentity]] = []
+    for media in view.media:
+        checksum = checksums_by_path[media.relative_path]
+        result = _read_and_hash_pinned(
+            pinned,
+            _safe_relative_path(media.relative_path),
+            expected_size=checksum.size_bytes,
+        )
+        if result.digest != checksum.sha256 or result.digest != media.checksum_sha256:
+            _err("published media changed during bundle loading")
+        media_identities.append((media.key, result.identity))
+
+    pinned.verify_lexical_identity()
+    return PublishedReportBundle(
+        root,
+        paths["report"],
+        paths["report_view"],
+        paths["manifest"],
+        paths["checksums"],
+        view,
+        manifest,
+        checksums,
+        tuple(media_identities),
+    )
+
+
 def load_published_bundle(
     session_dir: Path,
     *,
@@ -1618,57 +1954,74 @@ def load_published_bundle(
         _err("published checksums path is not canonical")
 
     with _PinnedBundleRoot(root) as pinned:
-        manifest, checksums, view = validate_staged_bundle(
-            root,
-            manifest_rel=REPORT_MANIFEST_FILENAME,
-            checksums_rel=REPORT_CHECKSUMS_FILENAME,
-            _pinned_root=pinned,
+        return _load_published_bundle_from_pinned(
+            pinned,
+            paths=paths,
+            attempt_id=root_match.group(1),
         )
-        if manifest.attempt_id != root_match.group(1):
-            _err("published report bundle root does not match its manifest attempt")
-        report_artifact = _single_kind(manifest, "report")
-        view_artifact = _single_kind(manifest, "report_view")
-        canonical_report = _join_under(
-            root, _safe_relative_path(report_artifact.relative_path)
-        )
-        canonical_view = _join_under(
-            root, _safe_relative_path(view_artifact.relative_path)
-        )
-        if paths["report"] != canonical_report or paths["report_view"] != canonical_view:
-            _err("published paths do not match their manifest-declared identities")
-        if paths["manifest"] != root / REPORT_MANIFEST_FILENAME:
-            _err("published manifest path does not match its canonical identity")
-        if paths["checksums"] != root / REPORT_CHECKSUMS_FILENAME:
-            _err("published checksums path does not match its canonical identity")
 
-        checksums_by_path = {entry.relative_path: entry for entry in checksums.files}
-        media_identities: list[tuple[str, _FileIdentity]] = []
-        for media in view.media:
-            checksum = checksums_by_path[media.relative_path]
-            result = _read_and_hash_pinned(
-                pinned,
-                _safe_relative_path(media.relative_path),
-                expected_size=checksum.size_bytes,
+
+@contextmanager
+def open_job_published_bundle(
+    sessions_dir: Path,
+    *,
+    job_id: object,
+    report_rel: object,
+    report_view_rel: object,
+    manifest_rel: object,
+    checksums_rel: object,
+) -> Iterator[PinnedJobReportBundle]:
+    parsed = _parse_job_report_paths(
+        report_rel=report_rel,
+        report_view_rel=report_view_rel,
+        manifest_rel=manifest_rel,
+        checksums_rel=checksums_rel,
+    )
+    safe_job_id = _safe_job_id(job_id)
+    root_match = _PUBLISHED_ROOT_PATTERN.fullmatch(parsed.bundle_name)
+    if root_match is None:  # pragma: no cover - parser establishes this invariant
+        _err("structured report bundle root is not canonical")
+
+    with _PinnedJobDirectoryChain(
+        sessions_dir,
+        job_id=safe_job_id,
+        analysis_child=parsed.analysis_child,
+    ) as chain:
+        root = chain.analysis_path / parsed.bundle_name
+        with _PinnedBundleRoot(
+            root,
+            parent_handle=chain.analysis_handle,
+            root_name=parsed.bundle_name,
+        ) as pinned_root:
+            filenames = (
+                _REPORT_FILENAME,
+                REPORT_VIEW_FILENAME,
+                REPORT_MANIFEST_FILENAME,
+                REPORT_CHECKSUMS_FILENAME,
             )
-            if (
-                result.digest != checksum.sha256
-                or result.digest != media.checksum_sha256
-            ):
-                _err("published media changed during bundle loading")
-            media_identities.append((media.key, result.identity))
+            paths = {
+                name: root / filename
+                for name, filename in zip(
+                    ("report", "report_view", "manifest", "checksums"),
+                    filenames,
+                )
+            }
+            bundle = _load_published_bundle_from_pinned(
+                pinned_root,
+                paths=paths,
+                attempt_id=root_match.group(1),
+            )
 
-        pinned.verify_lexical_identity()
-        return PublishedReportBundle(
-            root,
-            paths["report"],
-            paths["report_view"],
-            paths["manifest"],
-            paths["checksums"],
-            view,
-            manifest,
-            checksums,
-            tuple(media_identities),
-        )
+            def verify() -> None:
+                chain.verify_lexical_identity()
+                pinned_root.verify_lexical_identity()
+
+            pinned = PinnedJobReportBundle(bundle, parsed.full_rels, verify)
+            pinned.verify_lexical_identity()
+            try:
+                yield pinned
+            finally:
+                pinned.verify_lexical_identity()
 
 
 def validate_persisted_report_policy(

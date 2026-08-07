@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from pathlib import Path
 
 import numpy as np
@@ -15,10 +16,15 @@ from swinglab import pipeline, pose
 from swinglab.config import Config
 from swinglab.ffmpeg import VideoInfo
 from swinglab.frames import FrameSet
-from swinglab.pipeline import VideoTooLongError, analyze_video
+from swinglab.pipeline import SessionResult, VideoTooLongError, analyze_video
 from swinglab.report import REPORT_PRESENTATION_VERSION
 from swinglab.report_artifacts import ReportEntitlementSnapshot
-from swinglab.report_bundle import GuidedReportRendererUnavailable
+from swinglab.report_bundle import (
+    GuidedReportRendererUnavailable,
+    begin_report_bundle,
+    build_report_bundle,
+    publish_report_bundle,
+)
 from swinglab.report_view import (
     EvidenceKind,
     GUIDED_REPORT_PRESENTATION_VERSION,
@@ -29,11 +35,40 @@ from swinglab.report_view import (
     load_report_view,
 )
 from swinglab.web.humanize import friendly_error
+from swinglab.web import jobs as jobs_module
+from swinglab.web.jobs import Job, JobManager
 from tests.conftest import generate_test_video, make_landmarks, needs_ffmpeg
-from tests.report_bundle_fixtures import write_test_report_html
+from tests.report_bundle_fixtures import (
+    guided_bundle_inputs,
+    temporary_directory_redirect,
+    write_test_report_html,
+)
 from tests.test_pipeline_e2e import FakeTracker
 
 CLICKS = [3.0, 9.5, 16.25]
+
+
+def _guided_cap_result(
+    job: Job,
+    tmp_path: Path,
+    *,
+    capture_only: bool = False,
+) -> SessionResult:
+    analysis = job.session_dir / "out" / "source"
+    analysis.mkdir(parents=True, exist_ok=True)
+    attempt = begin_report_bundle(analysis, attempt_id="a" * 32)
+    inputs = guided_bundle_inputs(tmp_path, swings=[] if capture_only else None)
+    published = publish_report_bundle(build_report_bundle(attempt, **inputs))
+    return SessionResult(
+        session_dir=analysis,
+        report_path=published.report_path,
+        metrics_path=published.root / "metrics.json",
+        video=inputs["video"],
+        report_view_path=published.report_view_path,
+        manifest_path=published.manifest_path,
+        checksums_path=published.checksums_path,
+        structured_report=True,
+    )
 
 
 @pytest.fixture
@@ -86,6 +121,125 @@ def guided_without_ffmpeg(monkeypatch, tmp_path):
     monkeypatch.setattr(pipeline.frames, "extract_fullres_frame", extract_fullres)
     monkeypatch.setattr(pipeline.slowmo, "make_slowmo", make_slowmo)
     return video
+
+
+@pytest.mark.parametrize("depth", ["job", "out", "analysis"])
+def test_structured_classification_rejects_redirected_job_chain(
+    tmp_path: Path, depth: str,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    user_id = "redirected-golfer"
+    job = manager.create_session(
+        user_id=user_id,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_cap_result(job, tmp_path)
+    manager._complete_job(job, result)
+
+    if depth == "job":
+        original = job.session_dir
+        target = manager.sessions_dir / "classification-donor-job"
+    elif depth == "out":
+        original = job.session_dir / "out"
+        target = job.session_dir / "classification-donor-out"
+    else:
+        original = result.session_dir
+        target = result.session_dir.with_name("classification-donor-analysis")
+    shutil.copytree(original, target)
+
+    with temporary_directory_redirect(tmp_path, original, target):
+        row = manager._conn.execute(
+            "SELECT * FROM jobs WHERE id = ?", (job.id,)
+        ).fetchone()
+        stored = manager.get(job.id)
+        assert row is not None and stored is not None
+        assert (
+            manager._completed_report_classification(row)
+            == jobs_module._COMPLETION_CORRUPT
+        )
+        assert manager.coaching_eligible(stored) is False
+        assert manager.refilm_rejections_this_month(user_id) == 0
+        assert manager.usage_this_month(user_id) == 1
+
+
+@pytest.mark.parametrize(
+    ("capture_only", "classification", "eligible", "rejections", "usage"),
+    [
+        (False, jobs_module._COMPLETION_COACHING, True, 0, 1),
+        (True, jobs_module._COMPLETION_CAPTURE, False, 1, 0),
+    ],
+)
+def test_structured_classification_valid_controls(
+    tmp_path: Path,
+    capture_only: bool,
+    classification: str,
+    eligible: bool,
+    rejections: int,
+    usage: int,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    user_id = "valid-control-golfer"
+    job = manager.create_session(
+        user_id=user_id,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    assert manager._mark_processing(job) is True
+    manager._complete_job(
+        job,
+        _guided_cap_result(job, tmp_path, capture_only=capture_only),
+    )
+    row = manager._conn.execute(
+        "SELECT * FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    stored = manager.get(job.id)
+    assert row is not None and stored is not None
+
+    assert manager._completed_report_classification(row) == classification
+    assert manager.coaching_eligible(stored) is eligible
+    assert manager.refilm_rejections_this_month(user_id) == rejections
+    assert manager.usage_this_month(user_id) == usage
+
+
+def test_genuine_legacy_classification_control(tmp_path: Path):
+    manager = JobManager(tmp_path / "sessions", Config())
+    user_id = "legacy-control-golfer"
+    job = manager.create_session(user_id=user_id)
+    assert manager._mark_processing(job) is True
+    analysis = job.session_dir / "out" / "source"
+    analysis.mkdir(parents=True)
+    report = analysis / "report.html"
+    report.write_text("<html>legacy report</html>\n", encoding="utf-8")
+    manager._complete_job(
+        job,
+        SessionResult(
+            session_dir=analysis,
+            report_path=report,
+            metrics_path=analysis / "metrics.json",
+            video=guided_bundle_inputs(tmp_path)["video"],
+        ),
+    )
+    row = manager._conn.execute(
+        "SELECT * FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    stored = manager.get(job.id)
+    assert row is not None and stored is not None
+
+    assert (
+        manager._completed_report_classification(row)
+        == jobs_module._COMPLETION_COACHING
+    )
+    assert manager.coaching_eligible(stored) is True
+    assert manager.refilm_rejections_this_month(user_id) == 0
+    assert manager.usage_this_month(user_id) == 1
 
 
 # -- max_video_s -------------------------------------------------------------

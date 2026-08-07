@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+from contextlib import contextmanager
 from dataclasses import replace
 from pathlib import Path
 import sqlite3
@@ -10,7 +12,10 @@ import pytest
 from swinglab.config import Config
 from swinglab.pipeline import SessionResult, ZeroStrikesError
 from swinglab.report import REPORT_PRESENTATION_VERSION
-from swinglab.report_artifacts import ReportEntitlementSnapshot
+from swinglab.report_artifacts import (
+    ReportArtifactValidationError,
+    ReportEntitlementSnapshot,
+)
 from swinglab.report_bundle import (
     CoreReportBundleError,
     GuidedReportRendererUnavailable,
@@ -28,7 +33,11 @@ from swinglab.report_view import (
 from swinglab.web import jobs as jobs_module
 from swinglab.web.jobs import DONE, PROCESSING, Job, JobManager
 from tests import guided_report_gate_helper as gate_helper
-from tests.report_bundle_fixtures import guided_bundle_inputs, write_test_report_html
+from tests.report_bundle_fixtures import (
+    guided_bundle_inputs,
+    temporary_directory_redirect,
+    write_test_report_html,
+)
 
 
 def _guided_result(
@@ -54,6 +63,23 @@ def _guided_result(
         checksums_path=published.checksums_path,
         structured_report=True,
     )
+
+
+def _assert_processing_without_publication(manager: JobManager, job: Job) -> None:
+    row = manager._conn.execute(
+        "SELECT status, report_rel, report_view_rel, report_manifest_rel,"
+        " report_checksums_rel, structured_report FROM jobs WHERE id = ?",
+        (job.id,),
+    ).fetchone()
+    assert tuple(row) == (PROCESSING, None, None, None, None, 0)
+    assert job.status == PROCESSING
+    assert (
+        job.report_rel,
+        job.report_view_rel,
+        job.report_manifest_rel,
+        job.report_checksums_rel,
+        job.structured_report,
+    ) == (None, None, None, None, False)
 
 
 def test_guided_report_presentation_gate_is_strict_and_ships_disabled(tmp_path: Path):
@@ -672,6 +698,126 @@ def test_invalid_guided_bundle_never_publishes_a_done_row(
         stored.report_checksums_rel,
         stored.structured_report,
     ) == (None, None, None, None, False)
+
+
+def test_guided_completion_rejects_redirected_job_root_without_committing_artifact_rels(
+    tmp_path: Path,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+    target = tmp_path / "donor-job"
+    shutil.copytree(job.session_dir, target)
+
+    with temporary_directory_redirect(tmp_path, job.session_dir, target):
+        with pytest.raises((ReportArtifactValidationError, ValueError)):
+            manager._complete_job(job, result)
+
+    _assert_processing_without_publication(manager, job)
+
+
+def test_guided_completion_rejects_redirected_out_root_without_committing_artifact_rels(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+    original = job.session_dir / "out"
+    target = job.session_dir / "donor-out"
+    shutil.copytree(original, target)
+
+    # A static out redirect is already rejected by the old layout check. Swap
+    # at the loader boundary to reproduce the confirmed resolve-before-validate
+    # window and keep this regression genuinely RED against the old flow.
+    if hasattr(jobs_module, "open_job_published_bundle"):
+        real_open = jobs_module.open_job_published_bundle
+
+        @contextmanager
+        def open_after_redirect(*args, **kwargs):
+            with temporary_directory_redirect(tmp_path, original, target):
+                with real_open(*args, **kwargs) as pinned:
+                    yield pinned
+
+        monkeypatch.setattr(
+            jobs_module, "open_job_published_bundle", open_after_redirect
+        )
+    else:
+        real_load = jobs_module.load_published_bundle
+
+        def load_after_redirect(*args, **kwargs):
+            with temporary_directory_redirect(tmp_path, original, target):
+                return real_load(*args, **kwargs)
+
+        monkeypatch.setattr(jobs_module, "load_published_bundle", load_after_redirect)
+
+    with pytest.raises((ReportArtifactValidationError, ValueError)):
+        manager._complete_job(job, result)
+
+    _assert_processing_without_publication(manager, job)
+
+
+def test_guided_completion_rejects_redirected_analysis_child_without_committing_artifact_rels(
+    tmp_path: Path,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+    target = result.session_dir.with_name("donor-analysis")
+    shutil.copytree(result.session_dir, target)
+
+    with temporary_directory_redirect(tmp_path, result.session_dir, target):
+        with pytest.raises((ReportArtifactValidationError, ValueError)):
+            manager._complete_job(job, result)
+
+    _assert_processing_without_publication(manager, job)
+
+
+def test_guided_completion_rejects_artifacts_from_a_different_analysis_child(
+    tmp_path: Path,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    assert manager._mark_processing(job) is True
+    source = _guided_result(job, tmp_path, analysis_name="source")
+    donor = _guided_result(
+        job,
+        tmp_path,
+        attempt_id="b" * 32,
+        analysis_name="donor",
+    )
+    mismatched = replace(donor, session_dir=source.session_dir)
+
+    with pytest.raises(ValueError, match="direct analysis session"):
+        manager._complete_job(job, mismatched)
+
+    _assert_processing_without_publication(manager, job)
 
 
 def test_stale_nonprocessing_status_cannot_publish_bundle(tmp_path: Path):
