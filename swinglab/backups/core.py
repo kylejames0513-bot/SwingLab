@@ -108,6 +108,32 @@ def _is_link_or_reparse(path: Path) -> bool:
     )
 
 
+def _assert_no_link_or_reparse_components(path: Path, *, label: str) -> None:
+    """Inspect an unresolved path and every traversed component without resolving."""
+
+    expanded = path.expanduser()
+    lexical = expanded if expanded.is_absolute() else Path.cwd() / expanded
+    parts = lexical.parts
+    if not parts:
+        raise BackupError(f"The {label} is invalid.")
+    current = Path(parts[0])
+    if _is_link_or_reparse(current):
+        raise BackupError(
+            f"The {label} cannot traverse a symlink or reparse point."
+        )
+    for part in parts[1:]:
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            current = current.parent
+            continue
+        current /= part
+        if _is_link_or_reparse(current):
+            raise BackupError(
+                f"The {label} cannot traverse a symlink or reparse point."
+            )
+
+
 def _copy_and_hash(source: Path, destination: Path) -> tuple[str, int]:
     if _is_link_or_reparse(source) or not source.is_file():
         raise BackupError("A required artifact is not a regular file.")
@@ -601,10 +627,10 @@ def create_backup(
     """Create a complete local backup bundle without contacting object storage."""
     expanded_sessions = sessions_dir.expanduser()
     expanded_output = output_dir.expanduser()
-    if _is_link_or_reparse(expanded_sessions):
-        raise BackupError("The sessions directory cannot be a symlink or reparse point.")
-    if _is_link_or_reparse(expanded_output):
-        raise BackupError("The backup output cannot be a symlink or reparse point.")
+    _assert_no_link_or_reparse_components(
+        expanded_sessions, label="sessions directory"
+    )
+    _assert_no_link_or_reparse_components(expanded_output, label="backup output")
     sessions_dir = expanded_sessions.resolve()
     output_dir = expanded_output.resolve()
     if not sessions_dir.is_dir():
@@ -1002,8 +1028,7 @@ def _load_and_verify_manifest_snapshot(
     bundle_dir: Path,
 ) -> _VerifiedManifestSnapshot:
     expanded_bundle = bundle_dir.expanduser()
-    if _is_link_or_reparse(expanded_bundle):
-        raise BackupError("The backup bundle cannot be a symlink or reparse point.")
+    _assert_no_link_or_reparse_components(expanded_bundle, label="backup bundle")
     bundle_dir = expanded_bundle.resolve()
     if not bundle_dir.is_dir():
         raise BackupError("The backup bundle is missing or is not a regular directory.")
@@ -1147,8 +1172,7 @@ def _verify_artifact_database_mapping(
 
 def _assert_safe_scratch_root(scratch_root: Path, bundle_dir: Path) -> Path:
     expanded_root = scratch_root.expanduser()
-    if _is_link_or_reparse(expanded_root):
-        raise BackupError("The scratch root cannot be a symlink or reparse point.")
+    _assert_no_link_or_reparse_components(expanded_root, label="scratch root")
     root = expanded_root.resolve()
     data_root = Path("/data").resolve()
     if root == data_root or _is_relative_to(root, data_root):

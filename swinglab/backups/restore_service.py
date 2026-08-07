@@ -47,6 +47,7 @@ from .core import (
     DATABASE_BUNDLE_PATH,
     MANIFEST_FILE,
     BackupError,
+    _assert_no_link_or_reparse_components,
     _canonical_json,
     _assert_safe_scratch_root,
     _copy_and_hash,
@@ -792,8 +793,8 @@ def _validate_candidate_checkpoint_ancestry(
     *,
     evidence: RetainedRestoreEvidence,
     snapshot: ValidatedRecoveryChain,
-) -> None:
-    """Prove a restored checkpoint is an exact ancestor of the loaded chain."""
+) -> int:
+    """Return the exact 1-based chain boundary already present in the candidate."""
 
     baseline = snapshot.records[0]
     is_baseline = (
@@ -807,7 +808,10 @@ def _validate_candidate_checkpoint_ancestry(
     ).fetchall()
     if not rows:
         if is_baseline:
-            return
+            # Genesis is published only after this exact baseline snapshot, so
+            # its journal acceptance is restore work but it is never replayed
+            # through a record-kind reconciler.
+            return 1
         raise BackupError("A later service candidate is missing its chain checkpoint.")
     if len(rows) != 1:
         raise BackupError("The restored recovery checkpoint is ambiguous.")
@@ -835,6 +839,7 @@ def _validate_candidate_checkpoint_ancestry(
         raise BackupError("The restored recovery checkpoint is not in chain ancestry.")
     if sequence == len(snapshot.records) and row[6] != snapshot.head_etag:
         raise BackupError("The restored recovery checkpoint HEAD is not current.")
+    return sequence
 
 
 def _validate_candidate_baseline_journal(
@@ -945,6 +950,7 @@ def _apply_recovery_chain(
     snapshot: ValidatedRecoveryChain,
     keyring: VersionedHMAC,
     reconcilers: Mapping[str, RecoveryRecordReconciler],
+    restored_checkpoint_sequence: int,
     now: float,
 ) -> None:
     baseline = snapshot.records[0]
@@ -1008,7 +1014,7 @@ def _apply_recovery_chain(
             ),
         )
 
-        for record in snapshot.records[1:]:
+        for record in snapshot.records[restored_checkpoint_sequence:]:
             if record.kind == RecoveryRecordKind.TOKEN_REVOKE.value:
                 _apply_token_revoke(connection, record, keyring)
             elif record.kind in {
@@ -1081,6 +1087,11 @@ def prepare_service_restore(
     connection = sqlite3.connect(working_dir / "swinglab.db")
     owners = dict(reconcilers or {})
     try:
+        connection.execute("PRAGMA foreign_keys=ON")
+        if connection.execute("PRAGMA foreign_keys").fetchone() != (1,):
+            raise BackupError(
+                "Foreign-key enforcement could not be enabled for service restore."
+            )
         _require_key_coverage(
             connection,
             keyring=keyring,
@@ -1088,7 +1099,7 @@ def prepare_service_restore(
         )
         snapshot = _validated_service_chain(ledger)
         lineage_id, _baseline = _validate_candidate_lineage(evidence, snapshot)
-        _validate_candidate_checkpoint_ancestry(
+        restored_checkpoint_sequence = _validate_candidate_checkpoint_ancestry(
             connection,
             evidence=evidence,
             snapshot=snapshot,
@@ -1098,7 +1109,9 @@ def prepare_service_restore(
             evidence=evidence,
             snapshot=snapshot,
         )
-        _preflight_chain_owners(snapshot.records, owners)
+        _preflight_chain_owners(
+            snapshot.records[restored_checkpoint_sequence:], owners
+        )
         _require_key_coverage(
             connection,
             keyring=keyring,
@@ -1117,8 +1130,13 @@ def prepare_service_restore(
             snapshot=snapshot,
             keyring=keyring,
             reconcilers=owners,
+            restored_checkpoint_sequence=restored_checkpoint_sequence,
             now=float(prepared_at),
         )
+        if connection.execute("PRAGMA foreign_key_check").fetchall():
+            raise BackupError(
+                "The prepared service database failed foreign key validation."
+            )
         _validate_restored_auth_reset_postconditions(
             connection,
             expected_user_epochs=expected_user_epochs,
@@ -1190,8 +1208,7 @@ def prepare_service_restore(
 
 def _operator_root(path: Path, *, label: str) -> Path:
     expanded = path.expanduser()
-    if _is_link_or_reparse(expanded):
-        raise BackupError(f"The {label} cannot be a symlink or reparse point.")
+    _assert_no_link_or_reparse_components(expanded, label=label)
     resolved = expanded.resolve()
     data_root = Path("/data").resolve()
     try:
@@ -1489,6 +1506,7 @@ class RecoveryFenceOperatorComposition:
 
 def _private_operator_child(root: Path, name: str) -> Path:
     child = root / name
+    _assert_no_link_or_reparse_components(child, label="operator working directory")
     if child.exists() and (_is_link_or_reparse(child) or not child.is_dir()):
         raise BackupError("An operator working directory is unsafe.")
     child.mkdir(mode=0o700, exist_ok=True)
@@ -1507,8 +1525,12 @@ def compose_recovery_fence_operator(args: object) -> RecoveryFenceOperatorCompos
     if command not in {"initialize-baseline", "restore-to-service"}:
         raise BackupError("A closed recovery-fence operator command is required.")
     operator_root = _operator_root(operator_value, label="recovery operator root")
-    sessions_dir = sessions_value.expanduser().resolve()
-    if _is_link_or_reparse(sessions_value.expanduser()) or not sessions_dir.is_dir():
+    expanded_sessions = sessions_value.expanduser()
+    _assert_no_link_or_reparse_components(
+        expanded_sessions, label="recovery sessions directory"
+    )
+    sessions_dir = expanded_sessions.resolve()
+    if not sessions_dir.is_dir():
         raise BackupError("The recovery sessions directory is missing or unsafe.")
     try:
         overlap = operator_root.is_relative_to(sessions_dir) or sessions_dir.is_relative_to(
@@ -1540,6 +1562,9 @@ def compose_recovery_fence_operator(args: object) -> RecoveryFenceOperatorCompos
         keyring=keyring,
         local_root=sessions_dir,
         db_path=db_path,
+        checkpoint_mode=(
+            "read_only" if command == "restore-to-service" else "writable"
+        ),
     )
     service_restorer = OfflineServiceRestoreOperator(
         scratch_root=scratch_root,

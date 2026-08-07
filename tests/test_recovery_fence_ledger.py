@@ -881,6 +881,76 @@ def test_local_checkpoint_must_remain_in_the_validated_remote_ancestry(tmp_path)
         ledger.load_chain()
 
 
+def test_read_only_checkpoint_mode_uses_uri_query_only_and_never_mutates_local_state(
+    tmp_path,
+    monkeypatch,
+):
+    module = _api()
+    remote = _MemoryRemote(module)
+    publisher = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=_keyring(),
+        local_root=tmp_path / "publisher",
+    )
+    publisher.append_and_publish(_baseline_event(module))
+    db_path = tmp_path / "swinglab.db"
+    store = UserStore(db_path, mobile_state_hmac=_keyring())
+    store.close()
+    before = {
+        path.name: (path.stat().st_size, path.stat().st_mtime_ns)
+        for path in tmp_path.glob("swinglab.db*")
+    }
+    original_connect = module.sqlite3.connect
+    connect_calls = []
+    traced_statements = []
+
+    def traced_connect(database, *args, **kwargs):
+        connect_calls.append((database, dict(kwargs)))
+        connection = original_connect(database, *args, **kwargs)
+        connection.set_trace_callback(traced_statements.append)
+        return connection
+
+    monkeypatch.setattr(module.sqlite3, "connect", traced_connect)
+    reader = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=_keyring(),
+        local_root=tmp_path,
+        db_path=db_path,
+        checkpoint_mode="read_only",
+    )
+
+    assert len(reader.load_chain()) == 1
+    assert reader.checkpoint_mode == "read_only"
+    assert len(connect_calls) == 1
+    database, options = connect_calls[0]
+    assert isinstance(database, str) and database.startswith("file:")
+    assert "mode=ro" in database
+    assert options.get("uri") is True
+    assert any(
+        statement.replace(" ", "").casefold() == "pragmaquery_only=on"
+        for statement in traced_statements
+    )
+    assert {
+        path.name: (path.stat().st_size, path.stat().st_mtime_ns)
+        for path in tmp_path.glob("swinglab.db*")
+    } == before
+
+    prior_head = remote.head_body
+    prior_records = dict(remote.records)
+    with pytest.raises(module.RecoveryFenceError, match="read-only"):
+        reader.append_and_publish(
+            module.TokenRevokeEvent.from_raw(
+                event_id=str(uuid.uuid4()),
+                cutoff_at=90.0,
+                selector="read-only-selector",
+                stored_token_verifier="read-only-verifier",
+                keyring=_keyring(),
+            )
+        )
+    assert remote.head_body == prior_head
+    assert remote.records == prior_records
+
+
 class _BackupVerifier:
     def __init__(self, facts):
         self.facts = facts

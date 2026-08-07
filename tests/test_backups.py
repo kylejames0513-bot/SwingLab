@@ -576,6 +576,25 @@ def test_create_backup_rejects_a_broken_symlink_output(
     assert not outside.exists()
 
 
+def test_create_backup_rejects_a_symlinked_output_ancestor(
+    tmp_path,
+    synthetic_sessions,
+):
+    sessions, _ = synthetic_sessions
+    real_parent = tmp_path / "real-backup-parent"
+    real_parent.mkdir()
+    alias = tmp_path / "backup-parent-alias"
+    try:
+        alias.symlink_to(real_parent, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable on this test host.")
+
+    with pytest.raises(BackupError, match="symlink|reparse"):
+        create_backup(sessions, alias / "bundle", now=CAPTURED_AT)
+
+    assert not (real_parent / "bundle").exists()
+
+
 def test_symlinked_live_report_is_rejected(tmp_path, synthetic_sessions):
     sessions, _ = synthetic_sessions
     report = sessions / "jobdone/out/source/report.html"
@@ -1264,6 +1283,68 @@ def test_download_rejects_data_root_before_network(synthetic_sessions):
         download_bundle(
             manifest["backup_id"], Path("/data/download"), _settings(), client=fake
         )
+    assert fake.keys == []
+
+
+@pytest.mark.parametrize("link_location", ["leaf", "ancestor"])
+def test_download_rejects_broken_leaf_and_symlinked_ancestor_before_network(
+    tmp_path,
+    link_location,
+):
+    fake = _RecordingS3()
+    if link_location == "leaf":
+        output = tmp_path / "broken-download-link"
+        target = tmp_path / "missing-download-target"
+        try:
+            output.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pytest.skip("Directory symlinks are unavailable on this test host.")
+    else:
+        target = tmp_path / "real-download-parent"
+        target.mkdir()
+        alias = tmp_path / "download-parent-alias"
+        try:
+            alias.symlink_to(target, target_is_directory=True)
+        except OSError:
+            pytest.skip("Directory symlinks are unavailable on this test host.")
+        output = alias / "downloaded-bundle"
+
+    with pytest.raises(BackupError, match="symlink|reparse"):
+        download_bundle(
+            "20260727T120000Z-aaaaaaaaaaaa",
+            output,
+            _settings(),
+            client=fake,
+        )
+
+    assert fake.keys == []
+
+
+def test_download_rejects_a_windows_reparse_ancestor_before_network(
+    tmp_path,
+    monkeypatch,
+):
+    reparse_parent = tmp_path / "synthetic-reparse-parent"
+    reparse_parent.mkdir()
+    output = reparse_parent / "downloaded-bundle"
+    fake = _RecordingS3()
+    original_guard = core_module._is_link_or_reparse
+
+    def synthetic_reparse(path):
+        if Path(path) == reparse_parent:
+            return True
+        return original_guard(path)
+
+    monkeypatch.setattr(core_module, "_is_link_or_reparse", synthetic_reparse)
+
+    with pytest.raises(BackupError, match="symlink|reparse"):
+        download_bundle(
+            "20260727T120000Z-aaaaaaaaaaaa",
+            output,
+            _settings(),
+            client=fake,
+        )
+
     assert fake.keys == []
 
 
@@ -2377,6 +2458,34 @@ def _create_service_baseline_bundle(tmp_path, synthetic_sessions):
     return bundle, manifest, manifest_sha256
 
 
+def test_exact_baseline_without_a_checkpoint_establishes_sequence_one_boundary(
+    tmp_path,
+    synthetic_sessions,
+):
+    module = _restore_service_module()
+    _sessions, connection = synthetic_sessions
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    snapshot = _baseline_chain_snapshot(manifest, manifest_sha256)
+    evidence = module.RetainedRestoreEvidence(
+        bundle_dir=bundle,
+        restore_dir=bundle,
+        manifest=manifest,
+        manifest_sha256=manifest_sha256,
+        complete_sha256="",
+        file_sha256=(),
+    )
+
+    boundary = module._validate_candidate_checkpoint_ancestry(
+        connection,
+        evidence=evidence,
+        snapshot=snapshot,
+    )
+
+    assert boundary == 1
+
+
 def test_service_restore_prepares_only_disposable_copy_and_reconciles_full_chain(
     tmp_path, synthetic_sessions
 ):
@@ -2801,8 +2910,24 @@ def test_restore_operator_composition_does_not_load_backup_transport_roles(
 
     assert composition.initializer is None
     assert isinstance(composition.service_restorer, module.OfflineServiceRestoreOperator)
+    assert composition.service_restorer._ledger.checkpoint_mode == "read_only"
     assert not (operator_root / "baseline-bundles").exists()
     assert not (operator_root / "verified-readbacks").exists()
+
+
+def test_operator_root_rejects_a_symlinked_ancestor(tmp_path):
+    module = _restore_service_module()
+    real_parent = tmp_path / "real-operator-parent"
+    operator_root = real_parent / "operator"
+    operator_root.mkdir(parents=True)
+    alias = tmp_path / "operator-parent-alias"
+    try:
+        alias.symlink_to(real_parent, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable on this test host.")
+
+    with pytest.raises(BackupError, match="symlink|reparse"):
+        module._operator_root(alias / "operator", label="synthetic operator root")
 
 
 def test_retained_backup_key_usage_audit_is_verified_and_deterministic(
@@ -2852,7 +2977,10 @@ def test_retained_backup_key_usage_audit_is_verified_and_deterministic(
 def _seed_later_service_candidate(
     connection: sqlite3.Connection,
     *,
+    checkpoint_sequence: int = 1,
     checkpoint_hash: str = "2" * 64,
+    checkpoint_record_key: str | None = None,
+    checkpoint_head_etag: str = '"old-head"',
     minimum_created_at: float = CAPTURED_AT.timestamp() - 3600,
 ) -> tuple[str, str, str]:
     baseline_backup_id = "20260727T110000Z-aaaaaaaaaaaa"
@@ -2900,13 +3028,15 @@ def _seed_later_service_candidate(
         "INSERT INTO mobile_recovery_fence_checkpoints "
         "(checkpoint_id, lineage_id, baseline_backup_id, schema_generation, "
         "head_sequence, head_record_key, head_record_hash, head_etag, "
-        "chain_hmac_key_id, verified_at) VALUES (1, ?, ?, 1, 1, ?, ?, ?, ?, ?)",
+        "chain_hmac_key_id, verified_at) VALUES (1, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
         (
             BASELINE_LINEAGE_ID,
             baseline_backup_id,
-            "fence/records/1-" + checkpoint_hash + ".json",
+            checkpoint_sequence,
+            checkpoint_record_key
+            or f"fence/records/{checkpoint_sequence}-{checkpoint_hash}.json",
             checkpoint_hash,
-            '"old-head"',
+            checkpoint_head_etag,
             "chain-key",
             minimum_created_at + 1,
         ),
@@ -2990,6 +3120,48 @@ def test_later_matching_lineage_candidate_advances_a_stale_checkpoint(
         ).fetchone() == (2, snapshot.records[-1].record_hash)
     finally:
         prepared.close()
+
+
+def test_later_candidate_never_replays_an_already_checkpointed_reserved_record(
+    tmp_path,
+    synthetic_sessions,
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    reserved_hash = "8" * 64
+    baseline_id, baseline_sha, baseline_checkpoint = _seed_later_service_candidate(
+        connection,
+        checkpoint_sequence=3,
+        checkpoint_hash=reserved_hash,
+        checkpoint_head_etag='"validated-head"',
+    )
+    bundle = tmp_path / "already-reconciled-service-candidate"
+    manifest = create_backup(sessions, bundle, now=CAPTURED_AT)
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest(),
+        include_reserved=True,
+        genesis_backup_id=baseline_id,
+        genesis_manifest_sha256=baseline_sha,
+        genesis_db_checkpoint=baseline_checkpoint,
+        minimum_backup_created_at=CAPTURED_AT.timestamp() - 3600,
+    )
+    scratch = tmp_path / "already-reconciled-service-scratch"
+    scratch.mkdir()
+
+    def reject_replay(_connection, _record, _keyring):
+        raise AssertionError("an already-checkpointed reserved record was replayed")
+
+    result = module.prepare_service_restore(
+        bundle,
+        scratch,
+        ledger=_StaticValidatedLedger(snapshot),
+        keyring=_service_keyring(),
+        reconcilers={"push_environment_cutoff": reject_replay},
+        now=CAPTURED_AT.timestamp() + 100,
+    )
+
+    assert result.ready is True
 
 
 def test_later_candidate_rejects_divergent_checkpoint_before_auth_reset(
@@ -3078,6 +3250,100 @@ def test_service_restore_executes_an_explicit_reserved_kind_owner(
         ).fetchone() == (snapshot.records[-1].record_hash,)
     finally:
         prepared.close()
+
+
+def test_service_restore_enforces_foreign_keys_before_reserved_reconciliation(
+    tmp_path,
+    synthetic_sessions,
+):
+    module = _restore_service_module()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        manifest_sha256,
+        include_reserved=True,
+    )
+    scratch = tmp_path / "foreign-key-reconciler-scratch"
+    scratch.mkdir()
+    observed_modes = []
+
+    def insert_orphan(connection, _record, _keyring):
+        observed_modes.append(connection.execute("PRAGMA foreign_keys").fetchone()[0])
+        connection.execute(
+            "CREATE TABLE synthetic_fk_parents (id INTEGER PRIMARY KEY)"
+        )
+        connection.execute(
+            "CREATE TABLE synthetic_fk_children ("
+            "id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES "
+            "synthetic_fk_parents(id))"
+        )
+        connection.execute(
+            "INSERT INTO synthetic_fk_children (id, parent_id) VALUES (1, 999)"
+        )
+
+    with pytest.raises(BackupError):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=_StaticValidatedLedger(snapshot),
+            keyring=_service_keyring(),
+            reconcilers={"push_environment_cutoff": insert_orphan},
+            now=CAPTURED_AT.timestamp() + 100,
+        )
+
+    assert observed_modes == [1]
+    working_dir = next(scratch.glob("service-working-*"))
+    assert not (working_dir / "service-restore-ready.json").exists()
+
+
+def test_service_restore_post_reconciler_audit_rejects_foreign_key_bypass(
+    tmp_path,
+    synthetic_sessions,
+):
+    module = _restore_service_module()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        manifest_sha256,
+        include_reserved=True,
+    )
+    scratch = tmp_path / "foreign-key-bypass-scratch"
+    scratch.mkdir()
+
+    def bypass_enforcement(connection, _record, _keyring):
+        connection.execute(
+            "CREATE TABLE synthetic_fk_parents (id INTEGER PRIMARY KEY)"
+        )
+        connection.execute(
+            "CREATE TABLE synthetic_fk_children ("
+            "id INTEGER PRIMARY KEY, parent_id INTEGER NOT NULL REFERENCES "
+            "synthetic_fk_parents(id))"
+        )
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys=OFF")
+        connection.execute(
+            "INSERT INTO synthetic_fk_children (id, parent_id) VALUES (1, 999)"
+        )
+        connection.commit()
+        connection.execute("PRAGMA foreign_keys=ON")
+        connection.execute("BEGIN IMMEDIATE")
+
+    with pytest.raises(BackupError, match="foreign key"):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=_StaticValidatedLedger(snapshot),
+            keyring=_service_keyring(),
+            reconcilers={"push_environment_cutoff": bypass_enforcement},
+            now=CAPTURED_AT.timestamp() + 100,
+        )
+
+    working_dir = next(scratch.glob("service-working-*"))
+    assert not (working_dir / "service-restore-ready.json").exists()
 
 
 def test_service_restore_rejects_a_reconciler_that_reintroduces_credentials(

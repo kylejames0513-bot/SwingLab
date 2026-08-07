@@ -19,6 +19,7 @@ from .core import (
     FORMAT,
     MANIFEST_FILE,
     BackupError,
+    _assert_no_link_or_reparse_components,
     _canonical_json,
     _load_json,
     _join_under,
@@ -1155,7 +1156,11 @@ def download_bundle(
     client=None,
 ) -> dict[str, Any]:
     backup_id = validate_backup_id(backup_id)
-    output_dir = output_dir.expanduser().resolve()
+    expanded_output = output_dir.expanduser()
+    _assert_no_link_or_reparse_components(
+        expanded_output, label="download output"
+    )
+    output_dir = expanded_output.resolve()
     data_root = Path("/data").resolve()
     try:
         output_dir.relative_to(data_root)

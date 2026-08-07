@@ -934,6 +934,7 @@ class RecoveryFenceLedger:
         keyring: VersionedHMAC,
         local_root: str | Path,
         db_path: str | Path | None = None,
+        checkpoint_mode: str = "writable",
         max_cas_retries: int = 8,
     ):
         if not isinstance(keyring, VersionedHMAC):
@@ -945,16 +946,46 @@ class RecoveryFenceLedger:
             or max_cas_retries > 64
         ):
             raise ValueError("max_cas_retries must be between 1 and 64.")
+        if checkpoint_mode not in {"writable", "read_only"}:
+            raise ValueError("checkpoint_mode must be writable or read_only.")
+        if checkpoint_mode == "read_only" and db_path is None:
+            raise ValueError("Read-only checkpoint mode requires a database path.")
         self._remote = remote_store
         self._keyring = keyring
         self._local_root = Path(local_root)
         self._state_root = self._local_root / ".recovery-fence"
         self._db_path = Path(db_path) if db_path is not None else None
+        self._checkpoint_mode = checkpoint_mode
         self._max_cas_retries = max_cas_retries
 
     @property
     def local_root(self) -> Path:
         return self._local_root
+
+    @property
+    def checkpoint_mode(self) -> str:
+        return self._checkpoint_mode
+
+    def _open_checkpoint_connection(self) -> sqlite3.Connection:
+        assert self._db_path is not None
+        if self._checkpoint_mode == "writable":
+            return sqlite3.connect(self._db_path)
+        try:
+            database_uri = self._db_path.expanduser().resolve(strict=True).as_uri()
+            connection = sqlite3.connect(f"{database_uri}?mode=ro", uri=True)
+            connection.execute("PRAGMA query_only=ON")
+            if connection.execute("PRAGMA query_only").fetchone() != (1,):
+                connection.close()
+                raise RecoveryFenceError(
+                    "The restore-only checkpoint connection is not query-only."
+                )
+            return connection
+        except RecoveryFenceError:
+            raise
+        except (OSError, sqlite3.Error):
+            raise RecoveryFenceError(
+                "The local recovery-fence checkpoint could not be opened read-only."
+            ) from None
 
     def _read_chain(self, *, allow_empty: bool) -> tuple[Any | None, tuple[PublishedRecoveryRecord, ...]]:
         try:
@@ -1185,18 +1216,24 @@ class RecoveryFenceLedger:
     ) -> None:
         if self._db_path is None:
             return
+        connection: sqlite3.Connection | None = None
         try:
-            with sqlite3.connect(self._db_path) as connection:
-                existing = connection.execute(
-                    "SELECT head_sequence, lineage_id, baseline_backup_id, "
-                    "schema_generation, head_record_key, head_record_hash, "
-                    "chain_hmac_key_id FROM mobile_recovery_fence_checkpoints "
-                    "WHERE checkpoint_id = 1"
-                ).fetchone()
+            connection = self._open_checkpoint_connection()
+            existing = connection.execute(
+                "SELECT head_sequence, lineage_id, baseline_backup_id, "
+                "schema_generation, head_record_key, head_record_hash, "
+                "chain_hmac_key_id FROM mobile_recovery_fence_checkpoints "
+                "WHERE checkpoint_id = 1"
+            ).fetchone()
+        except RecoveryFenceError:
+            raise
         except sqlite3.Error:
             raise RecoveryFenceError(
                 "The local recovery-fence checkpoint could not be validated."
             ) from None
+        finally:
+            if connection is not None:
+                connection.close()
         self._require_checkpoint_ancestry(existing, chain)
 
     def _save_checkpoint(
@@ -1207,6 +1244,10 @@ class RecoveryFenceLedger:
     ) -> None:
         if self._db_path is None:
             return
+        if self._checkpoint_mode == "read_only":
+            raise RecoveryFenceError(
+                "A read-only recovery-fence ledger cannot save a checkpoint."
+            )
         if not validated_chain:
             raise RecoveryFenceError(
                 "A validated recovery-fence chain is required for checkpointing."
@@ -1274,6 +1315,11 @@ class RecoveryFenceLedger:
         resume_record_identity: tuple[str, str, str] | None = None,
     ) -> PublishedRecoveryRecord:
         """Append one event, rebasing only explicit provider CAS conflicts."""
+
+        if self._checkpoint_mode == "read_only":
+            raise RecoveryFenceError(
+                "A read-only recovery-fence ledger cannot publish records."
+            )
 
         if resume_record_identity is not None:
             if (
