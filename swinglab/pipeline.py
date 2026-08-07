@@ -6,7 +6,9 @@ future web layer both call into it (never duplicate pipeline logic elsewhere).
 
 from __future__ import annotations
 
+import os
 import shutil
+import stat
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
@@ -18,9 +20,28 @@ from .coaching import DTL_SESSION_NOTE, TRACKING_UNSTABLE_NOTE, angle_mismatch_n
 from .coaching import session_notes as make_session_notes
 from .coaching import swing_notes
 from .config import Config
-from .events import EventError
-from .ffmpeg import VideoInfo, probe, require_binaries
+from .events import EventError, EventFailure
+from .evidence import EvidenceSnapshot, build_evidence_snapshot
+from .ffmpeg import FFmpegError, VideoInfo, probe, require_binaries
 from .metrics import ANGLE_DTL, ANGLE_FACE_ON, ANGLES
+from .report import REPORT_PRESENTATION_VERSION
+from .report_artifacts import PublishedReportBundle, ReportEntitlementSnapshot
+from .report_bundle import (
+    CoreReportBundleError,
+    GuidedReportRendererUnavailable,
+    ReportHtmlWriter,
+    _delete_exact_owned_file,
+    begin_report_bundle,
+    build_report_bundle,
+    publish_report_bundle,
+)
+from .report_view import (
+    EventId,
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    MediaRole,
+    PhaseMethod,
+    ReasonCode,
+)
 
 
 class ZeroStrikesError(RuntimeError):
@@ -40,6 +61,11 @@ class SessionResult:
     swings: list[dict] = field(default_factory=list)
     stats: dict = field(default_factory=dict)
     skipped: list[str] = field(default_factory=list)
+    report_view_path: Path | None = None
+    manifest_path: Path | None = None
+    checksums_path: Path | None = None
+    structured_report: bool = False
+    evidence_snapshots: list[EvidenceSnapshot] = field(default_factory=list)
 
 
 def _unique_dir(base: Path) -> Path:
@@ -66,6 +92,103 @@ def _fullres_landmarks(
     return {k: v * scale for k, v in analysis_lm.items()}
 
 
+def _guided_video_info(info: VideoInfo) -> VideoInfo:
+    """Return persistable video facts without the private source path."""
+    return VideoInfo(
+        path=Path("uploaded-video"),
+        duration_s=info.duration_s,
+        width=info.width,
+        height=info.height,
+        fps=info.fps,
+        rotation=info.rotation,
+        creation_time=info.creation_time,
+        has_audio=info.has_audio,
+    )
+
+
+def _remove_optional_partial(
+    media_dir: Path,
+    output: Path,
+    *,
+    session_anchor: Path,
+) -> None:
+    """Remove only one exact renderer-owned partial, or fail closed."""
+    if output.parent.absolute() != media_dir.absolute():
+        raise CoreReportBundleError("optional renderer output is outside its owned media root")
+    _delete_exact_owned_file(
+        media_dir,
+        output,
+        session_anchor=session_anchor,
+    )
+
+
+def _optional_guided_media(
+    *,
+    label: str,
+    output: Path,
+    media_dir: Path,
+    session_anchor: Path,
+    render: Callable[[], Path],
+    log: Callable[[str], None],
+) -> Path | None:
+    """Run one independent guided renderer without inventing a substitute."""
+    try:
+        rendered = render()
+    except Exception:
+        _remove_optional_partial(
+            media_dir,
+            output,
+            session_anchor=session_anchor,
+        )
+        log(f"WARNING: {label} is unavailable.")
+        return None
+    if not isinstance(rendered, Path) or rendered.absolute() != output.absolute():
+        raise CoreReportBundleError("optional renderer returned a noncanonical owned path")
+    try:
+        info = os.lstat(output)
+    except OSError:
+        log(f"WARNING: {label} is unavailable.")
+        return None
+    reparse = bool(
+        int(getattr(info, "st_file_attributes", 0))
+        & int(getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400))
+    )
+    if stat.S_ISLNK(info.st_mode) or reparse or not stat.S_ISREG(info.st_mode):
+        raise CoreReportBundleError("optional renderer output has ambiguous ownership")
+    return output
+
+
+_EVENT_REASON_CODES = {
+    EventFailure.INSUFFICIENT_POSE_FRAMES: ReasonCode.INSUFFICIENT_POSE_FRAMES,
+    EventFailure.NO_READABLE_SWING: ReasonCode.NO_READABLE_SWING,
+}
+
+
+def _published_guided_swings(
+    swings: list[dict], published: PublishedReportBundle
+) -> list[dict]:
+    """Project only declared per-swing media onto their final owned paths."""
+    media = {entry.key: entry for entry in published.view.media}
+    projected: list[dict] = []
+    for index, original in enumerate(swings, start=1):
+        swing = {
+            "metrics": original["metrics"],
+            "notes": original["notes"],
+            "apparent_angle": original.get("apparent_angle"),
+        }
+        for key, field, role in (
+            (f"key-positions-s{index}", "strip", MediaRole.KEY_POSITIONS),
+            (f"slow-motion-s{index}", "slowmo", MediaRole.SLOW_MOTION),
+            (f"coach-replay-s{index}", "replay", MediaRole.COACH_REPLAY),
+            (f"capture-playback-s{index}", "slowmo", MediaRole.CAPTURE_PLAYBACK),
+        ):
+            entry = media.get(key)
+            if entry is not None and entry.role is role:
+                swing[field] = published.root / Path(entry.relative_path)
+        projected.append(swing)
+    return projected
+
+
 def analyze_video(
     video_path: str | Path,
     out_dir: str | Path | None = None,
@@ -80,6 +203,9 @@ def analyze_video(
     club: str | None = None,
     level: str | None = None,
     replay_locked: bool = False,
+    report_presentation_version: str = REPORT_PRESENTATION_VERSION,
+    report_entitlements: ReportEntitlementSnapshot | None = None,
+    guided_html_writer: ReportHtmlWriter | None = None,
 ) -> SessionResult:
     """Run the full pipeline for one video.
 
@@ -107,14 +233,26 @@ def analyze_video(
     swinglab.levels) is the same kind of context: a chip and one framing
     line on the report, never an analysis input.
     """
+    guided = report_presentation_version == GUIDED_REPORT_PRESENTATION_VERSION
+    if guided and guided_html_writer is None:
+        raise GuidedReportRendererUnavailable("guided report HTML writer is unavailable")
+    if guided and not isinstance(report_entitlements, ReportEntitlementSnapshot):
+        raise TypeError("guided report entitlement snapshot is required")
+
     cfg = cfg or Config.load()
     if angle not in ANGLES:
         raise ValueError(f'angle must be one of {ANGLES}, got "{angle}"')
     require_binaries()
     video_path = Path(video_path)
-    info = probe(video_path)
+    try:
+        info = probe(video_path)
+    except FFmpegError:
+        if guided:
+            raise CoreReportBundleError("guided video probe failed") from None
+        raise
     log(
-        f"{video_path.name}: {info.display_width}x{info.display_height} "
+        ("Input video" if guided else video_path.name)
+        + f": {info.display_width}x{info.display_height} "
         f"@ {info.fps:.2f} fps, {info.duration_s:.1f}s"
         + (f", rotation {info.rotation}°" if info.rotation else "")
     )
@@ -124,7 +262,8 @@ def analyze_video(
     max_video_s = float(cfg.analysis.get("max_video_s") or 0)
     if max_video_s and info.duration_s > max_video_s:
         raise VideoTooLongError(
-            f"{video_path.name} is {info.duration_s:.0f} seconds long — over "
+            f"{('The input video' if guided else video_path.name)} is "
+            f"{info.duration_s:.0f} seconds long — over "
             f"the {max_video_s:.0f}-second analysis limit. Trim the clip to "
             "the swings you want analyzed and try again. (Operators: the "
             "limit is analysis.max_video_s in config; 0 disables it.)"
@@ -139,35 +278,64 @@ def analyze_video(
             f"(analysis.auto_fps) for finer timing."
         )
 
-    session_dir = _unique_dir(
-        Path(out_dir or cfg.output_dir) / video_path.stem
-    )
-    media_dir = session_dir / "media"
-    work_dir = session_dir / "work"
-    media_dir.mkdir(parents=True, exist_ok=True)
-    work_dir.mkdir(parents=True, exist_ok=True)
+    session_dir = _unique_dir(Path(out_dir or cfg.output_dir) / video_path.stem)
+    attempt = None
+    if guided:
+        session_dir.mkdir(parents=True, exist_ok=False)
+        attempt = begin_report_bundle(session_dir)
+        media_dir = attempt.media_dir
+        work_dir = attempt.work_dir
+    else:
+        media_dir = session_dir / "media"
+        work_dir = session_dir / "work"
+        media_dir.mkdir(parents=True, exist_ok=True)
+        work_dir.mkdir(parents=True, exist_ok=True)
 
     # --- strikes ---------------------------------------------------------
-    if manual_strikes:
+    manual_event_source = manual_strikes is not None if guided else bool(manual_strikes)
+    impact_method = (
+        PhaseMethod.MANUAL_STRIKE
+        if manual_event_source
+        else PhaseMethod.DETECTED_AUDIO
+    )
+    reason_codes: list[ReasonCode] = []
+    if manual_event_source:
         strikes = sorted(manual_strikes)
         log(f"Using {len(strikes)} manual strike time(s): "
             + ", ".join(f"{t:.2f}s" for t in strikes))
     else:
         if not info.has_audio:
-            raise ZeroStrikesError(
-                f"{video_path.name} has no audio track, so strikes cannot be "
-                "detected. Pass strike times manually with --strikes."
-            )
-        wav = audio.extract_audio(video_path, work_dir / "audio.wav")
-        strikes = audio.detect_strikes(wav, cfg)
+            if guided:
+                strikes = []
+                reason_codes.append(ReasonCode.NO_RELIABLE_STRIKE_EVENT)
+            else:
+                raise ZeroStrikesError(
+                    f"{video_path.name} has no audio track, so strikes cannot be "
+                    "detected. Pass strike times manually with --strikes."
+                )
+        else:
+            try:
+                wav = audio.extract_audio(video_path, work_dir / "audio.wav")
+                strikes = audio.detect_strikes(wav, cfg)
+            except Exception:
+                if guided:
+                    raise CoreReportBundleError("guided strike detection failed") from None
+                raise
         if not strikes:
-            raise ZeroStrikesError(
-                f"No ball strikes detected in {video_path.name}. If the video "
-                "does contain swings, lower detection.audio_height in config, "
-                "or pass times manually: --strikes \"12.5,31.0\"."
-            )
-        log(f"Detected {len(strikes)} strike(s): "
-            + ", ".join(f"{t:.2f}s" for t in strikes))
+            if guided:
+                if ReasonCode.NO_RELIABLE_STRIKE_EVENT not in reason_codes:
+                    reason_codes.append(ReasonCode.NO_RELIABLE_STRIKE_EVENT)
+            else:
+                raise ZeroStrikesError(
+                    f"No ball strikes detected in {video_path.name}. If the video "
+                    "does contain swings, lower detection.audio_height in config, "
+                    "or pass times manually: --strikes \"12.5,31.0\"."
+                )
+        else:
+            log(f"Detected {len(strikes)} strike(s): "
+                + ", ".join(f"{t:.2f}s" for t in strikes))
+    if guided and not strikes and ReasonCode.NO_RELIABLE_STRIKE_EVENT not in reason_codes:
+        reason_codes.append(ReasonCode.NO_RELIABLE_STRIKE_EVENT)
 
     # Strike cap: analyze the FIRST N strikes, in clip order, and say so
     # honestly in the session notes — never silently drop swings.
@@ -185,30 +353,60 @@ def analyze_video(
     # --- per swing -------------------------------------------------------
     if progress:
         progress(0, len(strikes))
-    tracker = pose.PoseTracker()
+    tracker: pose.PoseTracker | None = pose.PoseTracker() if strikes else None
     swings: list[dict] = []
     all_metrics: list[metrics.SwingMetrics] = []
     skipped: list[str] = []
+    evidence_snapshots: list[EvidenceSnapshot] = []
+    guided_replay_locked = bool(
+        guided
+        and report_entitlements is not None
+        and report_entitlements.coach_replay == "locked"
+    )
+    guided_replay_available = bool(
+        guided
+        and report_entitlements is not None
+        and report_entitlements.coach_replay == "available"
+    )
     try:
         for swing_no, strike_s in enumerate(strikes, start=1):
             try:
-                swing = _analyze_swing(
+                assert tracker is not None
+                analyzed = _analyze_swing(
                     video_path, strike_s, swing_no, tracker, work_dir, media_dir,
                     session_dir, hand, cfg, fast, log, angle,
                     analysis_fps=analysis_fps, replay_locked=replay_locked,
+                    impact_method=impact_method, guided=guided,
+                    guided_replay_available=guided_replay_available,
                 )
+                if guided:
+                    swing, snapshot = analyzed
+                    evidence_snapshots.append(snapshot)
+                else:
+                    swing = analyzed
                 swings.append(swing)
                 all_metrics.append(swing["metrics"])
             except EventError as exc:
                 msg = f"Swing {swing_no} at {strike_s:.2f}s skipped: {exc}"
                 log(f"WARNING: {msg}")
                 skipped.append(msg)
+                if guided:
+                    reason = _EVENT_REASON_CODES.get(
+                        exc.reason, ReasonCode.NO_READABLE_SWING
+                    )
+                    if reason not in reason_codes:
+                        reason_codes.append(reason)
+            except Exception:
+                if guided:
+                    raise CoreReportBundleError("guided swing analysis failed") from None
+                raise
             if progress:
                 progress(swing_no, len(strikes))
     finally:
-        tracker.close()
+        if tracker is not None:
+            tracker.close()
 
-    if not swings:
+    if not swings and not guided:
         raise ZeroStrikesError(
             "Strikes were detected but no swing could be analyzed (pose "
             "tracking failed in every window). Check that the golfer is fully "
@@ -230,6 +428,8 @@ def analyze_video(
     if guesses and all(g != angle for g in guesses):
         notes.insert(0, angle_mismatch_note(angle, guesses[0]))
         log("WARNING: " + angle_mismatch_note(angle, guesses[0]))
+        if guided:
+            reason_codes.append(ReasonCode.CAMERA_ANGLE_MISMATCH)
     if angle == ANGLE_DTL:
         notes.insert(0, DTL_SESSION_NOTE)
     meta = {
@@ -242,6 +442,42 @@ def analyze_video(
         # resolution every timing number in this file is quantized to.
         "analysis_fps": analysis_fps,
     }
+    if guided:
+        assert attempt is not None and guided_html_writer is not None
+        staged = build_report_bundle(
+            attempt,
+            html_writer=guided_html_writer,
+            video=_guided_video_info(info),
+            swings=swings,
+            stats=stats,
+            session_notes=notes,
+            hand=hand,
+            cfg=cfg,
+            angle=angle,
+            club=club,
+            level=level,
+            analysis_fps=analysis_fps,
+            replay_locked=guided_replay_locked,
+            evidence_snapshots=evidence_snapshots,
+            reason_codes=tuple(dict.fromkeys(reason_codes)),
+        )
+        published = publish_report_bundle(staged)
+        result_swings = _published_guided_swings(swings, published)
+        return SessionResult(
+            session_dir=session_dir,
+            report_path=published.report_path,
+            metrics_path=published.root / "metrics.json",
+            video=info,
+            swings=result_swings,
+            stats=stats,
+            skipped=skipped,
+            report_view_path=published.report_view_path,
+            manifest_path=published.manifest_path,
+            checksums_path=published.checksums_path,
+            structured_report=True,
+            evidence_snapshots=evidence_snapshots,
+        )
+
     report_path = report.write_report_html(
         session_dir / "report.html", info, swings, stats, notes, hand, cfg,
         angle=angle, club=club, level=level, analysis_fps=analysis_fps,
@@ -284,12 +520,23 @@ def _analyze_swing(
     angle: str = ANGLE_FACE_ON,
     analysis_fps: float | None = None,
     replay_locked: bool = False,
-) -> dict:
+    impact_method: PhaseMethod = PhaseMethod.DETECTED_AUDIO,
+    guided: bool = False,
+    guided_replay_available: bool = False,
+) -> dict | tuple[dict, EvidenceSnapshot]:
     log(f"Swing {swing_no}: analyzing strike at {strike_s:.2f}s...")
     frameset = frames.extract_window(
         video_path, strike_s, work_dir, swing_no, cfg, fps=analysis_fps
     )
-    tracked = [tracker.detect(p) for p in frameset.paths]
+    observations: list[pose.PoseObservation | None] = []
+    if guided:
+        observations = [tracker.detect_observation(p) for p in frameset.paths]
+        tracked = [
+            observation.landmarks if observation is not None else None
+            for observation in observations
+        ]
+    else:
+        tracked = [tracker.detect(p) for p in frameset.paths]
     ev = events.detect_events(tracked, frameset, strike_s, cfg)
     finish_idx = frameset.index_near(ev.finish_s)
     m = metrics.compute_metrics(
@@ -322,37 +569,57 @@ def _analyze_swing(
             video_path, t, work_dir / f"full_s{swing_no}_{name}.png", cfg
         )
 
-    strip_path = strip.make_strip(
-        [fullres[k] for k in ("address", "top", "impact", "finish")],
-        swing_no,
-        media_dir / f"strip_s{swing_no}.png",
-        cfg,
-    )
+    if not guided:
+        strip_path = strip.make_strip(
+            [fullres[k] for k in ("address", "top", "impact", "finish")],
+            swing_no,
+            media_dir / f"strip_s{swing_no}.png",
+            cfg,
+        )
 
     analysis_by_key = {
         "address": (tracked[ev.address_idx], frameset.paths[ev.address_idx]),
         "top": (tracked[ev.top_idx], frameset.paths[ev.top_idx]),
         "impact": (tracked[ev.impact_idx], frameset.paths[ev.impact_idx]),
+        **(
+            {"finish": (tracked[finish_idx], frameset.paths[finish_idx])}
+            if guided else {}
+        ),
     }
-    overlay_lm = {
+    fullres_lm = {
         key: _fullres_landmarks(tracker, fullres[key], a_lm, a_frame)
         for key, (a_lm, a_frame) in analysis_by_key.items()
     }
-    overlay_path = overlay.make_overlay(
-        {k: fullres[k] for k in ("address", "top", "impact")},
-        overlay_lm,
-        m.target_direction,
-        media_dir / f"overlay_s{swing_no}.png",
-        cfg,
-    )
+
+    if not guided:
+        overlay_path = overlay.make_overlay(
+            {k: fullres[k] for k in ("address", "top", "impact")},
+            fullres_lm,
+            m.target_direction,
+            media_dir / f"overlay_s{swing_no}.png",
+            cfg,
+        )
 
     log(
         f"Swing {swing_no}: rendering slow motion"
         + (" (fast mode)..." if fast else " (the long step)...")
     )
-    slowmo_path = slowmo.make_slowmo(
-        video_path, strike_s, media_dir / f"slowmo_s{swing_no}.mp4", cfg, fast=fast
-    )
+    slowmo_out = media_dir / f"slowmo_s{swing_no}.mp4"
+    if guided:
+        slowmo_path = _optional_guided_media(
+            label=f"Swing {swing_no} slow motion",
+            output=slowmo_out,
+            media_dir=media_dir,
+            session_anchor=session_dir,
+            render=lambda: slowmo.make_slowmo(
+                video_path, strike_s, slowmo_out, cfg, fast=fast
+            ),
+            log=log,
+        )
+    else:
+        slowmo_path = slowmo.make_slowmo(
+            video_path, strike_s, slowmo_out, cfg, fast=fast
+        )
 
     # Annotated replay: the golfer's own footage with the tracked skeleton,
     # fading hand-path trace, and event chips burned in. Never motion-
@@ -360,16 +627,81 @@ def _analyze_swing(
     # slowmo.annotated is the feature switch, and replay_locked (the
     # per-job Pro gate, decided by the caller) skips the render entirely —
     # no file, no CPU spent on it.
-    replay_path = None
-    if cfg.slowmo["annotated"] and not replay_locked:
+    replay_path: Path | None = None
+    render_replay = (
+        cfg.slowmo["annotated"]
+        and (guided_replay_available if guided else not replay_locked)
+        and (not guided or angle != ANGLE_DTL)
+    )
+    if render_replay:
         log(f"Swing {swing_no}: rendering annotated replay...")
-        replay_frames = slowmo.extract_replay_frames(
-            video_path, strike_s, work_dir / f"replay_s{swing_no}", cfg
+        replay_out = media_dir / f"replay_s{swing_no}.mp4"
+
+        def render_annotated_replay() -> Path:
+            replay_frames = slowmo.extract_replay_frames(
+                video_path, strike_s, work_dir / f"replay_s{swing_no}", cfg
+            )
+            return annotate.make_replay(
+                replay_frames, frameset, tracked, ev, m, replay_out, cfg
+            )
+
+        if guided:
+            replay_path = _optional_guided_media(
+                label=f"Swing {swing_no} coach replay",
+                output=replay_out,
+                media_dir=media_dir,
+                session_anchor=session_dir,
+                render=render_annotated_replay,
+                log=log,
+            )
+        else:
+            replay_path = render_annotated_replay()
+
+    swing = {
+        "metrics": m,
+        "notes": notes,
+        # Camera-angle sanity check input: what the address pose looks like
+        # (face-on/dtl/None). Consumed by analyze_video, never serialized.
+        "apparent_angle": metrics.apparent_camera_angle(tracked[ev.address_idx]),
+    }
+    if guided:
+        if angle != ANGLE_DTL:
+            strip_out = media_dir / f"strip_s{swing_no}.png"
+            strip_path = _optional_guided_media(
+                label=f"Swing {swing_no} key-position strip",
+                output=strip_out,
+                media_dir=media_dir,
+                session_anchor=session_dir,
+                render=lambda: strip.make_strip(
+                    [fullres[k] for k in ("address", "top", "impact", "finish")],
+                    swing_no,
+                    strip_out,
+                    cfg,
+                ),
+                log=log,
+            )
+            if strip_path is not None:
+                swing["strip"] = strip_path
+        if slowmo_path is not None:
+            swing["slowmo"] = slowmo_path
+        if replay_path is not None:
+            swing["replay"] = replay_path
+        snapshot = build_evidence_snapshot(
+            swing=swing_no,
+            frameset=frameset,
+            observations=observations,
+            events=ev,
+            finish_idx=finish_idx,
+            metrics=m,
+            event_frames={EventId(key): path for key, path in fullres.items()},
+            event_landmarks={
+                EventId(key): landmarks for key, landmarks in fullres_lm.items()
+            },
+            impact_method=impact_method,
+            tracking_quality=quality,
+            hand=hand,
         )
-        replay_path = annotate.make_replay(
-            replay_frames, frameset, tracked, ev, m,
-            media_dir / f"replay_s{swing_no}.mp4", cfg,
-        )
+        return swing, snapshot
 
     return {
         "metrics": m,
@@ -379,7 +711,5 @@ def _analyze_swing(
         "overlay": str(overlay_path.relative_to(session_dir)),
         "slowmo": str(slowmo_path.relative_to(session_dir)),
         "replay": str(replay_path.relative_to(session_dir)) if replay_path else None,
-        # Camera-angle sanity check input: what the address pose looks like
-        # (face-on/dtl/None). Consumed by analyze_video, never serialized.
-        "apparent_angle": metrics.apparent_camera_angle(tracked[ev.address_idx]),
+        "apparent_angle": swing["apparent_angle"],
     }
