@@ -546,3 +546,77 @@ Every item below is still a production action and is not authorized by Stage 0B:
 
 No production backup should be called operational until a completed remote
 generation and successful scratch drill are both recorded.
+
+## Recovery-fence ledger (Gate 3B contract)
+
+The recovery-fence ledger is not part of an ordinary point-in-time backup. It
+uses a dedicated protected object prefix with exactly two key families:
+
+- `<prefix>/HEAD`
+- `<prefix>/records/<sequence>-<lowercase-sha256>.json`
+
+The application surface has no list or delete operation. Grant the dedicated
+identity only `s3:GetObject` and `s3:PutObject` on those two resource patterns;
+do not grant `s3:ListBucket`, `s3:DeleteObject`, any backup-prefix resource, or
+bucket administration. Keep backup upload/restore identities out of the web
+process. A representative allow-list is:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [{
+    "Effect": "Allow",
+    "Action": ["s3:GetObject", "s3:PutObject"],
+    "Resource": [
+      "arn:aws:s3:::DEDICATED_BUCKET/DEDICATED_PREFIX/HEAD",
+      "arn:aws:s3:::DEDICATED_BUCKET/DEDICATED_PREFIX/records/*"
+    ]
+  }]
+}
+```
+
+Use a provider that honors `If-None-Match` for immutable records/genesis and
+`If-Match` for later `HEAD` advancement. The adapter issues negative probes,
+then HEAD plus pinned GET readback, and validates size, SHA-256 metadata,
+encryption, ETag, canonical body, record hash, HMAC, sequence, and every explicit
+predecessor. An orphan immutable record is not acceptance. Missing objects,
+stale/divergent CAS, unsupported conditions, outages, or a missing retained HMAC
+key fail closed.
+
+### Offline initialization and rollback boundary
+
+```powershell
+$env:CADDIE_RECOVERY_FENCE_ENABLED = "true"
+swinglab recovery-fence-ledger initialize-baseline ...
+```
+
+The command is approval-gated and otherwise inert. It requires the erasure
+inventory, held dependent routes, fresh immutable backup, and scratch restore
+approvals. Gate 3B intentionally ships without the real evidence adapters, so
+the command currently refuses without touching the ledger. Gate 3C will inject
+the verified manifest facts and exact scratch proof; operator flags never
+substitute for that proof.
+
+The durable journal is
+`lineage_prepared -> backup_verified -> record_published -> head_published ->
+scratch_verified -> accepted`. Exact retry reuses the lineage, backup facts,
+record, and operation ID. `baseline_db_checkpoint` is exactly the verified
+manifest `database.sha256`; the initializer rejects independently supplied
+values that differ, and it is never guessed from SQLite WAL state.
+No dependent route may be activated until `accepted` exists and the complete
+remote chain validates.
+
+To disable offline operation, unset `CADDIE_RECOVERY_FENCE_ENABLED`; do not
+delete `HEAD`, immutable records, local checkpoints, or retained HMAC keys.
+Preserve the prior deployment as rollback, but never roll back to a binary that
+can perform an erasure while ignoring an accepted fence.
+
+### Credential rotation and readback
+
+Create a new identity with the same narrow two-pattern policy, update only the
+`CADDIE_RECOVERY_FENCE_*` protected credentials, and refetch/validate `HEAD` plus
+the complete chain before retiring the former identity. Rotation of S3
+credentials does not rotate record HMACs. Retain each
+`MOBILE_STATE_HMAC_KEYRING` key until no live row, ledger record, or retained
+backup references its key ID. Never log either credential set or provider error
+details.

@@ -104,3 +104,24 @@ Rollback changes application code only. It must not delete data, rotate secrets,
 alter DNS, replace the persistent volume, or delete Shopify customers created
 during the rollout. External customer creation is reconciled after the
 incident; it is never undone as a routine rollback shortcut.
+
+## Recovery-fence cutover ordering
+
+Deploy the generation-1 schema and recovery-fence code with dependent native
+routes held and with no recovery-fence startup composition. The shipped
+configuration currently exposes browser history reset, so wiring the pure
+startup policy before an accepted baseline exists would deliberately fail
+startup and is not a safe release order.
+
+Gate 3C must next compose the real immutable-backup and scratch-restore proof
+providers. Only an explicitly approved offline operation may then prepare one
+lineage, bind the verified manifest and its exact lowercase database snapshot
+SHA-256, prove that value is exactly `baseline_db_checkpoint`, publish/read back
+the immutable genesis record and conditional `HEAD`,
+verify the exact scratch restore, and mark that same journal accepted. Activate
+dependent routes or fail-closed startup reconciliation only after the accepted
+baseline and current-chain readback are independently verified.
+
+Do not enable horizontal replicas while recovery state, SQLite, filesystem
+artifacts, and worker coordination remain process/local-volume based. The root
+container contract and one-replica topology remain unchanged.

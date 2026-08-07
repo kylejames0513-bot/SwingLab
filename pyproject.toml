@@ -25,6 +25,9 @@ web = [
     "python-multipart>=0.0.9",
     "itsdangerous>=2.1",   # signed login cookies (starlette SessionMiddleware)
     "stripe>=9.0",         # Pro subscriptions
+    # Recovery-fence HEAD validation becomes a production dependency when
+    # later composition activates Gate 3B's pure startup policy.
+    "boto3>=1.37.32,<2",
 ]
 ops = [
     # Optional error monitoring: the app initializes Sentry only when the
@@ -34,8 +37,8 @@ ops = [
     "sentry-sdk>=2.0",
 ]
 backup = [
-    # Imported only by explicit backup upload/download commands. Base and web
-    # installs remain unchanged, so Stage 0B cannot contact object storage.
+    # Retained for explicit backup upload/download commands. The web extra has
+    # its own transport dependency for later recovery-fence composition.
     # 1.37.32+ models the conditional PutObject precondition used to enforce
     # one writer and immutable completion markers.
     "boto3>=1.37.32,<2",

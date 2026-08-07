@@ -36,10 +36,20 @@ MAX_BUNDLE_BYTES = 2 * 1024**4
 STREAM_CHUNK_BYTES = 1024 * 1024
 UPLOAD_CLAIM_FILE = "CLAIM.json"
 UPLOAD_CLAIM_FORMAT = "caddieinsight-upload-claim/v1"
+MAX_RECOVERY_FENCE_RECORD_BYTES = 1024 * 1024
+MAX_RECOVERY_FENCE_HEAD_BYTES = 64 * 1024
 
 
 class _ConditionalConflict(RuntimeError):
     """The provider explicitly rejected a write because the key exists."""
+
+
+class RecoveryFenceStoreError(RuntimeError):
+    """A safe-to-display failure of the dedicated recovery-fence store."""
+
+
+class RecoveryFenceCASConflict(RecoveryFenceStoreError):
+    """The protected HEAD changed before a conditional replacement."""
 
 
 @dataclass(frozen=True)
@@ -136,13 +146,174 @@ class S3Settings:
         return args
 
 
-def _client(settings: S3Settings):
+@dataclass(frozen=True)
+class RecoveryFenceStoreSettings:
+    """Dedicated least-privilege settings for HEAD and immutable records only.
+
+    These names deliberately do not share the backup configuration namespace.
+    A web process configured for recovery fencing therefore cannot silently
+    inherit backup listing, upload, download, or deletion authority.
+    """
+
+    bucket: str
+    prefix: str
+    region: str
+    endpoint_url: str | None = field(repr=False)
+    addressing_style: str
+    sse: str
+    kms_key_id: str | None = field(repr=False)
+    access_key_id: str = field(repr=False)
+    secret_access_key: str = field(repr=False)
+    session_token: str | None = field(default=None, repr=False)
+
+    _RECORD_KEY = re.compile(
+        r"records/([1-9][0-9]*)-([0-9a-f]{64})\.json"
+    )
+
+    @classmethod
+    def from_env(cls) -> "RecoveryFenceStoreSettings":
+        namespace = "CADDIE_RECOVERY_FENCE"
+
+        def required(suffix: str) -> str:
+            name = f"{namespace}_{suffix}"
+            value = os.environ.get(name, "").strip()
+            if not value:
+                raise BackupError(f"Required recovery-fence setting {name} is missing.")
+            return value
+
+        bucket = required("BUCKET")
+        prefix = required("PREFIX").strip("/")
+        region = required("REGION")
+        endpoint = os.environ.get(f"{namespace}_ENDPOINT_URL", "").strip() or None
+        if endpoint:
+            parsed = urlparse(endpoint)
+            if (
+                parsed.scheme != "https"
+                or not parsed.netloc
+                or parsed.username is not None
+                or parsed.password is not None
+                or parsed.query
+                or parsed.fragment
+            ):
+                raise BackupError(
+                    "The recovery-fence endpoint must be an absolute HTTPS URL "
+                    "without credentials, query parameters, or fragments."
+                )
+        if not prefix or any(part in ("", ".", "..") for part in prefix.split("/")):
+            raise BackupError("The recovery-fence object prefix is invalid.")
+        backup_bucket = os.environ.get("CADDIE_BACKUP_BUCKET", "").strip()
+        backup_prefix = os.environ.get("CADDIE_BACKUP_PREFIX", "").strip().strip("/")
+        if (
+            backup_bucket
+            and backup_prefix
+            and backup_bucket == bucket
+            and (
+                prefix == backup_prefix
+                or prefix.startswith(f"{backup_prefix}/")
+                or backup_prefix.startswith(f"{prefix}/")
+            )
+        ):
+            raise BackupError(
+                "The recovery-fence prefix must be dedicated and cannot overlap "
+                "the backup prefix."
+            )
+        addressing = os.environ.get(
+            f"{namespace}_ADDRESSING_STYLE", "auto"
+        ).strip()
+        if addressing not in {"auto", "path", "virtual"}:
+            raise BackupError("Unsupported recovery-fence S3 addressing style.")
+        sse = required("SSE")
+        if sse not in {"AES256", "aws:kms", "provider-managed"}:
+            raise BackupError("Unsupported recovery-fence encryption mode.")
+        kms_key = os.environ.get(f"{namespace}_KMS_KEY_ID", "").strip() or None
+        if sse == "aws:kms" and not kms_key:
+            raise BackupError(
+                "Recovery-fence KMS encryption requires "
+                "CADDIE_RECOVERY_FENCE_KMS_KEY_ID."
+            )
+        if sse == "aws:kms" and kms_key and not _kms_key_is_comparable(kms_key):
+            raise BackupError(
+                "CADDIE_RECOVERY_FENCE_KMS_KEY_ID must be a stable key UUID or "
+                "key ARN; KMS aliases cannot be verified after S3 resolves them."
+            )
+        if sse != "aws:kms" and kms_key:
+            raise BackupError(
+                "A recovery-fence KMS key may be set only with aws:kms encryption."
+            )
+        return cls(
+            bucket=bucket,
+            prefix=prefix,
+            region=region,
+            endpoint_url=endpoint,
+            addressing_style=addressing,
+            sse=sse,
+            kms_key_id=kms_key,
+            access_key_id=required("ACCESS_KEY_ID"),
+            secret_access_key=required("SECRET_ACCESS_KEY"),
+            session_token=os.environ.get(f"{namespace}_SESSION_TOKEN", "").strip()
+            or None,
+        )
+
+    @property
+    def head_key(self) -> str:
+        return f"{self.prefix}/HEAD"
+
+    def record_key(self, sequence: int, record_hash: str) -> str:
+        if (
+            isinstance(sequence, bool)
+            or not isinstance(sequence, int)
+            or sequence < 1
+            or not isinstance(record_hash, str)
+            or not re.fullmatch(r"[0-9a-f]{64}", record_hash)
+        ):
+            raise BackupError("Invalid recovery-fence record identity.")
+        return f"{self.prefix}/records/{sequence}-{record_hash}.json"
+
+    def validate_record_key(self, key: str) -> tuple[int, str]:
+        if not isinstance(key, str):
+            raise BackupError("Invalid recovery-fence record key.")
+        relative_prefix = f"{self.prefix}/"
+        if not key.startswith(relative_prefix):
+            raise BackupError("Invalid recovery-fence record key.")
+        match = self._RECORD_KEY.fullmatch(key[len(relative_prefix) :])
+        if match is None:
+            raise BackupError("Invalid recovery-fence record key.")
+        sequence = int(match.group(1))
+        if self.record_key(sequence, match.group(2)) != key:
+            raise BackupError("Invalid recovery-fence record key.")
+        return sequence, match.group(2)
+
+    def upload_args(self, sha256: str, content_type: str) -> dict[str, Any]:
+        args: dict[str, Any] = {
+            "Metadata": {"sha256": sha256},
+            "ContentType": content_type,
+        }
+        if self.sse in {"AES256", "aws:kms"}:
+            args["ServerSideEncryption"] = self.sse
+        if self.kms_key_id:
+            args["SSEKMSKeyId"] = self.kms_key_id
+        return args
+
+
+@dataclass(frozen=True)
+class RecoveryFenceRemoteObject:
+    key: str
+    body: bytes
+    etag: str
+
+
+def _client(settings: S3Settings | RecoveryFenceStoreSettings):
     try:
         import boto3
         from botocore.config import Config
     except ImportError as exc:
+        extra = (
+            "web"
+            if isinstance(settings, RecoveryFenceStoreSettings)
+            else "backup"
+        )
         raise BackupError(
-            'S3 transport is optional; install it with pip install "swinglab[backup]".'
+            f'S3 transport is optional; install it with pip install "swinglab[{extra}]".'
         ) from exc
     return boto3.client(
         "s3",
@@ -463,6 +634,314 @@ def _get_pinned_object(
             body.close()
         raise BackupError("The remote object identity changed during download.")
     return response, response.get("Body")
+
+
+def _quoted_etag(head: dict[str, Any]) -> str:
+    etag = head.get("ETag")
+    if (
+        not isinstance(etag, str)
+        or len(etag) <= 2
+        or len(etag) > 1024
+        or not etag.startswith('"')
+        or not etag.endswith('"')
+        or "\r" in etag
+        or "\n" in etag
+    ):
+        raise RecoveryFenceStoreError(
+            "The recovery-fence provider supplied no usable ETag."
+        )
+    return etag
+
+
+class RecoveryFenceRemoteStore:
+    """Narrow S3 adapter: exact HEAD plus immutable record get/put only."""
+
+    def __init__(
+        self,
+        settings: RecoveryFenceStoreSettings,
+        *,
+        client=None,
+    ):
+        if not isinstance(settings, RecoveryFenceStoreSettings):
+            raise TypeError("Dedicated recovery-fence settings are required.")
+        self._settings = settings
+        self._s3 = client or _client(settings)
+
+    def record_key(self, sequence: int, record_hash: str) -> str:
+        return self._settings.record_key(sequence, record_hash)
+
+    @staticmethod
+    def _different_same_size_body(body: bytes) -> bytes:
+        probe = bytearray(body)
+        probe[0] ^= 1
+        return bytes(probe)
+
+    def _require_condition_rejection(
+        self,
+        *,
+        key: str,
+        body: bytes,
+        condition: dict[str, str],
+        label: str,
+    ) -> None:
+        """Prove a negative conditional case without changing logical state.
+
+        For If-Match the probe body is the current HEAD body, so a provider
+        that incorrectly accepts the stale ETag leaves the logical value
+        unchanged but is still rejected. For If-None-Match the target is not
+        yet referenced (immutable record), or acceptance has not returned
+        (genesis HEAD), so an ignored condition fails closed before callers can
+        treat the value as accepted.
+        """
+
+        digest = hashlib.sha256(body).hexdigest()
+        try:
+            self._s3.put_object(
+                Bucket=self._settings.bucket,
+                Key=key,
+                Body=body,
+                ContentLength=len(body),
+                **condition,
+                **self._settings.upload_args(digest, "application/json"),
+            )
+        except Exception as exc:
+            if _precondition_failed(exc):
+                return
+            raise RecoveryFenceStoreError(
+                f"The recovery-fence provider does not support required {label} "
+                "conditional writes."
+            ) from None
+        raise RecoveryFenceStoreError(
+            f"The recovery-fence provider did not enforce required {label} "
+            "conditional writes."
+        )
+
+    def _read_exact(
+        self,
+        key: str,
+        *,
+        allow_missing: bool,
+        maximum_bytes: int,
+    ) -> RecoveryFenceRemoteObject | None:
+        try:
+            head = _head_object(
+                self._s3,
+                self._settings,
+                key,
+                allow_missing=allow_missing,
+            )
+            if head is None:
+                return None
+            size = head.get("ContentLength")
+            if (
+                isinstance(size, bool)
+                or not isinstance(size, int)
+                or size <= 0
+                or size > maximum_bytes
+            ):
+                raise RecoveryFenceStoreError(
+                    "The recovery-fence object size is invalid."
+                )
+            asserted_sha256 = _verified_metadata_sha256(
+                head,
+                expected_size=size,
+                settings=self._settings,
+            )
+            response, stream = _get_pinned_object(
+                self._s3,
+                self._settings,
+                key,
+                head,
+            )
+            try:
+                if stream is None or not hasattr(stream, "read"):
+                    raise RecoveryFenceStoreError(
+                        "The recovery-fence readback had no body."
+                    )
+                body = stream.read(maximum_bytes + 1)
+                if not isinstance(body, bytes):
+                    raise RecoveryFenceStoreError(
+                        "The recovery-fence readback body was invalid."
+                    )
+            finally:
+                if stream is not None and hasattr(stream, "close"):
+                    stream.close()
+            if (
+                len(body) != size
+                or hashlib.sha256(body).hexdigest() != asserted_sha256
+            ):
+                raise RecoveryFenceStoreError(
+                    "The recovery-fence readback changed or failed checksum validation."
+                )
+            response_etag = _quoted_etag(response)
+            if response_etag != _quoted_etag(head):
+                raise RecoveryFenceStoreError(
+                    "The recovery-fence readback identity changed."
+                )
+            return RecoveryFenceRemoteObject(
+                key=key,
+                body=body,
+                etag=response_etag,
+            )
+        except RecoveryFenceStoreError:
+            raise
+        except BackupError as exc:
+            message = str(exc).lower()
+            if allow_missing and "missing" in message:
+                return None
+            raise RecoveryFenceStoreError(
+                "Recovery-fence object readback failed closed."
+            ) from None
+        except Exception:
+            raise RecoveryFenceStoreError(
+                "Recovery-fence object readback failed closed."
+            ) from None
+
+    def read_head(self) -> RecoveryFenceRemoteObject | None:
+        return self._read_exact(
+            self._settings.head_key,
+            allow_missing=True,
+            maximum_bytes=MAX_RECOVERY_FENCE_HEAD_BYTES,
+        )
+
+    def read_record(self, key: str) -> RecoveryFenceRemoteObject:
+        try:
+            self._settings.validate_record_key(key)
+        except BackupError as exc:
+            raise RecoveryFenceStoreError(str(exc)) from None
+        value = self._read_exact(
+            key,
+            allow_missing=True,
+            maximum_bytes=MAX_RECOVERY_FENCE_RECORD_BYTES,
+        )
+        if value is None:
+            raise RecoveryFenceStoreError(
+                "The recovery-fence immutable record is missing."
+            )
+        return value
+
+    def put_immutable_record(
+        self,
+        key: str,
+        body: bytes,
+    ) -> RecoveryFenceRemoteObject:
+        try:
+            self._settings.validate_record_key(key)
+        except BackupError as exc:
+            raise RecoveryFenceStoreError(str(exc)) from None
+        if (
+            not isinstance(body, bytes)
+            or not body
+            or len(body) > MAX_RECOVERY_FENCE_RECORD_BYTES
+        ):
+            raise RecoveryFenceStoreError(
+                "The recovery-fence immutable record body is invalid."
+            )
+        conditional_conflict = False
+        try:
+            _put_if_absent(
+                self._s3,
+                self._settings,
+                key,
+                body,
+                content_type="application/json",
+            )
+        except _ConditionalConflict:
+            conditional_conflict = True
+        except BackupError:
+            raise RecoveryFenceStoreError(
+                "The recovery-fence immutable record write failed closed."
+            ) from None
+        self._require_condition_rejection(
+            key=key,
+            body=self._different_same_size_body(body),
+            condition={"IfNoneMatch": "*"},
+            label="If-None-Match",
+        )
+        readback = self.read_record(key)
+        if readback.body != body:
+            if conditional_conflict:
+                raise RecoveryFenceStoreError(
+                    "A different recovery-fence immutable record already exists."
+                ) from None
+            raise RecoveryFenceStoreError(
+                "The recovery-fence immutable record readback did not match."
+            )
+        return readback
+
+    def compare_and_swap_head(
+        self,
+        body: bytes,
+        *,
+        expected_etag: str | None,
+    ) -> RecoveryFenceRemoteObject:
+        if (
+            not isinstance(body, bytes)
+            or not body
+            or len(body) > MAX_RECOVERY_FENCE_HEAD_BYTES
+        ):
+            raise RecoveryFenceStoreError("The recovery-fence HEAD body is invalid.")
+
+        # This preflight does not replace provider CAS; it prevents a caller
+        # from knowingly issuing a stale conditional write and supplies a safe
+        # failure even when an emulator has incomplete If-Match support.
+        current = self.read_head()
+        if expected_etag is None:
+            if current is not None:
+                raise RecoveryFenceCASConflict(
+                    "The recovery-fence HEAD already exists."
+                )
+            condition = {"IfNoneMatch": "*"}
+        else:
+            if (
+                not isinstance(expected_etag, str)
+                or current is None
+                or current.etag != expected_etag
+            ):
+                raise RecoveryFenceCASConflict(
+                    "The recovery-fence HEAD changed before compare-and-swap."
+                )
+            stale_etag = '"' + ("0" * 64) + '"'
+            if stale_etag == current.etag:
+                stale_etag = '"' + ("1" * 64) + '"'
+            self._require_condition_rejection(
+                key=self._settings.head_key,
+                body=current.body,
+                condition={"IfMatch": stale_etag},
+                label="If-Match",
+            )
+            condition = {"IfMatch": expected_etag}
+        digest = hashlib.sha256(body).hexdigest()
+        try:
+            self._s3.put_object(
+                Bucket=self._settings.bucket,
+                Key=self._settings.head_key,
+                Body=body,
+                ContentLength=len(body),
+                **condition,
+                **self._settings.upload_args(digest, "application/json"),
+            )
+        except Exception as exc:
+            if _precondition_failed(exc):
+                raise RecoveryFenceCASConflict(
+                    "The recovery-fence HEAD changed during compare-and-swap."
+                ) from None
+            raise RecoveryFenceStoreError(
+                "The recovery-fence HEAD conditional write failed closed."
+            ) from None
+        if expected_etag is None:
+            self._require_condition_rejection(
+                key=self._settings.head_key,
+                body=self._different_same_size_body(body),
+                condition={"IfNoneMatch": "*"},
+                label="If-None-Match",
+            )
+        readback = self.read_head()
+        if readback is None or readback.body != body:
+            raise RecoveryFenceStoreError(
+                "The recovery-fence HEAD readback did not match the write."
+            )
+        return readback
 
 
 def _stream_pinned_object(

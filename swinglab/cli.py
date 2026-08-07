@@ -248,9 +248,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     # Explicit operator tooling only. Merely installing the package or setting
     # credentials starts no backup process and changes no web runtime behavior.
-    from .backups.cli import add_backup_subparser
+    from .backups.cli import add_backup_subparser, add_recovery_fence_subparser
 
     add_backup_subparser(sub)
+    add_recovery_fence_subparser(sub)
     return parser
 
 
@@ -354,6 +355,11 @@ def main(argv: list[str] | None = None) -> int:
         from .backups.cli import run_backup_command
 
         return run_backup_command(args)
+
+    if args.command == "recovery-fence-ledger":
+        from .backups.cli import run_recovery_fence_command
+
+        return run_recovery_fence_command(args)
 
     if args.command == "shopify-privacy":
         from .integrations.shopify.privacy_cli import run_privacy_command

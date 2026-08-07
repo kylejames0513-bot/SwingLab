@@ -17,6 +17,41 @@ below therefore means required for the stated production capability.
 
 `PUBLIC_BASE_URL` is the application origin, not the Shopify storefront.
 
+## Recovery-fence protected settings
+
+The recovery fence is an off-volume, append-only credential-revocation and
+cutover ledger. Its object-store role is intentionally separate from both
+backup upload and restore download roles. There is no fallback between these
+namespaces.
+
+- `CADDIE_RECOVERY_FENCE_ENABLED=true` permits only the explicit offline
+  `recovery-fence-ledger` operator command. Missing or any other value is inert.
+- `CADDIE_RECOVERY_FENCE_BUCKET` and `CADDIE_RECOVERY_FENCE_PREFIX` select the
+  dedicated private bucket/prefix. The prefix must not overlap
+  `CADDIE_BACKUP_PREFIX`.
+- `CADDIE_RECOVERY_FENCE_REGION`, optional HTTPS-only
+  `CADDIE_RECOVERY_FENCE_ENDPOINT_URL`, and optional
+  `CADDIE_RECOVERY_FENCE_ADDRESSING_STYLE=auto|path|virtual` configure the
+  S3-compatible transport.
+- `CADDIE_RECOVERY_FENCE_SSE=AES256|aws:kms|provider-managed` and optional
+  `CADDIE_RECOVERY_FENCE_KMS_KEY_ID` configure and verify encryption. A stable
+  KMS key UUID or key ARN is required; aliases cannot be verified after S3
+  resolves them.
+- `CADDIE_RECOVERY_FENCE_ACCESS_KEY_ID`,
+  `CADDIE_RECOVERY_FENCE_SECRET_ACCESS_KEY`, and optional
+  `CADDIE_RECOVERY_FENCE_SESSION_TOKEN` are the dedicated protected identity.
+
+The remote provider must enforce conditional `PutObject` with both
+`If-None-Match` and `If-Match`, return a usable ETag, retain checksum metadata,
+and read back the requested encryption mode. The adapter negatively probes the
+conditional headers and fails closed when an emulator silently ignores them.
+`MOBILE_STATE_HMAC_KEYRING` remains a different protected secret: its retained
+keys validate the record HMAC chain and must cover every referenced key ID.
+
+Gate 3B does not activate web-startup I/O. The default CLI composition also
+refuses baseline initialization until Gate 3C supplies an immutable-backup
+verifier and exact scratch-restore verifier.
+
 ## Shopify purchase bridge
 
 Buyer-facing Shopify commerce requires `SHOPIFY_STORE_DOMAIN` plus the primary
