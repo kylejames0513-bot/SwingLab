@@ -2,18 +2,20 @@ from __future__ import annotations
 
 from dataclasses import fields, replace
 from pathlib import Path
-import re
 
 import pytest
 
 from swinglab.config import Config
 from swinglab.report import REPORT_FORMAT_VERSION, write_report_html
+from swinglab.report_bundle import begin_report_bundle, build_report_bundle
+from swinglab.report_html import write_report_document_html
 from swinglab.report_presenter import (
     ReportDepthContent,
     ReportDocument,
     SwingDetail,
 )
 from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
+from tests.report_bundle_fixtures import guided_bundle_inputs
 from tests.report_view_fixtures import report_document_fixture
 from tests.test_report import fake_swing, fake_video
 
@@ -66,18 +68,15 @@ def test_guided_writer_emits_contract_markers_outcome_and_focused_media(tmp_path
     html = render_fixture(tmp_path, "coaching-improve-clear")
 
     header = html.encode("utf-8")[:8192]
-    assert len(re.findall(
-        rf'<meta\s+name="caddieinsight-report-format"\s+content="{REPORT_FORMAT_VERSION}">',
-        header.decode("utf-8"),
-    )) == 1
-    assert len(re.findall(
-        r'<meta\s+name="caddieinsight-report-presentation"\s+content="guided-report-v1">',
-        header.decode("utf-8"),
-    )) == 1
-    assert len(re.findall(
-        r'<meta\s+name="caddieinsight-report-outcome"\s+content="coaching_ready">',
-        header.decode("utf-8"),
-    )) == 1
+    assert header.count(
+        f'name="caddieinsight-report-format" content="{REPORT_FORMAT_VERSION}"'.encode()
+    ) == 1
+    assert header.count(
+        b'name="caddieinsight-report-presentation" content="guided-report-v1"'
+    ) == 1
+    assert header.count(
+        b'name="caddieinsight-report-outcome" content="coaching_ready"'
+    ) == 1
     assert document.view.presentation_version == GUIDED_REPORT_PRESENTATION_VERSION
     assert document.view.visual_evidence is not None
     assert document.view.visual_evidence.media_key is not None
@@ -95,9 +94,20 @@ def test_guided_writer_emits_contract_markers_outcome_and_focused_media(tmp_path
     assert 'name="caddieinsight-report-presentation" content="premium-coach-v2"' in legacy_path.read_text(encoding="utf-8")
 
 
-def test_guided_writer_rejects_unknown_media_before_writing(tmp_path: Path):
-    from swinglab.report_html import write_report_document_html
+def test_production_writer_builds_a_strictly_validated_bundle(tmp_path: Path):
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    attempt = begin_report_bundle(session_dir)
+    inputs = guided_bundle_inputs(tmp_path)
+    inputs["html_writer"] = write_report_document_html
 
+    staged = build_report_bundle(attempt, **inputs)
+
+    assert staged.report_path.is_file()
+    assert staged.manifest.presentation_version == GUIDED_REPORT_PRESENTATION_VERSION
+
+
+def test_guided_writer_rejects_unknown_media_before_writing(tmp_path: Path):
     document = report_document_fixture()
     assert document.view.visual_evidence is not None
     broken_view = replace(
