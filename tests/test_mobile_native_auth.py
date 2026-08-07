@@ -34,6 +34,7 @@ from swinglab.web.recovery_fence_ledger import RecoveryFenceError
 from swinglab.web.users import (
     SHOPIFY_SYNC_FAILED,
     SHOPIFY_SYNC_NOT_STARTED,
+    SHOPIFY_SYNC_PENDING,
     SHOPIFY_SYNC_REQUIRES_REVIEW,
     UserStore,
 )
@@ -987,13 +988,13 @@ def test_native_login_preserves_shopify_failure_backoff_and_manual_review(
     monkeypatch.setattr(app.state.shopify_sync, "enqueue", record_enqueue)
     with TestClient(app) as client:
         started = _start(client)
-        exchanged = _exchange(
-            client,
-            started.json()["challenge_id"],
-            _code_from_messages(messages),
-        )
+        code = _code_from_messages(messages)
+        exchanged = _exchange(client, started.json()["challenge_id"], code)
+        replay = _exchange(client, started.json()["challenge_id"], code)
 
     assert exchanged.status_code == 201
+    assert replay.status_code == 201
+    assert replay.json() == exchanged.json()
     current = app.state.users.get(user_id)
     assert current is not None
     assert current.shopify_sync_status == sync_status
@@ -1002,7 +1003,7 @@ def test_native_login_preserves_shopify_failure_backoff_and_manual_review(
     assert enqueue_calls == []
 
 
-def test_exact_native_exchange_replay_does_not_requeue_shopify_sync(
+def test_exact_native_exchange_replay_recovers_callback_crash_and_wakes_pending_sync(
     tmp_path, monkeypatch
 ):
     messages = []
@@ -1022,21 +1023,34 @@ def test_exact_native_exchange_replay_does_not_requeue_shopify_sync(
     enqueue_calls = []
     real_enqueue = app.state.shopify_sync.enqueue
 
-    def record_enqueue(candidate_user_id):
+    def crash_once_then_enqueue(candidate_user_id):
         enqueue_calls.append(candidate_user_id)
+        if len(enqueue_calls) == 1:
+            raise RuntimeError("crash after auth journal completion")
         return real_enqueue(candidate_user_id)
 
-    monkeypatch.setattr(app.state.shopify_sync, "enqueue", record_enqueue)
-    with TestClient(app) as client:
+    monkeypatch.setattr(
+        app.state.shopify_sync,
+        "enqueue",
+        crash_once_then_enqueue,
+    )
+    with TestClient(app, raise_server_exceptions=False) as client:
         started = _start(client)
         code = _code_from_messages(messages)
         first = _exchange(client, started.json()["challenge_id"], code)
         replay = _exchange(client, started.json()["challenge_id"], code)
+        pending_replay = _exchange(client, started.json()["challenge_id"], code)
 
-    assert first.status_code == 201
+    assert first.status_code == 500
+    assert first.json()["code"] == "internal_error"
     assert replay.status_code == 201
-    assert replay.json() == first.json()
-    assert enqueue_calls == [user_id]
+    assert pending_replay.status_code == 201
+    assert pending_replay.json() == replay.json()
+    current = app.state.users.get(user_id)
+    assert current is not None
+    assert current.shopify_sync_status == SHOPIFY_SYNC_PENDING
+    assert current.shopify_sync_attempts == 0
+    assert enqueue_calls == [user_id, user_id, user_id]
 
 
 def test_enabled_startup_fails_closed_without_https_or_recovery_readback(
@@ -1145,7 +1159,7 @@ def test_startup_resumes_prepared_initial_issuance_with_feature_off(
         monkeypatch.setattr(
             app.state.mobile_auth_service,
             "_advance",
-            lambda _exchange_id: (None, False),
+            lambda _exchange_id: None,
         )
         pending = _exchange(
             client,
