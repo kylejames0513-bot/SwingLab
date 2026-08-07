@@ -11,12 +11,34 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Literal, TypeVar
 
 REPORT_VIEW_VERSION = "report-view-v1"
+LEGACY_REPORT_PRESENTATION_VERSION = "premium-coach-v2"
 GUIDED_REPORT_PRESENTATION_VERSION = "guided-report-v1"
 MAX_REPORT_VIEW_BYTES = 2 * 1024 * 1024
 
 
 class ReportViewValidationError(ValueError): pass
 class UnsupportedReportViewVersion(ReportViewValidationError): pass
+class UnsupportedReportPresentationVersion(ValueError): pass
+
+
+class ReportPresentationVersion(StrEnum):
+    LEGACY = LEGACY_REPORT_PRESENTATION_VERSION
+    GUIDED = GUIDED_REPORT_PRESENTATION_VERSION
+
+
+def parse_report_presentation_version(value: object) -> ReportPresentationVersion:
+    """Parse the only two supported presentation routes, or fail closed."""
+
+    if not isinstance(value, str):
+        raise UnsupportedReportPresentationVersion(
+            f"unknown report presentation: {value!r}"
+        )
+    try:
+        return ReportPresentationVersion(value)
+    except ValueError as exc:
+        raise UnsupportedReportPresentationVersion(
+            f"unknown report presentation: {value!r}"
+        ) from exc
 
 
 class ReportOutcome(StrEnum): COACHING_READY = "coaching_ready"; CAPTURE_ONLY = "capture_only"

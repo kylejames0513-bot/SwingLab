@@ -23,6 +23,7 @@ from swinglab.report_view import (
     MediaRole,
     ReasonCode,
     TrackingState,
+    UnsupportedReportPresentationVersion,
 )
 from swinglab.web import jobs as jobs_module
 from swinglab.web.jobs import DONE, PROCESSING, Job, JobManager
@@ -122,12 +123,73 @@ def test_unknown_report_presentation_is_rejected_before_directory_or_row(tmp_pat
     manager = JobManager(tmp_path / "sessions", Config())
     before_dirs = {path.name for path in manager.sessions_dir.iterdir() if path.is_dir()}
 
-    with pytest.raises(ValueError, match="unknown report presentation"):
+    with pytest.raises(
+        UnsupportedReportPresentationVersion, match="unknown report presentation"
+    ):
         manager.create_session(report_presentation_version="future-report-v9")
 
     after_dirs = {path.name for path in manager.sessions_dir.iterdir() if path.is_dir()}
     assert after_dirs == before_dirs
     assert manager._conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+
+
+def test_restart_rejects_unknown_persisted_presentation_without_submitting(
+    tmp_path: Path, monkeypatch,
+):
+    sessions = tmp_path / "sessions"
+    manager = JobManager(sessions, Config())
+    job = manager.create_session(source_name="source.mov")
+    (job.session_dir / "source.mov").write_bytes(b"source")
+    manager._conn.execute(
+        "UPDATE jobs SET report_presentation_version = ? WHERE id = ?",
+        ("future-report-v9", job.id),
+    )
+    manager._conn.commit()
+    manager._pool.shutdown(wait=True)
+    manager._conn.close()
+    submitted: list[str] = []
+    monkeypatch.setattr(
+        JobManager,
+        "submit",
+        lambda self, current, video: submitted.append(current.id),
+    )
+
+    restarted = JobManager(sessions, Config())
+
+    assert submitted == []
+    row = restarted._conn.execute(
+        "SELECT status, error, report_rel FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()
+    assert row["status"] == "failed"
+    assert "unknown report presentation" in row["error"]
+    assert row["report_rel"] is None
+
+
+def test_explicit_empty_strikes_survive_persistence_restart_and_requeue(
+    tmp_path: Path, monkeypatch,
+):
+    sessions = tmp_path / "sessions"
+    manager = JobManager(sessions, Config())
+    job = manager.create_session(source_name="source.mov", strikes=[])
+    (job.session_dir / "source.mov").write_bytes(b"source")
+    raw = manager._conn.execute(
+        "SELECT strikes FROM jobs WHERE id = ?", (job.id,)
+    ).fetchone()[0]
+    manager._pool.shutdown(wait=True)
+    manager._conn.close()
+    submitted: list[tuple[str, list[float] | None]] = []
+    monkeypatch.setattr(
+        JobManager,
+        "submit",
+        lambda self, current, video: submitted.append(
+            (current.id, current.strikes)
+        ),
+    )
+
+    JobManager(sessions, Config())
+
+    assert raw == "[]"
+    assert submitted == [(job.id, [])]
 
 
 @pytest.mark.parametrize("explicit", [False, True])
@@ -634,6 +696,42 @@ def test_stale_nonprocessing_status_cannot_publish_bundle(tmp_path: Path):
     assert tuple(row) == (jobs_module.QUEUED, None, None, None, None, 0)
 
 
+def test_completion_rejects_noncanonical_final_root_without_committing_artifact_rels(
+    tmp_path: Path,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+    original_root = result.report_path.parent
+    invalid_root = original_root.with_name("published-report")
+    original_root.rename(invalid_root)
+    result = replace(
+        result,
+        report_path=invalid_root / result.report_path.name,
+        metrics_path=invalid_root / result.metrics_path.name,
+        report_view_path=invalid_root / result.report_view_path.name,
+        manifest_path=invalid_root / result.manifest_path.name,
+        checksums_path=invalid_root / result.checksums_path.name,
+    )
+
+    with pytest.raises(ValueError):
+        manager._complete_job(job, result)
+
+    row = manager._conn.execute(
+        "SELECT status, report_rel, report_view_rel, report_manifest_rel,"
+        " report_checksums_rel, structured_report FROM jobs WHERE id = ?",
+        (job.id,),
+    ).fetchone()
+    assert tuple(row) == (PROCESSING, None, None, None, None, 0)
+
+
 @pytest.mark.parametrize("damage", ["presentation", "malformed-entitlement"])
 def test_persisted_policy_mismatch_or_malformed_json_fails_closed_before_publish(
     tmp_path: Path, damage: str,
@@ -662,6 +760,37 @@ def test_persisted_policy_mismatch_or_malformed_json_fails_closed_before_publish
     manager._conn.commit()
 
     with pytest.raises((RuntimeError, ValueError)):
+        manager._complete_job(job, result)
+
+    row = manager._conn.execute(
+        "SELECT status, report_rel, report_view_rel, report_manifest_rel,"
+        " report_checksums_rel, structured_report FROM jobs WHERE id = ?",
+        (job.id,),
+    ).fetchone()
+    assert tuple(row) == (PROCESSING, None, None, None, None, 0)
+
+
+def test_completion_rejects_bundle_replay_state_that_disagrees_with_persisted_policy(
+    tmp_path: Path,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    job.report_entitlements = ReportEntitlementSnapshot("locked")
+    manager._conn.execute(
+        "UPDATE jobs SET report_entitlements_json = ? WHERE id = ?",
+        (job.report_entitlements.to_json(), job.id),
+    )
+    manager._conn.commit()
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+
+    with pytest.raises(ValueError):
         manager._complete_job(job, result)
 
     row = manager._conn.execute(
@@ -763,6 +892,168 @@ def test_retry_treats_all_null_structured_rels_as_authoritative_empty_protection
     manager._run(job, source)
 
     assert not abandoned_root.exists()
+
+
+def test_analysis_failure_cleans_worker_created_attempt_and_final_before_failed(
+    tmp_path: Path, monkeypatch,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        source_name="source.mov",
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    source = job.session_dir / "source.mov"
+    source.write_bytes(b"source")
+    owned: list[Path] = []
+
+    def fail_after_writing_owned_graph(*args, **kwargs):
+        published = _guided_result(job, tmp_path, attempt_id="a" * 32)
+        attempt = begin_report_bundle(
+            published.session_dir, attempt_id="b" * 32
+        )
+        owned.extend((published.report_path.parent, attempt.staging_dir))
+        raise ZeroStrikesError("no usable strikes")
+
+    monkeypatch.setattr(
+        jobs_module, "analyze_video", fail_after_writing_owned_graph
+    )
+
+    manager._run(job, source)
+
+    stored = manager.get(job.id)
+    assert stored is not None and stored.status == "failed"
+    assert stored.report_rel is None
+    assert owned and all(not path.exists() for path in owned)
+
+
+def test_cleanup_refusal_keeps_failure_actionable_and_durable(
+    tmp_path: Path, monkeypatch,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        source_name="source.mov",
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    source = job.session_dir / "source.mov"
+    source.write_bytes(b"source")
+    calls = 0
+    owned: list[Path] = []
+
+    def cleanup(current):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return 0
+        raise CoreReportBundleError("ambiguous ownership marker")
+
+    def fail_after_writing_owned_graph(*args, **kwargs):
+        published = _guided_result(job, tmp_path, attempt_id="c" * 32)
+        owned.append(published.report_path.parent)
+        raise ZeroStrikesError("no usable strikes")
+
+    monkeypatch.setattr(manager, "_cleanup_retry_report_bundles", cleanup)
+    monkeypatch.setattr(
+        jobs_module, "analyze_video", fail_after_writing_owned_graph
+    )
+
+    manager._run(job, source)
+
+    row = manager._conn.execute(
+        "SELECT status, error, log, report_rel FROM jobs WHERE id = ?",
+        (job.id,),
+    ).fetchone()
+    assert calls == 2
+    assert row["status"] == PROCESSING
+    assert "cleanup is pending" in row["error"].lower()
+    assert any("cleanup is pending" in line.lower() for line in jobs_module.json.loads(row["log"]))
+    assert row["report_rel"] is None
+    assert owned[0].is_dir()
+
+
+def test_worker_completion_validation_failure_stays_processing_without_exposure(
+    tmp_path: Path, monkeypatch,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        source_name="source.mov",
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    source = job.session_dir / "source.mov"
+    source.write_bytes(b"source")
+
+    def invalid_result(*args, **kwargs):
+        result = _guided_result(job, tmp_path, attempt_id="d" * 32)
+        original = result.report_path.parent
+        invalid = original.with_name("published-report")
+        original.rename(invalid)
+        return replace(
+            result,
+            report_path=invalid / result.report_path.name,
+            metrics_path=invalid / result.metrics_path.name,
+            report_view_path=invalid / result.report_view_path.name,
+            manifest_path=invalid / result.manifest_path.name,
+            checksums_path=invalid / result.checksums_path.name,
+        )
+
+    monkeypatch.setattr(jobs_module, "analyze_video", invalid_result)
+
+    manager._run(job, source)
+
+    row = manager._conn.execute(
+        "SELECT status, error, report_rel, report_view_rel, report_manifest_rel,"
+        " report_checksums_rel, structured_report FROM jobs WHERE id = ?",
+        (job.id,),
+    ).fetchone()
+    assert row["status"] == PROCESSING
+    assert "publication could not be validated" in row["error"].lower()
+    assert tuple(row[name] for name in (
+        "report_rel", "report_view_rel", "report_manifest_rel", "report_checksums_rel"
+    )) == (None, None, None, None)
+    assert row["structured_report"] == 0
+
+
+def test_restart_missing_source_cleans_owned_graph_before_failed(
+    tmp_path: Path, monkeypatch,
+):
+    sessions = tmp_path / "sessions"
+    manager = JobManager(
+        sessions,
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        source_name="missing.mov",
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    assert manager._mark_processing(job) is True
+    published = _guided_result(job, tmp_path, attempt_id="e" * 32)
+    attempt = begin_report_bundle(published.session_dir, attempt_id="f" * 32)
+    owned = (published.report_path.parent, attempt.staging_dir)
+    manager._pool.shutdown(wait=True)
+    manager._conn.close()
+    monkeypatch.setattr(JobManager, "submit", lambda self, current, video: None)
+
+    restarted = JobManager(
+        sessions,
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+
+    stored = restarted.get(job.id)
+    assert stored is not None and stored.status == "failed"
+    assert all(not path.exists() for path in owned)
 
 
 def test_retry_protects_complete_persisted_bundle_and_reclaims_other_final(
@@ -1141,6 +1432,85 @@ def test_guided_coaching_completion_consumes_allowance_exactly_once(tmp_path: Pa
     with pytest.raises(RuntimeError, match="no longer processing"):
         manager._complete_job(job, result)
     assert manager.usage_this_month(user_id) == 1
+
+
+@pytest.mark.parametrize("artifact", ["report", "metrics", "structured-flag"])
+def test_structured_quota_never_reclassifies_mutated_raw_artifacts_as_courtesy(
+    tmp_path: Path, artifact: str
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    user_id = "golfer"
+    job = manager.create_session(
+        user_id=user_id,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+    manager._complete_job(job, result)
+    if artifact == "report":
+        result.report_path.write_text(
+            result.report_path.read_text(encoding="utf-8").replace(
+                "coaching_ready", "capture_only"
+            ),
+            encoding="utf-8",
+        )
+    elif artifact == "metrics":
+        payload = jobs_module.json.loads(
+            result.metrics_path.read_text(encoding="utf-8")
+        )
+        payload["session_notes"] = ["Tracking was unstable — numbers may be off."]
+        result.metrics_path.write_text(
+            jobs_module.json.dumps(payload), encoding="utf-8"
+        )
+    else:
+        manager._conn.execute(
+            "UPDATE jobs SET structured_report = 0 WHERE id = ?", (job.id,)
+        )
+        manager._conn.commit()
+
+    stored = manager.get(job.id)
+    assert stored is not None
+    assert manager.coaching_eligible(stored) is False
+    assert manager.refilm_rejections_this_month(user_id) == 0
+    assert manager.usage_this_month(user_id) == 1
+
+
+def test_corrupt_structured_bundle_remains_consumed_across_restart_and_reset_receipt(
+    tmp_path: Path, monkeypatch
+):
+    sessions = tmp_path / "sessions"
+    manager = JobManager(
+        sessions,
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    user_id = "golfer"
+    job = manager.create_session(
+        user_id=user_id,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+    manager._complete_job(job, result)
+    result.report_path.write_text("corrupt", encoding="utf-8")
+    manager._pool.shutdown(wait=True)
+    manager._conn.close()
+    monkeypatch.setattr(JobManager, "submit", lambda self, current, video: None)
+
+    restarted = JobManager(
+        sessions,
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    assert restarted.usage_this_month(user_id) == 1
+    summary = restarted.reset_user_history(user_id)
+    assert summary.deleted_jobs == 1
+    assert restarted.usage_this_month(user_id) == 1
+    assert restarted.refilm_rejections_this_month(user_id) == 0
 
 
 def test_crash_after_bundle_rename_requeues_one_reservation_and_completes_once(

@@ -217,12 +217,20 @@ def assert_job_bundle(job: Job) -> PublishedReportBundle:
     )
     if not all(isinstance(relative, str) and relative for relative in rels):
         raise AssertionError("guided job is missing canonical report rels")
+    paths = tuple(job.session_dir / PurePosixPath(relative) for relative in rels)
+    bundle_roots = {path.parent for path in paths}
+    if len(bundle_roots) != 1:
+        raise AssertionError("guided job rels do not identify one bundle")
+    analysis_session = next(iter(bundle_roots)).parent
+    direct_rels = tuple(
+        path.relative_to(analysis_session).as_posix() for path in paths
+    )
     bundle = load_published_bundle(
-        job.session_dir,
-        report_rel=job.report_rel,
-        report_view_rel=job.report_view_rel,
-        manifest_rel=job.report_manifest_rel,
-        checksums_rel=job.report_checksums_rel,
+        analysis_session,
+        report_rel=direct_rels[0],
+        report_view_rel=direct_rels[1],
+        manifest_rel=direct_rels[2],
+        checksums_rel=direct_rels[3],
     )
     _assert_loaded_bundle(bundle)
     return bundle

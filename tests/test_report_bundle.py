@@ -504,6 +504,38 @@ def test_publish_revalidates_then_performs_one_sibling_noclobber_rename(tmp_path
     assert published.checksums_path == published.root / REPORT_CHECKSUMS_FILENAME
 
 
+def test_publish_rejects_coherent_destination_substitution_after_atomic_rename(
+    tmp_path, monkeypatch
+):
+    from swinglab import report_bundle
+
+    original_fixture = tmp_path / "original"
+    replacement_fixture = tmp_path / "replacement"
+    original_fixture.mkdir()
+    replacement_fixture.mkdir()
+    attempt, staged = _build(original_fixture)
+    replacement_attempt, _replacement = _build(
+        replacement_fixture,
+        swings=[],
+    )
+    real_rename = report_bundle._rename_report_bundle_noreplace
+
+    def rename_then_substitute(source, destination):
+        real_rename(source, destination)
+        displaced = destination.with_name("displaced-original")
+        destination.rename(displaced)
+        replacement_attempt.staging_dir.rename(destination)
+
+    monkeypatch.setattr(
+        report_bundle,
+        "_rename_report_bundle_noreplace",
+        rename_then_substitute,
+    )
+
+    with pytest.raises(CoreReportBundleError, match="changed|substitut"):
+        publish_report_bundle(staged)
+
+
 def test_publish_race_preserves_both_roots_without_clobber(tmp_path):
     attempt, staged = _build(tmp_path)
     destination = attempt.session_dir / ("report-bundle-" + attempt.attempt_id)

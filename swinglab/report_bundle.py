@@ -1534,7 +1534,7 @@ def publish_report_bundle(staged: StagedReportBundle) -> PublishedReportBundle:
 
     root_rel = destination.name
     try:
-        return load_published_bundle(
+        published = load_published_bundle(
             session,
             report_rel=f"{root_rel}/{REPORT_FILENAME}",
             report_view_rel=f"{root_rel}/{REPORT_VIEW_FILENAME}",
@@ -1545,6 +1545,19 @@ def publish_report_bundle(staged: StagedReportBundle) -> PublishedReportBundle:
         raise CoreReportBundleError(
             "published report readback failed; final root was left for scoped recovery"
         ) from exc
+    if (
+        published.manifest,
+        published.checksums,
+        published.view,
+    ) != (
+        staged.manifest,
+        staged.checksums,
+        staged.view,
+    ):
+        raise CoreReportBundleError(
+            "published report graph changed after the atomic rename; final root was left for scoped recovery"
+        )
+    return published
 
 
 def _safe_protected_path(value: str) -> PurePosixPath:

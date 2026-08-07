@@ -32,6 +32,7 @@ from swinglab.report_artifacts import (
     report_entitlements_from_json,
     report_entitlements_to_json,
     resolve_media_path,
+    validate_persisted_report_policy,
     validate_staged_bundle,
     write_report_checksums,
     write_report_manifest,
@@ -383,6 +384,95 @@ def test_entitlement_snapshot_has_canonical_json_round_trip_and_strict_enum():
         report_entitlements_from_json('{"coach_replay":"future"}\n')
     with pytest.raises(ReportArtifactValidationError):
         report_entitlements_from_json('{"coach_replay":"locked","extra":true}\n')
+
+
+@pytest.mark.parametrize(
+    ("policy", "section_locked", "rendered", "accepted"),
+    [
+        ("available", False, True, True),
+        ("available", False, False, True),
+        ("locked", True, False, True),
+        ("disabled", False, False, True),
+        ("locked", False, True, False),
+        ("locked", False, False, False),
+        ("disabled", False, True, False),
+        ("available", True, False, False),
+    ],
+)
+def test_persisted_policy_validator_reconciles_replay_state_with_validated_bundle(
+    tmp_path: Path,
+    policy: str,
+    section_locked: bool,
+    rendered: bool,
+    accepted: bool,
+):
+    if rendered:
+        payload, _ = _payload_with_media_role("coach_replay")
+    else:
+        payload = _artifact_report_view_payload()
+        optional = payload["optional_sections"]
+        assert isinstance(optional, list)
+        optional.append(
+            {
+                "id": "replay",
+                "label": "Coach replay",
+                "available": False,
+                "locked": section_locked,
+                "item_count": 0,
+            }
+        )
+    bundle = _load_bundle(_build_bundle(tmp_path, payload=payload))
+    persisted = ReportEntitlementSnapshot(policy).to_json()
+
+    if accepted:
+        assert (
+            validate_persisted_report_policy(
+                bundle,
+                report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+                report_entitlements_json=persisted,
+            )
+            == ReportEntitlementSnapshot(policy)
+        )
+    else:
+        with pytest.raises(ReportArtifactValidationError):
+            validate_persisted_report_policy(
+                bundle,
+                report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+                report_entitlements_json=persisted,
+            )
+
+
+@pytest.mark.parametrize(
+    ("presentation", "entitlements"),
+    [
+        ("premium-coach-v2", '{"coach_replay":"available"}\n'),
+        (GUIDED_REPORT_PRESENTATION_VERSION, None),
+        (GUIDED_REPORT_PRESENTATION_VERSION, '{"coach_replay":"available"}'),
+    ],
+)
+def test_persisted_policy_validator_requires_guided_and_canonical_policy(
+    tmp_path: Path, presentation: str, entitlements: str | None
+):
+    payload = _artifact_report_view_payload()
+    optional = payload["optional_sections"]
+    assert isinstance(optional, list)
+    optional.append(
+        {
+            "id": "replay",
+            "label": "Coach replay",
+            "available": False,
+            "locked": False,
+            "item_count": 0,
+        }
+    )
+    bundle = _load_bundle(_build_bundle(tmp_path, payload=payload))
+
+    with pytest.raises(ReportArtifactValidationError):
+        validate_persisted_report_policy(
+            bundle,
+            report_presentation_version=presentation,
+            report_entitlements_json=entitlements,
+        )
 
 
 def test_manifest_round_trip_is_canonical_sorted_and_newline_terminated(tmp_path: Path):
@@ -1777,6 +1867,36 @@ def test_all_four_published_paths_must_refer_to_one_bundle_root(tmp_path: Path, 
 
     with pytest.raises(ReportArtifactValidationError):
         load_published_bundle(root.parent, **rels)
+
+
+@pytest.mark.parametrize(
+    "root_name",
+    [
+        ".report-attempt-" + "a" * 32,
+        "published-report",
+        "report-bundle-" + "b" * 32,
+    ],
+)
+def test_published_lookup_requires_direct_canonical_root_bound_to_manifest_attempt(
+    tmp_path: Path, root_name: str
+):
+    root = _build_bundle(tmp_path, root_name=root_name)
+
+    with pytest.raises(ReportArtifactValidationError):
+        load_published_bundle(tmp_path, **_persisted_rels(root))
+
+
+def test_published_lookup_rejects_nested_canonical_final_root(tmp_path: Path):
+    nested_parent = tmp_path / "arbitrary-parent"
+    nested_parent.mkdir()
+    root = _build_bundle(nested_parent)
+    rels = {
+        key: f"{nested_parent.name}/{value}"
+        for key, value in _persisted_rels(root).items()
+    }
+
+    with pytest.raises(ReportArtifactValidationError):
+        load_published_bundle(tmp_path, **rels)
 
 
 def test_published_paths_must_match_manifest_declared_canonical_identities(tmp_path: Path):

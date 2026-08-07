@@ -36,7 +36,7 @@ from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Callable, Iterable, Iterator
+from typing import Callable, Iterable, Iterator, assert_never
 
 from ..caddie_brief import (
     payload_has_coachable_data,
@@ -66,6 +66,7 @@ from ..report_artifacts import (
     REPORT_VIEW_FILENAME,
     ReportEntitlementSnapshot,
     load_published_bundle,
+    validate_persisted_report_policy,
 )
 from ..report_bundle import (
     REPORT_FILENAME,
@@ -74,7 +75,13 @@ from ..report_bundle import (
     ReportHtmlWriter,
     prepare_abandoned_report_bundle_cleanup,
 )
-from ..report_view import GUIDED_REPORT_PRESENTATION_VERSION
+from ..report_view import (
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    ReportOutcome,
+    ReportPresentationVersion,
+    UnsupportedReportPresentationVersion,
+    parse_report_presentation_version,
+)
 from . import mailer
 from .humanize import friendly_error
 
@@ -86,6 +93,9 @@ DONE = "done"
 FAILED = "failed"
 ACTIVE = (QUEUED, PROCESSING)
 _FREE_REFILM_CREDITS_PER_MONTH = 1
+_COMPLETION_COACHING = "coaching"
+_COMPLETION_CAPTURE = "capture"
+_COMPLETION_CORRUPT = "corrupt"
 _MAX_RETRY_ANALYSIS_CHILDREN = 256
 _REPORT_BUNDLE_FINAL_RE = re.compile(r"report-bundle-[0-9a-f]{32}\Z")
 _HISTORY_TRASH_NAME = ".history-trash"
@@ -426,11 +436,15 @@ class JobManager:
                 + " ORDER BY created_at DESC LIMIT ?",
                 (*params, scan_limit),
             ).fetchall()
-        eligible = [
-            job
-            for job in (self._from_row(row) for row in rows)
-            if self.coaching_eligible(job)
-        ]
+        eligible: list[Job] = []
+        for row in rows:
+            if self._completed_report_classification(row) != _COMPLETION_COACHING:
+                continue
+            try:
+                eligible.append(self._from_row(row))
+            except (TypeError, ValueError):
+                # A malformed row cannot regain coaching/trend eligibility.
+                continue
         return eligible[:wanted]
 
     def usage_this_month(self, user_id: str) -> int:
@@ -458,11 +472,20 @@ class JobManager:
                 " WHERE user_hash = ? AND month_start = ? AND expires_at > ?",
                 (self._user_hash(user_id), month_start, now.timestamp()),
             ).fetchone()
-            jobs = [self._from_row(row) for row in rows]
-            active = sum(job.status in ACTIVE for job in jobs)
-            finished = [job for job in jobs if job.status == DONE]
-            eligible = sum(self.coaching_eligible(job) for job in finished)
-            rejected = len(finished) - eligible
+            active = sum(row["status"] in ACTIVE for row in rows)
+            completed = [
+                self._completed_report_classification(row)
+                for row in rows
+                if row["status"] == DONE
+            ]
+            # Integrity failures consume an allowance: a completed analysis
+            # cannot be converted into a courtesy re-film by mutating or
+            # deleting its signed bundle after publication.
+            eligible = sum(
+                state in (_COMPLETION_COACHING, _COMPLETION_CORRUPT)
+                for state in completed
+            )
+            rejected = sum(state == _COMPLETION_CAPTURE for state in completed)
         if receipt is not None:
             eligible += int(receipt["coaching_eligible"])
             rejected += int(receipt["refilm_rejections"])
@@ -473,6 +496,20 @@ class JobManager:
 
     def coaching_eligible(self, job: Job) -> bool:
         """Whether a finished job can power coaching, trends, and quota."""
+        if job.status != DONE:
+            return False
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (job.id,)
+            ).fetchone()
+        if row is None or row["status"] != DONE:
+            return False
+        return self._completed_report_classification(row, legacy_job=job) == (
+            _COMPLETION_COACHING
+        )
+
+    def _legacy_coaching_eligible(self, job: Job) -> bool:
+        """Compatibility-only eligibility for pre-structured reports."""
         if job.status != DONE or not job.report_rel:
             return False
         root = job.session_dir.resolve()
@@ -508,6 +545,101 @@ class JobManager:
             and not payload_has_coachable_data(payload, angle=job.angle)
         )
 
+    def _completed_report_classification(
+        self, row: sqlite3.Row, *, legacy_job: Job | None = None
+    ) -> str:
+        """Classify DONE rows without trusting mutable structured artifacts.
+
+        Structured reports are usable only when their complete persisted
+        bundle and creation-time policy validate. Any integrity or policy
+        failure is deliberately distinct from a genuine capture-only result:
+        it cannot power coaching, but it still consumes quota.
+        """
+
+        if row["status"] != DONE:
+            return _COMPLETION_CORRUPT
+        try:
+            presentation = parse_report_presentation_version(
+                row["report_presentation_version"]
+            )
+        except UnsupportedReportPresentationVersion:
+            return _COMPLETION_CORRUPT
+        structured_sidecars = any(
+            row[name] is not None
+            for name in (
+                "report_view_rel",
+                "report_manifest_rel",
+                "report_checksums_rel",
+            )
+        )
+        genuine_legacy = (
+            presentation is ReportPresentationVersion.LEGACY
+            and not bool(row["structured_report"])
+            and not structured_sidecars
+        )
+        if genuine_legacy:
+            try:
+                job = legacy_job if legacy_job is not None else self._from_row(row)
+                return (
+                    _COMPLETION_COACHING
+                    if self._legacy_coaching_eligible(job)
+                    else _COMPLETION_CAPTURE
+                )
+            except (OSError, TypeError, ValueError):
+                return _COMPLETION_CORRUPT
+        if not bool(row["structured_report"]):
+            return _COMPLETION_CORRUPT
+
+        try:
+            values = tuple(
+                row[name]
+                for name in (
+                    "report_rel",
+                    "report_view_rel",
+                    "report_manifest_rel",
+                    "report_checksums_rel",
+                )
+            )
+            child_name, direct_rels = self._parse_structured_report_rels(values)
+            if child_name is None:
+                raise CoreReportBundleError(
+                    "completed structured report rels are missing"
+                )
+            safe_id = self._validate_job_id(row["id"])
+            sessions_root = self.sessions_dir.resolve(strict=True)
+            job_root = (self.sessions_dir / safe_id).resolve(strict=True)
+            if job_root.parent != sessions_root:
+                raise CoreReportBundleError("structured job root escapes sessions")
+            analysis_session = (job_root / "out" / child_name).resolve(strict=True)
+            analysis_session.relative_to(job_root)
+            bundle = load_published_bundle(
+                analysis_session,
+                report_rel=direct_rels[0],
+                report_view_rel=direct_rels[1],
+                manifest_rel=direct_rels[2],
+                checksums_rel=direct_rels[3],
+            )
+            validate_persisted_report_policy(
+                bundle,
+                report_presentation_version=row["report_presentation_version"],
+                report_entitlements_json=row["report_entitlements_json"],
+            )
+        except Exception:
+            # This is a read-side trust decision, not a worker failure. Keep it
+            # fail-closed even for an unexpected malformed row or filesystem
+            # condition; callers must never regain a courtesy retry this way.
+            logger.warning(
+                "Structured report integrity validation failed for job %s",
+                row["id"],
+                exc_info=True,
+            )
+            return _COMPLETION_CORRUPT
+        if bundle.view.outcome == ReportOutcome.COACHING_READY:
+            return _COMPLETION_COACHING
+        if bundle.view.outcome == ReportOutcome.CAPTURE_ONLY:
+            return _COMPLETION_CAPTURE
+        return _COMPLETION_CORRUPT
+
     def refilm_rejections_this_month(self, user_id: str) -> int:
         """Finished coaching-ineligible clips for one account this month."""
         now = datetime.now(timezone.utc)
@@ -526,7 +658,8 @@ class JobManager:
                 (self._user_hash(user_id), month_start, now.timestamp()),
             ).fetchone()
             live = sum(
-                not self.coaching_eligible(self._from_row(row)) for row in rows
+                self._completed_report_classification(row) == _COMPLETION_CAPTURE
+                for row in rows
             )
         return live + (int(receipt["refilm_rejections"]) if receipt else 0)
 
@@ -740,11 +873,7 @@ class JobManager:
             if report_presentation_version is None
             else report_presentation_version
         )
-        if presentation not in (
-            REPORT_PRESENTATION_VERSION,
-            GUIDED_REPORT_PRESENTATION_VERSION,
-        ):
-            raise ValueError(f"unknown report presentation: {presentation!r}")
+        presentation = parse_report_presentation_version(presentation).value
         if (
             presentation == GUIDED_REPORT_PRESENTATION_VERSION
             and self._guided_html_writer is None
@@ -922,7 +1051,16 @@ class JobManager:
             ).fetchone()
         if row is None:
             raise CoreReportBundleError("retry job row is missing")
-        values = tuple(row)
+        return self._parse_structured_report_rels(tuple(row))
+
+    @staticmethod
+    def _parse_structured_report_rels(
+        values: tuple[object, ...],
+    ) -> tuple[str | None, tuple[str, ...]]:
+        if len(values) != 4:
+            raise CoreReportBundleError(
+                "persisted structured report rel count is invalid"
+            )
         if all(value is None for value in values):
             return None, ()
         if any(value is None for value in values):
@@ -1056,6 +1194,100 @@ class JobManager:
             ]
             return sum(cleanup.execute() for cleanup in prepared)
 
+    def _record_active_recovery_error(
+        self,
+        job: Job,
+        *,
+        expected_status: str,
+        error: str,
+        log_message: str,
+    ) -> bool:
+        """Persist an actionable error while deliberately keeping a job active."""
+
+        next_log = [*job.log]
+        if not next_log or next_log[-1] != log_message:
+            next_log.append(log_message)
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE jobs SET updated_at = ?, error = ?, log = ?,"
+                " swings_done = ?, swings_total = ?"
+                " WHERE id = ? AND status = ?",
+                (
+                    time.time(),
+                    error,
+                    json.dumps(next_log),
+                    job.swings_done,
+                    job.swings_total,
+                    job.id,
+                    expected_status,
+                ),
+            )
+            self._conn.commit()
+            if cursor.rowcount != 1:
+                row = self._conn.execute(
+                    "SELECT * FROM jobs WHERE id = ?", (job.id,)
+                ).fetchone()
+                if row is not None:
+                    self._copy_persisted_state(job, self._from_row(row))
+                return False
+        job.status = expected_status
+        job.error = error
+        job.log = next_log
+        return True
+
+    def _cleanup_before_failure(
+        self,
+        job: Job,
+        *,
+        expected_status: str,
+        error: str,
+    ) -> bool:
+        """Reclaim exact owned report graphs before exposing terminal failure.
+
+        A refusal is not treated as successful cleanup. The active state and
+        null publication fields remain recoverable on restart, with a durable
+        operator/user-facing explanation instead of an unreachable FAILED row.
+        """
+
+        try:
+            self._cleanup_retry_report_bundles(job)
+        except Exception:
+            logger.exception(
+                "Report bundle cleanup remains pending for job %s", job.id
+            )
+            log_message = (
+                "Report cleanup is pending; this analysis remains active for "
+                "safe recovery and has not exposed a report."
+            )
+            pending_error = f"{error}\n\n{log_message}"
+            self._record_active_recovery_error(
+                job,
+                expected_status=expected_status,
+                error=pending_error,
+                log_message=log_message,
+            )
+            return False
+
+        if expected_status == PROCESSING:
+            return self._fail_processing_job(job, error)
+        return self._transition_interrupted_job(
+            job,
+            expected_status=expected_status,
+            target_status=FAILED,
+            error=error,
+        )
+
+    def _finish_processing_failure(self, job: Job, error: str) -> None:
+        if not self._cleanup_before_failure(
+            job, expected_status=PROCESSING, error=error
+        ):
+            return
+        try:
+            self._delete_failed_source_if_configured(job)
+        except Exception:
+            logger.exception("Failed source cleanup failed for job %s", job.id)
+        self._notify_owner(job)
+
     def _run(self, job: Job, video_path: Path) -> None:
         def log(message: str) -> None:
             job.log.append(message)
@@ -1066,20 +1298,23 @@ class JobManager:
             job.swings_total = total
             self._save(job)
 
+        presentation = parse_report_presentation_version(
+            job.report_presentation_version
+        )
         if not self._mark_processing(job):
             return
-        # Coach-replay Pro gate: projected only from the creation-time snapshot.
-        # A later upgrade never rewrites this job (re-film to get the replay),
-        # and the skip is stated honestly in the session log.
-        locked = self.replay_locked(job)
-        if locked:
-            log(
-                "Coach replay is a Pro feature — skipped for this analysis. "
-                "Upgrade and re-film to get your swing annotated frame-by-frame."
-            )
         try:
+            # Coach-replay Pro gate: projected only from the creation-time snapshot.
+            # A later upgrade never rewrites this job (re-film to get the replay),
+            # and the skip is stated honestly in the session log.
+            locked = self.replay_locked(job)
+            if locked:
+                log(
+                    "Coach replay is a Pro feature — skipped for this analysis. "
+                    "Upgrade and re-film to get your swing annotated frame-by-frame."
+                )
             self._cleanup_retry_report_bundles(job)
-            if job.report_presentation_version == GUIDED_REPORT_PRESENTATION_VERSION:
+            if presentation is ReportPresentationVersion.GUIDED:
                 result = analyze_video(
                     video_path,
                     out_dir=job.session_dir / "out",
@@ -1097,7 +1332,7 @@ class JobManager:
                     report_entitlements=job.report_entitlements,
                     guided_html_writer=self._guided_html_writer,
                 )
-            else:
+            elif presentation is ReportPresentationVersion.LEGACY:
                 result = analyze_video(
                     video_path,
                     out_dir=job.session_dir / "out",
@@ -1112,29 +1347,12 @@ class JobManager:
                     level=job.level,
                     replay_locked=locked,
                 )
-            # Keep the manager's externally visible terminal boundary closed
-            # until the post-commit notes are durable. The re-entrant lock does
-            # not change publication ordering: core DONE commits first, then
-            # Proof/source cleanup run, and only then can readers observe it.
-            with self._lock:
-                self._complete_job(job, result)
-                self._write_proof_cycle_artifact(job)
-                try:
-                    self._delete_source_if_configured(job)
-                except Exception:
-                    logger.exception(
-                        "Completed source cleanup failed for job %s", job.id
-                    )
+            else:  # pragma: no cover - enum exhaustiveness guard
+                assert_never(presentation)
         except (ZeroStrikesError, VideoTooLongError, EventError, FFmpegError) as exc:
-            with self._lock:
-                failed = self._fail_processing_job(job, str(exc))
-                if failed:
-                    try:
-                        self._delete_failed_source_if_configured(job)
-                    except Exception:
-                        logger.exception(
-                            "Failed source cleanup failed for job %s", job.id
-                        )
+            self._finish_processing_failure(job, str(exc))
+            self._cleanup_expired()
+            return
         except Exception:
             error = "Unexpected error during analysis:\n" + traceback.format_exc(
                 limit=3
@@ -1142,15 +1360,35 @@ class JobManager:
             # logger.exception carries the full traceback to the process log
             # (and to Sentry when the operator configured it — see app.py).
             logger.exception("Unexpected error during analysis of job %s", job.id)
-            with self._lock:
-                failed = self._fail_processing_job(job, error)
-                if failed:
-                    try:
-                        self._delete_failed_source_if_configured(job)
-                    except Exception:
-                        logger.exception(
-                            "Failed source cleanup failed for job %s", job.id
-                        )
+            self._finish_processing_failure(job, error)
+            self._cleanup_expired()
+            return
+
+        try:
+            self._complete_job(job, result)
+        except Exception:
+            logger.exception("Report publication validation failed for job %s", job.id)
+            publication_error = (
+                "Report publication could not be validated; this analysis remains "
+                "active for safe recovery and no report was exposed."
+            )
+            self._record_active_recovery_error(
+                job,
+                expected_status=PROCESSING,
+                error=publication_error,
+                log_message=publication_error,
+            )
+            self._cleanup_expired()
+            return
+
+        # Keep the manager's externally visible terminal boundary closed until
+        # the additive post-commit notes are durable under this re-entrant lock.
+        with self._lock:
+            self._write_proof_cycle_artifact(job)
+            try:
+                self._delete_source_if_configured(job)
+            except Exception:
+                logger.exception("Completed source cleanup failed for job %s", job.id)
         self._notify_owner(job)
         self._cleanup_expired()
 
@@ -1381,7 +1619,15 @@ class JobManager:
     def _complete_job(self, job: Job, result: SessionResult) -> None:
         """Validate core artifacts, then expose every terminal field atomically."""
 
-        guided = job.report_presentation_version == GUIDED_REPORT_PRESENTATION_VERSION
+        presentation = parse_report_presentation_version(
+            job.report_presentation_version
+        )
+        if presentation is ReportPresentationVersion.GUIDED:
+            guided = True
+        elif presentation is ReportPresentationVersion.LEGACY:
+            guided = False
+        else:  # pragma: no cover - enum exhaustiveness guard
+            assert_never(presentation)
         report_rel = self._result_rel(job, result.report_path, label="report path")
         report_view_rel: str | None = None
         report_manifest_rel: str | None = None
@@ -1398,12 +1644,36 @@ class JobManager:
             report_checksums_rel = self._result_rel(
                 job, result.checksums_path, label="report checksums path"
             )
+            try:
+                job_root = job.session_dir.resolve(strict=True)
+                analysis_session = Path(result.session_dir).resolve(strict=True)
+                analysis_relative = analysis_session.relative_to(job_root)
+                if (
+                    len(analysis_relative.parts) != 2
+                    or analysis_relative.parts[0] != "out"
+                ):
+                    raise ValueError("analysis session does not use canonical layout")
+                direct_rels = tuple(
+                    Path(path).resolve(strict=True)
+                    .relative_to(analysis_session)
+                    .as_posix()
+                    for path in (
+                        result.report_path,
+                        result.report_view_path,
+                        result.manifest_path,
+                        result.checksums_path,
+                    )
+                )
+            except (OSError, ValueError) as exc:
+                raise ValueError(
+                    "structured report paths do not use their direct analysis session"
+                ) from exc
             bundle = load_published_bundle(
-                job.session_dir,
-                report_rel=report_rel,
-                report_view_rel=report_view_rel,
-                manifest_rel=report_manifest_rel,
-                checksums_rel=report_checksums_rel,
+                analysis_session,
+                report_rel=direct_rels[0],
+                report_view_rel=direct_rels[1],
+                manifest_rel=direct_rels[2],
+                checksums_rel=direct_rels[3],
             )
             if bundle.manifest.presentation_version != job.report_presentation_version:
                 raise ValueError("published report presentation does not match the job")
@@ -1425,10 +1695,20 @@ class JobManager:
                 if row is None or row["status"] != PROCESSING:
                     raise RuntimeError("job is no longer processing")
                 persisted_entitlements = (
-                    ReportEntitlementSnapshot("available")
-                    if row["report_entitlements_json"] is None
-                    else ReportEntitlementSnapshot.from_json(
-                        row["report_entitlements_json"]
+                    validate_persisted_report_policy(
+                        bundle,
+                        report_presentation_version=row[
+                            "report_presentation_version"
+                        ],
+                        report_entitlements_json=row["report_entitlements_json"],
+                    )
+                    if guided
+                    else (
+                        ReportEntitlementSnapshot("available")
+                        if row["report_entitlements_json"] is None
+                        else ReportEntitlementSnapshot.from_json(
+                            row["report_entitlements_json"]
+                        )
                     )
                 )
                 if (
@@ -1619,7 +1899,7 @@ class JobManager:
                     job.angle,
                     job.club,
                     job.level,
-                    json.dumps(job.strikes) if job.strikes else None,
+                    json.dumps(job.strikes) if job.strikes is not None else None,
                     int(job.fast),
                     job.client_ip,
                     job.user_id,
@@ -1715,9 +1995,10 @@ class JobManager:
                 expires_at,
             )
             counts = usage.setdefault(key, [0, 0])
-            if self.coaching_eligible(self._from_row(row)):
+            classification = self._completed_report_classification(row)
+            if classification in (_COMPLETION_COACHING, _COMPLETION_CORRUPT):
                 counts[0] += 1
-            else:
+            elif classification == _COMPLETION_CAPTURE:
                 counts[1] += 1
         return usage
 
@@ -2263,16 +2544,27 @@ class JobManager:
             ).fetchall()
         for row in rows:
             job = self._from_row(row)
+            try:
+                parse_report_presentation_version(job.report_presentation_version)
+            except UnsupportedReportPresentationVersion as exc:
+                error = str(exc)
+                transitioned = self._cleanup_before_failure(
+                    job,
+                    expected_status=row["status"],
+                    error=error,
+                )
+                if transitioned:
+                    self._notify_owner(job)
+                continue
             video = self._source_path(job)
             if video is None:
                 error = (
                     "The server restarted while this analysis was waiting and "
                     "the uploaded video is gone. Please upload it again."
                 )
-                transitioned = self._transition_interrupted_job(
+                transitioned = self._cleanup_before_failure(
                     job,
                     expected_status=row["status"],
-                    target_status=FAILED,
                     error=error,
                 )
             else:

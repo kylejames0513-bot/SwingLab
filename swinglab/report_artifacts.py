@@ -50,6 +50,7 @@ _METRICS_FILENAME = "metrics.json"
 _REPORT_HTML_FORMAT = "caddie-brief-v1"
 _REPORT_HEADER_BYTES = 8192
 _SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+_PUBLISHED_ROOT_PATTERN = re.compile(r"report-bundle-([0-9a-f]{32})\Z")
 _WINDOWS_RESERVED_SEGMENTS = {
     "CON",
     "PRN",
@@ -1598,6 +1599,17 @@ def load_published_bundle(
     root = next(iter(roots))
     if root == session_root:
         _err("published report must live in a dedicated bundle root")
+    try:
+        root_relative = root.relative_to(session_root)
+    except ValueError as exc:  # pragma: no cover - _join_under already proves this
+        raise ReportArtifactValidationError(
+            "published report bundle root escapes the session"
+        ) from exc
+    if len(root_relative.parts) != 1:
+        _err("published report bundle root must be a direct session child")
+    root_match = _PUBLISHED_ROOT_PATTERN.fullmatch(root_relative.name)
+    if root_match is None:
+        _err("published report bundle root is not canonical")
     if paths["report_view"].name != REPORT_VIEW_FILENAME:
         _err("published report view path is not canonical")
     if paths["manifest"].name != REPORT_MANIFEST_FILENAME:
@@ -1612,6 +1624,8 @@ def load_published_bundle(
             checksums_rel=REPORT_CHECKSUMS_FILENAME,
             _pinned_root=pinned,
         )
+        if manifest.attempt_id != root_match.group(1):
+            _err("published report bundle root does not match its manifest attempt")
         report_artifact = _single_kind(manifest, "report")
         view_artifact = _single_kind(manifest, "report_view")
         canonical_report = _join_under(
@@ -1655,6 +1669,63 @@ def load_published_bundle(
             checksums,
             tuple(media_identities),
         )
+
+
+def validate_persisted_report_policy(
+    bundle: PublishedReportBundle,
+    *,
+    report_presentation_version: object,
+    report_entitlements_json: object,
+) -> ReportEntitlementSnapshot:
+    """Bind one canonical persisted guided policy to one validated bundle."""
+
+    if not isinstance(bundle, PublishedReportBundle):
+        _err("expected PublishedReportBundle")
+    if report_presentation_version != GUIDED_REPORT_PRESENTATION_VERSION:
+        _err("structured report policy must use the guided presentation")
+    if (
+        bundle.manifest.presentation_version != report_presentation_version
+        or bundle.view.presentation_version != report_presentation_version
+    ):
+        _err("persisted presentation does not match the report bundle")
+    if not isinstance(report_entitlements_json, str):
+        _err("structured report entitlement policy is missing")
+    snapshot = report_entitlements_from_json(report_entitlements_json)
+
+    replay_media = tuple(
+        entry for entry in bundle.view.media if entry.role is MediaRole.COACH_REPLAY
+    )
+    replay_sections = tuple(
+        section
+        for section in bundle.view.optional_sections
+        if section.id is OptionalSectionId.REPLAY
+    )
+    if isinstance(bundle.view, CaptureOnlyReportView):
+        if replay_media or replay_sections or bundle.view.capabilities.coach_replay:
+            _err("capture-only report cannot expose coach replay")
+        return snapshot
+    if len(replay_sections) != 1:
+        _err("coaching report must declare one replay policy section")
+    replay_section = replay_sections[0]
+    if snapshot.coach_replay == "locked":
+        if (
+            not replay_section.locked
+            or replay_section.available
+            or replay_section.item_count != 0
+            or replay_media
+            or bundle.view.capabilities.coach_replay
+        ):
+            _err("locked coach replay policy disagrees with the report bundle")
+    elif replay_section.locked:
+        _err("unlocked coach replay policy cannot publish a locked section")
+    elif snapshot.coach_replay == "disabled" and (
+        replay_media
+        or replay_section.available
+        or replay_section.item_count != 0
+        or bundle.view.capabilities.coach_replay
+    ):
+        _err("disabled coach replay policy cannot publish replay content")
+    return snapshot
 
 
 def resolve_media_path(bundle: PublishedReportBundle, media_key: str) -> Path:

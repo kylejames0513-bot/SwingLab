@@ -20,8 +20,14 @@ from ..report_artifacts import (
     PublishedReportBundle,
     ReportArtifactValidationError,
     load_published_bundle,
+    validate_persisted_report_policy,
 )
 from ..proof_cycle_artifact import ARTIFACT_FILENAME, load_proof_cycle_artifact
+from ..report_view import (
+    ReportPresentationVersion,
+    UnsupportedReportPresentationVersion,
+    parse_report_presentation_version,
+)
 
 FORMAT = "caddieinsight-backup/v1"
 COMPLETE_FILE = "COMPLETE.json"
@@ -57,6 +63,8 @@ HISTORY_STATE_TABLES = (
 _BACKUP_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")
 _STRUCTURED_JOB_ADDITIONS = frozenset(
     {
+        "report_presentation_version",
+        "report_entitlements_json",
         "report_view_rel",
         "report_manifest_rel",
         "report_checksums_rel",
@@ -64,7 +72,8 @@ _STRUCTURED_JOB_ADDITIONS = frozenset(
     }
 )
 _STRUCTURED_JOB_PROJECTION = (
-    "id, report_rel, report_view_rel, report_manifest_rel, "
+    "id, report_rel, report_presentation_version, report_entitlements_json, "
+    "report_view_rel, report_manifest_rel, "
     "report_checksums_rel, structured_report, created_at, user_id, hand, angle, club"
 )
 
@@ -449,6 +458,26 @@ def _jobs_structured_schema_mode(
     )
 
 
+def _job_row_uses_structured_report(row: sqlite3.Row) -> bool:
+    if row["structured_report"] not in (0, 1):
+        raise BackupError("A completed job has an invalid report publication state.")
+    try:
+        presentation = parse_report_presentation_version(
+            row["report_presentation_version"]
+        )
+    except UnsupportedReportPresentationVersion as exc:
+        raise BackupError(
+            "A completed job has an invalid report presentation."
+        ) from exc
+    if row["structured_report"] == 1:
+        return True
+    if presentation is not ReportPresentationVersion.LEGACY:
+        raise BackupError(
+            "A structured report row cannot be treated as a legacy report."
+        )
+    return False
+
+
 def _structured_bundle_rels(row: sqlite3.Row) -> dict[str, str]:
     values = {
         "report_rel": row["report_rel"],
@@ -467,8 +496,35 @@ def _load_structured_bundle(
     job_root: Path, row: sqlite3.Row
 ) -> PublishedReportBundle:
     try:
-        return load_published_bundle(job_root, **_structured_bundle_rels(row))
-    except (OSError, ReportArtifactValidationError, ValueError) as exc:
+        rels = _structured_bundle_rels(row)
+        parsed = {
+            name: _safe_relative_path(value)
+            for name, value in rels.items()
+        }
+        bundle_roots = {path.parent for path in parsed.values()}
+        if len(bundle_roots) != 1:
+            raise BackupError(
+                "A structured report bundle does not use one publication root."
+            )
+        bundle_relative = next(iter(bundle_roots))
+        if len(bundle_relative.parts) != 3 or bundle_relative.parts[0] != "out":
+            raise BackupError(
+                "A structured report bundle does not use its canonical job layout."
+            )
+        analysis_relative = bundle_relative.parent
+        analysis_root = _join_under(job_root, analysis_relative)
+        direct_rels = {
+            name: path.relative_to(analysis_relative).as_posix()
+            for name, path in parsed.items()
+        }
+        bundle = load_published_bundle(analysis_root, **direct_rels)
+        validate_persisted_report_policy(
+            bundle,
+            report_presentation_version=row["report_presentation_version"],
+            report_entitlements_json=row["report_entitlements_json"],
+        )
+        return bundle
+    except (OSError, ReportArtifactValidationError, ValueError, BackupError) as exc:
         raise BackupError(
             "A structured report bundle failed publication validation."
         ) from exc
@@ -533,9 +589,10 @@ def _artifact_sources(
 
     for row in rows:
         job_root = _safe_job_root(sessions_dir, str(row["id"]))
-        if structured_schema and row["structured_report"] not in (0, 1):
-            raise BackupError("A completed job has an invalid report publication state.")
-        if structured_schema and row["structured_report"] == 1:
+        row_is_structured = (
+            _job_row_uses_structured_report(row) if structured_schema else False
+        )
+        if row_is_structured:
             bundle = _load_structured_bundle(job_root, row)
             selected = list(_structured_bundle_sources(bundle))
             proof_cycle = _verified_structured_proof_source(job_root, row)
@@ -820,9 +877,10 @@ def _verify_artifact_database_mapping(
         job_id = str(row["id"])
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", job_id):
             raise BackupError("A restored job identifier is unsafe.")
-        if structured_schema and row["structured_report"] not in (0, 1):
-            raise BackupError("A completed job has an invalid report publication state.")
-        if structured_schema and row["structured_report"] == 1:
+        row_is_structured = (
+            _job_row_uses_structured_report(row) if structured_schema else False
+        )
+        if row_is_structured:
             job_root = _safe_job_root(artifact_root, job_id)
             bundle = _load_structured_bundle(job_root, row)
             expected = {

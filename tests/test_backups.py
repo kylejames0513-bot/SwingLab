@@ -36,7 +36,8 @@ from swinglab.report_bundle import (
     build_report_bundle,
     publish_report_bundle,
 )
-from swinglab.report_artifacts import load_published_bundle
+from swinglab.report_artifacts import ReportEntitlementSnapshot, load_published_bundle
+from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
 from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
 from swinglab.web.throttle import _SCHEMA as THROTTLE_SCHEMA
 from swinglab.web.users import _SCHEMA as USERS_SCHEMA
@@ -270,7 +271,8 @@ def _add_structured_done_job(
         "INSERT INTO jobs "
         "(id, status, created_at, updated_at, report_rel, report_view_rel, "
         "report_manifest_rel, report_checksums_rel, structured_report, "
-        "user_id, hand, angle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "report_presentation_version, report_entitlements_json, "
+        "user_id, hand, angle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             job_id,
             "done",
@@ -281,6 +283,8 @@ def _add_structured_done_job(
             rel(published.manifest_path),
             rel(published.checksums_path),
             1,
+            GUIDED_REPORT_PRESENTATION_VERSION,
+            ReportEntitlementSnapshot("available").to_json(),
             "user-synthetic",
             "right",
             "face-on",
@@ -529,6 +533,42 @@ def test_structured_backup_fails_closed_for_invalid_database_publication_rels(
     assert not list(tmp_path.glob(f".{output.name}.partial-*"))
 
 
+@pytest.mark.parametrize(
+    ("column", "value"),
+    [
+        ("report_entitlements_json", None),
+        (
+            "report_entitlements_json",
+            ReportEntitlementSnapshot("locked").to_json(),
+        ),
+        ("report_presentation_version", "premium-coach-v2"),
+        ("structured_report", 0),
+    ],
+    ids=(
+        "missing-policy",
+        "replay-mismatch",
+        "legacy-presentation",
+        "structured-flag",
+    ),
+)
+def test_structured_backup_rejects_malformed_or_mismatched_persisted_policy(
+    tmp_path, synthetic_sessions, column, value
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    connection.execute(
+        f"UPDATE jobs SET {column} = ? WHERE id = 'jobguided'", (value,)
+    )
+    connection.commit()
+    output = tmp_path / "invalid-structured-policy-backup"
+
+    with pytest.raises(BackupError, match="structured report"):
+        create_backup(sessions, output, now=CAPTURED_AT)
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(f".{output.name}.partial-*"))
+
+
 def test_structured_backup_rejects_cross_root_rels_between_two_valid_bundles(
     tmp_path, synthetic_sessions
 ):
@@ -621,18 +661,46 @@ def test_structured_restore_reconciles_database_rels_to_readable_scratch_bundle(
         ("jobguided",),
     ).fetchone()
     restored_db.close()
+    analysis_root = result["restore_dir"] / "artifacts" / "jobguided" / "out" / "source"
     restored = load_published_bundle(
-        result["restore_dir"] / "artifacts" / "jobguided",
-        report_rel=row["report_rel"],
-        report_view_rel=row["report_view_rel"],
-        manifest_rel=row["report_manifest_rel"],
-        checksums_rel=row["report_checksums_rel"],
+        analysis_root,
+        report_rel=PurePosixPath(row["report_rel"]).relative_to("out/source").as_posix(),
+        report_view_rel=PurePosixPath(row["report_view_rel"]).relative_to("out/source").as_posix(),
+        manifest_rel=PurePosixPath(row["report_manifest_rel"]).relative_to("out/source").as_posix(),
+        checksums_rel=PurePosixPath(row["report_checksums_rel"]).relative_to("out/source").as_posix(),
     )
     assert restored.report_path.is_file()
     assert restored.report_view_path.is_file()
     assert restored.manifest_path.is_file()
     assert restored.checksums_path.is_file()
     assert (result["restore_dir"] / "restore-report.json").is_file()
+
+
+def test_structured_restore_rejects_replay_policy_mismatch_before_exposure(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    snapshot = sqlite3.connect(bundle / DATABASE_BUNDLE_PATH)
+    snapshot.execute(
+        "UPDATE jobs SET report_entitlements_json = ? WHERE id = ?",
+        (ReportEntitlementSnapshot("locked").to_json(), "jobguided"),
+    )
+    snapshot.commit()
+    snapshot.close()
+    manifest["database"]["sqlite"] = core_module.database_summary(
+        bundle / DATABASE_BUNDLE_PATH,
+        CAPTURED_AT.timestamp(),
+    )
+    _rewrite_database_attestation(bundle, manifest)
+    scratch = tmp_path / "scratch-policy-mismatch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="structured report"):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
 
 
 @pytest.mark.parametrize(
@@ -832,6 +900,8 @@ def test_pre_structured_schema_backup_remains_restorable_with_legacy_mapping(
     snapshot_path = bundle / DATABASE_BUNDLE_PATH
     snapshot = sqlite3.connect(snapshot_path)
     for column in (
+        "report_presentation_version",
+        "report_entitlements_json",
         "report_view_rel",
         "report_manifest_rel",
         "report_checksums_rel",

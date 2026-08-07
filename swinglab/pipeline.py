@@ -11,7 +11,7 @@ import shutil
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable
+from typing import Callable, assert_never
 
 from PIL import Image
 
@@ -37,10 +37,11 @@ from .report_bundle import (
 )
 from .report_view import (
     EventId,
-    GUIDED_REPORT_PRESENTATION_VERSION,
     MediaRole,
     PhaseMethod,
     ReasonCode,
+    ReportPresentationVersion,
+    parse_report_presentation_version,
 )
 
 
@@ -90,6 +91,31 @@ def _fullres_landmarks(
     with Image.open(fullres_path) as full, Image.open(analysis_frame) as small:
         scale = full.width / small.width
     return {k: v * scale for k, v in analysis_lm.items()}
+
+
+def _scaled_analysis_landmarks(
+    fullres_path: Path,
+    analysis_lm: pose.Landmarks | None,
+    analysis_frame: Path,
+) -> pose.Landmarks | None:
+    """Project the accepted analysis observation onto its render frame.
+
+    Guided visibility gates are calculated from that observation. Re-running
+    the model on a full-resolution extraction could produce a different pose
+    and let the rendered evidence contradict the gate that authorized it.
+    """
+
+    if analysis_lm is None:
+        return None
+    with Image.open(fullres_path) as full, Image.open(analysis_frame) as small:
+        if small.width <= 0 or small.height <= 0:
+            raise CoreReportBundleError("analysis frame has invalid dimensions")
+        scale_x = full.width / small.width
+        scale_y = full.height / small.height
+    return {
+        index: point * (scale_x, scale_y)
+        for index, point in analysis_lm.items()
+    }
 
 
 def _guided_video_info(info: VideoInfo) -> VideoInfo:
@@ -233,7 +259,13 @@ def analyze_video(
     swinglab.levels) is the same kind of context: a chip and one framing
     line on the report, never an analysis input.
     """
-    guided = report_presentation_version == GUIDED_REPORT_PRESENTATION_VERSION
+    presentation = parse_report_presentation_version(report_presentation_version)
+    if presentation is ReportPresentationVersion.GUIDED:
+        guided = True
+    elif presentation is ReportPresentationVersion.LEGACY:
+        guided = False
+    else:  # pragma: no cover - enum exhaustiveness guard
+        assert_never(presentation)
     if guided and guided_html_writer is None:
         raise GuidedReportRendererUnavailable("guided report HTML writer is unavailable")
     if guided and not isinstance(report_entitlements, ReportEntitlementSnapshot):
@@ -586,10 +618,16 @@ def _analyze_swing(
             if guided else {}
         ),
     }
-    fullres_lm = {
-        key: _fullres_landmarks(tracker, fullres[key], a_lm, a_frame)
-        for key, (a_lm, a_frame) in analysis_by_key.items()
-    }
+    if guided:
+        fullres_lm = {
+            key: _scaled_analysis_landmarks(fullres[key], a_lm, a_frame)
+            for key, (a_lm, a_frame) in analysis_by_key.items()
+        }
+    else:
+        fullres_lm = {
+            key: _fullres_landmarks(tracker, fullres[key], a_lm, a_frame)
+            for key, (a_lm, a_frame) in analysis_by_key.items()
+        }
 
     if not guided:
         overlay_path = overlay.make_overlay(

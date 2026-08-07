@@ -25,6 +25,7 @@ from swinglab.report_view import (
     MediaRole,
     PhaseMethod,
     ReasonCode,
+    UnsupportedReportPresentationVersion,
     load_report_view,
 )
 from swinglab.web.humanize import friendly_error
@@ -90,6 +91,28 @@ def guided_without_ffmpeg(monkeypatch, tmp_path):
 # -- max_video_s -------------------------------------------------------------
 
 
+def test_unknown_presentation_fails_before_video_or_artifact_work(
+    tmp_path, monkeypatch,
+):
+    out = tmp_path / "results"
+    monkeypatch.setattr(
+        pipeline,
+        "require_binaries",
+        lambda: (_ for _ in ()).throw(AssertionError("video work started")),
+    )
+
+    with pytest.raises(
+        UnsupportedReportPresentationVersion, match="unknown report presentation"
+    ):
+        analyze_video(
+            tmp_path / "private-source.mov",
+            out_dir=out,
+            report_presentation_version="future-report-v9",
+        )
+
+    assert not out.exists()
+
+
 def test_guided_null_writer_fails_before_creating_a_bundle(tmp_path):
     out = tmp_path / "results"
     with pytest.raises(GuidedReportRendererUnavailable):
@@ -138,6 +161,49 @@ def test_guided_pipeline_publishes_without_ffmpeg_and_redacts_source_name(
     persisted = result.report_view_path.read_text(encoding="utf-8") + json.dumps(metrics)
     assert "private-source-name" not in persisted
     assert "private-source-name" not in "\n".join(messages)
+
+
+def test_guided_visibility_gates_and_render_landmarks_share_analysis_observation(
+    tmp_path, fast_cfg, guided_without_ffmpeg, monkeypatch,
+):
+    class DivergentFullresTracker(FakeTracker):
+        fullres_calls = 0
+
+        def detect(self, frame_path):
+            if "full_s" in Path(frame_path).name:
+                type(self).fullres_calls += 1
+                landmarks = make_landmarks()
+                landmarks[pose.LEFT_SHOULDER] = np.array([7.0, 11.0])
+                return landmarks
+            return super().detect(frame_path)
+
+        def detect_observation(self, frame_path):
+            observation = super().detect_observation(frame_path)
+            assert observation is not None
+            visibility = dict(observation.visibility)
+            visibility[pose.LEFT_WRIST] = 0.1
+            return pose.PoseObservation(observation.landmarks, visibility)
+
+    monkeypatch.setattr(pipeline.pose, "PoseTracker", DivergentFullresTracker)
+
+    result = analyze_video(
+        guided_without_ffmpeg,
+        out_dir=tmp_path / "results",
+        cfg=fast_cfg,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+        report_entitlements=ReportEntitlementSnapshot("disabled"),
+        guided_html_writer=write_test_report_html,
+    )
+
+    snapshot = result.evidence_snapshots[0]
+    assert snapshot.annotation_gates["lead_arm_angle_deg"].readable is False
+    assert DivergentFullresTracker.fullres_calls == 0
+    # Analysis frames are 20x20 and event deliverables are 1000x1000. The
+    # stable analysis shoulder is projected to the render frame; a second
+    # full-resolution detection would have substituted the poisoned [7, 11].
+    impact = snapshot.event_landmarks[pipeline.EventId.IMPACT]
+    assert impact is not None
+    assert impact[pose.LEFT_SHOULDER].tolist() == [27500.0, 12500.0]
 
 
 def test_guided_metrics_preserve_literal_session_context_without_source_path(

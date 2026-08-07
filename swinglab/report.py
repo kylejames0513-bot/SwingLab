@@ -22,10 +22,11 @@ from .ffmpeg import VideoInfo
 from .metrics import ANGLE_DTL, ANGLE_FACE_ON, SwingMetrics
 from .report_insights import build_swing_breakdown
 from .report_presenter import build_report_document, prepare_report_input
+from .report_view import LEGACY_REPORT_PRESENTATION_VERSION
 
 
 REPORT_FORMAT_VERSION = "caddie-brief-v1"
-REPORT_PRESENTATION_VERSION = "premium-coach-v2"
+REPORT_PRESENTATION_VERSION = LEGACY_REPORT_PRESENTATION_VERSION
 REPORT_OUTCOME_COACHING = "coaching_ready"
 REPORT_OUTCOME_CAPTURE = "capture_only"
 PRIORITY_RULE_META_NAME = "caddieinsight-coaching-priority-rule"
