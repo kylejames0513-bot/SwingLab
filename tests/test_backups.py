@@ -5,10 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 import sqlite3
+import stat
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -25,11 +27,17 @@ from swinglab.backups.core import (
 from swinglab.backups.store import S3Settings, download_bundle, upload_bundle
 from swinglab.cli import main
 from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
+from swinglab.web.mobile_schema import (
+    VersionedHMAC,
+    ensure_mobile_state_schema,
+    mobile_state_summary,
+)
 from swinglab.web.throttle import _SCHEMA as THROTTLE_SCHEMA
 from swinglab.web.users import _SCHEMA as USERS_SCHEMA
 
 
 CAPTURED_AT = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
+BASELINE_LINEAGE_ID = "11111111-2222-4333-8444-555555555555"
 
 
 def _canonical(value) -> bytes:
@@ -493,6 +501,78 @@ def test_symlinked_bundle_parent_is_rejected(tmp_path, synthetic_sessions):
         restore_backup(bundle, scratch)
 
 
+def test_restore_rejects_a_symlinked_bundle_root(tmp_path, synthetic_sessions):
+    sessions, _ = synthetic_sessions
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    alias = tmp_path / "bundle-alias"
+    try:
+        alias.symlink_to(bundle, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable on this test host.")
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="symlink|reparse"):
+        restore_backup(alias, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_upload_rejects_a_symlinked_bundle_root(tmp_path, synthetic_sessions):
+    sessions, _ = synthetic_sessions
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    alias = tmp_path / "upload-bundle-alias"
+    try:
+        alias.symlink_to(bundle, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable on this test host.")
+    fake = _RecordingS3()
+
+    with pytest.raises(BackupError, match="symlink|reparse"):
+        upload_bundle(alias, _settings(), client=fake)
+
+    assert fake.objects == {}
+
+
+@pytest.mark.parametrize("metadata_name", [MANIFEST_FILE, COMPLETE_FILE])
+def test_restore_rejects_symlinked_bundle_metadata(
+    tmp_path, synthetic_sessions, metadata_name
+):
+    sessions, _ = synthetic_sessions
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    metadata = bundle / metadata_name
+    target = tmp_path / f"outside-{metadata_name}"
+    metadata.replace(target)
+    try:
+        metadata.symlink_to(target)
+    except OSError:
+        pytest.skip("File symlinks are unavailable on this test host.")
+    scratch = tmp_path / f"metadata-scratch-{metadata_name}"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="metadata|symlink|reparse"):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_create_backup_rejects_a_broken_symlink_output(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    outside = tmp_path / "unexpected-baseline-target"
+    alias = tmp_path / "broken-baseline-alias"
+    try:
+        alias.symlink_to(outside, target_is_directory=True)
+    except OSError:
+        pytest.skip("Directory symlinks are unavailable on this test host.")
+
+    with pytest.raises(BackupError, match="symlink|reparse"):
+        create_backup(sessions, alias, now=CAPTURED_AT)
+
+    assert not outside.exists()
+
+
 def test_symlinked_live_report_is_rejected(tmp_path, synthetic_sessions):
     sessions, _ = synthetic_sessions
     report = sessions / "jobdone/out/source/report.html"
@@ -506,6 +586,20 @@ def test_symlinked_live_report_is_rejected(tmp_path, synthetic_sessions):
 
     with pytest.raises(BackupError, match="Symlinks"):
         create_backup(sessions, tmp_path / "symlink-bundle", now=CAPTURED_AT)
+
+
+def test_path_guard_recognizes_windows_reparse_points(monkeypatch):
+    class SyntheticReparseStat:
+        st_mode = stat.S_IFDIR
+        st_file_attributes = 0x400
+
+    monkeypatch.setattr(
+        core_module.os,
+        "lstat",
+        lambda _path: SyntheticReparseStat(),
+    )
+
+    assert core_module._is_link_or_reparse(Path("synthetic-reparse"))
 
 
 def test_artifact_manifest_must_match_completed_jobs(
@@ -1176,3 +1270,1359 @@ def test_restore_rejects_data_root_before_writing(tmp_path, synthetic_sessions):
 
     with pytest.raises(BackupError, match="/data"):
         restore_backup(bundle, Path("/data"))
+
+
+def test_generation_zero_bundle_omits_mobile_state_and_remains_restorable(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+
+    assert "mobile_state" not in manifest
+    scratch = tmp_path / "generation-zero-scratch"
+    scratch.mkdir()
+    assert restore_backup(bundle, scratch)["report"]["sqlite_integrity_check"] == "ok"
+
+
+def test_generation_one_manifest_attests_the_frozen_snapshot_not_live_writer(
+    tmp_path, synthetic_sessions, monkeypatch
+):
+    sessions, live_connection = synthetic_sessions
+    ensure_mobile_state_schema(live_connection)
+    live_connection.execute(
+        "INSERT INTO mobile_rate_limit_events "
+        "(domain, key_id, key_digest, occurred_at) VALUES (?, ?, ?, ?)",
+        ("auth-start-client-ip", "old-key", "a" * 64, 10.0),
+    )
+    live_connection.commit()
+    original_snapshot = core_module._online_sqlite_snapshot
+
+    def snapshot_then_advance_writer(source, destination):
+        original_snapshot(source, destination)
+        live_connection.execute(
+            "INSERT INTO mobile_rate_limit_events "
+            "(domain, key_id, key_digest, occurred_at) VALUES (?, ?, ?, ?)",
+            ("auth-start-client-ip", "new-key", "b" * 64, 11.0),
+        )
+        live_connection.commit()
+
+    monkeypatch.setattr(
+        core_module,
+        "_online_sqlite_snapshot",
+        snapshot_then_advance_writer,
+    )
+
+    _, manifest = _create_bundle(tmp_path, sessions)
+
+    assert set(manifest["mobile_state"]) == {
+        "generation",
+        "schema_sha256",
+        "table_row_counts",
+        "phase_counts",
+        "domain_counts",
+        "referenced_hmac_key_ids",
+    }
+    assert manifest["mobile_state"]["generation"] == 1
+    assert manifest["mobile_state"]["table_row_counts"][
+        "mobile_rate_limit_events"
+    ] == 1
+    assert manifest["mobile_state"]["domain_counts"] == {
+        "mobile_rate_limit_events": {"auth-start-client-ip": 1}
+    }
+    assert manifest["mobile_state"]["referenced_hmac_key_ids"] == ["old-key"]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "message"),
+    [
+        (lambda manifest: manifest.pop("mobile_state"), "mobile state"),
+        (
+            lambda manifest: manifest["mobile_state"].__setitem__("generation", 2),
+            "generation",
+        ),
+        (
+            lambda manifest: manifest["mobile_state"]["table_row_counts"].__setitem__(
+                "mobile_rate_limit_events", 99
+            ),
+            "attestation",
+        ),
+        (
+            lambda manifest: manifest["mobile_state"].__setitem__("extra", True),
+            "shape",
+        ),
+        (
+            lambda manifest: manifest["mobile_state"].__setitem__(
+                "referenced_hmac_key_ids", ["valid-key", {}]
+            ),
+            "HMAC key",
+        ),
+    ],
+)
+def test_generation_one_restore_rejects_missing_future_or_tampered_attestation(
+    tmp_path, synthetic_sessions, mutation, message
+):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.commit()
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    if "mobile_state" not in manifest:
+        snapshot = sqlite3.connect(bundle / DATABASE_BUNDLE_PATH)
+        try:
+            manifest["mobile_state"] = mobile_state_summary(snapshot)
+        finally:
+            snapshot.close()
+    mutation(manifest)
+    _rewrite_completion(bundle, manifest)
+    scratch = tmp_path / "mobile-state-rejection-scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match=message):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_partial_generation_one_schema_cannot_be_backed_up(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.execute("DROP INDEX mobile_auth_challenges_active_ip")
+    connection.commit()
+
+    with pytest.raises(BackupError, match="mobile state"):
+        create_backup(sessions, tmp_path / "partial-mobile", now=CAPTURED_AT)
+
+
+def _insert_baseline_journal(connection: sqlite3.Connection) -> None:
+    connection.execute(
+        "INSERT INTO mobile_recovery_baseline_journals "
+        "(operation_id, phase, request_hash, lineage_id, created_at, updated_at) "
+        "VALUES (?, 'lineage_prepared', ?, ?, ?, ?)",
+        (
+            "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            "c" * 64,
+            BASELINE_LINEAGE_ID,
+            1.0,
+            1.0,
+        ),
+    )
+
+
+def test_baseline_manifest_uses_explicit_null_self_hash_and_exact_snapshot_facts(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    _insert_baseline_journal(connection)
+    connection.commit()
+
+    bundle = tmp_path / "baseline-bundle"
+    manifest = create_backup(
+        sessions,
+        bundle,
+        now=CAPTURED_AT,
+        baseline_lineage_id=BASELINE_LINEAGE_ID,
+    )
+
+    assert manifest["recovery_fence"] == {
+        "lineage_id": BASELINE_LINEAGE_ID,
+        "baseline_backup_id": manifest["backup_id"],
+        "baseline_manifest_sha256": None,
+        "baseline_schema_generation": 1,
+        "baseline_db_checkpoint": manifest["database"]["sha256"],
+    }
+    manifest_sha256 = hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest()
+    assert manifest_sha256 not in json.dumps(manifest["recovery_fence"])
+
+
+def test_baseline_restore_requires_the_snapshot_journal_to_remain_prepared(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    _insert_baseline_journal(connection)
+    connection.commit()
+    bundle = tmp_path / "tampered-baseline-phase"
+    manifest = create_backup(
+        sessions,
+        bundle,
+        now=CAPTURED_AT,
+        baseline_lineage_id=BASELINE_LINEAGE_ID,
+    )
+    snapshot = sqlite3.connect(bundle / DATABASE_BUNDLE_PATH)
+    try:
+        snapshot.execute(
+            "UPDATE mobile_recovery_baseline_journals SET phase='backup_verified'"
+        )
+        snapshot.commit()
+        manifest["mobile_state"] = mobile_state_summary(snapshot)
+    finally:
+        snapshot.close()
+    database_bytes = (bundle / DATABASE_BUNDLE_PATH).read_bytes()
+    database_sha256 = hashlib.sha256(database_bytes).hexdigest()
+    manifest["database"]["sha256"] = database_sha256
+    manifest["database"]["size"] = len(database_bytes)
+    manifest["recovery_fence"]["baseline_db_checkpoint"] = database_sha256
+    _rewrite_completion(bundle, manifest)
+    scratch = tmp_path / "tampered-baseline-scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="snapshot lineage"):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_later_manifest_binds_the_accepted_genesis_manifest_hash(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.execute(
+        "INSERT INTO mobile_recovery_accepted_baselines "
+        "(lineage_id, baseline_backup_id, minimum_backup_created_at, "
+        "manifest_sha256, schema_generation, baseline_db_checkpoint, accepted_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            BASELINE_LINEAGE_ID,
+            "20260727T110000Z-aaaaaaaaaaaa",
+            CAPTURED_AT.timestamp() - 3600,
+            "d" * 64,
+            1,
+            "e" * 64,
+            CAPTURED_AT.timestamp() - 3500,
+        ),
+    )
+    connection.commit()
+
+    _, manifest = _create_bundle(tmp_path, sessions)
+
+    assert manifest["recovery_fence"] == {
+        "lineage_id": BASELINE_LINEAGE_ID,
+        "baseline_backup_id": "20260727T110000Z-aaaaaaaaaaaa",
+        "baseline_manifest_sha256": "d" * 64,
+        "baseline_schema_generation": 1,
+        "baseline_db_checkpoint": "e" * 64,
+    }
+
+
+def test_generation_zero_cannot_be_declared_as_a_cutover_baseline(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+
+    with pytest.raises(BackupError, match="generation-1"):
+        create_backup(
+            sessions,
+            tmp_path / "invalid-baseline",
+            now=CAPTURED_AT,
+            baseline_lineage_id=BASELINE_LINEAGE_ID,
+        )
+
+
+def _restore_service_module():
+    try:
+        from swinglab.backups import restore_service
+    except ImportError as exc:  # pragma: no cover - RED-only guard
+        pytest.fail(f"restore_service is missing: {exc}")
+    return restore_service
+
+
+def _listed_restore_hashes(root: Path, manifest: dict) -> dict[str, str]:
+    paths = [DATABASE_BUNDLE_PATH]
+    paths.extend(f"artifacts/{item['path']}" for item in manifest["artifacts"]["files"])
+    return {
+        relative: hashlib.sha256((root / relative).read_bytes()).hexdigest()
+        for relative in paths
+    }
+
+
+def test_retained_evidence_is_read_only_and_second_copy_is_uniquely_migrated(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    original_hashes = {
+        MANIFEST_FILE: hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest(),
+        COMPLETE_FILE: hashlib.sha256((bundle / COMPLETE_FILE).read_bytes()).hexdigest(),
+        **_listed_restore_hashes(bundle, manifest),
+    }
+    scratch = tmp_path / "service-scratch"
+    scratch.mkdir()
+
+    evidence = module.retain_verified_restore_evidence(bundle, scratch)
+    retained_hashes = _listed_restore_hashes(evidence.restore_dir, manifest)
+    working_one = module.create_service_working_copy(evidence, scratch)
+    working_two = module.create_service_working_copy(evidence, scratch)
+
+    assert working_one != working_two != evidence.restore_dir
+    assert _listed_restore_hashes(evidence.restore_dir, manifest) == retained_hashes
+    assert (evidence.restore_dir / DATABASE_BUNDLE_PATH).stat().st_mode & stat.S_IWUSR == 0
+    retained_connection = sqlite3.connect(evidence.restore_dir / DATABASE_BUNDLE_PATH)
+    working_connection = sqlite3.connect(working_one / "swinglab.db")
+    try:
+        assert core_module.detect_mobile_state_generation(retained_connection) == 0
+        assert core_module.detect_mobile_state_generation(working_connection) == 1
+    finally:
+        retained_connection.close()
+        working_connection.close()
+    assert all(
+        (working_one / item["path"]).is_file()
+        for item in manifest["artifacts"]["files"]
+    )
+    assert {
+        MANIFEST_FILE: hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest(),
+        COMPLETE_FILE: hashlib.sha256((bundle / COMPLETE_FILE).read_bytes()).hexdigest(),
+        **_listed_restore_hashes(bundle, manifest),
+    } == original_hashes
+
+
+def test_working_copy_rejects_changed_retained_manifest_metadata(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, _ = synthetic_sessions
+    bundle, _manifest = _create_bundle(tmp_path, sessions)
+    scratch = tmp_path / "retained-metadata-scratch"
+    scratch.mkdir()
+    evidence = module.retain_verified_restore_evidence(bundle, scratch)
+    retained_manifest = evidence.restore_dir / MANIFEST_FILE
+    retained_manifest.chmod(0o600)
+    retained_manifest.write_text("{}\n", encoding="utf-8")
+
+    with pytest.raises(BackupError, match="metadata"):
+        module.create_service_working_copy(evidence, scratch)
+
+    assert not list(scratch.glob("service-working-*"))
+
+
+def test_readiness_publisher_leaves_no_final_marker_on_fsync_failure(
+    tmp_path, monkeypatch
+):
+    module = _restore_service_module()
+    ready_path = tmp_path / "service-restore-ready.json"
+
+    def fail_fsync(_descriptor):
+        raise OSError("synthetic readiness fsync failure")
+
+    monkeypatch.setattr(module.os, "fsync", fail_fsync)
+
+    with pytest.raises(BackupError, match="readiness"):
+        module._durably_publish_readiness(ready_path, b'{"ready":true}\n')
+
+    assert not ready_path.exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def _insert_dummy_required_row(connection: sqlite3.Connection, table: str) -> None:
+    connection.execute("PRAGMA ignore_check_constraints=ON")
+    columns = []
+    values = []
+    for row in connection.execute(f"PRAGMA table_info({table})"):
+        name, declared_type, not_null, default_value, primary_key = (
+            str(row[1]),
+            str(row[2]).upper(),
+            bool(row[3]),
+            row[4],
+            bool(row[5]),
+        )
+        if not (not_null or primary_key) or default_value is not None:
+            continue
+        columns.append(name)
+        if "INT" in declared_type:
+            values.append(1)
+        elif "REAL" in declared_type or "FLOA" in declared_type:
+            values.append(1.0)
+        else:
+            values.append(f"dummy-{table}-{name}")
+    quoted = ", ".join(f'"{name}"' for name in columns)
+    placeholders = ", ".join("?" for _ in values)
+    connection.execute(
+        f'INSERT INTO "{table}" ({quoted}) VALUES ({placeholders})', values
+    )
+
+
+def test_prepare_restored_auth_state_is_transactional_idempotent_and_preserving(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.execute(
+        "UPDATE users SET email_verified_at = ?, auth_epoch = 7, history_epoch = 3 "
+        "WHERE id = 'user-synthetic'",
+        (20.0,),
+    )
+    credential_tables = (
+        "mobile_api_tokens",
+        "mobile_auth_challenges",
+        "mobile_review_auth_challenges",
+        "mobile_auth_exchange_journals",
+        "mobile_auth_exchange_receipts",
+        "mobile_signout_journals",
+        "mobile_signout_receipts",
+        "mobile_device_revoke_journals",
+        "mobile_device_revoke_receipts",
+        "signup_intents",
+        "shopify_customer_account_oauth_states",
+        "shopify_customer_account_browser_sessions",
+    )
+    for table in credential_tables:
+        _insert_dummy_required_row(connection, table)
+    connection.commit()
+    before_preserved = connection.execute(
+        "SELECT email, email_verified_at, plan, subscription_status, pro_until, "
+        "history_epoch FROM users WHERE id = 'user-synthetic'"
+    ).fetchone()
+    before_history = connection.execute(
+        "SELECT coaching_eligible, refilm_rejections FROM analysis_usage_monthly"
+    ).fetchone()
+
+    first = module.prepare_restored_auth_state(
+        connection,
+        source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
+        source_lineage_id=BASELINE_LINEAGE_ID,
+        now=CAPTURED_AT.timestamp(),
+    )
+    second = module.prepare_restored_auth_state(
+        connection,
+        source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
+        source_lineage_id=BASELINE_LINEAGE_ID,
+        now=CAPTURED_AT.timestamp() + 10,
+    )
+
+    assert first.marker_id == second.marker_id
+    assert connection.execute(
+        "SELECT password_hash, auth_epoch FROM users WHERE id = 'user-synthetic'"
+    ).fetchone() == ("", 8)
+    assert connection.execute(
+        "SELECT email, email_verified_at, plan, subscription_status, pro_until, "
+        "history_epoch FROM users WHERE id = 'user-synthetic'"
+    ).fetchone() == before_preserved
+    assert connection.execute(
+        "SELECT coaching_eligible, refilm_rejections FROM analysis_usage_monthly"
+    ).fetchone() == before_history
+    assert connection.execute("SELECT COUNT(*) FROM shopify_orders").fetchone()[0] == 1
+    assert connection.execute("SELECT COUNT(*) FROM email_codes").fetchone()[0] == 0
+    assert connection.execute("SELECT COUNT(*) FROM auth_attempts").fetchone()[0] == 1
+    assert all(
+        connection.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] == 0
+        for table in credential_tables
+    )
+    assert connection.execute(
+        "SELECT source_backup_id, source_lineage_id, prepared_at FROM "
+        "mobile_restore_credential_reset_markers"
+    ).fetchall() == [
+        (
+            "20260727T120000Z-aaaaaaaaaaaa",
+            BASELINE_LINEAGE_ID,
+            CAPTURED_AT.timestamp(),
+        )
+    ]
+
+
+def test_prepare_restored_auth_state_rolls_back_every_change_on_delete_failure(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    _, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    _insert_dummy_required_row(connection, "signup_intents")
+    connection.executescript(
+        "CREATE TRIGGER fail_restore_delete BEFORE DELETE ON signup_intents "
+        "BEGIN SELECT RAISE(ABORT, 'synthetic restore failure'); END;"
+    )
+    connection.commit()
+
+    with pytest.raises(BackupError, match="credential reset"):
+        module.prepare_restored_auth_state(
+            connection,
+            source_backup_id="20260727T120000Z-aaaaaaaaaaaa",
+            source_lineage_id=BASELINE_LINEAGE_ID,
+            now=CAPTURED_AT.timestamp(),
+        )
+
+    assert connection.execute(
+        "SELECT password_hash, auth_epoch FROM users WHERE id = 'user-synthetic'"
+    ).fetchone() == ("synthetic-hash", 0)
+    assert connection.execute("SELECT COUNT(*) FROM signup_intents").fetchone()[0] == 1
+    assert connection.execute(
+        "SELECT COUNT(*) FROM mobile_restore_credential_reset_markers"
+    ).fetchone()[0] == 0
+
+
+class _StaticValidatedLedger:
+    def __init__(self, snapshot):
+        self.snapshot = snapshot
+        self.calls = 0
+
+    def load_chain_snapshot(self):
+        self.calls += 1
+        return self.snapshot
+
+
+def _baseline_chain_snapshot(
+    manifest: dict,
+    manifest_sha256: str,
+    *,
+    include_token_revoke: bool = True,
+    include_reserved: bool = False,
+    genesis_backup_id: str | None = None,
+    genesis_manifest_sha256: str | None = None,
+    genesis_db_checkpoint: str | None = None,
+    minimum_backup_created_at: float | None = None,
+):
+    from swinglab.web.recovery_fence_ledger import (
+        PublishedRecoveryRecord,
+        ValidatedRecoveryChain,
+    )
+
+    baseline_backup_id = genesis_backup_id or manifest["backup_id"]
+    baseline_manifest_sha256 = genesis_manifest_sha256 or manifest_sha256
+    baseline_db_checkpoint = genesis_db_checkpoint or manifest["database"]["sha256"]
+    minimum_created_at = (
+        float(manifest["created_at_epoch"])
+        if minimum_backup_created_at is None
+        else minimum_backup_created_at
+    )
+    baseline = PublishedRecoveryRecord(
+        sequence=1,
+        previous_record_key=None,
+        previous_record_hash=None,
+        kind="cutover_baseline",
+        event_id="aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+        cutoff_at=minimum_created_at,
+        payload={
+            "lineage_id": BASELINE_LINEAGE_ID,
+            "minimum_backup_created_at": minimum_created_at,
+            "baseline_backup_id": baseline_backup_id,
+            "manifest_sha256": baseline_manifest_sha256,
+            "schema_generation": 1,
+            "baseline_db_checkpoint": baseline_db_checkpoint,
+        },
+        chain_hmac_key_id="chain-key",
+        chain_hmac="1" * 64,
+        record_hash="2" * 64,
+        record_key="fence/records/1-" + "2" * 64 + ".json",
+        body=b"baseline-record",
+    )
+    records = [baseline]
+    if include_token_revoke:
+        records.append(
+            PublishedRecoveryRecord(
+                sequence=2,
+                previous_record_key=baseline.record_key,
+                previous_record_hash=baseline.record_hash,
+                kind="token_revoke",
+                event_id="bbbbbbbb-cccc-4ddd-8eee-ffffffffffff",
+                cutoff_at=float(manifest["created_at_epoch"]) + 1,
+                payload={
+                    "selector_hmac_key_id": "old-key",
+                    "selector_hmac": "3" * 64,
+                    "token_verifier_hmac_key_id": "old-key",
+                    "token_verifier_hmac": "4" * 64,
+                },
+                chain_hmac_key_id="chain-key",
+                chain_hmac="5" * 64,
+                record_hash="6" * 64,
+                record_key="fence/records/2-" + "6" * 64 + ".json",
+                body=b"token-record",
+            )
+        )
+    if include_reserved:
+        previous = records[-1]
+        records.append(
+            PublishedRecoveryRecord(
+                sequence=len(records) + 1,
+                previous_record_key=previous.record_key,
+                previous_record_hash=previous.record_hash,
+                kind="push_environment_cutoff",
+                event_id="cccccccc-dddd-4eee-8fff-000000000000",
+                cutoff_at=float(manifest["created_at_epoch"]) + 2,
+                payload={"state": "closed"},
+                chain_hmac_key_id="chain-key",
+                chain_hmac="7" * 64,
+                record_hash="8" * 64,
+                record_key=f"fence/records/{len(records) + 1}-" + "8" * 64 + ".json",
+                body=b"reserved-record",
+            )
+        )
+    records[-1] = records[-1].__class__(
+        **{
+            **records[-1].__dict__,
+            "head_etag": '"validated-head"',
+        }
+    )
+    return ValidatedRecoveryChain(
+        head_etag='"validated-head"', records=tuple(records)
+    )
+
+
+def _service_keyring(*, include_old: bool = True) -> VersionedHMAC:
+    keys = {"active-key": b"a" * 32, "chain-key": b"c" * 32}
+    if include_old:
+        keys["old-key"] = b"o" * 32
+    return VersionedHMAC("active-key", keys)
+
+
+def _create_service_baseline_bundle(tmp_path, synthetic_sessions):
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    _insert_baseline_journal(connection)
+    connection.execute(
+        "INSERT INTO mobile_rate_limit_events "
+        "(domain, key_id, key_digest, occurred_at) VALUES (?, ?, ?, ?)",
+        ("auth-start-client-ip", "old-key", "9" * 64, 5.0),
+    )
+    connection.execute(
+        "INSERT INTO mobile_api_tokens "
+        "(selector, token_hash, user_id, auth_epoch, label, created_at, expires_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("restored-selector", "restored-token-hash", "user-synthetic", 0, "Phone", 1.0, 9999999999.0),
+    )
+    connection.commit()
+    bundle = tmp_path / "service-baseline-bundle"
+    manifest = create_backup(
+        sessions,
+        bundle,
+        now=CAPTURED_AT,
+        baseline_lineage_id=BASELINE_LINEAGE_ID,
+    )
+    manifest_sha256 = hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest()
+    return bundle, manifest, manifest_sha256
+
+
+def test_service_restore_prepares_only_disposable_copy_and_reconciles_full_chain(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    chain = _baseline_chain_snapshot(manifest, manifest_sha256)
+    ledger = _StaticValidatedLedger(chain)
+    scratch = tmp_path / "service-prepare-scratch"
+    scratch.mkdir()
+
+    result = module.prepare_service_restore(
+        bundle,
+        scratch,
+        ledger=ledger,
+        keyring=_service_keyring(),
+        now=CAPTURED_AT.timestamp() + 100,
+    )
+
+    assert result.ready is True
+    assert result.manifest_sha256 == manifest_sha256
+    assert result.lineage_id == BASELINE_LINEAGE_ID
+    assert result.head_record_hash == chain.records[-1].record_hash
+    assert result.retained_restore_dir != result.working_dir
+    assert (result.working_dir / "service-restore-ready.json").is_file()
+    retained = sqlite3.connect(result.retained_restore_dir / DATABASE_BUNDLE_PATH)
+    working = sqlite3.connect(result.working_dir / "swinglab.db")
+    try:
+        assert retained.execute(
+            "SELECT password_hash, auth_epoch FROM users WHERE id='user-synthetic'"
+        ).fetchone() == ("synthetic-hash", 0)
+        assert retained.execute("SELECT COUNT(*) FROM mobile_api_tokens").fetchone()[0] == 1
+        assert working.execute(
+            "SELECT password_hash, auth_epoch FROM users WHERE id='user-synthetic'"
+        ).fetchone() == ("", 1)
+        assert working.execute("SELECT COUNT(*) FROM mobile_api_tokens").fetchone()[0] == 0
+        assert working.execute("SELECT COUNT(*) FROM email_codes").fetchone()[0] == 0
+        assert working.execute("SELECT COUNT(*) FROM auth_attempts").fetchone()[0] == 1
+        assert working.execute("SELECT COUNT(*) FROM shopify_orders").fetchone()[0] == 1
+        assert working.execute(
+            "SELECT phase, backup_id, manifest_sha256, record_hash, head_etag "
+            "FROM mobile_recovery_baseline_journals"
+        ).fetchone() == (
+            "accepted",
+            manifest["backup_id"],
+            manifest_sha256,
+            chain.records[0].record_hash,
+            chain.head_etag,
+        )
+        assert working.execute(
+            "SELECT lineage_id, baseline_backup_id, minimum_backup_created_at, "
+            "manifest_sha256, schema_generation, baseline_db_checkpoint FROM "
+            "mobile_recovery_accepted_baselines"
+        ).fetchone() == (
+            BASELINE_LINEAGE_ID,
+            manifest["backup_id"],
+            CAPTURED_AT.timestamp(),
+            manifest_sha256,
+            1,
+            manifest["database"]["sha256"],
+        )
+        assert working.execute(
+            "SELECT head_sequence, head_record_hash, head_etag, chain_hmac_key_id "
+            "FROM mobile_recovery_fence_checkpoints WHERE checkpoint_id=1"
+        ).fetchone() == (
+            len(chain.records),
+            chain.records[-1].record_hash,
+            chain.head_etag,
+            "chain-key",
+        )
+    finally:
+        retained.close()
+        working.close()
+    assert ledger.calls == 1
+
+
+def test_service_restore_requires_the_remote_genesis_journal_before_auth_reset(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    bundle, manifest, _manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    snapshot_db = sqlite3.connect(bundle / DATABASE_BUNDLE_PATH)
+    try:
+        snapshot_db.execute(
+            "UPDATE mobile_recovery_baseline_journals SET operation_id=?",
+            ("99999999-aaaa-4bbb-8ccc-dddddddddddd",),
+        )
+        snapshot_db.commit()
+        manifest["mobile_state"] = mobile_state_summary(snapshot_db)
+    finally:
+        snapshot_db.close()
+    database_bytes = (bundle / DATABASE_BUNDLE_PATH).read_bytes()
+    database_sha256 = hashlib.sha256(database_bytes).hexdigest()
+    manifest["database"]["sha256"] = database_sha256
+    manifest["database"]["size"] = len(database_bytes)
+    manifest["recovery_fence"]["baseline_db_checkpoint"] = database_sha256
+    _rewrite_completion(bundle, manifest)
+    manifest_sha256 = hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest()
+    chain = _baseline_chain_snapshot(
+        manifest,
+        manifest_sha256,
+        include_token_revoke=False,
+    )
+    scratch = tmp_path / "wrong-genesis-journal-scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="genesis journal|baseline journal"):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=_StaticValidatedLedger(chain),
+            keyring=_service_keyring(),
+            now=CAPTURED_AT.timestamp() + 100,
+        )
+
+    working = sqlite3.connect(next(scratch.glob("service-working-*")) / "swinglab.db")
+    try:
+        assert working.execute(
+            "SELECT password_hash, auth_epoch FROM users WHERE id='user-synthetic'"
+        ).fetchone() == ("synthetic-hash", 0)
+        assert working.execute(
+            "SELECT COUNT(*) FROM mobile_restore_credential_reset_markers"
+        ).fetchone()[0] == 0
+    finally:
+        working.close()
+
+
+def test_service_restore_rejects_generation_zero_before_working_copy_migration(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, _ = synthetic_sessions
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    scratch = tmp_path / "generation-zero-service-scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="generation-0|cutover"):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=object(),
+            keyring=_service_keyring(),
+            now=CAPTURED_AT.timestamp(),
+        )
+
+    assert not list(scratch.glob("service-working-*"))
+
+
+def test_service_restore_requires_manifest_live_and_chain_hmac_keys_before_reset(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    scratch = tmp_path / "missing-key-service-scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="HMAC key|key ID"):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=_StaticValidatedLedger(
+                _baseline_chain_snapshot(manifest, manifest_sha256)
+            ),
+            keyring=_service_keyring(include_old=False),
+            now=CAPTURED_AT.timestamp() + 100,
+        )
+
+    working_dirs = list(scratch.glob("service-working-*"))
+    assert len(working_dirs) == 1
+    connection = sqlite3.connect(working_dirs[0] / "swinglab.db")
+    try:
+        assert connection.execute(
+            "SELECT password_hash, auth_epoch FROM users WHERE id='user-synthetic'"
+        ).fetchone() == ("synthetic-hash", 0)
+        assert connection.execute(
+            "SELECT COUNT(*) FROM mobile_restore_credential_reset_markers"
+        ).fetchone()[0] == 0
+    finally:
+        connection.close()
+
+
+def test_service_restore_requires_an_explicit_owner_for_reserved_chain_kinds(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    scratch = tmp_path / "reserved-kind-service-scratch"
+    scratch.mkdir()
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        manifest_sha256,
+        include_reserved=True,
+    )
+
+    with pytest.raises(BackupError, match="reconciler|owned"):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=_StaticValidatedLedger(snapshot),
+            keyring=_service_keyring(),
+            now=CAPTURED_AT.timestamp() + 100,
+        )
+
+    working_dir = next(scratch.glob("service-working-*"))
+    connection = sqlite3.connect(working_dir / "swinglab.db")
+    try:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM mobile_restore_credential_reset_markers"
+        ).fetchone()[0] == 0
+    finally:
+        connection.close()
+
+
+def test_baseline_backup_verifier_uses_exact_immutable_transport_readback_and_retry(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    _insert_baseline_journal(connection)
+    connection.commit()
+    bundle_root = tmp_path / "baseline-verifier-bundles"
+    readback_root = tmp_path / "baseline-verifier-readbacks"
+    bundle_root.mkdir()
+    readback_root.mkdir()
+    fake = _RecordingS3()
+    verifier = module.ImmutableBundleBaselineBackupVerifier(
+        sessions_dir=sessions,
+        bundle_root=bundle_root,
+        readback_root=readback_root,
+        backup_settings=_settings(),
+        restore_settings=_settings(),
+        backup_client=fake,
+        restore_client=fake,
+        now_factory=lambda: CAPTURED_AT,
+    )
+
+    first = verifier.create_and_verify(lineage_id=BASELINE_LINEAGE_ID)
+    recreated = module.ImmutableBundleBaselineBackupVerifier(
+        sessions_dir=sessions,
+        bundle_root=bundle_root,
+        readback_root=readback_root,
+        backup_settings=_settings(),
+        restore_settings=_settings(),
+        backup_client=fake,
+        restore_client=fake,
+        now_factory=lambda: CAPTURED_AT,
+    )
+    second = recreated.create_and_verify(lineage_id=BASELINE_LINEAGE_ID)
+
+    assert first == second
+    local_bundle = bundle_root / f"cutover-baseline-{BASELINE_LINEAGE_ID}"
+    manifest = json.loads((local_bundle / MANIFEST_FILE).read_text())
+    assert first.backup_id == manifest["backup_id"]
+    assert first.backup_created_at == CAPTURED_AT.timestamp()
+    assert first.schema_generation == 1
+    assert first.manifest_sha256 == hashlib.sha256(
+        (local_bundle / MANIFEST_FILE).read_bytes()
+    ).hexdigest()
+    assert first.manifest_database_sha256 == manifest["database"]["sha256"]
+    assert first.baseline_db_checkpoint == manifest["database"]["sha256"]
+    complete_key = f"{_settings().object_prefix(first.backup_id)}/{COMPLETE_FILE}"
+    assert complete_key in fake.objects
+    assert len(list(readback_root.glob(f"readback-{first.backup_id}-*"))) == 2
+
+
+def test_baseline_backup_verifier_resumes_after_a_partial_claimed_upload(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    _insert_baseline_journal(connection)
+    connection.commit()
+    bundle_root = tmp_path / "resumable-baseline-bundles"
+    readback_root = tmp_path / "resumable-baseline-readbacks"
+    bundle_root.mkdir()
+    readback_root.mkdir()
+    fake = _RecordingS3(failure="synthetic interrupted upload")
+
+    def verifier():
+        return module.ImmutableBundleBaselineBackupVerifier(
+            sessions_dir=sessions,
+            bundle_root=bundle_root,
+            readback_root=readback_root,
+            backup_settings=_settings(),
+            restore_settings=_settings(),
+            backup_client=fake,
+            restore_client=fake,
+            now_factory=lambda: CAPTURED_AT,
+        )
+
+    with pytest.raises(BackupError, match="upload failed|upload"):
+        verifier().create_and_verify(lineage_id=BASELINE_LINEAGE_ID)
+    fake.failure = None
+
+    facts = verifier().create_and_verify(lineage_id=BASELINE_LINEAGE_ID)
+
+    complete_key = f"{_settings().object_prefix(facts.backup_id)}/{COMPLETE_FILE}"
+    assert complete_key in fake.objects
+    claim_key = f"{_settings().object_prefix(facts.backup_id)}/CLAIM.json"
+    assert sum(call["key"] == claim_key for call in fake.put_calls) >= 3
+
+
+def test_exact_scratch_baseline_verifier_returns_proof_from_service_restore_path(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    _insert_baseline_journal(connection)
+    connection.execute(
+        "INSERT INTO mobile_rate_limit_events "
+        "(domain, key_id, key_digest, occurred_at) VALUES (?, ?, ?, ?)",
+        ("auth-start-client-ip", "old-key", "9" * 64, 5.0),
+    )
+    connection.commit()
+    bundle_root = tmp_path / "scratch-verifier-bundles"
+    readback_root = tmp_path / "scratch-verifier-readbacks"
+    service_scratch = tmp_path / "scratch-verifier-service"
+    bundle_root.mkdir()
+    readback_root.mkdir()
+    service_scratch.mkdir()
+    fake = _RecordingS3()
+    backup_verifier = module.ImmutableBundleBaselineBackupVerifier(
+        sessions_dir=sessions,
+        bundle_root=bundle_root,
+        readback_root=readback_root,
+        backup_settings=_settings(),
+        restore_settings=_settings(),
+        backup_client=fake,
+        restore_client=fake,
+        now_factory=lambda: CAPTURED_AT,
+    )
+    facts = backup_verifier.create_and_verify(lineage_id=BASELINE_LINEAGE_ID)
+    local_bundle = bundle_root / f"cutover-baseline-{BASELINE_LINEAGE_ID}"
+    manifest = json.loads((local_bundle / MANIFEST_FILE).read_text())
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        facts.manifest_sha256,
+        include_token_revoke=False,
+    )
+    record = snapshot.records[0]
+    scratch_verifier = module.ExactScratchBaselineVerifier(
+        readback_root=readback_root,
+        scratch_root=service_scratch,
+        restore_settings=_settings(),
+        restore_client=fake,
+        ledger=_StaticValidatedLedger(snapshot),
+        keyring=_service_keyring(),
+        now_factory=lambda: CAPTURED_AT.timestamp() + 100,
+    )
+
+    proof = scratch_verifier.verify_exact(
+        lineage_id=BASELINE_LINEAGE_ID,
+        facts=facts,
+        record=record,
+    )
+
+    assert proof.verified is True
+    assert proof.lineage_id == BASELINE_LINEAGE_ID
+    assert proof.backup_id == facts.backup_id
+    assert proof.manifest_sha256 == facts.manifest_sha256
+    assert proof.baseline_db_checkpoint == facts.baseline_db_checkpoint
+    assert proof.record_hash == record.record_hash
+    assert scratch_verifier.last_result is not None
+    assert scratch_verifier.last_result.ready is True
+    assert scratch_verifier.last_result.head_record_hash == record.record_hash
+
+
+def test_restore_operator_composition_does_not_load_backup_transport_roles(
+    tmp_path, synthetic_sessions, monkeypatch
+):
+    module = _restore_service_module()
+    sessions, _ = synthetic_sessions
+    operator_root = tmp_path / "restore-only-operator"
+    operator_root.mkdir()
+    keyring = _service_keyring()
+
+    monkeypatch.setattr(
+        module.VersionedHMAC,
+        "from_env",
+        classmethod(lambda _cls, *, required: keyring),
+    )
+    monkeypatch.setattr(
+        module.RecoveryFenceStoreSettings,
+        "from_env",
+        classmethod(lambda _cls: object()),
+    )
+    monkeypatch.setattr(
+        module,
+        "RecoveryFenceRemoteStore",
+        lambda _settings: object(),
+    )
+
+    def reject_backup_role(_cls, *, role):
+        raise AssertionError(f"restore-only composition loaded the {role} role")
+
+    monkeypatch.setattr(
+        module.S3Settings,
+        "from_env",
+        classmethod(reject_backup_role),
+    )
+
+    composition = module.compose_recovery_fence_operator(
+        SimpleNamespace(
+            recovery_fence_command="restore-to-service",
+            operator_root=operator_root,
+            sessions_dir=sessions,
+        )
+    )
+
+    assert composition.initializer is None
+    assert isinstance(composition.service_restorer, module.OfflineServiceRestoreOperator)
+    assert not (operator_root / "baseline-bundles").exists()
+    assert not (operator_root / "verified-readbacks").exists()
+
+
+def test_retained_backup_key_usage_audit_is_verified_and_deterministic(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    ensure_mobile_state_schema(connection)
+    connection.execute(
+        "INSERT INTO mobile_rate_limit_events "
+        "(domain, key_id, key_digest, occurred_at) VALUES (?, ?, ?, ?)",
+        ("auth-start-client-ip", "old-key", "a" * 64, 1.0),
+    )
+    connection.commit()
+    first_bundle = tmp_path / "audit-first"
+    first_manifest = create_backup(sessions, first_bundle, now=CAPTURED_AT)
+    connection.execute(
+        "INSERT INTO mobile_rate_limit_events "
+        "(domain, key_id, key_digest, occurred_at) VALUES (?, ?, ?, ?)",
+        ("auth-start-client-ip", "active-key", "b" * 64, 2.0),
+    )
+    connection.commit()
+    second_bundle = tmp_path / "audit-second"
+    second_manifest = create_backup(
+        sessions,
+        second_bundle,
+        now=datetime(2026, 7, 27, 12, 1, tzinfo=timezone.utc),
+    )
+
+    audit = module.audit_retained_backup_key_usage(
+        [second_bundle, first_bundle]
+    )
+
+    assert audit.by_backup_id == (
+        (first_manifest["backup_id"], ("old-key",)),
+        (second_manifest["backup_id"], ("active-key", "old-key")),
+    )
+    assert audit.by_key_id == (
+        ("active-key", (second_manifest["backup_id"],)),
+        (
+            "old-key",
+            (first_manifest["backup_id"], second_manifest["backup_id"]),
+        ),
+    )
+
+
+def _seed_later_service_candidate(
+    connection: sqlite3.Connection,
+    *,
+    checkpoint_hash: str = "2" * 64,
+    minimum_created_at: float = CAPTURED_AT.timestamp() - 3600,
+) -> tuple[str, str, str]:
+    baseline_backup_id = "20260727T110000Z-aaaaaaaaaaaa"
+    baseline_manifest_sha256 = "d" * 64
+    baseline_db_checkpoint = "e" * 64
+    ensure_mobile_state_schema(connection)
+    connection.execute(
+        "INSERT INTO mobile_recovery_accepted_baselines "
+        "(lineage_id, baseline_backup_id, minimum_backup_created_at, "
+        "manifest_sha256, schema_generation, baseline_db_checkpoint, accepted_at) "
+        "VALUES (?, ?, ?, ?, 1, ?, ?)",
+        (
+            BASELINE_LINEAGE_ID,
+            baseline_backup_id,
+            minimum_created_at,
+            baseline_manifest_sha256,
+            baseline_db_checkpoint,
+            minimum_created_at + 1,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO mobile_recovery_baseline_journals "
+        "(operation_id, phase, request_hash, lineage_id, backup_id, "
+        "backup_created_at, schema_generation, manifest_sha256, "
+        "baseline_db_checkpoint, record_key, record_hash, head_etag, "
+        "chain_hmac_key_id, created_at, updated_at) "
+        "VALUES (?, 'accepted', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
+            "c" * 64,
+            BASELINE_LINEAGE_ID,
+            baseline_backup_id,
+            minimum_created_at,
+            baseline_manifest_sha256,
+            baseline_db_checkpoint,
+            "fence/records/1-" + "2" * 64 + ".json",
+            "2" * 64,
+            '"genesis-head"',
+            "chain-key",
+            minimum_created_at,
+            minimum_created_at + 1,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO mobile_recovery_fence_checkpoints "
+        "(checkpoint_id, lineage_id, baseline_backup_id, schema_generation, "
+        "head_sequence, head_record_key, head_record_hash, head_etag, "
+        "chain_hmac_key_id, verified_at) VALUES (1, ?, ?, 1, 1, ?, ?, ?, ?, ?)",
+        (
+            BASELINE_LINEAGE_ID,
+            baseline_backup_id,
+            "fence/records/1-" + checkpoint_hash + ".json",
+            checkpoint_hash,
+            '"old-head"',
+            "chain-key",
+            minimum_created_at + 1,
+        ),
+    )
+    connection.commit()
+    return baseline_backup_id, baseline_manifest_sha256, baseline_db_checkpoint
+
+
+@pytest.mark.parametrize(
+    "invalid_created_at",
+    [str(CAPTURED_AT.timestamp()), float("nan"), float("inf")],
+    ids=["numeric-string", "nan", "infinity"],
+)
+def test_later_candidate_requires_a_finite_numeric_creation_time(
+    tmp_path, synthetic_sessions, invalid_created_at
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    baseline_id, baseline_sha, baseline_checkpoint = _seed_later_service_candidate(
+        connection
+    )
+    bundle = tmp_path / "invalid-created-at-candidate"
+    manifest = create_backup(sessions, bundle, now=CAPTURED_AT)
+    manifest_sha256 = hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest()
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        manifest_sha256,
+        genesis_backup_id=baseline_id,
+        genesis_manifest_sha256=baseline_sha,
+        genesis_db_checkpoint=baseline_checkpoint,
+        minimum_backup_created_at=CAPTURED_AT.timestamp() - 3600,
+    )
+    manifest["created_at_epoch"] = invalid_created_at
+    evidence = module.RetainedRestoreEvidence(
+        bundle_dir=bundle,
+        restore_dir=bundle,
+        manifest=manifest,
+        manifest_sha256=manifest_sha256,
+        complete_sha256="",
+        file_sha256=(),
+    )
+
+    with pytest.raises(BackupError, match="creation time"):
+        module._validate_candidate_lineage(evidence, snapshot)
+
+
+def test_later_matching_lineage_candidate_advances_a_stale_checkpoint(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    baseline_id, baseline_sha, baseline_checkpoint = _seed_later_service_candidate(
+        connection
+    )
+    bundle = tmp_path / "later-service-candidate"
+    manifest = create_backup(sessions, bundle, now=CAPTURED_AT)
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest(),
+        genesis_backup_id=baseline_id,
+        genesis_manifest_sha256=baseline_sha,
+        genesis_db_checkpoint=baseline_checkpoint,
+        minimum_backup_created_at=CAPTURED_AT.timestamp() - 3600,
+    )
+    scratch = tmp_path / "later-service-scratch"
+    scratch.mkdir()
+
+    result = module.prepare_service_restore(
+        bundle,
+        scratch,
+        ledger=_StaticValidatedLedger(snapshot),
+        keyring=_service_keyring(),
+        now=CAPTURED_AT.timestamp() + 100,
+    )
+
+    prepared = sqlite3.connect(result.working_dir / "swinglab.db")
+    try:
+        assert prepared.execute(
+            "SELECT head_sequence, head_record_hash FROM "
+            "mobile_recovery_fence_checkpoints WHERE checkpoint_id=1"
+        ).fetchone() == (2, snapshot.records[-1].record_hash)
+    finally:
+        prepared.close()
+
+
+def test_later_candidate_rejects_divergent_checkpoint_before_auth_reset(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    sessions, connection = synthetic_sessions
+    baseline_id, baseline_sha, baseline_checkpoint = _seed_later_service_candidate(
+        connection,
+        checkpoint_hash="f" * 64,
+    )
+    bundle = tmp_path / "divergent-service-candidate"
+    manifest = create_backup(sessions, bundle, now=CAPTURED_AT)
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest(),
+        genesis_backup_id=baseline_id,
+        genesis_manifest_sha256=baseline_sha,
+        genesis_db_checkpoint=baseline_checkpoint,
+        minimum_backup_created_at=CAPTURED_AT.timestamp() - 3600,
+    )
+    scratch = tmp_path / "divergent-service-scratch"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="checkpoint|ancestry"):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=_StaticValidatedLedger(snapshot),
+            keyring=_service_keyring(),
+            now=CAPTURED_AT.timestamp() + 100,
+        )
+
+    working = sqlite3.connect(next(scratch.glob("service-working-*")) / "swinglab.db")
+    try:
+        assert working.execute(
+            "SELECT password_hash, auth_epoch FROM users WHERE id='user-synthetic'"
+        ).fetchone() == ("synthetic-hash", 0)
+        assert working.execute(
+            "SELECT COUNT(*) FROM mobile_restore_credential_reset_markers"
+        ).fetchone()[0] == 0
+    finally:
+        working.close()
+
+
+def test_service_restore_executes_an_explicit_reserved_kind_owner(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        manifest_sha256,
+        include_reserved=True,
+    )
+    scratch = tmp_path / "owned-reserved-scratch"
+    scratch.mkdir()
+    calls = []
+
+    def reconcile(connection, record, _keyring):
+        calls.append(record.record_hash)
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS synthetic_owned_reconciliation (value TEXT)"
+        )
+        connection.execute(
+            "INSERT INTO synthetic_owned_reconciliation VALUES (?)",
+            (record.record_hash,),
+        )
+
+    result = module.prepare_service_restore(
+        bundle,
+        scratch,
+        ledger=_StaticValidatedLedger(snapshot),
+        keyring=_service_keyring(),
+        reconcilers={"push_environment_cutoff": reconcile},
+        now=CAPTURED_AT.timestamp() + 100,
+    )
+
+    assert calls == [snapshot.records[-1].record_hash]
+    prepared = sqlite3.connect(result.working_dir / "swinglab.db")
+    try:
+        assert prepared.execute(
+            "SELECT value FROM synthetic_owned_reconciliation"
+        ).fetchone() == (snapshot.records[-1].record_hash,)
+    finally:
+        prepared.close()
+
+
+def test_service_restore_rejects_a_reconciler_that_reintroduces_credentials(
+    tmp_path, synthetic_sessions
+):
+    module = _restore_service_module()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    snapshot = _baseline_chain_snapshot(
+        manifest,
+        manifest_sha256,
+        include_reserved=True,
+    )
+    scratch = tmp_path / "credential-reintroduction-scratch"
+    scratch.mkdir()
+
+    def unsafe_reconciler(connection, _record, _keyring):
+        connection.execute(
+            "UPDATE users SET password_hash='resurrected', auth_epoch=0"
+        )
+
+    with pytest.raises(BackupError, match="credential reset|credentials"):
+        module.prepare_service_restore(
+            bundle,
+            scratch,
+            ledger=_StaticValidatedLedger(snapshot),
+            keyring=_service_keyring(),
+            reconcilers={"push_environment_cutoff": unsafe_reconciler},
+            now=CAPTURED_AT.timestamp() + 100,
+        )
+
+    working_dir = next(scratch.glob("service-working-*"))
+    assert not (working_dir / "service-restore-ready.json").exists()

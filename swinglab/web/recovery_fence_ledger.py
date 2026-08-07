@@ -516,6 +516,14 @@ class PublishedRecoveryRecord:
     head_etag: str | None = None
 
 
+@dataclass(frozen=True)
+class ValidatedRecoveryChain:
+    """One authenticated HEAD read bound to its fully validated ancestry."""
+
+    head_etag: str
+    records: tuple[PublishedRecoveryRecord, ...]
+
+
 def _build_record(
     event: RecoveryFenceEvent,
     *,
@@ -1047,7 +1055,21 @@ class RecoveryFenceLedger:
     def load_chain(self) -> tuple[PublishedRecoveryRecord, ...]:
         """Refetch and validate HEAD plus every explicit predecessor to genesis."""
 
-        return self._read_chain(allow_empty=False)[1]
+        return self.load_chain_snapshot().records
+
+    def load_chain_snapshot(self) -> ValidatedRecoveryChain:
+        """Return the validated chain and ETag from the same authenticated HEAD."""
+
+        head_object, chain = self._read_chain(allow_empty=False)
+        if head_object is None or not chain:  # pragma: no cover - allow_empty is false
+            raise RecoveryFenceError(
+                "The mandatory recovery-fence cutover baseline HEAD is missing."
+            )
+        records = (*chain[:-1], replace(chain[-1], head_etag=head_object.etag))
+        return ValidatedRecoveryChain(
+            head_etag=head_object.etag,
+            records=records,
+        )
 
     @staticmethod
     def _logical_record(record: PublishedRecoveryRecord) -> bytes:

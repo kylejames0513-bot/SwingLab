@@ -8,12 +8,19 @@ import os
 import re
 import shutil
 import sqlite3
+import stat
 import tempfile
 import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
+
+from swinglab.web.mobile_schema import (
+    MOBILE_STATE_GENERATIONS,
+    detect_mobile_state_generation,
+    mobile_state_summary,
+)
 
 FORMAT = "caddieinsight-backup/v1"
 COMPLETE_FILE = "COMPLETE.json"
@@ -85,8 +92,23 @@ def _sha256_file(path: Path) -> tuple[str, int]:
     return digest.hexdigest(), size
 
 
+def _is_link_or_reparse(path: Path) -> bool:
+    """Return whether ``path`` is a symlink or Windows reparse point."""
+
+    try:
+        metadata = os.lstat(path)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise BackupError("A backup path could not be inspected safely.") from exc
+    reparse_flag = getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+    return stat.S_ISLNK(metadata.st_mode) or bool(
+        getattr(metadata, "st_file_attributes", 0) & reparse_flag
+    )
+
+
 def _copy_and_hash(source: Path, destination: Path) -> tuple[str, int]:
-    if source.is_symlink() or not source.is_file():
+    if _is_link_or_reparse(source) or not source.is_file():
         raise BackupError("A required artifact is not a regular file.")
     try:
         before = source.stat()
@@ -127,7 +149,7 @@ def _read_only_connection(db_path: Path) -> sqlite3.Connection:
 
 
 def _online_sqlite_snapshot(source: Path, destination: Path) -> None:
-    if source.is_symlink() or not source.is_file():
+    if _is_link_or_reparse(source) or not source.is_file():
         raise BackupError("The SQLite source database is missing or is not a regular file.")
     destination.parent.mkdir(parents=True, exist_ok=True)
     source_connection = _read_only_connection(source)
@@ -347,6 +369,121 @@ def database_summary(db_path: Path, captured_at_epoch: float) -> dict[str, Any]:
         connection.close()
 
 
+def _snapshot_mobile_state(db_path: Path) -> dict[str, object] | None:
+    connection = _read_only_connection(db_path)
+    try:
+        generation = detect_mobile_state_generation(connection)
+        if generation == 0:
+            return None
+        return mobile_state_summary(connection)
+    except (RuntimeError, sqlite3.Error) as exc:
+        raise BackupError(
+            "The SQLite snapshot has invalid or incomplete mobile state."
+        ) from exc
+    finally:
+        connection.close()
+
+
+def _canonical_uuid(value: object, *, label: str) -> str:
+    if not isinstance(value, str):
+        raise BackupError(f"The backup {label} is invalid.")
+    try:
+        parsed = uuid.UUID(value)
+    except (ValueError, AttributeError):
+        raise BackupError(f"The backup {label} is invalid.") from None
+    if str(parsed) != value:
+        raise BackupError(f"The backup {label} is not canonical.")
+    return value
+
+
+def _snapshot_recovery_fence(
+    db_path: Path,
+    *,
+    backup_id: str,
+    database_sha256: str,
+    mobile_state: dict[str, object] | None,
+    baseline_lineage_id: str | None,
+) -> dict[str, object] | None:
+    if baseline_lineage_id is not None:
+        lineage_id = _canonical_uuid(
+            baseline_lineage_id, label="recovery lineage ID"
+        )
+        if mobile_state is None or mobile_state.get("generation") != 1:
+            raise BackupError(
+                "A cutover baseline requires an exact generation-1 mobile snapshot."
+            )
+    connection = _read_only_connection(db_path)
+    try:
+        if mobile_state is None:
+            return None
+        accepted = connection.execute(
+            "SELECT lineage_id, baseline_backup_id, manifest_sha256, "
+            "schema_generation, baseline_db_checkpoint FROM "
+            "mobile_recovery_accepted_baselines"
+        ).fetchall()
+        if len(accepted) > 1:
+            raise BackupError(
+                "The SQLite snapshot has conflicting accepted recovery baselines."
+            )
+        if baseline_lineage_id is not None:
+            if accepted:
+                raise BackupError(
+                    "An accepted recovery baseline already exists for this snapshot."
+                )
+            matching = connection.execute(
+                "SELECT phase FROM mobile_recovery_baseline_journals "
+                "WHERE lineage_id = ?",
+                (lineage_id,),
+            ).fetchall()
+            if len(matching) != 1 or str(matching[0][0]) != "lineage_prepared":
+                raise BackupError(
+                    "The cutover baseline lineage is not uniquely prepared."
+                )
+            return {
+                "lineage_id": lineage_id,
+                "baseline_backup_id": backup_id,
+                # The canonical baseline marker is null because embedding the
+                # final manifest digest inside that manifest is impossible.
+                "baseline_manifest_sha256": None,
+                "baseline_schema_generation": int(mobile_state["generation"]),
+                "baseline_db_checkpoint": database_sha256,
+            }
+        if not accepted:
+            return None
+        row = accepted[0]
+        lineage_id = _canonical_uuid(row[0], label="recovery lineage ID")
+        baseline_backup_id = validate_backup_id(str(row[1]))
+        manifest_sha256 = str(row[2])
+        schema_generation = row[3]
+        checkpoint = str(row[4])
+        if (
+            re.fullmatch(r"[0-9a-f]{64}", manifest_sha256) is None
+            or isinstance(schema_generation, bool)
+            or not isinstance(schema_generation, int)
+            or schema_generation not in MOBILE_STATE_GENERATIONS
+            or schema_generation == 0
+            or re.fullmatch(r"[0-9a-f]{64}", checkpoint) is None
+        ):
+            raise BackupError(
+                "The SQLite snapshot accepted recovery baseline is invalid."
+            )
+        return {
+            "lineage_id": lineage_id,
+            "baseline_backup_id": baseline_backup_id,
+            "baseline_manifest_sha256": manifest_sha256,
+            "baseline_schema_generation": schema_generation,
+            "baseline_db_checkpoint": checkpoint,
+        }
+    except BackupError:
+        raise
+    except sqlite3.Error as exc:
+        raise BackupError(
+            "The SQLite snapshot recovery baseline could not be verified."
+        ) from exc
+    finally:
+        connection.close()
+
+
 def _safe_relative_path(value: str) -> PurePosixPath:
     """Parse a manifest path using platform-independent POSIX semantics."""
     candidate = PurePosixPath(value)
@@ -372,13 +509,13 @@ def _is_relative_to(path: Path, root: Path) -> bool:
 
 
 def _join_under(root: Path, relative: PurePosixPath) -> Path:
-    """Join an already-safe manifest path and reject symlink-parent escapes."""
+    """Join a safe manifest path and reject link/reparse traversal."""
     resolved_root = root.resolve()
     candidate = resolved_root
     for part in relative.parts:
         candidate = candidate / part
-        if candidate.is_symlink():
-            raise BackupError("Symlinks are not allowed in backup paths.")
+        if _is_link_or_reparse(candidate):
+            raise BackupError("Symlinks or reparse points are not allowed in backup paths.")
     candidate = candidate.resolve()
     if not _is_relative_to(candidate, resolved_root):
         raise BackupError("A backup path escapes its expected root.")
@@ -412,7 +549,11 @@ def _artifact_sources(
         report = _join_under(job_root, report_rel)
         if not _is_relative_to(report, job_root):
             raise BackupError("A report path escapes its job directory.")
-        if report.name != "report.html" or report.is_symlink() or not report.is_file():
+        if (
+            report.name != "report.html"
+            or _is_link_or_reparse(report)
+            or not report.is_file()
+        ):
             raise BackupError("A completed job is missing its retained report.")
 
         deliverable_root = report.parent
@@ -428,7 +569,7 @@ def _artifact_sources(
             selected.append(proof_cycle)
         media = deliverable_root / "media"
         if media.exists():
-            if media.is_symlink() or not media.is_dir():
+            if _is_link_or_reparse(media) or not media.is_dir():
                 raise BackupError("A generated-media path is not a safe directory.")
             selected.extend(path for path in media.rglob("*") if path.is_file())
 
@@ -454,10 +595,17 @@ def create_backup(
     output_dir: Path,
     *,
     now: datetime | None = None,
+    baseline_lineage_id: str | None = None,
 ) -> dict[str, Any]:
     """Create a complete local backup bundle without contacting object storage."""
-    sessions_dir = sessions_dir.expanduser().resolve()
-    output_dir = output_dir.expanduser().resolve()
+    expanded_sessions = sessions_dir.expanduser()
+    expanded_output = output_dir.expanduser()
+    if _is_link_or_reparse(expanded_sessions):
+        raise BackupError("The sessions directory cannot be a symlink or reparse point.")
+    if _is_link_or_reparse(expanded_output):
+        raise BackupError("The backup output cannot be a symlink or reparse point.")
+    sessions_dir = expanded_sessions.resolve()
+    output_dir = expanded_output.resolve()
     if not sessions_dir.is_dir():
         raise BackupError("The sessions directory does not exist.")
     if output_dir.exists():
@@ -484,7 +632,15 @@ def create_backup(
         snapshot = staging / DATABASE_BUNDLE_PATH
         _online_sqlite_snapshot(sessions_dir / "swinglab.db", snapshot)
         sqlite_summary = database_summary(snapshot, captured_at_epoch)
+        mobile_state = _snapshot_mobile_state(snapshot)
         db_sha256, db_size = _sha256_file(snapshot)
+        recovery_fence = _snapshot_recovery_fence(
+            snapshot,
+            backup_id=backup_id,
+            database_sha256=db_sha256,
+            mobile_state=mobile_state,
+            baseline_lineage_id=baseline_lineage_id,
+        )
 
         artifacts = []
         artifact_bytes = 0
@@ -533,6 +689,10 @@ def create_backup(
                 ],
             },
         }
+        if mobile_state is not None:
+            manifest["mobile_state"] = mobile_state
+        if recovery_fence is not None:
+            manifest["recovery_fence"] = recovery_fence
         manifest_bytes = _canonical_json(manifest)
         manifest_path = staging / MANIFEST_FILE
         manifest_path.write_bytes(manifest_bytes)
@@ -559,15 +719,223 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
+def _nonnegative_count(value: object) -> bool:
+    return not isinstance(value, bool) and isinstance(value, int) and value >= 0
+
+
+def _validate_group_counts(value: object) -> bool:
+    return isinstance(value, dict) and all(
+        isinstance(name, str) and name and _nonnegative_count(count)
+        for name, count in value.items()
+    )
+
+
+def _validate_mobile_state_manifest_shape(value: object) -> None:
+    if not isinstance(value, dict) or set(value) != {
+        "generation",
+        "schema_sha256",
+        "table_row_counts",
+        "phase_counts",
+        "domain_counts",
+        "referenced_hmac_key_ids",
+    }:
+        raise BackupError("The backup mobile state manifest shape is invalid.")
+    generation = value["generation"]
+    if (
+        isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation not in MOBILE_STATE_GENERATIONS
+        or generation == 0
+    ):
+        raise BackupError("The backup mobile state generation is unsupported.")
+
+    expected_tables = set(MOBILE_STATE_GENERATIONS[generation].required_columns)
+    schema = value["schema_sha256"]
+    counts = value["table_row_counts"]
+    if (
+        not isinstance(schema, dict)
+        or set(schema) != expected_tables
+        or any(
+            not isinstance(digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in schema.values()
+        )
+        or not isinstance(counts, dict)
+        or set(counts) != expected_tables
+        or any(not _nonnegative_count(count) for count in counts.values())
+    ):
+        raise BackupError("The backup mobile state attestation is invalid.")
+
+    phases = value["phase_counts"]
+    expected_phase_tables = {
+        "mobile_auth_exchange_journals",
+        "mobile_signout_journals",
+        "mobile_device_revoke_journals",
+        "mobile_recovery_baseline_journals",
+    }
+    domains = value["domain_counts"]
+    if (
+        not isinstance(phases, dict)
+        or set(phases) != expected_phase_tables
+        or any(not _validate_group_counts(group) for group in phases.values())
+        or not isinstance(domains, dict)
+        or set(domains) != {"mobile_rate_limit_events"}
+        or not _validate_group_counts(domains["mobile_rate_limit_events"])
+    ):
+        raise BackupError("The backup mobile state attestation is invalid.")
+
+    key_ids = value["referenced_hmac_key_ids"]
+    if (
+        not isinstance(key_ids, list)
+        or any(
+            not isinstance(key_id, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", key_id) is None
+            for key_id in key_ids
+        )
+    ):
+        raise BackupError("The backup mobile state HMAC key attestation is invalid.")
+    if key_ids != sorted(set(key_ids)):
+        raise BackupError("The backup mobile state HMAC key attestation is invalid.")
+
+
+def _validate_recovery_fence_manifest_shape(
+    value: object, *, backup_id: str, database_sha256: str
+) -> None:
+    if not isinstance(value, dict) or set(value) != {
+        "lineage_id",
+        "baseline_backup_id",
+        "baseline_manifest_sha256",
+        "baseline_schema_generation",
+        "baseline_db_checkpoint",
+    }:
+        raise BackupError("The backup recovery fence manifest shape is invalid.")
+    _canonical_uuid(value["lineage_id"], label="recovery lineage ID")
+    try:
+        baseline_backup_id = validate_backup_id(value["baseline_backup_id"])
+    except (BackupError, TypeError):
+        raise BackupError("The backup recovery baseline identifier is invalid.") from None
+    generation = value["baseline_schema_generation"]
+    checkpoint = value["baseline_db_checkpoint"]
+    baseline_manifest_sha256 = value["baseline_manifest_sha256"]
+    if (
+        isinstance(generation, bool)
+        or not isinstance(generation, int)
+        or generation not in MOBILE_STATE_GENERATIONS
+        or generation == 0
+        or not isinstance(checkpoint, str)
+        or re.fullmatch(r"[0-9a-f]{64}", checkpoint) is None
+    ):
+        raise BackupError("The backup recovery fence manifest values are invalid.")
+    if baseline_backup_id == backup_id:
+        if baseline_manifest_sha256 is not None or checkpoint != database_sha256:
+            raise BackupError(
+                "The baseline backup recovery fence self marker is invalid."
+            )
+    elif (
+        not isinstance(baseline_manifest_sha256, str)
+        or re.fullmatch(r"[0-9a-f]{64}", baseline_manifest_sha256) is None
+    ):
+        raise BackupError(
+            "A later backup must bind the baseline manifest SHA-256."
+        )
+
+
+def _verify_recovery_fence_attestation(
+    db_path: Path, manifest: dict[str, Any]
+) -> None:
+    declared = manifest.get("recovery_fence")
+    if declared is None:
+        return
+    connection = _read_only_connection(db_path)
+    try:
+        accepted = connection.execute(
+            "SELECT lineage_id, baseline_backup_id, manifest_sha256, "
+            "schema_generation, baseline_db_checkpoint FROM "
+            "mobile_recovery_accepted_baselines"
+        ).fetchall()
+        if declared["baseline_backup_id"] == manifest["backup_id"]:
+            matching = connection.execute(
+                "SELECT phase FROM mobile_recovery_baseline_journals "
+                "WHERE lineage_id = ?",
+                (declared["lineage_id"],),
+            ).fetchall()
+            if (
+                accepted
+                or len(matching) != 1
+                or str(matching[0][0]) != "lineage_prepared"
+            ):
+                raise BackupError(
+                    "The baseline recovery fence does not match its snapshot lineage."
+                )
+            return
+        expected = [
+            (
+                declared["lineage_id"],
+                declared["baseline_backup_id"],
+                declared["baseline_manifest_sha256"],
+                declared["baseline_schema_generation"],
+                declared["baseline_db_checkpoint"],
+            )
+        ]
+        if [tuple(row) for row in accepted] != expected:
+            raise BackupError(
+                "The recovery fence manifest does not match the accepted baseline."
+            )
+    except BackupError:
+        raise
+    except sqlite3.Error as exc:
+        raise BackupError("The backup recovery fence attestation is invalid.") from exc
+    finally:
+        connection.close()
+
+
+def _verify_mobile_state_attestation(
+    db_path: Path, manifest: dict[str, Any]
+) -> None:
+    connection = _read_only_connection(db_path)
+    try:
+        generation = detect_mobile_state_generation(connection)
+        declared = manifest.get("mobile_state")
+        if declared is None:
+            if generation != 0:
+                raise BackupError(
+                    "The backup mobile state declaration is missing for this schema."
+                )
+            return
+        _validate_mobile_state_manifest_shape(declared)
+        if generation != declared["generation"]:
+            raise BackupError(
+                "The backup mobile state generation does not match its schema."
+            )
+        actual = mobile_state_summary(connection)
+        if actual != declared:
+            raise BackupError(
+                "The backup mobile state attestation does not match the database."
+            )
+    except BackupError:
+        raise
+    except (RuntimeError, sqlite3.Error) as exc:
+        raise BackupError(
+            "The backup mobile state schema is invalid or incomplete."
+        ) from exc
+    finally:
+        connection.close()
+
+
 def load_and_verify_manifest(bundle_dir: Path) -> dict[str, Any]:
     expanded_bundle = bundle_dir.expanduser()
-    if expanded_bundle.is_symlink():
-        raise BackupError("The backup bundle cannot be a symlink.")
+    if _is_link_or_reparse(expanded_bundle):
+        raise BackupError("The backup bundle cannot be a symlink or reparse point.")
     bundle_dir = expanded_bundle.resolve()
     if not bundle_dir.is_dir():
         raise BackupError("The backup bundle is missing or is not a regular directory.")
     manifest_path = bundle_dir / MANIFEST_FILE
     complete_path = bundle_dir / COMPLETE_FILE
+    if any(
+        _is_link_or_reparse(path) or not path.is_file()
+        for path in (manifest_path, complete_path)
+    ):
+        raise BackupError("Backup metadata is missing, linked, or not a regular file.")
     manifest = _load_json(manifest_path)
     complete = _load_json(complete_path)
     if manifest.get("format") != FORMAT or complete.get("format") != FORMAT:
@@ -609,13 +977,21 @@ def load_and_verify_manifest(bundle_dir: Path) -> dict[str, Any]:
         item["size"] for item in files
     ):
         raise BackupError("Backup artifact summary does not match its file list.")
+    if "mobile_state" in manifest:
+        _validate_mobile_state_manifest_shape(manifest["mobile_state"])
+    if "recovery_fence" in manifest:
+        _validate_recovery_fence_manifest_shape(
+            manifest["recovery_fence"],
+            backup_id=backup_id,
+            database_sha256=str(database.get("sha256", "")),
+        )
     return manifest
 
 
 def verify_bundle_files(bundle_dir: Path, manifest: dict[str, Any]) -> None:
     database = manifest["database"]
     db_path = _join_under(bundle_dir, _safe_relative_path(database["path"]))
-    if db_path.is_symlink() or not db_path.is_file():
+    if _is_link_or_reparse(db_path) or not db_path.is_file():
         raise BackupError("The SQLite snapshot is missing from the backup.")
     db_sha256, db_size = _sha256_file(db_path)
     if db_sha256 != database.get("sha256") or db_size != database.get("size"):
@@ -626,12 +1002,14 @@ def verify_bundle_files(bundle_dir: Path, manifest: dict[str, Any]) -> None:
             bundle_dir,
             PurePosixPath("artifacts") / _safe_relative_path(item["path"]),
         )
-        if path.is_symlink() or not path.is_file():
+        if _is_link_or_reparse(path) or not path.is_file():
             raise BackupError("A backed-up artifact is missing or unsafe.")
         sha256, size = _sha256_file(path)
         if sha256 != item["sha256"] or size != item["size"]:
             raise BackupError("Artifact checksum verification failed.")
     _verify_artifact_database_mapping(db_path, manifest)
+    _verify_mobile_state_attestation(db_path, manifest)
+    _verify_recovery_fence_attestation(db_path, manifest)
 
 
 def _verify_artifact_database_mapping(
@@ -681,13 +1059,13 @@ def _verify_artifact_database_mapping(
 
 def _assert_safe_scratch_root(scratch_root: Path, bundle_dir: Path) -> Path:
     expanded_root = scratch_root.expanduser()
-    if expanded_root.is_symlink():
-        raise BackupError("The scratch root cannot be a symlink.")
+    if _is_link_or_reparse(expanded_root):
+        raise BackupError("The scratch root cannot be a symlink or reparse point.")
     root = expanded_root.resolve()
     data_root = Path("/data").resolve()
     if root == data_root or _is_relative_to(root, data_root):
         raise BackupError("Restore drills are never allowed in or below /data.")
-    if not root.is_dir() or root.is_symlink():
+    if not root.is_dir() or _is_link_or_reparse(root):
         raise BackupError("The scratch root must be an existing regular directory.")
     if root == Path(root.anchor):
         raise BackupError("The filesystem root cannot be used as a restore scratch root.")
@@ -702,8 +1080,9 @@ def _assert_safe_scratch_root(scratch_root: Path, bundle_dir: Path) -> Path:
 
 def restore_backup(bundle_dir: Path, scratch_root: Path) -> dict[str, Any]:
     """Restore a verified bundle into a new scratch child and verify it."""
-    bundle_dir = bundle_dir.expanduser().resolve()
-    manifest = load_and_verify_manifest(bundle_dir)
+    expanded_bundle = bundle_dir.expanduser()
+    manifest = load_and_verify_manifest(expanded_bundle)
+    bundle_dir = expanded_bundle.resolve()
     verify_bundle_files(bundle_dir, manifest)
     root = _assert_safe_scratch_root(scratch_root, bundle_dir)
     restore_dir = root / (

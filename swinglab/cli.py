@@ -358,8 +358,12 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "recovery-fence-ledger":
         from .backups.cli import run_recovery_fence_command
+        from .backups.restore_service import compose_recovery_fence_operator
 
-        return run_recovery_fence_command(args)
+        return run_recovery_fence_command(
+            args,
+            composition_factory=compose_recovery_fence_operator,
+        )
 
     if args.command == "shopify-privacy":
         from .integrations.shopify.privacy_cli import run_privacy_command

@@ -216,6 +216,21 @@ def test_genesis_is_canonical_hmac_chained_and_strictly_validated(tmp_path):
         ledger.load_chain()
 
 
+def test_validated_chain_snapshot_binds_the_exact_head_etag_without_reread(tmp_path):
+    module, remote, ledger = _ledger(tmp_path)
+    published = ledger.append_and_publish(_baseline_event(module))
+    remote.calls.clear()
+
+    snapshot = ledger.load_chain_snapshot()
+
+    assert isinstance(snapshot, module.ValidatedRecoveryChain)
+    assert snapshot.head_etag == remote.head_etag
+    assert snapshot.records[-1].record_hash == published.record_hash
+    assert snapshot.records[-1].head_etag == remote.head_etag
+    assert [call[0] for call in remote.calls].count("read_head") == 1
+    assert ledger.load_chain() == snapshot.records
+
+
 def test_missing_head_record_key_or_hmac_key_fails_closed(tmp_path):
     module, remote, ledger = _ledger(tmp_path)
     with pytest.raises(module.RecoveryFenceError, match="HEAD|baseline"):
@@ -1294,3 +1309,143 @@ def test_cli_suppresses_untrusted_verifier_errors(monkeypatch, capsys, tmp_path)
 
     assert run_recovery_fence_command(args, initializer=FailingInitializer()) == 1
     assert sentinel not in capsys.readouterr().err
+
+
+def test_cli_lazily_composes_real_baseline_adapters_only_after_every_gate(
+    monkeypatch, capsys, tmp_path
+):
+    argv = [
+        "recovery-fence-ledger",
+        "initialize-baseline",
+        "--sessions-dir",
+        str(tmp_path / "sessions"),
+        "--operator-root",
+        str(tmp_path / "operator"),
+        "--operation-id",
+        "22222222-3333-4444-8555-666666666666",
+    ]
+    args = build_parser().parse_args(argv)
+    calls = []
+
+    class Initializer:
+        def initialize(self, **kwargs):
+            calls.append(("initialize", kwargs))
+            return SimpleNamespace(operation_id=kwargs["operation_id"], phase="accepted")
+
+    def compose(received):
+        calls.append(("compose", received.operator_root))
+        return SimpleNamespace(initializer=Initializer(), service_restorer=None)
+
+    monkeypatch.delenv("CADDIE_RECOVERY_FENCE_ENABLED", raising=False)
+    assert run_recovery_fence_command(args, composition_factory=compose) == 2
+    assert calls == []
+    monkeypatch.setenv("CADDIE_RECOVERY_FENCE_ENABLED", "true")
+    assert run_recovery_fence_command(args, composition_factory=compose) == 2
+    assert calls == []
+
+    approved = build_parser().parse_args(
+        argv
+        + [
+            "--confirm-erasure-inventory",
+            "--confirm-dependent-routes-held",
+            "--confirm-fresh-backup",
+            "--confirm-scratch-restore",
+        ]
+    )
+    assert run_recovery_fence_command(
+        approved, composition_factory=compose
+    ) == 0
+    assert [name for name, _value in calls] == ["compose", "initialize"]
+    assert "accepted" in capsys.readouterr().out
+
+
+def test_restore_to_service_cli_is_separately_gated_and_only_prepares_scratch(
+    monkeypatch, capsys, tmp_path
+):
+    bundle = tmp_path / "candidate-bundle"
+    operator_root = tmp_path / "operator"
+    sessions = tmp_path / "live-sessions"
+    argv = [
+        "recovery-fence-ledger",
+        "restore-to-service",
+        "--sessions-dir",
+        str(sessions),
+        "--bundle",
+        str(bundle),
+        "--operator-root",
+        str(operator_root),
+        "--confirm-dependent-routes-held",
+        "--confirm-scratch-restore",
+        "--confirm-service-restore",
+    ]
+    args = build_parser().parse_args(argv)
+    calls = []
+
+    class Restorer:
+        def prepare(self, received_bundle):
+            calls.append(("prepare", received_bundle))
+            return SimpleNamespace(
+                backup_id="20260807T120000Z-abcdef123456",
+                working_dir=operator_root / "service-working-candidate",
+            )
+
+    def compose(received):
+        calls.append(("compose", received.operator_root))
+        return SimpleNamespace(initializer=None, service_restorer=Restorer())
+
+    monkeypatch.delenv("CADDIE_RECOVERY_FENCE_ENABLED", raising=False)
+    monkeypatch.delenv("CADDIE_RESTORE_ENABLED", raising=False)
+    assert run_recovery_fence_command(args, composition_factory=compose) == 2
+    assert calls == []
+    monkeypatch.setenv("CADDIE_RECOVERY_FENCE_ENABLED", "true")
+    assert run_recovery_fence_command(args, composition_factory=compose) == 2
+    assert calls == []
+    monkeypatch.setenv("CADDIE_RESTORE_ENABLED", "true")
+
+    assert run_recovery_fence_command(args, composition_factory=compose) == 0
+    assert calls == [
+        ("compose", operator_root),
+        ("prepare", bundle),
+    ]
+    output = capsys.readouterr().out
+    assert "prepared" in output
+    assert "service-working-candidate" in output
+    assert not sessions.exists()
+
+
+def test_top_level_cli_injects_gate3c_operator_composition(monkeypatch, tmp_path):
+    from swinglab.backups import restore_service
+
+    monkeypatch.setenv("CADDIE_RECOVERY_FENCE_ENABLED", "true")
+    calls = []
+
+    class Initializer:
+        def initialize(self, **kwargs):
+            calls.append(kwargs["operation_id"])
+            return SimpleNamespace(
+                operation_id=kwargs["operation_id"], phase="accepted"
+            )
+
+    def compose(_args):
+        return SimpleNamespace(initializer=Initializer(), service_restorer=None)
+
+    monkeypatch.setattr(restore_service, "compose_recovery_fence_operator", compose)
+    result = main(
+        [
+            "recovery-fence-ledger",
+            "initialize-baseline",
+            "--sessions-dir",
+            str(tmp_path / "sessions"),
+            "--operator-root",
+            str(tmp_path / "operator"),
+            "--operation-id",
+            "22222222-3333-4444-8555-666666666666",
+            "--confirm-erasure-inventory",
+            "--confirm-dependent-routes-held",
+            "--confirm-fresh-backup",
+            "--confirm-scratch-restore",
+        ]
+    )
+
+    assert result == 0
+    assert calls == ["22222222-3333-4444-8555-666666666666"]

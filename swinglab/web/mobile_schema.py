@@ -1028,6 +1028,13 @@ class MobileStateGeneration:
 
 
 MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
+    0: MobileStateGeneration(
+        generation=0,
+        required_columns={
+            "mobile_api_tokens": tuple(sorted(_MOBILE_TOKEN_BASE_COLUMNS))
+        },
+        required_indexes={},
+    ),
     1: MobileStateGeneration(
         generation=1,
         required_columns=_GENERATION_ONE_REQUIRED_COLUMNS,
@@ -1054,6 +1061,48 @@ def validate_mobile_state_schema(connection: sqlite3.Connection) -> None:
     _validate_required_columns(connection)
     for index, (table, expected_columns) in _GENERATION_ONE_INDEXES.items():
         _validate_index_shape(connection, index, table, expected_columns)
+
+
+def detect_mobile_state_generation(connection: sqlite3.Connection) -> int:
+    """Return the one exact implemented generation or reject a partial footprint."""
+
+    tables = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    indexes = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+    }
+    token_columns = set(_table_columns(connection, "mobile_api_tokens"))
+    if not _MOBILE_TOKEN_BASE_COLUMNS.issubset(token_columns):
+        raise RuntimeError(
+            "Incompatible generation-0 mobile schema; the exact token base is required."
+        )
+
+    additive_names = {name for name, _ddl in _MOBILE_TOKEN_ADDITIVE_COLUMNS}
+    generation_one_tables = set(_GENERATION_ONE_REQUIRED_COLUMNS) - {
+        "mobile_api_tokens"
+    }
+    generation_one_indexes = set(_GENERATION_ONE_INDEXES)
+    has_generation_one_footprint = bool(
+        (token_columns & additive_names)
+        or (tables & generation_one_tables)
+        or (indexes & generation_one_indexes)
+    )
+    if not has_generation_one_footprint:
+        if token_columns != _MOBILE_TOKEN_BASE_COLUMNS:
+            raise RuntimeError(
+                "Incompatible generation-0 mobile schema; unknown token columns exist."
+            )
+        return 0
+
+    validate_mobile_state_schema(connection)
+    return MOBILE_STATE_SCHEMA_GENERATION
 
 
 def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:

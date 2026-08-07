@@ -95,10 +95,43 @@ def add_recovery_fence_subparser(subparsers) -> None:
         required=True,
         help="Stable canonical UUID reused for an exact lost-response retry.",
     )
+    initialize.add_argument(
+        "--operator-root",
+        type=Path,
+        default=None,
+        help=(
+            "Existing non-/data root for immutable baseline bundles, readbacks, "
+            "and disposable service-restore evidence."
+        ),
+    )
     initialize.add_argument("--confirm-erasure-inventory", action="store_true")
     initialize.add_argument("--confirm-dependent-routes-held", action="store_true")
     initialize.add_argument("--confirm-fresh-backup", action="store_true")
     initialize.add_argument("--confirm-scratch-restore", action="store_true")
+
+    restore = commands.add_parser(
+        "restore-to-service",
+        help=(
+            "Prepare a verified service-eligible scratch tree; never promotes it "
+            "over live sessions."
+        ),
+    )
+    restore.add_argument(
+        "--sessions-dir",
+        type=Path,
+        default=Path("/data/sessions"),
+        help="Current sessions directory used only for recovery-chain ancestry.",
+    )
+    restore.add_argument("--bundle", type=Path, required=True)
+    restore.add_argument(
+        "--operator-root",
+        type=Path,
+        required=True,
+        help="Existing non-/data root for retained evidence and disposable copies.",
+    )
+    restore.add_argument("--confirm-dependent-routes-held", action="store_true")
+    restore.add_argument("--confirm-scratch-restore", action="store_true")
+    restore.add_argument("--confirm-service-restore", action="store_true")
 
 
 def _enabled(name: str) -> bool:
@@ -161,6 +194,8 @@ def _baseline_request_hash(args: argparse.Namespace) -> str:
         "sessions_dir": str(args.sessions_dir.expanduser().resolve()),
         "contract": "caddieinsight-recovery-fence-baseline-request/v1",
     }
+    if getattr(args, "operator_root", None) is not None:
+        value["operator_root"] = str(args.operator_root.expanduser().resolve())
     encoded = json.dumps(
         value,
         sort_keys=True,
@@ -174,6 +209,8 @@ def run_recovery_fence_command(
     args: argparse.Namespace,
     *,
     initializer=None,
+    service_restorer=None,
+    composition_factory=None,
 ) -> int:
     """Run only with explicit approvals and injected verified evidence adapters.
 
@@ -189,12 +226,30 @@ def run_recovery_fence_command(
             file=sys.stderr,
         )
         return 2
-    approvals = (
-        ("--confirm-erasure-inventory", args.confirm_erasure_inventory),
-        ("--confirm-dependent-routes-held", args.confirm_dependent_routes_held),
-        ("--confirm-fresh-backup", args.confirm_fresh_backup),
-        ("--confirm-scratch-restore", args.confirm_scratch_restore),
-    )
+    command = args.recovery_fence_command
+    if command == "restore-to-service" and not _enabled("CADDIE_RESTORE_ENABLED"):
+        print(
+            "CADDIE_RESTORE_ENABLED=true is required for this explicit operator "
+            "command.",
+            file=sys.stderr,
+        )
+        return 2
+    if command == "initialize-baseline":
+        approvals = (
+            ("--confirm-erasure-inventory", args.confirm_erasure_inventory),
+            ("--confirm-dependent-routes-held", args.confirm_dependent_routes_held),
+            ("--confirm-fresh-backup", args.confirm_fresh_backup),
+            ("--confirm-scratch-restore", args.confirm_scratch_restore),
+        )
+    elif command == "restore-to-service":
+        approvals = (
+            ("--confirm-dependent-routes-held", args.confirm_dependent_routes_held),
+            ("--confirm-scratch-restore", args.confirm_scratch_restore),
+            ("--confirm-service-restore", args.confirm_service_restore),
+        )
+    else:  # pragma: no cover - argparse owns the closed command set
+        print("recovery-fence error: unknown operator command.", file=sys.stderr)
+        return 1
     missing = [name for name, confirmed in approvals if confirmed is not True]
     if missing:
         print(
@@ -203,33 +258,51 @@ def run_recovery_fence_command(
             file=sys.stderr,
         )
         return 2
-    if initializer is None:
-        print(
-            "recovery-fence error: Gate 3C verified-backup and exact "
-            "scratch-restore composition is not available; no baseline was changed.",
-            file=sys.stderr,
-        )
-        return 1
     try:
         from swinglab.web.recovery_fence_ledger import (
             BaselineApprovals,
             RecoveryFenceError,
         )
 
-        journal = initializer.initialize(
-            operation_id=args.operation_id,
-            request_hash=_baseline_request_hash(args),
-            approvals=BaselineApprovals(
-                erasure_inventory_complete=True,
-                dependent_routes_held=True,
-                fresh_backup_authorized=True,
-                scratch_restore_authorized=True,
-            ),
-        )
-        print(
-            f"Recovery-fence baseline operation {journal.operation_id} is "
-            f"{journal.phase}."
-        )
+        if (
+            (command == "initialize-baseline" and initializer is None)
+            or (command == "restore-to-service" and service_restorer is None)
+        ):
+            if composition_factory is None or getattr(args, "operator_root", None) is None:
+                raise BackupError(
+                    "Gate 3C verified-backup and exact scratch-restore composition "
+                    "is not available; no service state was changed."
+                )
+            composition = composition_factory(args)
+            initializer = initializer or getattr(composition, "initializer", None)
+            service_restorer = service_restorer or getattr(
+                composition, "service_restorer", None
+            )
+        if command == "initialize-baseline":
+            if initializer is None:
+                raise BackupError("The verified baseline initializer is unavailable.")
+            journal = initializer.initialize(
+                operation_id=args.operation_id,
+                request_hash=_baseline_request_hash(args),
+                approvals=BaselineApprovals(
+                    erasure_inventory_complete=True,
+                    dependent_routes_held=True,
+                    fresh_backup_authorized=True,
+                    scratch_restore_authorized=True,
+                ),
+            )
+            print(
+                f"Recovery-fence baseline operation {journal.operation_id} is "
+                f"{journal.phase}."
+            )
+        else:
+            if service_restorer is None:
+                raise BackupError("The service-restore preparer is unavailable.")
+            result = service_restorer.prepare(args.bundle)
+            print(
+                f"Backup {result.backup_id} prepared for service at "
+                f"{result.working_dir}; no live sessions were promoted."
+            )
         return 0
     except (BackupError, RecoveryFenceError) as exc:
         print(f"recovery-fence error: {exc}", file=sys.stderr)

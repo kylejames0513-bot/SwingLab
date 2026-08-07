@@ -488,13 +488,17 @@ def _acquire_upload_claim(
     settings: S3Settings,
     object_prefix: str,
     backup_id: str,
+    *,
+    claim_nonce: str | None = None,
 ) -> None:
+    if claim_nonce is not None and re.fullmatch(r"[0-9a-f]{64}", claim_nonce) is None:
+        raise BackupError("The immutable upload retry claim is invalid.")
     claim_key = f"{object_prefix}/{UPLOAD_CLAIM_FILE}"
     claim_body = _canonical_json(
         {
             "format": UPLOAD_CLAIM_FORMAT,
             "backup_id": backup_id,
-            "nonce": uuid.uuid4().hex,
+            "nonce": claim_nonce or uuid.uuid4().hex,
         }
     )
     probe_body = _canonical_json(
@@ -513,9 +517,25 @@ def _acquire_upload_claim(
             content_type="application/json",
         )
     except _ConditionalConflict:
-        raise BackupError(
-            "This backup identifier is already claimed by another writer."
-        ) from None
+        if claim_nonce is None:
+            raise BackupError(
+                "This backup identifier is already claimed by another writer."
+            ) from None
+        claim_sha256 = hashlib.sha256(claim_body).hexdigest()
+        claim_head = _head_object(s3, settings, claim_key)
+        assert claim_head is not None
+        try:
+            _verify_remote_object(
+                claim_head,
+                expected_size=len(claim_body),
+                expected_sha256=claim_sha256,
+                settings=settings,
+            )
+        except BackupError:
+            raise BackupError(
+                "This backup identifier is claimed by a different writer."
+            ) from None
+        return
 
     # Prove that the provider enforces If-None-Match before any backup body is
     # uploaded. A silent success would overwrite the claim and fails closed.
@@ -1026,9 +1046,11 @@ def upload_bundle(
     settings: S3Settings,
     *,
     client=None,
+    claim_nonce: str | None = None,
 ) -> str:
-    bundle_dir = bundle_dir.expanduser().resolve()
-    manifest = load_and_verify_manifest(bundle_dir)
+    expanded_bundle = bundle_dir.expanduser()
+    manifest = load_and_verify_manifest(expanded_bundle)
+    bundle_dir = expanded_bundle.resolve()
     verify_bundle_files(bundle_dir, manifest)
     expected = _expected_upload_files(bundle_dir, manifest)
     backup_id = manifest["backup_id"]
@@ -1040,7 +1062,13 @@ def upload_bundle(
             "This immutable backup identifier is already complete; refusing "
             "to overwrite any remote object."
         )
-    _acquire_upload_claim(s3, settings, object_prefix, backup_id)
+    _acquire_upload_claim(
+        s3,
+        settings,
+        object_prefix,
+        backup_id,
+        claim_nonce=claim_nonce,
+    )
     try:
         for local_relative, remote_relative, content_type in _upload_objects(manifest):
             path = _join_under(bundle_dir, _safe_relative_path(local_relative))
