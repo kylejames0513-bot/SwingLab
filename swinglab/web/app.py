@@ -629,9 +629,7 @@ def create_app(
             public_base_url=os.environ.get("PUBLIC_BASE_URL"),
             brand_name=str(cfg.brand["name"]),
             shopify_sync_eligible=lambda email: shopify_sync_eligible(email),
-            on_success=lambda user: queue_shopify_sync(
-                user, identity_just_verified=True
-            ),
+            on_success=lambda user: queue_shopify_sync(user),
             drain_timeout_seconds=sign_out_drain_timeout_seconds,
         )
         mobile_auth_service.verify_enabled_recovery_readiness()
@@ -1020,9 +1018,7 @@ def create_app(
             )
         )
 
-    def queue_shopify_sync(
-        user: User, *, identity_just_verified: bool = False
-    ) -> None:
+    def queue_shopify_sync(user: User) -> None:
         """Persist and wake outbound sync without delaying registration."""
 
         if (
@@ -1036,11 +1032,10 @@ def create_app(
         # Unverified or out-of-cohort users remain safe local accounts.
         if not user.email_verified:
             return
-        if identity_just_verified or user.shopify_sync_status in (
-            "not_started",
-            "pending",
-            "requires_review",
-        ):
+        # Automatic enrollment may wake only new/pending work. A failed row's
+        # retry timestamp and a requires-review row's operator decision are
+        # durable control state, not login-time retry hints.
+        if user.shopify_sync_status in ("not_started", "pending"):
             shopify_sync_coordinator.enqueue(user.id)
 
     def require_admin(request: Request) -> None:
@@ -2034,10 +2029,7 @@ def create_app(
                 auth_view=auth_view,
             )
         claim_pending_pro(user)
-        queue_shopify_sync(
-            user,
-            identity_just_verified=identity_just_verified,
-        )
+        queue_shopify_sync(user)
         if identity_just_verified:
             users.ensure_golfer_profile(user.id)
             record_product_event(
@@ -2203,7 +2195,7 @@ def create_app(
             profile_was_missing = users.get_golfer_profile(user.id) is None
             users.ensure_golfer_profile(user.id)
             claim_pending_pro(user)
-            queue_shopify_sync(user, identity_just_verified=True)
+            queue_shopify_sync(user)
             record_product_event(
                 request,
                 "account_verified",

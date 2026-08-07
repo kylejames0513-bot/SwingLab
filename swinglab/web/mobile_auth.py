@@ -444,7 +444,7 @@ class MobileAuthService:
             raise
         except ValueError as exc:
             raise MobileNativeAuthInvalidRequest(str(exc)) from exc
-        advanced = self._advance(journal.exchange_id)
+        advanced, completed_now = self._advance(journal.exchange_id)
         if advanced is None:
             return MobileNativeAuthExchange(
                 exchange_id=journal.exchange_id,
@@ -463,7 +463,8 @@ class MobileAuthService:
             raise MobileNativeAuthUnavailable(
                 "The authenticated account is unavailable."
             )
-        self._on_success(user)
+        if completed_now:
+            self._on_success(user)
         return MobileNativeAuthExchange(
             exchange_id=journal.exchange_id,
             pending=False,
@@ -669,7 +670,7 @@ class MobileAuthService:
                     self._users._conn.rollback()
                 raise
 
-    def _complete(self, row: sqlite3.Row) -> None:
+    def _complete(self, row: sqlite3.Row) -> bool:
         completed_at = float(self._now())
         with self._users._lock:
             try:
@@ -685,7 +686,7 @@ class MobileAuthService:
                     )
                 if str(current["phase"]) != "replacement_active":
                     self._users._conn.commit()
-                    return
+                    return False
                 self._users._conn.execute(
                     "INSERT OR IGNORE INTO mobile_auth_exchange_receipts"
                     " (exchange_id, purpose, challenge_id, replacement_selector,"
@@ -709,18 +710,25 @@ class MobileAuthService:
                     (completed_at, current["exchange_id"]),
                 )
                 self._users._conn.commit()
+                return True
             except Exception:
                 if self._users._conn.in_transaction:
                     self._users._conn.rollback()
                 raise
 
-    def _advance(self, exchange_id: str) -> MobileAuthExchangeJournal | None:
+    def _advance(
+        self, exchange_id: str
+    ) -> tuple[MobileAuthExchangeJournal | None, bool]:
         with self._operation_locks.hold(exchange_id):
+            completed_now = False
             while True:
                 row = self._row(exchange_id)
                 phase = str(row["phase"])
                 if phase == "complete":
-                    return self._users._mobile_auth_journal_from_row(row)
+                    return (
+                        self._users._mobile_auth_journal_from_row(row),
+                        completed_now,
+                    )
                 if phase == "prepared":
                     if row["prior_selector"] is None:
                         self._transition_without_recovery(
@@ -728,13 +736,13 @@ class MobileAuthService:
                         )
                         continue
                     if not self._publish_prior_revoke(row):
-                        return None
+                        return None, False
                     continue
                 if phase == "prior_recovery_fenced":
                     self._activate_replacement(row)
                     continue
                 if phase == "replacement_active":
-                    self._complete(row)
+                    completed_now = self._complete(row) or completed_now
                     continue
                 raise MobileNativeAuthUnavailable(
                     "A native authentication journal phase is invalid."
@@ -748,7 +756,8 @@ class MobileAuthService:
                 raise MobileNativeAuthUnavailable(
                     "Pending native authentication recovery is not configured."
                 )
-            if self._advance(exchange_id) is None:
+            advanced, _completed_now = self._advance(exchange_id)
+            if advanced is None:
                 raise MobileNativeAuthUnavailable(
                     "Pending native authentication recovery could not complete."
                 )

@@ -3923,7 +3923,13 @@ class UserStore:
                     # First inbox proof supersedes a password that may have
                     # been registered before ownership was demonstrated.
                     sets.extend(("password_hash = ''", "auth_epoch = auth_epoch + 1"))
-            if shopify_sync_pending and row["shopify_customer_id"] is None:
+            if (
+                shopify_sync_pending
+                and identity_just_verified
+                and row["shopify_customer_id"] is None
+                and row["shopify_sync_status"]
+                in (SHOPIFY_SYNC_NOT_STARTED, SHOPIFY_SYNC_PENDING)
+            ):
                 sets.extend(
                     (
                         "shopify_sync_status = ?",

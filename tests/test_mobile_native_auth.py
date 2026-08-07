@@ -16,10 +16,11 @@ import pytest
 pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
-from swinglab.config import Config
 from swinglab.api.contracts import NativeAuthStartRequest
 from swinglab.api.errors import MobileAPIHTTPError
 from swinglab.api.mobile_routes import _native_auth_payload
+from swinglab.config import Config
+from swinglab.integrations.shopify.backfill import bind_backfill_database
 from swinglab.web import mailer
 from swinglab.web import users as users_module
 from swinglab.web.app import create_app
@@ -30,6 +31,12 @@ from swinglab.web.mobile_auth import (
 )
 from swinglab.web.mobile_schema import VersionedHMAC
 from swinglab.web.recovery_fence_ledger import RecoveryFenceError
+from swinglab.web.users import (
+    SHOPIFY_SYNC_FAILED,
+    SHOPIFY_SYNC_NOT_STARTED,
+    SHOPIFY_SYNC_REQUIRES_REVIEW,
+    UserStore,
+)
 
 
 IDEMPOTENCY_KEY = "0123456789abcdef0123456789abcdef"
@@ -68,6 +75,14 @@ class FakeRecoveryFenceLedger:
         )
 
 
+class FakeShopifySyncAdminClient:
+    store_domain = "native-auth-test.myshopify.com"
+    shop_gid = "gid://shopify/Shop/321"
+
+    def verify_store_access(self):
+        return self.shop_gid
+
+
 def _keyring() -> VersionedHMAC:
     return VersionedHMAC("k1", {"k1": b"k" * 32})
 
@@ -93,6 +108,53 @@ def _make_app(tmp_path, *, enabled=True, ledger=None, config=None):
         mobile_state_hmac=_keyring(),
         recovery_fence_ledger=ledger or FakeRecoveryFenceLedger(),
     )
+
+
+def _make_shopify_sync_app(
+    tmp_path,
+    monkeypatch,
+    *,
+    sync_status: str,
+    sync_error: str | None = None,
+    next_attempt_at: float | None = None,
+):
+    sessions = tmp_path / "sessions"
+    sessions.mkdir(parents=True, exist_ok=True)
+    db_path = sessions / "swinglab.db"
+    seed = UserStore(db_path, mobile_state_hmac=_keyring())
+    user = seed.verify_email_signin("golfer@example.com")
+    seed._conn.execute(
+        "UPDATE users SET shopify_sync_status = ?, shopify_sync_error = ?,"
+        " shopify_sync_next_attempt_at = ? WHERE id = ?",
+        (sync_status, sync_error, next_attempt_at, user.id),
+    )
+    seed._conn.commit()
+    seed.close()
+
+    admin_client = FakeShopifySyncAdminClient()
+    bind_backfill_database(
+        db_path,
+        admin_client.store_domain,
+        admin_client.shop_gid,
+        confirmation=admin_client.store_domain,
+    )
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", admin_client.store_domain)
+    monkeypatch.setenv("SHOPIFY_CUSTOMER_SYNC_COHORT_PERCENT", "100")
+    monkeypatch.setenv("SWINGLAB_SECRET", "stable-native-auth-test-secret")
+    cfg = _config()
+    cfg.shopify_customer_sync["enabled"] = True
+    app = create_app(
+        cfg,
+        sessions,
+        shopify_admin_client=admin_client,
+        start_shopify_sync_worker=False,
+        start_background_workers=False,
+        mobile_state_hmac=_keyring(),
+        recovery_fence_ledger=FakeRecoveryFenceLedger(),
+    )
+    assert app.state.shopify_sync is not None
+    assert app.state.shopify_sync.enrollment_allowed
+    return app, user.id
 
 
 def _start_body(
@@ -888,6 +950,95 @@ def test_native_convergence_claims_pending_pro_and_creates_profile(
     assert app.state.users.get_golfer_profile(user.id) is not None
 
 
+@pytest.mark.parametrize(
+    ("sync_status", "next_attempt_at"),
+    (
+        (SHOPIFY_SYNC_FAILED, 4_000_000_000.0),
+        (SHOPIFY_SYNC_REQUIRES_REVIEW, None),
+    ),
+)
+def test_native_login_preserves_shopify_failure_backoff_and_manual_review(
+    tmp_path, monkeypatch, sync_status, next_attempt_at
+):
+    messages = []
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <noreply@example.com>")
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp://mail.example")
+    monkeypatch.setattr(
+        mailer,
+        "send",
+        lambda *args, **kwargs: messages.append((*args, kwargs.get("html_body"))),
+    )
+    safe_error = f"preserve-{sync_status}"
+    app, user_id = _make_shopify_sync_app(
+        tmp_path,
+        monkeypatch,
+        sync_status=sync_status,
+        sync_error=safe_error,
+        next_attempt_at=next_attempt_at,
+    )
+    enqueue_calls = []
+    real_enqueue = app.state.shopify_sync.enqueue
+
+    def record_enqueue(candidate_user_id):
+        enqueue_calls.append(candidate_user_id)
+        return real_enqueue(candidate_user_id)
+
+    monkeypatch.setattr(app.state.shopify_sync, "enqueue", record_enqueue)
+    with TestClient(app) as client:
+        started = _start(client)
+        exchanged = _exchange(
+            client,
+            started.json()["challenge_id"],
+            _code_from_messages(messages),
+        )
+
+    assert exchanged.status_code == 201
+    current = app.state.users.get(user_id)
+    assert current is not None
+    assert current.shopify_sync_status == sync_status
+    assert current.shopify_sync_error == safe_error
+    assert current.shopify_sync_next_attempt_at == next_attempt_at
+    assert enqueue_calls == []
+
+
+def test_exact_native_exchange_replay_does_not_requeue_shopify_sync(
+    tmp_path, monkeypatch
+):
+    messages = []
+    monkeypatch.setenv("PUBLIC_BASE_URL", "https://app.example")
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <noreply@example.com>")
+    monkeypatch.setenv("SWINGLAB_SMTP_URL", "smtp://mail.example")
+    monkeypatch.setattr(
+        mailer,
+        "send",
+        lambda *args, **kwargs: messages.append((*args, kwargs.get("html_body"))),
+    )
+    app, user_id = _make_shopify_sync_app(
+        tmp_path,
+        monkeypatch,
+        sync_status=SHOPIFY_SYNC_NOT_STARTED,
+    )
+    enqueue_calls = []
+    real_enqueue = app.state.shopify_sync.enqueue
+
+    def record_enqueue(candidate_user_id):
+        enqueue_calls.append(candidate_user_id)
+        return real_enqueue(candidate_user_id)
+
+    monkeypatch.setattr(app.state.shopify_sync, "enqueue", record_enqueue)
+    with TestClient(app) as client:
+        started = _start(client)
+        code = _code_from_messages(messages)
+        first = _exchange(client, started.json()["challenge_id"], code)
+        replay = _exchange(client, started.json()["challenge_id"], code)
+
+    assert first.status_code == 201
+    assert replay.status_code == 201
+    assert replay.json() == first.json()
+    assert enqueue_calls == [user_id]
+
+
 def test_enabled_startup_fails_closed_without_https_or_recovery_readback(
     tmp_path, monkeypatch
 ):
@@ -994,7 +1145,7 @@ def test_startup_resumes_prepared_initial_issuance_with_feature_off(
         monkeypatch.setattr(
             app.state.mobile_auth_service,
             "_advance",
-            lambda _exchange_id: None,
+            lambda _exchange_id: (None, False),
         )
         pending = _exchange(
             client,

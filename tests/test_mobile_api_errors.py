@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
 from swinglab.api.auth import MobileAuthError
-from swinglab.api.errors import install_mobile_error_handlers
+from swinglab.api.errors import MobileAPIHTTPError, install_mobile_error_handlers
 
 
 class _RequiredPayload(BaseModel):
@@ -36,6 +36,15 @@ def _app() -> FastAPI:
     def mobile_failure():
         raise RuntimeError("secret implementation detail")
 
+    @app.get("/mobile/structured-failure", name="mobile.structured_failure")
+    def mobile_structured_failure():
+        raise MobileAPIHTTPError(
+            503,
+            "auth_unavailable",
+            "caller supplied secret detail",
+            headers={"Cache-Control": "no-store", "Retry-After": "7"},
+        )
+
     @app.get("/legacy", name="legacy")
     def legacy():
         raise HTTPException(404, "legacy detail")
@@ -46,6 +55,7 @@ def _app() -> FastAPI:
             "mobile.synthetic_status",
             "mobile.synthetic_validation",
             "mobile.synthetic_failure",
+            "mobile.structured_failure",
         },
     )
     return app
@@ -90,6 +100,27 @@ def test_named_mobile_validation_and_failures_do_not_leak_request_or_exception_d
     assert failure.json()["retryable"] is True
     assert re.fullmatch(r"[0-9a-f]{32}", failure.json()["reference_id"])
     assert "secret implementation detail" not in failure.text
+
+
+def test_named_structured_5xx_is_sanitized_with_fresh_reference_and_safe_headers():
+    """Catches MobileAPIHTTPError bypassing the named-route 5xx boundary."""
+
+    client = TestClient(_app(), raise_server_exceptions=False)
+    responses = [client.get("/mobile/structured-failure") for _ in range(2)]
+    reference_ids = []
+    for response in responses:
+        assert response.status_code == 503
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["retry-after"] == "7"
+        assert response.json()["resource_version"] == 1
+        assert response.json()["code"] == "internal_error"
+        assert response.json()["message"] == "Internal server error."
+        assert response.json()["retryable"] is True
+        reference_id = response.json()["reference_id"]
+        assert re.fullmatch(r"[0-9a-f]{32}", reference_id)
+        assert "caller supplied secret detail" not in response.text
+        reference_ids.append(reference_id)
+    assert reference_ids[0] != reference_ids[1]
 
 
 def test_legacy_routes_keep_fastapis_detail_error_contract():

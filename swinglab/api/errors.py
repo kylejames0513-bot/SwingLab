@@ -70,16 +70,6 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
     async def mobile_http_exception(request: Request, exc: HTTPException):
         if not _is_named_mobile_route(request, names):
             return await http_exception_handler(request, exc)
-        if isinstance(exc, (MobileAuthError, MobileAPIHTTPError)):
-            return _response(
-                APIError(
-                    code=exc.mobile_error_code,
-                    message=str(exc.detail),
-                    retryable=exc.mobile_error_retryable,
-                ),
-                exc.status_code,
-                exc.headers,
-            )
         if exc.status_code >= 500:
             return _response(
                 APIError(
@@ -87,6 +77,16 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
                     message="Internal server error.",
                     retryable=True,
                     reference_id=secrets.token_hex(16),
+                ),
+                exc.status_code,
+                exc.headers,
+            )
+        if isinstance(exc, (MobileAuthError, MobileAPIHTTPError)):
+            return _response(
+                APIError(
+                    code=exc.mobile_error_code,
+                    message=str(exc.detail),
+                    retryable=exc.mobile_error_retryable,
                 ),
                 exc.status_code,
                 exc.headers,
