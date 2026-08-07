@@ -240,3 +240,90 @@ def test_failed_cleanup_of_one_ambiguous_target_does_not_delete_later_targets(tm
         cleanup_abandoned_report_bundles(session)
     assert bad.is_dir()
     assert good.staging_dir.is_dir()
+
+
+def test_discard_refuses_nested_ancestor_swap_before_outside_deletion(tmp_path, monkeypatch):
+    from swinglab import report_bundle
+
+    session = _session(tmp_path)
+    attempt = begin_report_bundle(session, attempt_id="9" * 32)
+    nested = attempt.work_dir / "nested"
+    nested.mkdir()
+    sentinel = nested / "outside-sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    moved = tmp_path / "moved-owned-tree"
+
+    def swap(plans):
+        try:
+            nested.rename(moved)
+        except OSError as exc:
+            raise CoreReportBundleError("pinned owned ancestor refused replacement") from exc
+        try:
+            nested.symlink_to(moved, target_is_directory=True)
+        except OSError as exc:
+            raise CoreReportBundleError("owned replacement could not be installed") from exc
+
+    monkeypatch.setattr(report_bundle, "_after_owned_tree_plans", swap, raising=False)
+    with pytest.raises(CoreReportBundleError):
+        discard_report_bundle_attempt(attempt)
+    surviving = moved / sentinel.name if moved.exists() else sentinel
+    assert surviving.read_text(encoding="utf-8") == "keep"
+
+
+def test_recovery_refuses_nested_ancestor_swap_before_any_candidate_deletion(tmp_path, monkeypatch):
+    from swinglab import report_bundle
+
+    session = _session(tmp_path)
+    first = begin_report_bundle(session, attempt_id="0" * 32)
+    second = begin_report_bundle(session, attempt_id="f" * 32)
+    nested = first.work_dir / "nested"
+    nested.mkdir()
+    sentinel = nested / "outside-sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    moved = tmp_path / "moved-recovery-tree"
+
+    def swap(plans):
+        try:
+            nested.rename(moved)
+        except OSError as exc:
+            raise CoreReportBundleError("pinned recovery ancestor refused replacement") from exc
+        try:
+            nested.symlink_to(moved, target_is_directory=True)
+        except OSError as exc:
+            raise CoreReportBundleError("recovery replacement could not be installed") from exc
+
+    monkeypatch.setattr(report_bundle, "_after_owned_tree_plans", swap)
+    with pytest.raises(CoreReportBundleError):
+        cleanup_abandoned_report_bundles(session)
+    surviving = moved / sentinel.name if moved.exists() else sentinel
+    assert surviving.read_text(encoding="utf-8") == "keep"
+    assert second.staging_dir.is_dir()
+
+
+def test_recovery_direct_entry_limit_counts_unrelated_children_before_planning(tmp_path, monkeypatch):
+    from swinglab import report_bundle
+
+    session = _session(tmp_path)
+    attempt = begin_report_bundle(session, attempt_id="a" * 32)
+    (session / "unrelated-one").mkdir()
+    (session / "unrelated-two").write_text("keep", encoding="utf-8")
+    monkeypatch.setattr(report_bundle, "_MAX_RECOVERY_DIRECT_ENTRIES", 2, raising=False)
+
+    with pytest.raises(CoreReportBundleError, match="direct|bound"):
+        cleanup_abandoned_report_bundles(session)
+    assert attempt.staging_dir.is_dir()
+    assert (session / "unrelated-two").read_text(encoding="utf-8") == "keep"
+
+
+def test_recovery_cumulative_plan_budget_fails_before_any_candidate_deletion(tmp_path, monkeypatch):
+    from swinglab import report_bundle
+
+    session = _session(tmp_path)
+    first = begin_report_bundle(session, attempt_id="c" * 32)
+    second = begin_report_bundle(session, attempt_id="d" * 32)
+    monkeypatch.setattr(report_bundle, "_MAX_RECOVERY_PLANNED_ENTRIES", 7, raising=False)
+
+    with pytest.raises(CoreReportBundleError, match="cumulative|budget|bound"):
+        cleanup_abandoned_report_bundles(session)
+    assert first.staging_dir.is_dir()
+    assert second.staging_dir.is_dir()

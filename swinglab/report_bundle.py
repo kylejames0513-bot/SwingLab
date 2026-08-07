@@ -10,6 +10,7 @@ import re
 import stat
 import sys
 import uuid
+from contextlib import ExitStack
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Protocol, Sequence
@@ -73,6 +74,8 @@ _FINAL_RE = re.compile(r"report-bundle-([0-9a-f]{32})\Z")
 _ATTEMPT_ID_RE = re.compile(r"[0-9a-f]{32}\Z")
 _OWNER_READ_LIMIT = 4096
 _MAX_OWNED_ENTRIES = 4096
+_MAX_RECOVERY_DIRECT_ENTRIES = 4096
+_MAX_RECOVERY_PLANNED_ENTRIES = 8192
 _FATAL_CAPTURE_REASONS = frozenset(
     {
         ReasonCode.CAMERA_ANGLE_MISMATCH,
@@ -83,6 +86,66 @@ _FATAL_CAPTURE_REASONS = frozenset(
         ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE,
     }
 )
+
+
+if os.name == "nt":  # pragma: no cover - definitions are imported only on Windows
+    from ctypes import wintypes
+
+    class _WinFileTime(ctypes.Structure):
+        _fields_ = [("dwLowDateTime", wintypes.DWORD), ("dwHighDateTime", wintypes.DWORD)]
+
+    class _WinByHandleFileInformation(ctypes.Structure):
+        _fields_ = [
+            ("dwFileAttributes", wintypes.DWORD),
+            ("ftCreationTime", _WinFileTime),
+            ("ftLastAccessTime", _WinFileTime),
+            ("ftLastWriteTime", _WinFileTime),
+            ("dwVolumeSerialNumber", wintypes.DWORD),
+            ("nFileSizeHigh", wintypes.DWORD),
+            ("nFileSizeLow", wintypes.DWORD),
+            ("nNumberOfLinks", wintypes.DWORD),
+            ("nFileIndexHigh", wintypes.DWORD),
+            ("nFileIndexLow", wintypes.DWORD),
+        ]
+
+    class _WinFileDispositionInfo(ctypes.Structure):
+        _fields_ = [("DeleteFile", wintypes.BOOL)]
+
+    _WIN_KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    _WIN_CREATE_FILE = _WIN_KERNEL32.CreateFileW
+    _WIN_CREATE_FILE.argtypes = [
+        wintypes.LPCWSTR,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    ]
+    _WIN_CREATE_FILE.restype = wintypes.HANDLE
+    _WIN_CLOSE_HANDLE = _WIN_KERNEL32.CloseHandle
+    _WIN_CLOSE_HANDLE.argtypes = [wintypes.HANDLE]
+    _WIN_CLOSE_HANDLE.restype = wintypes.BOOL
+    _WIN_GET_FILE_INFO = _WIN_KERNEL32.GetFileInformationByHandle
+    _WIN_GET_FILE_INFO.argtypes = [wintypes.HANDLE, ctypes.POINTER(_WinByHandleFileInformation)]
+    _WIN_GET_FILE_INFO.restype = wintypes.BOOL
+    _WIN_GET_FINAL_PATH = _WIN_KERNEL32.GetFinalPathNameByHandleW
+    _WIN_GET_FINAL_PATH.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
+    _WIN_GET_FINAL_PATH.restype = wintypes.DWORD
+    _WIN_SET_FILE_INFO = _WIN_KERNEL32.SetFileInformationByHandle
+    _WIN_SET_FILE_INFO.argtypes = [wintypes.HANDLE, ctypes.c_int, wintypes.LPVOID, wintypes.DWORD]
+    _WIN_SET_FILE_INFO.restype = wintypes.BOOL
+
+    _WIN_FILE_READ_ATTRIBUTES = 0x80
+    _WIN_DELETE = 0x00010000
+    _WIN_SHARE_READ_WRITE = 0x1 | 0x2
+    _WIN_OPEN_EXISTING = 3
+    _WIN_FLAG_BACKUP_SEMANTICS = 0x02000000
+    _WIN_FLAG_OPEN_REPARSE_POINT = 0x00200000
+    _WIN_ATTR_DIRECTORY = 0x10
+    _WIN_ATTR_REPARSE_POINT = 0x400
+    _WIN_FILE_DISPOSITION_INFO_CLASS = 4
+    _WIN_INVALID_HANDLE = ctypes.c_void_p(-1).value
 
 
 class CoreReportBundleError(RuntimeError):
@@ -125,12 +188,15 @@ class StagedReportBundle:
     checksums: ReportBundleChecksums
 
 
-@dataclass(frozen=True)
+@dataclass
 class _OwnedEntry:
     path: Path
+    name: str
+    parent_handle: int
     mode: int
     device: int
     inode: int
+    handle: int | None = None
 
 
 @dataclass(frozen=True)
@@ -251,54 +317,405 @@ def begin_report_bundle(
     return ReportBundleAttempt(selected, session, staging, staging / "work", staging / "media")
 
 
-def _preflight_owned_tree(root: Path) -> tuple[_OwnedEntry, ...]:
-    root_info = _lstat(root, label="owned report tree")
-    if _is_reparse(root, root_info) or not stat.S_ISDIR(root_info.st_mode):
-        raise CoreReportBundleError("owned report target is a link, reparse point, or non-directory")
-    entries: list[_OwnedEntry] = []
+def _same_entry(info: os.stat_result, entry: _OwnedEntry) -> bool:
+    return (
+        not _is_reparse_info(info)
+        and not stat.S_ISLNK(info.st_mode)
+        and (int(info.st_dev), int(info.st_ino), stat.S_IFMT(info.st_mode))
+        == (entry.device, entry.inode, stat.S_IFMT(entry.mode))
+    )
 
-    def walk(path: Path, info: os.stat_result) -> None:
-        if len(entries) >= _MAX_OWNED_ENTRIES:
-            raise CoreReportBundleError("owned report tree exceeds its traversal bound")
-        if _is_reparse(path, info):
-            raise CoreReportBundleError("owned report tree contains a link or reparse point")
-        if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
-            raise CoreReportBundleError("owned report tree contains an unsupported entry")
-        entries.append(_OwnedEntry(path, info.st_mode, int(info.st_dev), int(info.st_ino)))
-        if stat.S_ISDIR(info.st_mode):
+
+def _win_open_owned(path: Path, *, delete_access: bool) -> int:
+    desired = _WIN_FILE_READ_ATTRIBUTES | (_WIN_DELETE if delete_access else 0)
+    handle = _WIN_CREATE_FILE(
+        str(path),
+        desired,
+        _WIN_SHARE_READ_WRITE,
+        None,
+        _WIN_OPEN_EXISTING,
+        _WIN_FLAG_BACKUP_SEMANTICS | _WIN_FLAG_OPEN_REPARSE_POINT,
+        None,
+    )
+    if handle in (None, _WIN_INVALID_HANDLE):
+        raise OSError(ctypes.get_last_error(), "cannot pin owned report entry")
+    return int(handle)
+
+
+def _win_close_owned(handle: int) -> None:
+    if not _WIN_CLOSE_HANDLE(handle):
+        raise OSError(ctypes.get_last_error(), "cannot close owned report handle")
+
+
+def _win_owned_info(handle: int):
+    info = _WinByHandleFileInformation()
+    if not _WIN_GET_FILE_INFO(handle, ctypes.byref(info)):
+        raise OSError(ctypes.get_last_error(), "cannot inspect owned report handle")
+    return info
+
+
+def _win_owned_identity(info: object) -> tuple[int, int]:
+    return (
+        int(info.dwVolumeSerialNumber),
+        (int(info.nFileIndexHigh) << 32) | int(info.nFileIndexLow),
+    )
+
+
+def _win_owned_final_path(handle: int) -> Path:
+    size = 32768
+    buffer = ctypes.create_unicode_buffer(size)
+    length = _WIN_GET_FINAL_PATH(handle, buffer, size, 0)
+    if not length or length >= size:
+        raise OSError(ctypes.get_last_error(), "cannot resolve owned report handle")
+    value = buffer.value
+    if value.startswith("\\\\?\\UNC\\"):
+        value = "\\\\" + value[8:]
+    elif value.startswith("\\\\?\\"):
+        value = value[4:]
+    return Path(value)
+
+
+def _same_windows_path(left: Path, right: Path) -> bool:
+    return os.path.normcase(os.path.abspath(str(left))) == os.path.normcase(
+        os.path.abspath(str(right))
+    )
+
+
+def _win_validate_handle(
+    handle: int,
+    path: Path,
+    *,
+    expected_identity: tuple[int, int] | None = None,
+    expected_directory: bool,
+) -> tuple[int, int]:
+    info = _win_owned_info(handle)
+    attributes = int(info.dwFileAttributes)
+    if attributes & _WIN_ATTR_REPARSE_POINT:
+        raise CoreReportBundleError("owned report tree contains a reparse point")
+    is_directory = bool(attributes & _WIN_ATTR_DIRECTORY)
+    if is_directory != expected_directory:
+        raise CoreReportBundleError("owned report entry changed type")
+    identity = _win_owned_identity(info)
+    if expected_identity is not None and identity != expected_identity:
+        raise CoreReportBundleError("owned report entry changed identity")
+    if not _same_windows_path(_win_owned_final_path(handle), path):
+        raise CoreReportBundleError("owned report handle changed its final path")
+    return identity
+
+
+class _PinnedOwnedTree:
+    """Plan and delete one owned tree without releasing its ancestry."""
+
+    def __init__(self, root: Path):
+        self.root = root.absolute()
+        self.entries: list[_OwnedEntry] = []
+        self._parent_handle: int | None = None
+        self._parent_identity: tuple[int, int] | None = None
+
+    @property
+    def entry_count(self) -> int:
+        return len(self.entries)
+
+    def __enter__(self) -> _PinnedOwnedTree:
+        try:
+            if os.name == "nt":
+                self._enter_windows()
+            else:
+                self._enter_posix()
+        except CoreReportBundleError:
+            self.__exit__(None, None, None)
+            raise
+        except OSError as exc:
+            self.__exit__(None, None, None)
+            raise CoreReportBundleError("owned report tree cannot be pinned safely") from exc
+        return self
+
+    def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
+        for entry in reversed(self.entries):
+            if entry.handle is None:
+                continue
             try:
-                with os.scandir(path) as scanned:
-                    children = sorted(scanned, key=lambda item: item.name)
-                    for child in children:
-                        child_path = Path(child.path)
-                        # On Windows, DirEntry.stat may expose zeroed file IDs
-                        # while lstat returns the stable volume/file identity.
-                        walk(child_path, os.lstat(child_path))
+                _win_close_owned(entry.handle) if os.name == "nt" else os.close(entry.handle)
+            except OSError:
+                pass
+            entry.handle = None
+        self.entries.clear()
+        if self._parent_handle is not None:
+            try:
+                _win_close_owned(self._parent_handle) if os.name == "nt" else os.close(self._parent_handle)
+            except OSError:
+                pass
+        self._parent_handle = None
+        self._parent_identity = None
+
+    def _check_bound(self) -> None:
+        if len(self.entries) >= _MAX_OWNED_ENTRIES:
+            raise CoreReportBundleError("owned report tree exceeds its traversal bound")
+
+    def _enter_posix(self) -> None:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+        parent = self.root.parent
+        self._parent_handle = os.open(parent, flags)
+        parent_info = os.fstat(self._parent_handle)
+        if not stat.S_ISDIR(parent_info.st_mode) or _is_reparse_info(parent_info):
+            raise CoreReportBundleError("owned report parent cannot be pinned as a plain directory")
+        self._parent_identity = (int(parent_info.st_dev), int(parent_info.st_ino))
+        root_handle = os.open(self.root.name, flags, dir_fd=self._parent_handle)
+        root_info = os.fstat(root_handle)
+        root_entry = _OwnedEntry(
+            self.root,
+            self.root.name,
+            self._parent_handle,
+            root_info.st_mode,
+            int(root_info.st_dev),
+            int(root_info.st_ino),
+            root_handle,
+        )
+        self._walk_posix(root_entry)
+
+    def _walk_posix(self, entry: _OwnedEntry) -> None:
+        if len(self.entries) >= _MAX_OWNED_ENTRIES:
+            if entry.handle is not None:
+                os.close(entry.handle)
+                entry.handle = None
+            raise CoreReportBundleError("owned report tree exceeds its traversal bound")
+        if entry.handle is None or not stat.S_ISDIR(entry.mode):
+            raise CoreReportBundleError("owned report directory was not pinned")
+        self.entries.append(entry)
+        names: list[str] = []
+        with os.scandir(entry.handle) as scanned:
+            for child in scanned:
+                if len(self.entries) + len(names) >= _MAX_OWNED_ENTRIES:
+                    raise CoreReportBundleError("owned report tree exceeds its traversal bound")
+                names.append(child.name)
+        for name in sorted(names):
+            info = os.stat(name, dir_fd=entry.handle, follow_symlinks=False)
+            if _is_reparse_info(info) or stat.S_ISLNK(info.st_mode):
+                raise CoreReportBundleError("owned report tree contains a link or reparse point")
+            if not (stat.S_ISDIR(info.st_mode) or stat.S_ISREG(info.st_mode)):
+                raise CoreReportBundleError("owned report tree contains an unsupported entry")
+            child_path = entry.path / name
+            child_handle = None
+            if stat.S_ISDIR(info.st_mode):
+                flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0)
+                child_handle = os.open(name, flags, dir_fd=entry.handle)
+                pinned_info = os.fstat(child_handle)
+                if (int(info.st_dev), int(info.st_ino)) != (
+                    int(pinned_info.st_dev), int(pinned_info.st_ino)
+                ):
+                    os.close(child_handle)
+                    raise CoreReportBundleError("owned report directory changed while being pinned")
+            child_entry = _OwnedEntry(
+                child_path,
+                name,
+                entry.handle,
+                info.st_mode,
+                int(info.st_dev),
+                int(info.st_ino),
+                child_handle,
+            )
+            if stat.S_ISDIR(info.st_mode):
+                self._walk_posix(child_entry)
+            else:
+                self._check_bound()
+                self.entries.append(child_entry)
+
+    def _enter_windows(self) -> None:
+        parent = self.root.parent
+        self._parent_handle = _win_open_owned(parent, delete_access=False)
+        self._parent_identity = _win_validate_handle(
+            self._parent_handle, parent, expected_directory=True
+        )
+        root_handle = _win_open_owned(self.root, delete_access=True)
+        identity = _win_validate_handle(root_handle, self.root, expected_directory=True)
+        root_entry = _OwnedEntry(
+            self.root,
+            self.root.name,
+            self._parent_handle,
+            stat.S_IFDIR,
+            identity[0],
+            identity[1],
+            root_handle,
+        )
+        self._walk_windows(root_entry)
+
+    def _walk_windows(self, entry: _OwnedEntry) -> None:
+        if len(self.entries) >= _MAX_OWNED_ENTRIES:
+            if entry.handle is not None:
+                _win_close_owned(entry.handle)
+                entry.handle = None
+            raise CoreReportBundleError("owned report tree exceeds its traversal bound")
+        if entry.handle is None or not stat.S_ISDIR(entry.mode):
+            raise CoreReportBundleError("owned report directory was not pinned")
+        self.entries.append(entry)
+        names: list[str] = []
+        with os.scandir(entry.path) as scanned:
+            for child in scanned:
+                if len(self.entries) + len(names) >= _MAX_OWNED_ENTRIES:
+                    raise CoreReportBundleError("owned report tree exceeds its traversal bound")
+                names.append(child.name)
+        for name in sorted(names):
+            child_path = entry.path / name
+            child_handle = _win_open_owned(child_path, delete_access=True)
+            try:
+                info = _win_owned_info(child_handle)
+                attributes = int(info.dwFileAttributes)
+                if attributes & _WIN_ATTR_REPARSE_POINT:
+                    raise CoreReportBundleError("owned report tree contains a link or reparse point")
+                is_directory = bool(attributes & _WIN_ATTR_DIRECTORY)
+                identity = _win_validate_handle(
+                    child_handle,
+                    child_path,
+                    expected_directory=is_directory,
+                )
+                child_entry = _OwnedEntry(
+                    child_path,
+                    name,
+                    entry.handle,
+                    stat.S_IFDIR if is_directory else stat.S_IFREG,
+                    identity[0],
+                    identity[1],
+                    child_handle,
+                )
+                child_handle = None
+                if is_directory:
+                    self._walk_windows(child_entry)
+                else:
+                    self._check_bound()
+                    self.entries.append(child_entry)
+            finally:
+                if child_handle is not None:
+                    _win_close_owned(child_handle)
+
+    def validate(self) -> None:
+        if self._parent_handle is None or self._parent_identity is None or not self.entries:
+            raise CoreReportBundleError("owned report tree is not pinned")
+        try:
+            if os.name == "nt":
+                self._validate_windows()
+            else:
+                self._validate_posix()
+        except CoreReportBundleError:
+            raise
+        except OSError as exc:
+            raise CoreReportBundleError("owned report tree changed before deletion") from exc
+
+    def _validate_posix(self) -> None:
+        assert self._parent_handle is not None and self._parent_identity is not None
+        parent_info = os.stat(self.root.parent, follow_symlinks=False)
+        pinned_parent = os.fstat(self._parent_handle)
+        if (
+            _is_reparse_info(parent_info)
+            or stat.S_ISLNK(parent_info.st_mode)
+            or not stat.S_ISDIR(parent_info.st_mode)
+            or (int(parent_info.st_dev), int(parent_info.st_ino)) != self._parent_identity
+            or (int(pinned_parent.st_dev), int(pinned_parent.st_ino)) != self._parent_identity
+        ):
+            raise CoreReportBundleError("owned report parent changed before deletion")
+        for entry in self.entries:
+            info = os.stat(entry.name, dir_fd=entry.parent_handle, follow_symlinks=False)
+            if not _same_entry(info, entry):
+                raise CoreReportBundleError("owned report entry changed before deletion")
+            if entry.handle is not None:
+                pinned = os.fstat(entry.handle)
+                if not _same_entry(pinned, entry):
+                    raise CoreReportBundleError("pinned owned directory changed before deletion")
+
+    def _validate_windows(self) -> None:
+        assert self._parent_handle is not None and self._parent_identity is not None
+        _win_validate_handle(
+            self._parent_handle,
+            self.root.parent,
+            expected_identity=self._parent_identity,
+            expected_directory=True,
+        )
+        parent_probe = _win_open_owned(self.root.parent, delete_access=False)
+        try:
+            _win_validate_handle(
+                parent_probe,
+                self.root.parent,
+                expected_identity=self._parent_identity,
+                expected_directory=True,
+            )
+        finally:
+            _win_close_owned(parent_probe)
+        for entry in self.entries:
+            if entry.handle is None:
+                raise CoreReportBundleError("owned report entry lost its pinned handle")
+            identity = (entry.device, entry.inode)
+            expected_directory = stat.S_ISDIR(entry.mode)
+            _win_validate_handle(
+                entry.handle,
+                entry.path,
+                expected_identity=identity,
+                expected_directory=expected_directory,
+            )
+            probe = _win_open_owned(entry.path, delete_access=False)
+            try:
+                _win_validate_handle(
+                    probe,
+                    entry.path,
+                    expected_identity=identity,
+                    expected_directory=expected_directory,
+                )
+            finally:
+                _win_close_owned(probe)
+
+    def delete_preserving(
+        self,
+        keep_paths: Sequence[Path] = (),
+        *,
+        already_validated: bool = False,
+    ) -> None:
+        kept = {path.absolute() for path in keep_paths}
+        known = {entry.path for entry in self.entries}
+        if not kept.issubset(known):
+            raise CoreReportBundleError("owned report preservation target changed before deletion")
+        if not already_validated:
+            self.validate()
+        for entry in reversed(self.entries):
+            if entry.path in kept:
+                continue
+            if stat.S_ISDIR(entry.mode) and any(entry.path in path.parents for path in kept):
+                continue
+            try:
+                if os.name == "nt":
+                    if entry.handle is None:
+                        raise CoreReportBundleError("owned report entry lost its pinned handle")
+                    disposition = _WinFileDispositionInfo(True)
+                    if not _WIN_SET_FILE_INFO(
+                        entry.handle,
+                        _WIN_FILE_DISPOSITION_INFO_CLASS,
+                        ctypes.byref(disposition),
+                        ctypes.sizeof(disposition),
+                    ):
+                        raise OSError(ctypes.get_last_error(), "cannot mark owned report entry for deletion")
+                    _win_close_owned(entry.handle)
+                    entry.handle = None
+                elif stat.S_ISDIR(entry.mode):
+                    os.rmdir(entry.name, dir_fd=entry.parent_handle)
+                else:
+                    os.unlink(entry.name, dir_fd=entry.parent_handle)
             except CoreReportBundleError:
                 raise
             except OSError as exc:
-                raise CoreReportBundleError("owned report tree cannot be enumerated") from exc
-
-    walk(root, root_info)
-    return tuple(entries)
+                raise CoreReportBundleError("owned report entry could not be deleted safely") from exc
 
 
-def _delete_preflighted_tree(entries: Sequence[_OwnedEntry]) -> None:
-    for entry in reversed(entries):
-        info = _lstat(entry.path, label="owned report entry")
-        if (
-            _is_reparse(entry.path, info)
-            or (int(info.st_dev), int(info.st_ino), stat.S_IFMT(info.st_mode))
-            != (entry.device, entry.inode, stat.S_IFMT(entry.mode))
-        ):
-            raise CoreReportBundleError("owned report entry changed before deletion")
-        try:
-            if stat.S_ISDIR(entry.mode):
-                entry.path.rmdir()
-            else:
-                entry.path.unlink()
-        except OSError as exc:
-            raise CoreReportBundleError("owned report entry could not be deleted") from exc
+def _after_owned_tree_plans(plans: Sequence[_PinnedOwnedTree]) -> None:
+    """Test seam after all handles are pinned and before any deletion begins."""
+
+
+def _delete_exact_owned_file(root: Path, target: Path) -> None:
+    with _PinnedOwnedTree(root) as plan:
+        _after_owned_tree_plans((plan,))
+        matches = [entry for entry in plan.entries if entry.path == target.absolute()]
+        if not matches:
+            return
+        if len(matches) != 1 or not stat.S_ISREG(matches[0].mode):
+            raise CoreReportBundleError("partial focused evidence is not one owned regular file")
+        keep = tuple(entry.path for entry in plan.entries if entry.path != target.absolute())
+        plan.delete_preserving(keep)
 
 
 def _attempt_ownership(staging: Path, attempt_id: str) -> None:
@@ -325,8 +742,9 @@ def discard_report_bundle_attempt(attempt: ReportBundleAttempt) -> None:
     if _is_reparse(attempt.staging_dir, info) or not stat.S_ISDIR(info.st_mode):
         raise CoreReportBundleError("report attempt target is not an owned plain directory")
     _attempt_ownership(attempt.staging_dir, attempt.attempt_id)
-    entries = _preflight_owned_tree(attempt.staging_dir)
-    _delete_preflighted_tree(entries)
+    with _PinnedOwnedTree(attempt.staging_dir) as plan:
+        _after_owned_tree_plans((plan,))
+        plan.delete_preserving()
 
 
 def _hash_file(path: Path) -> tuple[int, str]:
@@ -379,6 +797,8 @@ def _safe_guided_media_path(attempt: ReportBundleAttempt, value: object) -> Path
 def _normalize_guided_media(
     attempt: ReportBundleAttempt,
     swings: Sequence[dict],
+    *,
+    angle: str,
 ) -> tuple[list[dict], tuple[_GuidedMedia, ...]]:
     normalized: list[dict] = []
     records: list[_GuidedMedia] = []
@@ -386,6 +806,8 @@ def _normalize_guided_media(
         swing = dict(original)
         if swing.get("overlay") is not None:
             raise CoreReportBundleError("guided report bundles reject legacy overlay media")
+        if angle == "dtl" and swing.get("strip") is not None:
+            raise CoreReportBundleError("DTL guided report bundles reject key-position strip media")
         swing.pop("overlay", None)
         for field in ("strip", "slowmo", "replay"):
             value = swing.get(field)
@@ -462,26 +884,12 @@ def _capture_media_and_prune(
             )
         normalized.append(swing)
 
-    entries = _preflight_owned_tree(attempt.media_dir)
-    files = {entry.path for entry in entries if stat.S_ISREG(entry.mode)}
-    if not kept.issubset(files):
-        raise CoreReportBundleError("safe capture playback changed before pruning")
-    for entry in reversed(entries):
-        if entry.path == attempt.media_dir or entry.path in kept:
-            continue
-        if stat.S_ISDIR(entry.mode) and any(path == entry.path or entry.path in path.parents for path in kept):
-            continue
-        info = _lstat(entry.path, label="coaching-only media")
-        if (
-            _is_reparse(entry.path, info)
-            or (info.st_dev, info.st_ino, stat.S_IFMT(info.st_mode))
-            != (entry.device, entry.inode, stat.S_IFMT(entry.mode))
-        ):
-            raise CoreReportBundleError("coaching-only media changed before pruning")
-        try:
-            entry.path.rmdir() if stat.S_ISDIR(entry.mode) else entry.path.unlink()
-        except OSError as exc:
-            raise CoreReportBundleError("coaching-only media could not be pruned safely") from exc
+    with _PinnedOwnedTree(attempt.media_dir) as plan:
+        files = {entry.path for entry in plan.entries if stat.S_ISREG(entry.mode)}
+        if not kept.issubset(files):
+            raise CoreReportBundleError("safe capture playback changed before pruning")
+        _after_owned_tree_plans((plan,))
+        plan.delete_preserving((attempt.media_dir, *kept))
     return normalized, tuple(media), tuple(safe_keys)
 
 
@@ -517,15 +925,16 @@ def _append_reason(reasons: Sequence[ReasonCode], reason: ReasonCode) -> tuple[R
 
 
 def _remove_work_and_empty_media(attempt: ReportBundleAttempt) -> None:
-    if attempt.work_dir.exists():
-        _delete_preflighted_tree(_preflight_owned_tree(attempt.work_dir))
-    if attempt.media_dir.exists():
-        try:
-            next(attempt.media_dir.iterdir())
-        except StopIteration:
-            attempt.media_dir.rmdir()
-        except OSError as exc:
-            raise CoreReportBundleError("attempt media root cannot be inspected") from exc
+    with ExitStack() as stack:
+        work = stack.enter_context(_PinnedOwnedTree(attempt.work_dir))
+        media = stack.enter_context(_PinnedOwnedTree(attempt.media_dir))
+        plans = (work, media)
+        _after_owned_tree_plans(plans)
+        for plan in plans:
+            plan.validate()
+        work.delete_preserving(already_validated=True)
+        if media.entry_count == 1:
+            media.delete_preserving(already_validated=True)
 
 
 def _manifest_artifacts(view: ReportViewV1) -> tuple[ManifestArtifact, ...]:
@@ -586,7 +995,7 @@ def build_report_bundle(
         raise GuidedReportRendererUnavailable("guided report HTML writer is unavailable")
 
     try:
-        normalized_swings, media_records = _normalize_guided_media(attempt, swings)
+        normalized_swings, media_records = _normalize_guided_media(attempt, swings, angle=angle)
         initial_media = _coaching_media(media_records)
         source = prepare_report_input(
             video,
@@ -636,6 +1045,7 @@ def build_report_bundle(
                                 angle=source.context.angle,
                             )
                         except FocusedEvidenceRenderError:
+                            _delete_exact_owned_file(attempt.media_dir, focused_path)
                             visual = build_unavailable_evidence(
                                 selection,
                                 observation="The selected measurement remains usable, but its focused visual is unavailable.",
@@ -873,42 +1283,65 @@ def cleanup_abandoned_report_bundles(
 ) -> int:
     session = _resolved_plain_directory(Path(session_dir), label="session root")
     protected = None if protected_rels is None else _protected_roots(protected_rels)
-    plans: list[tuple[_OwnedEntry, ...]] = []
+    child_names: list[str] = []
     try:
-        children = sorted(os.scandir(session), key=lambda entry: entry.name)
+        with os.scandir(session) as scanned:
+            for child in scanned:
+                if len(child_names) >= _MAX_RECOVERY_DIRECT_ENTRIES:
+                    raise CoreReportBundleError(
+                        "session report recovery exceeds its direct-entry bound"
+                    )
+                child_names.append(child.name)
+    except CoreReportBundleError:
+        raise
     except OSError as exc:
         raise CoreReportBundleError("session root cannot be enumerated for report recovery") from exc
-    for child in children:
-        attempt_match = _ATTEMPT_RE.fullmatch(child.name)
-        final_match = _FINAL_RE.fullmatch(child.name)
-        if attempt_match is None and final_match is None:
-            continue
-        path = Path(child.path)
-        info = child.stat(follow_symlinks=False)
-        if child.is_symlink() or _is_reparse_info(info) or not stat.S_ISDIR(info.st_mode):
-            raise CoreReportBundleError("report recovery candidate is a link, reparse point, or non-directory")
-        if attempt_match is not None:
-            attempt_id = attempt_match.group(1)
-            if path.parent.resolve(strict=True) != session:
-                raise CoreReportBundleError("report recovery attempt is not a direct session child")
-            _attempt_ownership(path, attempt_id)
-            plans.append(_preflight_owned_tree(path))
-            continue
-        assert final_match is not None
-        if protected is None or child.name in protected:
-            continue
-        try:
-            manifest, _, _ = validate_staged_bundle(
-                path,
-                manifest_rel=REPORT_MANIFEST_FILENAME,
-                checksums_rel=REPORT_CHECKSUMS_FILENAME,
-            )
-        except ReportArtifactValidationError as exc:
-            raise CoreReportBundleError("final report recovery candidate failed strict validation") from exc
-        if manifest.attempt_id != final_match.group(1):
-            raise CoreReportBundleError("final report manifest ID does not match its exact directory")
-        plans.append(_preflight_owned_tree(path))
+    with ExitStack() as stack:
+        plans: list[_PinnedOwnedTree] = []
+        cumulative_entries = 0
+        for name in sorted(child_names):
+            attempt_match = _ATTEMPT_RE.fullmatch(name)
+            final_match = _FINAL_RE.fullmatch(name)
+            if attempt_match is None and final_match is None:
+                continue
+            path = session / name
+            info = _lstat(path, label="report recovery candidate")
+            if _is_reparse(path, info) or not stat.S_ISDIR(info.st_mode):
+                raise CoreReportBundleError(
+                    "report recovery candidate is a link, reparse point, or non-directory"
+                )
+            if attempt_match is not None:
+                attempt_id = attempt_match.group(1)
+                _attempt_ownership(path, attempt_id)
+            else:
+                assert final_match is not None
+                if protected is None or name in protected:
+                    continue
+                try:
+                    manifest, _, _ = validate_staged_bundle(
+                        path,
+                        manifest_rel=REPORT_MANIFEST_FILENAME,
+                        checksums_rel=REPORT_CHECKSUMS_FILENAME,
+                    )
+                except ReportArtifactValidationError as exc:
+                    raise CoreReportBundleError(
+                        "final report recovery candidate failed strict validation"
+                    ) from exc
+                if manifest.attempt_id != final_match.group(1):
+                    raise CoreReportBundleError(
+                        "final report manifest ID does not match its exact directory"
+                    )
+            plan = stack.enter_context(_PinnedOwnedTree(path))
+            cumulative_entries += plan.entry_count
+            if cumulative_entries > _MAX_RECOVERY_PLANNED_ENTRIES:
+                raise CoreReportBundleError(
+                    "report recovery exceeds its cumulative planned-entry budget"
+                )
+            plans.append(plan)
 
-    for entries in plans:
-        _delete_preflighted_tree(entries)
-    return len(plans)
+        _after_owned_tree_plans(tuple(plans))
+        for plan in plans:
+            plan.validate()
+        for plan in plans:
+            plan.delete_preserving(already_validated=True)
+        return len(plans)

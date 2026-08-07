@@ -148,6 +148,23 @@ def test_focused_renderer_failure_degrades_to_limited_unavailable(tmp_path, monk
     assert all(media.role is not MediaRole.PRIORITY_EVIDENCE for media in staged.view.media)
 
 
+def test_focused_renderer_partial_output_is_safely_removed_before_fallback(tmp_path, monkeypatch):
+    from swinglab import report_bundle
+
+    def fail(*args, out_path, **kwargs):
+        out_path.write_bytes(b"partial-png")
+        raise FocusedEvidenceRenderError("fixture Pillow failure after write")
+
+    monkeypatch.setattr(report_bundle, "render_focused_evidence", fail)
+    attempt = _begin(tmp_path)
+    staged = build_report_bundle(attempt, **guided_bundle_inputs(tmp_path))
+    assert isinstance(staged.view, CoachingReportView)
+    assert staged.view.trust.state is TrustState.LIMITED
+    assert isinstance(staged.view.visual_evidence, UnavailableEvidence)
+    assert not (attempt.media_dir / "priority-evidence.png").exists()
+    assert "media/priority-evidence.png" not in _file_names(attempt.staging_dir)
+
+
 def test_missing_annotation_trust_becomes_capture_only_not_renderer_unavailable(tmp_path):
     inputs = guided_bundle_inputs(tmp_path)
     snapshot = inputs["evidence_snapshots"][0]
@@ -219,6 +236,35 @@ def test_optional_media_is_declared_only_when_actual_inputs_exist(tmp_path):
     assert "overlay" not in payload["swings"][0]["deliverables"]
 
 
+def test_dtl_strip_is_rejected_before_media_presentation(tmp_path, monkeypatch):
+    from swinglab import report_bundle
+
+    attempt = _begin(tmp_path)
+    inputs = guided_bundle_inputs(tmp_path, angle="dtl")
+    add_optional_media(attempt, inputs, strip=True)
+    monkeypatch.setattr(
+        report_bundle,
+        "_coaching_media",
+        lambda *args, **kwargs: pytest.fail("DTL strip reached MediaEntry construction"),
+    )
+    with pytest.raises(CoreReportBundleError, match="DTL|down-the-line|strip"):
+        build_report_bundle(attempt, **inputs)
+    assert not attempt.staging_dir.exists()
+
+
+def test_dtl_preserves_timing_focus_with_optional_raw_slowmo_only(tmp_path):
+    attempt = _begin(tmp_path)
+    inputs = guided_bundle_inputs(tmp_path, angle="dtl")
+    add_optional_media(attempt, inputs, slowmo=True)
+    staged = build_report_bundle(attempt, **inputs)
+    assert tuple(media.role for media in staged.view.media) == (
+        MediaRole.SLOW_MOTION,
+        MediaRole.PRIORITY_EVIDENCE,
+    )
+    assert staged.view.capabilities.slow_motion is True
+    assert all(media.role is not MediaRole.KEY_POSITIONS for media in staged.view.media)
+
+
 def test_fatal_capture_prunes_coaching_media_and_reroles_only_owned_raw_slowmo(tmp_path):
     attempt = _begin(tmp_path)
     inputs = guided_bundle_inputs(
@@ -243,6 +289,42 @@ def test_fatal_capture_prunes_coaching_media_and_reroles_only_owned_raw_slowmo(t
     }
     assert "media/positions-1.png" not in _file_names(attempt.staging_dir)
     assert "media/replay-1.mp4" not in _file_names(attempt.staging_dir)
+
+
+def test_capture_prune_refuses_nested_ancestor_swap_before_outside_deletion(tmp_path, monkeypatch):
+    from swinglab import report_bundle
+
+    attempt = _begin(tmp_path)
+    inputs = guided_bundle_inputs(tmp_path, reason_codes=(ReasonCode.TRACKING_UNSTABLE,))
+    nested = attempt.media_dir / "nested"
+    nested.mkdir()
+    strip = nested / "positions.png"
+    strip.write_bytes(b"positions")
+    sentinel = nested / "outside-sentinel.txt"
+    sentinel.write_text("keep", encoding="utf-8")
+    inputs["swings"][0]["strip"] = strip
+    moved = tmp_path / "moved-capture-media"
+    attempted = False
+
+    def swap(plans):
+        nonlocal attempted
+        if attempted:
+            raise CoreReportBundleError("stop ambiguous follow-up cleanup")
+        attempted = True
+        try:
+            nested.rename(moved)
+        except OSError as exc:
+            raise CoreReportBundleError("pinned capture ancestor refused replacement") from exc
+        try:
+            nested.symlink_to(moved, target_is_directory=True)
+        except OSError as exc:
+            raise CoreReportBundleError("capture replacement could not be installed") from exc
+
+    monkeypatch.setattr(report_bundle, "_after_owned_tree_plans", swap, raising=False)
+    with pytest.raises(CoreReportBundleError):
+        build_report_bundle(attempt, **inputs)
+    surviving = moved / sentinel.name if moved.exists() else sentinel
+    assert surviving.read_text(encoding="utf-8") == "keep"
 
 
 def test_guided_media_inputs_must_be_owned_paths_not_arbitrary_strings(tmp_path):
