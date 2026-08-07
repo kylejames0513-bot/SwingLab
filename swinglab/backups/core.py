@@ -14,7 +14,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any, Iterable
+from typing import Any, Iterable, Literal
 
 from ..report_artifacts import (
     PublishedReportBundle,
@@ -55,9 +55,8 @@ HISTORY_STATE_TABLES = (
 )
 
 _BACKUP_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")
-_STRUCTURED_JOB_COLUMNS = frozenset(
+_STRUCTURED_JOB_ADDITIONS = frozenset(
     {
-        "report_rel",
         "report_view_rel",
         "report_manifest_rel",
         "report_checksums_rel",
@@ -429,12 +428,25 @@ def _safe_job_root(sessions_dir: Path, job_id: str) -> Path:
     return root
 
 
-def _jobs_have_structured_schema(connection: sqlite3.Connection) -> bool:
+def _jobs_structured_schema_mode(
+    connection: sqlite3.Connection,
+) -> Literal["legacy", "structured"]:
     columns = {
         str(row["name"])
         for row in connection.execute('PRAGMA table_info("jobs")').fetchall()
     }
-    return _STRUCTURED_JOB_COLUMNS.issubset(columns)
+    if "report_rel" not in columns:
+        raise BackupError(
+            "The SQLite snapshot is missing the required report path schema."
+        )
+    additions = _STRUCTURED_JOB_ADDITIONS & columns
+    if not additions:
+        return "legacy"
+    if additions == _STRUCTURED_JOB_ADDITIONS:
+        return "structured"
+    raise BackupError(
+        "The SQLite snapshot has a partial structured report schema."
+    )
 
 
 def _structured_bundle_rels(row: sqlite3.Row) -> dict[str, str]:
@@ -504,7 +516,9 @@ def _artifact_sources(
 ) -> Iterable[tuple[Path, Path]]:
     connection = _read_only_connection(snapshot_db)
     try:
-        structured_schema = _jobs_have_structured_schema(connection)
+        structured_schema = (
+            _jobs_structured_schema_mode(connection) == "structured"
+        )
         projection = (
             _STRUCTURED_JOB_PROJECTION
             if structured_schema
@@ -781,7 +795,9 @@ def _verify_artifact_database_mapping(
 ) -> None:
     connection = _read_only_connection(db_path)
     try:
-        structured_schema = _jobs_have_structured_schema(connection)
+        structured_schema = (
+            _jobs_structured_schema_mode(connection) == "structured"
+        )
         projection = (
             _STRUCTURED_JOB_PROJECTION
             if structured_schema

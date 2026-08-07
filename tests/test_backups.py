@@ -411,6 +411,22 @@ def test_full_schema_unstructured_row_keeps_exact_legacy_allowlist(
     ]
 
 
+def test_backup_rejects_partial_structured_schema_before_artifact_selection(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    connection.execute("ALTER TABLE jobs DROP COLUMN report_checksums_rel")
+    connection.commit()
+    output = tmp_path / "partial-structured-schema-backup"
+
+    with pytest.raises(BackupError, match="partial structured report schema"):
+        create_backup(sessions, output, now=CAPTURED_AT)
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(f".{output.name}.partial-*"))
+
+
 def test_structured_backup_captures_validated_bundle_once_without_transient_tree(
     tmp_path, synthetic_sessions
 ):
@@ -669,6 +685,49 @@ def test_structured_restore_rejects_legacy_only_artifacts_for_structured_databas
         restore_backup(bundle, scratch)
 
     assert not list(scratch.iterdir())
+
+
+def test_restore_rejects_partial_structured_schema_before_legacy_reconciliation(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    published = _add_structured_done_job(tmp_path, sessions, connection)
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    snapshot_path = bundle / DATABASE_BUNDLE_PATH
+    snapshot = sqlite3.connect(snapshot_path)
+    snapshot.execute("ALTER TABLE jobs DROP COLUMN report_checksums_rel")
+    snapshot.commit()
+    snapshot.close()
+    manifest["database"]["sqlite"] = core_module.database_summary(
+        snapshot_path, CAPTURED_AT.timestamp()
+    )
+    _rewrite_database_attestation(bundle, manifest)
+
+    structured_private = {
+        _structured_backup_artifact_path(sessions, published, artifact)
+        for artifact in ("report-view", "manifest", "checksums")
+    }
+    kept = []
+    for item in manifest["artifacts"]["files"]:
+        if item["path"] in structured_private:
+            (
+                bundle
+                / "artifacts"
+                / Path(*PurePosixPath(item["path"]).parts)
+            ).unlink()
+        else:
+            kept.append(item)
+    manifest["artifacts"]["files"] = kept
+    manifest["artifacts"]["count"] = len(kept)
+    manifest["artifacts"]["bytes"] = sum(item["size"] for item in kept)
+    _rewrite_completion(bundle, manifest)
+    scratch = tmp_path / "scratch-partial-structured-schema"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="partial structured report schema"):
+        restore_backup(bundle, scratch)
+
+    assert not any(path.name == "restore-report.json" for path in scratch.rglob("*"))
 
 
 def test_structured_restore_rejects_unsafe_database_rel_before_scratch_result(

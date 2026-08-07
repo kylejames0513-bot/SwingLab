@@ -61,11 +61,17 @@ The database is a WAL-safe online snapshot. The backup format remains
 `caddieinsight-backup/v1`; structured files are additive artifact entries, not
 a second format. Artifact selection is schema-aware:
 
-- A snapshot without the complete structured column set keeps the original
-  legacy behavior exactly.
-- With the complete schema, `structured_report = 0` is still legacy and uses
+- An exact legacy snapshot has `report_rel` and none of the four structured
+  additions: `report_view_rel`, `report_manifest_rel`,
+  `report_checksums_rel`, or `structured_report`. It keeps the original legacy
+  behavior exactly.
+- A structured-capable snapshot has `report_rel` plus all four additions. In
+  that full schema, `structured_report = 0` is still legacy and uses
   only `report.html`, an optional sibling `metrics.json`, an optional legacy
   sibling `proof-cycle.json`, and regular files below the sibling `media/`.
+- Any nonempty proper subset of the four structured additions is a corrupt
+  partial migration. Backup and restore fail before selecting rows or
+  reconciling artifacts; a partial schema is never classified as legacy.
 - A `structured_report = 1` row must have nonempty `report_rel`,
   `report_view_rel`, `report_manifest_rel`, and `report_checksums_rel` values.
   All four must be canonical, session-relative paths beneath the same final
