@@ -550,11 +550,8 @@ if os.name == "nt":
         return int(handle)
 
 
-    def _win_scan_directory(handle: int, *, limit: int) -> tuple[_ScannedEntry, ...]:
-        if limit <= 0:
-            raise OSError("directory traversal limit must be positive")
+    def _win_iter_directory(handle: int) -> Iterator[_ScannedEntry]:
         buffer = (ctypes.c_longlong * (_WIN_DIRECTORY_INFO_BYTES // 8))()
-        rows: list[_ScannedEntry] = []
         information_class = _WIN_FILE_FULL_DIRECTORY_RESTART_INFO
         while True:
             ctypes.set_last_error(0)
@@ -566,7 +563,7 @@ if os.name == "nt":
             ):
                 error = ctypes.get_last_error()
                 if error == _WIN_ERROR_NO_MORE_FILES:
-                    return tuple(rows)
+                    return
                 raise OSError(error, "cannot enumerate open directory handle")
             information_class = _WIN_FILE_FULL_DIRECTORY_INFO
             base = ctypes.addressof(buffer)
@@ -587,19 +584,15 @@ if os.name == "nt":
                     name_bytes // ctypes.sizeof(ctypes.c_wchar),
                 )
                 if name not in (".", ".."):
-                    if len(rows) >= limit:
-                        _err("report bundle contains too many filesystem entries")
                     mode = (
                         stat.S_IFDIR
                         if attributes & _WIN_ATTR_DIRECTORY
                         else stat.S_IFREG
                     )
-                    rows.append(
-                        _ScannedEntry(
-                            name,
-                            mode,
-                            bool(attributes & _WIN_ATTR_REPARSE_POINT),
-                        )
+                    yield _ScannedEntry(
+                        name,
+                        mode,
+                        bool(attributes & _WIN_ATTR_REPARSE_POINT),
                     )
                 if next_offset == 0:
                     break
@@ -610,6 +603,24 @@ if os.name == "nt":
                 ):
                     raise OSError("open directory returned malformed entry offsets")
                 offset += next_offset
+
+
+    def _win_scan_directory(handle: int, *, limit: int) -> tuple[_ScannedEntry, ...]:
+        if limit <= 0:
+            raise OSError("directory traversal limit must be positive")
+        rows: list[_ScannedEntry] = []
+        for entry in _win_iter_directory(handle):
+            if len(rows) >= limit:
+                _err("report bundle contains too many filesystem entries")
+            rows.append(entry)
+        return tuple(rows)
+
+
+    def _win_has_exact_child(handle: int, name: str) -> bool:
+        # An exact lookup cannot share the capped bundle-topology scan: a sessions
+        # directory may legitimately outgrow that cap. Streaming to a match, or to
+        # the native end-of-directory marker for absence, keeps memory usage fixed.
+        return any(entry.name == name for entry in _win_iter_directory(handle))
 
 
     def _win_open_relative(
@@ -626,13 +637,7 @@ if os.name == "nt":
             or "\\" in name
         ):
             raise OSError("relative Windows child name is invalid")
-        if not any(
-            entry.name == name
-            for entry in _win_scan_directory(
-                parent_handle,
-                limit=_MAX_DIRECTORY_ENTRIES,
-            )
-        ):
+        if not _win_has_exact_child(parent_handle, name):
             raise FileNotFoundError(f"exact Windows child name does not exist: {name}")
 
         name_buffer = ctypes.create_unicode_buffer(name)

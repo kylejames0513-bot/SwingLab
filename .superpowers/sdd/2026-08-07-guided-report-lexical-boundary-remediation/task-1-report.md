@@ -313,3 +313,110 @@ executed.
   commit are not made atomically linearizable. Every fallible verification now
   occurs before commit, handles remain pinned through commit, and later reads
   revalidate the complete structured boundary.
+
+## Fix round 2 — stream exact Windows child discovery
+
+### Status and scope
+
+Fix round 2 started from
+`16803b978751fc25acd5ed12e8c5dbc923507f97`. It changes only:
+
+- `swinglab/report_artifacts.py`
+- `tests/test_report_artifacts.py`
+- this report
+
+No push, merge, deployment, feature activation, live mutation, or worktree
+cleanup was performed. The fix commit containing this section has subject
+`fix: stream exact Windows child lookup`; its SHA is reported in the handoff
+because a commit cannot contain its own final object ID.
+
+### RED evidence
+
+The new Windows regression creates 4,097 ordinary entries plus an exact target
+in one parent directory. Against the pre-fix implementation, the exact child
+lookup fully materialized `_win_scan_directory(..., limit=4096)` and failed at
+entry 4,097 even though only one exact child was requested:
+
+```text
+python -m pytest tests/test_report_artifacts.py::test_windows_relative_open_finds_exact_child_beyond_topology_scan_limit -q
+1 failed in 1.19s
+ReportArtifactValidationError: report bundle contains too many filesystem entries
+```
+
+The failure reached native handle enumeration and the intended production
+boundary; it was not a collection, permission, or fixture failure.
+
+### Correction
+
+- Extracted `_win_iter_directory`, a lazy `GetFileInformationByHandleEx`
+  iterator over the already-open directory handle. It remains nonrecursive and
+  validates native entry sizes and offsets as entries are consumed.
+- Kept `_win_scan_directory` as the capped, materialized topology operation.
+  It still rejects an entry beyond its supplied limit, so bundle topology
+  validation retains the existing 4,096-entry resource bound.
+- Added `_win_has_exact_child` for child binding. It uses exact case-sensitive
+  name comparison and constant auxiliary memory, stops immediately at a match,
+  and does not reuse the topology limit. For an absent name, the native
+  end-of-directory result is the completeness bound: a fixed entry-position
+  cap would make a legitimate child beyond that cap indistinguishable from an
+  absent child in a sessions directory that is allowed to keep growing.
+- `_win_open_relative` still performs its `NtOpenFile` call relative to the
+  pinned `RootDirectory` handle. Delete sharing, reparse/type/identity checks,
+  exact final-name validation, and final-path validation are unchanged.
+
+The regression also asserts that the capped full scan still rejects the same
+oversized directory and that an actually absent exact child returns
+`FileNotFoundError` after handle enumeration reaches native end-of-directory.
+
+### Verification
+
+Exact round-two regression on the final tree:
+
+```text
+python -m pytest tests/test_report_artifacts.py::test_windows_relative_open_finds_exact_child_beyond_topology_scan_limit -q
+1 passed in 0.97s
+```
+
+Prior fix-round selectors and the original boundary selector set:
+
+```text
+prior 8 selectors: 7 passed, 1 skipped in 1.48s
+original 15 named selectors (35 parametrized cases): 35 passed in 4.04s
+```
+
+Required focused and lifecycle gates:
+
+```text
+python -m pytest tests/test_report_artifacts.py tests/test_report_bundle_job_publication.py tests/test_caps.py -q
+294 passed, 9 skipped in 19.00s
+
+python -m pytest tests/test_history_reset_core.py tests/test_backups.py tests/test_report_bundle.py -q
+123 passed in 22.69s
+```
+
+Complete verification:
+
+```text
+python -m pytest -q
+1847 passed, 33 skipped, 1 warning in 345.92s (0:05:45)
+
+python -m compileall -q swinglab tests
+exit 0
+
+git diff --check
+exit 0 (Git emitted only working-tree LF-to-CRLF conversion notices)
+```
+
+The single warning is the existing Starlette deprecation warning for `httpx`
+with `starlette.testclient`. The sole skip in the prior fix selectors is the
+POSIX-only descriptor ownership test on this Windows host.
+
+### Concerns
+
+- An absent exact-name lookup is linear in the number of entries in the pinned
+  parent directory. This is intentional: native end-of-directory is the only
+  complete absence result when legitimate sessions may exceed any fixed
+  entry-position cap, while the streaming implementation keeps memory bounded.
+- Windows native enumeration and exact relative opening were executed on this
+  Windows host. The change is isolated inside the existing Windows-only branch;
+  POSIX traversal behavior is unchanged.

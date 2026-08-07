@@ -2190,6 +2190,49 @@ def test_windows_handle_enumeration_is_case_exact_and_not_path_redirectable(
     assert path_scans == []
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows native handle traversal")
+def test_windows_relative_open_finds_exact_child_beyond_topology_scan_limit(
+    tmp_path: Path,
+):
+    parent = tmp_path / "large-parent"
+    parent.mkdir()
+    for index in range(report_artifacts_module._MAX_DIRECTORY_ENTRIES + 1):
+        (parent / f"a-{index:04d}.tmp").touch()
+    target = parent / "z-exact-target"
+    target.mkdir()
+
+    parent_handle = report_artifacts_module._win_open(parent, directory=True)
+    child_handle: int | None = None
+    try:
+        with pytest.raises(
+            ReportArtifactValidationError,
+            match="too many filesystem entries",
+        ):
+            report_artifacts_module._win_scan_directory(
+                parent_handle,
+                limit=report_artifacts_module._MAX_DIRECTORY_ENTRIES,
+            )
+        child_handle = report_artifacts_module._win_open_relative(
+            parent_handle,
+            target.name,
+            directory=True,
+        )
+        assert os.path.samefile(
+            report_artifacts_module._win_final_path(child_handle),
+            target,
+        )
+        with pytest.raises(FileNotFoundError, match="exact Windows child name"):
+            report_artifacts_module._win_open_relative(
+                parent_handle,
+                "z-missing-target",
+                directory=True,
+            )
+    finally:
+        if child_handle is not None:
+            report_artifacts_module._win_close(child_handle)
+        report_artifacts_module._win_close(parent_handle)
+
+
 def test_job_bundle_context_exit_is_cleanup_only_after_explicit_verify(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
