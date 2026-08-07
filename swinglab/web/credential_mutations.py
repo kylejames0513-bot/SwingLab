@@ -16,8 +16,9 @@ import sqlite3
 import threading
 import time
 import uuid
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Callable, Iterator, Protocol
 
 from ..api.auth import MobileAuthContext
 from .mobile_schema import MobileStateDomain, VersionedHMAC
@@ -29,6 +30,8 @@ from .users import UserStore
 
 
 _IDEMPOTENCY_KEY = re.compile(r"[0-9A-Fa-f]{32}")
+_SIGN_OUT_EXTENSION_ID = re.compile(r"[a-z][a-z0-9.-]{0,63}")
+_SIGN_OUT_EXTENSION_CONTRACT_VERSION = 1
 _SIGN_OUT_REPLAY_SECONDS = 7 * 86400
 logger = logging.getLogger("swinglab.mobile_sign_out")
 
@@ -55,6 +58,8 @@ class RecoveryFencePublisher(Protocol):
 
 class SignOutExtension(Protocol):
     """One idempotent selector cleanup supplied by a later task owner."""
+
+    extension_id: str
 
     def close_for_sign_out(
         self,
@@ -321,6 +326,49 @@ class _SignOutMaterial:
     request_hash: str
 
 
+@dataclass
+class _OperationLockEntry:
+    lock: threading.Lock
+    references: int = 0
+
+
+class _OperationLockRegistry:
+    """Bounded per-operation serialization without retaining terminal IDs."""
+
+    def __init__(self) -> None:
+        self._guard = threading.Lock()
+        self._entries: dict[str, _OperationLockEntry] = {}
+
+    @contextmanager
+    def hold(self, operation_id: str) -> Iterator[None]:
+        with self._guard:
+            entry = self._entries.get(operation_id)
+            if entry is None:
+                entry = _OperationLockEntry(threading.Lock())
+                self._entries[operation_id] = entry
+            entry.references += 1
+        acquired = False
+        try:
+            entry.lock.acquire()
+            acquired = True
+            yield
+        finally:
+            if acquired:
+                entry.lock.release()
+            with self._guard:
+                entry.references -= 1
+                if (
+                    entry.references == 0
+                    and self._entries.get(operation_id) is entry
+                ):
+                    self._entries.pop(operation_id, None)
+
+    @property
+    def count(self) -> int:
+        with self._guard:
+            return len(self._entries)
+
+
 class MobileSignOutService:
     """Drive one current-selector sign-out journal to a terminal receipt."""
 
@@ -340,6 +388,58 @@ class MobileSignOutService:
         self._ledger = recovery_fence_ledger
         self._drain_timeout_seconds = max(0.0, float(drain_timeout_seconds))
         self._extensions = tuple(extensions)
+        extension_ids: list[str] = []
+        seen_extension_ids: set[str] = set()
+        for extension in self._extensions:
+            extension_id = getattr(extension, "extension_id", None)
+            if (
+                not isinstance(extension_id, str)
+                or _SIGN_OUT_EXTENSION_ID.fullmatch(extension_id) is None
+            ):
+                raise ValueError(
+                    "Every sign-out extension requires a valid stable extension ID."
+                )
+            if extension_id in seen_extension_ids:
+                raise ValueError("Sign-out extension IDs must be unique.")
+            extension_ids.append(extension_id)
+            seen_extension_ids.add(extension_id)
+        self._extension_contract_version = _SIGN_OUT_EXTENSION_CONTRACT_VERSION
+        self._extension_contract_sha256 = self._contract_digest(extension_ids)
+        self._operation_locks = _OperationLockRegistry()
+
+    @staticmethod
+    def _contract_digest(extension_ids: list[str]) -> str:
+        canonical = json.dumps(
+            {
+                "extensions": extension_ids,
+                "version": _SIGN_OUT_EXTENSION_CONTRACT_VERSION,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        return hashlib.sha256(canonical).hexdigest()
+
+    @property
+    def operation_lock_count(self) -> int:
+        return self._operation_locks.count
+
+    def _validate_extension_contract(self, row: sqlite3.Row) -> None:
+        try:
+            version = row["extension_contract_version"]
+            digest = row["extension_contract_sha256"]
+        except (IndexError, KeyError) as exc:
+            raise MobileSignOutUnavailable(
+                "The pending sign-out extension contract is invalid."
+            ) from exc
+        if (
+            type(version) is not int
+            or not isinstance(digest, str)
+            or version != self._extension_contract_version
+            or not hmac.compare_digest(digest, self._extension_contract_sha256)
+        ):
+            raise MobileSignOutUnavailable(
+                "The pending sign-out extension contract changed."
+            )
 
     @staticmethod
     def _idempotency_bytes(value: object) -> bytes:
@@ -569,7 +669,7 @@ class MobileSignOutService:
                 "Protected mobile sign-out is not configured."
             )
         material = self._new_material(selector, token_hash, idempotency)
-        operation_id = uuid.uuid4().hex
+        operation_id = str(uuid.uuid4())
         expires_at = observed_at + _SIGN_OUT_REPLAY_SECONDS
         context = MobileAuthContext(
             user=principal.user,
@@ -601,8 +701,9 @@ class MobileSignOutService:
                 " (operation_id, user_id, phase, selector_hmac_key_id,"
                 " selector_hmac, token_verifier_hmac_key_id,"
                 " token_verifier_hmac, idempotency_hmac_key_id,"
-                " idempotency_hmac, request_hash, created_at, updated_at,"
-                " expires_at) VALUES (?, ?, 'prepared', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                " idempotency_hmac, request_hash, extension_contract_version,"
+                " extension_contract_sha256, created_at, updated_at, expires_at)"
+                " VALUES (?, ?, 'prepared', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     operation_id,
                     principal.user.id,
@@ -613,6 +714,8 @@ class MobileSignOutService:
                     material.idempotency_hmac_key_id,
                     material.idempotency_hmac,
                     material.request_hash,
+                    self._extension_contract_version,
+                    self._extension_contract_sha256,
                     observed_at,
                     observed_at,
                     expires_at,
@@ -805,11 +908,26 @@ class MobileSignOutService:
         selector: str,
         close: CredentialMutationClose | None,
     ) -> MobileSignOutResult:
+        with self._operation_locks.hold(operation_id):
+            return self._advance_serialized(
+                operation_id,
+                selector=selector,
+                close=close,
+            )
+
+    def _advance_serialized(
+        self,
+        operation_id: str,
+        *,
+        selector: str,
+        close: CredentialMutationClose | None,
+    ) -> MobileSignOutResult:
         while True:
             row = self._operation(operation_id)
             phase = str(row["phase"])
             if phase == "complete":
                 return MobileSignOutResult(pending=False)
+            self._validate_extension_contract(row)
             if phase == "prepared":
                 if self._ledger is None:
                     return MobileSignOutResult(pending=True)
@@ -932,6 +1050,7 @@ class MobileSignOutService:
                 " WHERE phase != 'complete' ORDER BY created_at, operation_id"
             ).fetchall()
         for row in rows:
+            self._validate_extension_contract(row)
             selector = self._selector_for_row(row)
             token_row = None
             with self._users._lock:

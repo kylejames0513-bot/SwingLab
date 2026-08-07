@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import threading
+import time
+import uuid
+from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
 import pytest
@@ -10,8 +16,15 @@ from fastapi.testclient import TestClient
 from swinglab.api.auth import MobileAuthContext
 from swinglab.config import Config
 from swinglab.web.app import create_app
+from swinglab.web.credential_mutations import MobileSignOutService
 from swinglab.web.mobile_schema import VersionedHMAC
 from swinglab.web.recovery_fence_ledger import RecoveryFenceError
+from swinglab.web.users import UserStore
+from tests.test_recovery_fence_ledger import (
+    _baseline_event as _real_baseline_event,
+    _keyring as _real_keyring,
+    _ledger as _real_ledger,
+)
 
 
 GOOD_KEY = "00112233445566778899aabbccddeeff"
@@ -23,17 +36,36 @@ class FakeRecoveryFenceLedger:
         self.outage = outage
         self.events = []
         self.before_publish = None
+        self._lock = threading.Lock()
+        self._accepted = {}
 
     def append_and_publish(self, event):
         if self.before_publish is not None:
             self.before_publish(event)
         if self.outage:
             raise RecoveryFenceError("synthetic recovery outage")
-        self.events.append(event)
-        return SimpleNamespace(
-            sequence=len(self.events),
-            record_hash=f"{len(self.events):064x}",
-        )
+        with self._lock:
+            accepted = self._accepted.get(event.event_id)
+            if accepted is not None:
+                return accepted
+            self.events.append(event)
+            accepted = SimpleNamespace(
+                sequence=len(self.events),
+                record_hash=f"{len(self.events):064x}",
+            )
+            self._accepted[event.event_id] = accepted
+            return accepted
+
+
+class NamedExtension:
+    def __init__(self, extension_id: str, *, outcome=True):
+        self.extension_id = extension_id
+        self.outcome = outcome
+        self.calls = []
+
+    def close_for_sign_out(self, **kwargs):
+        self.calls.append(kwargs["operation_id"])
+        return self.outcome
 
 
 def _keyring(key_id: str = "k1", fill: bytes = b"k") -> VersionedHMAC:
@@ -133,6 +165,30 @@ def test_sign_out_fences_before_publish_and_revokes_only_current_selector(tmp_pa
     ).fetchone()
     assert tuple(row) == ("complete", 1, f"{1:064x}")
     assert first.selector != second.selector
+    _close_app(app)
+
+
+def test_sign_out_operation_id_passes_real_ledger_canonical_validation(tmp_path):
+    keyring = _real_keyring()
+    module, _remote, ledger = _real_ledger(
+        tmp_path / "ledger",
+        keyring=keyring,
+    )
+    ledger.append_and_publish(_real_baseline_event(module))
+    app = _app(tmp_path / "sessions", keyring=keyring, ledger=ledger)
+    _user, raw_token, _token = _issue(
+        app.state.users, "golfer@example.com", "Phone"
+    )
+
+    response = TestClient(app).post(
+        "/api/v1/auth/sign-out", headers=_headers(raw_token)
+    )
+
+    assert response.status_code == 204
+    chain = ledger.load_chain()
+    operation_id = chain[-1].event_id
+    assert str(uuid.UUID(operation_id)) == operation_id
+    assert chain[-1].kind == "token_revoke"
     _close_app(app)
 
 
@@ -237,6 +293,8 @@ def test_sign_out_extension_pending_or_failure_is_replayed_without_leaking(
     tmp_path, first_outcome
 ):
     class Extension:
+        extension_id = "test.retryable-cleanup.v1"
+
         def __init__(self):
             self.outcomes = [first_outcome, True]
             self.calls = []
@@ -275,6 +333,223 @@ def test_sign_out_extension_pending_or_failure_is_replayed_without_leaking(
     assert complete.status_code == 204
     assert len(extension.calls) == 2
     assert all(call[2] == token.selector for call in extension.calls)
+    _close_app(app)
+
+
+def test_sign_out_persists_the_exact_ordered_extension_contract_digest(tmp_path):
+    extensions = (
+        NamedExtension("push.current-selector.v1"),
+        NamedExtension("export.selector-cleanup.v1"),
+    )
+    app = _app(
+        tmp_path / "sessions",
+        keyring=_keyring(),
+        ledger=FakeRecoveryFenceLedger(outage=True),
+        extensions=extensions,
+    )
+    _user, raw_token, _token = _issue(
+        app.state.users, "golfer@example.com", "Phone"
+    )
+    assert TestClient(app).post(
+        "/api/v1/auth/sign-out", headers=_headers(raw_token)
+    ).status_code == 202
+
+    row = app.state.users._conn.execute(
+        "SELECT extension_contract_version, extension_contract_sha256"
+        " FROM mobile_signout_journals"
+    ).fetchone()
+    canonical = json.dumps(
+        {
+            "extensions": [extension.extension_id for extension in extensions],
+            "version": 1,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("ascii")
+    assert row["extension_contract_version"] == 1
+    assert row["extension_contract_sha256"] == hashlib.sha256(
+        canonical
+    ).hexdigest()
+    _close_app(app)
+
+
+@pytest.mark.parametrize(
+    "extension_ids",
+    [
+        ("",),
+        ("Uppercase.v1",),
+        ("x" * 65,),
+        ("push.v1", "push.v1"),
+    ],
+)
+def test_sign_out_rejects_invalid_or_duplicate_extension_ids(
+    tmp_path, extension_ids
+):
+    try:
+        app = _app(
+            tmp_path / "sessions",
+            keyring=_keyring(),
+            ledger=FakeRecoveryFenceLedger(),
+            extensions=tuple(NamedExtension(value) for value in extension_ids),
+        )
+    except ValueError as exc:
+        assert "extension" in str(exc).lower()
+    else:
+        _close_app(app)
+        pytest.fail("Invalid sign-out extension IDs were accepted.")
+
+
+@pytest.mark.parametrize(
+    "resumed_ids",
+    [
+        (),
+        ("push.changed.v1", "export.cleanup.v1"),
+        ("export.cleanup.v1", "push.cleanup.v1"),
+    ],
+)
+def test_startup_fails_closed_when_required_extension_membership_drifts(
+    tmp_path, resumed_ids
+):
+    sessions_dir = tmp_path / "sessions"
+    keyring = _keyring()
+    original_ids = ("push.cleanup.v1", "export.cleanup.v1")
+    first = _app(
+        sessions_dir,
+        keyring=keyring,
+        ledger=FakeRecoveryFenceLedger(outage=True),
+        extensions=tuple(NamedExtension(value) for value in original_ids),
+    )
+    _user, raw_token, _token = _issue(
+        first.state.users, "golfer@example.com", "Phone"
+    )
+    assert TestClient(first).post(
+        "/api/v1/auth/sign-out", headers=_headers(raw_token)
+    ).status_code == 202
+    _close_app(first)
+
+    try:
+        resumed = _app(
+            sessions_dir,
+            keyring=keyring,
+            ledger=FakeRecoveryFenceLedger(),
+            require_account=False,
+            extensions=tuple(NamedExtension(value) for value in resumed_ids),
+        )
+    except RuntimeError as exc:
+        assert "extension contract" in str(exc).lower()
+    else:
+        _close_app(resumed)
+        pytest.fail("Startup skipped a durable sign-out extension contract.")
+
+    reopened = UserStore(
+        sessions_dir / "swinglab.db",
+        mobile_state_hmac=keyring,
+    )
+    try:
+        assert reopened._conn.execute(
+            "SELECT phase FROM mobile_signout_journals"
+        ).fetchone()[0] == "prepared"
+    finally:
+        reopened.close()
+
+
+def test_pending_replay_fails_closed_when_extension_contract_changes(tmp_path):
+    keyring = _keyring()
+    app = _app(
+        tmp_path / "sessions",
+        keyring=keyring,
+        ledger=FakeRecoveryFenceLedger(outage=True),
+        extensions=(NamedExtension("push.cleanup.v1"),),
+    )
+    users = app.state.users
+    _user, raw_token, _token = _issue(users, "golfer@example.com", "Phone")
+    assert TestClient(app).post(
+        "/api/v1/auth/sign-out", headers=_headers(raw_token)
+    ).status_code == 202
+
+    mismatched = MobileSignOutService(
+        users,
+        app.state.credential_mutation_guard,
+        keyring=keyring,
+        recovery_fence_ledger=FakeRecoveryFenceLedger(),
+        drain_timeout_seconds=0.0,
+        extensions=(NamedExtension("push.changed.v1"),),
+    )
+    with pytest.raises(RuntimeError, match="extension contract"):
+        mismatched.sign_out(raw_token, GOOD_KEY)
+    assert users._conn.execute(
+        "SELECT phase FROM mobile_signout_journals"
+    ).fetchone()[0] == "prepared"
+    _close_app(app)
+
+
+def test_concurrent_exact_replays_serialize_hooks_until_terminal_204(tmp_path):
+    class BarrierExtension:
+        extension_id = "test.concurrent-cleanup.v1"
+
+        def __init__(self):
+            self._barrier = threading.Barrier(2)
+            self._lock = threading.Lock()
+            self.calls = 0
+            self.in_flight = 0
+            self.max_in_flight = 0
+
+        def close_for_sign_out(self, **_kwargs):
+            with self._lock:
+                self.calls += 1
+                call_number = self.calls
+                self.in_flight += 1
+                self.max_in_flight = max(self.max_in_flight, self.in_flight)
+            try:
+                try:
+                    self._barrier.wait(timeout=0.4)
+                except threading.BrokenBarrierError:
+                    pass
+                if call_number == 2:
+                    time.sleep(0.2)
+                return True
+            finally:
+                with self._lock:
+                    self.in_flight -= 1
+
+        def current_in_flight(self):
+            with self._lock:
+                return self.in_flight
+
+    extension = BarrierExtension()
+    ledger = FakeRecoveryFenceLedger(outage=True)
+    app = _app(
+        tmp_path / "sessions",
+        keyring=_keyring(),
+        ledger=ledger,
+        extensions=(extension,),
+    )
+    _user, raw_token, _token = _issue(
+        app.state.users, "golfer@example.com", "Phone"
+    )
+    assert TestClient(app).post(
+        "/api/v1/auth/sign-out", headers=_headers(raw_token)
+    ).status_code == 202
+    ledger.outage = False
+    start = threading.Barrier(3)
+
+    def replay():
+        start.wait(timeout=2)
+        response = TestClient(app).post(
+            "/api/v1/auth/sign-out", headers=_headers(raw_token)
+        )
+        return response.status_code, extension.current_in_flight()
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        futures = [executor.submit(replay) for _index in range(2)]
+        start.wait(timeout=2)
+        results = [future.result(timeout=5) for future in futures]
+
+    assert results == [(204, 0), (204, 0)]
+    assert extension.calls == 1
+    assert extension.max_in_flight == 1
+    assert extension.in_flight == 0
+    assert app.state.sign_out_service.operation_lock_count == 0
     _close_app(app)
 
 

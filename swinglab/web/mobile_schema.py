@@ -458,6 +458,13 @@ _GENERATION_ONE_TABLE_DDL: dict[str, str] = {
             idempotency_hmac_key_id TEXT NOT NULL,
             idempotency_hmac TEXT NOT NULL,
             request_hash TEXT NOT NULL,
+            extension_contract_version INTEGER NOT NULL CHECK (
+                extension_contract_version = 1
+            ),
+            extension_contract_sha256 TEXT NOT NULL CHECK (
+                length(extension_contract_sha256) = 64
+                AND extension_contract_sha256 NOT GLOB '*[^0-9a-f]*'
+            ),
             recovery_sequence INTEGER,
             recovery_record_hash TEXT,
             created_at REAL NOT NULL,
@@ -621,7 +628,9 @@ _GENERATION_ONE_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "operation_id", "user_id", "phase",
         "selector_hmac_key_id", "selector_hmac", "token_verifier_hmac_key_id",
         "token_verifier_hmac", "idempotency_hmac_key_id", "idempotency_hmac",
-        "request_hash", "recovery_sequence", "recovery_record_hash",
+        "request_hash", "extension_contract_version",
+        "extension_contract_sha256", "recovery_sequence",
+        "recovery_record_hash",
         "created_at", "updated_at", "expires_at",
     ),
     "mobile_signout_receipts": (

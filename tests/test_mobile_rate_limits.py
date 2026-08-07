@@ -544,9 +544,10 @@ def test_mobile_state_summary_records_counts_domains_phases_and_schema_digests(t
         "INSERT INTO mobile_signout_journals"
         " (operation_id, user_id, phase, selector_hmac_key_id,"
         " selector_hmac, token_verifier_hmac_key_id, token_verifier_hmac,"
-        " idempotency_hmac_key_id, idempotency_hmac, request_hash, created_at,"
+        " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+        " extension_contract_version, extension_contract_sha256, created_at,"
         " updated_at, expires_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "operation",
             "user",
@@ -558,6 +559,8 @@ def test_mobile_state_summary_records_counts_domains_phases_and_schema_digests(t
             "k1",
             "03" * 32,
             "04" * 32,
+            1,
+            "05" * 32,
             1.0,
             1.0,
             2.0,
