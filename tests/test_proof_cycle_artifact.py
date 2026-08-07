@@ -175,6 +175,25 @@ def test_first_selected_issue_sets_baseline_without_verdict(tmp_path):
     assert proof_cycle_artifact_path(job).name == ARTIFACT_FILENAME
 
 
+def test_structured_report_uses_private_session_sidecar_without_changing_legacy_fakes(
+    tmp_path,
+):
+    structured = make_job(
+        tmp_path, "structured", 1.0, [row(head_sway=0.50) for _ in range(3)]
+    )
+    setattr(structured, "structured_report", True)
+    legacy = make_job(
+        tmp_path, "legacy", 2.0, [row(head_sway=0.50) for _ in range(3)]
+    )
+
+    assert proof_cycle_artifact_path(structured) == (
+        structured.session_dir / ARTIFACT_FILENAME
+    )
+    assert proof_cycle_artifact_path(legacy) == (
+        legacy.session_dir / "out" / "source" / ARTIFACT_FILENAME
+    )
+
+
 def test_refilm_carries_original_target_and_confirms_only_after_two(tmp_path):
     configured = cfg()
     baseline = make_job(
@@ -539,6 +558,18 @@ def test_sidecar_is_strict_private_and_invalidates_when_metrics_change(tmp_path)
     metrics = path.with_name("metrics.json")
     metrics.write_text(json.dumps({"swings": []}))
     assert load_proof_cycle_artifact(job) is None
+
+
+def test_sidecar_loader_rejects_oversized_otherwise_valid_json(tmp_path):
+    job = make_job(
+        tmp_path, "bounded", 1.0, [row(head_sway=0.50) for _ in range(3)]
+    )
+    artifact = build_and_write(job, [], cfg())
+    path = proof_cycle_artifact_path(job)
+    path.write_bytes(path.read_bytes() + b" " * (2 * 1024 * 1024))
+
+    assert load_proof_cycle_artifact(job) is None
+    assert artifact.stage == "baseline"
 
 
 def test_repeated_build_does_not_count_the_current_job_twice(tmp_path):

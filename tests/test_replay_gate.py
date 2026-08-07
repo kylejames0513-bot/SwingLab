@@ -76,7 +76,7 @@ def test_cli_pipeline_is_never_gated_by_default():
     assert param.default is False
 
 
-# -- the gate decision, at analysis time --------------------------------------
+# -- the immutable gate decision, captured at session creation ----------------
 
 def make_manager(tmp_path, gate=True, accounts=True, user_store=None,
                  annotated=True, name="s"):
@@ -134,18 +134,30 @@ def test_gate_decision_matrix(tmp_path):
     ) is False
 
 
-def test_pro_at_analysis_time_is_what_counts(tmp_path):
-    """The gate reads the plan when the analysis RUNS — a lapsed pro_until
-    is free, a live one is Pro."""
+def test_replay_entitlement_is_captured_once_and_survives_restart(
+    tmp_path, monkeypatch,
+):
     users = UserStore(tmp_path / "users.db")
     user = users.create("kyle@example.com", "longenough")
     manager = make_manager(tmp_path, user_store=users)
-    job = manager.create_session(user_id=user.id)
-    assert manager.replay_locked(job) is True
+    locked_job = manager.create_session(user_id=user.id)
+    assert manager.replay_locked(locked_job) is True
+
     users.grant_pro_days(user.id, 31)
-    assert manager.replay_locked(job) is False
+    assert manager.replay_locked(locked_job) is True
+    available_job = manager.create_session(user_id=user.id)
+    assert manager.replay_locked(available_job) is False
+
     users.revoke_pro_days(user.id, 31)
-    assert manager.replay_locked(job) is True
+    assert manager.replay_locked(locked_job) is True
+    assert manager.replay_locked(available_job) is False
+
+    for job in (locked_job, available_job):
+        (job.session_dir / "source.mov").write_bytes(b"source")
+    monkeypatch.setattr(JobManager, "submit", lambda self, job, video: None)
+    restarted = make_manager(tmp_path, user_store=users)
+    assert restarted.replay_locked(restarted.get(locked_job.id)) is True
+    assert restarted.replay_locked(restarted.get(available_job.id)) is False
 
 
 # -- web wiring: the decision reaches the pipeline, honestly logged -----------

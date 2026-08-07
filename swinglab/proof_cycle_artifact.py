@@ -16,6 +16,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import stat
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
@@ -57,6 +58,7 @@ from .proof_cycle import (
 ARTIFACT_FILENAME = "proof-cycle.json"
 ARTIFACT_FORMAT = "caddieinsight-proof-cycle"
 ARTIFACT_VERSION = 1
+_MAX_ARTIFACT_BYTES = 512 * 1024
 
 ArtifactStage = Literal["baseline", "comparison", "unavailable"]
 
@@ -163,7 +165,11 @@ def proof_cycle_artifact_path(job: JobLike) -> Path | None:
     """Resolve the private sidecar only under this job's declared report."""
 
     report = _report_path(job)
-    return report.parent / ARTIFACT_FILENAME if report is not None else None
+    if report is None:
+        return None
+    if getattr(job, "structured_report", False) is True:
+        return Path(job.session_dir) / ARTIFACT_FILENAME
+    return report.parent / ARTIFACT_FILENAME
 
 
 def proof_session_from_job(job: JobLike, cfg: Config) -> ProofSession | None:
@@ -409,17 +415,51 @@ def write_proof_cycle_artifact(job: JobLike, artifact: ProofCycleArtifact) -> Pa
     return path
 
 
+def _artifact_file_identity(info: os.stat_result) -> tuple[int, int, int, int, int]:
+    return (
+        int(info.st_dev),
+        int(info.st_ino),
+        int(info.st_size),
+        int(info.st_mtime_ns),
+        int(getattr(info, "st_birthtime_ns", info.st_ctime_ns)),
+    )
+
+
+def _read_artifact_bytes(path: Path) -> bytes:
+    before = os.lstat(path)
+    attributes = getattr(before, "st_file_attributes", 0)
+    if (
+        stat.S_ISLNK(before.st_mode)
+        or not stat.S_ISREG(before.st_mode)
+        or attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        or before.st_size > _MAX_ARTIFACT_BYTES
+    ):
+        raise ValueError("Proof Cycle sidecar is not a bounded regular file")
+    expected = _artifact_file_identity(before)
+    with path.open("rb") as handle:
+        opened = os.fstat(handle.fileno())
+        if _artifact_file_identity(opened) != expected:
+            raise ValueError("Proof Cycle sidecar changed before it was read")
+        raw = handle.read(_MAX_ARTIFACT_BYTES + 1)
+    if len(raw) > _MAX_ARTIFACT_BYTES:
+        raise ValueError("Proof Cycle sidecar exceeds its read bound")
+    after = os.lstat(path)
+    if _artifact_file_identity(after) != expected or len(raw) != before.st_size:
+        raise ValueError("Proof Cycle sidecar changed while it was read")
+    return raw
+
+
 def load_proof_cycle_artifact(job: JobLike) -> ProofCycleArtifact | None:
     """Load only a complete, current, schema-valid sidecar; otherwise None."""
 
     path = proof_cycle_artifact_path(job)
-    if path is None or not path.is_file():
+    if path is None:
         return None
     user_id = _text(getattr(job, "user_id", None))
     if not user_id:
         return None
     try:
-        raw = path.read_bytes()
+        raw = _read_artifact_bytes(path)
         data = json.loads(raw.decode("utf-8"))
         artifact = _artifact_from_dict(data, user_id=user_id)
     except (OSError, UnicodeDecodeError, ValueError, TypeError):
