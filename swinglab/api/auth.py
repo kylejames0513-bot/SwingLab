@@ -17,6 +17,7 @@ class MobileAuthContext:
     user: User
     via_bearer: bool
     selector: str | None
+    auth_epoch: int
 
 
 class MobileAuthError(HTTPException):
@@ -50,7 +51,7 @@ def mobile_bearer_unauthorized() -> HTTPException:
     )
 
 
-def _mobile_bearer_token(request: Request) -> str | None:
+def mobile_bearer_token(request: Request) -> str | None:
     """Read one strict Bearer token without accepting cookie fallback."""
 
     authorization = request.headers.get("authorization")
@@ -91,7 +92,7 @@ def resolve_mobile_auth(
 
     if not require_account:
         raise HTTPException(404, "Account API is not enabled.")
-    bearer = _mobile_bearer_token(request)
+    bearer = mobile_bearer_token(request)
     if bearer is not None:
         principal = users.authenticate_mobile_api_principal(bearer)
         if principal is None:
@@ -100,11 +101,17 @@ def resolve_mobile_auth(
             user=principal.user,
             via_bearer=True,
             selector=principal.selector,
+            auth_epoch=principal.auth_epoch,
         )
     user = _cookie_user(request, users)
     if user is None:
         raise HTTPException(401, "Log in first.")
-    return MobileAuthContext(user=user, via_bearer=False, selector=None)
+    return MobileAuthContext(
+        user=user,
+        via_bearer=False,
+        selector=None,
+        auth_epoch=user.auth_epoch,
+    )
 
 
 def require_mobile_bearer(
@@ -114,7 +121,7 @@ def require_mobile_bearer(
 
     if not require_account:
         raise HTTPException(404, "Account API is not enabled.")
-    bearer = _mobile_bearer_token(request)
+    bearer = mobile_bearer_token(request)
     if bearer is None:
         raise MobileAuthError(
             "bearer_required", "A mobile access token is required."
@@ -126,4 +133,10 @@ def require_mobile_bearer(
         user=principal.user,
         via_bearer=True,
         selector=principal.selector,
+        auth_epoch=principal.auth_epoch,
     )
+
+
+# Private compatibility for older in-package callers while new routes use the
+# deliberately exported strict parser before normal bearer authentication.
+_mobile_bearer_token = mobile_bearer_token

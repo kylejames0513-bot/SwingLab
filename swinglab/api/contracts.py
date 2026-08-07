@@ -298,6 +298,12 @@ class NativeSignOutResponse(ContractModel):
     signed_out: Literal[True] = True
 
 
+class NativeSignOutPendingResponse(ContractModel):
+    resource_version: Literal[1] = 1
+    status: Literal["pending"]
+    retry_after_seconds: int
+
+
 class AnalysisRetryRequest(ContractModel):
     session_id: str
 

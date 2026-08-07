@@ -447,7 +447,6 @@ _GENERATION_ONE_TABLE_DDL: dict[str, str] = {
         CREATE TABLE IF NOT EXISTS mobile_signout_journals (
             operation_id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL,
-            selector TEXT NOT NULL,
             phase TEXT NOT NULL CHECK (phase IN (
                 'prepared', 'recovery_fenced', 'extensions_closed',
                 'token_revoked', 'complete'
@@ -471,6 +470,8 @@ _GENERATION_ONE_TABLE_DDL: dict[str, str] = {
             operation_id TEXT PRIMARY KEY,
             selector_hmac_key_id TEXT NOT NULL,
             selector_hmac TEXT NOT NULL,
+            token_verifier_hmac_key_id TEXT NOT NULL,
+            token_verifier_hmac TEXT NOT NULL,
             idempotency_hmac_key_id TEXT NOT NULL,
             idempotency_hmac TEXT NOT NULL,
             request_hash TEXT NOT NULL,
@@ -617,7 +618,7 @@ _GENERATION_ONE_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "completed_at", "expires_at",
     ),
     "mobile_signout_journals": (
-        "operation_id", "user_id", "selector", "phase",
+        "operation_id", "user_id", "phase",
         "selector_hmac_key_id", "selector_hmac", "token_verifier_hmac_key_id",
         "token_verifier_hmac", "idempotency_hmac_key_id", "idempotency_hmac",
         "request_hash", "recovery_sequence", "recovery_record_hash",
@@ -625,6 +626,7 @@ _GENERATION_ONE_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
     ),
     "mobile_signout_receipts": (
         "operation_id", "selector_hmac_key_id", "selector_hmac",
+        "token_verifier_hmac_key_id", "token_verifier_hmac",
         "idempotency_hmac_key_id", "idempotency_hmac", "request_hash",
         "completed_at", "expires_at",
     ),
@@ -702,9 +704,13 @@ _GENERATION_ONE_INDEXES: dict[str, tuple[str, tuple[str, ...]]] = {
     "mobile_signout_journals_phase": (
         "mobile_signout_journals", ("phase", "updated_at"),
     ),
+    "mobile_signout_journals_replay": (
+        "mobile_signout_journals",
+        ("idempotency_hmac_key_id", "idempotency_hmac", "expires_at"),
+    ),
     "mobile_signout_receipts_replay": (
         "mobile_signout_receipts",
-        ("selector_hmac_key_id", "selector_hmac", "expires_at"),
+        ("idempotency_hmac_key_id", "idempotency_hmac", "expires_at"),
     ),
     "mobile_device_revoke_journals_phase": (
         "mobile_device_revoke_journals", ("phase", "updated_at"),
@@ -983,6 +989,11 @@ _HMAC_COLUMN_PAIRS: tuple[tuple[str, str, str], ...] = (
         "idempotency_hmac",
     ),
     ("mobile_signout_receipts", "selector_hmac_key_id", "selector_hmac"),
+    (
+        "mobile_signout_receipts",
+        "token_verifier_hmac_key_id",
+        "token_verifier_hmac",
+    ),
     (
         "mobile_signout_receipts",
         "idempotency_hmac_key_id",

@@ -93,6 +93,10 @@ from ..api.contracts import (
 )
 from ..api.auth import mobile_bearer_unauthorized, resolve_mobile_auth
 from ..api.errors import install_mobile_error_handlers
+from ..api.mobile_routes import (
+    MOBILE_SIGN_OUT_ROUTE_NAME,
+    install_mobile_routes,
+)
 from ..caddie_brief import (
     build_caddie_brief_from_payload,
     payload_has_coachable_data,
@@ -147,6 +151,13 @@ from .jobs import (
     Job,
     JobManager,
 )
+from .credential_mutations import (
+    CredentialMutationGuard,
+    MobileSignOutService,
+    RecoveryFencePublisher,
+    SignOutExtension,
+)
+from .mobile_schema import VersionedHMAC
 from .throttle import Throttle
 from .users import (
     MobileAPIToken,
@@ -554,6 +565,11 @@ def create_app(
     shopify_admin_client: shopify_admin.ShopifyAdminClient | None = None,
     start_shopify_sync_worker: bool = True,
     start_background_workers: bool = True,
+    mobile_state_hmac: VersionedHMAC | None = None,
+    recovery_fence_ledger: RecoveryFencePublisher | None = None,
+    credential_mutation_guard: CredentialMutationGuard | None = None,
+    sign_out_drain_timeout_seconds: float = 0.25,
+    sign_out_extensions: tuple[SignOutExtension, ...] = (),
 ) -> FastAPI:
     cfg = cfg or Config.load()
     shopify_sync_settings = shopify_customer_sync.validate_sync_settings(
@@ -577,7 +593,26 @@ def create_app(
     sessions_dir.mkdir(parents=True, exist_ok=True)
     # Users first: the job runner needs the store to decide the coach-replay
     # Pro gate (billing.replay_pro_only) at analysis time.
-    users = UserStore(sessions_dir / "swinglab.db")
+    users = UserStore(
+        sessions_dir / "swinglab.db",
+        mobile_state_hmac=mobile_state_hmac,
+    )
+    mutation_guard = credential_mutation_guard or CredentialMutationGuard()
+    sign_out_service = MobileSignOutService(
+        users,
+        mutation_guard,
+        keyring=users._mobile_state_hmac,
+        recovery_fence_ledger=recovery_fence_ledger,
+        drain_timeout_seconds=sign_out_drain_timeout_seconds,
+        extensions=sign_out_extensions,
+    )
+    try:
+        # Crash journals are independent of auth/push/privacy feature flags.
+        # Resume them before JobManager recovery, workers, or route admission.
+        sign_out_service.resume_nonterminal()
+    except Exception:
+        users.close()
+        raise
     manager = JobManager(
         sessions_dir,
         cfg,
@@ -594,9 +629,14 @@ def create_app(
     app.state.users = users
     app.state.throttle = throttle
     app.state.cfg = cfg
-    # No existing resource route opts into the native error envelope yet.
-    # Future native handlers must be named explicitly before registration.
-    install_mobile_error_handlers(app, frozenset())
+    app.state.credential_mutation_guard = mutation_guard
+    app.state.sign_out_service = sign_out_service
+    install_mobile_error_handlers(app, {MOBILE_SIGN_OUT_ROUTE_NAME})
+    install_mobile_routes(
+        app,
+        sign_out_service=sign_out_service,
+        require_account=bool(cfg.web.get("require_account")),
+    )
     static_dir = Path(__file__).parent / "static"
     # Static assets contain only versioned public brand imagery and the
     # install shell (icon + service worker), never a report, user data, or

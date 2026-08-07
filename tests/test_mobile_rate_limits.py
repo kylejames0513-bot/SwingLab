@@ -542,15 +542,14 @@ def test_mobile_state_summary_records_counts_domains_phases_and_schema_digests(t
     users = UserStore(db_path, mobile_state_hmac=_keyring())
     users._conn.execute(
         "INSERT INTO mobile_signout_journals"
-        " (operation_id, user_id, selector, phase, selector_hmac_key_id,"
+        " (operation_id, user_id, phase, selector_hmac_key_id,"
         " selector_hmac, token_verifier_hmac_key_id, token_verifier_hmac,"
         " idempotency_hmac_key_id, idempotency_hmac, request_hash, created_at,"
         " updated_at, expires_at)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "operation",
             "user",
-            "selector",
             "prepared",
             "k1",
             "01" * 32,
