@@ -438,6 +438,29 @@ def _validated_payload(kind: str, payload: object) -> dict[str, Any]:
     return payload
 
 
+def _require_payload_hmac_key_coverage(
+    kind: str,
+    payload: dict[str, Any],
+    *,
+    keyring: VersionedHMAC,
+) -> None:
+    if kind == RecoveryRecordKind.TOKEN_REVOKE.value:
+        key_ids = (
+            payload["selector_hmac_key_id"],
+            payload["token_verifier_hmac_key_id"],
+        )
+    elif kind == RecoveryRecordKind.PUSH_ENVIRONMENT_CUTOFF.value:
+        key_ids = (payload["expo_project_hmac_key_id"],)
+    elif kind == RecoveryRecordKind.REVIEW_ACCESS_REVISION.value:
+        key_ids = tuple(item["key_id"] for item in payload["credential_hmacs"])
+    else:
+        key_ids = ()
+    if any(key_id not in keyring.key_ids for key_id in key_ids):
+        raise RecoveryFenceError(
+            "A recovery-fence payload HMAC key is unavailable."
+        )
+
+
 def _event_core(
     event: RecoveryFenceEvent,
     *,
@@ -508,6 +531,11 @@ def _build_record(
         sequence=sequence,
         previous_record_key=previous_record_key,
         previous_record_hash=previous_record_hash,
+    )
+    _require_payload_hmac_key_coverage(
+        core["kind"],
+        core["payload"],
+        keyring=keyring,
     )
     if requested_chain_hmac_key_id is None:
         chain_key_id, chain_hmac = keyring.digest(
@@ -618,6 +646,7 @@ def _validate_record(
         ) from None
     if not hmac.compare_digest(expected_hmac, chain_hmac):
         raise RecoveryFenceError("The recovery-fence chain HMAC did not validate.")
+    _require_payload_hmac_key_coverage(kind, payload, keyring=keyring)
     key_match = _REMOTE_RECORD_KEY.search(expected_key)
     if (
         key_match is None
@@ -1048,6 +1077,33 @@ class RecoveryFenceLedger:
             }
         )
 
+    def _load_journaled_record(
+        self,
+        identity: tuple[str, str, str],
+        *,
+        logical_event: bytes,
+    ) -> PublishedRecoveryRecord:
+        try:
+            remote_record = self._remote.read_record(identity[0])
+        except RecoveryFenceStoreError as exc:
+            raise RecoveryFenceError(
+                "The journaled recovery-fence immutable record is unavailable."
+            ) from exc
+        record = _validate_record(
+            remote_record.body,
+            keyring=self._keyring,
+            expected_key=identity[0],
+        )
+        if (
+            record.record_hash != identity[1]
+            or record.chain_hmac_key_id != identity[2]
+            or self._logical_record(record) != logical_event
+        ):
+            raise RecoveryFenceError(
+                "The journaled recovery-fence record identity diverged."
+            )
+        return record
+
     def _write_local_record(self, record: PublishedRecoveryRecord) -> None:
         name = Path(record.record_key).name
         _durable_atomic_write(
@@ -1216,6 +1272,14 @@ class RecoveryFenceLedger:
             )
         logical_event = self._logical_event(event)
         with _writer_lock(self._local_root):
+            journaled_record = (
+                None
+                if resume_record_identity is None
+                else self._load_journaled_record(
+                    resume_record_identity,
+                    logical_event=logical_event,
+                )
+            )
             for _attempt in range(self._max_cas_retries):
                 head_object, chain = self._read_chain(allow_empty=True)
                 for existing in chain:
@@ -1225,14 +1289,6 @@ class RecoveryFenceLedger:
                         raise RecoveryFenceError(
                             "The recovery-fence event_id was reused for a "
                             "different logical event."
-                        )
-                    if resume_record_identity is not None and (
-                        existing.record_key,
-                        existing.record_hash,
-                        existing.chain_hmac_key_id,
-                    ) != resume_record_identity:
-                        raise RecoveryFenceError(
-                            "The journaled recovery-fence record identity diverged."
                         )
                     accepted_existing = replace(
                         existing,
@@ -1282,14 +1338,36 @@ class RecoveryFenceLedger:
                         else resume_record_identity[2]
                     ),
                 )
-                if resume_record_identity is not None and (
-                    record.record_key,
-                    record.record_hash,
-                    record.chain_hmac_key_id,
-                ) != resume_record_identity:
-                    raise RecoveryFenceError(
-                        "The journaled recovery-fence orphan record diverged."
-                    )
+                if journaled_record is not None:
+                    if record.sequence < journaled_record.sequence:
+                        raise RecoveryFenceError(
+                            "The journaled recovery-fence record sequence regressed."
+                        )
+                    if record.sequence == journaled_record.sequence:
+                        if (
+                            record.record_key,
+                            record.record_hash,
+                            record.chain_hmac_key_id,
+                        ) != resume_record_identity:
+                            raise RecoveryFenceError(
+                                "The journaled recovery-fence orphan record diverged."
+                            )
+                    else:
+                        predecessor_index = journaled_record.sequence - 2
+                        if predecessor_index < 0 or predecessor_index >= len(chain):
+                            raise RecoveryFenceError(
+                                "The journaled recovery-fence orphan cannot be rebased."
+                            )
+                        original_predecessor = chain[predecessor_index]
+                        if (
+                            original_predecessor.record_key
+                            != journaled_record.previous_record_key
+                            or original_predecessor.record_hash
+                            != journaled_record.previous_record_hash
+                        ):
+                            raise RecoveryFenceError(
+                                "The journaled recovery-fence orphan ancestry diverged."
+                            )
                 self._write_local_record(record)
                 try:
                     remote_record = self._remote.put_immutable_record(

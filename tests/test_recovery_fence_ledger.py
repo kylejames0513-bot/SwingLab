@@ -236,6 +236,134 @@ def test_missing_head_record_key_or_hmac_key_fails_closed(tmp_path):
         missing_key_ledger.load_chain()
 
 
+@pytest.mark.parametrize(
+    "missing_payload_key",
+    [
+        "token_selector",
+        "token_verifier",
+        "push_project",
+        "review_credential",
+    ],
+)
+def test_load_chain_requires_every_closed_payload_hmac_key(
+    tmp_path,
+    missing_payload_key,
+):
+    module = _api()
+    missing_key_id = f"payload-missing-{missing_payload_key}"
+    raw_value = f"raw-{missing_payload_key}-must-not-leak"
+    publishing_keyring = VersionedHMAC(
+        "recovery-k1",
+        {
+            "recovery-k1": b"k" * 32,
+            missing_key_id: b"m" * 32,
+        },
+    )
+    remote = _MemoryRemote(module)
+    publisher = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=publishing_keyring,
+        local_root=tmp_path / "publisher",
+    )
+    publisher.append_and_publish(_baseline_event(module))
+    current_selector = publishing_keyring.digest_with_key(
+        "recovery-k1",
+        module.MobileStateDomain.RECOVERY_SELECTOR,
+        "current-selector",
+    )
+    current_verifier = publishing_keyring.digest_with_key(
+        "recovery-k1",
+        module.MobileStateDomain.RECOVERY_TOKEN_VERIFIER,
+        "current-verifier",
+    )
+    missing_digest = publishing_keyring.digest_with_key(
+        missing_key_id,
+        (
+            module.MobileStateDomain.RECOVERY_TOKEN_VERIFIER
+            if missing_payload_key == "token_verifier"
+            else module.MobileStateDomain.RECOVERY_SELECTOR
+        ),
+        raw_value,
+    )
+    if missing_payload_key in {"token_selector", "token_verifier"}:
+        event = module.TokenRevokeEvent(
+            event_id=str(uuid.uuid4()),
+            cutoff_at=20.0,
+            selector_hmac_key_id=(
+                missing_key_id
+                if missing_payload_key == "token_selector"
+                else "recovery-k1"
+            ),
+            selector_hmac=(
+                missing_digest
+                if missing_payload_key == "token_selector"
+                else current_selector
+            ),
+            token_verifier_hmac_key_id=(
+                missing_key_id
+                if missing_payload_key == "token_verifier"
+                else "recovery-k1"
+            ),
+            token_verifier_hmac=(
+                missing_digest
+                if missing_payload_key == "token_verifier"
+                else current_verifier
+            ),
+        )
+    elif missing_payload_key == "push_project":
+        event = module.PushEnvironmentCutoffEvent(
+            event_id=str(uuid.uuid4()),
+            cutoff_at=30.0,
+            deployment_environment="production",
+            expo_project_hmac_key_id=missing_key_id,
+            expo_project_hmac=missing_digest,
+            activation_revision=1,
+            cutoff_revision=2,
+            last_provider_started_at=27.0,
+            last_provider_accepted_at=28.0,
+            provider_may_accept_until=29.0,
+            closed_at=30.0,
+            cutoff_skew_seconds=1.0,
+            provider_safe_after=31.0,
+        )
+    else:
+        event = module.ReviewAccessRevisionEvent(
+            event_id=str(uuid.uuid4()),
+            cutoff_at=40.0,
+            provider="apple",
+            lane_revision=1,
+            supported_builds=(
+                {
+                    "application_id": "com.caddieinsight.mobile",
+                    "platform": "ios",
+                    "version": "1.0",
+                    "build": "1",
+                },
+            ),
+            window_state="closed",
+            purchase_test_state="complete",
+            credential_hmacs=(
+                HMACDigest(key_id=missing_key_id, digest=missing_digest),
+            ),
+        )
+    published = publisher.append_and_publish(event)
+    assert raw_value.encode() not in published.body
+    assert {
+        json.loads(body)["chain_hmac_key_id"] for body in remote.records.values()
+    } == {"recovery-k1"}
+
+    validator = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=VersionedHMAC("recovery-k1", {"recovery-k1": b"k" * 32}),
+        local_root=tmp_path / "validator",
+    )
+    with pytest.raises(module.RecoveryFenceError, match="payload|key|HMAC") as caught:
+        validator.load_chain()
+    assert raw_value not in str(caught.value)
+    assert missing_key_id not in str(caught.value)
+    assert caught.value.__cause__ is None
+
+
 def test_token_revoke_stores_only_domain_hmacs_and_exact_retry_is_idempotent(
     tmp_path,
 ):
@@ -280,7 +408,7 @@ def test_record_kinds_are_closed_and_reserved_shapes_store_no_provider_secrets(
             event_id=str(uuid.uuid4()),
             cutoff_at=60.0,
             deployment_environment="production",
-            expo_project_hmac_key_id="future-push-key",
+            expo_project_hmac_key_id="recovery-k1",
             expo_project_hmac="c" * 64,
             activation_revision=3,
             cutoff_revision=4,
@@ -309,7 +437,7 @@ def test_record_kinds_are_closed_and_reserved_shapes_store_no_provider_secrets(
             window_state="closed",
             purchase_test_state="complete",
             credential_hmacs=(
-                HMACDigest(key_id="future-review-key", digest="d" * 64),
+                HMACDigest(key_id="recovery-k1", digest="d" * 64),
             ),
         )
     )
@@ -325,7 +453,7 @@ def test_record_kinds_are_closed_and_reserved_shapes_store_no_provider_secrets(
     assert "expo_project_id" not in push_payload
     assert set(push_payload) >= {"expo_project_hmac_key_id", "expo_project_hmac"}
     assert review_payload["credential_hmacs"] == [
-        {"key_id": "future-review-key", "digest": "d" * 64}
+        {"key_id": "recovery-k1", "digest": "d" * 64}
     ]
     assert not ({"account", "password", "credential"} & set(review_payload))
     assert [record.kind for record in ledger.load_chain()] == [
@@ -408,6 +536,138 @@ def test_orphan_record_is_not_acceptance_and_exact_retry_resumes(tmp_path):
     accepted = ledger.append_and_publish(event)
     assert accepted.sequence == 2
     assert len(ledger.load_chain()) == 2
+
+
+def test_journaled_orphan_rebases_after_another_writer_advances_head(tmp_path):
+    module = _api()
+    remote = _MemoryRemote(module)
+    writer_a = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=_keyring(),
+        local_root=tmp_path / "writer-a",
+    )
+    writer_b = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=_keyring(),
+        local_root=tmp_path / "writer-b",
+    )
+    writer_a.append_and_publish(_baseline_event(module))
+    event_a = module.TokenRevokeEvent.from_raw(
+        event_id=str(uuid.uuid4()),
+        cutoff_at=41.0,
+        selector="writer-a-selector",
+        stored_token_verifier="writer-a-verifier",
+        keyring=_keyring(),
+    )
+    journaled_identity: tuple[str, str, str] | None = None
+
+    def lose_record_response(phase, record):
+        nonlocal journaled_identity
+        if phase == "record_published":
+            journaled_identity = (
+                record.record_key,
+                record.record_hash,
+                record.chain_hmac_key_id,
+            )
+            raise RuntimeError("synthetic lost record-published response")
+
+    with pytest.raises(RuntimeError, match="lost record-published"):
+        writer_a.append_and_publish(event_a, on_phase=lose_record_response)
+    assert journaled_identity is not None
+    original_orphan_key = journaled_identity[0]
+    assert original_orphan_key in remote.records
+    assert len(writer_a.load_chain()) == 1
+
+    event_b = module.TokenRevokeEvent.from_raw(
+        event_id=str(uuid.uuid4()),
+        cutoff_at=42.0,
+        selector="writer-b-selector",
+        stored_token_verifier="writer-b-verifier",
+        keyring=_keyring(),
+    )
+    assert writer_b.append_and_publish(event_b).sequence == 2
+
+    retry_phases: list[tuple[str, int]] = []
+    accepted = writer_a.append_and_publish(
+        event_a,
+        resume_record_identity=journaled_identity,
+        on_phase=lambda phase, record: retry_phases.append((phase, record.sequence)),
+    )
+
+    assert accepted.sequence == 3
+    assert accepted.record_key != original_orphan_key
+    assert original_orphan_key in remote.records
+    assert retry_phases == [("record_published", 3), ("head_published", 3)]
+    chain = writer_a.load_chain()
+    assert [record.event_id for record in chain] == [
+        chain[0].event_id,
+        event_b.event_id,
+        event_a.event_id,
+    ]
+    assert sum(record.event_id == event_a.event_id for record in chain) == 1
+    assert len(remote.records) == 4
+
+
+def test_journaled_orphan_accepts_same_logical_event_winner_after_key_rotation(
+    tmp_path,
+):
+    module = _api()
+    remote = _MemoryRemote(module)
+    original_keyring = VersionedHMAC(
+        "recovery-k1",
+        {"recovery-k1": b"k" * 32, "recovery-k2": b"n" * 32},
+    )
+    rotated_keyring = VersionedHMAC(
+        "recovery-k2",
+        {"recovery-k1": b"k" * 32, "recovery-k2": b"n" * 32},
+    )
+    writer_a = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=original_keyring,
+        local_root=tmp_path / "writer-a",
+    )
+    writer_b = module.RecoveryFenceLedger(
+        remote_store=remote,
+        keyring=rotated_keyring,
+        local_root=tmp_path / "writer-b",
+    )
+    writer_a.append_and_publish(_baseline_event(module))
+    event = module.TokenRevokeEvent.from_raw(
+        event_id=str(uuid.uuid4()),
+        cutoff_at=43.0,
+        selector="same-event-selector",
+        stored_token_verifier="same-event-verifier",
+        keyring=original_keyring,
+    )
+    journaled_identity: tuple[str, str, str] | None = None
+
+    def lose_record_response(phase, record):
+        nonlocal journaled_identity
+        if phase == "record_published":
+            journaled_identity = (
+                record.record_key,
+                record.record_hash,
+                record.chain_hmac_key_id,
+            )
+            raise RuntimeError("synthetic lost record-published response")
+
+    with pytest.raises(RuntimeError, match="lost record-published"):
+        writer_a.append_and_publish(event, on_phase=lose_record_response)
+    assert journaled_identity is not None
+    winner = writer_b.append_and_publish(event)
+    assert winner.sequence == 2
+    assert winner.chain_hmac_key_id == "recovery-k2"
+    assert winner.record_key != journaled_identity[0]
+
+    accepted = writer_a.append_and_publish(
+        event,
+        resume_record_identity=journaled_identity,
+    )
+
+    assert accepted.record_key == winner.record_key
+    assert accepted.chain_hmac_key_id == "recovery-k2"
+    assert sum(record.event_id == event.event_id for record in writer_a.load_chain()) == 1
+    assert len(remote.records) == 3
 
 
 def test_local_record_head_lock_and_parent_fsync_are_published(tmp_path, monkeypatch):
