@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="caddieinsight-report-format"
+        content="{{ report_format_version }}">
+  <meta name="caddieinsight-report-presentation"
+        content="{{ view.presentation_version }}">
+  <meta name="caddieinsight-report-outcome"
+        content="{{ view.outcome }}">
+  <meta name="caddieinsight-coaching-priority-rule"
+        content="{{ priority_rule_version }}">
+  <title>{{ brand.name }} — Swing report</title>
+  <style>
+    :root {
+      --brand-primary: {{ brand.primary_color }};
+      --brand-accent: {{ brand.accent_color }};
+      --ink: #17201a;
+      --muted: #5d685f;
+      --paper: #fffdf8;
+      --canvas: #f3f1eb;
+      --accent-text: #944600;
+      --control-border: #66736b;
+      --focus: #005fcc;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; color: var(--ink); background: var(--canvas); }
+    main { width: min(100% - 28px, 72rem); margin: auto; }
+  </style>
+</head>
+<body>
+  {% if sample_banner %}
+  <aside class="sample-banner" aria-label="Sample report">
+    <span>{{ sample_banner.text }}</span>
+    <a href="{{ sample_banner.cta_url }}">{{ sample_banner.cta_label }}</a>
+  </aside>
+  {% endif %}
+  <main id="report-main">
+    {% if view.outcome == "coaching_ready" %}
+    <h1>{{ view.next_move.title }}</h1>
+    {% else %}
+    <h1>{{ view.capture_guidance.reason_label }}</h1>
+    {% endif %}
+    {% if view.visual_evidence and view.visual_evidence.media_key %}
+    <img src="{{ media_path(view.visual_evidence.media_key) }}"
+         alt="{{ view.visual_evidence.alt_text }}">
+    {% endif %}
+  </main>
+</body>
+</html>
