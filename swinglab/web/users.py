@@ -4458,6 +4458,28 @@ class UserStore:
             expires_at=float(row["expires_at"]),
         )
 
+    def mobile_review_exchange_replay_eligible(
+        self, challenge_id: object, *, now: float | None = None
+    ) -> bool:
+        """Return whether a review journal still permits its normal replay path.
+
+        This lookup deliberately does not authenticate the replay. Identity,
+        PKCE, provider admission, and the journal's protected request proofs
+        remain mandatory in their existing order.
+        """
+
+        if not isinstance(challenge_id, str) or len(challenge_id) > 64:
+            return False
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT 1 FROM mobile_auth_exchange_journals"
+                " WHERE purpose = 'review' AND challenge_id = ?"
+                " AND expires_at > ? LIMIT 1",
+                (challenge_id, observed_at),
+            ).fetchone()
+        return row is not None
+
     def record_mobile_review_signin_failure(
         self, challenge_id: str, *, now: float | None = None
     ) -> None:

@@ -480,6 +480,126 @@ def test_review_exchange_is_scoped_replayable_and_rechecked(tmp_path):
         _close(app)
 
 
+def test_exact_review_exchange_replays_after_challenge_expiry_with_revalidation(
+    tmp_path,
+):
+    holder = {}
+
+    def factory(apple, google):
+        value = _admission(apple, google)
+        holder["admission"] = value
+        return value
+
+    app, _, _ = _make_app(tmp_path, factory)
+    try:
+        with TestClient(app) as client:
+            challenge_id = _start(client).json()["challenge_id"]
+            first = _exchange(client, challenge_id)
+            assert first.status_code == 201, first.text
+            journal = app.state.users._conn.execute(
+                "SELECT expires_at FROM mobile_auth_exchange_journals"
+                " WHERE purpose = 'review' AND challenge_id = ?",
+                (challenge_id,),
+            ).fetchone()
+            assert journal is not None
+            now = app.state.review_auth_service._now()
+            assert float(journal["expires_at"]) > now
+            app.state.users._conn.execute(
+                "UPDATE mobile_review_auth_challenges SET expires_at = ?"
+                " WHERE challenge_id = ?",
+                (now - 1, challenge_id),
+            )
+            app.state.users._conn.commit()
+            provider_calls = holder["admission"].exchange_calls
+
+            replay = _exchange(client, challenge_id)
+
+        assert replay.status_code == 201, replay.text
+        assert replay.json()["access_token"] == first.json()["access_token"]
+        assert holder["admission"].exchange_calls == provider_calls + 1
+    finally:
+        _close(app)
+
+
+def test_expired_review_challenge_conflicting_replay_still_conflicts(tmp_path):
+    holder = {}
+
+    def factory(apple, google):
+        value = _admission(apple, google)
+        holder["admission"] = value
+        return value
+
+    app, _, _ = _make_app(tmp_path, factory)
+    try:
+        with TestClient(app) as client:
+            challenge_id = _start(client).json()["challenge_id"]
+            assert _exchange(client, challenge_id).status_code == 201
+            app.state.users._conn.execute(
+                "UPDATE mobile_review_auth_challenges SET expires_at = ?"
+                " WHERE challenge_id = ?",
+                (app.state.review_auth_service._now() - 1, challenge_id),
+            )
+            app.state.users._conn.commit()
+            provider_calls = holder["admission"].exchange_calls
+
+            conflict = _exchange(
+                client,
+                challenge_id,
+                idempotency_key="f" * 32,
+            )
+
+        assert conflict.status_code == 409
+        assert conflict.json()["code"] == "exchange_conflict"
+        assert holder["admission"].exchange_calls == provider_calls + 1
+    finally:
+        _close(app)
+
+
+def test_expired_review_challenge_cannot_replay_after_journal_deadline(tmp_path):
+    holder = {}
+
+    def factory(apple, google):
+        value = _admission(apple, google)
+        holder["admission"] = value
+        return value
+
+    app, _, _ = _make_app(tmp_path, factory)
+    try:
+        with TestClient(app) as client:
+            challenge_id = _start(client).json()["challenge_id"]
+            assert _exchange(client, challenge_id).status_code == 201
+            expired_at = app.state.review_auth_service._now() - 1
+            app.state.users._conn.execute(
+                "UPDATE mobile_review_auth_challenges SET expires_at = ?"
+                " WHERE challenge_id = ?",
+                (expired_at, challenge_id),
+            )
+            app.state.users._conn.execute(
+                "UPDATE mobile_auth_exchange_journals SET expires_at = ?"
+                " WHERE purpose = 'review' AND challenge_id = ?",
+                (expired_at, challenge_id),
+            )
+            app.state.users._conn.execute(
+                "UPDATE mobile_auth_exchange_receipts SET expires_at = ?"
+                " WHERE purpose = 'review' AND challenge_id = ?",
+                (expired_at, challenge_id),
+            )
+            app.state.users._conn.commit()
+            provider_calls = holder["admission"].exchange_calls
+
+            rejected = _exchange(client, challenge_id)
+
+        assert rejected.status_code == 401
+        assert holder["admission"].exchange_calls == provider_calls
+        assert app.state.users._conn.execute(
+            "SELECT 1 FROM mobile_auth_exchange_journals"
+            " WHERE purpose = 'review' AND challenge_id = ?",
+            (challenge_id,),
+        ).fetchone() is None
+    finally:
+        _close(app)
+
+
 def test_lane_close_cancels_an_existing_review_mutation_lease_before_commit(tmp_path):
     holder = {}
 
@@ -787,6 +907,14 @@ def test_expired_known_review_challenge_debits_account_and_ip_without_admission(
         assert first.status_code == 401
         assert limited.status_code == 429
         assert holder["admission"].exchange_calls == calls_before
+        assert app.state.users._conn.execute(
+            "SELECT COUNT(*) FROM mobile_auth_exchange_journals"
+            " WHERE purpose = 'review' AND challenge_id = ?",
+            (challenge_id,),
+        ).fetchone()[0] == 0
+        assert app.state.users._conn.execute(
+            "SELECT COUNT(*) FROM mobile_api_tokens"
+        ).fetchone()[0] == 0
         domains = app.state.users._conn.execute(
             "SELECT domain, COUNT(*) FROM mobile_rate_limit_events"
             " WHERE domain LIKE 'review-auth-exchange-%'"

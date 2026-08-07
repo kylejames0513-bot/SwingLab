@@ -584,10 +584,17 @@ class ReviewAuthService:
         verifier = self._users._validate_mobile_auth_verifier(code_verifier)
         if (
             challenge is None
-            or challenge.expires_at <= now
             or not isinstance(password, str)
             or not password
             or len(password) > 1024
+        ):
+            self._debit_failure(client_ip=ip, challenge=challenge, now=now)
+            raise MobileNativeAuthRejected("Invalid review authentication.")
+        if (
+            challenge.expires_at <= now
+            and not self._users.mobile_review_exchange_replay_eligible(
+                challenge.challenge_id, now=now
+            )
         ):
             self._debit_failure(client_ip=ip, challenge=challenge, now=now)
             raise MobileNativeAuthRejected("Invalid review authentication.")
