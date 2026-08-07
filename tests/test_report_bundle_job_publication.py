@@ -18,9 +18,15 @@ from swinglab.report_bundle import (
     build_report_bundle,
     publish_report_bundle,
 )
-from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
+from swinglab.report_view import (
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    MediaRole,
+    ReasonCode,
+    TrackingState,
+)
 from swinglab.web import jobs as jobs_module
 from swinglab.web.jobs import DONE, PROCESSING, Job, JobManager
+from tests import guided_report_gate_helper as gate_helper
 from tests.report_bundle_fixtures import guided_bundle_inputs, write_test_report_html
 
 
@@ -287,6 +293,68 @@ def test_guided_core_publication_commit_acknowledgement_loss_reads_back_done_row
     )
     assert job.status == DONE and job.structured_report is True
     assert manager.usage_this_month(user_id) == 1
+
+
+def test_guided_gate_renderer_only_job_is_done_limited_and_has_no_partial(
+    tmp_path: Path,
+):
+    row, manager = gate_helper.run_guided_job(
+        tmp_path / "renderer-only",
+        angle="face-on",
+        renderer_failure=True,
+    )
+    try:
+        bundle = gate_helper.assert_job_bundle(row)
+        assert row.status == DONE
+        assert row.structured_report is True
+        assert bundle.view.trust.state.value == "limited"
+        assert bundle.view.visual_evidence.state == "unavailable"
+        assert bundle.view.visual_evidence.tracking_state is not TrackingState.UNAVAILABLE
+        assert bundle.view.visual_evidence.render_reasons == (
+            ReasonCode.FOCUSED_MEDIA_RENDER_FAILED,
+        )
+        assert ReasonCode.FOCUSED_MEDIA_RENDER_FAILED in bundle.view.trust.reasons
+        assert not any(
+            media.role is MediaRole.PRIORITY_EVIDENCE
+            for media in bundle.view.media
+        )
+        assert not any(
+            path.name == "priority-evidence.png"
+            for path in row.session_dir.rglob("*")
+        )
+        assert manager.usage_this_month("guided-gate-user") == 1
+    finally:
+        gate_helper.close_job_manager(manager)
+
+
+def test_guided_gate_core_writer_job_is_failed_unpublished_and_zero_usage(
+    tmp_path: Path,
+):
+    row, manager = gate_helper.run_guided_job(
+        tmp_path / "core-writer",
+        angle="face-on",
+        core_writer_failure=True,
+    )
+    try:
+        assert row.status == jobs_module.FAILED
+        assert row.structured_report is False
+        assert (
+            row.report_rel,
+            row.report_view_rel,
+            row.report_manifest_rel,
+            row.report_checksums_rel,
+        ) == (None, None, None, None)
+        assert manager.usage_this_month("guided-gate-user") == 0
+        assert not any(
+            path.is_dir() and path.name.startswith("report-bundle-")
+            for path in row.session_dir.rglob("*")
+        )
+        assert not any(
+            path.is_dir() and path.name.startswith(".report-attempt-")
+            for path in row.session_dir.rglob("*")
+        )
+    finally:
+        gate_helper.close_job_manager(manager)
 
 
 def test_terminal_log_append_is_status_and_policy_guarded(tmp_path: Path):

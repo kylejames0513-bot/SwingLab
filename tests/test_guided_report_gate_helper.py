@@ -1,20 +1,18 @@
 from __future__ import annotations
 
 import importlib
-import inspect
 import json
 from pathlib import Path
 import re
+
+import pytest
 
 from swinglab.report_view import (
     EvidenceKind,
     MediaRole,
     PhaseId,
     PhaseMethod,
-    ReasonCode,
-    TrackingState,
 )
-from swinglab.web.jobs import DONE, FAILED
 
 
 def _gate_helper():
@@ -44,76 +42,6 @@ def test_face_on_gate_uses_the_real_pipeline_and_validates_one_focused_artifact(
         for token in ("work/", "raw", "overlay", "strip", "replay")
     )
     assert not (result.session_dir / "work").exists()
-
-
-def test_renderer_only_failure_commits_a_complete_limited_bundle_without_partial(
-    tmp_path: Path,
-):
-    gate = _gate_helper()
-    assert hasattr(gate, "run_guided_job"), "guided job gate is not implemented"
-
-    row, manager = gate.run_guided_job(
-        tmp_path / "renderer-only",
-        angle="face-on",
-        renderer_failure=True,
-    )
-    try:
-        bundle = gate.assert_job_bundle(row)
-        assert row.status == DONE
-        assert row.structured_report is True
-        assert bundle.view.trust.state.value == "limited"
-        assert bundle.view.visual_evidence.state == "unavailable"
-        assert bundle.view.visual_evidence.tracking_state is not TrackingState.UNAVAILABLE
-        assert bundle.view.visual_evidence.render_reasons == (
-            ReasonCode.FOCUSED_MEDIA_RENDER_FAILED,
-        )
-        assert ReasonCode.FOCUSED_MEDIA_RENDER_FAILED in bundle.view.trust.reasons
-        assert not any(
-            media.role is MediaRole.PRIORITY_EVIDENCE
-            for media in bundle.view.media
-        )
-        assert not any(
-            path.name == "priority-evidence.png"
-            for path in row.session_dir.rglob("*")
-        )
-        assert manager.usage_this_month("guided-gate-user") == 1
-    finally:
-        gate.close_job_manager(manager)
-
-
-def test_core_writer_failure_leaves_a_failed_zero_usage_row_and_no_final_bundle(
-    tmp_path: Path,
-):
-    gate = _gate_helper()
-    assert "core_writer_failure" in inspect.signature(
-        gate.run_guided_job
-    ).parameters, "core writer gate is not implemented"
-
-    row, manager = gate.run_guided_job(
-        tmp_path / "core-writer",
-        angle="face-on",
-        core_writer_failure=True,
-    )
-    try:
-        assert row.status == FAILED
-        assert row.structured_report is False
-        assert (
-            row.report_rel,
-            row.report_view_rel,
-            row.report_manifest_rel,
-            row.report_checksums_rel,
-        ) == (None, None, None, None)
-        assert manager.usage_this_month("guided-gate-user") == 0
-        assert not any(
-            path.is_dir() and path.name.startswith("report-bundle-")
-            for path in row.session_dir.rglob("*")
-        )
-        assert not any(
-            path.is_dir() and path.name.startswith(".report-attempt-")
-            for path in row.session_dir.rglob("*")
-        )
-    finally:
-        gate.close_job_manager(manager)
 
 
 def test_dtl_gate_keeps_timing_provenance_and_excludes_body_semantics(
@@ -168,6 +96,27 @@ def test_dtl_gate_keeps_timing_provenance_and_excludes_body_semantics(
     )
 
 
+def test_guided_gate_renderer_only_rejects_an_extra_direct_final_bundle_root(
+    tmp_path: Path,
+    monkeypatch,
+):
+    gate = _gate_helper()
+    real_run_guided_job = gate.run_guided_job
+
+    def run_with_extra_final(*args, **kwargs):
+        row, manager = real_run_guided_job(*args, **kwargs)
+        assert row.report_rel is not None
+        report_path = row.session_dir / Path(row.report_rel)
+        analysis_session = report_path.parent.parent
+        (analysis_session / "report-bundle-extra").mkdir()
+        return row, manager
+
+    monkeypatch.setattr(gate, "run_guided_job", run_with_extra_final)
+
+    with pytest.raises(AssertionError, match="exactly one final report bundle"):
+        gate._run_renderer_only(tmp_path)
+
+
 def test_gate_cli_writes_one_bounded_privacy_safe_result_for_all_scenarios(
     tmp_path: Path,
     capsys,
@@ -211,6 +160,8 @@ def test_gate_cli_writes_one_bounded_privacy_safe_result_for_all_scenarios(
     assert by_scenario["dtl"]["body_metrics_null"] is True
     assert by_scenario["renderer-only"]["priority_evidence_count"] == 0
     assert by_scenario["renderer-only"]["visual_evidence_state"] == "unavailable"
+    assert by_scenario["renderer-only"]["trust_state"] == "limited"
+    assert by_scenario["renderer-only"]["final_bundle_roots"] == 1
     assert by_scenario["renderer-only"]["durable_job"] == {
         "canonical_rels_present": True,
         "status": "done",

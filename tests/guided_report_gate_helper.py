@@ -411,6 +411,29 @@ def _run_dtl(root: Path) -> dict[str, object]:
     return summary
 
 
+def _direct_final_bundle_roots(analysis_session: Path) -> tuple[Path, ...]:
+    return tuple(
+        sorted(
+            (
+                path
+                for path in analysis_session.iterdir()
+                if path.is_dir() and path.name.startswith("report-bundle-")
+            ),
+            key=lambda path: path.name,
+        )
+    )
+
+
+def _single_job_analysis_session(row: Job) -> Path:
+    out_dir = row.session_dir / "out"
+    analysis_sessions = tuple(
+        path for path in out_dir.iterdir() if path.is_dir()
+    )
+    if len(analysis_sessions) != 1:
+        raise AssertionError("guided gate requires one owned analysis session")
+    return analysis_sessions[0]
+
+
 def _run_renderer_only(root: Path) -> dict[str, object]:
     row, manager = run_guided_job(
         root / "renderer-only",
@@ -421,9 +444,17 @@ def _run_renderer_only(root: Path) -> dict[str, object]:
         bundle = assert_job_bundle(row)
         summary = _bundle_summary("renderer-only", bundle)
         visual = bundle.view.visual_evidence
+        trust_state = bundle.view.trust.state.value
         usage = manager.usage_this_month("guided-gate-user")
+        final_roots = _direct_final_bundle_roots(bundle.root.parent)
         if row.status != jobs_module.DONE or not row.structured_report:
             raise AssertionError("renderer-only failure did not commit a done row")
+        if trust_state != "limited":
+            raise AssertionError("renderer-only trust state is not limited")
+        if len(final_roots) != 1:
+            raise AssertionError(
+                "renderer-only gate requires exactly one final report bundle"
+            )
         if visual is None or visual.state != "unavailable":
             raise AssertionError("renderer-only failure is not unavailable")
         if visual.render_reasons != (ReasonCode.FOCUSED_MEDIA_RENDER_FAILED,):
@@ -449,7 +480,8 @@ def _run_renderer_only(root: Path) -> dict[str, object]:
             ),
             "usage_this_month": usage,
         }
-        summary["final_bundle_roots"] = 1
+        summary["trust_state"] = trust_state
+        summary["final_bundle_roots"] = len(final_roots)
         return summary
     finally:
         close_job_manager(manager)
@@ -469,13 +501,11 @@ def _run_core_writer(root: Path) -> dict[str, object]:
             row.report_checksums_rel,
         )
         usage = manager.usage_this_month("guided-gate-user")
-        final_roots = sum(
-            path.is_dir() and path.name.startswith("report-bundle-")
-            for path in row.session_dir.rglob("*")
-        )
+        analysis_session = _single_job_analysis_session(row)
+        final_roots = len(_direct_final_bundle_roots(analysis_session))
         partial_roots = sum(
             path.is_dir() and path.name.startswith(".report-attempt-")
-            for path in row.session_dir.rglob("*")
+            for path in analysis_session.iterdir()
         )
         if (
             row.status != jobs_module.FAILED
