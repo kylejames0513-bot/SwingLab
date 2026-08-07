@@ -11,9 +11,17 @@ import sqlite3
 import tempfile
 import time
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
+
+from ..report_artifacts import (
+    PublishedReportBundle,
+    ReportArtifactValidationError,
+    load_published_bundle,
+)
+from ..proof_cycle_artifact import ARTIFACT_FILENAME, load_proof_cycle_artifact
 
 FORMAT = "caddieinsight-backup/v1"
 COMPLETE_FILE = "COMPLETE.json"
@@ -47,10 +55,37 @@ HISTORY_STATE_TABLES = (
 )
 
 _BACKUP_ID_RE = re.compile(r"^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$")
+_STRUCTURED_JOB_COLUMNS = frozenset(
+    {
+        "report_rel",
+        "report_view_rel",
+        "report_manifest_rel",
+        "report_checksums_rel",
+        "structured_report",
+    }
+)
+_STRUCTURED_JOB_PROJECTION = (
+    "id, report_rel, report_view_rel, report_manifest_rel, "
+    "report_checksums_rel, structured_report, created_at, user_id, hand, angle, club"
+)
 
 
 class BackupError(RuntimeError):
     """A safe-to-display backup or restore failure."""
+
+
+@dataclass(frozen=True)
+class _ArtifactJob:
+    id: str
+    session_dir: Path
+    status: str
+    created_at: float
+    hand: str
+    angle: str
+    club: str | None
+    user_id: str | None
+    report_rel: str
+    structured_report: bool
 
 
 def _utc_now() -> datetime:
@@ -394,13 +429,89 @@ def _safe_job_root(sessions_dir: Path, job_id: str) -> Path:
     return root
 
 
+def _jobs_have_structured_schema(connection: sqlite3.Connection) -> bool:
+    columns = {
+        str(row["name"])
+        for row in connection.execute('PRAGMA table_info("jobs")').fetchall()
+    }
+    return _STRUCTURED_JOB_COLUMNS.issubset(columns)
+
+
+def _structured_bundle_rels(row: sqlite3.Row) -> dict[str, str]:
+    values = {
+        "report_rel": row["report_rel"],
+        "report_view_rel": row["report_view_rel"],
+        "manifest_rel": row["report_manifest_rel"],
+        "checksums_rel": row["report_checksums_rel"],
+    }
+    if any(not isinstance(value, str) or not value for value in values.values()):
+        raise BackupError(
+            "A structured report is missing its complete publication paths."
+        )
+    return values  # type: ignore[return-value]
+
+
+def _load_structured_bundle(
+    job_root: Path, row: sqlite3.Row
+) -> PublishedReportBundle:
+    try:
+        return load_published_bundle(job_root, **_structured_bundle_rels(row))
+    except (OSError, ReportArtifactValidationError, ValueError) as exc:
+        raise BackupError(
+            "A structured report bundle failed publication validation."
+        ) from exc
+
+
+def _structured_bundle_sources(bundle: PublishedReportBundle) -> tuple[Path, ...]:
+    selected = [
+        bundle.report_path,
+        bundle.report_view_path,
+        *(
+            _join_under(bundle.root, _safe_relative_path(artifact.relative_path))
+            for artifact in bundle.manifest.artifacts
+            if artifact.kind in ("metrics", "media")
+        ),
+        bundle.manifest_path,
+        bundle.checksums_path,
+    ]
+    deduped = {path.relative_to(bundle.root).as_posix(): path for path in selected}
+    return tuple(deduped[key] for key in sorted(deduped))
+
+
+def _verified_structured_proof_source(
+    job_root: Path, row: sqlite3.Row
+) -> Path | None:
+    sidecar = job_root / ARTIFACT_FILENAME
+    if not sidecar.exists():
+        return None
+    job = _ArtifactJob(
+        id=str(row["id"]),
+        session_dir=job_root,
+        status="done",
+        created_at=float(row["created_at"]),
+        hand=str(row["hand"] or ""),
+        angle=str(row["angle"] or ""),
+        club=str(row["club"]) if row["club"] is not None else None,
+        user_id=str(row["user_id"]) if row["user_id"] is not None else None,
+        report_rel=str(row["report_rel"]),
+        structured_report=True,
+    )
+    return sidecar if load_proof_cycle_artifact(job) is not None else None
+
+
 def _artifact_sources(
     sessions_dir: Path, snapshot_db: Path
 ) -> Iterable[tuple[Path, Path]]:
     connection = _read_only_connection(snapshot_db)
     try:
+        structured_schema = _jobs_have_structured_schema(connection)
+        projection = (
+            _STRUCTURED_JOB_PROJECTION
+            if structured_schema
+            else "id, report_rel"
+        )
         rows = connection.execute(
-            "SELECT id, report_rel FROM jobs "
+            f"SELECT {projection} FROM jobs "
             "WHERE status = 'done' ORDER BY id"
         ).fetchall()
     finally:
@@ -408,6 +519,31 @@ def _artifact_sources(
 
     for row in rows:
         job_root = _safe_job_root(sessions_dir, str(row["id"]))
+        if structured_schema and row["structured_report"] not in (0, 1):
+            raise BackupError("A completed job has an invalid report publication state.")
+        if structured_schema and row["structured_report"] == 1:
+            bundle = _load_structured_bundle(job_root, row)
+            selected = list(_structured_bundle_sources(bundle))
+            proof_cycle = _verified_structured_proof_source(job_root, row)
+            if proof_cycle is not None:
+                selected.append(proof_cycle)
+            deduped: dict[str, tuple[Path, Path]] = {}
+            for source in selected:
+                relative = source.relative_to(sessions_dir)
+                deduped.setdefault(relative.as_posix(), (source, relative))
+            for relative_text in sorted(deduped):
+                source, relative = deduped[relative_text]
+                if (
+                    "work" in relative.parts
+                    or relative.name.startswith("source.")
+                    or any(part.startswith(".report-attempt-") for part in relative.parts)
+                ):
+                    raise BackupError(
+                        "A raw upload, work artifact, or report attempt entered the allowlist."
+                    )
+                yield source, relative
+            continue
+
         report_rel = _safe_relative_path(str(row["report_rel"] or ""))
         report = _join_under(job_root, report_rel)
         if not _is_relative_to(report, job_root):
@@ -444,7 +580,11 @@ def _artifact_sources(
                 PurePosixPath(*lexical_relative.parts),
             )
             relative = resolved.relative_to(sessions_dir)
-            if "work" in relative.parts or relative.name.startswith("source."):
+            if (
+                "work" in relative.parts
+                or relative.name.startswith("source.")
+                or any(part.startswith(".report-attempt-") for part in relative.parts)
+            ):
                 raise BackupError("A raw upload or work artifact entered the allowlist.")
             yield resolved, relative
 
@@ -520,10 +660,10 @@ def create_backup(
             "scope": {
                 "included": [
                     "WAL-safe SQLite snapshot",
-                    "completed-job report.html",
-                    "completed-job metrics.json when present",
-                    "completed-job proof-cycle.json when present",
-                    "completed-job media files",
+                    "completed legacy report allowlist",
+                    "validated structured report bundle graphs",
+                    "manifest-declared structured media files",
+                    "independently validated proof-cycle.json when present",
                 ],
                 "excluded": [
                     "live swinglab.db, swinglab.db-wal, and swinglab.db-shm files",
@@ -631,43 +771,82 @@ def verify_bundle_files(bundle_dir: Path, manifest: dict[str, Any]) -> None:
         sha256, size = _sha256_file(path)
         if sha256 != item["sha256"] or size != item["size"]:
             raise BackupError("Artifact checksum verification failed.")
-    _verify_artifact_database_mapping(db_path, manifest)
+    _verify_artifact_database_mapping(
+        db_path, manifest, bundle_dir / "artifacts"
+    )
 
 
 def _verify_artifact_database_mapping(
-    db_path: Path, manifest: dict[str, Any]
+    db_path: Path, manifest: dict[str, Any], artifact_root: Path
 ) -> None:
     connection = _read_only_connection(db_path)
     try:
+        structured_schema = _jobs_have_structured_schema(connection)
+        projection = (
+            _STRUCTURED_JOB_PROJECTION
+            if structured_schema
+            else "id, report_rel"
+        )
         rows = connection.execute(
-            "SELECT id, report_rel FROM jobs WHERE status = 'done' ORDER BY id"
+            f"SELECT {projection} FROM jobs WHERE status = 'done' ORDER BY id"
         ).fetchall()
     except sqlite3.Error as exc:
         raise BackupError("Artifact-to-database reconciliation failed.") from exc
     finally:
         connection.close()
 
-    jobs: dict[str, tuple[PurePosixPath, PurePosixPath]] = {}
-    for row in rows:
-        job_id = str(row["id"])
-        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", job_id):
-            raise BackupError("A restored job identifier is unsafe.")
-        report_rel = _safe_relative_path(str(row["report_rel"] or ""))
-        report_path = PurePosixPath(job_id) / report_rel
-        jobs[job_id] = (report_path, report_path.parent)
-
     listed = {
         _safe_relative_path(str(item["path"]))
         for item in manifest["artifacts"]["files"]
     }
-    expected_reports = {report for report, _ in jobs.values()}
+    jobs: dict[str, tuple[PurePosixPath, PurePosixPath] | set[PurePosixPath]] = {}
+    for row in rows:
+        job_id = str(row["id"])
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", job_id):
+            raise BackupError("A restored job identifier is unsafe.")
+        if structured_schema and row["structured_report"] not in (0, 1):
+            raise BackupError("A completed job has an invalid report publication state.")
+        if structured_schema and row["structured_report"] == 1:
+            job_root = _safe_job_root(artifact_root, job_id)
+            bundle = _load_structured_bundle(job_root, row)
+            expected = {
+                PurePosixPath(job_id)
+                / PurePosixPath(*source.relative_to(job_root).parts)
+                for source in _structured_bundle_sources(bundle)
+            }
+            proof_cycle = _verified_structured_proof_source(job_root, row)
+            if proof_cycle is not None:
+                expected.add(PurePosixPath(job_id) / ARTIFACT_FILENAME)
+            listed_for_job = {
+                path for path in listed if path.parts and path.parts[0] == job_id
+            }
+            if listed_for_job != expected:
+                raise BackupError(
+                    "A structured report artifact set does not match its database row."
+                )
+            jobs[job_id] = expected
+            continue
+        report_rel = _safe_relative_path(str(row["report_rel"] or ""))
+        report_path = PurePosixPath(job_id) / report_rel
+        jobs[job_id] = (report_path, report_path.parent)
+
+    expected_reports = {
+        job[0] for job in jobs.values() if isinstance(job, tuple)
+    }
     if not expected_reports.issubset(listed):
         raise BackupError("A completed job report is absent from the manifest.")
 
     for path in listed:
         if not path.parts or path.parts[0] not in jobs:
             raise BackupError("An artifact is not associated with a completed job.")
-        report, deliverable_root = jobs[path.parts[0]]
+        job = jobs[path.parts[0]]
+        if isinstance(job, set):
+            if path not in job:
+                raise BackupError(
+                    "An artifact is outside the structured report allowlist."
+                )
+            continue
+        report, deliverable_root = job
         metrics = deliverable_root / "metrics.json"
         proof_cycle = deliverable_root / "proof-cycle.json"
         media_root = deliverable_root / "media"
@@ -732,6 +911,10 @@ def restore_backup(bundle_dir: Path, scratch_root: Path) -> dict[str, Any]:
             sha256, size = _copy_and_hash(source, destination)
             if sha256 != item["sha256"] or size != item["size"]:
                 raise BackupError("Restored artifact checksum verification failed.")
+
+        _verify_artifact_database_mapping(
+            restored_db, manifest, restore_dir / "artifacts"
+        )
 
         restored_summary = database_summary(
             restored_db, float(manifest["created_at_epoch"])

@@ -7,9 +7,11 @@ import hashlib
 import hmac
 import json
 import logging
+import re
 import sqlite3
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -18,6 +20,17 @@ from fastapi.testclient import TestClient
 
 from swinglab.config import Config
 from swinglab.integrations.shopify.backfill import bind_backfill_database
+from swinglab.pipeline import SessionResult
+from swinglab.proof_cycle_artifact import (
+    build_proof_cycle_artifact,
+    write_proof_cycle_artifact,
+)
+from swinglab.report_bundle import (
+    begin_report_bundle,
+    build_report_bundle,
+    publish_report_bundle,
+)
+from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.users import (
@@ -26,12 +39,19 @@ from swinglab.web.users import (
     UserStore,
     shopify_remote_privacy_lock,
 )
+from swinglab.web.jobs import PROCESSING
+from tests.report_bundle_fixtures import (
+    add_optional_media,
+    guided_bundle_inputs,
+    write_test_report_html,
+)
 from tests.test_web import fake_analyze_ok
 
 
 PRIMARY_SECRET = "primary-shopify-test-secret"
 PRIVACY_SECRET = "privacy-app-test-secret"
 STORE = "privacy-test.myshopify.com"
+RAW_LANDMARK_SENTINEL = "raw_landmarks:0.123456789,0.987654321"
 
 
 @pytest.fixture
@@ -72,6 +92,48 @@ def signed_webhook(
             "Content-Type": "application/json",
         },
     )
+
+
+def structured_privacy_job(app, tmp_path: Path, user_id: str):
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    manager = app.state.jobs
+    manager._guided_html_writer = write_test_report_html
+    job = manager.create_session(
+        source_name="private-swing.mov",
+        user_id=user_id,
+        hand="right",
+        angle="face-on",
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    (job.session_dir / "source.mov").write_bytes(b"private raw upload")
+    job.status = PROCESSING
+    manager._save(job)
+    analysis_dir = job.session_dir / "out" / "source"
+    analysis_dir.mkdir(parents=True)
+    attempt = begin_report_bundle(analysis_dir, attempt_id="a" * 32)
+    inputs = guided_bundle_inputs(tmp_path)
+    add_optional_media(attempt, inputs, strip=True, replay=True)
+    (attempt.media_dir / "positions-1.png").write_text(
+        RAW_LANDMARK_SENTINEL, encoding="utf-8"
+    )
+    published = publish_report_bundle(build_report_bundle(attempt, **inputs))
+    manager._complete_job(
+        job,
+        SessionResult(
+            session_dir=analysis_dir,
+            report_path=published.report_path,
+            metrics_path=published.root / "metrics.json",
+            video=inputs["video"],
+            report_view_path=published.report_view_path,
+            manifest_path=published.manifest_path,
+            checksums_path=published.checksums_path,
+            structured_report=True,
+        ),
+    )
+    write_proof_cycle_artifact(
+        job, build_proof_cycle_artifact(job, [], Config())
+    )
+    return job, published
 
 
 def test_data_request_is_durable_idempotent_and_pii_free_in_logs(app, caplog):
@@ -209,6 +271,118 @@ def test_data_request_is_durable_idempotent_and_pii_free_in_logs(app, caplog):
         now=request.expires_at + 1
     ) == 1
     assert users.get_shopify_privacy_request(request.request_id) is None
+
+
+def test_structured_privacy_inventory_names_artifacts_without_copying_content(
+    app, tmp_path
+):
+    users: UserStore = app.state.users
+    email = "structured-privacy@example.com"
+    customer_id = "7001555"
+    user = users.create(email, "private-password", email_verified=True)
+    users.upsert_store_customer(email, customer_id)
+    job, published = structured_privacy_job(app, tmp_path, user.id)
+
+    request = users.capture_shopify_data_request(
+        shop_domain=STORE,
+        configured_shop_domain=STORE,
+        customer_id=customer_id,
+        order_ids=[],
+        event_id="structured-artifact-inventory",
+    )
+
+    assert request is not None
+    snapshot = users.export_shopify_privacy_request(request.request_id)
+    assert snapshot is not None
+    inventory = next(
+        item for item in snapshot["session_artifacts"] if item["job_id"] == job.id
+    )
+    files = inventory["files"]
+    paths = {item["path"] for item in files}
+    root_rel = published.root.relative_to(job.session_dir).as_posix()
+    expected = {
+        f"{root_rel}/{artifact.relative_path}"
+        for artifact in published.manifest.artifacts
+    }
+    expected.update(
+        {
+            f"{root_rel}/report-bundle-manifest.json",
+            f"{root_rel}/report-bundle-checksums.json",
+            "proof-cycle.json",
+        }
+    )
+    assert expected.issubset(paths)
+    assert any(path.endswith("/report.html") for path in paths)
+    assert any("/media/" in path for path in paths)
+    assert all(set(item) == {"path", "bytes", "modified_at"} for item in files)
+
+    row = users._conn.execute(
+        "SELECT snapshot_json FROM shopify_privacy_requests "
+        "WHERE request_id = ?",
+        (request.request_id,),
+    ).fetchone()
+    assert row is not None
+    snapshot_json = row["snapshot_json"]
+    assert RAW_LANDMARK_SENTINEL not in snapshot_json
+    assert "raw_landmarks" not in snapshot_json
+    database_files = [app.state.jobs.sessions_dir / "swinglab.db"]
+    database_files.extend(
+        path
+        for path in (
+            app.state.jobs.sessions_dir / "swinglab.db-wal",
+            app.state.jobs.sessions_dir / "swinglab.db-shm",
+        )
+        if path.exists()
+    )
+    assert RAW_LANDMARK_SENTINEL.encode() not in b"".join(
+        path.read_bytes() for path in database_files
+    )
+
+
+def test_account_history_delete_removes_structured_job_tree_and_row_only_for_owner(
+    app, tmp_path
+):
+    app.state.cfg.web["history_reset_enabled"] = True
+    app.state.cfg.web["passwordless_login"] = False
+    client = TestClient(app)
+    users: UserStore = app.state.users
+    owner = users.create(
+        "structured-reset@example.com", "longenough", email_verified=True
+    )
+    response = client.post(
+        "/login",
+        data={
+            "email": "structured-reset@example.com",
+            "password": "longenough",
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    job, _ = structured_privacy_job(app, tmp_path / "owner", owner.id)
+    other = users.create(
+        "structured-other@example.com", "longenough", email_verified=True
+    )
+    other_job, _ = structured_privacy_job(app, tmp_path / "other", other.id)
+    page = client.get("/account/history/delete")
+    assert page.status_code == 200
+    nonce = re.search(r'name="nonce" value="([^"]+)"', page.text)
+    assert nonce is not None
+
+    deleted = client.post(
+        "/account/history/delete",
+        data={
+            "nonce": nonce.group(1),
+            "confirmation": "START OVER",
+            "password": "longenough",
+        },
+        follow_redirects=False,
+    )
+
+    assert deleted.status_code == 303
+    assert app.state.jobs.get(job.id) is None
+    assert not job.session_dir.exists()
+    assert app.state.jobs.get(other_job.id) is not None
+    assert other_job.session_dir.is_dir()
 
 
 def test_customer_redaction_erases_structured_proof_cycle_context(app):

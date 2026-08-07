@@ -17,7 +17,7 @@ from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.jobs import JobManager
 
-from tests.test_history_reset_core import terminal_job
+from tests.test_history_reset_core import structured_tree_paths, terminal_job
 from tests.test_web import fake_analyze_no_strikes, fake_analyze_ok, upload, wait_for
 
 
@@ -127,9 +127,13 @@ def test_retention_archives_current_month_quota_before_deleting(tmp_path):
     cfg = Config()
     cfg.web["retention_days"] = 1
     manager = JobManager(tmp_path / "sessions", cfg)
-    eligible = terminal_job(manager, "alice")
-    rejected = terminal_job(manager, "alice", capture_only=True)
+    eligible = terminal_job(manager, "alice", structured=True)
+    rejected = terminal_job(
+        manager, "alice", capture_only=True, structured=True
+    )
     ownerless = terminal_job(manager, None)
+    eligible_tree = structured_tree_paths(eligible)
+    rejected_tree = structured_tree_paths(rejected)
     old = time.time() - 2 * 86400
     with manager._lock:
         manager._conn.executemany(
@@ -141,6 +145,7 @@ def test_retention_archives_current_month_quota_before_deleting(tmp_path):
     assert manager.usage_this_month("alice") == 1
     assert manager.refilm_rejections_this_month("alice") == 1
     manager._cleanup_expired()
+    manager._cleanup_expired()
 
     assert manager.get(eligible.id) is None
     assert manager.get(rejected.id) is None
@@ -148,6 +153,7 @@ def test_retention_archives_current_month_quota_before_deleting(tmp_path):
     assert not eligible.session_dir.exists()
     assert not rejected.session_dir.exists()
     assert not ownerless.session_dir.exists()
+    assert all(not path.exists() for path in (*eligible_tree, *rejected_tree))
     assert manager.usage_this_month("alice") == 1
     assert manager.refilm_rejections_this_month("alice") == 1
     with manager._lock:
@@ -210,7 +216,8 @@ def test_retention_stops_when_prior_history_recovery_remains_unresolved(
     cfg.web["retention_days"] = 1
     sessions = tmp_path / "sessions"
     manager = JobManager(sessions, cfg)
-    blocked = terminal_job(manager, "alice")
+    blocked = terminal_job(manager, "alice", structured=True)
+    blocked_tree = structured_tree_paths(blocked)
     untouched = terminal_job(manager, "bob")
     old = time.time() - 2 * 86400
     with manager._lock:
@@ -226,6 +233,10 @@ def test_retention_stops_when_prior_history_recovery_remains_unresolved(
             (row,), kind="retention", subject_hash=None
         )
     staged = sessions / ".history-trash" / operation_id / blocked.id
+    assert all(
+        (staged / path.relative_to(blocked.session_dir)).exists()
+        for path in blocked_tree
+    )
     original_replace = Path.replace
 
     def fail_restore(path, target):
@@ -250,3 +261,4 @@ def test_retention_stops_when_prior_history_recovery_remains_unresolved(
     assert manager.history_cleanup_pending_count() == 0
     assert blocked.session_dir.is_dir()
     assert manager.get(blocked.id) is not None
+    assert all(path.exists() for path in blocked_tree)

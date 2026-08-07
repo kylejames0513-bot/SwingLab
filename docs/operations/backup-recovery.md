@@ -4,7 +4,7 @@
 
 **Stage:** 0B foundation only
 
-**Last reviewed:** 2026-08-01
+**Last reviewed:** 2026-08-07
 
 **Activation status:** Inactive. No storage account, credentials, schedule,
 Railway setting, production backup, or automatic restore is configured by this
@@ -44,23 +44,60 @@ Each generation is a new immutable prefix and local bundle:
 ```text
 <backup-id>/
   database/swinglab.db
-  artifacts/<job-id>/<report-relative paths>
+  artifacts/<job-id>/out/source/report.html                 # legacy example
+  artifacts/<job-id>/out/source/report-bundle-<attempt-id>/ # structured
+    report.html
+    report-view.json
+    metrics.json
+    media/<manifest-declared files>
+    report-bundle-manifest.json
+    report-bundle-checksums.json
+  artifacts/<job-id>/proof-cycle.json                       # optional sidecar
   manifest.json
   COMPLETE.json
 ```
 
-The database is a WAL-safe online snapshot. Artifacts are selected from `done`
-jobs in that snapshot and are limited to:
+The database is a WAL-safe online snapshot. The backup format remains
+`caddieinsight-backup/v1`; structured files are additive artifact entries, not
+a second format. Artifact selection is schema-aware:
 
-- the `report.html` identified by `jobs.report_rel`;
-- the sibling `metrics.json`, when present;
-- regular files below the sibling `media/` directory.
+- A snapshot without the complete structured column set keeps the original
+  legacy behavior exactly.
+- With the complete schema, `structured_report = 0` is still legacy and uses
+  only `report.html`, an optional sibling `metrics.json`, an optional legacy
+  sibling `proof-cycle.json`, and regular files below the sibling `media/`.
+- A `structured_report = 1` row must have nonempty `report_rel`,
+  `report_view_rel`, `report_manifest_rel`, and `report_checksums_rel` values.
+  All four must be canonical, session-relative paths beneath the same final
+  bundle root. The backup validates the complete graph before copying any file,
+  then includes exactly the report, private view, metrics, every media file
+  declared by the manifest, the manifest, and the checksum file.
+
+The structured checksum graph covers the manifest plus `report.html`,
+`report-view.json`, `metrics.json`, and every manifest-declared media file
+exactly once. The checksum file does not checksum itself. Validation also
+reconciles the HTML presentation/outcome, private view, metrics, manifest media
+identities and entitlements, and media hashes. A partial row, unsafe path,
+cross-root rel, missing file, undeclared topology, duplicate/missing checksum
+entry, or changed content aborts the backup; it is never downgraded to legacy.
+
+Structured `proof-cycle.json` is separate at the job-session root, outside the
+immutable bundle checksum graph. It is included only when its own bounded,
+schema/current-metrics validation succeeds. Missing or invalid Proof Cycle data
+does not weaken or replace validation of the required core graph.
+
+`report.html` and entitled evidence media are customer-readable deliverables.
+`report-view.json`, the manifest, checksums, and Proof Cycle sidecar are private
+implementation records. Authorized privacy exports may inventory their paths,
+sizes, and modification times, but must not copy their bytes into SQLite or
+make them available through generic session-file serving.
 
 The backup deliberately excludes:
 
 - `swinglab.db`, `swinglab.db-wal`, and `swinglab.db-shm` as raw source files;
 - uploaded `source.*` videos;
 - analysis `work/` trees;
+- abandoned `.report-attempt-*` trees;
 - files for queued, processing, and failed jobs;
 - symlinks, devices, path traversal, and files outside the selected
   deliverable directory.
@@ -69,6 +106,11 @@ This preserves retained customer reports and generated media without defeating
 the application's source-video minimization. The shipped application deletes
 raw uploads after terminal jobs and deletes terminal session directories after
 180 days.
+
+Guided report attempt directories and their final `report-bundle-<attempt-id>`
+directory are direct children of the same analysis directory and are published
+by one same-volume exclusive rename. Recovery and cleanup operate on the whole
+owned job directory. They never select individual bundle files for deletion.
 
 Every database snapshot and artifact has a SHA-256 digest and byte size in
 `manifest.json`. The manifest also contains:
@@ -109,6 +151,14 @@ remains verifiable and restorable; a partial schema with only one is rejected.
 Remote database and artifact object keys are opaque ordinals; logical job paths
 exist only inside the encrypted/private manifest body, not in provider-visible
 object names or metadata.
+
+Restore reconciliation runs twice. Before a scratch directory can be exposed,
+the snapshot database rels are validated against the backup's
+`artifacts/<job-id>` mirror with the same structured bundle loader. After the
+hash-checked copy, the same database-to-bundle validation runs again against
+the copied scratch artifact root. A transport hash match alone is not a
+readable-restore result, and `restore-report.json` is not created after either
+mapping fails.
 
 Remote uploads use an explicit single-writer protocol. Before uploading bundle
 data, the writer conditionally creates `CLAIM.json` with
@@ -263,6 +313,15 @@ Before enabling a lifecycle rule, obtain privacy and operations approval for:
 - lifecycle deletion only after a completed-generation age reaches 30 days;
 - any legal hold as an explicit exception with an owner and expiry;
 - quarterly scratch restore drills.
+
+Application history reset, account-history deletion, and local 180-day
+retention rename or remove the complete validated job directory. That boundary
+includes final structured bundles, the optional root sidecar, raw source files,
+and abandoned attempts. Crash recovery either restores a prepared whole-tree
+rename or finishes a committed purge before another cleanup can proceed.
+Monthly coaching/capture usage is archived once from terminal job rows into the
+existing pseudonymous `analysis_usage_monthly` receipt before row deletion;
+there is no per-artifact usage ledger.
 
 Longer database-ledger retention may eventually be required for financial or
 legal reasons, while customer media should remain short-lived. Because Stage 0B
@@ -436,7 +495,11 @@ snapshot plus retained deliverables. Check free space before the first run.
    - every critical-table count and deterministic digest matches the manifest;
    - entitlement and Shopify/gear purchase aggregates match the capture-time
      manifest;
-   - all artifact checksums match.
+   - all outer backup artifact checksums match;
+   - every structured database row resolves to one complete, canonical bundle
+     in both the backup artifact mirror and the copied scratch artifact root;
+   - each structured bundle's internal manifest/checksum graph and declared
+     media relationships validate exactly.
 
 7. Review the generated `restore-report.json`. Record the backup ID, drill date,
    durations, restored bytes, operator, result, and any alert ticket. Do not

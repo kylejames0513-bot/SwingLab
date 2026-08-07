@@ -8,7 +8,8 @@ import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -24,9 +25,22 @@ from swinglab.backups.core import (
 )
 from swinglab.backups.store import S3Settings, download_bundle, upload_bundle
 from swinglab.cli import main
+from swinglab.config import Config
+from swinglab.proof_cycle_artifact import (
+    build_proof_cycle_artifact,
+    load_proof_cycle_artifact,
+    write_proof_cycle_artifact,
+)
+from swinglab.report_bundle import (
+    begin_report_bundle,
+    build_report_bundle,
+    publish_report_bundle,
+)
+from swinglab.report_artifacts import load_published_bundle
 from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
 from swinglab.web.throttle import _SCHEMA as THROTTLE_SCHEMA
 from swinglab.web.users import _SCHEMA as USERS_SCHEMA
+from tests.report_bundle_fixtures import add_optional_media, guided_bundle_inputs
 
 
 CAPTURED_AT = datetime(2026, 7, 27, 12, 0, tzinfo=timezone.utc)
@@ -48,6 +62,30 @@ def _rewrite_completion(bundle: Path, manifest: dict) -> None:
         "manifest_sha256": hashlib.sha256(manifest_bytes).hexdigest(),
     }
     (bundle / COMPLETE_FILE).write_bytes(_canonical(complete))
+
+
+def _rewrite_database_attestation(bundle: Path, manifest: dict) -> None:
+    database = bundle / DATABASE_BUNDLE_PATH
+    raw = database.read_bytes()
+    manifest["database"]["size"] = len(raw)
+    manifest["database"]["sha256"] = hashlib.sha256(raw).hexdigest()
+    _rewrite_completion(bundle, manifest)
+
+
+def _rewrite_artifact_attestation(
+    bundle: Path, manifest: dict, relative: str
+) -> None:
+    artifact = bundle / "artifacts" / Path(*PurePosixPath(relative).parts)
+    raw = artifact.read_bytes()
+    item = next(
+        entry
+        for entry in manifest["artifacts"]["files"]
+        if entry["path"] == relative
+    )
+    manifest["artifacts"]["bytes"] += len(raw) - item["size"]
+    item["size"] = len(raw)
+    item["sha256"] = hashlib.sha256(raw).hexdigest()
+    _rewrite_completion(bundle, manifest)
 
 
 @pytest.fixture
@@ -212,6 +250,90 @@ def _create_bundle(tmp_path: Path, sessions: Path) -> tuple[Path, dict]:
     return bundle, manifest
 
 
+def _add_structured_done_job(
+    tmp_path: Path,
+    sessions: Path,
+    connection: sqlite3.Connection,
+    *,
+    job_id: str = "jobguided",
+    include_proof: bool = False,
+):
+    job_root = sessions / job_id
+    analysis_dir = job_root / "out" / "source"
+    analysis_dir.mkdir(parents=True)
+    attempt = begin_report_bundle(analysis_dir, attempt_id="a" * 32)
+    inputs = guided_bundle_inputs(tmp_path)
+    add_optional_media(attempt, inputs, strip=True, replay=True)
+    published = publish_report_bundle(build_report_bundle(attempt, **inputs))
+    rel = lambda path: path.relative_to(job_root).as_posix()
+    connection.execute(
+        "INSERT INTO jobs "
+        "(id, status, created_at, updated_at, report_rel, report_view_rel, "
+        "report_manifest_rel, report_checksums_rel, structured_report, "
+        "user_id, hand, angle) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            job_id,
+            "done",
+            7.0,
+            8.0,
+            rel(published.report_path),
+            rel(published.report_view_path),
+            rel(published.manifest_path),
+            rel(published.checksums_path),
+            1,
+            "user-synthetic",
+            "right",
+            "face-on",
+        ),
+    )
+    connection.commit()
+
+    if include_proof:
+        job = SimpleNamespace(
+            id=job_id,
+            session_dir=job_root,
+            status="done",
+            created_at=7.0,
+            report_rel=rel(published.report_path),
+            structured_report=True,
+            user_id="user-synthetic",
+            hand="right",
+            angle="face-on",
+            club=None,
+        )
+        artifact = build_proof_cycle_artifact(job, [], Config())
+        write_proof_cycle_artifact(job, artifact)
+        assert load_proof_cycle_artifact(job) is not None
+
+    abandoned = begin_report_bundle(analysis_dir, attempt_id="b" * 32)
+    (abandoned.staging_dir / "abandoned.tmp").write_bytes(b"abandoned")
+    (analysis_dir / "work").mkdir()
+    (analysis_dir / "work" / "frame.png").write_bytes(b"temporary")
+    (job_root / "source.mov").write_bytes(b"raw-source")
+    return published
+
+
+def _structured_backup_artifact_path(
+    sessions: Path, published, artifact: str
+) -> str:
+    if artifact == "report-view":
+        path = published.report_view_path
+    elif artifact == "manifest":
+        path = published.manifest_path
+    elif artifact == "checksums":
+        path = published.checksums_path
+    elif artifact == "focused-media":
+        media_key = published.view.visual_evidence.media_key
+        media = next(item for item in published.view.media if item.key == media_key)
+        path = published.root / Path(*PurePosixPath(media.relative_path).parts)
+    else:  # pragma: no cover - test helper contract
+        raise AssertionError(f"unknown structured artifact {artifact}")
+    return (
+        PurePosixPath("jobguided")
+        / PurePosixPath(*path.relative_to(sessions / "jobguided").parts)
+    ).as_posix()
+
+
 def test_wal_safe_snapshot_and_artifact_allowlist(tmp_path, synthetic_sessions):
     sessions, live_connection = synthetic_sessions
     bundle, manifest = _create_bundle(tmp_path, sessions)
@@ -258,6 +380,168 @@ def test_wal_safe_snapshot_and_artifact_allowlist(tmp_path, synthetic_sessions):
     }
 
 
+def test_full_schema_unstructured_row_keeps_exact_legacy_allowlist(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    deliverables = sessions / "jobdone" / "out" / "source"
+    (deliverables / "report-view.json").write_text('{"private":true}')
+    (deliverables / "report-bundle-manifest.json").write_text('{"private":true}')
+    (deliverables / "report-bundle-checksums.json").write_text('{"private":true}')
+    connection.execute(
+        "UPDATE jobs SET report_view_rel = ?, report_manifest_rel = ?, "
+        "report_checksums_rel = ?, structured_report = 0 WHERE id = 'jobdone'",
+        (
+            "out/source/report-view.json",
+            "out/source/report-bundle-manifest.json",
+            "out/source/report-bundle-checksums.json",
+        ),
+    )
+    connection.commit()
+
+    _, manifest = _create_bundle(tmp_path, sessions)
+
+    paths = [item["path"] for item in manifest["artifacts"]["files"]]
+    assert paths == [
+        "jobdone/out/source/media/replay_s1.mp4",
+        "jobdone/out/source/media/strip_s1.png",
+        "jobdone/out/source/metrics.json",
+        "jobdone/out/source/proof-cycle.json",
+        "jobdone/out/source/report.html",
+    ]
+
+
+def test_structured_backup_captures_validated_bundle_once_without_transient_tree(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    published = _add_structured_done_job(tmp_path, sessions, connection)
+
+    _, manifest = _create_bundle(tmp_path, sessions)
+
+    paths = [item["path"] for item in manifest["artifacts"]["files"]]
+    job_prefix = PurePosixPath("jobguided")
+    expected = {
+        (job_prefix / path.relative_to(sessions / "jobguided")).as_posix()
+        for path in (
+            published.report_path,
+            published.report_view_path,
+            published.root / "metrics.json",
+            published.manifest_path,
+            published.checksums_path,
+        )
+    }
+    expected.update(
+        (
+            job_prefix
+            / published.root.relative_to(sessions / "jobguided")
+            / artifact.relative_path
+        ).as_posix()
+        for artifact in published.manifest.artifacts
+        if artifact.kind == "media"
+    )
+    structured_paths = [path for path in paths if path.startswith("jobguided/")]
+    assert set(structured_paths) == expected
+    assert len(structured_paths) == len(expected)
+    assert all("/.report-attempt-" not in path for path in paths)
+    assert all("/work/" not in path for path in paths)
+    assert all(not path.endswith("/source.mov") for path in paths)
+
+
+def test_structured_backup_includes_only_a_separately_validated_root_proof_sidecar(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(
+        tmp_path, sessions, connection, include_proof=True
+    )
+
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+
+    paths = [item["path"] for item in manifest["artifacts"]["files"]]
+    assert paths.count("jobguided/proof-cycle.json") == 1
+    scratch = tmp_path / "scratch-proof-sidecar"
+    scratch.mkdir()
+    restored = restore_backup(bundle, scratch)
+    assert (
+        restored["restore_dir"]
+        / "artifacts"
+        / "jobguided"
+        / "proof-cycle.json"
+    ).is_file()
+
+
+def test_invalid_structured_proof_sidecar_is_omitted_without_weakening_core_graph(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(
+        tmp_path, sessions, connection, include_proof=True
+    )
+    (sessions / "jobguided" / "proof-cycle.json").write_text("not-json")
+
+    _, manifest = _create_bundle(tmp_path, sessions)
+
+    paths = [item["path"] for item in manifest["artifacts"]["files"]]
+    assert "jobguided/proof-cycle.json" not in paths
+    assert any(path.endswith("/report-bundle-checksums.json") for path in paths)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "UPDATE jobs SET report_view_rel = NULL WHERE id = 'jobguided'",
+        "UPDATE jobs SET report_rel = '../report.html' WHERE id = 'jobguided'",
+        "UPDATE jobs SET report_checksums_rel = report_manifest_rel "
+        "WHERE id = 'jobguided'",
+    ],
+    ids=("partial", "unsafe", "mismatched-kind"),
+)
+def test_structured_backup_fails_closed_for_invalid_database_publication_rels(
+    tmp_path, synthetic_sessions, mutation
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    connection.execute(mutation)
+    connection.commit()
+    output = tmp_path / "invalid-structured-backup"
+
+    with pytest.raises(BackupError, match="structured report"):
+        create_backup(sessions, output, now=CAPTURED_AT)
+
+    assert not output.exists()
+    assert not list(tmp_path.glob(f".{output.name}.partial-*"))
+
+
+def test_structured_backup_rejects_cross_root_rels_between_two_valid_bundles(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    second_fixture = tmp_path / "second-valid-bundle"
+    second_fixture.mkdir()
+    analysis_dir = sessions / "jobguided" / "out" / "source"
+    attempt = begin_report_bundle(analysis_dir, attempt_id="c" * 32)
+    second = publish_report_bundle(
+        build_report_bundle(attempt, **guided_bundle_inputs(second_fixture))
+    )
+    connection.execute(
+        "UPDATE jobs SET report_view_rel = ? WHERE id = 'jobguided'",
+        (
+            second.report_view_path.relative_to(
+                sessions / "jobguided"
+            ).as_posix(),
+        ),
+    )
+    connection.commit()
+    output = tmp_path / "cross-root-backup"
+
+    with pytest.raises(BackupError, match="structured report bundle"):
+        create_backup(sessions, output, now=CAPTURED_AT)
+
+    assert not output.exists()
+
+
 def test_restore_drill_uses_new_scratch_and_reconciles(tmp_path, synthetic_sessions):
     sessions, _ = synthetic_sessions
     bundle, manifest = _create_bundle(tmp_path, sessions)
@@ -302,6 +586,165 @@ def test_restore_drill_uses_new_scratch_and_reconciles(tmp_path, synthetic_sessi
     assert (sessions / "swinglab.db").is_file()
 
 
+def test_structured_restore_reconciles_database_rels_to_readable_scratch_bundle(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    scratch = tmp_path / "scratch-structured"
+    scratch.mkdir()
+
+    result = restore_backup(bundle, scratch)
+
+    restored_db = sqlite3.connect(result["restore_dir"] / DATABASE_BUNDLE_PATH)
+    restored_db.row_factory = sqlite3.Row
+    row = restored_db.execute(
+        "SELECT report_rel, report_view_rel, report_manifest_rel, "
+        "report_checksums_rel FROM jobs WHERE id = ?",
+        ("jobguided",),
+    ).fetchone()
+    restored_db.close()
+    restored = load_published_bundle(
+        result["restore_dir"] / "artifacts" / "jobguided",
+        report_rel=row["report_rel"],
+        report_view_rel=row["report_view_rel"],
+        manifest_rel=row["report_manifest_rel"],
+        checksums_rel=row["report_checksums_rel"],
+    )
+    assert restored.report_path.is_file()
+    assert restored.report_view_path.is_file()
+    assert restored.manifest_path.is_file()
+    assert restored.checksums_path.is_file()
+    assert (result["restore_dir"] / "restore-report.json").is_file()
+
+
+@pytest.mark.parametrize(
+    "artifact", ("focused-media", "report-view", "manifest", "checksums")
+)
+@pytest.mark.parametrize("action", ("changed", "missing"))
+def test_structured_restore_rejects_changed_or_missing_bundle_graph_artifact(
+    tmp_path, synthetic_sessions, artifact, action
+):
+    sessions, connection = synthetic_sessions
+    published = _add_structured_done_job(tmp_path, sessions, connection)
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    relative = _structured_backup_artifact_path(sessions, published, artifact)
+    target = bundle / "artifacts" / Path(*PurePosixPath(relative).parts)
+    if action == "missing":
+        target.unlink()
+    else:
+        raw = target.read_bytes()
+        target.write_bytes((b"X" + raw[1:]) if raw else b"X")
+        _rewrite_artifact_attestation(bundle, manifest, relative)
+    scratch = tmp_path / f"scratch-{artifact}-{action}"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_structured_restore_rejects_legacy_only_artifacts_for_structured_database_row(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    snapshot = sqlite3.connect(bundle / DATABASE_BUNDLE_PATH)
+    snapshot.execute(
+        "UPDATE jobs SET structured_report = 1, "
+        "report_view_rel = 'out/source/report-view.json', "
+        "report_manifest_rel = 'out/source/report-bundle-manifest.json', "
+        "report_checksums_rel = 'out/source/report-bundle-checksums.json' "
+        "WHERE id = 'jobdone'"
+    )
+    snapshot.commit()
+    snapshot.close()
+    _rewrite_database_attestation(bundle, manifest)
+    scratch = tmp_path / "scratch-legacy-only-structured"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="structured report bundle"):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_structured_restore_rejects_unsafe_database_rel_before_scratch_result(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    snapshot = sqlite3.connect(bundle / DATABASE_BUNDLE_PATH)
+    snapshot.execute(
+        "UPDATE jobs SET report_view_rel = '../report-view.json' "
+        "WHERE id = 'jobguided'"
+    )
+    snapshot.commit()
+    snapshot.close()
+    _rewrite_database_attestation(bundle, manifest)
+    scratch = tmp_path / "scratch-unsafe-structured"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="structured report bundle"):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_structured_restore_rejects_symlinked_private_view(
+    tmp_path, synthetic_sessions
+):
+    sessions, connection = synthetic_sessions
+    published = _add_structured_done_job(tmp_path, sessions, connection)
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    relative = _structured_backup_artifact_path(
+        sessions, published, "report-view"
+    )
+    target = bundle / "artifacts" / Path(*PurePosixPath(relative).parts)
+    outside = tmp_path / "outside-report-view.json"
+    target.replace(outside)
+    try:
+        target.symlink_to(outside)
+    except OSError:
+        pytest.skip("File symlinks are unavailable on this test host.")
+    scratch = tmp_path / "scratch-symlinked-view"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="Symlinks"):
+        restore_backup(bundle, scratch)
+
+    assert not list(scratch.iterdir())
+
+
+def test_structured_restore_revalidates_copied_scratch_graph_before_report(
+    tmp_path, synthetic_sessions, monkeypatch
+):
+    sessions, connection = synthetic_sessions
+    _add_structured_done_job(tmp_path, sessions, connection)
+    bundle, _ = _create_bundle(tmp_path, sessions)
+    real_copy = core_module._copy_and_hash
+
+    def corrupt_after_copy(source: Path, destination: Path):
+        result = real_copy(source, destination)
+        if destination.name == "report.html" and "jobguided" in destination.parts:
+            (destination.parent / "report-view.json").write_bytes(b"corrupt-after-copy")
+        return result
+
+    monkeypatch.setattr(core_module, "_copy_and_hash", corrupt_after_copy)
+    scratch = tmp_path / "scratch-post-copy-corruption"
+    scratch.mkdir()
+
+    with pytest.raises(BackupError, match="structured report bundle"):
+        restore_backup(bundle, scratch)
+
+    restore_dirs = list(scratch.iterdir())
+    assert len(restore_dirs) == 1
+    assert not (restore_dirs[0] / "restore-report.json").exists()
+
+
 def test_legacy_v1_database_without_history_tables_remains_restorable(
     tmp_path, synthetic_sessions
 ):
@@ -320,6 +763,42 @@ def test_legacy_v1_database_without_history_tables_remains_restorable(
     restored = restore_backup(bundle, scratch)
 
     assert restored["report"]["sqlite_integrity_check"] == "ok"
+
+
+def test_pre_structured_schema_backup_remains_restorable_with_legacy_mapping(
+    tmp_path, synthetic_sessions
+):
+    sessions, _ = synthetic_sessions
+    bundle, manifest = _create_bundle(tmp_path, sessions)
+    snapshot_path = bundle / DATABASE_BUNDLE_PATH
+    snapshot = sqlite3.connect(snapshot_path)
+    for column in (
+        "report_view_rel",
+        "report_manifest_rel",
+        "report_checksums_rel",
+        "structured_report",
+    ):
+        snapshot.execute(f"ALTER TABLE jobs DROP COLUMN {column}")
+    snapshot.commit()
+    snapshot.close()
+    manifest["database"]["sqlite"] = core_module.database_summary(
+        snapshot_path, CAPTURED_AT.timestamp()
+    )
+    _rewrite_database_attestation(bundle, manifest)
+    scratch = tmp_path / "scratch-pre-structured-schema"
+    scratch.mkdir()
+
+    restored = restore_backup(bundle, scratch)
+
+    assert restored["report"]["sqlite_integrity_check"] == "ok"
+    assert (
+        restored["restore_dir"]
+        / "artifacts"
+        / "jobdone"
+        / "out"
+        / "source"
+        / "report.html"
+    ).is_file()
 
 
 def test_new_bundle_preserves_the_original_v1_reader_contract(
