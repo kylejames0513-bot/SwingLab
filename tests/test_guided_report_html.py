@@ -22,7 +22,10 @@ from swinglab.report_view import (
     report_view_to_dict,
 )
 from tests.report_bundle_fixtures import guided_bundle_inputs
-from tests.report_view_fixtures import report_document_fixture
+from tests.report_view_fixtures import (
+    LOCKED_REPLAY_SENTINEL,
+    report_document_fixture,
+)
 from tests.test_report import fake_swing, fake_video
 
 
@@ -533,6 +536,8 @@ def test_capture_only_is_an_ordered_recovery_path_without_partial_coaching(
         assert guidance.secondary_action_label in html
     assert 'data-capture-playback="playback-1"' in html
     assert 'src="media/playback-1.mp4"' in html
+    assert 'poster="media/capture-poster-1.jpg"' in html
+    assert document.depth.swings[0].video_poster_alt_text in html
 
     forbidden = (
         'data-report-block="understand"',
@@ -560,6 +565,14 @@ def test_capture_retry_failure_keeps_reason_and_both_recovery_actions(tmp_path: 
     assert guidance.explanation in html
     assert guidance.primary_action_label in html
     assert guidance.secondary_action_label in html
+    assert re.search(
+        rf'<a[^>]*data-capture-action="primary"[^>]*href="/"[^>]*>{re.escape(guidance.primary_action_label)}</a>',
+        html,
+    )
+    assert re.search(
+        rf'<a[^>]*data-capture-action="secondary"[^>]*href="/"[^>]*>{re.escape(guidance.secondary_action_label)}</a>',
+        html,
+    )
     assert 'data-report-block="practice"' not in html
 
 
@@ -626,9 +639,9 @@ def test_optional_depth_uses_each_typed_payload_and_accessible_tables(tmp_path: 
     gear = optional_section(html, "gear")
     assert document.depth.gear[0].label in gear
     assert document.depth.gear[0].url in gear
-    assert html.index('data-report-block="practice"') < html.index(
-        'data-optional-section="gear"'
-    )
+    practice_start = html.index('data-report-block="practice"')
+    practice_end = html.index("</section>", practice_start)
+    assert practice_end < html.index('data-optional-section="gear"')
 
 
 def test_unavailable_optional_sections_do_not_appear(tmp_path: Path):
@@ -636,6 +649,7 @@ def test_unavailable_optional_sections_do_not_appear(tmp_path: Path):
     html = render_guided(tmp_path, document)
 
     assert 'data-optional-section="measurements"' in html
+    assert document.view.practice.alternatives[0].name not in html
     for section_id in (
         "every_swing",
         "replay",
@@ -647,19 +661,58 @@ def test_unavailable_optional_sections_do_not_appear(tmp_path: Path):
         assert f'data-optional-section="{section_id}"' not in html
 
 
+def test_locked_alternatives_explain_the_lock_and_locked_gear_stays_absent(
+    tmp_path: Path,
+):
+    document = report_document_fixture("pro-unlocked")
+    locked_sections = tuple(
+        replace(section, available=False, locked=True, item_count=0)
+        if section.id in {"alternative_drills", "gear"}
+        else section
+        for section in document.view.optional_sections
+    )
+    locked = replace(document, view=replace(document.view, optional_sections=locked_sections))
+
+    html = render_guided(tmp_path, locked)
+
+    alternatives = optional_section(html, "alternative_drills")
+    assert "This section is locked." in alternatives
+    assert document.view.practice.alternatives[0].name not in alternatives
+    assert 'data-optional-section="gear"' not in html
+    assert document.depth.gear[0].url not in html
+
+
 def test_locked_replay_never_resolves_hidden_media_but_pro_replay_does(tmp_path: Path):
-    sentinel = "private/never-publish-coach-replay.mp4"
     locked = report_document_fixture("free-locked")
     locked_html = render_guided(tmp_path, locked)
     locked_replay = optional_section(locked_html, "replay")
+    locked_replay_contract = next(
+        section for section in locked.view.optional_sections if section.id == "replay"
+    )
+    locked_measurements = next(
+        section
+        for section in locked.view.optional_sections
+        if section.id == "measurements"
+    )
+    assert not locked_replay_contract.available
+    assert locked_replay_contract.locked
+    assert locked_replay_contract.item_count == 0
+    assert locked_measurements.item_count == len(locked.depth.measurements)
     assert locked.depth.swings[0].locked_replay_explanation in locked_replay
     assert "coach-replay-1" not in locked.media_by_key
     assert "coach-replay-1" not in locked_html
-    assert sentinel not in locked_html
+    assert LOCKED_REPLAY_SENTINEL not in repr(locked)
+    assert LOCKED_REPLAY_SENTINEL not in locked_html
 
     unlocked = report_document_fixture("pro-unlocked")
     unlocked_html = render_guided(tmp_path, unlocked)
     unlocked_replay = optional_section(unlocked_html, "replay")
+    unlocked_replay_contract = next(
+        section for section in unlocked.view.optional_sections if section.id == "replay"
+    )
+    assert unlocked_replay_contract.available
+    assert not unlocked_replay_contract.locked
+    assert unlocked_replay_contract.item_count == 1
     assert 'src="media/coach-replay-1.mp4"' in unlocked_replay
     assert unlocked.depth.swings[0].coach_replay_caption in unlocked_replay
 

@@ -6,6 +6,7 @@ from pathlib import Path
 
 
 _ROOT = Path(__file__).with_name("fixtures") / "report_view"
+LOCKED_REPLAY_SENTINEL = "private/never-publish-coach-replay.mp4"
 
 
 def report_view_payload(name: str = "coaching-improve-clear") -> dict[str, object]:
@@ -68,6 +69,16 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
     elif name == "coaching-improve-clear-long-copy":
         view = replace(
             base_view,
+            optional_sections=base_view.optional_sections
+            + (
+                OptionalSection(
+                    OptionalSectionId.ALTERNATIVE_DRILLS,
+                    "Try a different drill",
+                    True,
+                    False,
+                    len(base_view.practice.alternatives),
+                ),
+            ),
             next_move=replace(
                 base_view.next_move,
                 title="Keep your head centered while your turn builds behind the ball",
@@ -435,6 +446,20 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
         else:
             reason = ReasonCode.NO_READABLE_SWING
             guidance = capture_view.capture_guidance
+        capture_poster = MediaEntry(
+            key="capture-poster-1",
+            role=MediaRole.VIDEO_POSTER,
+            mime_type="image/jpeg",
+            entitlement=Entitlement.CORE,
+            relative_path="media/capture-poster-1.jpg",
+            checksum_sha256="2" * 64,
+        )
+        guidance = replace(
+            guidance,
+            safe_media_keys=tuple(
+                dict.fromkeys((*guidance.safe_media_keys, capture_poster.key))
+            ),
+        )
         view = replace(
             capture_view,
             trust=replace(
@@ -442,22 +467,26 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                 reasons=(reason,),
                 explanation=guidance.explanation,
             ),
+            media=(*capture_view.media, capture_poster),
             capture_guidance=guidance,
         )
     elif name in {"free-locked", "pro-unlocked"}:
         replay_variant = name
         unlocked = name == "pro-unlocked"
         media = list(base_view.media)
-        media.extend(
-            (
-                MediaEntry(
-                    key="key-positions-1",
-                    role=MediaRole.KEY_POSITIONS,
-                    mime_type="image/jpeg",
-                    entitlement=Entitlement.FREE,
-                    relative_path="media/key-positions-1.jpg",
-                    checksum_sha256="d" * 64,
-                ),
+        media.append(
+            MediaEntry(
+                key="key-positions-1",
+                role=MediaRole.KEY_POSITIONS,
+                mime_type="image/jpeg",
+                entitlement=Entitlement.FREE,
+                relative_path="media/key-positions-1.jpg",
+                checksum_sha256="d" * 64,
+            )
+        )
+        if unlocked:
+            media.extend(
+                (
                 MediaEntry(
                     key="slow-motion-1",
                     role=MediaRole.SLOW_MOTION,
@@ -474,22 +503,34 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                     relative_path="media/poster-1.jpg",
                     checksum_sha256="f" * 64,
                 ),
-            )
-        )
-        if unlocked:
-            media.append(
-                MediaEntry(
-                    key="coach-replay-1",
-                    role=MediaRole.COACH_REPLAY,
-                    mime_type="video/mp4",
-                    entitlement=Entitlement.PRO,
-                    relative_path="media/coach-replay-1.mp4",
-                    checksum_sha256="1" * 64,
                 )
             )
+        replay_candidate = MediaEntry(
+            key="coach-replay-1",
+            role=MediaRole.COACH_REPLAY,
+            mime_type="video/mp4",
+            entitlement=Entitlement.PRO,
+            relative_path=(
+                "media/coach-replay-1.mp4"
+                if unlocked
+                else LOCKED_REPLAY_SENTINEL
+            ),
+            checksum_sha256="1" * 64,
+        )
+        media = [
+            entry
+            for entry in (*media, replay_candidate)
+            if unlocked or entry.role is not MediaRole.COACH_REPLAY
+        ]
         optional_sections = (
             OptionalSection(OptionalSectionId.EVERY_SWING, "Every swing", True, False, 1),
-            OptionalSection(OptionalSectionId.REPLAY, "Replay", True, not unlocked, 1),
+            OptionalSection(
+                OptionalSectionId.REPLAY,
+                "Replay",
+                unlocked,
+                not unlocked,
+                1 if unlocked else 0,
+            ),
             OptionalSection(
                 OptionalSectionId.SECONDARY_FINDINGS,
                 "Secondary findings",
@@ -505,7 +546,7 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                 len(base_view.practice.alternatives),
             ),
             OptionalSection(OptionalSectionId.MORE_STRENGTHS, "More strengths", True, False, 1),
-            OptionalSection(OptionalSectionId.MEASUREMENTS, "Measurements", True, False, 3),
+            OptionalSection(OptionalSectionId.MEASUREMENTS, "Measurements", True, False, 1),
             OptionalSection(OptionalSectionId.GLOSSARY, "Glossary", True, False, 1),
             OptionalSection(OptionalSectionId.GEAR, "Gear", True, False, 1),
         )
@@ -608,8 +649,8 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                     coach_replay_caption=None,
                     replay_locked=False,
                     locked_replay_explanation=None,
-                    video_poster_media_key=None,
-                    video_poster_alt_text=None,
+                    video_poster_media_key="capture-poster-1",
+                    video_poster_alt_text="Poster frame from the original upload",
                     print_playback_reference="Playback: media/playback-1.mp4",
                 ),
             ),

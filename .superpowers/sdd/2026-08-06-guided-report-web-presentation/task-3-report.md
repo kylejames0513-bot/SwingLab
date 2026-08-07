@@ -76,3 +76,35 @@ exit 0
 
 None for Task 3. Screen/print media separation, real-browser reflow, focus,
 reduced motion, and poster behavior remain intentionally owned by Task 4.
+
+## Fix round 1 — optional-authority review
+
+Independent review found four Important contract weaknesses and two Minor test
+gaps: alternative drills fell back to array length when their optional-section
+entry was absent; locked gear still rendered; Free replay/count fixtures did
+not match the producer; the filename sentinel was inert; capture poster
+association and action/ordering assertions were incomplete.
+
+The fix makes alternative drills strictly server-gated, renders a lock-only
+alternative disclosure, suppresses locked gear, models Free replay as
+`available=False`, `locked=True`, `item_count=0`, and derives measurement count
+from the typed depth payload. A candidate Pro replay entry now carries the
+sentinel before the Free filter removes it, so the leak assertion exercises the
+fixture construction path. Capture playback resolves an allowlisted poster and
+uses its authored alt text. Tests now prove linked recovery actions, poster
+association, locked gear suppression, and gear placement after the closing
+primary Practice section.
+
+```text
+python -m pytest tests/test_guided_report_html.py -q
+26 passed in 2.26s
+
+python -m pytest tests/test_guided_report_html.py tests/test_guided_report_web_composition.py tests/test_premium_report.py tests/test_report_view_contract.py tests/test_report_presenter_phases.py tests/test_focused_evidence.py tests/test_report_bundle.py -q
+166 passed in 6.46s
+
+python -m compileall -q swinglab tests
+exit 0
+
+git diff --check
+exit 0
+```

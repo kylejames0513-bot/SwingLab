@@ -436,15 +436,19 @@
       </details>
       {% endif %}
       {% set alternative_section = optional_by_id.get("alternative_drills") %}
-      {% if view.practice.alternatives and (not alternative_section or (alternative_section.available and not alternative_section.locked)) %}
-      <details class="alternatives"{% if alternative_section %} data-optional-section="alternative_drills"{% endif %}>
-        <summary>{% if alternative_section %}{{ alternative_section.label }} · {{ alternative_section.item_count }}{% else %}Try a different drill{% endif %}</summary>
+      {% if alternative_section and (alternative_section.available or alternative_section.locked) %}
+      <details class="alternatives" data-optional-section="alternative_drills">
+        <summary>{{ alternative_section.label }} · {{ alternative_section.item_count }}</summary>
+        {% if alternative_section.locked %}
+        <p>This section is locked.</p>
+        {% else %}
         {% for alternative in view.practice.alternatives %}
         <article>
           <h3>{{ alternative.name }}</h3>
           <p>{{ alternative.aim }}</p>
         </article>
         {% endfor %}
+        {% endif %}
       </details>
       {% endif %}
       <p><a class="report-control" href="#refilm">Ready to re-film</a></p>
@@ -584,7 +588,7 @@
       {% endif %}
 
       {% set section = optional_by_id.get("gear") %}
-      {% if section and (section.available or section.locked) %}
+      {% if section and section.available and not section.locked %}
       <details class="optional-card" data-optional-section="gear">
         <summary>{{ section.label }} · {{ section.item_count }}</summary>
         {% if section.locked %}<p>This section is locked.</p>{% else %}
@@ -609,7 +613,9 @@
       {% for swing in depth.swings %}
         {% if swing.slow_motion_media_key and swing.slow_motion_media_key in view.capture_guidance.safe_media_keys %}
         <figure class="capture-playback" data-capture-playback="{{ swing.slow_motion_media_key }}">
-          <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}" aria-label="{{ swing.slow_motion_caption }}"></video>
+          <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}"
+                 {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                 aria-label="{{ swing.video_poster_alt_text or swing.slow_motion_caption }}"></video>
           <figcaption>{{ swing.slow_motion_caption }}</figcaption>
         </figure>
         {% endif %}
