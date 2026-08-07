@@ -375,6 +375,32 @@ def test_posix_delete_capability_check_fails_closed_when_required_support_is_mis
         report_bundle._require_posix_delete_capabilities()
 
 
+def test_posix_owned_tree_validation_uses_anchor_pins_not_windows_parent_pins(
+    tmp_path, monkeypatch
+):
+    from swinglab import report_bundle
+
+    root = tmp_path / "owned"
+    plan = report_bundle._PinnedOwnedTree(root, session_anchor=tmp_path)
+    plan.entries.append(
+        report_bundle._OwnedEntry(root, root.name, 0, 0, 1, 2)
+    )
+    plan._posix_anchor_handle = 0
+    plan._posix_anchor_identity = (1, 2)
+    validated = []
+
+    monkeypatch.setattr(plan, "_validate_posix", lambda: validated.append("posix"))
+    monkeypatch.setattr(
+        report_bundle,
+        "os",
+        type("PosixOS", (), {"name": "posix"})(),
+    )
+
+    plan.validate()
+
+    assert validated == ["posix"]
+
+
 @pytest.mark.parametrize(
     ("platform", "symbol"),
     [("linux", "renameat2"), ("darwin", "renameatx_np")],

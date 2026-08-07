@@ -774,7 +774,15 @@ class _PinnedOwnedTree:
                     _win_close_owned(child_handle)
 
     def validate(self) -> None:
-        if self._parent_handle is None or self._parent_identity is None or not self.entries:
+        if not self.entries:
+            raise CoreReportBundleError("owned report tree is not pinned")
+        if os.name == "nt":
+            if self._parent_handle is None or self._parent_identity is None:
+                raise CoreReportBundleError("owned report tree is not pinned")
+        elif (
+            self._posix_anchor_handle is None
+            or self._posix_anchor_identity is None
+        ):
             raise CoreReportBundleError("owned report tree is not pinned")
         try:
             if os.name == "nt":
