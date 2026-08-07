@@ -53,8 +53,8 @@
       top: -5rem;
       z-index: 10;
       padding: .65rem 1rem;
-      color: #fff;
-      background: var(--brand-primary);
+      color: var(--paper);
+      background: var(--ink);
     }
     .skip-link:focus { top: 1rem; }
     .sample-banner,
@@ -72,7 +72,7 @@
     .report-brand {
       display: inline-block;
       margin-bottom: .75rem;
-      color: var(--brand-primary);
+      color: var(--ink);
       font-size: .8rem;
       font-weight: 800;
       letter-spacing: .14em;
@@ -240,8 +240,8 @@
     .primary-action {
       margin-top: 1rem;
       padding: .75rem 1rem;
-      color: #fff;
-      background: var(--brand-primary);
+      color: var(--paper);
+      background: var(--ink);
       border-radius: .55rem;
       font-weight: 800;
       text-decoration: none;
@@ -254,10 +254,17 @@
       .sample-banner { align-items: flex-start; flex-direction: column; }
       .report-header { padding-top: .8rem; }
       .context-list {
-        grid-template-columns: repeat(2, minmax(0, 1fr));
+        grid-template-columns: minmax(0, 1fr);
         gap: .4rem;
       }
-      .context-list div { padding: .4rem .5rem; }
+      .context-list div {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        min-height: 44px;
+        padding: .25rem .5rem;
+      }
+      .context-list dd { margin-top: 0; }
       .focused-evidence { grid-template-columns: 1fr; }
       .journey-preview { grid-template-columns: 1fr; }
       .event-timeline li { grid-template-columns: 1fr; gap: .1rem; }
@@ -293,6 +300,7 @@
       }
       .screen-only,
       .report-actions,
+      .report-control,
       video { display: none !important; }
       .print-only { display: block !important; }
       details > summary { display: none !important; }
@@ -344,7 +352,7 @@
     {% set measurement = evidence.supporting_measurement %}
     <section class="next-move" data-report-block="next-move"
              data-canonical="priority" aria-labelledby="report-title">
-      <p class="eyebrow">Your next move · {{ view.next_move.eyebrow }}</p>
+      <p class="eyebrow">{{ view.next_move.eyebrow }}</p>
       {% if view.next_move.mode == "protect" %}
       <p class="strength-label">Strength to protect</p>
       {% endif %}

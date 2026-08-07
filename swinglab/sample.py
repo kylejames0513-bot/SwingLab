@@ -19,7 +19,9 @@ auth (see web/app.py).
 from __future__ import annotations
 
 import hashlib
+from dataclasses import replace
 from pathlib import Path
+import tempfile
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -44,6 +46,7 @@ from .report_presenter import (
 )
 from .report_view import (
     BenchmarkRelation,
+    CoachingReportView,
     Entitlement,
     EventId,
     EventProvenance,
@@ -570,6 +573,18 @@ def build_guided_sample_report(sample_dir: Path, cfg: Config) -> Path:
         ),
     )
     document = build_report_document(source, cfg)
+    if not isinstance(document.view, CoachingReportView):
+        raise ValueError("guided sample requires a coaching-ready document")
+    document = replace(
+        document,
+        view=replace(
+            document.view,
+            next_move=replace(
+                document.view.next_move,
+                eyebrow="Your next move",
+            ),
+        ),
+    )
     temporary_report = report_path.with_name(".report.html.tmp")
     write_report_document_html(
         temporary_report,
@@ -581,17 +596,44 @@ def build_guided_sample_report(sample_dir: Path, cfg: Config) -> Path:
             "cta_url": "/",
         },
     )
-    temporary_report.replace(report_path)
-    # These exact synthetic files belong only to the legacy sample. Cleanup
-    # happens after the atomic report switch so a failed guided render leaves
-    # every media file referenced by the existing legacy report intact.
-    for swing_no in (1, 2, 3):
+    overlay_paths = tuple(
+        media_dir / f"overlay_s{swing_no}.png" for swing_no in (1, 2, 3)
+    )
+    backup_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{sample_dir.name}-legacy-overlays-",
+            dir=sample_dir.parent,
+        )
+    )
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for overlay_path in overlay_paths:
+            if overlay_path.is_file():
+                backup_path = backup_dir / overlay_path.name
+                overlay_path.replace(backup_path)
+                staged.append((overlay_path, backup_path))
+        temporary_report.replace(report_path)
+    except BaseException:
+        for overlay_path, backup_path in reversed(staged):
+            if backup_path.is_file():
+                backup_path.replace(overlay_path)
         try:
-            (media_dir / f"overlay_s{swing_no}.png").unlink(missing_ok=True)
+            backup_dir.rmdir()
         except OSError:
-            # A stale, unreferenced synthetic overlay is harmless; failing the
-            # now-valid guided sample startup would be worse than retaining it.
             pass
+        raise
+    for _, backup_path in staged:
+        try:
+            backup_path.unlink()
+        except OSError:
+            # The backup is outside the publicly served sample root. Retaining
+            # it is safer than reporting activation failure after the atomic
+            # HTML switch has completed.
+            pass
+    try:
+        backup_dir.rmdir()
+    except OSError:
+        pass
     return report_path
 
 

@@ -4,10 +4,13 @@ being a sample, and advertised from the landing page."""
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
 
+import numpy as np
 import pytest
 from PIL import Image
+from scipy import ndimage
 
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
@@ -191,11 +194,27 @@ def test_focused_sample_art_is_square_solid_and_uses_only_approved_marks(
     with Image.open(out_path) as image:
         assert image.width == image.height
         assert image.width >= 640
+        pixels = np.asarray(image.convert("RGB"))
         colors = image.convert("RGB").getcolors(maxcolors=image.width * image.height)
     assert colors is not None
     counts = {color: count for count, color in colors}
     assert counts.get((232, 114, 12), 0) > 100  # observed orange
     assert counts.get((46, 204, 64), 0) > 100  # starting reference green
+
+    def component_sizes(color: tuple[int, int, int]) -> list[int]:
+        mask = np.all(pixels == color, axis=2)
+        components, count = ndimage.label(mask)
+        return sorted(
+            np.bincount(components.ravel())[1 : count + 1].tolist(),
+            reverse=True,
+        )
+
+    silhouette = component_sizes((243, 238, 226))
+    boundary = component_sizes((246, 215, 168))
+    reference = component_sizes((46, 204, 64))
+    assert silhouette and silhouette[0] > 150_000
+    assert len(boundary) >= 8 and all(size >= 100 for size in boundary[:8])
+    assert reference and reference[0] < 10_000
 
 
 def test_guided_sample_evidence_copy_is_explicit_and_not_an_ideal_pose(
@@ -255,6 +274,28 @@ def test_failed_guided_switch_keeps_legacy_report_and_its_media(
         (sample_dir / "media" / f"overlay_s{swing}.png").is_file()
         for swing in (1, 2, 3)
     )
+
+
+def test_guided_switch_keeps_failed_overlay_cleanup_outside_public_root(
+    tmp_path, monkeypatch
+):
+    sample_dir = tmp_path / "public-sample"
+    sample.build_legacy_sample_report(sample_dir, Config())
+    original_unlink = Path.unlink
+
+    def fail_staged_overlay_cleanup(path: Path, *args, **kwargs):
+        if "legacy-overlays" in path.parent.name:
+            raise PermissionError("injected backup cleanup failure")
+        return original_unlink(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "unlink", fail_staged_overlay_cleanup)
+
+    guided = sample.build_guided_sample_report(sample_dir, Config())
+
+    assert 'content="guided-report-v1"' in guided.read_text(encoding="utf-8")
+    assert not list(sample_dir.rglob("overlay_s*.png"))
+    staged_backups = list(tmp_path.glob(".*-legacy-overlays-*/overlay_s*.png"))
+    assert len(staged_backups) == 3
 
 
 @pytest.mark.parametrize("value", ("'true'", "1", "'1'"))

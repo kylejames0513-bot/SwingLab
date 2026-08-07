@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from pathlib import Path
 
+from PIL import Image, ImageDraw
 from playwright.sync_api import Page, sync_playwright
 
 from tests.report_view_fixtures import (
@@ -9,6 +11,41 @@ from tests.report_view_fixtures import (
     report_document_fixture,
 )
 from tests.test_guided_report_html import render_fixture_path
+
+
+# One frame of browser-decodable synthetic video. It is intentionally tiny,
+# silent, and content-free; the test exercises real loading/layout rather than
+# pretending to provide golfer footage.
+_SYNTHETIC_VIDEO = base64.b64decode(
+    "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAJYEU2bdLpN"
+    "u4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggEoTbuMU6uEHFO7a1Os"
+    "ggJC7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrX"
+    "sYMPQkBNgIxMYXZmNjEuMS4xMDBXQYxMYXZmNjEuMS4xMDBEiYhARAAAAAAAABZUrmvNrgEA"
+    "AAAAAABE14EBc8WIplRXxk7As8WcgQAitZyDdW5kiIEAhoVWX1ZQOIOBASPjg4QCYloA4JWw"
+    "ggFAuoG0moECVbCIVbeBAlW4gQISVMNn+nNzn2PAgGfImUWjh0VOQ09ERVJEh4xMYXZmNjEu"
+    "MS4xMDBzc9VjwItjxYimVFfGTsCzxWfIoEWjh0VOQ09ERVJEh5NMYXZjNjEuMy4xMDAgbGli"
+    "dnB4Z8ihRaOIRFVSQVRJT05Eh5MwMDowMDowMC4wNDAwMDAwMDAAH0O2dUCV54EAo0CPgQAA"
+    "gPAOAJ0BKkABtAAARwiFhYiFhIgCAgAGFgVpfa9ubJzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh"
+    "7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh"
+    "7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7JzeAP7+67q/pLpcWgAcU7trkbuPs4EAt4r3gQHxggGn8IED"
+)
+
+
+def _materialize_fixture_media(tmp_path: Path, name: str) -> None:
+    document = report_document_fixture(name)
+    for entry in document.media_by_key.values():
+        target = tmp_path / entry.relative_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if entry.mime_type.startswith("image/"):
+            image = Image.new("RGB", (640, 360), "#25302a")
+            draw = ImageDraw.Draw(image)
+            draw.rectangle((40, 40, 600, 320), outline="#e8720c", width=8)
+            draw.text((68, 72), entry.key, fill="white")
+            draw.text((68, 110), entry.role.value.replace("_", " "), fill="#c9d4cc")
+            image.save(target, format="PNG" if target.suffix.lower() == ".png" else "JPEG")
+        elif entry.mime_type.startswith("video/"):
+            target.write_bytes(_SYNTHETIC_VIDEO)
 
 
 def _open_report(
@@ -21,7 +58,18 @@ def _open_report(
     path = render_fixture_path(
         tmp_path, name, sample_banner=sample_banner
     ).resolve()
+    _materialize_fixture_media(tmp_path, name)
     page.goto(path.as_uri(), wait_until="load")
+    if page.locator("img").count():
+        page.wait_for_function(
+            "Array.from(document.images).every(image => "
+            "image.complete && image.naturalWidth > 0)"
+        )
+    if page.locator("video").count():
+        page.wait_for_function(
+            "Array.from(document.querySelectorAll('video')).every(video => "
+            "video.readyState >= 1 && !video.error)"
+        )
     return path
 
 
@@ -38,11 +86,17 @@ def test_long_copy_opening_fold_and_320px_reflow(tmp_path: Path) -> None:
         page = browser.new_page(viewport={"width": 390, "height": 844})
         _open_report(page, tmp_path, "coaching-improve-clear-long-copy")
 
-        cue_box = page.locator('[data-field="cue"]').bounding_box()
-        assert cue_box is not None
-        assert cue_box["y"] + cue_box["height"] <= 844
+        for field in ("priority", "observation", "cue"):
+            box = page.locator(f'[data-field="{field}"]').bounding_box()
+            assert box is not None
+            assert 0 <= box["y"]
+            assert box["y"] + box["height"] <= 844
         page.set_viewport_size({"width": 320, "height": 844})
         _assert_no_horizontal_page_scroll(page)
+        assert page.locator(".context-list").evaluate(
+            "element => getComputedStyle(element).gridTemplateColumns"
+            ".trim().split(/\\s+/).length"
+        ) == 1
         browser.close()
 
 
@@ -149,15 +203,16 @@ def test_reading_order_and_native_disclosure_keyboard_behavior(
             fields,
         )
 
-        summary = page.locator("details > summary").first
+        summary = page.locator(".measurement-detail > summary")
         summary.focus()
-        was_open = summary.evaluate("element => element.parentElement.open")
+        assert not summary.evaluate("element => element.parentElement.open")
         page.keyboard.press("Space")
         assert summary.evaluate("element => element === document.activeElement")
-        assert summary.evaluate("element => element.parentElement.open") is not was_open
+        assert summary.evaluate("element => element.parentElement.open")
         assert summary.evaluate(
             "element => Boolean(element.nextElementSibling) && "
-            "element.nextElementSibling.parentElement === element.parentElement"
+            "element.nextElementSibling.parentElement === element.parentElement && "
+            "element.nextElementSibling.getBoundingClientRect().height > 0"
         )
         browser.close()
 
@@ -209,6 +264,7 @@ def test_report_remains_readable_and_disclosures_operable_without_javascript(
         assert document.view.refilm.target.text in body_text
         for phase in document.view.phases:
             assert phase.label in body_text
+            assert phase.summary in body_text
         assert page.locator(".focused-evidence img").get_attribute("alt") == (
             document.view.visual_evidence.alt_text
         )
@@ -217,9 +273,15 @@ def test_report_remains_readable_and_disclosures_operable_without_javascript(
         for index in range(summaries.count()):
             summary = summaries.nth(index)
             assert summary.is_visible()
-            was_open = summary.evaluate("element => element.parentElement.open")
+            if summary.evaluate("element => element.parentElement.open"):
+                summary.click()
+                assert not summary.evaluate("element => element.parentElement.open")
             summary.click()
-            assert summary.evaluate("element => element.parentElement.open") is not was_open
+            assert summary.evaluate("element => element.parentElement.open")
+            assert summary.evaluate(
+                "element => !element.nextElementSibling || "
+                "element.nextElementSibling.getBoundingClientRect().height > 0"
+            )
         context.close()
         browser.close()
 
@@ -247,6 +309,12 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
             screen_videos.nth(index).get_attribute("poster") == poster_path
             for index in range(screen_videos.count())
         )
+        assert all(
+            screen_videos.nth(index).evaluate(
+                "video => video.readyState >= 1 && !video.error"
+            )
+            for index in range(screen_videos.count())
+        )
         page.emulate_media(media="print")
 
         closed_details = page.locator("details:not([open])")
@@ -267,6 +335,7 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
             )
         assert page.locator("video:visible").count() == 0
         assert page.locator(".screen-only:visible").count() == 0
+        assert page.locator(".report-control:visible").count() == 0
         assert page.get_by_text(sample["text"], exact=True).is_visible()
         assert not page.get_by_role("link", name=sample["cta_label"]).is_visible()
 
@@ -275,6 +344,7 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
         for index in range(print_figures.count()):
             figure = print_figures.nth(index)
             assert figure.locator("img").get_attribute("alt") == swing.video_poster_alt_text
+            assert figure.locator("img").evaluate("image => image.naturalWidth > 0")
             caption = figure.locator("figcaption").text_content() or ""
             assert swing.print_playback_reference in caption
         assert swing.slow_motion_caption in page.locator("body").text_content()
@@ -293,4 +363,25 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
         assert locked_page.locator("video").count() == 0
         assert locked_page.locator('[src*="locked"], [poster*="locked"]').count() == 0
         assert LOCKED_REPLAY_SENTINEL not in locked_page.content()
+
+        capture_page = browser.new_page(viewport={"width": 390, "height": 844})
+        _open_report(capture_page, tmp_path, "capture-only-angle")
+        capture = report_document_fixture("capture-only-angle").depth.swings[0]
+        assert capture_page.locator("video").get_attribute("poster") == (
+            report_document_fixture("capture-only-angle").media_by_key[
+                capture.video_poster_media_key
+            ].relative_path
+        )
+        capture_page.emulate_media(media="print")
+        capture_figure = capture_page.locator(".capture-playback.print-only")
+        assert capture_figure.is_visible()
+        assert capture_figure.locator("img").get_attribute("alt") == (
+            capture.video_poster_alt_text
+        )
+        assert capture_figure.locator("img").evaluate(
+            "image => image.naturalWidth > 0"
+        )
+        capture_caption = capture_figure.locator("figcaption").text_content() or ""
+        assert capture.slow_motion_caption in capture_caption
+        assert capture.print_playback_reference in capture_caption
         browser.close()

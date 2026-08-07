@@ -14,6 +14,10 @@ class GuidedReportAudit(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.headings: list[int] = []
         self.main_count = 0
+        self.landmarks: dict[str, int] = {}
+        self.controls: list[dict[str, object]] = []
+        self.disclosure_summaries: list[dict[str, object]] = []
+        self.details_count = 0
         self.ids: list[str] = []
         self.image_alts: list[str | None] = []
         self.details_first_children: list[str | None] = []
@@ -21,6 +25,8 @@ class GuidedReportAudit(HTMLParser):
         self._details_stack: list[dict[str, object]] = []
         self._active_status: dict[str, object] | None = None
         self._status_nodes: list[bool] = []
+        self._active_control: dict[str, object] | None = None
+        self._control_depth = 0
 
     def handle_starttag(
         self, tag: str, attrs: list[tuple[str, str | None]]
@@ -30,6 +36,8 @@ class GuidedReportAudit(HTMLParser):
             self.headings.append(int(tag[1]))
         if tag == "main":
             self.main_count += 1
+        if tag in {"main", "header", "footer", "nav", "aside"}:
+            self.landmarks[tag] = self.landmarks.get(tag, 0) + 1
         if "id" in values:
             self.ids.append(values["id"] or "")
         if tag == "img":
@@ -37,7 +45,25 @@ class GuidedReportAudit(HTMLParser):
         if self._details_stack and self._details_stack[-1]["first"] is None:
             self._details_stack[-1]["first"] = tag
         if tag == "details":
+            self.details_count += 1
             self._details_stack.append({"first": None})
+        if self._active_control is not None and tag not in {
+            "area", "base", "br", "col", "embed", "hr", "img", "input",
+            "link", "meta", "param", "source", "track", "wbr",
+        }:
+            self._control_depth += 1
+        elif tag in {"a", "button", "summary"}:
+            control: dict[str, object] = {
+                "tag": tag,
+                "text": [],
+                "aria_label": values.get("aria-label"),
+                "href": values.get("href"),
+            }
+            self.controls.append(control)
+            if tag == "summary":
+                self.disclosure_summaries.append(control)
+            self._active_control = control
+            self._control_depth = 1
         classes = set((values.get("class") or "").split())
         if "status" in classes:
             item: dict[str, object] = {"text": [], "hidden_icon": False}
@@ -58,6 +84,10 @@ class GuidedReportAudit(HTMLParser):
             self._status_nodes.pop()
             if not self._status_nodes:
                 self._active_status = None
+        if self._active_control is not None:
+            self._control_depth -= 1
+            if self._control_depth == 0:
+                self._active_control = None
 
     def handle_data(self, data: str) -> None:
         if (
@@ -66,6 +96,8 @@ class GuidedReportAudit(HTMLParser):
             and not self._status_nodes[-1]
         ):
             self._active_status["text"].append(data)
+        if self._active_control is not None:
+            self._active_control["text"].append(data)
 
 
 def _style_source(html: str) -> str:
@@ -113,20 +145,47 @@ def test_guided_report_has_structural_accessibility(
         for previous, current in zip(audit.headings, audit.headings[1:])
     )
     assert audit.main_count == 1
+    assert audit.landmarks.get("main") == 1
+    assert audit.landmarks.get("header") == 1
     assert audit.ids and all(audit.ids)
     assert len(audit.ids) == len(set(audit.ids))
     assert audit.image_alts and all(alt and alt.strip() for alt in audit.image_alts)
     assert all(child == "summary" for child in audit.details_first_children)
+    assert audit.details_count == len(audit.disclosure_summaries)
+    assert all(
+        "".join(summary["text"]).strip()
+        or str(summary["aria_label"] or "").strip()
+        for summary in audit.disclosure_summaries
+    )
+    assert audit.controls
+    assert all(
+        "".join(control["text"]).strip()
+        or str(control["aria_label"] or "").strip()
+        for control in audit.controls
+    )
+    assert all(
+        control["tag"] != "a" or str(control["href"] or "").strip()
+        for control in audit.controls
+    )
     if fixture == "coaching-improve-clear":
         assert audit.statuses
     assert all(item["hidden_icon"] for item in audit.statuses)
     assert all("".join(item["text"]).strip() for item in audit.statuses)
 
 
+@pytest.mark.parametrize(
+    "fixture",
+    (
+        "coaching-improve-clear",
+        "capture-only-angle",
+        "free-locked",
+        "pro-unlocked",
+    ),
+)
 def test_guided_report_is_offline_and_progressively_enhanced(
-    tmp_path: Path,
+    tmp_path: Path, fixture: str,
 ) -> None:
-    html = render_fixture(tmp_path, "coaching-improve-clear")
+    html = render_fixture(tmp_path, fixture)
     lowered = html.lower()
 
     assert "<script" not in lowered
@@ -170,6 +229,12 @@ def test_inline_css_defines_accessible_reflow_motion_and_print_contract(
     assert re.search(r"\.report-control\s*,\s*details\s*>\s*summary\s*\{[^}]*min-height:\s*44px", css, re.DOTALL)
     assert "overflow-wrap: anywhere" in css
     assert "grid-template-columns: 1fr" in css
+    assert re.search(
+        r"@media\s*\(max-width:\s*40rem\).*?\.context-list\s*\{"
+        r"[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)",
+        css,
+        re.DOTALL,
+    )
     assert "prefers-reduced-motion: reduce" in css
     assert "overscroll-behavior-inline: contain" in css
     assert "@media print" in css
@@ -188,3 +253,23 @@ def test_measurements_table_has_labeled_horizontal_region(tmp_path: Path) -> Non
         html,
     )
     assert '<caption>Session details and measurements</caption>' in html
+
+
+def test_untrusted_brand_color_is_decorative_not_control_or_text_color(
+    tmp_path: Path,
+) -> None:
+    css = _style_source(render_fixture(tmp_path, "coaching-improve-clear"))
+
+    assert re.search(r"\.report-brand\s*\{[^}]*color:\s*var\(--ink\)", css, re.DOTALL)
+    assert re.search(
+        r"\.skip-link\s*\{[^}]*color:\s*var\(--paper\)"
+        r"[^}]*background:\s*var\(--ink\)",
+        css,
+        re.DOTALL,
+    )
+    assert re.search(
+        r"\.primary-action\s*\{[^}]*color:\s*var\(--paper\)"
+        r"[^}]*background:\s*var\(--ink\)",
+        css,
+        re.DOTALL,
+    )
