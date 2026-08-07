@@ -100,6 +100,14 @@ def write_metrics_json(
     cfg: Config,
     meta: dict | None = None,
 ) -> Path:
+    def metrics_payload(swing: dict) -> dict:
+        metrics = swing["metrics"]
+        if isinstance(metrics, SwingMetrics):
+            return metrics.as_dict()
+        if isinstance(metrics, dict):
+            return dict(metrics)
+        raise TypeError("Every swing must contain SwingMetrics or a metrics mapping")
+
     payload = {
         "generator": {"name": cfg.brand["name"], "swinglab_version": __version__},
         "video": {
@@ -116,13 +124,15 @@ def write_metrics_json(
         **({"meta": meta} if meta else {}),
         "swings": [
             {
-                "metrics": s["metrics"].as_dict(),
+                "metrics": metrics_payload(s),
                 "notes": s["notes"],
                 "deliverables": {
-                    "strip": s["strip"],
-                    "overlay": s["overlay"],
-                    "slowmo": s["slowmo"],
-                    # only when present — older consumers see no null churn
+                    # Each renderer is independent in guided bundles.  Legacy
+                    # calls that supply the established three values retain
+                    # their exact insertion order and serialized bytes.
+                    **({"strip": s["strip"]} if s.get("strip") else {}),
+                    **({"overlay": s["overlay"]} if s.get("overlay") else {}),
+                    **({"slowmo": s["slowmo"]} if s.get("slowmo") else {}),
                     **({"replay": s["replay"]} if s.get("replay") else {}),
                 },
             }

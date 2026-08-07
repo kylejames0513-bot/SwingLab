@@ -309,10 +309,10 @@ class ReportPresentationInput:
     swings: Sequence[ReportSwingSource]
     stats: Mapping[str, Mapping[str, float]]
     session_notes: Sequence[str]
-    brief: CaddieBrief
+    brief: CaddieBrief | None
     issues: Sequence[IssueCard]
     strengths: Sequence[StrengthCard]
-    primary_drill: Drill
+    primary_drill: Drill | None
     alternative_drills: Sequence[Drill]
     visual_evidence: EvidenceView | None
     media: Sequence[MediaEntry]
@@ -483,6 +483,10 @@ def _ordered_reasons(reasons: Sequence[ReasonCode]) -> tuple[ReasonCode, ...]:
     return tuple(reason for reason in _REASON_ORDER if reason in present)
 
 
+def _has_fatal_capture_reason(reasons: Sequence[ReasonCode]) -> bool:
+    return any(reason in _FATAL_REASONS for reason in reasons)
+
+
 def _context(source: ReportContextInput, readable: int) -> ReportContext:
     angle = Angle.FACE_ON if source.angle == ANGLE_FACE_ON else Angle(source.angle)
     hand = Hand(source.hand)
@@ -587,6 +591,8 @@ def measurement_detail(metric_id: str, metrics: Sequence[SwingMetrics | ReportSw
 
 
 def _selected_metric(source: ReportPresentationInput) -> str | None:
+    if source.brief is None:
+        return None
     if source.brief.focus_flag is not None:
         selected = next((item for item in source.issues if item.flag == source.brief.focus_flag), None)
         return selected.metric if selected else None
@@ -620,6 +626,8 @@ def _phase_status(source: ReportPresentationInput, phase: PhaseId, measurements:
 
 def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple[PhaseSummary, ...]:
     """Map supported facts into the fixed camera-angle phase layout."""
+    if source.brief is None:
+        raise ValueError("Coaching phase summaries require a Caddie Brief")
     is_dtl = source.context.angle == "dtl"
     phase_ids = (PhaseId.TIMING_RHYTHM,) if is_dtl else _FACE_ON_PHASES
     protect = source.brief.focus_flag is None
@@ -671,15 +679,19 @@ def _practice(
 def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportViewV1:
     """Turn trusted server decisions into a complete, typed report union."""
     reasons = _ordered_reasons(source.reason_codes)
+    readable = source.visual_evidence.readable_swings if source.visual_evidence is not None else 0
+    context = _context(source.context, readable)
+    if _has_fatal_capture_reason(reasons):
+        return _capture_only(source, context, reasons)
+    if source.brief is None or source.primary_drill is None:
+        raise ValueError("Coaching-ready report input requires a Caddie Brief and primary drill")
     selected_issue = next((item for item in source.issues if item.flag == source.brief.focus_flag), None)
     selected_strength = next((item for item in source.strengths if item.key == source.brief.strength_key), None)
     selected_metric = selected_issue.metric if selected_issue else selected_strength.metric if selected_strength else None
-    readable = source.visual_evidence.readable_swings if source.visual_evidence is not None else 0
-    context = _context(source.context, readable)
     priority_missing = source.brief.refilm_required or selected_metric is None or source.visual_evidence is None or source.visual_evidence.tracking_state is TrackingState.UNAVAILABLE
     if priority_missing and ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE not in reasons:
         reasons = _ordered_reasons((*reasons, ReasonCode.PRIORITY_EVIDENCE_UNRELIABLE))
-    if any(reason in _FATAL_REASONS for reason in reasons):
+    if _has_fatal_capture_reason(reasons):
         return _capture_only(source, context, reasons)
 
     assert selected_metric is not None and source.visual_evidence is not None
@@ -778,11 +790,17 @@ def prepare_report_input(
     navigation: ReportNavigation | None = None,
 ) -> ReportPresentationInput:
     """Assemble report facts once, before either typed or legacy rendering."""
-    raw_metrics = [swing["metrics"] for swing in swings]
-    if not all(isinstance(metric, SwingMetrics) for metric in raw_metrics):
-        raise TypeError("Every swing must contain SwingMetrics")
-    scoped = scope_metrics_for_angle(raw_metrics, angle)  # type: ignore[arg-type]
-    scoped_stats = session_stats(scoped) if angle == ANGLE_DTL else stats
+    fatal_capture = _has_fatal_capture_reason(reason_codes)
+    raw_metrics = [swing.get("metrics") for swing in swings]
+    typed_metrics = all(isinstance(metric, SwingMetrics) for metric in raw_metrics)
+    if not typed_metrics and not fatal_capture:
+        raise TypeError("Every coaching swing must contain SwingMetrics")
+    scoped = (
+        scope_metrics_for_angle(raw_metrics, angle)  # type: ignore[arg-type]
+        if typed_metrics
+        else []
+    )
+    scoped_stats = session_stats(scoped) if angle == ANGLE_DTL and scoped else stats
     notes = [note for note in session_notes if isinstance(note, str)]
     notes.extend(
         note
@@ -791,49 +809,72 @@ def prepare_report_input(
         if isinstance(note, str)
     )
     rule = priority_rule_version(cfg)
-    brief = build_caddie_brief(
-        scoped, dict(scoped_stats), cfg,
-        warning=quality_warning(angle, notes), angle=angle, club=club,
-        rule_version=rule,
-    )
-    if brief is None:
-        raise ValueError("Report input requires a Caddie Brief")
-    issues = issue_cards(scoped, dict(scoped_stats), cfg, club=club, rule_version=rule)
-    strengths = strength_cards(scoped, cfg, dict(scoped_stats))
-    if rule == 2:
-        flags = [card.flag for card in issues]
+    if not scoped and fatal_capture:
+        brief = None
+        issues = []
+        strengths = []
+        plan = []
+        primary = None
+        alternatives = ()
     else:
-        from .coaching import session_flags
-        flags = session_flags(scoped, dict(scoped_stats), cfg)
-    plan = practice_plan(flags if not brief.refilm_required else [], cfg)
-    primary = brief.drill or plan[0]["drills"][0]
-    alternatives = tuple(
-        drill
-        for block in plan
-        for drill in block["drills"]
-        if drill.id != primary.id
-    )
+        brief = build_caddie_brief(
+            scoped, dict(scoped_stats), cfg,
+            warning=quality_warning(angle, notes), angle=angle, club=club,
+            rule_version=rule,
+        )
+        if brief is None:
+            if not fatal_capture:
+                raise ValueError("Report input requires a Caddie Brief")
+            issues = []
+            strengths = []
+            plan = []
+            primary = None
+            alternatives = ()
+        else:
+            issues = issue_cards(scoped, dict(scoped_stats), cfg, club=club, rule_version=rule)
+            strengths = strength_cards(scoped, cfg, dict(scoped_stats))
+            if rule == 2:
+                flags = [card.flag for card in issues]
+            else:
+                from .coaching import session_flags
+                flags = session_flags(scoped, dict(scoped_stats), cfg)
+            plan = practice_plan(flags if not brief.refilm_required else [], cfg)
+            primary = brief.drill
+            if primary is None and not fatal_capture:
+                primary = plan[0]["drills"][0]
+            alternatives = tuple(
+                drill
+                for block in plan
+                for drill in block["drills"]
+                if primary is not None and drill.id != primary.id
+            )
     swing_sources = tuple(
         ReportSwingSource(
-            metrics=metric.as_dict(),
+            metrics=(
+                metric.as_dict()
+                if isinstance(metric, SwingMetrics)
+                else dict(metric) if isinstance(metric, Mapping) else {}
+            ),
             notes=tuple(note for note in (swing.get("notes") or ()) if isinstance(note, str)),
             key_positions_media_key=_explicit_media_key(swing.get("overlay") or swing.get("strip"), media),
-            key_positions_alt_text=f"Key positions for swing {metric.swing}",
+            key_positions_alt_text=f"Key positions for swing {getattr(metric, 'swing', index)}",
             slow_motion_media_key=_explicit_media_key(swing.get("slowmo"), media),
-            slow_motion_caption=f"Slow-motion playback for swing {metric.swing}",
+            slow_motion_caption=f"Slow-motion playback for swing {getattr(metric, 'swing', index)}",
             coach_replay_media_key=None if replay_locked else _explicit_media_key(swing.get("replay"), media),
-            coach_replay_caption=f"Coach replay for swing {metric.swing}",
+            coach_replay_caption=f"Coach replay for swing {getattr(metric, 'swing', index)}",
             locked_replay_explanation=(
                 "Coach replay is available with Pro; the measured coaching remains available here."
                 if replay_locked else None
             ),
             video_poster_media_key=_explicit_media_key(swing.get("poster"), media),
-            video_poster_alt_text=f"Video poster for swing {metric.swing}",
+            video_poster_alt_text=f"Video poster for swing {getattr(metric, 'swing', index)}",
             print_playback_reference=(
-                f"Playback reference: swing {metric.swing} slow motion"
+                f"Playback reference: swing {getattr(metric, 'swing', index)} slow motion"
             ),
         )
-        for swing, metric in zip(swings, scoped)
+        for index, (swing, metric) in enumerate(
+            zip(swings, scoped if typed_metrics else raw_metrics), start=1
+        )
     )
     return ReportPresentationInput(
         ReportContextInput(
@@ -907,7 +948,7 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
     posters = [swing.video_poster_media_key for swing in swings if swing.video_poster_media_key]
     if len(posters) != len(set(posters)):
         raise ValueError("Each video poster key must be distinct or explicitly null")
-    selected = source.brief.focus_flag
+    selected = source.brief.focus_flag if source.brief is not None else None
     findings = () if capture_only else tuple(
         FindingDetail(card.flag, card.display_name, card.session_text, card.why,
                       card.fix, (f"measurement-{card.metric}",), "secondary-findings")
@@ -930,7 +971,7 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
     ))
     navigation = source.navigation or ReportNavigation(None, None, gear_shop_url(cfg))
     gear_url = gear_shop_url(cfg)
-    gear = (() if capture_only or not gear_url else (GearDetail(
+    gear = (() if capture_only or not gear_url or source.primary_drill is None else (GearDetail(
         source.primary_drill.gear_tag, "Matched training aid",
         source.primary_drill.gear_note or "Optional aid for this practice step.",
         gear_url,

@@ -10,7 +10,7 @@ from swinglab.caddie_brief import build_caddie_brief, scope_metrics_for_angle
 from swinglab.coaching import issue_cards, priority_rule_version, strength_cards
 from swinglab.drills import practice_plan
 from swinglab.metrics import session_stats
-from swinglab.report_view import Entitlement, MediaEntry, MediaRole
+from swinglab.report_view import Entitlement, MediaEntry, MediaRole, ReasonCode
 from swinglab.report_presenter import (
     ReportDocument,
     ReportNavigation,
@@ -276,3 +276,44 @@ def test_production_document_owns_priority_prescription_target_and_navigation():
     assert strings.count(document.view.next_move.title) == 1
     assert strings.count(document.view.refilm.target.text) == 1
     assert all(strings.count(step) == 1 for step in document.view.practice.full_steps)
+
+
+@pytest.mark.parametrize(
+    "swings",
+    [
+        [],
+        [{"metrics": {"swing": 1, "tempo_ratio": None}, "notes": ["No readable motion."]}],
+    ],
+)
+def test_fatal_capture_preparation_accepts_zero_or_partial_metrics_without_coaching(swings):
+    cfg = branded_cfg()
+    source = prepare_report_input(
+        fake_video(), swings, {}, [], "right", cfg,
+        reason_codes=(ReasonCode.NO_READABLE_SWING,),
+    )
+    assert source.brief is None
+    assert source.primary_drill is None
+    assert source.issues == ()
+    assert source.strengths == ()
+    assert source.alternative_drills == ()
+    assert source.practice_blocks == ()
+    document = build_report_document(source, cfg)
+    assert document.view.outcome.value == "capture_only"
+    assert document.view.next_move is None
+    assert document.view.practice is None
+    assert document.view.refilm is None
+    assert document.depth.secondary_findings == ()
+    assert document.depth.strengths == ()
+    assert document.depth.measurements == ()
+    assert document.depth.gear == ()
+
+
+def test_coaching_ready_input_without_a_brief_or_drill_fails_closed():
+    cfg = branded_cfg()
+    swing = fake_swing(1, 2.0)
+    source = prepare_report_input(
+        fake_video(), [swing], session_stats([swing["metrics"]]), [], "right", cfg,
+    )
+    broken = dataclasses.replace(source, brief=None, primary_drill=None)
+    with pytest.raises(ValueError, match="Caddie Brief"):
+        build_report_document(broken, cfg)
