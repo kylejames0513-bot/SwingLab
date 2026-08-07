@@ -1114,12 +1114,20 @@ def test_win32_child_handle_closes_once_when_final_path_inspection_fails(
     opened: list[int] = []
     closed: list[int] = []
     final_path_calls = 0
-    real_open = report_artifacts_module._win_open
+    real_absolute_open = report_artifacts_module._win_open
+    real_relative_open = report_artifacts_module._win_open_relative
     real_close = report_artifacts_module._win_close
     real_final_path = report_artifacts_module._win_final_path
 
-    def tracking_open(path: Path, *, directory: bool) -> int:
-        handle = real_open(path, directory=directory)
+    def tracking_absolute_open(path: Path, *, directory: bool) -> int:
+        handle = real_absolute_open(path, directory=directory)
+        opened.append(handle)
+        return handle
+
+    def tracking_relative_open(
+        parent_handle: int, name: str, *, directory: bool
+    ) -> int:
+        handle = real_relative_open(parent_handle, name, directory=directory)
         opened.append(handle)
         return handle
 
@@ -1130,11 +1138,16 @@ def test_win32_child_handle_closes_once_when_final_path_inspection_fails(
     def fail_child_final_path(handle: int) -> Path:
         nonlocal final_path_calls
         final_path_calls += 1
-        if final_path_calls == 2:
+        if final_path_calls == 3:
             raise OSError("injected GetFinalPathNameByHandleW failure")
         return real_final_path(handle)
 
-    monkeypatch.setattr(report_artifacts_module, "_win_open", tracking_open)
+    monkeypatch.setattr(
+        report_artifacts_module, "_win_open", tracking_absolute_open
+    )
+    monkeypatch.setattr(
+        report_artifacts_module, "_win_open_relative", tracking_relative_open
+    )
     monkeypatch.setattr(report_artifacts_module, "_win_close", tracking_close)
     monkeypatch.setattr(
         report_artifacts_module, "_win_final_path", fail_child_final_path
@@ -2034,6 +2047,303 @@ def test_job_bundle_loader_detects_lexical_replacement_while_pinned(
     assert replacement_sentinel.read_bytes() == b"replacement analysis\n"
 
 
+@pytest.mark.skipif(os.name != "nt", reason="Windows native handle traversal")
+def test_windows_job_bundle_opens_every_component_relative_to_its_pinned_parent(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    sessions, job_id, _analysis, root, full = _job_bundle_layout(tmp_path)
+    real_absolute_open = report_artifacts_module._win_open
+    real_relative_open = report_artifacts_module._win_open_relative
+    absolute_calls: list[tuple[Path, bool, int]] = []
+    relative_calls: list[tuple[int, str, bool, int]] = []
+
+    def tracking_absolute_open(path: Path, *, directory: bool) -> int:
+        handle = real_absolute_open(path, directory=directory)
+        absolute_calls.append((path, directory, handle))
+        return handle
+
+    def tracking_relative_open(
+        parent_handle: int, name: str, *, directory: bool
+    ) -> int:
+        handle = real_relative_open(parent_handle, name, directory=directory)
+        relative_calls.append((parent_handle, name, directory, handle))
+        return handle
+
+    monkeypatch.setattr(
+        report_artifacts_module, "_win_open", tracking_absolute_open
+    )
+    monkeypatch.setattr(
+        report_artifacts_module, "_win_open_relative", tracking_relative_open
+    )
+
+    with report_artifacts_module.open_job_published_bundle(
+        sessions, job_id=job_id, **full
+    ) as pinned:
+        pinned.verify_lexical_identity()
+
+    assert absolute_calls
+    assert all(
+        path == sessions and directory
+        for path, directory, _handle in absolute_calls
+    )
+    first_chain = relative_calls[:4]
+    assert [(name, directory) for _parent, name, directory, _child in first_chain] == [
+        (job_id, True),
+        ("out", True),
+        ("source", True),
+        (root.name, True),
+    ]
+    assert first_chain[0][0] == absolute_calls[0][2]
+    assert all(
+        first_chain[index][0] == first_chain[index - 1][3]
+        for index in range(1, len(first_chain))
+    )
+    direct_file_calls = {
+        name
+        for parent, name, directory, _handle in relative_calls
+        if parent == first_chain[-1][3] and not directory
+    }
+    assert {
+        "report.html",
+        REPORT_VIEW_FILENAME,
+        REPORT_MANIFEST_FILENAME,
+        REPORT_CHECKSUMS_FILENAME,
+    }.issubset(direct_file_calls)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native handle traversal")
+def test_windows_relative_children_ignore_injected_lexical_ancestor_redirection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    sessions, job_id, _analysis, _root, full = _job_bundle_layout(tmp_path)
+    donor_sessions = tmp_path / "redirected-sessions"
+    shutil.copytree(sessions, donor_sessions)
+    donor_report = next(donor_sessions.rglob("report.html"))
+    donor_report.write_bytes(b"foreign report bytes\n")
+    real_absolute_open = report_artifacts_module._win_open
+    real_relative_open = report_artifacts_module._win_open_relative
+    absolute_calls: list[Path] = []
+    relative_calls: list[tuple[int, str, bool]] = []
+
+    def redirected_absolute_open(path: Path, *, directory: bool) -> int:
+        absolute_calls.append(path)
+        if path == sessions:
+            return real_absolute_open(path, directory=directory)
+        relative = path.relative_to(sessions)
+        return real_absolute_open(donor_sessions / relative, directory=directory)
+
+    def tracking_relative_open(
+        parent_handle: int, name: str, *, directory: bool
+    ) -> int:
+        relative_calls.append((parent_handle, name, directory))
+        return real_relative_open(parent_handle, name, directory=directory)
+
+    monkeypatch.setattr(
+        report_artifacts_module, "_win_open", redirected_absolute_open
+    )
+    monkeypatch.setattr(
+        report_artifacts_module, "_win_open_relative", tracking_relative_open
+    )
+
+    with report_artifacts_module.open_job_published_bundle(
+        sessions, job_id=job_id, **full
+    ) as pinned:
+        assert pinned.bundle.report_path.read_bytes() != donor_report.read_bytes()
+
+    assert absolute_calls
+    assert all(path == sessions for path in absolute_calls)
+    assert relative_calls
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows native handle traversal")
+def test_windows_handle_enumeration_is_case_exact_and_not_path_redirectable(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    original = tmp_path / "original"
+    donor = tmp_path / "donor"
+    original.mkdir()
+    donor.mkdir()
+    (original / "Exact.txt").write_bytes(b"original\n")
+    (donor / "foreign.txt").write_bytes(b"foreign\n")
+    real_scandir = report_artifacts_module.os.scandir
+    path_scans: list[object] = []
+
+    def redirected_path_scan(path):
+        path_scans.append(path)
+        return real_scandir(donor)
+
+    handle = report_artifacts_module._win_open(original, directory=True)
+    monkeypatch.setattr(report_artifacts_module.os, "scandir", redirected_path_scan)
+    try:
+        rows = report_artifacts_module._win_scan_directory(handle, limit=16)
+        assert [row.name for row in rows] == ["Exact.txt"]
+        with pytest.raises(OSError):
+            child = report_artifacts_module._win_open_relative(
+                handle,
+                "exact.txt",
+                directory=False,
+            )
+            report_artifacts_module._win_close(child)
+    finally:
+        report_artifacts_module._win_close(handle)
+
+    assert path_scans == []
+
+
+def test_job_bundle_context_exit_is_cleanup_only_after_explicit_verify(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    sessions, job_id, _analysis, _root, full = _job_bundle_layout(tmp_path)
+    real_verify = report_artifacts_module._PinnedJobDirectoryChain.verify_lexical_identity
+    calls = 0
+
+    def reject_exit_time_verify(chain) -> None:
+        nonlocal calls
+        calls += 1
+        if calls > 2:
+            raise ReportArtifactValidationError("unexpected exit-time verification")
+        real_verify(chain)
+
+    monkeypatch.setattr(
+        report_artifacts_module._PinnedJobDirectoryChain,
+        "verify_lexical_identity",
+        reject_exit_time_verify,
+    )
+
+    with report_artifacts_module.open_job_published_bundle(
+        sessions, job_id=job_id, **full
+    ) as pinned:
+        pinned.verify_lexical_identity()
+
+    assert calls == 2
+
+
+def test_job_bundle_context_exit_does_not_raise_after_cleanup_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    sessions, job_id, _analysis, _root, full = _job_bundle_layout(tmp_path)
+    real_close = report_artifacts_module._close_directory_handle
+    cleanup_armed = False
+    closed: list[int] = []
+
+    def close_then_fail(handle: int) -> None:
+        real_close(handle)
+        if cleanup_armed:
+            closed.append(handle)
+            raise OSError("injected cleanup close failure")
+
+    monkeypatch.setattr(
+        report_artifacts_module,
+        "_close_directory_handle",
+        close_then_fail,
+    )
+
+    with report_artifacts_module.open_job_published_bundle(
+        sessions, job_id=job_id, **full
+    ) as pinned:
+        pinned.verify_lexical_identity()
+        cleanup_armed = True
+
+    assert len(closed) == 5
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX descriptor ownership")
+def test_posix_fdopen_failure_closes_owned_descriptor_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _build_bundle(tmp_path)
+    descriptor: int | None = None
+    real_close = os.close
+    closed: list[int] = []
+
+    def tracking_close(candidate: int) -> None:
+        if descriptor is not None and candidate == descriptor:
+            closed.append(candidate)
+        real_close(candidate)
+
+    def fail_fdopen(candidate: int, mode: str):
+        nonlocal descriptor
+        descriptor = candidate
+        assert mode == "rb"
+        raise OSError("injected fdopen failure")
+
+    with report_artifacts_module._PinnedBundleRoot(root) as pinned:
+        monkeypatch.setattr(report_artifacts_module.os, "close", tracking_close)
+        monkeypatch.setattr(report_artifacts_module.os, "fdopen", fail_fdopen)
+        try:
+            with pytest.raises(
+                ReportArtifactValidationError,
+                match="cannot be opened safely",
+            ):
+                with pinned.open_file(PurePosixPath("report.html")):
+                    pass
+        finally:
+            if descriptor is not None:
+                try:
+                    os.fstat(descriptor)
+                except OSError:
+                    pass
+                else:
+                    real_close(descriptor)
+
+    assert descriptor is not None
+    assert closed == [descriptor]
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows CRT handle ownership")
+def test_windows_fdopen_failure_closes_transferred_handle_exactly_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    root = _build_bundle(tmp_path)
+    real_transfer = report_artifacts_module.msvcrt.open_osfhandle
+    real_close = report_artifacts_module.os.close
+    transferred: list[tuple[int, int]] = []
+    closed: list[int] = []
+
+    def tracking_transfer(handle: int, flags: int) -> int:
+        descriptor = real_transfer(handle, flags)
+        transferred.append((handle, descriptor))
+        return descriptor
+
+    def fail_fdopen(descriptor: int, mode: str):
+        assert transferred and descriptor == transferred[-1][1]
+        assert mode == "rb"
+        raise OSError("injected Windows fdopen failure")
+
+    def tracking_close(descriptor: int) -> None:
+        if transferred and descriptor == transferred[-1][1]:
+            closed.append(descriptor)
+        real_close(descriptor)
+
+    with report_artifacts_module._PinnedBundleRoot(root) as pinned:
+        monkeypatch.setattr(
+            report_artifacts_module.msvcrt,
+            "open_osfhandle",
+            tracking_transfer,
+        )
+        monkeypatch.setattr(report_artifacts_module.os, "fdopen", fail_fdopen)
+        monkeypatch.setattr(report_artifacts_module.os, "close", tracking_close)
+        try:
+            with pytest.raises(
+                ReportArtifactValidationError,
+                match="cannot be opened safely",
+            ):
+                with pinned.open_file(PurePosixPath("report.html")):
+                    pass
+        finally:
+            if transferred:
+                descriptor = transferred[-1][1]
+                try:
+                    os.fstat(descriptor)
+                except OSError:
+                    pass
+                else:
+                    real_close(descriptor)
+
+    assert len(transferred) == 1
+    assert closed == [transferred[0][1]]
+
+
 def test_job_bundle_loader_closes_partial_handle_chain_on_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ):
@@ -2042,24 +2352,43 @@ def test_job_bundle_loader_closes_partial_handle_chain_on_failure(
     closed: list[int] = []
 
     if os.name == "nt":
-        real_open = report_artifacts_module._win_open
+        real_absolute_open = report_artifacts_module._win_open
+        real_relative_open = report_artifacts_module._win_open_relative
         real_close = report_artifacts_module._win_close
         calls = 0
 
-        def tracking_open(path: Path, *, directory: bool) -> int:
+        def track_open(open_call, *args, **kwargs) -> int:
             nonlocal calls
             calls += 1
             if calls == 4:
                 raise OSError("injected partial job-chain open failure")
-            handle = real_open(path, directory=directory)
+            handle = open_call(*args, **kwargs)
             opened.append(handle)
             return handle
+
+        def tracking_absolute_open(path: Path, *, directory: bool) -> int:
+            return track_open(real_absolute_open, path, directory=directory)
+
+        def tracking_relative_open(
+            parent_handle: int, name: str, *, directory: bool
+        ) -> int:
+            return track_open(
+                real_relative_open,
+                parent_handle,
+                name,
+                directory=directory,
+            )
 
         def tracking_close(handle: int) -> None:
             closed.append(handle)
             real_close(handle)
 
-        monkeypatch.setattr(report_artifacts_module, "_win_open", tracking_open)
+        monkeypatch.setattr(
+            report_artifacts_module, "_win_open", tracking_absolute_open
+        )
+        monkeypatch.setattr(
+            report_artifacts_module, "_win_open_relative", tracking_relative_open
+        )
         monkeypatch.setattr(report_artifacts_module, "_win_close", tracking_close)
     else:
         real_open = os.open

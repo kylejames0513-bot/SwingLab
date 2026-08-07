@@ -1774,6 +1774,8 @@ class JobManager:
                 )
                 if cursor.rowcount != 1:
                     raise RuntimeError("job publication guard did not match")
+                if pinned_bundle is not None:
+                    pinned_bundle.verify_lexical_identity()
                 try:
                     self._conn.commit()
                     committed = True

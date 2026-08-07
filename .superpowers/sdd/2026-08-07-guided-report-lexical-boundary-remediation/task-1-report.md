@@ -154,3 +154,162 @@ quarantine permission was added.
   structured read revalidates and fails closed after subsequent tampering.
 - The guided presentation remains default-off. The branch and worktree are
   intentionally preserved for the parent implementation owner.
+
+## Fix round 1 — review remediation
+
+### Status and scope
+
+Fix round 1 started from `cf2e8f1732e9715939d17329ab11c87694f5ca16`
+after the task review found three boundary defects. The round changes only:
+
+- `swinglab/report_artifacts.py`
+- `swinglab/web/jobs.py`
+- `tests/test_report_artifacts.py`
+- `tests/test_report_bundle_job_publication.py`
+- this report
+
+No push, merge, deployment, feature activation, live mutation, or worktree
+cleanup was performed. The fix commit containing this section has subject
+`fix: complete guided report boundary pinning`; its SHA is reported in the
+handoff because a commit cannot contain its own final object ID.
+
+### RED evidence
+
+The first exact run exercised all three reviewed defects before production
+edits:
+
+```text
+python -m pytest tests/test_report_artifacts.py::test_windows_job_bundle_opens_every_component_relative_to_its_pinned_parent tests/test_report_artifacts.py::test_windows_relative_children_ignore_injected_lexical_ancestor_redirection tests/test_report_artifacts.py::test_job_bundle_context_exit_is_cleanup_only_after_explicit_verify tests/test_report_artifacts.py::test_fdopen_failure_closes_owned_descriptor_exactly_once tests/test_report_artifacts.py::test_windows_fdopen_failure_closes_transferred_handle_exactly_once tests/test_report_bundle_job_publication.py::test_guided_completion_rolls_back_when_final_precommit_identity_verify_fails -q
+6 failed in 1.89s
+```
+
+The intended failures were:
+
+- the two Windows traversal tests could not find `_win_open_relative`;
+- context exit invoked a third, fallible lexical verification;
+- the descriptor ownership helper/seam was absent and the real Windows
+  `fdopen()` failure recorded zero descriptor closes;
+- guided completion verified only once, committed, and did not raise the
+  injected final pre-commit identity failure.
+
+Handle-based Windows enumeration received its own RED run before the native
+enumeration implementation:
+
+```text
+python -m pytest tests/test_report_artifacts.py::test_windows_handle_enumeration_is_case_exact_and_not_path_redirectable -q
+1 failed in 0.42s: AttributeError: no _win_scan_directory
+```
+
+The cleanup-only wording was also tested explicitly before suppressing teardown
+close errors:
+
+```text
+python -m pytest tests/test_report_artifacts.py::test_job_bundle_context_exit_does_not_raise_after_cleanup_attempts -q
+1 failed in 0.54s: injected cleanup close failure escaped context exit
+```
+
+All RED failures reached the intended behavior; there were no fixture,
+permission, or collection errors.
+
+### Corrections
+
+1. Windows child binding now uses `NtOpenFile` with
+   `OBJECT_ATTRIBUTES.RootDirectory`. Only the initial sessions root uses
+   `CreateFileW`; job, literal `out`, analysis, bundle, nested directory, and
+   artifact file components are opened one exact component at a time relative
+   to their still-open parent handles. Object attributes remain case-sensitive,
+   delete sharing remains disabled, and directory/file type, reparse attribute,
+   final path, and handle identity checks remain enforced.
+2. Windows exact-name and topology inspection now uses
+   `GetFileInformationByHandleEx(FileFullDirectoryRestartInfo)` against the open
+   directory handle. Path inspection remains defense in depth only and cannot
+   bind or redirect a child. Enumeration remains bounded and nonrecursive.
+3. `open_job_published_bundle` performs its validation before yielding and has
+   cleanup-only, nonthrowing teardown. Guided completion verifies once before
+   the guarded update and again after the update while the transaction is still
+   active, then commits with the already-verified handles still open. A final
+   verification failure rolls the update back, leaving persisted and in-memory
+   state processing with all four rels null.
+4. Artifact file opening retains ownership in this order: Windows raw handle,
+   CRT descriptor after successful `open_osfhandle`, then Python file object
+   after successful `fdopen`. Failure closes the currently owned raw handle or
+   descriptor exactly once. POSIX uses the same descriptor-to-file ownership
+   rule.
+
+### Exact GREEN verification
+
+Exact fix-round selectors on the final code:
+
+```text
+python -m pytest tests/test_report_artifacts.py::test_windows_job_bundle_opens_every_component_relative_to_its_pinned_parent tests/test_report_artifacts.py::test_windows_relative_children_ignore_injected_lexical_ancestor_redirection tests/test_report_artifacts.py::test_windows_handle_enumeration_is_case_exact_and_not_path_redirectable tests/test_report_artifacts.py::test_job_bundle_context_exit_is_cleanup_only_after_explicit_verify tests/test_report_artifacts.py::test_job_bundle_context_exit_does_not_raise_after_cleanup_attempts tests/test_report_artifacts.py::test_posix_fdopen_failure_closes_owned_descriptor_exactly_once tests/test_report_artifacts.py::test_windows_fdopen_failure_closes_transferred_handle_exactly_once tests/test_report_bundle_job_publication.py::test_guided_completion_rolls_back_when_final_precommit_identity_verify_fails -q
+7 passed, 1 skipped in 1.37s
+```
+
+All three Windows native traversal/enumeration tests and the Windows descriptor
+ownership test executed. The sole skip is the POSIX-only descriptor ownership
+counterpart on this Windows host.
+
+Required focused and lifecycle gates:
+
+```text
+python -m pytest tests/test_report_artifacts.py tests/test_report_bundle_job_publication.py tests/test_caps.py -q
+293 passed, 9 skipped in 17.75s
+
+python -m pytest tests/test_history_reset_core.py tests/test_backups.py tests/test_report_bundle.py -q
+123 passed in 21.44s
+```
+
+Because the correction changes the shared artifact open/enumeration core, the
+complete suite was rerun:
+
+```text
+python -m pytest -q
+1846 passed, 33 skipped, 1 warning in 357.13s (0:05:57)
+
+python -m compileall -q swinglab tests
+exit 0
+
+git diff --check
+exit 0 (Git emitted only working-tree LF-to-CRLF conversion notices)
+
+git status --short
+ M swinglab/report_artifacts.py
+ M swinglab/web/jobs.py
+ M tests/test_report_artifacts.py
+ M tests/test_report_bundle_job_publication.py
+```
+
+The single warning is the existing Starlette deprecation warning for `httpx`
+with `starlette.testclient`. No skipped codec-dependent case is represented as
+executed.
+
+### Self-review and mutation coverage
+
+- Replacing `_win_open_relative` with a pathname open fails the component-chain
+  and injected ancestor-redirection tests; both record the actual native seam,
+  not source text.
+- Replacing handle enumeration with `os.scandir(path)` fails the injected path
+  redirection assertion, and wrong-case selection fails the exact-name test.
+- Restoring exit-time identity verification fails the cleanup-only call-count
+  test. Allowing teardown close errors to escape fails the cleanup-attempt test.
+- Removing the second in-transaction verification lets the injected final
+  failure commit DONE, so the rollback test fails its raise, persisted-state,
+  and in-memory-state assertions.
+- Clearing the raw handle or descriptor before the next ownership conversion
+  succeeds makes the Windows/POSIX `fdopen()` tests observe a leak; closing both
+  layers makes their exact-once assertions fail.
+- Existing redirected job/out/analysis, replacement, partial-open cleanup,
+  valid guided, genuine legacy, backup, reset, and direct bundle tests remain
+  green.
+
+### Concerns
+
+- Windows native traversal and enumeration were executed on this Windows host.
+  The POSIX descriptor failure case is present but requires POSIX CI to execute.
+- `GetFileInformationByHandleEx` full-directory enumeration is available on
+  supported modern Windows versions; an unavailable native capability fails the
+  structured boundary closed.
+- The approved non-goal remains unchanged: filesystem mutation and SQLite
+  commit are not made atomically linearizable. Every fallible verification now
+  occurs before commit, handles remain pinned through commit, and later reads
+  revalidate the complete structured boundary.

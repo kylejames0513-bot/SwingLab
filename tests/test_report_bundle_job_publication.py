@@ -820,6 +820,63 @@ def test_guided_completion_rejects_artifacts_from_a_different_analysis_child(
     _assert_processing_without_publication(manager, job)
 
 
+def test_guided_completion_rolls_back_when_final_precommit_identity_verify_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+    real_open = jobs_module.open_job_published_bundle
+    verify_calls = 0
+    context_exited = False
+
+    @contextmanager
+    def fail_final_precommit_verify(*args, **kwargs):
+        nonlocal context_exited, verify_calls
+        with real_open(*args, **kwargs) as pinned:
+
+            class ControlledPinnedBundle:
+                bundle = pinned.bundle
+                report_rels = pinned.report_rels
+
+                @staticmethod
+                def verify_lexical_identity() -> None:
+                    nonlocal verify_calls
+                    verify_calls += 1
+                    if verify_calls == 2:
+                        raise ReportArtifactValidationError(
+                            "injected final precommit identity failure"
+                        )
+
+            try:
+                yield ControlledPinnedBundle()
+            finally:
+                context_exited = True
+
+    monkeypatch.setattr(
+        jobs_module,
+        "open_job_published_bundle",
+        fail_final_precommit_verify,
+    )
+
+    with pytest.raises(
+        ReportArtifactValidationError,
+        match="final precommit identity failure",
+    ):
+        manager._complete_job(job, result)
+
+    assert verify_calls == 2
+    assert context_exited is True
+    _assert_processing_without_publication(manager, job)
+
+
 def test_stale_nonprocessing_status_cannot_publish_bundle(tmp_path: Path):
     manager = JobManager(
         tmp_path / "sessions",

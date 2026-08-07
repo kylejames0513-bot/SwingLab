@@ -88,6 +88,33 @@ if os.name == "nt":  # pragma: no cover - imported only on Windows
             ("nFileIndexLow", wintypes.DWORD),
         ]
 
+    class _NtUnicodeString(ctypes.Structure):
+        _fields_ = [
+            ("Length", wintypes.USHORT),
+            ("MaximumLength", wintypes.USHORT),
+            ("Buffer", wintypes.LPWSTR),
+        ]
+
+    class _NtIoStatusValue(ctypes.Union):
+        _fields_ = [("Status", wintypes.LONG), ("Pointer", wintypes.LPVOID)]
+
+    class _NtIoStatusBlock(ctypes.Structure):
+        _anonymous_ = ("value",)
+        _fields_ = [
+            ("value", _NtIoStatusValue),
+            ("Information", ctypes.c_size_t),
+        ]
+
+    class _NtObjectAttributes(ctypes.Structure):
+        _fields_ = [
+            ("Length", wintypes.ULONG),
+            ("RootDirectory", wintypes.HANDLE),
+            ("ObjectName", ctypes.POINTER(_NtUnicodeString)),
+            ("Attributes", wintypes.ULONG),
+            ("SecurityDescriptor", wintypes.LPVOID),
+            ("SecurityQualityOfService", wintypes.LPVOID),
+        ]
+
     _WIN_KERNEL32 = ctypes.WinDLL("kernel32", use_last_error=True)
     _WIN_CREATE_FILE = _WIN_KERNEL32.CreateFileW
     _WIN_CREATE_FILE.argtypes = [
@@ -106,19 +133,54 @@ if os.name == "nt":  # pragma: no cover - imported only on Windows
     _WIN_GET_FILE_INFO = _WIN_KERNEL32.GetFileInformationByHandle
     _WIN_GET_FILE_INFO.argtypes = [wintypes.HANDLE, ctypes.POINTER(_WinByHandleFileInformation)]
     _WIN_GET_FILE_INFO.restype = wintypes.BOOL
+    _WIN_GET_FILE_INFO_EX = _WIN_KERNEL32.GetFileInformationByHandleEx
+    _WIN_GET_FILE_INFO_EX.argtypes = [
+        wintypes.HANDLE,
+        ctypes.c_int,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+    ]
+    _WIN_GET_FILE_INFO_EX.restype = wintypes.BOOL
     _WIN_GET_FINAL_PATH = _WIN_KERNEL32.GetFinalPathNameByHandleW
     _WIN_GET_FINAL_PATH.argtypes = [wintypes.HANDLE, wintypes.LPWSTR, wintypes.DWORD, wintypes.DWORD]
     _WIN_GET_FINAL_PATH.restype = wintypes.DWORD
+    _WIN_NTDLL = ctypes.WinDLL("ntdll")
+    _WIN_NT_OPEN_FILE = _WIN_NTDLL.NtOpenFile
+    _WIN_NT_OPEN_FILE.argtypes = [
+        ctypes.POINTER(wintypes.HANDLE),
+        wintypes.DWORD,
+        ctypes.POINTER(_NtObjectAttributes),
+        ctypes.POINTER(_NtIoStatusBlock),
+        wintypes.ULONG,
+        wintypes.ULONG,
+    ]
+    _WIN_NT_OPEN_FILE.restype = wintypes.LONG
+    _WIN_NTSTATUS_TO_DOS_ERROR = _WIN_NTDLL.RtlNtStatusToDosError
+    _WIN_NTSTATUS_TO_DOS_ERROR.argtypes = [wintypes.LONG]
+    _WIN_NTSTATUS_TO_DOS_ERROR.restype = wintypes.ULONG
 
     _WIN_GENERIC_READ = 0x80000000
+    _WIN_FILE_LIST_DIRECTORY = 0x1
+    _WIN_FILE_READ_DATA = 0x1
+    _WIN_FILE_TRAVERSE = 0x20
     _WIN_FILE_READ_ATTRIBUTES = 0x80
+    _WIN_SYNCHRONIZE = 0x00100000
     _WIN_SHARE_READ_WRITE = 0x1 | 0x2
     _WIN_OPEN_EXISTING = 3
     _WIN_FLAG_BACKUP_SEMANTICS = 0x02000000
     _WIN_FLAG_OPEN_REPARSE_POINT = 0x00200000
+    _WIN_FILE_DIRECTORY_FILE = 0x1
+    _WIN_FILE_SYNCHRONOUS_IO_NONALERT = 0x20
+    _WIN_FILE_NON_DIRECTORY_FILE = 0x40
+    _WIN_FILE_OPEN_REPARSE_POINT = 0x00200000
     _WIN_ATTR_DIRECTORY = 0x10
     _WIN_ATTR_REPARSE_POINT = 0x400
     _WIN_INVALID_HANDLE = ctypes.c_void_p(-1).value
+    _WIN_FILE_FULL_DIRECTORY_INFO = 14
+    _WIN_FILE_FULL_DIRECTORY_RESTART_INFO = 15
+    _WIN_ERROR_NO_MORE_FILES = 18
+    _WIN_DIRECTORY_INFO_BYTES = 64 * 1024
+    _WIN_DIRECTORY_NAME_OFFSET = 68
 
 
 class ReportArtifactValidationError(ValueError):
@@ -466,7 +528,14 @@ def _entry_is_reparse(info: os.stat_result) -> bool:
 if os.name == "nt":
 
     def _win_open(path: Path, *, directory: bool) -> int:
-        access = _WIN_FILE_READ_ATTRIBUTES if directory else _WIN_GENERIC_READ
+        access = (
+            _WIN_FILE_LIST_DIRECTORY
+            | _WIN_FILE_TRAVERSE
+            | _WIN_FILE_READ_ATTRIBUTES
+            | _WIN_SYNCHRONIZE
+            if directory
+            else _WIN_GENERIC_READ
+        )
         handle = _WIN_CREATE_FILE(
             str(path),
             access,
@@ -479,6 +548,147 @@ if os.name == "nt":
         if handle == _WIN_INVALID_HANDLE:
             raise OSError(ctypes.get_last_error(), f"cannot open {path}")
         return int(handle)
+
+
+    def _win_scan_directory(handle: int, *, limit: int) -> tuple[_ScannedEntry, ...]:
+        if limit <= 0:
+            raise OSError("directory traversal limit must be positive")
+        buffer = (ctypes.c_longlong * (_WIN_DIRECTORY_INFO_BYTES // 8))()
+        rows: list[_ScannedEntry] = []
+        information_class = _WIN_FILE_FULL_DIRECTORY_RESTART_INFO
+        while True:
+            ctypes.set_last_error(0)
+            if not _WIN_GET_FILE_INFO_EX(
+                handle,
+                information_class,
+                ctypes.byref(buffer),
+                ctypes.sizeof(buffer),
+            ):
+                error = ctypes.get_last_error()
+                if error == _WIN_ERROR_NO_MORE_FILES:
+                    return tuple(rows)
+                raise OSError(error, "cannot enumerate open directory handle")
+            information_class = _WIN_FILE_FULL_DIRECTORY_INFO
+            base = ctypes.addressof(buffer)
+            offset = 0
+            while True:
+                next_offset = wintypes.ULONG.from_address(base + offset).value
+                attributes = wintypes.ULONG.from_address(base + offset + 56).value
+                name_bytes = wintypes.ULONG.from_address(base + offset + 60).value
+                name_start = offset + _WIN_DIRECTORY_NAME_OFFSET
+                name_end = name_start + name_bytes
+                if (
+                    name_bytes % ctypes.sizeof(ctypes.c_wchar)
+                    or name_end > ctypes.sizeof(buffer)
+                ):
+                    raise OSError("open directory returned malformed entry data")
+                name = ctypes.wstring_at(
+                    base + name_start,
+                    name_bytes // ctypes.sizeof(ctypes.c_wchar),
+                )
+                if name not in (".", ".."):
+                    if len(rows) >= limit:
+                        _err("report bundle contains too many filesystem entries")
+                    mode = (
+                        stat.S_IFDIR
+                        if attributes & _WIN_ATTR_DIRECTORY
+                        else stat.S_IFREG
+                    )
+                    rows.append(
+                        _ScannedEntry(
+                            name,
+                            mode,
+                            bool(attributes & _WIN_ATTR_REPARSE_POINT),
+                        )
+                    )
+                if next_offset == 0:
+                    break
+                if (
+                    next_offset % 8
+                    or next_offset < _WIN_DIRECTORY_NAME_OFFSET
+                    or offset + next_offset >= ctypes.sizeof(buffer)
+                ):
+                    raise OSError("open directory returned malformed entry offsets")
+                offset += next_offset
+
+
+    def _win_open_relative(
+        parent_handle: int,
+        name: str,
+        *,
+        directory: bool,
+    ) -> int:
+        if (
+            not isinstance(name, str)
+            or not name
+            or name in (".", "..")
+            or "/" in name
+            or "\\" in name
+        ):
+            raise OSError("relative Windows child name is invalid")
+        if not any(
+            entry.name == name
+            for entry in _win_scan_directory(
+                parent_handle,
+                limit=_MAX_DIRECTORY_ENTRIES,
+            )
+        ):
+            raise FileNotFoundError(f"exact Windows child name does not exist: {name}")
+
+        name_buffer = ctypes.create_unicode_buffer(name)
+        unicode_name = _NtUnicodeString(
+            ctypes.sizeof(name_buffer) - ctypes.sizeof(ctypes.c_wchar),
+            ctypes.sizeof(name_buffer),
+            ctypes.cast(name_buffer, wintypes.LPWSTR),
+        )
+        attributes = _NtObjectAttributes(
+            ctypes.sizeof(_NtObjectAttributes),
+            wintypes.HANDLE(parent_handle),
+            ctypes.pointer(unicode_name),
+            0,
+            None,
+            None,
+        )
+        io_status = _NtIoStatusBlock()
+        result = wintypes.HANDLE()
+        access = (
+            _WIN_FILE_LIST_DIRECTORY
+            | _WIN_FILE_TRAVERSE
+            | _WIN_FILE_READ_ATTRIBUTES
+            | _WIN_SYNCHRONIZE
+            if directory
+            else _WIN_FILE_READ_DATA
+            | _WIN_FILE_READ_ATTRIBUTES
+            | _WIN_SYNCHRONIZE
+        )
+        options = (
+            _WIN_FILE_DIRECTORY_FILE if directory else _WIN_FILE_NON_DIRECTORY_FILE
+        ) | _WIN_FILE_SYNCHRONOUS_IO_NONALERT | _WIN_FILE_OPEN_REPARSE_POINT
+        status = int(
+            _WIN_NT_OPEN_FILE(
+                ctypes.byref(result),
+                access,
+                ctypes.byref(attributes),
+                ctypes.byref(io_status),
+                _WIN_SHARE_READ_WRITE,
+                options,
+            )
+        )
+        if status != 0:
+            if result.value not in (None, _WIN_INVALID_HANDLE):
+                _win_close(int(result.value))
+            error = int(_WIN_NTSTATUS_TO_DOS_ERROR(status))
+            raise OSError(error, f"cannot open relative Windows child: {name}")
+        if result.value in (None, _WIN_INVALID_HANDLE):
+            raise OSError("relative Windows open returned an invalid handle")
+        handle = int(result.value)
+        try:
+            if _win_final_path(handle).name != name:
+                raise OSError("relative Windows child name is not exact")
+        except Exception:
+            _win_close(handle)
+            raise
+        return handle
 
 
     def _win_close(handle: int) -> None:
@@ -569,20 +779,27 @@ def _open_pinned_directory(
     handle: int | None = None
     try:
         if os.name == "nt":
-            if name is not None:
-                if path.name != name:
+            lexical_inode: int | None = None
+            if parent_handle is None:
+                lexical = os.lstat(path)
+                _directory_stat_identity(lexical, label=label)
+                lexical_inode = int(lexical.st_ino)
+                handle = _win_open(path, directory=True)
+            else:
+                if name is None or path.name != name:
                     _err(f"{label} path is not canonical")
-                _assert_exact_child_name(path.parent, name)
-            lexical = os.lstat(path)
-            _directory_stat_identity(lexical, label=label)
-            handle = _win_open(path, directory=True)
+                handle = _win_open_relative(
+                    parent_handle,
+                    name,
+                    directory=True,
+                )
             opened = _win_info(handle)
             if opened.dwFileAttributes & _WIN_ATTR_REPARSE_POINT:
                 _err(f"{label} cannot be a reparse point")
             if not opened.dwFileAttributes & _WIN_ATTR_DIRECTORY:
                 _err(f"{label} must be a directory")
             identity = _win_identity(opened)
-            if int(lexical.st_ino) != identity[1]:
+            if lexical_inode is not None and lexical_inode != identity[1]:
                 _err(f"{label} changed while it was pinned")
             final = _win_final_path(handle)
             if os.path.normcase(os.path.abspath(str(final))) != os.path.normcase(
@@ -685,16 +902,12 @@ class _PinnedJobDirectoryChain:
         return self
 
     def __exit__(self, exc_type: object, exc: object, traceback: object) -> None:
-        first_error: OSError | None = None
         while self._entries:
             entry = self._entries.pop()
             try:
                 _close_directory_handle(entry.handle)
-            except OSError as close_error:  # pragma: no cover - OS close failure
-                if first_error is None:
-                    first_error = close_error
-        if first_error is not None:
-            raise first_error
+            except OSError:  # cleanup cannot invalidate a committed publication
+                pass
 
     def verify_lexical_identity(self) -> None:
         if len(self._entries) != 4:
@@ -761,7 +974,10 @@ class _PinnedBundleRoot:
             return
         handle = self._root_handle
         try:
-            _close_directory_handle(handle)
+            try:
+                _close_directory_handle(handle)
+            except OSError:  # cleanup cannot invalidate a committed publication
+                pass
         finally:
             self._root_handle = None
             self._root_identity = None
@@ -810,10 +1026,13 @@ class _PinnedBundleRoot:
         current_handle = self._root_handle
         try:
             for part in parts:
-                _assert_exact_child_name(current_path, part)
                 current_path = current_path / part
                 if os.name == "nt":
-                    child = _win_open(current_path, directory=True)
+                    child = _win_open_relative(
+                        current_handle,
+                        part,
+                        directory=True,
+                    )
                     handles.append(child)
                     info = _win_info(child)
                     if info.dwFileAttributes & _WIN_ATTR_REPARSE_POINT:
@@ -824,6 +1043,7 @@ class _PinnedBundleRoot:
                     if not _path_is_under(final, self.path):
                         _err("report bundle directory handle escaped its root")
                 else:
+                    _assert_exact_child_name(current_path.parent, part)
                     flags = _posix_directory_flags()
                     child = os.open(part, flags, dir_fd=current_handle)
                     handles.append(child)
@@ -844,20 +1064,28 @@ class _PinnedBundleRoot:
 
     @contextmanager
     def open_file(self, relative: PurePosixPath) -> Iterator[tuple[BinaryIO, Path]]:
-        # Keep the legacy path check as defense in depth; the handle-relative open
-        # below is the authority and remains safe if this preflight races.
+        if _safe_relative_path(relative.as_posix()) != relative:
+            _err("declared report artifact path is not canonical")
+        # Path inspection remains defense in depth only. The component opens
+        # below are authoritative and stay relative to pinned parent handles.
         _join_under(self.path, relative)
         parent_relative = (
             PurePosixPath(*relative.parts[:-1]) if len(relative.parts) > 1 else None
         )
         with self._open_directory(parent_relative) as (parent_handle, parent_path):
             name = relative.parts[-1]
-            _assert_exact_child_name(parent_path, name)
+            if os.name != "nt":
+                _assert_exact_child_name(parent_path, name)
             path = parent_path / name
             raw_handle: int | None = None
+            descriptor: int | None = None
             try:
                 if os.name == "nt":
-                    raw_handle = _win_open(path, directory=False)
+                    raw_handle = _win_open_relative(
+                        parent_handle,
+                        name,
+                        directory=False,
+                    )
                     info = _win_info(raw_handle)
                     if info.dwFileAttributes & _WIN_ATTR_REPARSE_POINT:
                         _err("declared report artifact cannot be a reparse point")
@@ -866,15 +1094,16 @@ class _PinnedBundleRoot:
                     final = _win_final_path(raw_handle)
                     if not _path_is_under(final, self.path):
                         _err("declared report artifact handle escaped its root")
-                    fd = msvcrt.open_osfhandle(
+                    descriptor = msvcrt.open_osfhandle(
                         raw_handle, os.O_RDONLY | getattr(os, "O_BINARY", 0)
                     )
                     raw_handle = None
                 else:
                     _posix_directory_flags()
                     flags = os.O_RDONLY | int(getattr(os, "O_NOFOLLOW", 0))
-                    fd = os.open(name, flags, dir_fd=parent_handle)
-                handle = os.fdopen(fd, "rb")
+                    descriptor = os.open(name, flags, dir_fd=parent_handle)
+                handle = os.fdopen(descriptor, "rb")
+                descriptor = None
                 try:
                     info = os.fstat(handle.fileno())
                     if not stat.S_ISREG(info.st_mode) or _entry_is_reparse(info):
@@ -889,6 +1118,8 @@ class _PinnedBundleRoot:
                     "declared report artifact cannot be opened safely"
                 ) from exc
             finally:
+                if descriptor is not None:
+                    os.close(descriptor)
                 if raw_handle is not None:
                     _win_close(raw_handle)
 
@@ -898,8 +1129,9 @@ class _PinnedBundleRoot:
         rows: list[_ScannedEntry] = []
         with self._open_directory(relative) as (handle, path):
             try:
-                scan_target: int | Path = path if os.name == "nt" else handle
-                with os.scandir(scan_target) as entries:
+                if os.name == "nt":
+                    return _win_scan_directory(handle, limit=limit)
+                with os.scandir(handle) as entries:
                     for entry in entries:
                         if len(rows) >= limit:
                             _err("report bundle contains too many filesystem entries")
@@ -2018,10 +2250,7 @@ def open_job_published_bundle(
 
             pinned = PinnedJobReportBundle(bundle, parsed.full_rels, verify)
             pinned.verify_lexical_identity()
-            try:
-                yield pinned
-            finally:
-                pinned.verify_lexical_identity()
+            yield pinned
 
 
 def validate_persisted_report_policy(
