@@ -16,11 +16,15 @@ fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
 from swinglab.config import Config
+from swinglab.report_bundle import CoreReportBundleError
+from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
 from swinglab.web import billing
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
+from swinglab.web.jobs import FAILED, JobManager
 from swinglab.web.users import PRO, UserStore
 
+from tests.report_bundle_fixtures import write_test_report_html
 from tests.test_web import fake_analyze_ok, wait_for
 
 
@@ -283,6 +287,37 @@ def test_refilm_result_preserves_free_retry_and_first_baseline(tmp_path, monkeyp
         client.app.state.users.get_by_email("kyle@example.com").id
     ) == 1
     assert "Your next coaching check-in" in client.get("/").text
+
+
+def test_guided_core_failure_releases_the_single_active_allowance(
+    tmp_path, monkeypatch,
+):
+    users = UserStore(tmp_path / "users.db")
+    user = users.create("guided@example.com", "longenough")
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        user_store=users,
+        guided_html_writer=write_test_report_html,
+    )
+    job = manager.create_session(
+        user_id=user.id,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    source = job.session_dir / "source.mov"
+    source.write_bytes(b"source")
+
+    def fail_core(*args, **kwargs):
+        assert manager.usage_this_month(user.id) == 1
+        raise CoreReportBundleError("guided core failed")
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fail_core)
+    assert manager.usage_this_month(user.id) == 1
+
+    manager._run(job, source)
+
+    assert manager.get(job.id).status == FAILED
+    assert manager.usage_this_month(user.id) == 0
 
 
 def test_repeated_refilm_results_eventually_use_the_allowance(

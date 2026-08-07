@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from swinglab.events import EventError, detect_events
+from swinglab.events import EventError, EventFailure, detect_events
 from swinglab.frames import FrameSet
 from tests.conftest import make_landmarks
 
@@ -52,6 +52,13 @@ def test_no_takeaway_raises(cfg):
     frames = build_frameset(len(tracked))
     with pytest.raises(EventError, match="takeaway"):
         detect_events(tracked, frames, 1.5, cfg)
+    with pytest.raises(EventError) as exc:
+        detect_events(tracked, frames, 1.5, cfg)
+    assert exc.value.reason is EventFailure.NO_READABLE_SWING
+    assert str(exc.value) == (
+        "No takeaway found before impact — the hands never left the "
+        "address position."
+    )
 
 
 def test_too_few_tracked_frames_raises(cfg):
@@ -59,6 +66,27 @@ def test_too_few_tracked_frames_raises(cfg):
     frames = build_frameset(len(tracked))
     with pytest.raises(EventError, match="usable pose frames"):
         detect_events(tracked, frames, 1.5, cfg)
+    with pytest.raises(EventError) as exc:
+        detect_events(tracked, frames, 1.5, cfg)
+    assert exc.value.reason is EventFailure.INSUFFICIENT_POSE_FRAMES
+    assert str(exc.value) == (
+        "Only 3 usable pose frames in window — need at least 8. "
+        "Is the golfer fully in frame?"
+    )
+
+
+def test_missing_top_to_impact_tracking_is_no_readable_swing(cfg):
+    tracked = synthetic_swing()
+    for i in range(12, 54):
+        tracked[i] = None
+    frames = build_frameset(len(tracked))
+    with pytest.raises(EventError) as exc:
+        detect_events(tracked, frames, 54 / 30.0, cfg)
+    assert exc.value.reason is EventFailure.NO_READABLE_SWING
+    assert str(exc.value) == (
+        "No takeaway found before impact — the hands never left the "
+        "address position."
+    )
 
 
 def test_untracked_frames_are_skipped(cfg):

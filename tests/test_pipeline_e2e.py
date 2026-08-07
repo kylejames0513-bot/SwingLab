@@ -18,7 +18,14 @@ from swinglab import pipeline, pose
 from swinglab.cli import main as cli_main
 from swinglab.config import Config
 from swinglab.pipeline import ZeroStrikesError, analyze_video
+from swinglab.report_artifacts import ReportEntitlementSnapshot
+from swinglab.report_view import (
+    EventId,
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    PhaseMethod,
+)
 from tests.conftest import generate_test_video, make_landmarks, needs_ffmpeg
+from tests.report_bundle_fixtures import write_test_report_html
 
 pytestmark = needs_ffmpeg
 
@@ -48,6 +55,15 @@ class FakeTracker:
         else:
             hand_x, hand_y = 550.0, 400.0
         return make_landmarks(hand_x=hand_x, hand_y=hand_y)
+
+    def detect_observation(self, frame_path) -> pose.PoseObservation | None:
+        landmarks = self.detect(frame_path)
+        if landmarks is None:
+            return None
+        return pose.PoseObservation(
+            landmarks,
+            {index: 0.9 for index in pose.TRACKED},
+        )
 
     def close(self):
         pass
@@ -90,6 +106,35 @@ def test_three_swings_full_run(tmp_path, fast_cfg):
     html = result.report_path.read_text()
     assert html.count("media/strip_s") == 3
     assert html.count("media/replay_s") == 3
+
+
+def test_guided_face_on_publishes_structured_bundle_and_evidence_snapshot(
+    tmp_path, fast_cfg,
+):
+    video = generate_test_video(tmp_path / "private-source-name.mov", [9.5])
+    messages: list[str] = []
+
+    result = analyze_video(
+        video,
+        out_dir=tmp_path / "results",
+        cfg=fast_cfg,
+        log=messages.append,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+        report_entitlements=ReportEntitlementSnapshot("available"),
+        guided_html_writer=write_test_report_html,
+    )
+
+    assert result.structured_report is True
+    assert result.report_view_path is not None and result.report_view_path.is_file()
+    assert result.manifest_path is not None and result.manifest_path.is_file()
+    assert result.checksums_path is not None and result.checksums_path.is_file()
+    assert result.report_path.parent == result.report_view_path.parent
+    assert result.report_path.parent.parent == result.session_dir
+    assert len(result.evidence_snapshots) == 1
+    snapshot = result.evidence_snapshots[0]
+    assert snapshot.swing == 1
+    assert next(event for event in snapshot.events if event.event is EventId.IMPACT).method is PhaseMethod.DETECTED_AUDIO
+    assert "private-source-name.mov" not in "\n".join(messages)
 
 
 def test_annotated_false_disables_replay(tmp_path, fast_cfg):

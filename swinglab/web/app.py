@@ -110,6 +110,7 @@ from ..report import (
     persisted_priority_rule_version,
     persisted_report_outcome,
 )
+from ..report_html import write_report_document_html
 from ..trends import (
     FLAG_LABELS,
     build_trends,
@@ -504,7 +505,12 @@ def create_app(
     # Users first: the job runner needs the store to decide the coach-replay
     # Pro gate (billing.replay_pro_only) at analysis time.
     users = UserStore(sessions_dir / "swinglab.db")
-    manager = JobManager(sessions_dir, cfg, user_store=users)
+    manager = JobManager(
+        sessions_dir,
+        cfg,
+        user_store=users,
+        guided_html_writer=write_report_document_html,
+    )
     throttle = Throttle(sessions_dir / "swinglab.db")
     code_send_locks: dict[
         tuple[str, str], tuple[threading.Lock, int]

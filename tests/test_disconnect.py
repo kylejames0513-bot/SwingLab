@@ -16,6 +16,8 @@ from fastapi.testclient import TestClient
 from starlette.requests import ClientDisconnect
 
 from swinglab.config import Config
+from swinglab.report_bundle import GuidedReportRendererUnavailable
+from swinglab.web.jobs import JobManager
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
 from tests.test_web import fake_analyze_ok, upload, wait_for
@@ -40,6 +42,19 @@ def session_dirs(sessions):
         p for p in sessions.iterdir()
         if p.is_dir() and p.name != "sample-report"
     ]
+
+
+def test_guided_writer_rejection_cannot_leak_an_upload_session(tmp_path):
+    sessions = tmp_path / "s"
+    cfg = Config()
+    cfg.report["guided_presentation_enabled"] = True
+    manager = JobManager(sessions, cfg)
+
+    with pytest.raises(GuidedReportRendererUnavailable):
+        manager.create_session(source_name="swing.mov")
+
+    assert session_dirs(sessions) == []
+    assert manager._conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
 
 
 def test_disconnect_mid_upload_leaks_nothing(tmp_path, monkeypatch):

@@ -22,6 +22,12 @@ from fastapi.testclient import TestClient
 from swinglab.config import DEFAULTS, Config
 from swinglab.metrics import session_stats
 from swinglab.pipeline import analyze_video
+from swinglab.report_artifacts import ReportEntitlementSnapshot
+from swinglab.report_view import (
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    MediaRole,
+    load_report_view,
+)
 from swinglab.report import write_report_html
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
@@ -70,7 +76,7 @@ def test_cli_pipeline_is_never_gated_by_default():
     assert param.default is False
 
 
-# -- the gate decision, at analysis time --------------------------------------
+# -- the immutable gate decision, captured at session creation ----------------
 
 def make_manager(tmp_path, gate=True, accounts=True, user_store=None,
                  annotated=True, name="s"):
@@ -128,18 +134,30 @@ def test_gate_decision_matrix(tmp_path):
     ) is False
 
 
-def test_pro_at_analysis_time_is_what_counts(tmp_path):
-    """The gate reads the plan when the analysis RUNS — a lapsed pro_until
-    is free, a live one is Pro."""
+def test_replay_entitlement_is_captured_once_and_survives_restart(
+    tmp_path, monkeypatch,
+):
     users = UserStore(tmp_path / "users.db")
     user = users.create("kyle@example.com", "longenough")
     manager = make_manager(tmp_path, user_store=users)
-    job = manager.create_session(user_id=user.id)
-    assert manager.replay_locked(job) is True
+    locked_job = manager.create_session(user_id=user.id)
+    assert manager.replay_locked(locked_job) is True
+
     users.grant_pro_days(user.id, 31)
-    assert manager.replay_locked(job) is False
+    assert manager.replay_locked(locked_job) is True
+    available_job = manager.create_session(user_id=user.id)
+    assert manager.replay_locked(available_job) is False
+
     users.revoke_pro_days(user.id, 31)
-    assert manager.replay_locked(job) is True
+    assert manager.replay_locked(locked_job) is True
+    assert manager.replay_locked(available_job) is False
+
+    for job in (locked_job, available_job):
+        (job.session_dir / "source.mov").write_bytes(b"source")
+    monkeypatch.setattr(JobManager, "submit", lambda self, job, video: None)
+    restarted = make_manager(tmp_path, user_store=users)
+    assert restarted.replay_locked(restarted.get(locked_job.id)) is True
+    assert restarted.replay_locked(restarted.get(available_job.id)) is False
 
 
 # -- web wiring: the decision reaches the pipeline, honestly logged -----------
@@ -302,3 +320,96 @@ def test_locked_note_not_shown_when_replay_feature_is_off(tmp_path, monkeypatch)
     html = result.report_path.read_text()
     assert "Coach replay" not in html
     assert LOCKED_NOTE_TAIL not in html
+
+
+@pytest.mark.parametrize(
+    ("state", "rendered", "locked"),
+    [
+        ("available", True, False),
+        ("locked", False, True),
+        ("disabled", False, False),
+    ],
+)
+def test_guided_pipeline_uses_authoritative_replay_entitlement_snapshot(
+    tmp_path, monkeypatch, state, rendered, locked,
+):
+    from PIL import Image
+
+    from swinglab import pipeline, pose
+    from swinglab.ffmpeg import VideoInfo
+    from swinglab.frames import FrameSet
+    from tests.report_bundle_fixtures import write_test_report_html
+
+    monkeypatch.setattr(pose, "PoseTracker", FakeTracker)
+    monkeypatch.setattr(pipeline.pose, "PoseTracker", FakeTracker)
+    monkeypatch.setattr(pipeline, "require_binaries", lambda: None)
+    video = tmp_path / "entitled-private.mov"
+    video.write_bytes(b"source")
+    monkeypatch.setattr(
+        pipeline,
+        "probe",
+        lambda path: VideoInfo(Path(path), 4.0, 1000, 1000, 30.0, 0, None, True),
+    )
+    monkeypatch.setattr(pipeline.audio, "extract_audio", lambda video, out: out)
+    monkeypatch.setattr(pipeline.audio, "detect_strikes", lambda wav, cfg: [2.0])
+
+    def extract_window(video, strike, work, swing, cfg, fps=None):
+        paths = []
+        for index in range(75):
+            path = Path(work) / f"s{swing}_{index + 1:03d}.png"
+            Image.new("RGB", (20, 20), "white").save(path)
+            paths.append(path)
+        return FrameSet(paths, 0.0, float(fps or 30.0))
+
+    def extract_fullres(video, timestamp, out, cfg):
+        path = Path(out)
+        Image.new("RGB", (1000, 1000), "white").save(path)
+        return path
+
+    def media_file(*args, **kwargs):
+        path = Path(args[2])
+        path.write_bytes(b"media")
+        return path
+
+    def replay_frames(video, strike, work, cfg):
+        path = Path(work) / "r0001.png"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        Image.new("RGB", (20, 20), "white").save(path)
+        return FrameSet([path], 0.0, 30.0)
+
+    replay_calls = []
+
+    def make_replay(replay, analysis, tracked, events, metrics, out, cfg):
+        replay_calls.append(Path(out))
+        path = Path(out)
+        path.write_bytes(b"replay")
+        return path
+
+    monkeypatch.setattr(pipeline.frames, "extract_window", extract_window)
+    monkeypatch.setattr(pipeline.frames, "extract_fullres_frame", extract_fullres)
+    monkeypatch.setattr(pipeline.slowmo, "make_slowmo", media_file)
+    monkeypatch.setattr(pipeline.slowmo, "extract_replay_frames", replay_frames)
+    monkeypatch.setattr(pipeline.annotate, "make_replay", make_replay)
+    monkeypatch.setattr(
+        pipeline.overlay,
+        "make_overlay",
+        lambda *args, **kwargs: pytest.fail("guided face-on called legacy overlay"),
+    )
+    cfg = Config()
+    cfg.slowmo["annotated"] = True
+    result = analyze_video(
+        video,
+        out_dir=tmp_path / "results",
+        cfg=cfg,
+        replay_locked=state != "locked",
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+        report_entitlements=ReportEntitlementSnapshot(state),
+        guided_html_writer=write_test_report_html,
+    )
+    view = load_report_view(result.report_view_path)
+    replay_section = next(section for section in view.optional_sections if section.id.value == "replay")
+    assert bool(replay_calls) is rendered
+    assert any(media.role is MediaRole.COACH_REPLAY for media in view.media) is rendered
+    assert view.capabilities.coach_replay is rendered
+    assert replay_section.available is rendered
+    assert replay_section.locked is locked

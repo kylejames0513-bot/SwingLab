@@ -18,7 +18,10 @@ auth (see web/app.py).
 
 from __future__ import annotations
 
+import hashlib
+from dataclasses import replace
 from pathlib import Path
+import tempfile
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -34,6 +37,29 @@ from .report import (
     REPORT_FORMAT_VERSION,
     REPORT_PRESENTATION_VERSION,
     write_report_html,
+)
+from .report_html import write_report_document_html
+from .report_presenter import (
+    ReportNavigation,
+    build_report_document,
+    prepare_report_input,
+)
+from .report_view import (
+    BenchmarkRelation,
+    CoachingReportView,
+    Entitlement,
+    EventId,
+    EventProvenance,
+    EvidenceKind,
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    MediaEntry,
+    MediaRole,
+    MeasurementDetail,
+    MeasurementUnit,
+    PhaseId,
+    PhaseMethod,
+    RenderedEvidence,
+    TrackingState,
 )
 
 # What the banner on top of the sample says. cta_url is the app's landing
@@ -235,6 +261,100 @@ def draw_sample_overlay(out_path: Path, swing_no: int, cfg: Config) -> Path:
     return out_path
 
 
+_SAMPLE_OBSERVED = "#e8720c"
+_SAMPLE_REFERENCE = "#2ecc40"
+_SAMPLE_SILHOUETTE = "#f3eee2"
+_SAMPLE_BOUNDARY = "#f6d7a8"
+
+
+def draw_sample_focused_evidence(out_path: Path, cfg: Config) -> Path:
+    """Draw honest, cropped sample evidence without a pose skeleton.
+
+    This is a diagram of the evidence vocabulary, not generated golfer
+    footage and not a body correction. Filled shapes keep the golfer readable
+    at report scale while the only semantic marks remain observed, starting
+    reference, and coaching boundary.
+    """
+    del cfg  # Semantic evidence colors stay stable across brand themes.
+    size = 900
+    image = Image.new("RGB", (size, size), _BG)
+    draw = ImageDraw.Draw(image)
+    title_font = load_font(34)
+    label_font = load_font(24)
+    small_font = load_font(19)
+
+    draw.text(
+        (52, 42),
+        "SYNTHETIC SAMPLE · CROPPED FOCUS",
+        fill="#ffffff",
+        font=title_font,
+    )
+    draw.text(
+        (52, 91),
+        "Head position near the top",
+        fill="#c9d4cc",
+        font=small_font,
+    )
+
+    # Starting reference zone: a filled, rounded region rather than a ghost
+    # body. It describes only the head's opening location.
+    draw.rounded_rectangle(
+        (245, 165, 405, 325),
+        radius=38,
+        fill="#214e31",
+        outline=_SAMPLE_REFERENCE,
+        width=10,
+    )
+    draw.rectangle((72, 171, 102, 201), fill=_SAMPLE_REFERENCE)
+    draw.text((118, 171), "STARTING ZONE", fill="#ffffff", font=label_font)
+
+    # Dashed coaching boundary between the starting zone and observed head.
+    boundary_x = 454
+    for y in range(142, 574, 34):
+        draw.line(
+            (boundary_x, y, boundary_x, min(y + 18, 574)),
+            fill=_SAMPLE_BOUNDARY,
+            width=7,
+        )
+    draw.line((454, 548, 720, 548), fill=_SAMPLE_BOUNDARY, width=3)
+    draw.text(
+        (528, 558),
+        "COACHING BOUNDARY",
+        fill="#ffffff",
+        font=label_font,
+    )
+
+    # Cropped, filled upper-body silhouette. No joints, landmark lines,
+    # skeleton, corrected ghost, or full-body comparison is drawn.
+    draw.polygon(
+        ((392, 439), (505, 365), (640, 399), (732, 521),
+         (704, 812), (332, 812), (324, 580)),
+        fill=_SAMPLE_SILHOUETTE,
+    )
+    draw.polygon(
+        ((485, 408), (397, 458), (249, 384), (216, 431),
+         (383, 545), (548, 478)),
+        fill=_SAMPLE_SILHOUETTE,
+    )
+    draw.polygon(
+        ((562, 410), (665, 452), (771, 351), (810, 395),
+         (700, 548), (525, 485)),
+        fill=_SAMPLE_SILHOUETTE,
+    )
+    draw.ellipse((495, 202, 635, 342), fill=_SAMPLE_OBSERVED)
+    draw.rectangle((710, 211, 740, 241), fill=_SAMPLE_OBSERVED)
+    draw.text((754, 211), "OBSERVED", fill="#ffffff", font=label_font)
+    draw.line((710, 242, 630, 267), fill=_SAMPLE_OBSERVED, width=5)
+
+    _footer(
+        image,
+        "Sample illustration — not golfer footage or a predicted ideal pose.",
+    )
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    image.save(out_path)
+    return out_path
+
+
 # -- assembly -----------------------------------------------------------------
 
 def build_sample_swings(sample_dir: Path, cfg: Config) -> list[dict]:
@@ -259,32 +379,30 @@ def build_sample_swings(sample_dir: Path, cfg: Config) -> list[dict]:
     return swings
 
 
-def ensure_sample_report(sample_dir: Path, cfg: Config) -> Path:
-    """Generate or format-refresh the synthetic public sample report.
+def _report_is_current(report_path: Path, presentation_version: str) -> bool:
+    if not report_path.is_file():
+        return False
+    try:
+        existing = report_path.read_text(encoding="utf-8")
+    except OSError:
+        return False
+    format_marker = (
+        'name="caddieinsight-report-format" '
+        f'content="{REPORT_FORMAT_VERSION}"'
+    )
+    presentation_marker = (
+        'name="caddieinsight-report-presentation" '
+        f'content="{presentation_version}"'
+    )
+    return format_marker in existing and presentation_marker in existing
 
-    Current-format, current-presentation reports are left byte-for-byte alone.
-    An older synthetic report is regenerated through the real renderer and
-    atomically replaces only ``sample-report/report.html``; customer sessions
-    are never involved.  Presentation and schema versions stay separate so a
-    sample redesign never changes persisted customer-report compatibility.
-    """
+
+def build_legacy_sample_report(sample_dir: Path, cfg: Config) -> Path:
+    """Build or refresh the rollback-safe legacy public sample."""
     sample_dir = Path(sample_dir)
     report_path = sample_dir / "report.html"
-    if report_path.is_file():
-        try:
-            existing = report_path.read_text(encoding="utf-8")
-        except OSError:
-            existing = ""
-        format_marker = (
-            'name="caddieinsight-report-format" '
-            f'content="{REPORT_FORMAT_VERSION}"'
-        )
-        presentation_marker = (
-            'name="caddieinsight-report-presentation" '
-            f'content="{REPORT_PRESENTATION_VERSION}"'
-        )
-        if format_marker in existing and presentation_marker in existing:
-            return report_path
+    if _report_is_current(report_path, REPORT_PRESENTATION_VERSION):
+        return report_path
     sample_dir.mkdir(parents=True, exist_ok=True)
     swings = build_sample_swings(sample_dir, cfg)
     all_metrics = [s["metrics"] for s in swings]
@@ -308,3 +426,224 @@ def ensure_sample_report(sample_dir: Path, cfg: Config) -> Path:
     )
     temporary_report.replace(report_path)
     return report_path
+
+
+def _media_entry(
+    *,
+    key: str,
+    role: MediaRole,
+    entitlement: Entitlement,
+    relative_path: str,
+    path: Path,
+) -> MediaEntry:
+    return MediaEntry(
+        key=key,
+        role=role,
+        mime_type="image/png",
+        entitlement=entitlement,
+        relative_path=relative_path,
+        checksum_sha256=hashlib.sha256(path.read_bytes()).hexdigest(),
+    )
+
+
+def build_guided_sample_swings(
+    sample_dir: Path, cfg: Config
+) -> tuple[list[dict[str, object]], tuple[MediaEntry, ...]]:
+    """Build guided depth rows with stable strip keys and no overlays."""
+    swings: list[dict[str, object]] = []
+    media: list[MediaEntry] = []
+    for metric in sample_metrics():
+        swing_no = metric.swing
+        relative_path = f"media/strip_s{swing_no}.png"
+        path = draw_sample_strip(sample_dir / relative_path, swing_no, cfg)
+        key = f"sample-strip-{swing_no}"
+        media.append(
+            _media_entry(
+                key=key,
+                role=MediaRole.KEY_POSITIONS,
+                entitlement=Entitlement.FREE,
+                relative_path=relative_path,
+                path=path,
+            )
+        )
+        swings.append(
+            {
+                "metrics": metric,
+                "notes": swing_notes(metric, cfg),
+                "strip": key,
+                "slowmo": None,
+                "replay": None,
+            }
+        )
+    return swings, tuple(media)
+
+
+def _sample_focused_evidence(media_key: str) -> RenderedEvidence:
+    return RenderedEvidence(
+        kind=EvidenceKind.HEAD_BOUNDARY,
+        state="rendered",
+        media_key=media_key,
+        swing=1,
+        phase=PhaseId.GOING_BACK,
+        phase_method=PhaseMethod.HIGHEST_TRACKED_HANDS,
+        timestamp_ms=2860,
+        events=(
+            EventProvenance(
+                event=EventId.TOP,
+                method=PhaseMethod.HIGHEST_TRACKED_HANDS,
+                timestamp_ms=2860,
+                label="Top estimate",
+            ),
+        ),
+        tracking_state=TrackingState.CLEAR,
+        tracking_reasons=(),
+        render_reasons=(),
+        observed_label="Head position near the top",
+        reference_label="Starting head-position zone",
+        boundary_label="0.35 shoulder-width coaching boundary",
+        readable_swings=3,
+        triggered_swings=2,
+        supporting_measurement=MeasurementDetail(
+            id="measurement-head_sway_backswing_sw",
+            label="Head sway going back",
+            plain_value="0.37 shoulder widths",
+            numeric_value=0.37,
+            unit=MeasurementUnit.SHOULDER_WIDTHS,
+            benchmark_relation=BenchmarkRelation.ABOVE,
+            benchmark_value=0.35,
+            benchmark_upper_value=None,
+            benchmark_label="Coaching line: 0.35 shoulder widths",
+            explanation="How far the head moved from address to the top estimate.",
+            limitation="A face-on 2D estimate, not a 3D center-of-mass measure.",
+        ),
+        observation=(
+            "The head moved beyond its starting reference zone on two of "
+            "three readable swings."
+        ),
+        alt_text=(
+            "Sample illustration of swing 1 near the top. An orange head "
+            "marker sits outside the green starting zone and beyond a dashed "
+            "coaching boundary."
+        ),
+    )
+
+
+def build_guided_sample_report(sample_dir: Path, cfg: Config) -> Path:
+    """Build or refresh the explicit guided public-sample preview."""
+    sample_dir = Path(sample_dir)
+    report_path = sample_dir / "report.html"
+    if _report_is_current(report_path, GUIDED_REPORT_PRESENTATION_VERSION):
+        return report_path
+
+    sample_dir.mkdir(parents=True, exist_ok=True)
+    media_dir = sample_dir / "media"
+    media_dir.mkdir(parents=True, exist_ok=True)
+    focused_relative_path = "media/focused-priority.png"
+    focused_path = draw_sample_focused_evidence(
+        sample_dir / focused_relative_path, cfg
+    )
+    focused_media = _media_entry(
+        key="sample-focused-priority",
+        role=MediaRole.PRIORITY_EVIDENCE,
+        entitlement=Entitlement.CORE,
+        relative_path=focused_relative_path,
+        path=focused_path,
+    )
+    swings, strip_media = build_guided_sample_swings(sample_dir, cfg)
+    all_metrics = [swing["metrics"] for swing in swings]
+    stats = session_stats(all_metrics)
+    notes = make_session_notes(all_metrics, stats, cfg)
+    media = (focused_media, *strip_media)
+    source = prepare_report_input(
+        sample_video(),
+        swings,
+        stats,
+        notes,
+        "right",
+        cfg,
+        angle="face_on",
+        club="iron",
+        analysis_fps=30.0,
+        visual_evidence=_sample_focused_evidence(focused_media.key),
+        media=media,
+        navigation=ReportNavigation(
+            app_url="/",
+            storefront_url=None,
+            gear_collection_url=None,
+        ),
+    )
+    document = build_report_document(source, cfg)
+    if not isinstance(document.view, CoachingReportView):
+        raise ValueError("guided sample requires a coaching-ready document")
+    document = replace(
+        document,
+        view=replace(
+            document.view,
+            next_move=replace(
+                document.view.next_move,
+                eyebrow="Your next move",
+            ),
+        ),
+    )
+    temporary_report = report_path.with_name(".report.html.tmp")
+    write_report_document_html(
+        temporary_report,
+        document,
+        cfg=cfg,
+        sample_banner={
+            "text": BANNER_TEXT,
+            "cta_label": BANNER_CTA,
+            "cta_url": "/",
+        },
+    )
+    overlay_paths = tuple(
+        media_dir / f"overlay_s{swing_no}.png" for swing_no in (1, 2, 3)
+    )
+    backup_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{sample_dir.name}-legacy-overlays-",
+            dir=sample_dir.parent,
+        )
+    )
+    staged: list[tuple[Path, Path]] = []
+    try:
+        for overlay_path in overlay_paths:
+            if overlay_path.is_file():
+                backup_path = backup_dir / overlay_path.name
+                overlay_path.replace(backup_path)
+                staged.append((overlay_path, backup_path))
+        temporary_report.replace(report_path)
+    except BaseException:
+        for overlay_path, backup_path in reversed(staged):
+            if backup_path.is_file():
+                backup_path.replace(overlay_path)
+        try:
+            backup_dir.rmdir()
+        except OSError:
+            pass
+        raise
+    for _, backup_path in staged:
+        try:
+            backup_path.unlink()
+        except OSError:
+            # The backup is outside the publicly served sample root. Retaining
+            # it is safer than reporting activation failure after the atomic
+            # HTML switch has completed.
+            pass
+    try:
+        backup_dir.rmdir()
+    except OSError:
+        pass
+    return report_path
+
+
+def ensure_sample_report(sample_dir: Path, cfg: Config) -> Path:
+    """Generate the configured synthetic public sample, defaulting legacy.
+
+    Only the literal boolean True selects the guided presentation. This gate
+    never changes customer-job presentation policy, and both branches replace
+    only the synthetic ``sample-report/report.html`` atomically.
+    """
+    if cfg.report.get("guided_sample_enabled") is True:
+        return build_guided_sample_report(sample_dir, cfg)
+    return build_legacy_sample_report(sample_dir, cfg)

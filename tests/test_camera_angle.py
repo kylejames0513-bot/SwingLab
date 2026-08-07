@@ -185,6 +185,13 @@ def test_dtl_report_shows_no_face_on_reference_numbers(tmp_path):
     assert '<tr class="bench-row">' in face_html
 
 
+def test_dtl_guided_measurement_detail_excludes_face_on_metric_even_if_stale_value_exists():
+    from swinglab.report_presenter import measurement_detail
+    from tests.test_metrics_depth import make_metrics
+    metric = make_metrics(1, head_sway_backswing_sw=0.7)
+    assert measurement_detail("head_sway_backswing_sw", [metric], {}, Config(), angle=ANGLE_DTL) is None
+
+
 # ------------------------------------------------------------ web plumbing
 
 

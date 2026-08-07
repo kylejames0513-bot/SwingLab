@@ -1,0 +1,756 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="caddieinsight-report-format" content="{{ report_format_version }}">
+  <meta name="caddieinsight-report-presentation" content="{{ view.presentation_version }}">
+  <meta name="caddieinsight-report-outcome" content="{{ view.outcome }}">
+  <meta name="caddieinsight-coaching-priority-rule"
+        content="{{ priority_rule_version }}">
+  <title>{{ brand.name }} — Swing report</title>
+  <style>
+    :root {
+      --brand-primary: {{ brand.primary_color }};
+      --brand-accent: {{ brand.accent_color }};
+      --ink: #17201a;
+      --muted: #5d685f;
+      --paper: #fffdf8;
+      --canvas: #f3f1eb;
+      --accent-text: #944600;
+      --control-border: #66736b;
+      --focus: #005fcc;
+      --line: #d9ddd7;
+      --soft: #f7f4ed;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      color: var(--ink);
+      background: var(--canvas);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+    a { color: var(--accent-text); }
+    img, video, svg { max-width: 100%; height: auto; }
+    img { display: block; }
+    .report-control,
+    details > summary {
+      display: inline-flex;
+      min-width: 44px;
+      min-height: 44px;
+      align-items: center;
+    }
+    :where(a, button, summary):focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 3px;
+    }
+    .skip-link {
+      position: absolute;
+      left: 1rem;
+      top: -5rem;
+      z-index: 10;
+      padding: .65rem 1rem;
+      color: var(--paper);
+      background: var(--ink);
+    }
+    .skip-link:focus { top: 1rem; }
+    .sample-banner,
+    .report-header,
+    main { width: min(calc(100% - 2rem), 68rem); margin-inline: auto; }
+    .sample-banner {
+      display: flex;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .75rem 1rem;
+      background: #fff4db;
+      border: 1px solid #ead19a;
+    }
+    .report-header { padding: 1.25rem 0 .75rem; }
+    .report-brand {
+      display: inline-block;
+      margin-bottom: .75rem;
+      color: var(--ink);
+      font-size: .8rem;
+      font-weight: 800;
+      letter-spacing: .14em;
+    }
+    .context-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
+      gap: .65rem;
+      margin: 0;
+    }
+    .context-list div {
+      min-width: 0;
+      padding: .65rem .75rem;
+      background: rgba(255, 255, 255, .7);
+      border: 1px solid var(--line);
+      border-radius: .7rem;
+    }
+    .context-list dt { color: var(--muted); font-size: .74rem; font-weight: 700; }
+    .context-list dd { margin: .1rem 0 0; font-weight: 700; }
+    main { padding-bottom: 4rem; }
+    [data-report-block] {
+      margin-top: 1rem;
+      padding: clamp(1rem, 3vw, 2rem);
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 1rem;
+      box-shadow: 0 .35rem 1.2rem rgba(23, 32, 26, .06);
+    }
+    .next-move { border-top: .35rem solid var(--brand-accent); }
+    .eyebrow,
+    .step-label,
+    .strength-label {
+      margin: 0 0 .35rem;
+      color: var(--accent-text);
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 { line-height: 1.15; }
+    h1 { max-width: 22ch; margin: .2rem 0 .8rem; font-size: clamp(1.9rem, 6vw, 3.6rem); }
+    h2 { margin: .25rem 0 1rem; font-size: clamp(1.45rem, 4vw, 2.2rem); }
+    .observation { max-width: 62ch; font-size: 1.08rem; }
+    .coach-cue {
+      max-width: 62ch;
+      padding: .8rem 1rem;
+      background: var(--soft);
+      border-left: .28rem solid var(--brand-primary);
+    }
+    .journey-preview {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: .6rem;
+      margin: 1.2rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .journey-preview a {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: .65rem;
+      text-align: center;
+      text-decoration: none;
+      background: var(--soft);
+      border: 1px solid var(--control-border);
+      border-radius: .55rem;
+      font-weight: 700;
+    }
+    .focused-evidence {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(16rem, .85fr);
+      gap: 1rem;
+      margin: 0;
+      padding: 1rem;
+      background: var(--soft);
+      border-radius: .8rem;
+    }
+    .focused-evidence img { width: 100%; border-radius: .55rem; }
+    .evidence-meta,
+    .evidence-counts,
+    .refilm-confirmations { margin: .75rem 0; }
+    .evidence-counts {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .45rem;
+    }
+    .evidence-counts div {
+      padding: .4rem .55rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: .45rem;
+    }
+    .evidence-counts dt,
+    .evidence-counts dd { display: inline; margin: 0; }
+    .visual-unavailable {
+      padding: 1rem;
+      background: var(--soft);
+      border: 1px dashed var(--control-border);
+      border-radius: .8rem;
+    }
+    .evidence-boundary { color: var(--muted); font-size: .92rem; }
+    .event-timeline { padding-left: 1.25rem; }
+    .event-timeline li {
+      display: grid;
+      grid-template-columns: minmax(5rem, .6fr) minmax(4.5rem, .35fr) minmax(12rem, 1fr);
+      gap: .6rem;
+      padding: .45rem 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .phase-list { display: grid; gap: .65rem; margin-top: 1.2rem; }
+    .phase-card {
+      padding: .1rem 1rem;
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: .65rem;
+    }
+    .phase-card[open] { border-color: var(--brand-primary); }
+    .phase-card summary {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      gap: 1rem;
+      padding: .85rem 0;
+      cursor: pointer;
+      font-weight: 800;
+    }
+    .status { white-space: nowrap; color: var(--muted); font-weight: 700; }
+    details > summary { cursor: pointer; }
+    .measurement-detail,
+    .video-limitations,
+    .practice-detail,
+    .alternatives,
+    .optional-card { margin-top: 1rem; padding: .75rem 1rem; background: var(--soft); border-radius: .6rem; }
+    .capture-correction { padding: .8rem 1rem; background: var(--soft); border-left: .28rem solid var(--brand-primary); }
+    .capture-actions { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
+    .capture-playback { margin: 1rem 0 0; }
+    .capture-playback video,
+    .optional-card video { width: min(100%, 42rem); }
+    .optional-depth { margin-top: 1rem; }
+    .optional-card > summary { font-weight: 800; }
+    .table-scroll {
+      max-width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: .55rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .practice-summary,
+    .refilm-checklist { padding-left: 1.35rem; }
+    .practice-summary li,
+    .refilm-checklist li { margin: .55rem 0; }
+    .practice-facts,
+    .refilm-confirmations {
+      display: grid;
+      grid-template-columns: minmax(8rem, .4fr) 1fr;
+      gap: .4rem .8rem;
+    }
+    .practice-facts dt,
+    .refilm-confirmations dt { font-weight: 800; }
+    .practice-facts dd,
+    .refilm-confirmations dd { margin: 0; }
+    .drill-illustration { max-width: 36rem; margin: 1rem 0; }
+    .drill-illustration figcaption { margin-top: .4rem; color: var(--muted); }
+    .primary-action {
+      margin-top: 1rem;
+      padding: .75rem 1rem;
+      color: var(--paper);
+      background: var(--ink);
+      border-radius: .55rem;
+      font-weight: 800;
+      text-decoration: none;
+    }
+    .print-only { display: none; }
+    @media (max-width: 40rem) {
+      .sample-banner,
+      .report-header,
+      main { width: min(calc(100% - 20px), 68rem); }
+      .sample-banner { align-items: flex-start; flex-direction: column; }
+      .report-header { padding-top: .8rem; }
+      .context-list {
+        grid-template-columns: minmax(0, 1fr);
+        gap: .4rem;
+      }
+      .context-list div {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        min-height: 44px;
+        padding: .25rem .5rem;
+      }
+      .context-list dd { margin-top: 0; }
+      .focused-evidence { grid-template-columns: 1fr; }
+      .journey-preview { grid-template-columns: 1fr; }
+      .event-timeline li { grid-template-columns: 1fr; gap: .1rem; }
+      .practice-facts,
+      .refilm-confirmations { grid-template-columns: 1fr; }
+      [data-report-block] { padding: 1rem; }
+      h1 { font-size: clamp(1.8rem, 9vw, 2.35rem); }
+      .focused-evidence { margin-inline: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+    @media print {
+      @page { margin: 12mm 11mm 14mm; }
+      html { scroll-behavior: auto; }
+      body {
+        background: white;
+        color: var(--ink);
+        font-size: 10pt;
+      }
+      .sample-banner,
+      .report-header,
+      main { width: 100%; }
+      .sample-banner { box-shadow: none; }
+      [data-report-block] {
+        box-shadow: none;
+        border-radius: 0;
+      }
+      .screen-only,
+      .report-actions,
+      .report-control,
+      video { display: none !important; }
+      .print-only { display: block !important; }
+      details > summary { display: none !important; }
+      details:not([open]) > :not(summary) { display: block !important; }
+      details::details-content {
+        content-visibility: visible !important;
+        height: auto !important;
+      }
+      .table-scroll { overflow: visible; }
+      table { width: 100%; font-size: 8pt; }
+      tr, img, figure, .phase-card, .practice-card, .refilm-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      h1, h2, h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+      }
+    }
+  </style>
+</head>
+<body>
+  {% if sample_banner %}
+  <aside class="sample-banner" aria-label="Sample report">
+    <span>{{ sample_banner.text }}</span>
+    <a class="screen-only report-control" href="{{ sample_banner.cta_url }}">{{ sample_banner.cta_label }}</a>
+  </aside>
+  {% endif %}
+  <a class="skip-link report-control" href="#report-main">Skip to report</a>
+  <header class="report-header">
+    <span class="report-brand">{{ brand.name | upper }}</span>
+    <dl class="context-list" aria-label="Swing context">
+      {% if view.context.club_label %}
+      <div><dt>Club</dt><dd>{{ view.context.club_label }}</dd></div>
+      {% endif %}
+      <div><dt>Hand</dt><dd>{{ view.context.hand | title }}</dd></div>
+      <div><dt>Camera</dt><dd>{{ view.context.angle_label }}</dd></div>
+      <div><dt>Detected</dt><dd>{{ view.context.detected_swings }}</dd></div>
+      <div>
+        <dt>Priority readable</dt>
+        <dd>{{ view.context.priority_readable_swings }}</dd>
+      </div>
+      <div><dt>Trust</dt><dd>{{ view.trust.label }}</dd></div>
+    </dl>
+  </header>
+  <main id="report-main">
+    {% if view.outcome == "coaching_ready" %}
+    {% set evidence = view.visual_evidence %}
+    {% set measurement = evidence.supporting_measurement %}
+    <section class="next-move" data-report-block="next-move"
+             data-canonical="priority" aria-labelledby="report-title">
+      <p class="eyebrow">{{ view.next_move.eyebrow }}</p>
+      {% if view.next_move.mode == "protect" %}
+      <p class="strength-label">Strength to protect</p>
+      {% endif %}
+      <h1 id="report-title" data-field="priority">{{ view.next_move.title }}</h1>
+      <p class="observation" data-field="observation">{{ view.next_move.observation }}</p>
+      <p class="coach-cue" data-field="cue">
+        <strong>Coach cue:</strong> {{ view.next_move.cue }}
+      </p>
+      {% if measurement and view.next_move.measurement_detail_id == measurement.id %}
+      <p><a class="report-control" href="#{{ measurement.id }}">See measurement</a></p>
+      {% endif %}
+      <ol class="journey-preview" aria-label="Your report journey">
+        <li><a class="report-control" href="#understand">Understand</a></li>
+        <li><a class="report-control" href="#practice">Practice</a></li>
+        <li><a class="report-control" href="#refilm">Re-film</a></li>
+      </ol>
+    </section>
+
+    <section id="understand" data-report-block="understand"
+             aria-labelledby="understand-heading">
+      <p class="step-label">1 · Understand</p>
+      <h2 id="understand-heading">See it in your swing</h2>
+      {% if evidence.state == "rendered" %}
+      <figure class="focused-evidence">
+        <img src="{{ media_path(evidence.media_key) }}" alt="{{ evidence.alt_text }}">
+        <figcaption>
+          <p class="evidence-meta">
+            Swing {{ evidence.swing }} ·
+            {{ evidence.phase | replace("_", " ") | title }} ·
+            {{ phase_method_labels[evidence.phase_method] }}
+          </p>
+          <p><strong>Observed:</strong> {{ evidence.observed_label }}</p>
+          {% if evidence.reference_label %}
+          <p><strong>Starting reference:</strong> {{ evidence.reference_label }}</p>
+          {% endif %}
+          {% if evidence.boundary_label %}
+          <p><strong>Coaching boundary:</strong> {{ evidence.boundary_label }}</p>
+          {% endif %}
+          <p data-evidence-tracking="{{ evidence.tracking_state }}">
+            <strong>Tracking:</strong>
+            {{ evidence.tracking_state | replace("_", " ") | title }}
+          </p>
+          <p>{{ evidence.observation }}</p>
+        </figcaption>
+      </figure>
+      {% else %}
+      <article class="visual-unavailable" role="note">
+        <h3>Visual unavailable</h3>
+        <p><strong>Observed:</strong> {{ evidence.observed_label }}</p>
+        {% if evidence.reference_label %}
+        <p><strong>Starting reference:</strong> {{ evidence.reference_label }}</p>
+        {% endif %}
+        {% if evidence.boundary_label %}
+        <p><strong>Coaching boundary:</strong> {{ evidence.boundary_label }}</p>
+        {% endif %}
+        <p>{{ evidence.observation }}</p>
+        <p><strong>Phase selected by:</strong> {{ phase_method_labels[evidence.phase_method] }}</p>
+        <p data-evidence-tracking="{{ evidence.tracking_state }}">
+          <strong>Tracking:</strong>
+          {{ evidence.tracking_state | replace("_", " ") | title }}
+        </p>
+        {% if evidence.render_reasons %}
+        <ul aria-label="Why the visual is unavailable">
+          {% for reason in evidence.render_reasons %}
+          <li>{{ reason | replace("_", " ") | capitalize }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
+        {% if view.trust.explanation %}<p>{{ view.trust.explanation }}</p>{% endif %}
+      </article>
+      {% endif %}
+
+      <p class="evidence-boundary">
+        Observed and reference marks are 2D phone-video evidence, not a personalized ideal pose.
+      </p>
+
+      <dl class="evidence-counts" aria-label="Evidence coverage summary">
+        <div><dt>Detected:</dt> <dd data-evidence-count="detected">{{ view.context.detected_swings }}</dd></div>
+        <div><dt>Readable:</dt> <dd data-evidence-count="readable">{{ evidence.readable_swings }}</dd></div>
+        {% if evidence.triggered_swings is not none %}
+        <div><dt>Triggered:</dt> <dd data-evidence-count="triggered">{{ evidence.triggered_swings }}</dd></div>
+        {% endif %}
+      </dl>
+
+      {% if evidence.events %}
+      <ol class="event-timeline" aria-label="Detected swing events">
+        {% for event in evidence.events %}
+        <li data-event="{{ event.event }}">
+          <strong>{{ event.label }}</strong>
+          <time data-event-timestamp="{{ event.timestamp_ms }}">{{ event.timestamp_ms }} ms</time>
+          <span>{{ phase_method_labels[event.method] }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+      {% endif %}
+
+      {% if measurement %}
+      <details class="measurement-detail" id="{{ measurement.id }}">
+        <summary>See measurement</summary>
+        <p><strong>{{ measurement.label }}:</strong> {{ measurement.plain_value }}</p>
+        {% if measurement.benchmark_label %}<p>{{ measurement.benchmark_label }}</p>{% endif %}
+        <p>{{ measurement.explanation }}</p>
+        {% if measurement.limitation %}<p>{{ measurement.limitation }}</p>{% endif %}
+      </details>
+      {% endif %}
+
+      <div class="phase-list" aria-label="Whole-swing breakdown">
+        {% for phase in view.phases %}
+        <details class="phase-card phase-card--{{ phase.status }}"
+                 data-phase-id="{{ phase.id }}"
+                 {% if phase.expanded_by_default %}open{% endif %}>
+          <summary>
+            <span>{{ phase.label }}</span>
+            <span class="status">
+              <span aria-hidden="true">{{ status_icons[phase.status] }}</span>
+              {{ phase.status_label }}
+            </span>
+          </summary>
+          <p>{{ phase.summary }}</p>
+          <p>{{ phase.readable_swings }} readable swing{% if phase.readable_swings != 1 %}s{% endif %}</p>
+          {% if phase.unavailable_reasons %}
+          <ul aria-label="Why this phase was not measured">
+            {% for reason in phase.unavailable_reasons %}
+            <li>{{ reason | replace("_", " ") | capitalize }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+        </details>
+        {% endfor %}
+      </div>
+
+      <details class="video-limitations">
+        <summary>What this video can measure</summary>
+        <ul>
+          {% for limitation in depth.limitations %}<li>{{ limitation }}</li>{% endfor %}
+        </ul>
+      </details>
+    </section>
+
+    <section id="practice" data-report-block="practice"
+             data-canonical="practice" aria-labelledby="practice-heading">
+      <p class="step-label">2 · Practice</p>
+      <h2 id="practice-heading" data-field="drill-name">{{ view.practice.name }}</h2>
+      <p>{{ view.practice.aim }}</p>
+      <ol class="practice-summary">
+        {% for step in view.practice.summary_steps %}<li>{{ step }}</li>{% endfor %}
+      </ol>
+      <dl class="practice-facts">
+        <dt>Setup</dt><dd>{{ view.practice.setup }}</dd>
+        <dt>Feel cue</dt><dd>{{ view.practice.feel_cue }}</dd>
+        <dt>Dosage</dt><dd>{{ view.practice.dosage }}</dd>
+        {% if view.practice.equipment %}<dt>Equipment</dt><dd>{{ view.practice.equipment }}</dd>{% endif %}
+      </dl>
+      {% if view.practice.illustration_media_key %}
+      <figure class="drill-illustration">
+        <img src="{{ media_path(view.practice.illustration_media_key) }}"
+             alt="Instructional illustration — not your measured pose">
+        <figcaption>Instructional illustration — not your measured pose</figcaption>
+      </figure>
+      {% endif %}
+      {% if view.practice.full_steps != view.practice.summary_steps %}
+      <details class="practice-detail">
+        <summary>Full drill steps</summary>
+        <ol>{% for step in view.practice.full_steps %}<li>{{ step }}</li>{% endfor %}</ol>
+      </details>
+      {% endif %}
+      {% set alternative_section = optional_by_id.get("alternative_drills") %}
+      {% if alternative_section and (alternative_section.available or alternative_section.locked) %}
+      <details class="alternatives" data-optional-section="alternative_drills">
+        <summary>{{ alternative_section.label }} · {{ alternative_section.item_count }}</summary>
+        {% if alternative_section.locked %}
+        <p>This section is locked.</p>
+        {% else %}
+        {% for alternative in view.practice.alternatives %}
+        <article>
+          <h3>{{ alternative.name }}</h3>
+          <p>{{ alternative.aim }}</p>
+        </article>
+        {% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+      <p><a class="report-control" href="#refilm">Ready to re-film</a></p>
+    </section>
+
+    <section id="refilm" data-report-block="refilm"
+             data-canonical="refilm" aria-labelledby="refilm-heading">
+      <p class="step-label">3 · Re-film</p>
+      <h2 id="refilm-heading">Repeat the same test</h2>
+      <ol class="refilm-checklist">
+        {% for item in view.refilm.checklist %}<li>{{ item }}</li>{% endfor %}
+      </ol>
+      <h3>Pass mark</h3>
+      <p data-field="pass-mark">{{ view.refilm.target.text }}</p>
+      <dl class="refilm-confirmations" aria-label="Re-film controls">
+        <dt>Same club</dt><dd>{{ "Confirmed" if view.refilm.preserves_club else "Use the club named above" }}</dd>
+        <dt>Same hand</dt><dd>{{ "Confirmed" if view.refilm.preserves_hand else "Match the original hand" }}</dd>
+        <dt>Same camera angle</dt><dd>{{ "Confirmed" if view.refilm.preserves_angle else "Match the original angle" }}</dd>
+        <dt>Same camera height</dt><dd>{{ "Confirmed" if view.refilm.preserves_camera_height else "Match the original height" }}</dd>
+        <dt>Same framing</dt><dd>{{ "Confirmed" if view.refilm.preserves_framing else "Match the original framing" }}</dd>
+        <dt>Same effort</dt><dd>{{ "Confirmed" if view.refilm.preserves_effort else "Match the original effort" }}</dd>
+      </dl>
+      {% if navigation.app_url %}
+      <a class="primary-action report-control" href="{{ navigation.app_url }}">{{ view.refilm.primary_action_label }}</a>
+      {% else %}
+      <p class="primary-action" role="note" data-offline-action="true">{{ view.refilm.primary_action_label }}</p>
+      {% endif %}
+    </section>
+
+    <section class="optional-depth" aria-label="More report detail">
+      {% set section = optional_by_id.get("every_swing") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="every_swing">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}
+        <p>This section is locked.</p>
+        {% else %}
+        {% for swing in depth.swings %}
+        <article>
+          <h3>{{ swing.summary }}</h3>
+          {% if swing.key_positions_media_key %}
+          <img src="{{ media_path(swing.key_positions_media_key) }}" alt="{{ swing.key_positions_alt_text }}">
+          {% endif %}
+          {% if swing.notes %}<ul>{% for note in swing.notes %}<li>{{ note }}</li>{% endfor %}</ul>{% endif %}
+          {% if swing.measurements %}
+          <dl>{% for item in swing.measurements %}<dt>{{ item.label }}</dt><dd>{{ item.value }}</dd>{% endfor %}</dl>
+          {% endif %}
+        </article>
+        {% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("replay") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="replay">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}
+          {% for swing in depth.swings %}
+            {% if swing.locked_replay_explanation %}<p>{{ swing.locked_replay_explanation }}</p>{% endif %}
+          {% endfor %}
+        {% else %}
+          {% for swing in depth.swings %}
+          <article>
+            <h3>{{ swing.summary }}</h3>
+            {% if swing.replay_locked %}
+            <p>{{ swing.locked_replay_explanation }}</p>
+            {% else %}
+              {% if swing.slow_motion_media_key %}
+              <div class="screen-only">
+                <video controls preload="metadata"
+                       src="{{ media_path(swing.slow_motion_media_key) }}"
+                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                       aria-label="{{ swing.slow_motion_caption }}"></video>
+                <p>{{ swing.slow_motion_caption }}</p>
+              </div>
+              {% if swing.video_poster_media_key %}
+              <figure class="print-only playback-print">
+                <img src="{{ media_path(swing.video_poster_media_key) }}"
+                     alt="{{ swing.video_poster_alt_text }}">
+                <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
+              </figure>
+              {% else %}
+              <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
+              {% endif %}
+              {% endif %}
+              {% if swing.coach_replay_media_key %}
+              <div class="screen-only">
+                <video controls preload="metadata"
+                       src="{{ media_path(swing.coach_replay_media_key) }}"
+                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                       aria-label="{{ swing.coach_replay_caption }}"></video>
+                <p>{{ swing.coach_replay_caption }}</p>
+              </div>
+              {% if swing.video_poster_media_key %}
+              <figure class="print-only playback-print">
+                <img src="{{ media_path(swing.video_poster_media_key) }}"
+                     alt="{{ swing.video_poster_alt_text }}">
+                <figcaption>{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</figcaption>
+              </figure>
+              {% else %}
+              <p class="print-only">{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</p>
+              {% endif %}
+              {% endif %}
+            {% endif %}
+          </article>
+          {% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("secondary_findings") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="secondary_findings">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        {% for finding in depth.secondary_findings %}
+        <article><h3>{{ finding.title }}</h3><p>{{ finding.summary }}</p><p>{{ finding.why }}</p><p><strong>Cue:</strong> {{ finding.cue }}</p></article>
+        {% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("more_strengths") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="more_strengths">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        {% for strength in depth.strengths %}<article><h3>{{ strength.title }}</h3><p>{{ strength.summary }}</p></article>{% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("measurements") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="measurements">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        <div class="table-scroll" role="region" aria-label="Session measurements" tabindex="0">
+          <table>
+            <caption>Session details and measurements</caption>
+            <thead><tr><th scope="col">Item</th><th scope="col">Value</th></tr></thead>
+            <tbody>
+              {% for item in depth.session_details %}<tr><th scope="row">{{ item.label }}</th><td>{{ item.value }}</td></tr>{% endfor %}
+              {% for item in depth.measurements %}<tr><th scope="row">{{ item.label }}</th><td>{{ item.value }}</td></tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% for phase in view.phases %}{% for detail in phase.measurements %}
+        <article><h3>{{ detail.label }}</h3><p>{{ detail.plain_value }}</p><p>{{ detail.explanation }}</p><p>{{ detail.limitation }}</p></article>
+        {% endfor %}{% endfor %}
+        <ul>{% for limitation in depth.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("glossary") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="glossary">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        <dl>{% for entry in depth.glossary %}<dt>{{ entry.term }}</dt><dd>{{ entry.definition }}</dd>{% endfor %}</dl>
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("gear") %}
+      {% if section and section.available and not section.locked %}
+      <details class="optional-card" data-optional-section="gear">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        {% for item in depth.gear %}<article><h3>{{ item.label }}</h3><p>{{ item.description }}</p><a class="report-control" href="{{ item.url }}">View gear</a></article>{% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+    </section>
+    {% else %}
+    <section class="capture-recovery" data-report-block="capture-recovery" aria-labelledby="report-title">
+      <p class="eyebrow">{{ view.trust.label }}</p>
+      <h1 id="report-title">{{ view.capture_guidance.reason_label }}</h1>
+      <p>{{ view.capture_guidance.explanation }}</p>
+      <div class="capture-correction">
+        <h2>Change this for the next video</h2>
+        <p>{{ view.capture_guidance.correction }}</p>
+      </div>
+      <section aria-labelledby="capture-checklist">
+        <h2 id="capture-checklist">Quick filming checklist</h2>
+        <ul>{% for item in view.capture_guidance.checklist %}<li>{{ item }}</li>{% endfor %}</ul>
+      </section>
+      {% for swing in depth.swings %}
+        {% if swing.slow_motion_media_key and swing.slow_motion_media_key in view.capture_guidance.safe_media_keys %}
+        <figure class="capture-playback screen-only" data-capture-playback="{{ swing.slow_motion_media_key }}">
+          <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}"
+                 {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                 aria-label="{{ swing.video_poster_alt_text or swing.slow_motion_caption }}"></video>
+          <figcaption>{{ swing.slow_motion_caption }}</figcaption>
+        </figure>
+        {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}
+        <figure class="capture-playback print-only">
+          <img src="{{ media_path(swing.video_poster_media_key) }}"
+               alt="{{ swing.video_poster_alt_text }}">
+          <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
+        </figure>
+        {% else %}
+        <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
+        {% endif %}
+        {% endif %}
+      {% endfor %}
+      <div class="capture-actions">
+        {% if navigation.app_url %}
+        <a class="primary-action report-control" data-capture-action="primary" href="{{ navigation.app_url }}">{{ view.capture_guidance.primary_action_label }}</a>
+        {% if view.capture_guidance.secondary_action_label %}<a class="report-control" data-capture-action="secondary" href="{{ navigation.app_url }}">{{ view.capture_guidance.secondary_action_label }}</a>{% endif %}
+        {% else %}
+        <p role="note">{{ view.capture_guidance.primary_action_label }}</p>
+        {% endif %}
+      </div>
+    </section>
+    {% endif %}
+  </main>
+</body>
+</html>

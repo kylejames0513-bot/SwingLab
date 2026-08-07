@@ -70,6 +70,16 @@ DEFAULTS: dict[str, Any] = {
         # "balance" (in shoulder widths; a step, well above pose jitter).
         "finish_balance_warn_sw": 0.15,
     },
+    "report": {
+        # New jobs opt into the structured guided presentation only when the
+        # operator supplies the literal boolean True. Existing and malformed
+        # configuration stays on the legacy presentation for safe rollback.
+        "guided_presentation_enabled": False,
+        # The public synthetic sample has its own rollout boundary. Only the
+        # literal boolean True selects the guided sample; false or malformed
+        # values keep the established legacy sample for immediate rollback.
+        "guided_sample_enabled": False,
+    },
     "proof_cycle": {
         # A deliberately separate product policy from the coaching thresholds:
         # coaching decides what to work on; Proof Cycle decides when a matched
@@ -199,7 +209,7 @@ DEFAULTS: dict[str, Any] = {
         "pro_per_month": 0,
         # Coach-replay Pro gate. When true AND accounts are on, the annotated
         # replay (replay_sN.mp4) is rendered only for jobs whose owner has
-        # Pro at analysis time; free users' reports show an honest locked
+        # Pro when the job is created; free users' reports show an honest locked
         # note (with a /pricing link) in the replay slot instead, and the
         # render is skipped entirely — the CPU is saved too. Open instances
         # (require_account false) and CLI runs are never gated. Bare-code
@@ -341,6 +351,10 @@ class Config:
     @property
     def coaching(self) -> dict[str, Any]:
         return self.data["coaching"]
+
+    @property
+    def report(self) -> dict[str, Any]:
+        return self.data["report"]
 
     @property
     def proof_cycle(self) -> dict[str, Any]:

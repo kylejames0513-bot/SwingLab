@@ -104,6 +104,48 @@ def draw_dashed_vline(
         y += 2 * dash
 
 
+def draw_marker(draw: ImageDraw.ImageDraw, point: tuple[float, float], color: str, radius: int = 8) -> None:
+    """Draw one measured landmark marker; callers never imply an ideal pose."""
+    x, y = point
+    draw.ellipse((x - radius, y - radius, x + radius, y + radius), fill=color)
+
+
+def draw_dashed_line(draw: ImageDraw.ImageDraw, start: tuple[float, float], end: tuple[float, float], color: str, dash: int = 12, line_w: int = 3) -> None:
+    """Draw a configured, explicitly labelled boundary."""
+    a, b = np.array(start, dtype=float), np.array(end, dtype=float)
+    length = float(np.linalg.norm(b - a))
+    if length == 0:
+        return
+    unit = (b - a) / length
+    for offset in range(0, int(length), dash * 2):
+        p0 = a + unit * offset
+        p1 = a + unit * min(offset + dash, length)
+        draw.line([tuple(p0), tuple(p1)], fill=color, width=line_w)
+
+
+def draw_displacement_arrow(draw: ImageDraw.ImageDraw, start: tuple[float, float], end: tuple[float, float], color: str) -> None:
+    draw.line([start, end], fill=color, width=3)
+    draw.polygon([end, (end[0] - 8, end[1] - 5), (end[0] - 8, end[1] + 5)], fill=color)
+
+
+def draw_angle_arc(draw: ImageDraw.ImageDraw, center: tuple[float, float], start: float, end: float, radius: float, color: str) -> None:
+    draw.arc((center[0] - radius, center[1] - radius, center[0] + radius, center[1] + radius), start, end, fill=color, width=3)
+
+
+def draw_labeled_timeline(draw: ImageDraw.ImageDraw, events: list[tuple[str, float]], *, y: int, color: str, font: ImageFont.ImageFont) -> None:
+    """Timing-only primitive; it deliberately accepts no body landmarks."""
+    if not events:
+        return
+    left, right = 50, 750
+    draw.line((left, y, right, y), fill=color, width=3)
+    first, last = events[0][1], events[-1][1]
+    span = max(last - first, 1)
+    for label, timestamp in events:
+        x = left + (timestamp - first) / span * (right - left)
+        draw.line((x, y - 14, x, y + 14), fill=color, width=3)
+        draw.text((x - 25, y + 20), label, fill=color, font=font)
+
+
 def draw_gap_arrow(
     draw: ImageDraw.ImageDraw,
     y: float,

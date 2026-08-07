@@ -12,27 +12,21 @@ from typing import Any
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from . import __version__, diagrams
-from .caddie_brief import (
-    build_caddie_brief,
-    quality_warning,
-    scope_metrics_for_angle,
-)
 from .clubs import club_label
 from .levels import level_label, level_note
-from .coaching import issue_cards as make_issue_cards
 from .coaching import priority_rule_version
-from .coaching import praise_notes as make_praise_notes
-from .coaching import session_flags
 from .config import Config
-from .drills import gear_shop_url, practice_plan
+from .drills import gear_shop_url
 from .explainers import build_explainers
 from .ffmpeg import VideoInfo
-from .metrics import ANGLE_DTL, ANGLE_FACE_ON, session_stats
+from .metrics import ANGLE_DTL, ANGLE_FACE_ON, SwingMetrics
 from .report_insights import build_swing_breakdown
+from .report_presenter import build_report_document, prepare_report_input
+from .report_view import LEGACY_REPORT_PRESENTATION_VERSION
 
 
 REPORT_FORMAT_VERSION = "caddie-brief-v1"
-REPORT_PRESENTATION_VERSION = "premium-coach-v2"
+REPORT_PRESENTATION_VERSION = LEGACY_REPORT_PRESENTATION_VERSION
 REPORT_OUTCOME_COACHING = "coaching_ready"
 REPORT_OUTCOME_CAPTURE = "capture_only"
 PRIORITY_RULE_META_NAME = "caddieinsight-coaching-priority-rule"
@@ -107,6 +101,14 @@ def write_metrics_json(
     cfg: Config,
     meta: dict | None = None,
 ) -> Path:
+    def metrics_payload(swing: dict) -> dict:
+        metrics = swing["metrics"]
+        if isinstance(metrics, SwingMetrics):
+            return metrics.as_dict()
+        if isinstance(metrics, dict):
+            return dict(metrics)
+        raise TypeError("Every swing must contain SwingMetrics or a metrics mapping")
+
     payload = {
         "generator": {"name": cfg.brand["name"], "swinglab_version": __version__},
         "video": {
@@ -123,13 +125,15 @@ def write_metrics_json(
         **({"meta": meta} if meta else {}),
         "swings": [
             {
-                "metrics": s["metrics"].as_dict(),
+                "metrics": metrics_payload(s),
                 "notes": s["notes"],
                 "deliverables": {
-                    "strip": s["strip"],
-                    "overlay": s["overlay"],
-                    "slowmo": s["slowmo"],
-                    # only when present — older consumers see no null churn
+                    # Each renderer is independent in guided bundles.  Legacy
+                    # calls that supply the established three values retain
+                    # their exact insertion order and serialized bytes.
+                    **({"strip": s["strip"]} if s.get("strip") else {}),
+                    **({"overlay": s["overlay"]} if s.get("overlay") else {}),
+                    **({"slowmo": s["slowmo"]} if s.get("slowmo") else {}),
                     **({"replay": s["replay"]} if s.get("replay") else {}),
                 },
             }
@@ -172,35 +176,21 @@ def write_report_html(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=select_autoescape(["html", "j2"]),
     )
-    all_metrics = scope_metrics_for_angle(
-        [s["metrics"] for s in swings], angle
+    source = prepare_report_input(
+        video, swings, stats, session_notes, hand, cfg, angle=angle, club=club,
+        level=level, analysis_fps=analysis_fps, replay_locked=replay_locked,
     )
-    coaching_stats = (
-        session_stats(all_metrics) if angle == ANGLE_DTL else stats
-    )
+    # Establish the typed boundary even while the legacy Jinja adapter remains
+    # the shipping renderer. The next presentation workstream consumes it.
+    build_report_document(source, cfg)
+    all_metrics = [SwingMetrics(**dict(item.metrics)) for item in source.swings]
+    coaching_stats = source.stats
     render_swings = [
         {**swing, "metrics": metric}
         for swing, metric in zip(swings, all_metrics)
     ]
-    quality_notes = [
-        note for note in session_notes if isinstance(note, str)
-    ]
-    quality_notes.extend(
-        note
-        for swing in swings
-        for note in (swing.get("notes") or [])
-        if isinstance(note, str)
-    )
     selected_priority_rule = priority_rule_version(cfg)
-    caddie_brief = build_caddie_brief(
-        all_metrics,
-        coaching_stats,
-        cfg,
-        warning=quality_warning(angle, quality_notes),
-        angle=angle,
-        club=club,
-        rule_version=selected_priority_rule,
-    )
+    caddie_brief = source.brief
     coaching_allowed = bool(
         caddie_brief is not None and not caddie_brief.refilm_required
     )
@@ -208,17 +198,7 @@ def write_report_html(
     # the per-swing values against the flag's benchmark (self-contained HTML,
     # no external assets). Already sorted highest-severity first — the report
     # renders the first one full-size as "Start here" and defers the rest.
-    cards = (
-        make_issue_cards(
-            all_metrics,
-            coaching_stats,
-            cfg,
-            club=club,
-            rule_version=selected_priority_rule,
-        )
-        if coaching_allowed
-        else []
-    )
+    cards = list(source.issues) if coaching_allowed else []
     if not coaching_allowed:
         flags = []
     elif selected_priority_rule == 2:
@@ -228,14 +208,14 @@ def write_report_html(
     else:
         # The compatibility floor must remain inert: rule 1 preserves the
         # established raw flag order used by historical practice plans.
-        flags = session_flags(all_metrics, coaching_stats, cfg)
+        flags = [block["flag"] for block in source.practice_blocks]
     issue_ctx = [
         {**dataclasses.asdict(c),
          "sparkline": diagrams.sparkline(
              c.per_swing, c.benchmark_value, cfg.brand, c.worse_direction)}
         for c in cards
     ]
-    plan = practice_plan(flags, cfg) if coaching_allowed else []
+    plan = [dict(block) for block in source.practice_blocks] if coaching_allowed else []
     limited_baseline = False
     if (
         coaching_allowed
@@ -297,7 +277,7 @@ def write_report_html(
         # "What's working": every metric measured AND in range — [] hides the
         # strip entirely (never fake praise).
         praise_notes=(
-            make_praise_notes(all_metrics, cfg, coaching_stats)
+            [card.text for card in source.strengths]
             if coaching_allowed
             else []
         ),

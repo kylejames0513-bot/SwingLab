@@ -9,6 +9,17 @@ from pathlib import Path
 import pytest
 
 from swinglab.config import Config
+from swinglab.pipeline import SessionResult
+from swinglab.proof_cycle_artifact import (
+    build_proof_cycle_artifact,
+    write_proof_cycle_artifact,
+)
+from swinglab.report_bundle import (
+    begin_report_bundle,
+    build_report_bundle,
+    publish_report_bundle,
+)
+from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
 from swinglab.web import jobs as jobs_module
 from swinglab.web.jobs import (
     DONE,
@@ -20,6 +31,11 @@ from swinglab.web.jobs import (
     Job,
     JobManager,
 )
+from tests.report_bundle_fixtures import (
+    add_optional_media,
+    guided_bundle_inputs,
+    write_test_report_html,
+)
 
 
 def terminal_job(
@@ -28,10 +44,49 @@ def terminal_job(
     *,
     status: str = DONE,
     capture_only: bool = False,
+    structured: bool = False,
 ) -> Job:
-    job = manager.create_session(source_name="swing.mov", user_id=user_id)
+    if structured:
+        manager._guided_html_writer = write_test_report_html
+    job = manager.create_session(
+        source_name="swing.mov",
+        user_id=user_id,
+        report_presentation_version=(
+            GUIDED_REPORT_PRESENTATION_VERSION if structured else None
+        ),
+    )
     (job.session_dir / "source.mov").write_bytes(b"video")
-    if status == DONE:
+    if status == DONE and structured:
+        job.status = PROCESSING
+        manager._save(job)
+        analysis_dir = job.session_dir / "out" / "source"
+        analysis_dir.mkdir(parents=True)
+        attempt = begin_report_bundle(analysis_dir, attempt_id="a" * 32)
+        inputs = guided_bundle_inputs(
+            job.session_dir, swings=[] if capture_only else None
+        )
+        if not capture_only:
+            add_optional_media(attempt, inputs, strip=True, replay=True)
+        published = publish_report_bundle(build_report_bundle(attempt, **inputs))
+        manager._complete_job(
+            job,
+            SessionResult(
+                session_dir=analysis_dir,
+                report_path=published.report_path,
+                metrics_path=published.root / "metrics.json",
+                video=inputs["video"],
+                report_view_path=published.report_view_path,
+                manifest_path=published.manifest_path,
+                checksums_path=published.checksums_path,
+                structured_report=True,
+            ),
+        )
+        write_proof_cycle_artifact(
+            job, build_proof_cycle_artifact(job, [], Config())
+        )
+        abandoned = begin_report_bundle(analysis_dir, attempt_id="b" * 32)
+        (abandoned.staging_dir / "abandoned.tmp").write_bytes(b"abandoned")
+    elif status == DONE:
         output = job.session_dir / "out"
         output.mkdir()
         if capture_only:
@@ -46,9 +101,19 @@ def terminal_job(
             report = "<html>legacy coaching report</html>"
         (output / "report.html").write_text(report, encoding="utf-8")
         job.report_rel = "out/report.html"
-    job.status = status
-    manager._save(job)
+    if not (status == DONE and structured):
+        job.status = status
+        manager._save(job)
     return job
+
+
+def structured_tree_paths(job: Job) -> tuple[Path, Path, Path, Path]:
+    report = job.session_dir / str(job.report_rel)
+    attempts = tuple((job.session_dir / "out" / "source").glob(".report-attempt-*"))
+    assert len(attempts) == 1
+    return report.parent, attempts[0], job.session_dir / "proof-cycle.json", (
+        job.session_dir / "source.mov"
+    )
 
 
 def test_reset_is_exactly_user_scoped_and_callback_shares_transaction(tmp_path):
@@ -158,9 +223,9 @@ def test_stale_upload_epoch_conflicts_before_directory_or_row_creation(tmp_path)
 
 def test_quota_and_refilm_courtesy_survive_repeated_resets(tmp_path):
     manager = JobManager(tmp_path / "sessions", Config())
+    terminal_job(manager, "alice", capture_only=True, structured=True)
     terminal_job(manager, "alice", capture_only=True)
-    terminal_job(manager, "alice", capture_only=True)
-    terminal_job(manager, "alice")
+    terminal_job(manager, "alice", structured=True)
     assert manager.refilm_rejections_this_month("alice") == 2
     assert manager.usage_this_month("alice") == 2
 
@@ -180,6 +245,32 @@ def test_quota_and_refilm_courtesy_survive_repeated_resets(tmp_path):
         ).fetchall()
     assert len(receipts) == 1
     assert "alice" not in tuple(receipts[0])
+
+
+def test_structured_reset_renames_and_deletes_one_complete_owned_session_tree(
+    tmp_path, monkeypatch
+):
+    manager = JobManager(tmp_path / "sessions", Config())
+    job = terminal_job(manager, "alice", structured=True)
+    owned = structured_tree_paths(job)
+    assert all(path.exists() for path in owned)
+    original_replace = Path.replace
+    replacements: list[tuple[Path, Path]] = []
+
+    def record_replace(path, target):
+        replacements.append((Path(path), Path(target)))
+        return original_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", record_replace)
+    summary = manager.reset_user_history("alice")
+
+    assert summary.deleted_jobs == 1
+    assert not summary.cleanup_pending
+    assert manager.get(job.id) is None
+    assert not job.session_dir.exists()
+    moved_sources = [source for source, _ in replacements]
+    assert moved_sources == [job.session_dir]
+    assert all(not path.exists() for path in owned)
 
 
 def test_rename_failure_restores_every_directory_and_aborts_journal(
@@ -245,7 +336,8 @@ def test_callback_failure_rolls_back_database_and_restores_artifacts(tmp_path):
 def test_post_commit_cleanup_is_retried_on_restart(tmp_path, monkeypatch):
     sessions = tmp_path / "sessions"
     manager = JobManager(sessions, Config())
-    job = terminal_job(manager, "alice")
+    job = terminal_job(manager, "alice", structured=True)
+    owned = structured_tree_paths(job)
     original_rmtree = jobs_module.shutil.rmtree
 
     def fail_history_trash(path, *args, **kwargs):
@@ -261,6 +353,12 @@ def test_post_commit_cleanup_is_retried_on_restart(tmp_path, monkeypatch):
     assert manager.get(job.id) is None
     assert manager.usage_this_month("alice") == 1
     assert manager.history_cleanup_pending_count() == 1
+    staged_roots = list((sessions / ".history-trash").glob(f"*/{job.id}"))
+    assert len(staged_roots) == 1
+    staged = staged_roots[0]
+    assert all(
+        (staged / path.relative_to(job.session_dir)).exists() for path in owned
+    )
 
     monkeypatch.setattr(jobs_module.shutil, "rmtree", original_rmtree)
     restarted = JobManager(sessions, Config())
@@ -268,6 +366,7 @@ def test_post_commit_cleanup_is_retried_on_restart(tmp_path, monkeypatch):
     assert restarted.get(job.id) is None
     assert restarted.usage_this_month("alice") == 1
     assert not (sessions / ".history-trash").exists()
+    assert all(not path.exists() for path in owned)
 
 
 def test_prepare_journal_failure_leaves_connection_and_history_untouched(tmp_path):
@@ -322,7 +421,8 @@ def test_cleaned_committed_journal_is_retried_after_database_failure(tmp_path):
 def test_committed_recovery_purges_artifact_if_rename_was_lost(tmp_path):
     sessions = tmp_path / "sessions"
     manager = JobManager(sessions, Config())
-    job = terminal_job(manager, "alice")
+    job = terminal_job(manager, "alice", structured=True)
+    owned = structured_tree_paths(job)
     with manager._lock:
         row = manager._conn.execute(
             "SELECT * FROM jobs WHERE id = ?", (job.id,)
@@ -349,12 +449,14 @@ def test_committed_recovery_purges_artifact_if_rename_was_lost(tmp_path):
     assert restarted.history_cleanup_pending_count() == 0
     assert not job.session_dir.exists()
     assert not (sessions / ".history-trash").exists()
+    assert all(not path.exists() for path in owned)
 
 
 def test_prepared_operation_restores_artifacts_on_restart(tmp_path):
     sessions = tmp_path / "sessions"
     manager = JobManager(sessions, Config())
-    job = terminal_job(manager, "alice")
+    job = terminal_job(manager, "alice", structured=True)
+    owned = structured_tree_paths(job)
     with manager._lock:
         row = manager._conn.execute(
             "SELECT * FROM jobs WHERE id = ?", (job.id,)
@@ -368,7 +470,7 @@ def test_prepared_operation_restores_artifacts_on_restart(tmp_path):
     restarted = JobManager(sessions, Config())
     assert restarted.history_cleanup_pending_count() == 0
     assert restarted.get(job.id) is not None
-    assert (job.session_dir / "source.mov").is_file()
+    assert all(path.exists() for path in owned)
 
 
 def test_unresolved_prepared_operation_blocks_retry_without_orphaning_history(
@@ -376,7 +478,8 @@ def test_unresolved_prepared_operation_blocks_retry_without_orphaning_history(
 ):
     sessions = tmp_path / "sessions"
     manager = JobManager(sessions, Config())
-    job = terminal_job(manager, "alice")
+    job = terminal_job(manager, "alice", structured=True)
+    owned = structured_tree_paths(job)
     with manager._lock:
         row = manager._conn.execute(
             "SELECT * FROM jobs WHERE id = ?", (job.id,)
@@ -421,7 +524,7 @@ def test_unresolved_prepared_operation_blocks_retry_without_orphaning_history(
 
     assert manager.history_cleanup_pending_count() == 0
     assert manager.get(job.id) is not None
-    assert (job.session_dir / "out" / "report.html").is_file()
+    assert all(path.exists() for path in owned)
     assert not (sessions / ".history-trash").exists()
 
 

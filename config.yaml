@@ -62,6 +62,17 @@ coaching:
                              # widths) - a step or stumble, well above pose
                              # jitter (~0.02 SW)
 
+report:
+  guided_presentation_enabled: false
+                             # Future jobs use the guided structured report
+                             # only after the production writer is composed.
+                             # Set false to roll new jobs back to legacy;
+                             # persisted jobs keep their assigned presentation.
+  guided_sample_enabled: false
+                             # Separate public-sample preview gate. Set true
+                             # only after sample QA; false restores the legacy
+                             # sample without changing customer-job reports.
+
 proof_cycle:
   enabled: true              # controlled first-stage rollout: write and show
                              # private result sidecars for new analyses only.
@@ -248,7 +259,7 @@ billing:
                              # report's most shareable artifact and the one clean
                              # quality line between free and Pro. true + accounts
                              # on: the replay is rendered only when the job's
-                             # owner has Pro at analysis time; a free user's
+                             # owner has Pro when the job is created; a free user's
                              # report shows an honest locked note (with a
                              # /pricing link) in the replay slot instead, and
                              # the render is skipped entirely — the CPU is

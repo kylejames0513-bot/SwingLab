@@ -32,11 +32,11 @@ import time
 import traceback
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import contextmanager
+from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Callable, Iterable, Iterator
+from pathlib import Path, PurePosixPath
+from typing import Callable, Iterable, Iterator, assert_never
 
 from ..caddie_brief import (
     payload_has_coachable_data,
@@ -47,7 +47,7 @@ from ..caddie_brief import (
 from ..config import Config
 from ..events import EventError
 from ..ffmpeg import FFmpegError
-from ..pipeline import VideoTooLongError, ZeroStrikesError, analyze_video
+from ..pipeline import SessionResult, VideoTooLongError, ZeroStrikesError, analyze_video
 from ..proof_cycle_artifact import (
     build_proof_cycle_artifact,
     proof_cycle_enabled,
@@ -57,7 +57,30 @@ from ..proof_cycle_artifact import (
 from ..report import (
     REPORT_OUTCOME_CAPTURE,
     REPORT_OUTCOME_COACHING,
+    REPORT_PRESENTATION_VERSION,
     persisted_report_outcome,
+)
+from ..report_artifacts import (
+    REPORT_CHECKSUMS_FILENAME,
+    REPORT_MANIFEST_FILENAME,
+    REPORT_VIEW_FILENAME,
+    ReportEntitlementSnapshot,
+    open_job_published_bundle,
+    validate_persisted_report_policy,
+)
+from ..report_bundle import (
+    REPORT_FILENAME,
+    CoreReportBundleError,
+    GuidedReportRendererUnavailable,
+    ReportHtmlWriter,
+    prepare_abandoned_report_bundle_cleanup,
+)
+from ..report_view import (
+    GUIDED_REPORT_PRESENTATION_VERSION,
+    ReportOutcome,
+    ReportPresentationVersion,
+    UnsupportedReportPresentationVersion,
+    parse_report_presentation_version,
 )
 from . import mailer
 from .humanize import friendly_error
@@ -70,6 +93,11 @@ DONE = "done"
 FAILED = "failed"
 ACTIVE = (QUEUED, PROCESSING)
 _FREE_REFILM_CREDITS_PER_MONTH = 1
+_COMPLETION_COACHING = "coaching"
+_COMPLETION_CAPTURE = "capture"
+_COMPLETION_CORRUPT = "corrupt"
+_MAX_RETRY_ANALYSIS_CHILDREN = 256
+_REPORT_BUNDLE_FINAL_RE = re.compile(r"report-bundle-[0-9a-f]{32}\Z")
 _HISTORY_TRASH_NAME = ".history-trash"
 _HISTORY_OPERATION_ID_RE = re.compile(r"[0-9a-f]{32}")
 _SAFE_JOB_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}")
@@ -81,6 +109,14 @@ _WINDOWS_RESERVED_NAMES = {
     *(f"COM{number}" for number in range(1, 10)),
     *(f"LPT{number}" for number in range(1, 10)),
 }
+
+
+def configured_report_presentation(cfg: Config) -> str:
+    """Resolve the presentation assigned to a future job from one strict gate."""
+
+    if cfg.report.get("guided_presentation_enabled") is True:
+        return GUIDED_REPORT_PRESENTATION_VERSION
+    return REPORT_PRESENTATION_VERSION
 
 _SCHEMA = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -99,6 +135,12 @@ CREATE TABLE IF NOT EXISTS jobs (
     user_id      TEXT,
     error        TEXT,
     report_rel   TEXT,
+    report_presentation_version TEXT NOT NULL DEFAULT 'premium-coach-v2',
+    report_entitlements_json TEXT,
+    report_view_rel TEXT,
+    report_manifest_rel TEXT,
+    report_checksums_rel TEXT,
+    structured_report INTEGER NOT NULL DEFAULT 0,
     swings_done  INTEGER NOT NULL DEFAULT 0,
     swings_total INTEGER NOT NULL DEFAULT 0,
     log          TEXT NOT NULL DEFAULT '[]',
@@ -189,6 +231,14 @@ class Job:
     log: list[str] = field(default_factory=list)
     error: str | None = None
     report_rel: str | None = None  # path of report.html relative to session_dir
+    report_presentation_version: str = REPORT_PRESENTATION_VERSION
+    report_entitlements: ReportEntitlementSnapshot = field(
+        default_factory=lambda: ReportEntitlementSnapshot("available")
+    )
+    report_view_rel: str | None = None
+    report_manifest_rel: str | None = None
+    report_checksums_rel: str | None = None
+    structured_report: bool = False
     swings_done: int = 0
     swings_total: int = 0  # 0 until strike detection has counted the swings
     notify_email: bool = False  # owner asked to be emailed at completion
@@ -216,14 +266,22 @@ class Job:
 
 
 class JobManager:
-    def __init__(self, sessions_dir: Path, cfg: Config, user_store=None):
+    def __init__(
+        self,
+        sessions_dir: Path,
+        cfg: Config,
+        user_store=None,
+        *,
+        guided_html_writer: ReportHtmlWriter | None = None,
+    ):
         """``user_store`` (a swinglab.web.users.UserStore, duck-typed on
-        ``.get(user_id)``) lets the runner check the owner's plan at
-        analysis time for the coach-replay Pro gate. None — the default,
+        ``.get(user_id)``) lets session creation capture the owner's plan for
+        the coach-replay Pro gate. None — the default,
         and what any non-web caller gets — disables the gate entirely."""
         self.sessions_dir = sessions_dir
         self.cfg = cfg
         self._users = user_store
+        self._guided_html_writer = guided_html_writer
         sessions_dir.mkdir(parents=True, exist_ok=True)
         # One re-entrant lock serializes the single-replica job state machine,
         # including the short filesystem/SQLite two-phase history reset.  The
@@ -265,6 +323,32 @@ class JobManager:
             if "notified_at" not in columns:
                 self._conn.execute(
                     "ALTER TABLE jobs ADD COLUMN notified_at REAL"
+                )
+            if "report_presentation_version" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN report_presentation_version"
+                    " TEXT NOT NULL DEFAULT 'premium-coach-v2'"
+                )
+            if "report_entitlements_json" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN report_entitlements_json TEXT"
+                )
+            if "report_view_rel" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN report_view_rel TEXT"
+                )
+            if "report_manifest_rel" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN report_manifest_rel TEXT"
+                )
+            if "report_checksums_rel" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN report_checksums_rel TEXT"
+                )
+            if "structured_report" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN structured_report"
+                    " INTEGER NOT NULL DEFAULT 0"
                 )
             history_columns = {
                 row[1]
@@ -352,11 +436,15 @@ class JobManager:
                 + " ORDER BY created_at DESC LIMIT ?",
                 (*params, scan_limit),
             ).fetchall()
-        eligible = [
-            job
-            for job in (self._from_row(row) for row in rows)
-            if self.coaching_eligible(job)
-        ]
+        eligible: list[Job] = []
+        for row in rows:
+            if self._completed_report_classification(row) != _COMPLETION_COACHING:
+                continue
+            try:
+                eligible.append(self._from_row(row))
+            except (TypeError, ValueError):
+                # A malformed row cannot regain coaching/trend eligibility.
+                continue
         return eligible[:wanted]
 
     def usage_this_month(self, user_id: str) -> int:
@@ -384,11 +472,20 @@ class JobManager:
                 " WHERE user_hash = ? AND month_start = ? AND expires_at > ?",
                 (self._user_hash(user_id), month_start, now.timestamp()),
             ).fetchone()
-            jobs = [self._from_row(row) for row in rows]
-            active = sum(job.status in ACTIVE for job in jobs)
-            finished = [job for job in jobs if job.status == DONE]
-            eligible = sum(self.coaching_eligible(job) for job in finished)
-            rejected = len(finished) - eligible
+            active = sum(row["status"] in ACTIVE for row in rows)
+            completed = [
+                self._completed_report_classification(row)
+                for row in rows
+                if row["status"] == DONE
+            ]
+            # Integrity failures consume an allowance: a completed analysis
+            # cannot be converted into a courtesy re-film by mutating or
+            # deleting its signed bundle after publication.
+            eligible = sum(
+                state in (_COMPLETION_COACHING, _COMPLETION_CORRUPT)
+                for state in completed
+            )
+            rejected = sum(state == _COMPLETION_CAPTURE for state in completed)
         if receipt is not None:
             eligible += int(receipt["coaching_eligible"])
             rejected += int(receipt["refilm_rejections"])
@@ -399,6 +496,20 @@ class JobManager:
 
     def coaching_eligible(self, job: Job) -> bool:
         """Whether a finished job can power coaching, trends, and quota."""
+        if job.status != DONE:
+            return False
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (job.id,)
+            ).fetchone()
+        if row is None or row["status"] != DONE:
+            return False
+        return self._completed_report_classification(row, legacy_job=job) == (
+            _COMPLETION_COACHING
+        )
+
+    def _legacy_coaching_eligible(self, job: Job) -> bool:
+        """Compatibility-only eligibility for pre-structured reports."""
         if job.status != DONE or not job.report_rel:
             return False
         root = job.session_dir.resolve()
@@ -434,6 +545,84 @@ class JobManager:
             and not payload_has_coachable_data(payload, angle=job.angle)
         )
 
+    def _completed_report_classification(
+        self, row: sqlite3.Row, *, legacy_job: Job | None = None
+    ) -> str:
+        """Classify DONE rows without trusting mutable structured artifacts.
+
+        Structured reports are usable only when their complete persisted
+        bundle and creation-time policy validate. Any integrity or policy
+        failure is deliberately distinct from a genuine capture-only result:
+        it cannot power coaching, but it still consumes quota.
+        """
+
+        if row["status"] != DONE:
+            return _COMPLETION_CORRUPT
+        try:
+            presentation = parse_report_presentation_version(
+                row["report_presentation_version"]
+            )
+        except UnsupportedReportPresentationVersion:
+            return _COMPLETION_CORRUPT
+        structured_sidecars = any(
+            row[name] is not None
+            for name in (
+                "report_view_rel",
+                "report_manifest_rel",
+                "report_checksums_rel",
+            )
+        )
+        genuine_legacy = (
+            presentation is ReportPresentationVersion.LEGACY
+            and not bool(row["structured_report"])
+            and not structured_sidecars
+        )
+        if genuine_legacy:
+            try:
+                job = legacy_job if legacy_job is not None else self._from_row(row)
+                return (
+                    _COMPLETION_COACHING
+                    if self._legacy_coaching_eligible(job)
+                    else _COMPLETION_CAPTURE
+                )
+            except (OSError, TypeError, ValueError):
+                return _COMPLETION_CORRUPT
+        if not bool(row["structured_report"]):
+            return _COMPLETION_CORRUPT
+
+        try:
+            with open_job_published_bundle(
+                self.sessions_dir,
+                job_id=row["id"],
+                report_rel=row["report_rel"],
+                report_view_rel=row["report_view_rel"],
+                manifest_rel=row["report_manifest_rel"],
+                checksums_rel=row["report_checksums_rel"],
+            ) as pinned:
+                validate_persisted_report_policy(
+                    pinned.bundle,
+                    report_presentation_version=row[
+                        "report_presentation_version"
+                    ],
+                    report_entitlements_json=row["report_entitlements_json"],
+                )
+                outcome = pinned.bundle.view.outcome
+        except Exception:
+            # This is a read-side trust decision, not a worker failure. Keep it
+            # fail-closed even for an unexpected malformed row or filesystem
+            # condition; callers must never regain a courtesy retry this way.
+            logger.warning(
+                "Structured report integrity validation failed for job %s",
+                row["id"],
+                exc_info=True,
+            )
+            return _COMPLETION_CORRUPT
+        if outcome == ReportOutcome.COACHING_READY:
+            return _COMPLETION_COACHING
+        if outcome == ReportOutcome.CAPTURE_ONLY:
+            return _COMPLETION_CAPTURE
+        return _COMPLETION_CORRUPT
+
     def refilm_rejections_this_month(self, user_id: str) -> int:
         """Finished coaching-ineligible clips for one account this month."""
         now = datetime.now(timezone.utc)
@@ -452,7 +641,8 @@ class JobManager:
                 (self._user_hash(user_id), month_start, now.timestamp()),
             ).fetchone()
             live = sum(
-                not self.coaching_eligible(self._from_row(row)) for row in rows
+                self._completed_report_classification(row) == _COMPLETION_CAPTURE
+                for row in rows
             )
         return live + (int(receipt["refilm_rejections"]) if receipt else 0)
 
@@ -659,7 +849,21 @@ class JobManager:
         level: str | None = None,
         expected_history_epoch: int | None = None,
         notify_email: bool = False,
+        report_presentation_version: str | None = None,
     ) -> Job:
+        presentation = (
+            configured_report_presentation(self.cfg)
+            if report_presentation_version is None
+            else report_presentation_version
+        )
+        presentation = parse_report_presentation_version(presentation).value
+        if (
+            presentation == GUIDED_REPORT_PRESENTATION_VERSION
+            and self._guided_html_writer is None
+        ):
+            raise GuidedReportRendererUnavailable(
+                "guided report HTML writer is unavailable"
+            )
         # Enter the manager lock before creating the directory so a concurrent
         # account reset cannot miss a half-created, not-yet-persisted session.
         with self._lock:
@@ -683,6 +887,7 @@ class JobManager:
                     raise HistoryResetConflict(
                         "Swing history changed before the upload session was created."
                     )
+            report_entitlements = self._capture_report_entitlements(user_id)
             job_id = uuid.uuid4().hex[:12]
             job = Job(
                 id=job_id,
@@ -698,6 +903,8 @@ class JobManager:
                 client_ip=client_ip,
                 user_id=user_id,
                 notify_email=bool(notify_email and user_id),
+                report_presentation_version=presentation,
+                report_entitlements=report_entitlements,
             )
             job.session_dir.mkdir(parents=True)
             self._save(job)
@@ -714,23 +921,359 @@ class JobManager:
             self._conn.commit()
 
     # -- execution --------------------------------------------------------
-    def replay_locked(self, job: Job) -> bool:
-        """The coach-replay Pro gate (billing.replay_pro_only), decided at
-        analysis time. True ONLY when the gate is on, accounts are on, and
-        the job's owner is not Pro right now — so open instances
-        (require_account off), ownerless pre-account jobs, and managers
-        without a user store (CLI-adjacent embedders) are never gated. An
-        owner whose account row has vanished has no Pro either — gated."""
-        if not self.cfg.billing.get("replay_pro_only"):
-            return False
+    def _capture_report_entitlements(
+        self, user_id: str | None
+    ) -> ReportEntitlementSnapshot:
         if not self.cfg.slowmo.get("annotated"):
-            return False  # no replay feature at all — nothing to gate
-        if not self.cfg.web.get("require_account"):
+            return ReportEntitlementSnapshot("disabled")
+        if (
+            not self.cfg.billing.get("replay_pro_only")
+            or not self.cfg.web.get("require_account")
+            or self._users is None
+            or user_id is None
+        ):
+            return ReportEntitlementSnapshot("available")
+        owner = self._users.get(user_id)
+        if owner is None or not getattr(owner, "is_pro", False):
+            return ReportEntitlementSnapshot("locked")
+        return ReportEntitlementSnapshot("available")
+
+    def replay_locked(self, job: Job) -> bool:
+        """Project the immutable creation-time entitlement for old callers."""
+
+        return job.report_entitlements.coach_replay == "locked"
+
+    def _mark_processing(self, job: Job) -> bool:
+        now = time.time()
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE jobs SET status = ?, updated_at = ?, error = NULL"
+                " WHERE id = ? AND status = ?",
+                (PROCESSING, now, job.id, QUEUED),
+            )
+            self._conn.commit()
+            if cursor.rowcount != 1:
+                row = self._conn.execute(
+                    "SELECT * FROM jobs WHERE id = ?", (job.id,)
+                ).fetchone()
+                if row is not None:
+                    self._copy_persisted_state(job, self._from_row(row))
+                return False
+        job.status = PROCESSING
+        job.error = None
+        return True
+
+    def _fail_processing_job(self, job: Job, error: str) -> bool:
+        now = time.time()
+        with self._lock:
+            try:
+                cursor = self._conn.execute(
+                    "UPDATE jobs SET status = ?, updated_at = ?, error = ?,"
+                    " swings_done = ?, swings_total = ?, log = ?"
+                    " WHERE id = ? AND status = ?",
+                    (
+                        FAILED,
+                        now,
+                        error,
+                        job.swings_done,
+                        job.swings_total,
+                        json.dumps(job.log),
+                        job.id,
+                        PROCESSING,
+                    ),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                row = self._conn.execute(
+                    "SELECT * FROM jobs WHERE id = ?", (job.id,)
+                ).fetchone()
+                if row is not None:
+                    persisted = self._from_row(row)
+                    self._copy_persisted_state(job, persisted)
+                    if persisted.status == FAILED and persisted.error == error:
+                        return True
+                raise
+            if cursor.rowcount != 1:
+                row = self._conn.execute(
+                    "SELECT * FROM jobs WHERE id = ?", (job.id,)
+                ).fetchone()
+                if row is not None:
+                    self._copy_persisted_state(job, self._from_row(row))
+                return False
+        job.status = FAILED
+        job.error = error
+        return True
+
+    @staticmethod
+    def _copy_persisted_state(target: Job, persisted: Job) -> None:
+        for name in (
+            "status",
+            "error",
+            "report_rel",
+            "report_view_rel",
+            "report_manifest_rel",
+            "report_checksums_rel",
+            "structured_report",
+            "swings_done",
+            "swings_total",
+            "log",
+            "notified_at",
+        ):
+            setattr(target, name, getattr(persisted, name))
+
+    def _retry_report_protection(
+        self, job: Job
+    ) -> tuple[str | None, tuple[str, ...]]:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT report_rel, report_view_rel, report_manifest_rel,"
+                " report_checksums_rel FROM jobs WHERE id = ?",
+                (job.id,),
+            ).fetchone()
+        if row is None:
+            raise CoreReportBundleError("retry job row is missing")
+        return self._parse_structured_report_rels(tuple(row))
+
+    @staticmethod
+    def _parse_structured_report_rels(
+        values: tuple[object, ...],
+    ) -> tuple[str | None, tuple[str, ...]]:
+        if len(values) != 4:
+            raise CoreReportBundleError(
+                "persisted structured report rel count is invalid"
+            )
+        if all(value is None for value in values):
+            return None, ()
+        if any(value is None for value in values):
+            raise CoreReportBundleError(
+                "persisted structured report rels are incomplete"
+            )
+        if any(not isinstance(value, str) for value in values):
+            raise CoreReportBundleError(
+                "persisted structured report rel is not text"
+            )
+        if len(set(values)) != 4 or len({value.casefold() for value in values}) != 4:
+            raise CoreReportBundleError(
+                "persisted structured report rels are duplicated"
+            )
+
+        expected_names = (
+            REPORT_FILENAME,
+            REPORT_VIEW_FILENAME,
+            REPORT_MANIFEST_FILENAME,
+            REPORT_CHECKSUMS_FILENAME,
+        )
+        parsed: list[PurePosixPath] = []
+        for value, expected_name in zip(values, expected_names):
+            assert isinstance(value, str)
+            path = PurePosixPath(value)
+            if (
+                path.is_absolute()
+                or path.as_posix() != value
+                or "\\" in value
+                or ":" in value
+                or len(path.parts) != 4
+                or path.parts[0] != "out"
+                or path.name != expected_name
+                or any(
+                    part in {"", ".", ".."} or part.endswith((".", " "))
+                    for part in path.parts
+                )
+            ):
+                raise CoreReportBundleError(
+                    "persisted structured report rel is unsafe"
+                )
+            parsed.append(path)
+        child_names = {path.parts[1] for path in parsed}
+        bundle_names = {path.parts[2] for path in parsed}
+        if len(child_names) != 1 or len(bundle_names) != 1:
+            raise CoreReportBundleError(
+                "persisted structured report rels cross analysis children"
+            )
+        bundle_name = next(iter(bundle_names))
+        if _REPORT_BUNDLE_FINAL_RE.fullmatch(bundle_name) is None:
+            raise CoreReportBundleError(
+                "persisted structured report rels do not name a canonical bundle"
+            )
+        child_name = next(iter(child_names))
+        return child_name, tuple(
+            PurePosixPath(path.parts[2], path.parts[3]).as_posix()
+            for path in parsed
+        )
+
+    @staticmethod
+    def _retry_path_is_reparse(path: Path, info: os.stat_result) -> bool:
+        if stat.S_ISLNK(info.st_mode):
+            return True
+        attributes = getattr(info, "st_file_attributes", 0)
+        if attributes & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400):
+            return True
+        is_junction = getattr(path, "is_junction", None)
+        return bool(is_junction and is_junction())
+
+    def _cleanup_retry_report_bundles(self, job: Job) -> int:
+        protected_child, protected_rels = self._retry_report_protection(job)
+        out_dir = job.session_dir / "out"
+        try:
+            out_info = os.lstat(out_dir)
+        except FileNotFoundError:
+            return 0
+        except OSError as exc:
+            raise CoreReportBundleError(
+                "retry output root cannot be inspected"
+            ) from exc
+        if self._retry_path_is_reparse(out_dir, out_info) or not stat.S_ISDIR(
+            out_info.st_mode
+        ):
+            raise CoreReportBundleError("retry output root is not a plain directory")
+
+        names: list[str] = []
+        try:
+            with os.scandir(out_dir) as scanned:
+                for entry in scanned:
+                    if len(names) >= _MAX_RETRY_ANALYSIS_CHILDREN:
+                        raise CoreReportBundleError(
+                            "retry analysis children exceed the direct-entry bound"
+                        )
+                    names.append(entry.name)
+        except CoreReportBundleError:
+            raise
+        except OSError as exc:
+            raise CoreReportBundleError(
+                "retry output root cannot be enumerated"
+            ) from exc
+
+        plans: list[tuple[Path, tuple[str, ...]]] = []
+        for name in sorted(names):
+            child = out_dir / name
+            try:
+                info = os.lstat(child)
+            except OSError as exc:
+                raise CoreReportBundleError(
+                    "retry analysis child cannot be inspected"
+                ) from exc
+            if self._retry_path_is_reparse(child, info) or not stat.S_ISDIR(
+                info.st_mode
+            ):
+                continue
+            plans.append(
+                (
+                    child,
+                    protected_rels if name == protected_child else (),
+                )
+            )
+
+        with ExitStack() as stack:
+            prepared = [
+                stack.enter_context(
+                    prepare_abandoned_report_bundle_cleanup(
+                        child,
+                        protected_rels=child_rels,
+                    )
+                )
+                for child, child_rels in plans
+            ]
+            return sum(cleanup.execute() for cleanup in prepared)
+
+    def _record_active_recovery_error(
+        self,
+        job: Job,
+        *,
+        expected_status: str,
+        error: str,
+        log_message: str,
+    ) -> bool:
+        """Persist an actionable error while deliberately keeping a job active."""
+
+        next_log = [*job.log]
+        if not next_log or next_log[-1] != log_message:
+            next_log.append(log_message)
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE jobs SET updated_at = ?, error = ?, log = ?,"
+                " swings_done = ?, swings_total = ?"
+                " WHERE id = ? AND status = ?",
+                (
+                    time.time(),
+                    error,
+                    json.dumps(next_log),
+                    job.swings_done,
+                    job.swings_total,
+                    job.id,
+                    expected_status,
+                ),
+            )
+            self._conn.commit()
+            if cursor.rowcount != 1:
+                row = self._conn.execute(
+                    "SELECT * FROM jobs WHERE id = ?", (job.id,)
+                ).fetchone()
+                if row is not None:
+                    self._copy_persisted_state(job, self._from_row(row))
+                return False
+        job.status = expected_status
+        job.error = error
+        job.log = next_log
+        return True
+
+    def _cleanup_before_failure(
+        self,
+        job: Job,
+        *,
+        expected_status: str,
+        error: str,
+    ) -> bool:
+        """Reclaim exact owned report graphs before exposing terminal failure.
+
+        A refusal is not treated as successful cleanup. The active state and
+        null publication fields remain recoverable on restart, with a durable
+        operator/user-facing explanation instead of an unreachable FAILED row.
+        """
+
+        try:
+            self._cleanup_retry_report_bundles(job)
+        except Exception:
+            logger.exception(
+                "Report bundle cleanup remains pending for job %s", job.id
+            )
+            log_message = (
+                "Report cleanup is pending; this analysis remains active for "
+                "safe recovery and has not exposed a report."
+            )
+            pending_error = f"{error}\n\n{log_message}"
+            self._record_active_recovery_error(
+                job,
+                expected_status=expected_status,
+                error=pending_error,
+                log_message=log_message,
+            )
             return False
-        if self._users is None or job.user_id is None:
-            return False
-        user = self._users.get(job.user_id)
-        return user is None or not user.is_pro
+
+        if expected_status == PROCESSING:
+            return self._fail_processing_job(job, error)
+        return self._transition_interrupted_job(
+            job,
+            expected_status=expected_status,
+            target_status=FAILED,
+            error=error,
+        )
+
+    def _finish_processing_failure(self, job: Job, error: str) -> None:
+        # Do not expose FAILED while additive terminal cleanup and note
+        # persistence are still running. API lookups share this re-entrant
+        # lock and therefore see one stable side of that boundary.
+        with self._lock:
+            if not self._cleanup_before_failure(
+                job, expected_status=PROCESSING, error=error
+            ):
+                return
+            try:
+                self._delete_failed_source_if_configured(job)
+            except Exception:
+                logger.exception("Failed source cleanup failed for job %s", job.id)
+        self._notify_owner(job)
 
     def _run(self, job: Job, video_path: Path) -> None:
         def log(message: str) -> None:
@@ -742,50 +1285,97 @@ class JobManager:
             job.swings_total = total
             self._save(job)
 
-        job.status = PROCESSING
-        self._save(job)
-        # Coach-replay Pro gate: decided HERE, at analysis time — a later
-        # upgrade never rewrites an existing report (re-film to get the
-        # replay), and the skip is stated honestly in the session log.
-        locked = self.replay_locked(job)
-        if locked:
-            log(
-                "Coach replay is a Pro feature — skipped for this analysis. "
-                "Upgrade and re-film to get your swing annotated frame-by-frame."
-            )
+        presentation = parse_report_presentation_version(
+            job.report_presentation_version
+        )
+        if not self._mark_processing(job):
+            return
         try:
-            result = analyze_video(
-                video_path,
-                out_dir=job.session_dir / "out",
-                hand=job.hand,
-                manual_strikes=job.strikes,
-                cfg=self.cfg,
-                fast=job.fast,
-                log=log,
-                progress=progress,
-                angle=job.angle,
-                club=job.club,
-                level=job.level,
-                replay_locked=locked,
-            )
-            job.report_rel = str(result.report_path.relative_to(job.session_dir))
-            job.status = DONE
-            self._write_proof_cycle_artifact(job)
-            self._delete_source_if_configured(job)
+            # Coach-replay Pro gate: projected only from the creation-time snapshot.
+            # A later upgrade never rewrites this job (re-film to get the replay),
+            # and the skip is stated honestly in the session log.
+            locked = self.replay_locked(job)
+            if locked:
+                log(
+                    "Coach replay is a Pro feature — skipped for this analysis. "
+                    "Upgrade and re-film to get your swing annotated frame-by-frame."
+                )
+            self._cleanup_retry_report_bundles(job)
+            if presentation is ReportPresentationVersion.GUIDED:
+                result = analyze_video(
+                    video_path,
+                    out_dir=job.session_dir / "out",
+                    hand=job.hand,
+                    manual_strikes=job.strikes,
+                    cfg=self.cfg,
+                    fast=job.fast,
+                    log=log,
+                    progress=progress,
+                    angle=job.angle,
+                    club=job.club,
+                    level=job.level,
+                    replay_locked=locked,
+                    report_presentation_version=job.report_presentation_version,
+                    report_entitlements=job.report_entitlements,
+                    guided_html_writer=self._guided_html_writer,
+                )
+            elif presentation is ReportPresentationVersion.LEGACY:
+                result = analyze_video(
+                    video_path,
+                    out_dir=job.session_dir / "out",
+                    hand=job.hand,
+                    manual_strikes=job.strikes,
+                    cfg=self.cfg,
+                    fast=job.fast,
+                    log=log,
+                    progress=progress,
+                    angle=job.angle,
+                    club=job.club,
+                    level=job.level,
+                    replay_locked=locked,
+                )
+            else:  # pragma: no cover - enum exhaustiveness guard
+                assert_never(presentation)
         except (ZeroStrikesError, VideoTooLongError, EventError, FFmpegError) as exc:
-            job.status = FAILED
-            job.error = str(exc)
-            self._delete_failed_source_if_configured(job)
+            self._finish_processing_failure(job, str(exc))
+            self._cleanup_expired()
+            return
         except Exception:
-            job.status = FAILED
-            job.error = "Unexpected error during analysis:\n" + traceback.format_exc(
+            error = "Unexpected error during analysis:\n" + traceback.format_exc(
                 limit=3
             )
             # logger.exception carries the full traceback to the process log
             # (and to Sentry when the operator configured it — see app.py).
             logger.exception("Unexpected error during analysis of job %s", job.id)
-            self._delete_failed_source_if_configured(job)
-        self._save(job)
+            self._finish_processing_failure(job, error)
+            self._cleanup_expired()
+            return
+
+        try:
+            self._complete_job(job, result)
+        except Exception:
+            logger.exception("Report publication validation failed for job %s", job.id)
+            publication_error = (
+                "Report publication could not be validated; this analysis remains "
+                "active for safe recovery and no report was exposed."
+            )
+            self._record_active_recovery_error(
+                job,
+                expected_status=PROCESSING,
+                error=publication_error,
+                log_message=publication_error,
+            )
+            self._cleanup_expired()
+            return
+
+        # Keep the manager's externally visible terminal boundary closed until
+        # the additive post-commit notes are durable under this re-entrant lock.
+        with self._lock:
+            self._write_proof_cycle_artifact(job)
+            try:
+                self._delete_source_if_configured(job)
+            except Exception:
+                logger.exception("Completed source cleanup failed for job %s", job.id)
         self._notify_owner(job)
         self._cleanup_expired()
 
@@ -898,10 +1488,10 @@ class JobManager:
     def _write_proof_cycle_artifact(self, job: Job) -> None:
         """Persist an additive Proof Cycle sidecar without risking the report.
 
-        This runs only after the pipeline has written its immutable report and
-        metrics artifacts, while the current job is still absent from the
-        manager's ``done`` query.  That means history contains only genuine
-        previous sessions; a re-run can never count itself as evidence.
+        This runs only after the pipeline has written and the manager has
+        committed its immutable core report. The bounded ``done`` query now
+        contains that row, so it is explicitly removed before evidence builds;
+        a re-run can never count itself as prior evidence.
         """
 
         if not proof_cycle_enabled(self.cfg):
@@ -909,12 +1499,16 @@ class JobManager:
         try:
             prior_jobs: list[Job] = []
             if job.user_id and job.club:
-                prior_jobs = self.list_comparable(
-                    user_id=job.user_id,
-                    club=job.club,
-                    through=job.created_at,
-                    limit=proof_cycle_history_scan_limit(self.cfg),
-                )
+                prior_jobs = [
+                    candidate
+                    for candidate in self.list_comparable(
+                        user_id=job.user_id,
+                        club=job.club,
+                        through=job.created_at,
+                        limit=proof_cycle_history_scan_limit(self.cfg),
+                    )
+                    if candidate.id != job.id
+                ]
             artifact = build_proof_cycle_artifact(
                 job,
                 prior_jobs,
@@ -926,9 +1520,16 @@ class JobManager:
             # A comparison is an enhancement.  Never turn a finished report
             # into a failed analysis because its optional sidecar did not write.
             logger.exception("Proof Cycle sidecar failed for job %s", job.id)
-            job.log.append(
-                "Proof Cycle check was unavailable; your report is still ready."
-            )
+            try:
+                self._append_terminal_log(
+                    job,
+                    "Proof Cycle check was unavailable; your report is still ready.",
+                )
+            except Exception:
+                logger.exception(
+                    "Proof Cycle failure note could not be persisted for job %s",
+                    job.id,
+                )
 
     def _delete_source_if_configured(self, job: Job) -> None:
         """web.delete_source_after_done: drop the original upload once the
@@ -944,9 +1545,10 @@ class JobManager:
         source = self._source_path(job)
         if source is not None:
             source.unlink(missing_ok=True)
-            job.log.append(
+            self._append_terminal_log(
+                job,
                 "Original upload deleted after analysis (configured data "
-                "minimization) — re-analyzing this clip needs a fresh upload."
+                "minimization) — re-analyzing this clip needs a fresh upload.",
             )
 
     def _delete_failed_source_if_configured(self, job: Job) -> None:
@@ -962,10 +1564,346 @@ class JobManager:
         source = self._source_path(job)
         if source is not None:
             source.unlink(missing_ok=True)
-            job.log.append(
+            self._append_terminal_log(
+                job,
                 "Original upload deleted after the failed analysis (configured "
-                "data minimization) — fix the clip and upload again to retry."
+                "data minimization) — fix the clip and upload again to retry.",
             )
+
+    def _result_rel(self, job: Job, path: Path | None, *, label: str) -> str:
+        if path is None:
+            raise ValueError(f"{label} is required")
+        try:
+            session_root = job.session_dir.resolve(strict=True)
+            resolved = Path(path).resolve(strict=True)
+            relative = resolved.relative_to(session_root)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"{label} is not contained by the job session") from exc
+        if not resolved.is_file():
+            raise ValueError(f"{label} is not a file")
+        return relative.as_posix()
+
+    def _structured_result_rels(
+        self, job: Job, result: SessionResult
+    ) -> tuple[str, str, str, str]:
+        """Derive persisted guided paths lexically without following ancestry."""
+
+        def absolute(path: object, *, label: str) -> Path:
+            try:
+                return Path(os.path.abspath(os.fspath(path)))
+            except (TypeError, ValueError, OSError) as exc:
+                raise ValueError(f"{label} is invalid") from exc
+
+        if not isinstance(job.id, str):
+            raise ValueError("structured report job id is invalid")
+        sessions_root = absolute(self.sessions_dir, label="sessions root")
+        expected_job_root = absolute(
+            sessions_root / job.id, label="structured job root"
+        )
+        if (
+            str(expected_job_root.parent) != str(sessions_root)
+            or expected_job_root.name != job.id
+        ):
+            raise ValueError("structured report job id is invalid")
+        job_root = absolute(job.session_dir, label="structured job root")
+        if str(job_root) != str(expected_job_root):
+            raise ValueError("structured job root is not canonical")
+
+        analysis = absolute(result.session_dir, label="analysis session")
+        try:
+            analysis_relative = analysis.relative_to(job_root)
+        except ValueError as exc:
+            raise ValueError(
+                "analysis session is not contained by the job session"
+            ) from exc
+        if (
+            len(analysis_relative.parts) != 2
+            or analysis_relative.parts[0] != "out"
+        ):
+            raise ValueError("analysis session does not use canonical layout")
+
+        labels_and_paths = (
+            ("report path", result.report_path),
+            ("report view path", result.report_view_path),
+            ("report manifest path", result.manifest_path),
+            ("report checksums path", result.checksums_path),
+        )
+        rels: list[str] = []
+        for label, path in labels_and_paths:
+            if path is None:
+                raise ValueError(f"{label} is required")
+            artifact = absolute(path, label=label)
+            try:
+                direct_relative = artifact.relative_to(analysis)
+            except ValueError as exc:
+                raise ValueError(
+                    f"{label} does not use the direct analysis session"
+                ) from exc
+            rels.append((analysis_relative / direct_relative).as_posix())
+        return rels[0], rels[1], rels[2], rels[3]
+
+    @staticmethod
+    def _publication_row_matches(
+        row: sqlite3.Row | None,
+        *,
+        report_rel: str,
+        report_view_rel: str | None,
+        report_manifest_rel: str | None,
+        report_checksums_rel: str | None,
+        structured_report: bool,
+    ) -> bool:
+        return bool(
+            row is not None
+            and row["status"] == DONE
+            and row["report_rel"] == report_rel
+            and row["report_view_rel"] == report_view_rel
+            and row["report_manifest_rel"] == report_manifest_rel
+            and row["report_checksums_rel"] == report_checksums_rel
+            and bool(row["structured_report"]) is structured_report
+        )
+
+    def _complete_job(self, job: Job, result: SessionResult) -> None:
+        """Validate core artifacts, then expose every terminal field atomically."""
+
+        presentation = parse_report_presentation_version(
+            job.report_presentation_version
+        )
+        if presentation is ReportPresentationVersion.GUIDED:
+            guided = True
+        elif presentation is ReportPresentationVersion.LEGACY:
+            guided = False
+        else:  # pragma: no cover - enum exhaustiveness guard
+            assert_never(presentation)
+        entitlements_json = job.report_entitlements.to_json()
+        legacy_available_json = ReportEntitlementSnapshot("available").to_json()
+        now = time.time()
+        committed = False
+
+        publication_stack = ExitStack()
+        pinned_bundle = None
+        report_rel: str
+        report_view_rel: str | None = None
+        report_manifest_rel: str | None = None
+        report_checksums_rel: str | None = None
+        if guided:
+            if result.structured_report is not True:
+                raise ValueError("guided completion requires a structured report")
+            structured_rels = self._structured_result_rels(job, result)
+            pinned_bundle = publication_stack.enter_context(
+                open_job_published_bundle(
+                    self.sessions_dir,
+                    job_id=job.id,
+                    report_rel=structured_rels[0],
+                    report_view_rel=structured_rels[1],
+                    manifest_rel=structured_rels[2],
+                    checksums_rel=structured_rels[3],
+                )
+            )
+            (
+                report_rel,
+                report_view_rel,
+                report_manifest_rel,
+                report_checksums_rel,
+            ) = pinned_bundle.report_rels
+        elif result.structured_report:
+            raise ValueError("legacy completion cannot publish a structured report")
+        else:
+            report_rel = self._result_rel(job, result.report_path, label="report path")
+
+        with self._lock, publication_stack:
+            if pinned_bundle is not None and (
+                pinned_bundle.bundle.manifest.presentation_version
+                != job.report_presentation_version
+            ):
+                raise ValueError("published report presentation does not match the job")
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute(
+                    "SELECT status, report_presentation_version,"
+                    " report_entitlements_json FROM jobs WHERE id = ?",
+                    (job.id,),
+                ).fetchone()
+                if row is None or row["status"] != PROCESSING:
+                    raise RuntimeError("job is no longer processing")
+                persisted_entitlements = (
+                    validate_persisted_report_policy(
+                        pinned_bundle.bundle,
+                        report_presentation_version=row[
+                            "report_presentation_version"
+                        ],
+                        report_entitlements_json=row["report_entitlements_json"],
+                    )
+                    if guided
+                    else (
+                        ReportEntitlementSnapshot("available")
+                        if row["report_entitlements_json"] is None
+                        else ReportEntitlementSnapshot.from_json(
+                            row["report_entitlements_json"]
+                        )
+                    )
+                )
+                if (
+                    row["report_presentation_version"]
+                    != job.report_presentation_version
+                    or persisted_entitlements != job.report_entitlements
+                ):
+                    raise RuntimeError("persisted report policy changed during analysis")
+                if pinned_bundle is not None:
+                    pinned_bundle.verify_lexical_identity()
+                cursor = self._conn.execute(
+                    "UPDATE jobs SET status = ?, updated_at = ?, error = NULL,"
+                    " report_rel = ?, report_view_rel = ?, report_manifest_rel = ?,"
+                    " report_checksums_rel = ?, structured_report = ?,"
+                    " swings_done = ?, swings_total = ?, log = ?"
+                    " WHERE id = ? AND status = ?"
+                    " AND report_presentation_version = ?"
+                    " AND COALESCE(report_entitlements_json, ?) = ?",
+                    (
+                        DONE,
+                        now,
+                        report_rel,
+                        report_view_rel,
+                        report_manifest_rel,
+                        report_checksums_rel,
+                        int(guided),
+                        job.swings_done,
+                        job.swings_total,
+                        json.dumps(job.log),
+                        job.id,
+                        PROCESSING,
+                        job.report_presentation_version,
+                        legacy_available_json,
+                        entitlements_json,
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("job publication guard did not match")
+                if pinned_bundle is not None:
+                    pinned_bundle.verify_lexical_identity()
+                try:
+                    self._conn.commit()
+                    committed = True
+                except Exception:
+                    if self._conn.in_transaction:
+                        self._conn.rollback()
+                    persisted = self._conn.execute(
+                        "SELECT status, report_rel, report_view_rel,"
+                        " report_manifest_rel, report_checksums_rel,"
+                        " structured_report FROM jobs WHERE id = ?",
+                        (job.id,),
+                    ).fetchone()
+                    if self._publication_row_matches(
+                        persisted,
+                        report_rel=report_rel,
+                        report_view_rel=report_view_rel,
+                        report_manifest_rel=report_manifest_rel,
+                        report_checksums_rel=report_checksums_rel,
+                        structured_report=guided,
+                    ):
+                        committed = True
+                    else:
+                        raise
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+        if not committed:
+            raise RuntimeError("job publication did not commit")
+        job.status = DONE
+        job.error = None
+        job.report_rel = report_rel
+        job.report_view_rel = report_view_rel
+        job.report_manifest_rel = report_manifest_rel
+        job.report_checksums_rel = report_checksums_rel
+        job.structured_report = guided
+
+    def _append_terminal_log(self, job: Job, message: str) -> bool:
+        """Append one post-completion note without reopening terminal state."""
+
+        if job.status not in (DONE, FAILED):
+            return False
+        if not isinstance(message, str):
+            raise TypeError("terminal log message must be text")
+
+        expected_status = job.status
+        expected_presentation = job.report_presentation_version
+        entitlement_json = job.report_entitlements.to_json()
+        legacy_available_json = ReportEntitlementSnapshot("available").to_json()
+        next_log: list[str] | None = None
+        committed = False
+        with self._lock:
+            self._conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = self._conn.execute(
+                    "SELECT log FROM jobs WHERE id = ? AND status = ?"
+                    " AND report_presentation_version = ?"
+                    " AND COALESCE(report_entitlements_json, ?) = ?",
+                    (
+                        job.id,
+                        expected_status,
+                        expected_presentation,
+                        legacy_available_json,
+                        entitlement_json,
+                    ),
+                ).fetchone()
+                if row is None:
+                    self._conn.rollback()
+                    return False
+                persisted_log = json.loads(row["log"])
+                if not isinstance(persisted_log, list) or any(
+                    not isinstance(item, str) for item in persisted_log
+                ):
+                    raise ValueError("persisted job log is malformed")
+                next_log = [*persisted_log, message]
+                next_log_json = json.dumps(next_log)
+                cursor = self._conn.execute(
+                    "UPDATE jobs SET log = ? WHERE id = ? AND status = ?"
+                    " AND report_presentation_version = ?"
+                    " AND COALESCE(report_entitlements_json, ?) = ? AND log = ?",
+                    (
+                        next_log_json,
+                        job.id,
+                        expected_status,
+                        expected_presentation,
+                        legacy_available_json,
+                        entitlement_json,
+                        row["log"],
+                    ),
+                )
+                if cursor.rowcount != 1:
+                    raise RuntimeError("terminal log guard did not match")
+                try:
+                    self._conn.commit()
+                    committed = True
+                except Exception:
+                    if self._conn.in_transaction:
+                        self._conn.rollback()
+                    persisted = self._conn.execute(
+                        "SELECT log FROM jobs WHERE id = ? AND status = ?"
+                        " AND report_presentation_version = ?"
+                        " AND COALESCE(report_entitlements_json, ?) = ?",
+                        (
+                            job.id,
+                            expected_status,
+                            expected_presentation,
+                            legacy_available_json,
+                            entitlement_json,
+                        ),
+                    ).fetchone()
+                    if persisted is not None and persisted["log"] == next_log_json:
+                        committed = True
+                    else:
+                        raise
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+        if not committed or next_log is None:
+            raise RuntimeError("terminal log append did not commit")
+        job.log = next_log
+        return True
 
     # -- persistence ------------------------------------------------------
     def _save(self, job: Job) -> None:
@@ -976,12 +1914,16 @@ class JobManager:
             self._conn.execute(
                 "INSERT INTO jobs (id, status, created_at, updated_at, source_name,"
                 " hand, angle, club, level, strikes, fast, client_ip, user_id, error,"
-                " report_rel, swings_done, swings_total, log, notify_email)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " report_rel, report_presentation_version, report_entitlements_json,"
+                " report_view_rel, report_manifest_rel, report_checksums_rel,"
+                " structured_report, swings_done, swings_total, log, notify_email)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                " ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET status = excluded.status,"
                 " updated_at = excluded.updated_at, error = excluded.error,"
                 " report_rel = excluded.report_rel, swings_done = excluded.swings_done,"
-                " swings_total = excluded.swings_total, log = excluded.log",
+                " swings_total = excluded.swings_total, log = excluded.log"
+                " WHERE jobs.status NOT IN ('done', 'failed')",
                 (
                     job.id,
                     job.status,
@@ -992,12 +1934,18 @@ class JobManager:
                     job.angle,
                     job.club,
                     job.level,
-                    json.dumps(job.strikes) if job.strikes else None,
+                    json.dumps(job.strikes) if job.strikes is not None else None,
                     int(job.fast),
                     job.client_ip,
                     job.user_id,
                     job.error,
                     job.report_rel,
+                    job.report_presentation_version,
+                    job.report_entitlements.to_json(),
+                    job.report_view_rel,
+                    job.report_manifest_rel,
+                    job.report_checksums_rel,
+                    int(job.structured_report),
                     job.swings_done,
                     job.swings_total,
                     json.dumps(job.log),
@@ -1024,6 +1972,18 @@ class JobManager:
             log=json.loads(row["log"]),
             error=row["error"],
             report_rel=row["report_rel"],
+            report_presentation_version=row["report_presentation_version"],
+            report_entitlements=(
+                ReportEntitlementSnapshot("available")
+                if row["report_entitlements_json"] is None
+                else ReportEntitlementSnapshot.from_json(
+                    row["report_entitlements_json"]
+                )
+            ),
+            report_view_rel=row["report_view_rel"],
+            report_manifest_rel=row["report_manifest_rel"],
+            report_checksums_rel=row["report_checksums_rel"],
+            structured_report=bool(row["structured_report"]),
             swings_done=row["swings_done"],
             swings_total=row["swings_total"],
             notify_email=bool(row["notify_email"]),
@@ -1070,9 +2030,10 @@ class JobManager:
                 expires_at,
             )
             counts = usage.setdefault(key, [0, 0])
-            if self.coaching_eligible(self._from_row(row)):
+            classification = self._completed_report_classification(row)
+            if classification in (_COMPLETION_COACHING, _COMPLETION_CORRUPT):
                 counts[0] += 1
-            else:
+            elif classification == _COMPLETION_CAPTURE:
                 counts[1] += 1
         return usage
 
@@ -1576,6 +2537,39 @@ class JobManager:
         """The uploaded video (saved as source.<ext> by the web layer)."""
         return next(job.session_dir.glob("source.*"), None)
 
+    def _transition_interrupted_job(
+        self,
+        job: Job,
+        *,
+        expected_status: str,
+        target_status: str,
+        error: str | None,
+    ) -> bool:
+        with self._lock:
+            cursor = self._conn.execute(
+                "UPDATE jobs SET status = ?, updated_at = ?, error = ?, log = ?"
+                " WHERE id = ? AND status = ?",
+                (
+                    target_status,
+                    time.time(),
+                    error,
+                    json.dumps(job.log),
+                    job.id,
+                    expected_status,
+                ),
+            )
+            self._conn.commit()
+            if cursor.rowcount != 1:
+                row = self._conn.execute(
+                    "SELECT * FROM jobs WHERE id = ?", (job.id,)
+                ).fetchone()
+                if row is not None:
+                    self._copy_persisted_state(job, self._from_row(row))
+                return False
+        job.status = target_status
+        job.error = error
+        return True
+
     def _requeue_interrupted(self) -> None:
         """Re-run jobs that were queued or running when the process died."""
         with self._lock:
@@ -1585,17 +2579,39 @@ class JobManager:
             ).fetchall()
         for row in rows:
             job = self._from_row(row)
+            try:
+                parse_report_presentation_version(job.report_presentation_version)
+            except UnsupportedReportPresentationVersion as exc:
+                error = str(exc)
+                transitioned = self._cleanup_before_failure(
+                    job,
+                    expected_status=row["status"],
+                    error=error,
+                )
+                if transitioned:
+                    self._notify_owner(job)
+                continue
             video = self._source_path(job)
             if video is None:
-                job.status = FAILED
-                job.error = (
+                error = (
                     "The server restarted while this analysis was waiting and "
                     "the uploaded video is gone. Please upload it again."
                 )
+                transitioned = self._cleanup_before_failure(
+                    job,
+                    expected_status=row["status"],
+                    error=error,
+                )
             else:
-                job.status = QUEUED
                 job.log.append("Server restarted — analysis re-queued.")
-            self._save(job)
+                transitioned = self._transition_interrupted_job(
+                    job,
+                    expected_status=row["status"],
+                    target_status=QUEUED,
+                    error=None,
+                )
+            if not transitioned:
+                continue
             if job.status == QUEUED:
                 self.submit(job, video)
             else:

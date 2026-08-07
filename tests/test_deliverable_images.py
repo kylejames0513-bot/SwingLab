@@ -7,6 +7,7 @@ import numpy as np
 from PIL import Image
 
 from swinglab.config import Config
+from swinglab.report_view import Entitlement, MediaRole
 from swinglab.overlay import make_overlay
 from swinglab.strip import make_strip
 from tests.conftest import make_landmarks
@@ -88,3 +89,26 @@ def test_watermark_applied_when_enabled(tmp_path):
     plain = np.asarray(Image.open(out_plain).convert("RGB"))
     assert marked.shape == plain.shape
     assert np.any(marked != plain)  # the watermark changed pixels
+
+
+def test_focused_artifact_media_is_core_and_hashes_saved_bytes(tmp_path):
+    from hashlib import sha256
+    from swinglab.focused_evidence import FocusedEvidenceSelection, render_focused_evidence
+    from swinglab.report_presenter import PriorityEvidenceRule
+    from swinglab.evidence import AnnotationGate, EvidenceSnapshot, EventSnapshot
+    from swinglab.metrics import SwingMetrics
+    from swinglab import pose
+    from swinglab.report_view import EvidenceKind, EventId, PhaseId, PhaseMethod
+    from types import MappingProxyType
+    from tests.conftest import make_landmarks
+    path = tmp_path / "frame.png"; Image.new("RGB", (800, 1000), "white").save(path)
+    metrics = SwingMetrics(1, 1, 1, .3, 3, .4, .1, .1, .1, 1)
+    events = tuple(EventSnapshot(e, i, i * 100, PhaseMethod.OPENING_BASELINE, e.value) for i, e in enumerate(EventId))
+    gate = AnnotationGate("head_sway_backswing_sw", True, ())
+    snapshot = EvidenceSnapshot(1, metrics, events, MappingProxyType({e:path for e in EventId}), MappingProxyType({e:make_landmarks() for e in EventId}), (), MappingProxyType({"head_sway_backswing_sw":gate}), pose.TrackingQuality(0,0,False),1,True,100,"right")
+    rule = PriorityEvidenceRule("sway", "head_sway_backswing_sw", EvidenceKind.HEAD_BOUNDARY, PhaseId.GOING_BACK, EventId.TOP, "threshold", .35, "higher")
+    artifact = render_focused_evidence(FocusedEvidenceSelection(rule, snapshot, 1, 1, 1, None), out_path=tmp_path / "evidence.png", relative_path="media/evidence.png", cfg=Config())
+    assert artifact.media.entitlement is Entitlement.CORE
+    assert artifact.media.role is MediaRole.PRIORITY_EVIDENCE
+    assert artifact.media.relative_path == "media/evidence.png" and artifact.path.is_file()
+    assert artifact.media.checksum_sha256 == sha256(artifact.path.read_bytes()).hexdigest()

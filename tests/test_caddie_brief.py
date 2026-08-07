@@ -14,6 +14,7 @@ from swinglab.coaching import (
     FLAG_HEAD_DIP,
     FLAG_TEMPO,
     flag_keys,
+    strength_cards,
 )
 from swinglab.config import Config
 from swinglab.metrics import SwingMetrics, session_stats
@@ -68,6 +69,28 @@ def test_brief_leads_with_one_issue_one_drill_and_one_real_strength():
     assert not brief.clean
 
 
+def test_protect_brief_records_the_exact_selected_strength_card():
+    metrics = [metric()]
+    brief = brief_for(*metrics)
+    selected = strength_cards(metrics, Config())[0]
+    assert brief.strength_key == selected.key
+    assert brief.strength == selected.text
+
+
+def test_clean_brief_never_selects_a_context_only_strength_for_protection():
+    metrics = [metric()]
+    brief = brief_for(*metrics)
+    selected = strength_cards(metrics, Config())
+    assert brief.strength_key in {card.key for card in selected}
+    assert brief.strength_key not in {"stance-width", "hand-speed"}
+
+
+def test_improve_brief_does_not_replace_the_selected_issue_with_a_strength_key():
+    brief = brief_for(metric(tempo_ratio=2.0))
+    assert brief.focus_flag == FLAG_TEMPO
+    assert brief.strength_key is None
+
+
 def test_history_never_changes_the_report_priority():
     current = metric(tempo_ratio=2.0, head_dip_sw=0.50)
     brief = brief_for(
@@ -99,10 +122,12 @@ def test_clean_dtl_session_uses_tempo_only_maintenance():
     )
     assert brief is not None and brief.clean
     assert brief.focus_name == "Protect your tempo baseline"
-    assert brief.drill.id == "tempo-three-beat-count"
+    assert brief.drill.id == "rhythm-baseline-refilm"
     assert "tempo ratio" in brief.drill.success_metric
     assert "head sway" not in brief.drill.success_metric
     assert "face-on" in brief.fix
+    assert brief.strength_key == "tempo"
+    assert brief.drill.id == "rhythm-baseline-refilm"
 
 
 def test_dtl_payload_ignores_stale_face_on_metrics():
@@ -191,6 +216,18 @@ def test_partial_face_on_clean_session_does_not_claim_full_baseline():
     assert brief.drill.name == "Rhythm baseline re-film"
     assert "sway and slide" not in brief.drill.success_metric
     assert "complete body-motion baseline" in brief.fix
+    assert brief.strength_key == "tempo"
+    assert brief.drill.id == "rhythm-baseline-refilm"
+
+
+def test_partial_baseline_without_tempo_uses_readability_maintenance_id():
+    brief = build_caddie_brief_from_payload(
+        {"swings": [{"metrics": {"head_sway_backswing_sw": 0.10}}]},
+        Config(),
+    )
+    assert brief is not None and brief.clean
+    assert brief.strength_key == "sway"
+    assert brief.drill.id == "readability-baseline-refilm"
 
 
 def test_payload_adapter_is_honest_about_missing_data():

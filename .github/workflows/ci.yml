@@ -40,6 +40,9 @@ jobs:
       - name: Install package
         run: pip install -e ".[dev,web]"
 
+      - name: Install Chromium for browser tests
+        run: python -m playwright install --with-deps chromium
+
       - name: Verify package boundaries and web dependencies
         run: |
           python -c "import fastapi; from swinglab.analysis import analyze_video; from swinglab.api import create_app"

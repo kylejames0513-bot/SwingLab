@@ -3,14 +3,30 @@ changing brand name/colors in config changes the report with no code edits."""
 
 from __future__ import annotations
 
+import inspect
 import json
 import math
+import os
 from pathlib import Path
 
 from swinglab.config import Config
 from swinglab.ffmpeg import VideoInfo
 from swinglab.metrics import SwingMetrics, session_stats
 from swinglab.report import write_metrics_json, write_report_html
+
+
+def test_write_report_html_keeps_the_complete_legacy_signature():
+    signature = inspect.signature(write_report_html)
+    assert tuple(signature.parameters) == (
+        "out_path", "video", "swings", "stats", "session_notes", "hand", "cfg",
+        "angle", "club", "level", "sample_banner", "analysis_fps", "replay_locked",
+    )
+    assert signature.parameters["angle"].default == "face-on"
+    assert signature.parameters["club"].default is None
+    assert signature.parameters["level"].default is None
+    assert signature.parameters["sample_banner"].default is None
+    assert signature.parameters["analysis_fps"].default is None
+    assert signature.parameters["replay_locked"].default is False
 
 
 def fake_video() -> VideoInfo:
@@ -384,3 +400,79 @@ def test_metrics_json_valid_and_nan_becomes_null(tmp_path):
     assert data["video"]["height"] == 1920
     assert data["disclaimer"].startswith("Automated estimates")
     assert not math.isnan(data["session_stats"]["backswing_s"]["mean"])
+
+
+def test_metrics_deliverable_keys_are_individually_optional_in_canonical_order(tmp_path):
+    cfg = Config()
+    swing = fake_swing(1)
+    for key in ("strip", "overlay", "slowmo"):
+        swing.pop(key)
+    swing["replay"] = None
+    empty = write_metrics_json(
+        tmp_path / "empty.json", fake_video(), [swing],
+        session_stats([swing["metrics"]]), [], cfg,
+    )
+    assert json.loads(empty.read_text(encoding="utf-8"))["swings"][0]["deliverables"] == {}
+
+    swing.update(
+        strip="media/strip.png",
+        overlay="media/overlay.png",
+        slowmo="media/slow.mp4",
+        replay="media/replay.mp4",
+    )
+    full = write_metrics_json(
+        tmp_path / "full.json", fake_video(), [swing],
+        session_stats([swing["metrics"]]), [], cfg,
+    )
+    assert tuple(json.loads(full.read_text(encoding="utf-8"))["swings"][0]["deliverables"]) == (
+        "strip", "overlay", "slowmo", "replay"
+    )
+
+
+def test_metrics_legacy_current_key_output_stays_byte_compatible(tmp_path):
+    from swinglab import __version__
+
+    cfg = Config()
+    swing = fake_swing(1)
+    stats = session_stats([swing["metrics"]])
+    actual = write_metrics_json(
+        tmp_path / "metrics.json", fake_video(), [swing], stats, [], cfg,
+    ).read_bytes()
+    expected_payload = {
+        "generator": {"name": cfg.brand["name"], "swinglab_version": __version__},
+        "video": {
+            "path": str(fake_video().path),
+            "duration_s": fake_video().duration_s,
+            "width": fake_video().display_width,
+            "height": fake_video().display_height,
+            "fps": fake_video().fps,
+            "rotation": fake_video().rotation,
+            "creation_time": fake_video().creation_time,
+        },
+        "swings": [{
+            "metrics": swing["metrics"].as_dict(),
+            "notes": swing["notes"],
+            "deliverables": {
+                "strip": swing["strip"],
+                "overlay": swing["overlay"],
+                "slowmo": swing["slowmo"],
+            },
+        }],
+        "session_stats": stats,
+        "session_notes": [],
+        "disclaimer": cfg.brand["disclaimer"],
+    }
+    def legacy_sanitize(value):
+        if isinstance(value, float) and math.isnan(value):
+            return None
+        if isinstance(value, dict):
+            return {key: legacy_sanitize(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [legacy_sanitize(item) for item in value]
+        return value
+
+    expected_text = json.dumps(legacy_sanitize(expected_payload), indent=2)
+    if os.linesep != "\n":
+        expected_text = expected_text.replace("\n", os.linesep)
+    expected = expected_text.encode("utf-8")
+    assert actual == expected

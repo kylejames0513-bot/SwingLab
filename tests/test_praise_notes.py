@@ -8,7 +8,7 @@ from __future__ import annotations
 import tempfile
 from pathlib import Path
 
-from swinglab.coaching import praise_notes
+from swinglab.coaching import praise_notes, strength_cards
 from swinglab.config import Config
 from swinglab.metrics import SwingMetrics, session_stats
 from tests.test_metrics_depth import all_flags_metrics, make_metrics
@@ -28,6 +28,29 @@ def test_clean_session_praises_every_measured_family():
     assert "Shoulder tilt" in text
     assert "Finish drift" in text
     assert "consistent swing to swing" in text
+
+
+def test_legacy_praise_output_is_byte_for_byte_stable():
+    metrics = [make_metrics(1), make_metrics(2)]
+    assert praise_notes(metrics, Config()) == [
+        "Head sway peaks at 0.10 shoulder widths going back — inside the "
+        "0.35 line. The turn is staying centered over the ball.",
+        "Tempo holds at 3.00:1 or better on every measured swing — at or "
+        "above the 2.4:1 line, moving toward the 3.0:1 reference. The "
+        "backswing is getting time to finish.",
+        "Hip slide stays at 0.10 shoulder widths or less in the backswing — "
+        "inside the 0.35 line. The hips are turning, not drifting.",
+        "Head dip tops out at 0.10 shoulder widths into impact — inside the "
+        "0.25 line. Height is holding through the strike.",
+        "Lead arm stays at 170° or straighter at impact (180° is straight) "
+        "— width through the ball is there.",
+        "Shoulder tilt holds at 12° or more at impact — the trail shoulder "
+        "is working down through the ball.",
+        "Finish drift stays at 0.05 shoulder widths or less — the swing is "
+        "ending somewhere the body can hold. Keep holding every finish.",
+        "Tempo is consistent swing to swing (±0.00) — same clock every "
+        "time. That's an asset worth protecting.",
+    ]
 
 
 def test_all_flagged_session_gets_zero_praise():
@@ -95,6 +118,17 @@ def test_praise_tracks_config_thresholds():
     ms = [make_metrics(1)]
     text = " ".join(praise_notes(ms, cfg))
     assert "Head sway" not in text and "Hip slide" not in text
+
+
+def test_strength_cards_preserve_praise_text_and_order():
+    metrics = [make_metrics(1), make_metrics(2)]
+    cards = strength_cards(metrics, Config())
+    assert [card.text for card in cards] == praise_notes(metrics, Config())
+    assert [card.key for card in cards] == [
+        "sway", "tempo", "hip-slide", "head-dip", "arm-extension",
+        "shoulder-tilt", "balance", "consistency",
+    ]
+    assert all(card.metric and card.display_name for card in cards)
 
 
 # ------------------------------------------------------- report structure

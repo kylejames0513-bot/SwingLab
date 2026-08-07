@@ -16,7 +16,8 @@ from fastapi.testclient import TestClient
 from swinglab.config import Config
 from swinglab.levels import LEVEL_LABELS, level_label, level_note
 from swinglab.metrics import session_stats
-from swinglab.report import write_report_html
+from swinglab.report import REPORT_PRESENTATION_VERSION, write_report_html
+from swinglab.report_artifacts import ReportEntitlementSnapshot
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.jobs import JobManager
@@ -72,6 +73,24 @@ def test_old_database_without_level_column_migrates(tmp_path):
     manager = JobManager(sessions, Config())  # migrates in place
     veteran = manager.get("old1")
     assert veteran is not None and veteran.level is None
+    assert veteran.report_presentation_version == REPORT_PRESENTATION_VERSION
+    assert veteran.report_entitlements == ReportEntitlementSnapshot("available")
+    assert veteran.report_view_rel is None
+    assert veteran.report_manifest_rel is None
+    assert veteran.report_checksums_rel is None
+    assert veteran.structured_report is False
+
+    columns = {
+        row[1] for row in manager._conn.execute("PRAGMA table_info(jobs)")
+    }
+    assert {
+        "report_presentation_version",
+        "report_entitlements_json",
+        "report_view_rel",
+        "report_manifest_rel",
+        "report_checksums_rel",
+        "structured_report",
+    } <= columns
 
 
 def test_upload_forwards_level_to_the_pipeline(tmp_path, monkeypatch):

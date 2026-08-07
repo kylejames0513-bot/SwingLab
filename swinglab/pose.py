@@ -15,6 +15,8 @@ from __future__ import annotations
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
+from typing import Mapping
 
 import numpy as np
 
@@ -65,6 +67,14 @@ QUALITY_MAX_CORE_JUMP_SW = 1.0
 Landmarks = dict[int, np.ndarray]  # index -> [x_px, y_px]
 
 
+@dataclass(frozen=True)
+class PoseObservation:
+    """One accepted pose and the model's visibility for every retained joint."""
+
+    landmarks: Landmarks
+    visibility: Mapping[int, float | None]
+
+
 def ensure_model(path: Path = MODEL_PATH) -> Path:
     if not path.is_file():
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -95,7 +105,7 @@ def upright_sanity(lm: Landmarks) -> bool:
     return nose_y < shoulder_y < hip_y < ankle_y
 
 
-def core_visibility_ok(visibility: dict[int, float]) -> bool:
+def core_visibility_ok(visibility: Mapping[int, float | None]) -> bool:
     """False when any core landmark (shoulders/hips/ankles) scores below
     CORE_VISIBILITY_FLOOR. Missing scores count as visible — when the model
     doesn't say, don't drop."""
@@ -167,16 +177,14 @@ class PoseTracker:
             )
         )
 
-    def detect(self, frame_path: str | Path) -> Landmarks | None:
-        """Landmarks in pixels for one frame, or None if no (sane) pose found."""
+    def detect_observation(self, frame_path: str | Path) -> PoseObservation | None:
+        """Accepted landmarks plus visibility, or None if no sane pose was found."""
         img = self._mp.Image.create_from_file(str(frame_path))
         res = self._landmarker.detect(img)
         if not res.pose_landmarks:
             return None
         raw = res.pose_landmarks[0]
-        visibility = {
-            i: getattr(raw[i], "visibility", None) for i in CORE_LANDMARKS
-        }
+        visibility = {i: getattr(raw[i], "visibility", None) for i in TRACKED}
         if not core_visibility_ok(visibility):
             return None
         w, h = img.width, img.height
@@ -186,7 +194,11 @@ class PoseTracker:
         }
         if not upright_sanity(lm):
             return None
-        return lm
+        return PoseObservation(lm, MappingProxyType(visibility))
+
+    def detect(self, frame_path: str | Path) -> Landmarks | None:
+        observation = self.detect_observation(frame_path)
+        return observation.landmarks if observation is not None else None
 
     def close(self) -> None:
         self._landmarker.close()
