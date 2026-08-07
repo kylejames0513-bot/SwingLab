@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import base64
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -8,28 +7,10 @@ from playwright.sync_api import Page, sync_playwright
 
 from tests.report_view_fixtures import (
     LOCKED_REPLAY_SENTINEL,
+    QA_SYNTHETIC_MP4,
     report_document_fixture,
 )
 from tests.test_guided_report_html import render_fixture_path
-
-
-# One frame of browser-decodable synthetic video. It is intentionally tiny,
-# silent, and content-free; the test exercises real loading/layout rather than
-# pretending to provide golfer footage.
-_SYNTHETIC_VIDEO = base64.b64decode(
-    "GkXfo59ChoEBQveBAULygQRC84EIQoKEd2VibUKHgQJChYECGFOAZwEAAAAAAAJYEU2bdLpN"
-    "u4tTq4QVSalmU6yBoU27i1OrhBZUrmtTrIHWTbuMU6uEElTDZ1OsggEoTbuMU6uEHFO7a1Os"
-    "ggJC7AEAAAAAAABZAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
-    "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAVSalmsCrX"
-    "sYMPQkBNgIxMYXZmNjEuMS4xMDBXQYxMYXZmNjEuMS4xMDBEiYhARAAAAAAAABZUrmvNrgEA"
-    "AAAAAABE14EBc8WIplRXxk7As8WcgQAitZyDdW5kiIEAhoVWX1ZQOIOBASPjg4QCYloA4JWw"
-    "ggFAuoG0moECVbCIVbeBAlW4gQISVMNn+nNzn2PAgGfImUWjh0VOQ09ERVJEh4xMYXZmNjEu"
-    "MS4xMDBzc9VjwItjxYimVFfGTsCzxWfIoEWjh0VOQ09ERVJEh5NMYXZjNjEuMy4xMDAgbGli"
-    "dnB4Z8ihRaOIRFVSQVRJT05Eh5MwMDowMDowMC4wNDAwMDAwMDAAH0O2dUCV54EAo0CPgQAA"
-    "gPAOAJ0BKkABtAAARwiFhYiFhIgCAgAGFgVpfa9ubJzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh"
-    "7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh"
-    "7Jzh7Jzh7Jzh7Jzh7Jzh7Jzh7JzeAP7+67q/pLpcWgAcU7trkbuPs4EAt4r3gQHxggGn8IED"
-)
 
 
 def _materialize_fixture_media(tmp_path: Path, name: str) -> None:
@@ -45,7 +26,8 @@ def _materialize_fixture_media(tmp_path: Path, name: str) -> None:
             draw.text((68, 110), entry.role.value.replace("_", " "), fill="#c9d4cc")
             image.save(target, format="PNG" if target.suffix.lower() == ".png" else "JPEG")
         elif entry.mime_type.startswith("video/"):
-            target.write_bytes(_SYNTHETIC_VIDEO)
+            assert entry.mime_type == "video/mp4"
+            target.write_bytes(QA_SYNTHETIC_MP4)
 
 
 def _open_report(
@@ -344,6 +326,7 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
         for index in range(print_figures.count()):
             figure = print_figures.nth(index)
             assert figure.locator("img").get_attribute("alt") == swing.video_poster_alt_text
+            assert figure.locator("img").get_attribute("src") == poster_path
             assert figure.locator("img").evaluate("image => image.naturalWidth > 0")
             caption = figure.locator("figcaption").text_content() or ""
             assert swing.print_playback_reference in caption
@@ -367,17 +350,17 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
         capture_page = browser.new_page(viewport={"width": 390, "height": 844})
         _open_report(capture_page, tmp_path, "capture-only-angle")
         capture = report_document_fixture("capture-only-angle").depth.swings[0]
-        assert capture_page.locator("video").get_attribute("poster") == (
-            report_document_fixture("capture-only-angle").media_by_key[
-                capture.video_poster_media_key
-            ].relative_path
-        )
+        capture_poster_path = report_document_fixture(
+            "capture-only-angle"
+        ).media_by_key[capture.video_poster_media_key].relative_path
+        assert capture_page.locator("video").get_attribute("poster") == capture_poster_path
         capture_page.emulate_media(media="print")
         capture_figure = capture_page.locator(".capture-playback.print-only")
         assert capture_figure.is_visible()
         assert capture_figure.locator("img").get_attribute("alt") == (
             capture.video_poster_alt_text
         )
+        assert capture_figure.locator("img").get_attribute("src") == capture_poster_path
         assert capture_figure.locator("img").evaluate(
             "image => image.naturalWidth > 0"
         )
