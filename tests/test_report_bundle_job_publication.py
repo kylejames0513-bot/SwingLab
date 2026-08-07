@@ -237,6 +237,58 @@ def test_guided_completion_commits_all_terminal_publication_fields_once(tmp_path
     assert job.report_rel == stored.report_rel
 
 
+def test_guided_core_publication_commit_acknowledgement_loss_reads_back_done_row(
+    tmp_path: Path,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    user_id = "golfer"
+    job = manager.create_session(
+        user_id=user_id,
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+
+    class CommitThenRaise:
+        def __init__(self, connection):
+            self.connection = connection
+            self.raised = False
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        def commit(self):
+            self.connection.commit()
+            if not self.raised:
+                self.raised = True
+                raise sqlite3.OperationalError("commit acknowledgement lost")
+
+    manager._conn = CommitThenRaise(manager._conn)
+
+    manager._complete_job(job, result)
+
+    stored = manager.get(job.id)
+    assert stored is not None and stored.status == DONE
+    assert stored.structured_report is True
+    assert (
+        stored.report_rel,
+        stored.report_view_rel,
+        stored.report_manifest_rel,
+        stored.report_checksums_rel,
+    ) == (
+        result.report_path.relative_to(job.session_dir).as_posix(),
+        result.report_view_path.relative_to(job.session_dir).as_posix(),
+        result.manifest_path.relative_to(job.session_dir).as_posix(),
+        result.checksums_path.relative_to(job.session_dir).as_posix(),
+    )
+    assert job.status == DONE and job.structured_report is True
+    assert manager.usage_this_month(user_id) == 1
+
+
 def test_terminal_log_append_is_status_and_policy_guarded(tmp_path: Path):
     manager = JobManager(
         tmp_path / "sessions",
