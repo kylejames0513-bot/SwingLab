@@ -4,6 +4,8 @@ gauges. Durable quota receipts cover retention_days cleanup below."""
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
+import threading
 import time
 from pathlib import Path
 
@@ -81,6 +83,50 @@ def test_failed_job_source_also_deleted_when_configured(tmp_path, monkeypatch):
     job = client.app.state.jobs.get(job_id)
     assert source_files(job.session_dir) == []
     assert any("upload again to retry" in line for line in data["log"])
+
+
+def test_failed_status_waits_for_terminal_source_cleanup(tmp_path, monkeypatch):
+    """A client that stops polling at FAILED must see final cleanup notes."""
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_no_strikes)
+    cleanup_started = threading.Event()
+    release_cleanup = threading.Event()
+    original_cleanup = JobManager._delete_failed_source_if_configured
+
+    def blocked_cleanup(manager, job):
+        cleanup_started.set()
+        assert release_cleanup.wait(timeout=5), "test never released cleanup"
+        return original_cleanup(manager, job)
+
+    monkeypatch.setattr(
+        JobManager, "_delete_failed_source_if_configured", blocked_cleanup
+    )
+    cfg = Config()
+    cfg.web["delete_source_after_done"] = True
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
+    job_id = upload(client)
+    assert cleanup_started.wait(timeout=5), "failed cleanup never started"
+
+    executor = ThreadPoolExecutor(max_workers=1)
+    lookup_started = threading.Event()
+
+    def lookup_job():
+        lookup_started.set()
+        return client.app.state.jobs.get(job_id)
+
+    lookup = executor.submit(lookup_job)
+    try:
+        assert lookup_started.wait(timeout=1), "job lookup never started"
+        with pytest.raises(FutureTimeout):
+            lookup.result(timeout=0.25)
+    finally:
+        release_cleanup.set()
+
+    persisted = lookup.result(timeout=5)
+    executor.shutdown()
+    assert persisted is not None and persisted.status == "failed"
+    assert source_files(persisted.session_dir) == []
+    assert any("upload again to retry" in line for line in persisted.log)
 
 
 def test_failed_job_keeps_source_by_default(tmp_path, monkeypatch):

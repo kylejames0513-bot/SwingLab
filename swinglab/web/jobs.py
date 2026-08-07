@@ -1261,14 +1261,18 @@ class JobManager:
         )
 
     def _finish_processing_failure(self, job: Job, error: str) -> None:
-        if not self._cleanup_before_failure(
-            job, expected_status=PROCESSING, error=error
-        ):
-            return
-        try:
-            self._delete_failed_source_if_configured(job)
-        except Exception:
-            logger.exception("Failed source cleanup failed for job %s", job.id)
+        # Do not expose FAILED while additive terminal cleanup and note
+        # persistence are still running. API lookups share this re-entrant
+        # lock and therefore see one stable side of that boundary.
+        with self._lock:
+            if not self._cleanup_before_failure(
+                job, expected_status=PROCESSING, error=error
+            ):
+                return
+            try:
+                self._delete_failed_source_if_configured(job)
+            except Exception:
+                logger.exception("Failed source cleanup failed for job %s", job.id)
         self._notify_owner(job)
 
     def _run(self, job: Job, video_path: Path) -> None:
