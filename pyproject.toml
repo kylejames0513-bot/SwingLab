@@ -40,7 +40,11 @@ backup = [
     # one writer and immutable completion markers.
     "boto3>=1.37.32,<2",
 ]
-dev = ["pytest>=8.0", "httpx>=0.27"]
+dev = [
+    "pytest>=8.0",
+    "httpx>=0.27",
+    "playwright>=1.52",
+]
 
 [project.scripts]
 swinglab = "swinglab.cli:main"

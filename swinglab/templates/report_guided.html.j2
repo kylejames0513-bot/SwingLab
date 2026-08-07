@@ -31,11 +31,22 @@
       background: var(--canvas);
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       line-height: 1.55;
+      overflow-wrap: anywhere;
     }
-    a { color: var(--brand-primary); }
-    img { display: block; max-width: 100%; height: auto; }
-    .report-control:focus-visible,
-    summary:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; }
+    a { color: var(--accent-text); }
+    img, video, svg { max-width: 100%; height: auto; }
+    img { display: block; }
+    .report-control,
+    details > summary {
+      display: inline-flex;
+      min-width: 44px;
+      min-height: 44px;
+      align-items: center;
+    }
+    :where(a, button, summary):focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 3px;
+    }
     .skip-link {
       position: absolute;
       left: 1rem;
@@ -120,7 +131,9 @@
       list-style: none;
     }
     .journey-preview a {
-      display: block;
+      display: flex;
+      align-items: center;
+      justify-content: center;
       padding: .65rem;
       text-align: center;
       text-decoration: none;
@@ -180,6 +193,7 @@
     .phase-card[open] { border-color: var(--brand-primary); }
     .phase-card summary {
       display: flex;
+      flex-wrap: wrap;
       justify-content: space-between;
       gap: 1rem;
       padding: .85rem 0;
@@ -200,7 +214,11 @@
     .optional-card video { width: min(100%, 42rem); }
     .optional-depth { margin-top: 1rem; }
     .optional-card > summary { font-weight: 800; }
-    .table-scroll { max-width: 100%; overflow-x: auto; }
+    .table-scroll {
+      max-width: 100%;
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+    }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: .55rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     .practice-summary,
@@ -220,7 +238,6 @@
     .drill-illustration { max-width: 36rem; margin: 1rem 0; }
     .drill-illustration figcaption { margin-top: .4rem; color: var(--muted); }
     .primary-action {
-      display: inline-block;
       margin-top: 1rem;
       padding: .75rem 1rem;
       color: #fff;
@@ -229,12 +246,71 @@
       font-weight: 800;
       text-decoration: none;
     }
-    @media (max-width: 42rem) {
+    .print-only { display: none; }
+    @media (max-width: 40rem) {
+      .sample-banner,
+      .report-header,
+      main { width: min(calc(100% - 20px), 68rem); }
+      .sample-banner { align-items: flex-start; flex-direction: column; }
+      .report-header { padding-top: .8rem; }
+      .context-list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: .4rem;
+      }
+      .context-list div { padding: .4rem .5rem; }
       .focused-evidence { grid-template-columns: 1fr; }
       .journey-preview { grid-template-columns: 1fr; }
       .event-timeline li { grid-template-columns: 1fr; gap: .1rem; }
       .practice-facts,
       .refilm-confirmations { grid-template-columns: 1fr; }
+      [data-report-block] { padding: 1rem; }
+      h1 { font-size: clamp(1.8rem, 9vw, 2.35rem); }
+      .focused-evidence { margin-inline: 0; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+      }
+    }
+    @media print {
+      @page { margin: 12mm 11mm 14mm; }
+      html { scroll-behavior: auto; }
+      body {
+        background: white;
+        color: var(--ink);
+        font-size: 10pt;
+      }
+      .sample-banner,
+      .report-header,
+      main { width: 100%; }
+      .sample-banner { box-shadow: none; }
+      [data-report-block] {
+        box-shadow: none;
+        border-radius: 0;
+      }
+      .screen-only,
+      .report-actions,
+      video { display: none !important; }
+      .print-only { display: block !important; }
+      details > summary { display: none !important; }
+      details:not([open]) > :not(summary) { display: block !important; }
+      details::details-content {
+        content-visibility: visible !important;
+        height: auto !important;
+      }
+      .table-scroll { overflow: visible; }
+      table { width: 100%; font-size: 8pt; }
+      tr, img, figure, .phase-card, .practice-card, .refilm-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+      h1, h2, h3 {
+        break-after: avoid;
+        page-break-after: avoid;
+      }
     }
   </style>
 </head>
@@ -242,7 +318,7 @@
   {% if sample_banner %}
   <aside class="sample-banner" aria-label="Sample report">
     <span>{{ sample_banner.text }}</span>
-    <a href="{{ sample_banner.cta_url }}">{{ sample_banner.cta_label }}</a>
+    <a class="screen-only report-control" href="{{ sample_banner.cta_url }}">{{ sample_banner.cta_label }}</a>
   </aside>
   {% endif %}
   <a class="skip-link report-control" href="#report-main">Skip to report</a>
@@ -518,12 +594,40 @@
             <p>{{ swing.locked_replay_explanation }}</p>
             {% else %}
               {% if swing.slow_motion_media_key %}
-              <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}" aria-label="{{ swing.slow_motion_caption }}"></video>
-              <p>{{ swing.slow_motion_caption }}</p>
+              <div class="screen-only">
+                <video controls preload="metadata"
+                       src="{{ media_path(swing.slow_motion_media_key) }}"
+                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                       aria-label="{{ swing.slow_motion_caption }}"></video>
+                <p>{{ swing.slow_motion_caption }}</p>
+              </div>
+              {% if swing.video_poster_media_key %}
+              <figure class="print-only playback-print">
+                <img src="{{ media_path(swing.video_poster_media_key) }}"
+                     alt="{{ swing.video_poster_alt_text }}">
+                <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
+              </figure>
+              {% else %}
+              <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
+              {% endif %}
               {% endif %}
               {% if swing.coach_replay_media_key %}
-              <video controls preload="metadata" src="{{ media_path(swing.coach_replay_media_key) }}" aria-label="{{ swing.coach_replay_caption }}"></video>
-              <p>{{ swing.coach_replay_caption }}</p>
+              <div class="screen-only">
+                <video controls preload="metadata"
+                       src="{{ media_path(swing.coach_replay_media_key) }}"
+                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                       aria-label="{{ swing.coach_replay_caption }}"></video>
+                <p>{{ swing.coach_replay_caption }}</p>
+              </div>
+              {% if swing.video_poster_media_key %}
+              <figure class="print-only playback-print">
+                <img src="{{ media_path(swing.video_poster_media_key) }}"
+                     alt="{{ swing.video_poster_alt_text }}">
+                <figcaption>{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</figcaption>
+              </figure>
+              {% else %}
+              <p class="print-only">{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</p>
+              {% endif %}
               {% endif %}
             {% endif %}
           </article>
@@ -612,12 +716,21 @@
       </section>
       {% for swing in depth.swings %}
         {% if swing.slow_motion_media_key and swing.slow_motion_media_key in view.capture_guidance.safe_media_keys %}
-        <figure class="capture-playback" data-capture-playback="{{ swing.slow_motion_media_key }}">
+        <figure class="capture-playback screen-only" data-capture-playback="{{ swing.slow_motion_media_key }}">
           <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}"
                  {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
                  aria-label="{{ swing.video_poster_alt_text or swing.slow_motion_caption }}"></video>
           <figcaption>{{ swing.slow_motion_caption }}</figcaption>
         </figure>
+        {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}
+        <figure class="capture-playback print-only">
+          <img src="{{ media_path(swing.video_poster_media_key) }}"
+               alt="{{ swing.video_poster_alt_text }}">
+          <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
+        </figure>
+        {% else %}
+        <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
+        {% endif %}
         {% endif %}
       {% endfor %}
       <div class="capture-actions">
