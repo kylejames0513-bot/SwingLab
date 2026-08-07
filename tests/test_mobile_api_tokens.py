@@ -326,14 +326,16 @@ def test_issue_refuses_auth_epoch_change_while_request_body_is_read(
     assert browser.get("/api/v1/me").status_code == 401
 
 
-def test_store_lifecycle_enforces_expiry_revocation_epoch_and_active_cap(tmp_path):
+def test_store_principal_lifecycle_enforces_selector_expiry_revocation_epoch_and_active_cap(
+    tmp_path,
+):
     users = UserStore(tmp_path / "tokens.sqlite")
     user = users.create("token-owner@example.com", "longenough")
 
     expired_raw, expired = issue_store_token(
         users, user.id, "Expired phone", now=-MOBILE_API_TOKEN_TTL_S
     )
-    assert users.authenticate_mobile_api_token(expired_raw, now=0) is None
+    assert users.authenticate_mobile_api_principal(expired_raw, now=0) is None
     assert users.list_mobile_api_tokens(user.id, now=0)[0].active is False
 
     raw_tokens = []
@@ -348,25 +350,39 @@ def test_store_lifecycle_enforces_expiry_revocation_epoch_and_active_cap(tmp_pat
     statements = []
     users._conn.set_trace_callback(statements.append)
     try:
+        assert users.authenticate_mobile_api_principal("not a token", now=101.0) is None
         invalid = f"ciat_{'A' * 24}.{'B' * 43}"
-        assert users.authenticate_mobile_api_token(invalid, now=101.0) is None
+        assert users.authenticate_mobile_api_principal(invalid, now=101.0) is None
     finally:
         users._conn.set_trace_callback(None)
     assert not any("BEGIN IMMEDIATE" in statement for statement in statements)
 
-    assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=101.0).id == user.id
+    principal = users.authenticate_mobile_api_principal(raw_tokens[0][0], now=101.0)
+    assert principal is not None
+    assert principal.user.id == user.id
+    assert principal.selector == raw_tokens[0][1].selector
+    assert principal.auth_epoch == user.auth_epoch
+    assert principal.installation_key is None
     first_used = users._conn.execute(
         "SELECT last_used_at FROM mobile_api_tokens WHERE selector = ?",
         (raw_tokens[0][1].selector,),
     ).fetchone()["last_used_at"]
     assert first_used == 101.0
-    assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=120.0).id == user.id
+    sampled_principal = users.authenticate_mobile_api_principal(
+        raw_tokens[0][0], now=120.0
+    )
+    assert sampled_principal is not None
+    assert sampled_principal.selector == raw_tokens[0][1].selector
     sampled_used = users._conn.execute(
         "SELECT last_used_at FROM mobile_api_tokens WHERE selector = ?",
         (raw_tokens[0][1].selector,),
     ).fetchone()["last_used_at"]
     assert sampled_used == first_used
-    assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=162.0).id == user.id
+    refreshed_principal = users.authenticate_mobile_api_principal(
+        raw_tokens[0][0], now=162.0
+    )
+    assert refreshed_principal is not None
+    assert refreshed_principal.selector == raw_tokens[0][1].selector
     refreshed_used = users._conn.execute(
         "SELECT last_used_at FROM mobile_api_tokens WHERE selector = ?",
         (raw_tokens[0][1].selector,),
@@ -374,14 +390,19 @@ def test_store_lifecycle_enforces_expiry_revocation_epoch_and_active_cap(tmp_pat
     assert refreshed_used == 162.0
 
     users.set_password(user.id, "replacement-password")
-    assert users.authenticate_mobile_api_token(raw_tokens[0][0], now=102.0) is None
+    assert users.authenticate_mobile_api_principal(raw_tokens[0][0], now=102.0) is None
 
     replacement_raw, replacement = issue_store_token(
         users, user.id, "Replacement phone", now=102.0
     )
+    replacement_principal = users.authenticate_mobile_api_principal(
+        replacement_raw, now=103.0
+    )
+    assert replacement_principal is not None
+    assert replacement_principal.selector == replacement.selector
     assert users.authenticate_mobile_api_token(replacement_raw, now=103.0).id == user.id
     assert users.revoke_mobile_api_token(user.id, replacement.selector, now=104.0)
-    assert users.authenticate_mobile_api_token(replacement_raw, now=105.0) is None
+    assert users.authenticate_mobile_api_principal(replacement_raw, now=105.0) is None
     assert users.revoke_mobile_api_token(user.id, "not-a-selector") is False
     assert users._conn.execute(
         "SELECT token_hash FROM mobile_api_tokens WHERE selector = ?",

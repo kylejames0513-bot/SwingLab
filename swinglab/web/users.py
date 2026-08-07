@@ -739,6 +739,16 @@ class MobileAPIToken:
 
 
 @dataclass(frozen=True)
+class MobileAPIPrincipal:
+    """The authenticated identity and device selector for a mobile token."""
+
+    user: User
+    selector: str
+    auth_epoch: int
+    installation_key: str | None
+
+
+@dataclass(frozen=True)
 class ShopifyCustomerAccountOAuthState:
     """One short-lived, server-side authorization-code transaction."""
 
@@ -4117,9 +4127,9 @@ class UserStore:
             self._conn.commit()
         return cursor.rowcount == 1
 
-    def authenticate_mobile_api_token(
+    def authenticate_mobile_api_principal(
         self, token: object, *, now: float | None = None
-    ) -> User | None:
+    ) -> MobileAPIPrincipal | None:
         """Authenticate a valid, unrevoked device token and record its use.
 
         A malformed, unknown, expired, revoked, or epoch-stale credential has
@@ -4196,7 +4206,17 @@ class UserStore:
                 except Exception:
                     self._conn.rollback()
                     raise
-        return self._from_row(user)
+        authenticated_user = self._from_row(user)
+        return MobileAPIPrincipal(
+            user=authenticated_user,
+            selector=selector,
+            auth_epoch=authenticated_user.auth_epoch,
+            installation_key=None,
+        )
+
+    def authenticate_mobile_api_token(self, token: object, *, now=None) -> User | None:
+        principal = self.authenticate_mobile_api_principal(token, now=now)
+        return principal.user if principal is not None else None
 
     def _shopify_identity_rows(
         self,

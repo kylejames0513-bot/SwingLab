@@ -14,6 +14,7 @@ from fastapi.exception_handlers import (
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
+from .auth import MobileAuthError
 from .contracts import APIError
 
 logger = logging.getLogger("swinglab.api.errors")
@@ -50,6 +51,16 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
                     message="Internal server error.",
                     retryable=True,
                     reference_id=secrets.token_hex(16),
+                ),
+                exc.status_code,
+                exc.headers,
+            )
+        if isinstance(exc, MobileAuthError):
+            return _response(
+                APIError(
+                    code=exc.mobile_error_code,
+                    message=str(exc.detail),
+                    retryable=exc.mobile_error_retryable,
                 ),
                 exc.status_code,
                 exc.headers,

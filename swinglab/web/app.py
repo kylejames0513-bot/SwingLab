@@ -91,6 +91,7 @@ from ..api.contracts import (
     PracticeCheckinResponse,
     ProfileResponse,
 )
+from ..api.auth import mobile_bearer_unauthorized, resolve_mobile_auth
 from ..api.errors import install_mobile_error_handlers
 from ..caddie_brief import (
     build_caddie_brief_from_payload,
@@ -728,37 +729,6 @@ def create_app(
             return None
         return user
 
-    def mobile_bearer_unauthorized() -> HTTPException:
-        """Return one non-enumerating error for every bad device credential."""
-
-        return HTTPException(
-            401,
-            "Invalid mobile access token.",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-
-    def mobile_bearer_token(request: Request) -> str | None:
-        """Read one strict Bearer token without accepting cookie fallback.
-
-        The helper is called only from routes that intentionally support a
-        native-client credential.  If any Authorization header is present,
-        malformed values are failures rather than an excuse to silently use a
-        browser session that happened to accompany the request.
-        """
-
-        authorization = request.headers.get("authorization")
-        if authorization is None:
-            return None
-        scheme, separator, token = authorization.partition(" ")
-        if (
-            separator != " "
-            or scheme.lower() != "bearer"
-            or not token
-            or " " in token
-        ):
-            raise mobile_bearer_unauthorized()
-        return token
-
     def api_v1_auth(request: Request) -> tuple[User, bool]:
         """Authenticate an owned mobile API call by bearer or cookie.
 
@@ -767,18 +737,10 @@ def create_app(
         Cookie-authenticated mutations keep their existing same-origin guard.
         """
 
-        if not cfg.web.get("require_account"):
-            raise HTTPException(404, "Account API is not enabled.")
-        bearer = mobile_bearer_token(request)
-        if bearer is not None:
-            user = users.authenticate_mobile_api_token(bearer)
-            if user is None:
-                raise mobile_bearer_unauthorized()
-            return user, True
-        user = current_user(request)
-        if user is None:
-            raise HTTPException(401, "Log in first.")
-        return user, False
+        context = resolve_mobile_auth(
+            request, users, bool(cfg.web.get("require_account"))
+        )
+        return context.user, context.via_bearer
 
     def session_access_user(request: Request) -> User | None:
         """Resolve a session/report owner, rejecting bad bearer credentials.

@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel
 
+from swinglab.api.auth import MobileAuthError
 from swinglab.api.errors import install_mobile_error_handlers
 
 
@@ -96,3 +97,35 @@ def test_legacy_routes_keep_fastapis_detail_error_contract():
     response = TestClient(_app(), raise_server_exceptions=False).get("/legacy")
     assert response.status_code == 404
     assert response.json() == {"detail": "legacy detail"}
+
+
+def test_mobile_auth_error_keeps_its_bounded_code_on_named_routes_only():
+    """Catches bearer-required errors degrading to generic HTTP 401 responses."""
+    app = FastAPI()
+
+    @app.get("/mobile/bearer", name="mobile.synthetic_bearer")
+    def mobile_bearer():
+        raise MobileAuthError("bearer_required", "A mobile access token is required.")
+
+    @app.get("/legacy/bearer", name="legacy.bearer")
+    def legacy_bearer():
+        raise MobileAuthError("bearer_required", "A mobile access token is required.")
+
+    install_mobile_error_handlers(app, {"mobile.synthetic_bearer"})
+    client = TestClient(app)
+
+    mobile = client.get("/mobile/bearer")
+    assert mobile.status_code == 401
+    assert mobile.json() == {
+        "resource_version": 1,
+        "code": "bearer_required",
+        "message": "A mobile access token is required.",
+        "retryable": False,
+        "reference_id": None,
+    }
+    assert mobile.headers["www-authenticate"] == "Bearer"
+
+    legacy = client.get("/legacy/bearer")
+    assert legacy.status_code == 401
+    assert legacy.json() == {"detail": "A mobile access token is required."}
+    assert legacy.headers["www-authenticate"] == "Bearer"
