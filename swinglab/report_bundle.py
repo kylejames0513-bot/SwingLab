@@ -1385,7 +1385,21 @@ def build_report_bundle(
         checksums_path = attempt.staging_dir / REPORT_CHECKSUMS_FILENAME
 
         write_report_view(report_view_path, document.view)
-        write_metrics_json(metrics_path, video, final_swings, stats, session_notes, cfg)
+        write_metrics_json(
+            metrics_path,
+            video,
+            final_swings,
+            stats,
+            session_notes,
+            cfg,
+            meta={
+                "camera_angle": angle,
+                "club": club,
+                "level": level,
+                "hand": hand,
+                "analysis_fps": analysis_fps,
+            },
+        )
         written_report = html_writer(report_path, document, cfg=cfg)
         if not isinstance(written_report, Path) or written_report.absolute() != report_path.absolute():
             raise CoreReportBundleError("guided HTML writer returned a noncanonical report path")

@@ -140,6 +140,36 @@ def test_guided_pipeline_publishes_without_ffmpeg_and_redacts_source_name(
     assert "private-source-name" not in "\n".join(messages)
 
 
+def test_guided_metrics_preserve_literal_session_context_without_source_path(
+    tmp_path, fast_cfg, guided_without_ffmpeg,
+):
+    fast_cfg.analysis["fps"] = 24.0
+    fast_cfg.analysis["auto_fps"] = False
+    result = analyze_video(
+        guided_without_ffmpeg,
+        out_dir=tmp_path / "results",
+        cfg=fast_cfg,
+        hand="left",
+        angle="face-on",
+        club="7-iron",
+        level="advanced",
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+        report_entitlements=ReportEntitlementSnapshot("disabled"),
+        guided_html_writer=write_test_report_html,
+    )
+
+    payload = json.loads(result.metrics_path.read_text(encoding="utf-8"))
+    assert payload["meta"] == {
+        "camera_angle": "face-on",
+        "club": "7-iron",
+        "level": "advanced",
+        "hand": "left",
+        "analysis_fps": 24.0,
+    }
+    assert payload["video"]["path"] == "uploaded-video"
+    assert "private-source-name" not in json.dumps(payload)
+
+
 def test_legacy_version_ignores_guided_inputs_and_keeps_overlay_call_shape(
     tmp_path, fast_cfg, guided_without_ffmpeg, monkeypatch,
 ):
@@ -180,6 +210,44 @@ def test_guided_manual_event_method_is_persisted_exactly(
     impact = result.evidence_snapshots[0].events[2]
     assert impact.method is PhaseMethod.MANUAL_STRIKE
     assert load_report_view(result.report_view_path).visual_evidence.events[2].method is PhaseMethod.MANUAL_STRIKE
+
+
+def test_guided_silent_manual_strike_skips_audio_and_persists_provenance(
+    tmp_path, fast_cfg, guided_without_ffmpeg, monkeypatch,
+):
+    monkeypatch.setattr(
+        pipeline,
+        "probe",
+        lambda path: VideoInfo(Path(path), 4.0, 1000, 1000, 30.0, 0, None, False),
+    )
+    monkeypatch.setattr(
+        pipeline.audio,
+        "extract_audio",
+        lambda *args, **kwargs: pytest.fail("manual silent input extracted audio"),
+    )
+    monkeypatch.setattr(
+        pipeline.audio,
+        "detect_strikes",
+        lambda *args, **kwargs: pytest.fail("manual silent input detected audio strikes"),
+    )
+
+    result = analyze_video(
+        guided_without_ffmpeg,
+        out_dir=tmp_path / "results",
+        cfg=fast_cfg,
+        manual_strikes=[2.0],
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+        report_entitlements=ReportEntitlementSnapshot("disabled"),
+        guided_html_writer=write_test_report_html,
+    )
+
+    payload = json.loads(result.report_view_path.read_text(encoding="utf-8"))
+    assert payload["visual_evidence"]["events"][2] == {
+        "event": "impact",
+        "method": "manual_strike",
+        "timestamp_ms": 2000,
+        "label": "Impact",
+    }
 
 
 def test_guided_missing_event_publishes_capture_only_without_coaching(
