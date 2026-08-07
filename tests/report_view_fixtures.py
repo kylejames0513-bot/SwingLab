@@ -28,12 +28,20 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
     from swinglab.report_view import (
         Angle,
         BenchmarkRelation,
+        Capabilities,
+        CaptureGuidance,
+        CaptureOnlyReportView,
         CoachingReportView,
+        Entitlement,
         EventId,
         EventProvenance,
         EvidenceKind,
         JourneyMode,
+        MediaEntry,
+        MediaRole,
         MeasurementUnit,
+        OptionalSection,
+        OptionalSectionId,
         PhaseId,
         PhaseMethod,
         PhaseStatus,
@@ -52,6 +60,8 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
     assert isinstance(base_view.visual_evidence, RenderedEvidence)
     assert base_view.visual_evidence.supporting_measurement is not None
     view = base_view
+    capture_variant = False
+    replay_variant: str | None = None
 
     if name == "coaching-improve-clear":
         pass
@@ -367,6 +377,154 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                 ),
             ),
         )
+    elif name in {
+        "capture-only-angle",
+        "capture-only-tracking",
+        "capture-only-no-readable-swing",
+        "capture-only-retry-failure",
+    }:
+        capture_view = report_view_from_dict(report_view_payload("capture-only"))
+        assert isinstance(capture_view, CaptureOnlyReportView)
+        capture_variant = True
+        if name == "capture-only-angle":
+            reason = ReasonCode.CAMERA_ANGLE_MISMATCH
+            guidance = CaptureGuidance(
+                reason,
+                "Camera angle mismatch",
+                "This clip was not filmed from the selected face-on angle.",
+                "Move the camera to belt height directly face-on.",
+                (
+                    "Set the camera directly across from your belt buckle.",
+                    "Keep the full club and both feet in frame.",
+                ),
+                ("playback-1",),
+                "refilm",
+                "Re-film from face-on",
+                "choose_video",
+                "Choose another video",
+            )
+        elif name == "capture-only-tracking":
+            reason = ReasonCode.TRACKING_UNSTABLE
+            guidance = CaptureGuidance(
+                reason,
+                "Tracking was unstable",
+                "The golfer was visible, but key body points could not be followed reliably.",
+                "Use brighter, even light and keep your full body clear of obstructions.",
+                (
+                    "Face the light instead of filming into it.",
+                    "Keep hands, feet, and the club visible throughout the swing.",
+                ),
+                ("playback-1",),
+                "refilm",
+                "Re-film with clearer tracking",
+                "support",
+                "Get filming help",
+            )
+        elif name == "capture-only-retry-failure":
+            reason = ReasonCode.NO_READABLE_SWING
+            guidance = replace(
+                capture_view.capture_guidance,
+                explanation=(
+                    "The retry still did not contain one complete readable swing."
+                ),
+                correction="Keep the entire golfer and club in frame from start to finish.",
+                primary_action_label="Try the re-film again",
+                secondary_action="support",
+                secondary_action_label="Get filming help",
+            )
+        else:
+            reason = ReasonCode.NO_READABLE_SWING
+            guidance = capture_view.capture_guidance
+        view = replace(
+            capture_view,
+            trust=replace(
+                capture_view.trust,
+                reasons=(reason,),
+                explanation=guidance.explanation,
+            ),
+            capture_guidance=guidance,
+        )
+    elif name in {"free-locked", "pro-unlocked"}:
+        replay_variant = name
+        unlocked = name == "pro-unlocked"
+        media = list(base_view.media)
+        media.extend(
+            (
+                MediaEntry(
+                    key="key-positions-1",
+                    role=MediaRole.KEY_POSITIONS,
+                    mime_type="image/jpeg",
+                    entitlement=Entitlement.FREE,
+                    relative_path="media/key-positions-1.jpg",
+                    checksum_sha256="d" * 64,
+                ),
+                MediaEntry(
+                    key="slow-motion-1",
+                    role=MediaRole.SLOW_MOTION,
+                    mime_type="video/mp4",
+                    entitlement=Entitlement.FREE,
+                    relative_path="media/slow-motion-1.mp4",
+                    checksum_sha256="e" * 64,
+                ),
+                MediaEntry(
+                    key="poster-1",
+                    role=MediaRole.VIDEO_POSTER,
+                    mime_type="image/jpeg",
+                    entitlement=Entitlement.FREE,
+                    relative_path="media/poster-1.jpg",
+                    checksum_sha256="f" * 64,
+                ),
+            )
+        )
+        if unlocked:
+            media.append(
+                MediaEntry(
+                    key="coach-replay-1",
+                    role=MediaRole.COACH_REPLAY,
+                    mime_type="video/mp4",
+                    entitlement=Entitlement.PRO,
+                    relative_path="media/coach-replay-1.mp4",
+                    checksum_sha256="1" * 64,
+                )
+            )
+        optional_sections = (
+            OptionalSection(OptionalSectionId.EVERY_SWING, "Every swing", True, False, 1),
+            OptionalSection(OptionalSectionId.REPLAY, "Replay", True, not unlocked, 1),
+            OptionalSection(
+                OptionalSectionId.SECONDARY_FINDINGS,
+                "Secondary findings",
+                True,
+                False,
+                1,
+            ),
+            OptionalSection(
+                OptionalSectionId.ALTERNATIVE_DRILLS,
+                "Try a different drill",
+                True,
+                False,
+                len(base_view.practice.alternatives),
+            ),
+            OptionalSection(OptionalSectionId.MORE_STRENGTHS, "More strengths", True, False, 1),
+            OptionalSection(OptionalSectionId.MEASUREMENTS, "Measurements", True, False, 3),
+            OptionalSection(OptionalSectionId.GLOSSARY, "Glossary", True, False, 1),
+            OptionalSection(OptionalSectionId.GEAR, "Gear", True, False, 1),
+        )
+        view = replace(
+            base_view,
+            capabilities=Capabilities(
+                True,
+                True,
+                True,
+                unlocked,
+                unlocked,
+                True,
+                True,
+                True,
+                True,
+            ),
+            media=tuple(media),
+            optional_sections=optional_sections,
+        )
     else:
         view = report_view_from_dict(report_view_payload(name))
 
@@ -433,7 +591,61 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
         ),
         navigation=ReportNavigation("/", "/shop", "/collections/swinglab-gear"),
     )
-    if name == "coaching-improve-limited":
+    if capture_variant:
+        depth = replace(
+            depth,
+            swings=(
+                SwingDetail(
+                    swing=1,
+                    summary="Original upload",
+                    notes=(),
+                    measurements=(),
+                    key_positions_media_key=None,
+                    key_positions_alt_text=None,
+                    slow_motion_media_key="playback-1",
+                    slow_motion_caption="Original upload for framing review",
+                    coach_replay_media_key=None,
+                    coach_replay_caption=None,
+                    replay_locked=False,
+                    locked_replay_explanation=None,
+                    video_poster_media_key=None,
+                    video_poster_alt_text=None,
+                    print_playback_reference="Playback: media/playback-1.mp4",
+                ),
+            ),
+            navigation=ReportNavigation("/", None, None),
+        )
+    elif replay_variant is not None:
+        unlocked = replay_variant == "pro-unlocked"
+        depth = replace(
+            depth,
+            swings=(
+                SwingDetail(
+                    swing=1,
+                    summary="Swing 1",
+                    notes=("Readable swing", "Balanced finish"),
+                    measurements=(
+                        LabelValue("tempo", "Tempo", "3.1 to 1"),
+                    ),
+                    key_positions_media_key="key-positions-1",
+                    key_positions_alt_text="Address, top, impact, and finish for swing 1",
+                    slow_motion_media_key="slow-motion-1" if unlocked else None,
+                    slow_motion_caption="Slow-motion swing 1" if unlocked else None,
+                    coach_replay_media_key="coach-replay-1" if unlocked else None,
+                    coach_replay_caption="Coach replay for swing 1" if unlocked else None,
+                    replay_locked=not unlocked,
+                    locked_replay_explanation=(
+                        None if unlocked else "Coach replay is available with Pro."
+                    ),
+                    video_poster_media_key="poster-1" if unlocked else None,
+                    video_poster_alt_text=(
+                        "Swing 1 video poster" if unlocked else None
+                    ),
+                    print_playback_reference="Playback: swing 1",
+                ),
+            ),
+        )
+    elif name == "coaching-improve-limited":
         depth = replace(
             depth,
             navigation=replace(depth.navigation, app_url=None),

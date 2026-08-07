@@ -88,6 +88,16 @@ def normalized_html_text(fragment: str) -> str:
     )
 
 
+def optional_section(html: str, section_id: str) -> str:
+    match = re.search(
+        rf'<details[^>]*data-optional-section="{re.escape(section_id)}"[^>]*>.*?</details>',
+        html,
+        flags=re.DOTALL,
+    )
+    assert match is not None, f"missing optional section {section_id}"
+    return match.group(0)
+
+
 def test_report_document_exposes_all_server_owned_html_depth():
     assert field_names(ReportDocument) == {"view", "depth", "media_by_key"}
     assert {
@@ -471,3 +481,205 @@ def test_measurement_limitations_practice_and_refilm_keep_authored_content(
     assert "Full drill steps" not in report_block(
         offline_html, "practice", "refilm"
     )
+
+
+@pytest.mark.parametrize(
+    ("name", "reason_label", "correction", "primary_action"),
+    (
+        (
+            "capture-only-angle",
+            "Camera angle mismatch",
+            "Move the camera to belt height directly face-on.",
+            "Re-film from face-on",
+        ),
+        (
+            "capture-only-tracking",
+            "Tracking was unstable",
+            "Use brighter, even light and keep your full body clear of obstructions.",
+            "Re-film with clearer tracking",
+        ),
+        (
+            "capture-only-no-readable-swing",
+            "No readable swing",
+            "Re-film with your full body visible.",
+            "Re-film your swing",
+        ),
+    ),
+)
+def test_capture_only_is_an_ordered_recovery_path_without_partial_coaching(
+    tmp_path: Path,
+    name: str,
+    reason_label: str,
+    correction: str,
+    primary_action: str,
+):
+    document = report_document_fixture(name)
+    html = render_guided(tmp_path, document)
+    guidance = document.view.capture_guidance
+    assert guidance is not None
+
+    order = positions(
+        html,
+        reason_label,
+        guidance.explanation,
+        correction,
+        "Quick filming checklist",
+        primary_action,
+    )
+    assert order == tuple(sorted(order))
+    for item in guidance.checklist:
+        assert item in html
+    if guidance.secondary_action_label:
+        assert guidance.secondary_action_label in html
+    assert 'data-capture-playback="playback-1"' in html
+    assert 'src="media/playback-1.mp4"' in html
+
+    forbidden = (
+        'data-report-block="understand"',
+        'data-report-block="practice"',
+        'data-report-block="refilm"',
+        'data-phase-id=',
+        'data-canonical="priority"',
+        "Coach cue:",
+        "Pass mark",
+        "Coach replay",
+    )
+    for marker in forbidden:
+        assert marker not in html
+    for gear in document.depth.gear:
+        assert gear.url not in html
+
+
+def test_capture_retry_failure_keeps_reason_and_both_recovery_actions(tmp_path: Path):
+    document = report_document_fixture("capture-only-retry-failure")
+    html = render_guided(tmp_path, document)
+    guidance = document.view.capture_guidance
+    assert guidance is not None
+
+    assert guidance.reason_label in html
+    assert guidance.explanation in html
+    assert guidance.primary_action_label in html
+    assert guidance.secondary_action_label in html
+    assert 'data-report-block="practice"' not in html
+
+
+def test_capture_playback_requires_the_server_safe_media_allowlist(tmp_path: Path):
+    document = report_document_fixture("capture-only-angle")
+    guidance = document.view.capture_guidance
+    assert guidance is not None
+    blocked = replace(
+        document,
+        view=replace(
+            document.view,
+            capture_guidance=replace(guidance, safe_media_keys=()),
+        ),
+    )
+
+    html = render_guided(tmp_path, blocked)
+
+    assert 'data-capture-playback=' not in html
+    assert 'src="media/playback-1.mp4"' not in html
+
+
+def test_optional_depth_uses_each_typed_payload_and_accessible_tables(tmp_path: Path):
+    document = report_document_fixture("pro-unlocked")
+    html = render_guided(tmp_path, document)
+
+    for section in document.view.optional_sections:
+        fragment = optional_section(html, section.id)
+        assert section.label in fragment
+        assert str(section.item_count) in fragment
+
+    every_swing = optional_section(html, "every_swing")
+    swing = document.depth.swings[0]
+    assert swing.summary in every_swing
+    assert swing.notes[0] in every_swing
+    assert 'src="media/key-positions-1.jpg"' in every_swing
+
+    replay = optional_section(html, "replay")
+    assert 'src="media/slow-motion-1.mp4"' in replay
+    assert 'src="media/coach-replay-1.mp4"' in replay
+    assert swing.coach_replay_caption in replay
+
+    secondary = optional_section(html, "secondary_findings")
+    assert document.depth.secondary_findings[0].title in secondary
+    assert document.depth.secondary_findings[0].cue in secondary
+    assert 'data-report-block="practice"' not in secondary
+
+    alternatives = optional_section(html, "alternative_drills")
+    assert document.view.practice.alternatives[0].name in alternatives
+    strengths = optional_section(html, "more_strengths")
+    assert document.depth.strengths[0].title in strengths
+
+    measurements = optional_section(html, "measurements")
+    assert '<caption>' in measurements
+    assert 'role="region"' in measurements
+    assert 'tabindex="0"' in measurements
+    assert 'scope="col"' in measurements
+    assert document.depth.session_details[0].value in measurements
+    assert document.depth.measurements[0].value in measurements
+    assert document.depth.limitations[0] in measurements
+
+    glossary = optional_section(html, "glossary")
+    assert document.depth.glossary[0].term in glossary
+    assert document.depth.glossary[0].definition in glossary
+    gear = optional_section(html, "gear")
+    assert document.depth.gear[0].label in gear
+    assert document.depth.gear[0].url in gear
+    assert html.index('data-report-block="practice"') < html.index(
+        'data-optional-section="gear"'
+    )
+
+
+def test_unavailable_optional_sections_do_not_appear(tmp_path: Path):
+    document = report_document_fixture("coaching-improve-clear")
+    html = render_guided(tmp_path, document)
+
+    assert 'data-optional-section="measurements"' in html
+    for section_id in (
+        "every_swing",
+        "replay",
+        "secondary_findings",
+        "more_strengths",
+        "glossary",
+        "gear",
+    ):
+        assert f'data-optional-section="{section_id}"' not in html
+
+
+def test_locked_replay_never_resolves_hidden_media_but_pro_replay_does(tmp_path: Path):
+    sentinel = "private/never-publish-coach-replay.mp4"
+    locked = report_document_fixture("free-locked")
+    locked_html = render_guided(tmp_path, locked)
+    locked_replay = optional_section(locked_html, "replay")
+    assert locked.depth.swings[0].locked_replay_explanation in locked_replay
+    assert "coach-replay-1" not in locked.media_by_key
+    assert "coach-replay-1" not in locked_html
+    assert sentinel not in locked_html
+
+    unlocked = report_document_fixture("pro-unlocked")
+    unlocked_html = render_guided(tmp_path, unlocked)
+    unlocked_replay = optional_section(unlocked_html, "replay")
+    assert 'src="media/coach-replay-1.mp4"' in unlocked_replay
+    assert unlocked.depth.swings[0].coach_replay_caption in unlocked_replay
+
+
+def test_capture_only_suppresses_malicious_depth_gear(tmp_path: Path):
+    document = report_document_fixture("capture-only-angle")
+    malicious = replace(
+        document,
+        depth=replace(
+            document.depth,
+            gear=(
+                replace(
+                    document.depth.gear[0],
+                    label="SHOULD NOT RENDER",
+                    url="/private-capture-gear",
+                ),
+            ),
+        ),
+    )
+    html = render_guided(tmp_path, malicious)
+
+    assert "SHOULD NOT RENDER" not in html
+    assert "/private-capture-gear" not in html

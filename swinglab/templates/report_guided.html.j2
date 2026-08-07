@@ -191,7 +191,18 @@
     .measurement-detail,
     .video-limitations,
     .practice-detail,
-    .alternatives { margin-top: 1rem; padding: .75rem 1rem; background: var(--soft); border-radius: .6rem; }
+    .alternatives,
+    .optional-card { margin-top: 1rem; padding: .75rem 1rem; background: var(--soft); border-radius: .6rem; }
+    .capture-correction { padding: .8rem 1rem; background: var(--soft); border-left: .28rem solid var(--brand-primary); }
+    .capture-actions { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
+    .capture-playback { margin: 1rem 0 0; }
+    .capture-playback video,
+    .optional-card video { width: min(100%, 42rem); }
+    .optional-depth { margin-top: 1rem; }
+    .optional-card > summary { font-weight: 800; }
+    .table-scroll { max-width: 100%; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: .55rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
     .practice-summary,
     .refilm-checklist { padding-left: 1.35rem; }
     .practice-summary li,
@@ -424,9 +435,10 @@
         <ol>{% for step in view.practice.full_steps %}<li>{{ step }}</li>{% endfor %}</ol>
       </details>
       {% endif %}
-      {% if view.practice.alternatives %}
-      <details class="alternatives">
-        <summary>Try a different drill</summary>
+      {% set alternative_section = optional_by_id.get("alternative_drills") %}
+      {% if view.practice.alternatives and (not alternative_section or (alternative_section.available and not alternative_section.locked)) %}
+      <details class="alternatives"{% if alternative_section %} data-optional-section="alternative_drills"{% endif %}>
+        <summary>{% if alternative_section %}{{ alternative_section.label }} · {{ alternative_section.item_count }}{% else %}Try a different drill{% endif %}</summary>
         {% for alternative in view.practice.alternatives %}
         <article>
           <h3>{{ alternative.name }}</h3>
@@ -461,10 +473,155 @@
       <p class="primary-action" role="note" data-offline-action="true">{{ view.refilm.primary_action_label }}</p>
       {% endif %}
     </section>
+
+    <section class="optional-depth" aria-label="More report detail">
+      {% set section = optional_by_id.get("every_swing") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="every_swing">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}
+        <p>This section is locked.</p>
+        {% else %}
+        {% for swing in depth.swings %}
+        <article>
+          <h3>{{ swing.summary }}</h3>
+          {% if swing.key_positions_media_key %}
+          <img src="{{ media_path(swing.key_positions_media_key) }}" alt="{{ swing.key_positions_alt_text }}">
+          {% endif %}
+          {% if swing.notes %}<ul>{% for note in swing.notes %}<li>{{ note }}</li>{% endfor %}</ul>{% endif %}
+          {% if swing.measurements %}
+          <dl>{% for item in swing.measurements %}<dt>{{ item.label }}</dt><dd>{{ item.value }}</dd>{% endfor %}</dl>
+          {% endif %}
+        </article>
+        {% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("replay") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="replay">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}
+          {% for swing in depth.swings %}
+            {% if swing.locked_replay_explanation %}<p>{{ swing.locked_replay_explanation }}</p>{% endif %}
+          {% endfor %}
+        {% else %}
+          {% for swing in depth.swings %}
+          <article>
+            <h3>{{ swing.summary }}</h3>
+            {% if swing.replay_locked %}
+            <p>{{ swing.locked_replay_explanation }}</p>
+            {% else %}
+              {% if swing.slow_motion_media_key %}
+              <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}" aria-label="{{ swing.slow_motion_caption }}"></video>
+              <p>{{ swing.slow_motion_caption }}</p>
+              {% endif %}
+              {% if swing.coach_replay_media_key %}
+              <video controls preload="metadata" src="{{ media_path(swing.coach_replay_media_key) }}" aria-label="{{ swing.coach_replay_caption }}"></video>
+              <p>{{ swing.coach_replay_caption }}</p>
+              {% endif %}
+            {% endif %}
+          </article>
+          {% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("secondary_findings") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="secondary_findings">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        {% for finding in depth.secondary_findings %}
+        <article><h3>{{ finding.title }}</h3><p>{{ finding.summary }}</p><p>{{ finding.why }}</p><p><strong>Cue:</strong> {{ finding.cue }}</p></article>
+        {% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("more_strengths") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="more_strengths">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        {% for strength in depth.strengths %}<article><h3>{{ strength.title }}</h3><p>{{ strength.summary }}</p></article>{% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("measurements") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="measurements">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        <div class="table-scroll" role="region" aria-label="Session measurements" tabindex="0">
+          <table>
+            <caption>Session details and measurements</caption>
+            <thead><tr><th scope="col">Item</th><th scope="col">Value</th></tr></thead>
+            <tbody>
+              {% for item in depth.session_details %}<tr><th scope="row">{{ item.label }}</th><td>{{ item.value }}</td></tr>{% endfor %}
+              {% for item in depth.measurements %}<tr><th scope="row">{{ item.label }}</th><td>{{ item.value }}</td></tr>{% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% for phase in view.phases %}{% for detail in phase.measurements %}
+        <article><h3>{{ detail.label }}</h3><p>{{ detail.plain_value }}</p><p>{{ detail.explanation }}</p><p>{{ detail.limitation }}</p></article>
+        {% endfor %}{% endfor %}
+        <ul>{% for limitation in depth.limitations %}<li>{{ limitation }}</li>{% endfor %}</ul>
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("glossary") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="glossary">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        <dl>{% for entry in depth.glossary %}<dt>{{ entry.term }}</dt><dd>{{ entry.definition }}</dd>{% endfor %}</dl>
+        {% endif %}
+      </details>
+      {% endif %}
+
+      {% set section = optional_by_id.get("gear") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="gear">
+        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        {% if section.locked %}<p>This section is locked.</p>{% else %}
+        {% for item in depth.gear %}<article><h3>{{ item.label }}</h3><p>{{ item.description }}</p><a class="report-control" href="{{ item.url }}">View gear</a></article>{% endfor %}
+        {% endif %}
+      </details>
+      {% endif %}
+    </section>
     {% else %}
-    <section class="capture-shell" aria-labelledby="report-title">
+    <section class="capture-recovery" data-report-block="capture-recovery" aria-labelledby="report-title">
+      <p class="eyebrow">{{ view.trust.label }}</p>
       <h1 id="report-title">{{ view.capture_guidance.reason_label }}</h1>
       <p>{{ view.capture_guidance.explanation }}</p>
+      <div class="capture-correction">
+        <h2>Change this for the next video</h2>
+        <p>{{ view.capture_guidance.correction }}</p>
+      </div>
+      <section aria-labelledby="capture-checklist">
+        <h2 id="capture-checklist">Quick filming checklist</h2>
+        <ul>{% for item in view.capture_guidance.checklist %}<li>{{ item }}</li>{% endfor %}</ul>
+      </section>
+      {% for swing in depth.swings %}
+        {% if swing.slow_motion_media_key and swing.slow_motion_media_key in view.capture_guidance.safe_media_keys %}
+        <figure class="capture-playback" data-capture-playback="{{ swing.slow_motion_media_key }}">
+          <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}" aria-label="{{ swing.slow_motion_caption }}"></video>
+          <figcaption>{{ swing.slow_motion_caption }}</figcaption>
+        </figure>
+        {% endif %}
+      {% endfor %}
+      <div class="capture-actions">
+        {% if navigation.app_url %}
+        <a class="primary-action report-control" data-capture-action="primary" href="{{ navigation.app_url }}">{{ view.capture_guidance.primary_action_label }}</a>
+        {% if view.capture_guidance.secondary_action_label %}<a class="report-control" data-capture-action="secondary" href="{{ navigation.app_url }}">{{ view.capture_guidance.secondary_action_label }}</a>{% endif %}
+        {% else %}
+        <p role="note">{{ view.capture_guidance.primary_action_label }}</p>
+        {% endif %}
+      </div>
     </section>
     {% endif %}
   </main>
