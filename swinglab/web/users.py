@@ -65,6 +65,11 @@ from ..proof_cycle_practice import (
     normalize_practice_minutes,
     normalize_practice_outcome,
 )
+from .mobile_schema import (
+    VersionedHMAC,
+    ensure_mobile_state_schema,
+    require_mobile_state_key_coverage,
+)
 
 FREE = "free"
 PRO = "pro"
@@ -838,10 +843,20 @@ class PasswordAddConflict(RuntimeError):
 
 
 class UserStore:
-    def __init__(self, db_path: str | Path):
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        mobile_state_hmac: VersionedHMAC | None = None,
+    ):
         self._lock = threading.Lock()
         self._closed = False
         self._db_path = Path(db_path)
+        self._mobile_state_hmac = (
+            mobile_state_hmac
+            if mobile_state_hmac is not None
+            else VersionedHMAC.from_env(required=False)
+        )
         self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         with self._lock:
@@ -851,6 +866,7 @@ class UserStore:
                 # processes. A per-instance threading lock cannot prevent
                 # two connections from observing the same missing column.
                 self._conn.execute("BEGIN IMMEDIATE")
+                ensure_mobile_state_schema(self._conn)
                 self._conn.execute(
                     "DELETE FROM signup_intents WHERE expires_at <= ?",
                     (time.time(),),
@@ -1206,6 +1222,13 @@ class UserStore:
                 )
                 self._backfill_shopify_grant_provenance(
                     backfill_pending=pending_days_added
+                )
+                # Protected configuration must cover every durable reference,
+                # even when all mobile feature flags are off.  HMAC inputs are
+                # intentionally unavailable, so a missing old key cannot be
+                # repaired or re-keyed after startup.
+                require_mobile_state_key_coverage(
+                    self._conn, self._mobile_state_hmac
                 )
                 self._conn.commit()
             except Exception:
@@ -3971,6 +3994,8 @@ class UserStore:
                 revoked_at is None
                 and float(row["expires_at"]) > now
                 and int(row["auth_epoch"]) == current_auth_epoch
+                and str(row["state"]) == "active"
+                and row["fenced_at"] is None
             ),
         )
 
@@ -4014,7 +4039,8 @@ class UserStore:
                     self._conn.execute(
                         "SELECT COUNT(*) FROM mobile_api_tokens"
                         " WHERE user_id = ? AND auth_epoch = ?"
-                        " AND revoked_at IS NULL AND expires_at > ?",
+                        " AND revoked_at IS NULL AND expires_at > ?"
+                        " AND state = 'active' AND fenced_at IS NULL",
                         (user_id, current_auth_epoch, issued_at),
                     ).fetchone()[0]
                 )
@@ -4089,7 +4115,7 @@ class UserStore:
                 return []
             rows = self._conn.execute(
                 "SELECT selector, user_id, auth_epoch, label, created_at,"
-                " last_used_at, expires_at, revoked_at"
+                " last_used_at, expires_at, revoked_at, state, fenced_at"
                 " FROM mobile_api_tokens WHERE user_id = ?"
                 " ORDER BY created_at DESC, selector",
                 (user_id,),
@@ -4170,6 +4196,8 @@ class UserStore:
                 or token_row["revoked_at"] is not None
                 or float(token_row["expires_at"]) <= observed_at
                 or int(token_row["auth_epoch"]) != int(user["auth_epoch"] or 0)
+                or str(token_row["state"]) != "active"
+                or token_row["fenced_at"] is not None
             ):
                 return None
 
@@ -4211,7 +4239,11 @@ class UserStore:
             user=authenticated_user,
             selector=selector,
             auth_epoch=authenticated_user.auth_epoch,
-            installation_key=None,
+            installation_key=(
+                str(token_row["installation_key"])
+                if token_row["installation_key"] is not None
+                else None
+            ),
         )
 
     def authenticate_mobile_api_token(self, token: object, *, now=None) -> User | None:
