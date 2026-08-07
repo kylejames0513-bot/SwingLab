@@ -736,9 +736,60 @@ class _TableShape:
     unique_indexes: tuple[tuple[str, tuple[str, ...]], ...]
 
 
+def _sql_without_comments(sql: str) -> str:
+    """Replace SQLite comments with whitespace without touching quoted text."""
+
+    result: list[str] = []
+    quote_end: str | None = None
+    index = 0
+    while index < len(sql):
+        character = sql[index]
+        following = sql[index + 1] if index + 1 < len(sql) else ""
+        if quote_end is not None:
+            result.append(character)
+            if character == quote_end:
+                if following == quote_end:
+                    result.append(following)
+                    index += 1
+                else:
+                    quote_end = None
+        elif character in ("'", '"', "`"):
+            quote_end = character
+            result.append(character)
+        elif character == "[":
+            quote_end = "]"
+            result.append(character)
+        elif character == "-" and following == "-":
+            result.append(" ")
+            index += 2
+            while index < len(sql) and sql[index] not in "\r\n":
+                index += 1
+            if index < len(sql):
+                result.append(sql[index])
+        elif character == "/" and following == "*":
+            result.append(" ")
+            index += 2
+            while index < len(sql):
+                if (
+                    sql[index] == "*"
+                    and index + 1 < len(sql)
+                    and sql[index + 1] == "/"
+                ):
+                    index += 1
+                    break
+                if sql[index] in "\r\n":
+                    result.append(sql[index])
+                index += 1
+        else:
+            result.append(character)
+        index += 1
+    return "".join(result)
+
+
 def _check_constraints(sql: str) -> tuple[str, ...]:
     """Extract normalized CHECK bodies while respecting nested parentheses."""
 
+    sql = _sql_without_comments(sql)
     constraints: list[str] = []
     search_from = 0
     upper_sql = sql.upper()

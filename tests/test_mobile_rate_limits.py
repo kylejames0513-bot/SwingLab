@@ -432,6 +432,37 @@ def test_user_store_rejects_weakened_generation_one_table_shape(tmp_path):
         UserStore(db_path, mobile_state_hmac=_keyring())
 
 
+@pytest.mark.parametrize("comment_style", ["line", "block"])
+def test_user_store_rejects_expected_check_text_inside_sql_comments(
+    tmp_path, comment_style
+):
+    """Catches commented CHECK text being mistaken for enforced constraints."""
+
+    db_path = tmp_path / f"commented-check-{comment_style}.sqlite"
+    users = UserStore(db_path, mobile_state_hmac=_keyring())
+    users.close()
+    connection = sqlite3.connect(db_path)
+    table_sql = connection.execute(
+        "SELECT sql FROM sqlite_master"
+        " WHERE type = 'table' AND name = 'mobile_auth_challenges'"
+    ).fetchone()[0]
+    checks = (
+        "CHECK (purpose = 'signin')",
+        "CHECK (attempts BETWEEN 0 AND 5)",
+    )
+    for check in checks:
+        assert check in table_sql
+        comment = f"/* {check} */" if comment_style == "block" else f"-- {check}\n"
+        table_sql = table_sql.replace(check, comment)
+    connection.execute("DROP TABLE mobile_auth_challenges")
+    connection.execute(table_sql)
+    connection.commit()
+    connection.close()
+
+    with pytest.raises(RuntimeError, match="mobile_auth_challenges.*shape"):
+        UserStore(db_path, mobile_state_hmac=_keyring())
+
+
 def test_user_store_rejects_wrong_generation_one_index_shape(tmp_path):
     """Catches a same-named index that cannot enforce the live-IP lookup contract."""
 
