@@ -1706,7 +1706,7 @@ class JobManager:
         else:
             report_rel = self._result_rel(job, result.report_path, label="report path")
 
-        with publication_stack, self._lock:
+        with self._lock, publication_stack:
             if pinned_bundle is not None and (
                 pinned_bundle.bundle.manifest.presentation_version
                 != job.report_presentation_version

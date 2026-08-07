@@ -420,3 +420,133 @@ POSIX-only descriptor ownership test on this Windows host.
 - Windows native enumeration and exact relative opening were executed on this
   Windows host. The change is isolated inside the existing Windows-only branch;
   POSIX traversal behavior is unchanged.
+
+## Final whole-plan fix wave — cleanup serialization and direct relative opens
+
+### Status and scope
+
+This single consolidated fix wave started from
+`08e2dba8bb2fda267dbe0df75345a1f16841b8c5`. It changes only:
+
+- `swinglab/report_artifacts.py`
+- `swinglab/web/jobs.py`
+- `tests/test_report_artifacts.py`
+- `tests/test_report_bundle_job_publication.py`
+- this report
+
+No push, merge, deployment, feature activation, live mutation, or worktree
+cleanup was performed. The one fix commit containing this section has subject
+`fix: tighten publication cleanup and Windows opens`; its SHA is reported in
+the handoff because a commit cannot contain its own final object ID.
+
+### RED evidence
+
+Three behavioral selectors were run together against the pre-fix production
+code:
+
+```text
+python -m pytest tests/test_report_bundle_job_publication.py::test_guided_completion_keeps_manager_lock_through_pinned_cleanup tests/test_report_artifacts.py::test_windows_handle_enumeration_is_case_exact_and_not_path_redirectable tests/test_report_artifacts.py::test_windows_relative_open_finds_exact_child_beyond_topology_scan_limit -q
+3 failed in 2.55s
+```
+
+The failures reached the intended boundaries:
+
+- The completion context blocked while its real pinned publication context was
+  still open, but a concurrent real retention pass reached its first
+  lock-protected recovery step. This proved `_lock` had already been released
+  before pinned-handle cleanup.
+- Both ordinary and oversized-parent Windows relative opens raised the injected
+  `AssertionError: relative child open enumerated its parent`, proving the open
+  path still called `_win_iter_directory` through `_win_has_exact_child`.
+
+There were no collection, fixture, permission, or setup failures.
+
+### Corrections
+
+1. Guided completion now uses `with self._lock, publication_stack:`. Contexts
+   exit in reverse order, so the `ExitStack` finishes all pinned-handle cleanup
+   before the manager lock is released. Transaction, commit, verification, and
+   in-memory state behavior are otherwise unchanged.
+2. `_win_open_relative` no longer performs `_win_has_exact_child` enumeration.
+   It opens the requested component directly with the existing `NtOpenFile`
+   call, the pinned parent as `OBJECT_ATTRIBUTES.RootDirectory`, and
+   `OBJECT_ATTRIBUTES.Attributes = 0` so no case-insensitive lookup flag is
+   supplied. The existing exact final-name check remains in the open helper;
+   caller-side reparse, file/directory type, final-path containment, and handle
+   identity checks remain unchanged.
+3. `_win_iter_directory` and `_win_scan_directory` remain available only for
+   bounded bundle-topology validation. The existing 4,096-entry topology cap
+   and nonrecursive handle-based enumeration are unchanged.
+
+### Regression coverage
+
+- The lifecycle test blocks the actual guided publication context during
+  cleanup, starts a real `_cleanup_expired()` retention pass, and observes its
+  first operation after acquiring the manager lock. Retention cannot reach that
+  point until cleanup is released, and both threads must terminate without an
+  error.
+- The Windows handle test performs a real capped handle scan, then replaces the
+  enumeration iterator with a fail-fast sentinel. An exact-case relative file
+  open succeeds and resolves to the intended file without enumeration; a
+  wrong-case open still fails behaviorally.
+- The oversized-parent test creates 4,097 ordinary entries plus the requested
+  directory. A full topology scan still rejects the extra entry; after
+  enumeration is disabled, exact and missing relative opens are resolved
+  directly through `NtOpenFile` without scanning the parent.
+
+### Verification
+
+Exact final-fix selectors:
+
+```text
+3 passed in 2.93s
+```
+
+Prior fix selectors and original boundary cases:
+
+```text
+prior 8 selectors: 7 passed, 1 skipped in 1.36s
+original 15 named selectors (35 parametrized cases): 35 passed in 3.59s
+```
+
+Required focused and lifecycle gates:
+
+```text
+python -m pytest tests/test_report_artifacts.py tests/test_report_bundle_job_publication.py tests/test_caps.py -q
+295 passed, 9 skipped in 20.85s
+
+python -m pytest tests/test_history_reset_core.py tests/test_backups.py tests/test_report_bundle.py -q
+123 passed in 23.09s
+```
+
+Complete verification on the unchanged final code tree:
+
+```text
+python -m pytest -q
+1848 passed, 33 skipped, 1 warning in 352.52s (0:05:52)
+
+python -m compileall -q swinglab tests
+exit 0
+
+git diff --check
+exit 0 (Git emitted only working-tree LF-to-CRLF conversion notices)
+```
+
+The first full-suite attempt exposed the existing polling race in
+`test_failed_job_source_also_deleted_when_configured`: its poll observed the
+durable `FAILED` status before the additive deletion note was visible in that
+response; the subsequent assertion saw source deletion complete. That untouched
+failure-path selector passed four consecutive isolated reruns, and the full
+suite then passed without any code change. The single warning is the existing
+Starlette deprecation warning for `httpx` with `starlette.testclient`.
+
+### Concerns
+
+- Case-exact Windows child lookup now relies on the native case-sensitive
+  `NtOpenFile` object attributes plus the existing exact final-name check. Both
+  exact and wrong-case behavior executed successfully on this Windows host.
+- The unrelated failed-source polling race remains outside this fix wave. It is
+  documented above rather than expanded into an unrequested fifth production
+  area.
+- The sole skip in the prior fix selectors is the POSIX-only descriptor
+  ownership test on this Windows host; POSIX production traversal is unchanged.

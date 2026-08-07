@@ -616,13 +616,6 @@ if os.name == "nt":
         return tuple(rows)
 
 
-    def _win_has_exact_child(handle: int, name: str) -> bool:
-        # An exact lookup cannot share the capped bundle-topology scan: a sessions
-        # directory may legitimately outgrow that cap. Streaming to a match, or to
-        # the native end-of-directory marker for absence, keeps memory usage fixed.
-        return any(entry.name == name for entry in _win_iter_directory(handle))
-
-
     def _win_open_relative(
         parent_handle: int,
         name: str,
@@ -637,8 +630,6 @@ if os.name == "nt":
             or "\\" in name
         ):
             raise OSError("relative Windows child name is invalid")
-        if not _win_has_exact_child(parent_handle, name):
-            raise FileNotFoundError(f"exact Windows child name does not exist: {name}")
 
         name_buffer = ctypes.create_unicode_buffer(name)
         unicode_name = _NtUnicodeString(

@@ -6,6 +6,7 @@ from dataclasses import replace
 from pathlib import Path
 import sqlite3
 import subprocess
+import threading
 
 import pytest
 
@@ -875,6 +876,92 @@ def test_guided_completion_rolls_back_when_final_precommit_identity_verify_fails
     assert verify_calls == 2
     assert context_exited is True
     _assert_processing_without_publication(manager, job)
+
+
+def test_guided_completion_keeps_manager_lock_through_pinned_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+):
+    manager = JobManager(
+        tmp_path / "sessions",
+        Config(),
+        guided_html_writer=write_test_report_html,
+    )
+    manager.cfg.web["retention_days"] = 0
+    job = manager.create_session(
+        report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION
+    )
+    assert manager._mark_processing(job) is True
+    result = _guided_result(job, tmp_path)
+
+    cleanup_started = threading.Event()
+    allow_cleanup = threading.Event()
+    retention_attempted = threading.Event()
+    retention_began = threading.Event()
+    completion_errors: list[BaseException] = []
+    retention_errors: list[BaseException] = []
+    real_open = jobs_module.open_job_published_bundle
+    real_recover = manager._recover_history_operations_locked
+
+    @contextmanager
+    def block_pinned_cleanup(*args, **kwargs):
+        with real_open(*args, **kwargs) as pinned:
+            try:
+                yield pinned
+            finally:
+                cleanup_started.set()
+                if not allow_cleanup.wait(timeout=5):
+                    raise AssertionError("publication cleanup was not released")
+
+    def observe_retention_start() -> None:
+        retention_began.set()
+        real_recover()
+
+    def complete() -> None:
+        try:
+            manager._complete_job(job, result)
+        except BaseException as exc:  # pragma: no cover - asserted below
+            completion_errors.append(exc)
+
+    def retain() -> None:
+        retention_attempted.set()
+        try:
+            manager._cleanup_expired()
+        except BaseException as exc:  # pragma: no cover - asserted below
+            retention_errors.append(exc)
+
+    monkeypatch.setattr(
+        jobs_module,
+        "open_job_published_bundle",
+        block_pinned_cleanup,
+    )
+    monkeypatch.setattr(
+        manager,
+        "_recover_history_operations_locked",
+        observe_retention_start,
+    )
+    completion_thread = threading.Thread(target=complete)
+    retention_thread = threading.Thread(target=retain)
+    retention_started = False
+    retention_began_before_cleanup_finished = False
+    completion_thread.start()
+    try:
+        assert cleanup_started.wait(timeout=5)
+        retention_thread.start()
+        retention_started = True
+        assert retention_attempted.wait(timeout=5)
+        retention_began_before_cleanup_finished = retention_began.wait(timeout=1)
+    finally:
+        allow_cleanup.set()
+        completion_thread.join(timeout=5)
+        if retention_started:
+            retention_thread.join(timeout=5)
+
+    assert not completion_thread.is_alive()
+    assert not retention_thread.is_alive()
+    assert completion_errors == []
+    assert retention_errors == []
+    assert retention_began_before_cleanup_finished is False
+    assert retention_began.is_set()
 
 
 def test_stale_nonprocessing_status_cannot_publish_bundle(tmp_path: Path):

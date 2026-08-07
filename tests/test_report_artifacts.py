@@ -2177,6 +2177,27 @@ def test_windows_handle_enumeration_is_case_exact_and_not_path_redirectable(
     try:
         rows = report_artifacts_module._win_scan_directory(handle, limit=16)
         assert [row.name for row in rows] == ["Exact.txt"]
+
+        def reject_relative_open_enumeration(_handle: int):
+            raise AssertionError("relative child open enumerated its parent")
+
+        monkeypatch.setattr(
+            report_artifacts_module,
+            "_win_iter_directory",
+            reject_relative_open_enumeration,
+        )
+        child = report_artifacts_module._win_open_relative(
+            handle,
+            "Exact.txt",
+            directory=False,
+        )
+        try:
+            assert os.path.samefile(
+                report_artifacts_module._win_final_path(child),
+                original / "Exact.txt",
+            )
+        finally:
+            report_artifacts_module._win_close(child)
         with pytest.raises(OSError):
             child = report_artifacts_module._win_open_relative(
                 handle,
@@ -2192,7 +2213,7 @@ def test_windows_handle_enumeration_is_case_exact_and_not_path_redirectable(
 
 @pytest.mark.skipif(os.name != "nt", reason="Windows native handle traversal")
 def test_windows_relative_open_finds_exact_child_beyond_topology_scan_limit(
-    tmp_path: Path,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ):
     parent = tmp_path / "large-parent"
     parent.mkdir()
@@ -2212,6 +2233,15 @@ def test_windows_relative_open_finds_exact_child_beyond_topology_scan_limit(
                 parent_handle,
                 limit=report_artifacts_module._MAX_DIRECTORY_ENTRIES,
             )
+
+        def reject_relative_open_enumeration(_handle: int):
+            raise AssertionError("relative child open enumerated its parent")
+
+        monkeypatch.setattr(
+            report_artifacts_module,
+            "_win_iter_directory",
+            reject_relative_open_enumeration,
+        )
         child_handle = report_artifacts_module._win_open_relative(
             parent_handle,
             target.name,
@@ -2221,7 +2251,7 @@ def test_windows_relative_open_finds_exact_child_beyond_topology_scan_limit(
             report_artifacts_module._win_final_path(child_handle),
             target,
         )
-        with pytest.raises(FileNotFoundError, match="exact Windows child name"):
+        with pytest.raises(FileNotFoundError):
             report_artifacts_module._win_open_relative(
                 parent_handle,
                 "z-missing-target",
