@@ -1,12 +1,36 @@
 # Mobile API tokens
 
-CaddieInsight’s native client uses a personal device token only after the
-account owner signs in through the normal browser flow. It is not a replacement
-for a Shopify Customer Account, a browser session, or an operator token.
+CaddieInsight’s native client uses a personal device token after either the
+established browser-management flow or the recovery-gated native inbox-proof
+flow. It is not a Shopify Customer Account, browser session, or operator token.
+
+## Native inbox proof
+
+The default-off `web.mobile_native_auth_enabled` flow starts at
+`POST /api/v1/auth/email/start` with an email, PKCE S256 challenge, canonical
+installation UUID, and device label. The generic no-store `202` response does
+not reveal whether an account exists. The email contains an HTTPS universal
+link and the same eight-digit code grouped as `NNNN-NNNN`.
+
+`POST /api/v1/auth/email/exchange` accepts the challenge ID, code, PKCE
+verifier, and one 128-bit `Idempotency-Key`. A first successful exchange returns
+the raw `ciat_...` credential once in a no-store `201`; an exact lost-response
+retry reconstructs that same value during the bounded replay window. Store it
+directly in the platform keychain. The database retains versioned HMAC proofs,
+the token hash, and recovery journals—not the code, verifier, installation UUID,
+idempotency key, or raw bearer.
+
+Signing in again from the same installation is a rotation. The old selector is
+locally fenced before the exchange transaction commits, then revocation is
+published and read back through the off-volume recovery fence. Until that
+readback succeeds, exchange returns a credential-free `202 pending`; the old
+token remains rejected and the replacement remains inactive. Crash startup
+resumes this journal even when the feature flag has since been turned off.
 
 ## Issue and manage a device
 
-From an authenticated same-origin browser session:
+From an authenticated same-origin browser session, the compatibility management
+surface remains available:
 
 - `POST /api/v1/mobile-tokens` with `{"label":"Kyle's iPhone"}` issues one
   opaque `ciat_<selector>.<secret>` credential. The raw value is returned only

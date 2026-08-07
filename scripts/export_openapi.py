@@ -31,6 +31,8 @@ def export_openapi(output: Path) -> None:
             app.state.jobs.close()
             app.state.users.close()
             app.state.throttle.close()
+            if app.state.mobile_keyed_throttle is not None:
+                app.state.mobile_keyed_throttle.close()
 
 
 def main() -> None:

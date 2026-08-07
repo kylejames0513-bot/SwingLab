@@ -52,6 +52,28 @@ Gate 3B does not activate web-startup I/O. The default CLI composition also
 refuses baseline initialization until Gate 3C supplies an immutable-backup
 verifier and exact scratch-restore verifier.
 
+## Native email authentication
+
+Native email authentication remains off unless
+`web.mobile_native_auth_enabled` is exactly `true`. Enabling it requires a
+canonical HTTPS `PUBLIC_BASE_URL`, `MOBILE_STATE_HMAC_KEYRING`, and an injected
+recovery-fence ledger whose current chain begins with the accepted cutover
+baseline. Startup fails closed if any recovery dependency or readback is
+unavailable. Email delivery additionally uses the transport settings documented
+below.
+
+The shipped/default abuse controls are strict positive integers. Invalid types,
+zero, or values outside these closed ranges stop startup:
+
+| YAML setting | Default | Allowed range |
+| --- | ---: | ---: |
+| `web.mobile_auth_starts_per_15_minutes_per_ip` | 20 | 1–100 |
+| `web.mobile_auth_starts_per_15_minutes_per_email` | 5 | 1–50 |
+| `web.mobile_auth_failed_exchanges_per_15_minutes_per_ip` | 20 | 1–100 |
+| `web.mobile_auth_failed_exchanges_per_15_minutes_per_email` | 10 | 1–50 |
+| `web.mobile_auth_live_challenges_per_ip` | 20 | 1–100 |
+| `web.mobile_auth_live_challenges_per_email` | 3 | 1–20 |
+
 ## Shopify purchase bridge
 
 Buyer-facing Shopify commerce requires `SHOPIFY_STORE_DOMAIN` plus the primary

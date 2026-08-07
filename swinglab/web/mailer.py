@@ -116,16 +116,35 @@ def _send_resend(
     subject: str,
     body: str,
     html: bool,
+    html_body: str | None = None,
 ) -> None:
-    payload = {
+    payload: dict[str, object] = {
         "from": mail_from,
         "to": [to],
         "subject": subject,
-        "html" if html else "text": body,
     }
-    idempotency_material = "\0".join(
-        (mail_from, to, subject, body, "html" if html else "text")
-    ).encode("utf-8")
+    if html_body is not None:
+        payload["text"] = body
+        payload["html"] = html_body
+        content_kind = "multipart"
+    else:
+        payload["html" if html else "text"] = body
+        content_kind = "html" if html else "text"
+    if html_body is None:
+        # Preserve the historical derivation for every existing caller so an
+        # uncertain delivery remains the same provider-side operation across
+        # this deployment.
+        idempotency_parts = (mail_from, to, subject, body, content_kind)
+    else:
+        idempotency_parts = (
+            mail_from,
+            to,
+            subject,
+            body,
+            html_body,
+            content_kind,
+        )
+    idempotency_material = "\0".join(idempotency_parts).encode("utf-8")
     idempotency_key = "caddie-" + hmac.new(
         api_key.encode("utf-8"), idempotency_material, hashlib.sha256
     ).hexdigest()
@@ -173,6 +192,7 @@ def _send_smtp(
     subject: str,
     body: str,
     html: bool,
+    html_body: str | None = None,
 ) -> None:
     try:
         scheme, host, port, username, password = _parse_url(smtp_url)
@@ -184,7 +204,10 @@ def _send_smtp(
     message["From"] = mail_from
     message["To"] = to
     message["Subject"] = subject
-    if html:
+    if html_body is not None:
+        message.set_content(body)
+        message.add_alternative(html_body, subtype="html")
+    elif html:
         message.set_content(body, subtype="html")
     else:
         message.set_content(body)
@@ -221,7 +244,14 @@ def _send_smtp(
         raise EmailDeliveryRejected("SMTP delivery failed.") from None
 
 
-def send(to: str, subject: str, body: str, html: bool = False) -> None:
+def send(
+    to: str,
+    subject: str,
+    body: str,
+    html: bool = False,
+    *,
+    html_body: str | None = None,
+) -> None:
     """Send one message, preferring Resend HTTPS and falling back to SMTP."""
     if not enabled():
         raise EmailDeliveryRejected(
@@ -237,10 +267,10 @@ def send(to: str, subject: str, body: str, html: bool = False) -> None:
             "SWINGLAB_MAIL_TRANSPORT must be auto, resend, or smtp."
         )
     if mode == "smtp":
-        _send_smtp(smtp_url, mail_from, to, subject, body, html)
+        _send_smtp(smtp_url, mail_from, to, subject, body, html, html_body)
         return
     if api_key and mode in {"auto", "resend"}:
-        _send_resend(api_key, mail_from, to, subject, body, html)
+        _send_resend(api_key, mail_from, to, subject, body, html, html_body)
         return
     try:
         resend_key = (
@@ -253,7 +283,7 @@ def send(to: str, subject: str, body: str, html: bool = False) -> None:
             "SWINGLAB_SMTP_URL is invalid."
         ) from None
     if resend_key:
-        _send_resend(resend_key, mail_from, to, subject, body, html)
+        _send_resend(resend_key, mail_from, to, subject, body, html, html_body)
         return
     if mode == "resend":
         raise EmailDeliveryRejected(
@@ -267,4 +297,5 @@ def send(to: str, subject: str, body: str, html: bool = False) -> None:
         subject,
         body,
         html,
+        html_body,
     )

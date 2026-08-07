@@ -94,6 +94,8 @@ from ..api.contracts import (
 from ..api.auth import mobile_bearer_unauthorized, resolve_mobile_auth
 from ..api.errors import install_mobile_error_handlers
 from ..api.mobile_routes import (
+    MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
+    MOBILE_EMAIL_START_ROUTE_NAME,
     MOBILE_SIGN_OUT_ROUTE_NAME,
     install_mobile_routes,
 )
@@ -158,7 +160,11 @@ from .credential_mutations import (
     SignOutExtension,
 )
 from .mobile_schema import VersionedHMAC
-from .throttle import Throttle
+from .mobile_auth import (
+    MobileAuthService,
+    validate_mobile_native_auth_settings,
+)
+from .throttle import KeyedThrottle, Throttle
 from .users import (
     MobileAPIToken,
     MobileAPITokenAuthEpochError,
@@ -572,6 +578,7 @@ def create_app(
     sign_out_extensions: tuple[SignOutExtension, ...] = (),
 ) -> FastAPI:
     cfg = cfg or Config.load()
+    native_auth_settings = validate_mobile_native_auth_settings(cfg.web)
     shopify_sync_settings = shopify_customer_sync.validate_sync_settings(
         cfg.shopify_customer_sync
     )
@@ -606,11 +613,35 @@ def create_app(
         drain_timeout_seconds=sign_out_drain_timeout_seconds,
         extensions=sign_out_extensions,
     )
+    mobile_keyed_throttle: KeyedThrottle | None = None
     try:
+        if users._mobile_state_hmac is not None:
+            mobile_keyed_throttle = KeyedThrottle(
+                sessions_dir / "swinglab.db", users._mobile_state_hmac
+            )
+        mobile_auth_service = MobileAuthService(
+            users,
+            mobile_keyed_throttle,
+            mutation_guard,
+            keyring=users._mobile_state_hmac,
+            recovery_fence_ledger=recovery_fence_ledger,
+            settings=native_auth_settings,
+            public_base_url=os.environ.get("PUBLIC_BASE_URL"),
+            brand_name=str(cfg.brand["name"]),
+            shopify_sync_eligible=lambda email: shopify_sync_eligible(email),
+            on_success=lambda user: queue_shopify_sync(
+                user, identity_just_verified=True
+            ),
+            drain_timeout_seconds=sign_out_drain_timeout_seconds,
+        )
+        mobile_auth_service.verify_enabled_recovery_readiness()
         # Crash journals are independent of auth/push/privacy feature flags.
         # Resume them before JobManager recovery, workers, or route admission.
         sign_out_service.resume_nonterminal()
+        mobile_auth_service.resume_nonterminal()
     except Exception:
+        if mobile_keyed_throttle is not None:
+            mobile_keyed_throttle.close()
         users.close()
         raise
     manager = JobManager(
@@ -631,10 +662,24 @@ def create_app(
     app.state.cfg = cfg
     app.state.credential_mutation_guard = mutation_guard
     app.state.sign_out_service = sign_out_service
-    install_mobile_error_handlers(app, {MOBILE_SIGN_OUT_ROUTE_NAME})
+    app.state.mobile_auth_service = mobile_auth_service
+    app.state.mobile_keyed_throttle = mobile_keyed_throttle
+    if mobile_keyed_throttle is not None:
+        app.router.add_event_handler("shutdown", mobile_keyed_throttle.close)
+    install_mobile_error_handlers(
+        app,
+        {
+            MOBILE_EMAIL_START_ROUTE_NAME,
+            MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
+            MOBILE_SIGN_OUT_ROUTE_NAME,
+        },
+    )
     install_mobile_routes(
         app,
         sign_out_service=sign_out_service,
+        email_auth_service=mobile_auth_service,
+        native_email_auth_enabled=native_auth_settings.enabled,
+        client_ip_resolver=client_ip,
         require_account=bool(cfg.web.get("require_account")),
     )
     static_dir = Path(__file__).parent / "static"
@@ -4765,6 +4810,30 @@ def create_app(
                     manager.history_cleanup_pending_count()
                 ),
                 "shopify_customer_sync": sync_health,
+                "native_email_auth": {
+                    "enabled": native_auth_settings.enabled,
+                    # An enabled app cannot reach route admission unless the
+                    # recovery chain readback passed during composition.
+                    "recovery_ready": native_auth_settings.enabled,
+                    "starts_per_15_minutes_per_ip": (
+                        native_auth_settings.starts_per_ip
+                    ),
+                    "starts_per_15_minutes_per_email": (
+                        native_auth_settings.starts_per_email
+                    ),
+                    "failed_exchanges_per_15_minutes_per_ip": (
+                        native_auth_settings.failed_exchanges_per_ip
+                    ),
+                    "failed_exchanges_per_15_minutes_per_email": (
+                        native_auth_settings.failed_exchanges_per_email
+                    ),
+                    "live_challenges_per_ip": (
+                        native_auth_settings.live_challenges_per_ip
+                    ),
+                    "live_challenges_per_email": (
+                        native_auth_settings.live_challenges_per_email
+                    ),
+                },
                 # Feature-state only: this supports a safe rollout check
                 # without exposing a golfer, report, or comparison outcome.
                 "proof_cycle": {

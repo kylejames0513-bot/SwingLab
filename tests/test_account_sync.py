@@ -1267,8 +1267,12 @@ def test_reverse_order_identity_and_value_wait_for_inbox_proof(app):
     assert not verified.has_password
     assert verified.shopify_customer_id == "7001"
     assert users.authenticate(email, attacker_password) is None
-    assert users.claim_pending_grant(verified.id, email) == 31
-    assert users.get(verified.id).is_pro
+    # Inbox-proof convergence now claims parked value in the same transaction
+    # as identity verification, so native and browser flows cannot crash in a
+    # verified-but-unentitled gap.
+    assert verified.is_pro
+    assert users.claim_pending_grant(verified.id, email) == 0
+    assert users.pending_grant_days(email) == 0
 
     replay = users.upsert_store_customer(
         email,

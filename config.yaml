@@ -198,6 +198,16 @@ web:
                              # (0 = off). Every signup costs a scrypt hash —
                              # this keeps throwaway-email loops from burning
                              # CPU for free.
+  mobile_native_auth_enabled: false
+                             # recovery-gated native email authentication;
+                             # startup fails closed when enabled without an
+                             # HTTPS PUBLIC_BASE_URL and verified recovery fence.
+  mobile_auth_starts_per_15_minutes_per_ip: 20
+  mobile_auth_starts_per_15_minutes_per_email: 5
+  mobile_auth_failed_exchanges_per_15_minutes_per_ip: 20
+  mobile_auth_failed_exchanges_per_15_minutes_per_email: 10
+  mobile_auth_live_challenges_per_ip: 20
+  mobile_auth_live_challenges_per_email: 3
   require_account: true      # visitors must sign up before analyzing; false = open access
                              # (set SWINGLAB_SECRET in the environment so logins
                              # survive restarts)

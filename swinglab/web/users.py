@@ -41,11 +41,14 @@ with the email code, and is consumed atomically when setup finishes.
 
 from __future__ import annotations
 
+import base64
+import binascii
 import errno
 import hashlib
 import hmac
 import json
 import os
+import re
 import secrets
 import sqlite3
 import threading
@@ -66,6 +69,7 @@ from ..proof_cycle_practice import (
     normalize_practice_outcome,
 )
 from .mobile_schema import (
+    MobileStateDomain,
     VersionedHMAC,
     ensure_mobile_state_schema,
     require_mobile_state_key_coverage,
@@ -214,6 +218,13 @@ MOBILE_API_TOKEN_SELECTOR_BYTES = 18
 MOBILE_API_TOKEN_SECRET_BYTES = 32
 MOBILE_API_TOKEN_TTL_S = 90 * 86400
 MOBILE_API_TOKEN_ACTIVE_LIMIT = 5
+MOBILE_AUTH_CHALLENGE_TTL_S = 10 * 60
+MOBILE_AUTH_RESEND_S = 60
+MOBILE_AUTH_MAX_ATTEMPTS = 5
+MOBILE_AUTH_REPLAY_TTL_S = 24 * 60 * 60
+_MOBILE_AUTH_PKCE = re.compile(r"[A-Za-z0-9_-]{43}")
+_MOBILE_AUTH_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}")
+_MOBILE_AUTH_IDEMPOTENCY = re.compile(r"[0-9A-Fa-f]{32}")
 _MOBILE_API_TOKEN_LABEL_MAX = 80
 _MOBILE_API_TOKEN_MAX_LENGTH = 256
 _MOBILE_API_TOKEN_LAST_USED_WRITE_INTERVAL_S = 60
@@ -754,6 +765,57 @@ class MobileAPIPrincipal:
 
 
 @dataclass(frozen=True)
+class VerifiedIdentityConvergence:
+    """Facts produced by one lock-held inbox-identity convergence."""
+
+    user: User
+    identity_just_verified: bool
+    profile_was_missing: bool
+    pending_pro_days_claimed: float
+
+
+@dataclass(frozen=True)
+class MobileAuthChallenge:
+    """One public native sign-in challenge plus an ephemeral mail code."""
+
+    challenge_id: str
+    expires_at: float
+    email_code: str
+    send_required: bool
+
+
+@dataclass(frozen=True)
+class MobileAuthExchangeJournal:
+    """Safe orchestration state for deterministic native credential recovery."""
+
+    exchange_id: str
+    challenge_id: str
+    user_id: str
+    auth_epoch: int
+    phase: str
+    prior_selector: str | None
+    replacement_selector: str
+    created_at: float
+    expires_at: float
+
+
+class MobileAuthChallengeRejected(RuntimeError):
+    """A native email challenge or supplied proof is not usable."""
+
+
+class MobileAuthExchangeConflict(RuntimeError):
+    """An idempotency key or consumed challenge conflicts with this request."""
+
+
+class MobileAuthChallengeLimit(RuntimeError):
+    """A live native email challenge cap has been reached."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("Native email sign-in is temporarily rate limited.")
+        self.retry_after_seconds = max(1, int(retry_after_seconds))
+
+
+@dataclass(frozen=True)
 class ShopifyCustomerAccountOAuthState:
     """One short-lived, server-side authorization-code transaction."""
 
@@ -849,7 +911,11 @@ class UserStore:
         *,
         mobile_state_hmac: VersionedHMAC | None = None,
     ):
-        self._lock = threading.Lock()
+        # Verified-identity convergence composes existing lock-held helpers in
+        # one transaction.  RLock preserves the established single-owner
+        # serialization while allowing those private helpers to be reused by
+        # the public compatibility methods without a second connection.
+        self._lock = threading.RLock()
         self._closed = False
         self._db_path = Path(db_path)
         self._mobile_state_hmac = (
@@ -3802,87 +3868,1036 @@ class UserStore:
         self._move_customer_pending_to_email(customer_id, email)
         return True
 
+    def converge_verified_identity_locked(
+        self,
+        email: str,
+        *,
+        shopify_sync_pending: bool = False,
+        now: float | None = None,
+    ) -> VerifiedIdentityConvergence:
+        """Converge inbox ownership while the caller owns lock + transaction.
+
+        Native exchange and the browser compatibility method share this exact
+        state transition.  It creates/claims the same stable account, preserves
+        Shopify identity, atomically claims eligible pending Pro value, creates
+        the same first-verification profile shell, and marks eligible outbound
+        Shopify synchronization pending without performing provider I/O.
+        """
+
+        if not self._conn.in_transaction:
+            raise RuntimeError(
+                "Verified identity convergence requires an active transaction."
+            )
+        normalized = self.validate_email(email)
+        observed_at = time.time() if now is None else float(now)
+        row = self._conn.execute(
+            "SELECT * FROM users WHERE email = ?", (normalized,)
+        ).fetchone()
+        identity_just_verified = row is None or row["email_verified_at"] is None
+        if row is None:
+            user_id = uuid.uuid4().hex[:12]
+            self._conn.execute(
+                "INSERT INTO users (id, email, password_hash, created_at,"
+                " email_verified_at, shopify_sync_status)"
+                " VALUES (?, ?, '', ?, ?, ?)",
+                (
+                    user_id,
+                    normalized,
+                    observed_at,
+                    observed_at,
+                    (
+                        SHOPIFY_SYNC_PENDING
+                        if shopify_sync_pending
+                        else SHOPIFY_SYNC_NOT_STARTED
+                    ),
+                ),
+            )
+        else:
+            user_id = str(row["id"])
+            sets: list[str] = []
+            values: list[object] = []
+            if row["email_verified_at"] is None:
+                sets.append("email_verified_at = ?")
+                values.append(observed_at)
+                if row["password_hash"]:
+                    # First inbox proof supersedes a password that may have
+                    # been registered before ownership was demonstrated.
+                    sets.extend(("password_hash = ''", "auth_epoch = auth_epoch + 1"))
+            if shopify_sync_pending and row["shopify_customer_id"] is None:
+                sets.extend(
+                    (
+                        "shopify_sync_status = ?",
+                        "shopify_sync_next_attempt_at = NULL",
+                        "shopify_sync_attempt_token = NULL",
+                    )
+                )
+                values.append(SHOPIFY_SYNC_PENDING)
+            if sets:
+                values.append(user_id)
+                self._conn.execute(
+                    f"UPDATE users SET {', '.join(sets)} WHERE id = ?",
+                    values,
+                )
+
+        self._resolve_verified_shopify_identity_locked(user_id, normalized)
+        claimed_days = self._claim_pending_grant_locked(user_id, normalized)
+        profile_was_missing = self._conn.execute(
+            "SELECT 1 FROM golfer_profiles WHERE user_id = ?", (user_id,)
+        ).fetchone() is None
+        if identity_just_verified and profile_was_missing:
+            self._conn.execute(
+                "INSERT INTO golfer_profiles"
+                " (user_id, created_at, updated_at) VALUES (?, ?, ?)",
+                (user_id, observed_at, observed_at),
+            )
+        resolved = self._conn.execute(
+            "SELECT * FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if resolved is None:  # pragma: no cover - protected by this transaction
+            raise RuntimeError("Verified identity convergence lost its account.")
+        return VerifiedIdentityConvergence(
+            user=self._from_row(resolved),
+            identity_just_verified=identity_just_verified,
+            profile_was_missing=profile_was_missing,
+            pending_pro_days_claimed=claimed_days,
+        )
+
     def verify_email_signin(
         self, email: str, *, shopify_sync_pending: bool = False
     ) -> User:
-        """A sign-in code for this email was just entered correctly — the
-        one moment all three account states converge. Existing account:
-        returned as-is. Unclaimed store stub: claimed in place (the code is
-        proof of inbox ownership, so the Shopify link and anything bought
-        stay put). No account at all: a passwordless one is created. Either
-        way the email is stamped verified (first proof wins — the stamp is
-        never moved)."""
-        email = self.validate_email(email)
-        now = time.time()
+        """Compatibility wrapper for the established browser email flow."""
+
+        normalized = self.validate_email(email)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                convergence = self.converge_verified_identity_locked(
+                    normalized,
+                    shopify_sync_pending=shopify_sync_pending,
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return convergence.user
+
+    # -- challenge-bound native email authentication -------------------
+    @staticmethod
+    def _normalize_mobile_auth_installation(value: object) -> str:
+        if not isinstance(value, str):
+            raise ValueError("A canonical installation UUID is required.")
+        try:
+            parsed = uuid.UUID(value)
+        except (ValueError, AttributeError):
+            raise ValueError("A canonical installation UUID is required.") from None
+        canonical = str(parsed)
+        if value != canonical:
+            raise ValueError("A canonical installation UUID is required.")
+        return canonical
+
+    @staticmethod
+    def _validate_mobile_auth_code_challenge(value: object) -> str:
+        if not isinstance(value, str) or _MOBILE_AUTH_PKCE.fullmatch(value) is None:
+            raise ValueError("A PKCE S256 code challenge is required.")
+        try:
+            decoded = base64.urlsafe_b64decode(value + "=")
+        except (ValueError, binascii.Error):
+            raise ValueError("A PKCE S256 code challenge is required.") from None
+        if len(decoded) != 32:
+            raise ValueError("A PKCE S256 code challenge is required.")
+        return value
+
+    @staticmethod
+    def _normalize_mobile_auth_code(value: object) -> str | None:
+        if not isinstance(value, str) or not value.isascii():
+            return None
+        normalized = value.replace(" ", "").replace("-", "")
+        return normalized if len(normalized) == 8 and normalized.isdigit() else None
+
+    @staticmethod
+    def _validate_mobile_auth_verifier(value: object) -> str | None:
+        if not isinstance(value, str) or _MOBILE_AUTH_VERIFIER.fullmatch(value) is None:
+            return None
+        return value
+
+    @staticmethod
+    def _mobile_auth_pkce_challenge(verifier: str) -> str:
+        return base64.urlsafe_b64encode(
+            hashlib.sha256(verifier.encode("ascii")).digest()
+        ).rstrip(b"=").decode("ascii")
+
+    @staticmethod
+    def _mobile_auth_idempotency_bytes(value: object) -> bytes:
+        if not isinstance(value, str) or _MOBILE_AUTH_IDEMPOTENCY.fullmatch(value) is None:
+            raise ValueError("Invalid Idempotency-Key.")
+        return bytes.fromhex(value)
+
+    @staticmethod
+    def _mobile_auth_candidate_clause(
+        key_column: str,
+        digest_column: str,
+        candidates,
+    ) -> tuple[str, list[object]]:
+        clause = " OR ".join(
+            f"({key_column} = ? AND {digest_column} = ?)" for _ in candidates
+        )
+        values: list[object] = []
+        for candidate in candidates:
+            values.extend((candidate.key_id, candidate.digest))
+        return clause, values
+
+    def begin_mobile_email_signin(
+        self,
+        email: object,
+        *,
+        code_challenge: object,
+        installation_id: object,
+        device_label: object,
+        client_ip: str,
+        live_challenges_per_ip: int,
+        live_challenges_per_email: int,
+        now: float | None = None,
+    ) -> MobileAuthChallenge:
+        """Create or resend one native challenge without storing raw proofs."""
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        normalized_email = self.validate_email(email)
+        normalized_challenge = self._validate_mobile_auth_code_challenge(
+            code_challenge
+        )
+        installation = self._normalize_mobile_auth_installation(installation_id)
+        label = self._normalize_mobile_api_token_label(device_label)
+        if not isinstance(client_ip, str) or not client_ip:
+            raise ValueError("A client address is required.")
+        observed_at = time.time() if now is None else float(now)
+        installation_candidates = keyring.candidates(
+            MobileStateDomain.INSTALLATION_ID, installation
+        )
+        installation_key_id, installation_hmac = keyring.digest(
+            MobileStateDomain.INSTALLATION_ID, installation
+        )
+        start_ip_key_id, start_ip_hmac = keyring.digest(
+            MobileStateDomain.AUTH_START_CLIENT_IP, client_ip
+        )
+        installation_clause, installation_values = self._mobile_auth_candidate_clause(
+            "installation_hmac_key_id",
+            "installation_hmac",
+            installation_candidates,
+        )
+
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT * FROM mobile_auth_challenges"
+                    " WHERE normalized_email = ? AND consumed_at IS NULL"
+                    " AND expires_at > ? AND (" + installation_clause + ")"
+                    " ORDER BY created_at DESC, challenge_id LIMIT 1",
+                    (normalized_email, observed_at, *installation_values),
+                ).fetchone()
+                if existing is not None and (
+                    observed_at - float(existing["last_sent_at"])
+                    < MOBILE_AUTH_RESEND_S
+                ):
+                    self._conn.commit()
+                    return MobileAuthChallenge(
+                        challenge_id=str(existing["challenge_id"]),
+                        expires_at=float(existing["expires_at"]),
+                        email_code="",
+                        send_required=False,
+                    )
+
+                ip_candidates = keyring.candidates(
+                    MobileStateDomain.AUTH_START_CLIENT_IP, client_ip
+                )
+                ip_clause, ip_values = self._mobile_auth_candidate_clause(
+                    "start_ip_hmac_key_id", "start_ip_hmac", ip_candidates
+                )
+                # A post-suppression resend updates this row in place; it is
+                # not a second live challenge and therefore must not consume
+                # another slot in either cap.
+                excluded_challenge_id = (
+                    str(existing["challenge_id"]) if existing is not None else ""
+                )
+                ip_rows = self._conn.execute(
+                    "SELECT expires_at FROM mobile_auth_challenges"
+                    " WHERE consumed_at IS NULL AND expires_at > ? AND ("
+                    + ip_clause
+                    + ") AND challenge_id != ?"
+                    " ORDER BY expires_at",
+                    (observed_at, *ip_values, excluded_challenge_id),
+                ).fetchall()
+                email_rows = self._conn.execute(
+                    "SELECT expires_at FROM mobile_auth_challenges"
+                    " WHERE normalized_email = ? AND consumed_at IS NULL"
+                    " AND expires_at > ? AND challenge_id != ? ORDER BY expires_at",
+                    (normalized_email, observed_at, excluded_challenge_id),
+                ).fetchall()
+                denied_expiries: list[float] = []
+                if len(ip_rows) >= live_challenges_per_ip:
+                    denied_expiries.append(float(ip_rows[0]["expires_at"]))
+                if len(email_rows) >= live_challenges_per_email:
+                    denied_expiries.append(float(email_rows[0]["expires_at"]))
+                if denied_expiries:
+                    self._conn.commit()
+                    raise MobileAuthChallengeLimit(
+                        max(1, int(min(denied_expiries) - observed_at + 0.999))
+                    )
+
+                email_code = f"{secrets.randbelow(100_000_000):08d}"
+                code_hmac_key_id, code_hmac = keyring.digest(
+                    MobileStateDomain.EMAIL_CODE_VERIFIER, email_code
+                )
+                expires_at = observed_at + MOBILE_AUTH_CHALLENGE_TTL_S
+
+                # Account/token lookup affects only the private row.  It lets
+                # an old-key installation rotate safely after keyring rollout
+                # without storing the raw installation UUID.
+                prior_selector = None
+                account = self._conn.execute(
+                    "SELECT id, auth_epoch FROM users WHERE email = ?",
+                    (normalized_email,),
+                ).fetchone()
+                if account is not None:
+                    token_clause, token_values = self._mobile_auth_candidate_clause(
+                        "installation_key_version",
+                        "installation_key",
+                        installation_candidates,
+                    )
+                    prior_rows = self._conn.execute(
+                        "SELECT selector FROM mobile_api_tokens"
+                        " WHERE user_id = ? AND auth_epoch = ?"
+                        " AND revoked_at IS NULL AND expires_at > ?"
+                        " AND state = 'active' AND fenced_at IS NULL AND ("
+                        + token_clause
+                        + ") ORDER BY created_at DESC, selector",
+                        (
+                            account["id"],
+                            int(account["auth_epoch"] or 0),
+                            observed_at,
+                            *token_values,
+                        ),
+                    ).fetchall()
+                    if len(prior_rows) == 1:
+                        prior_selector = str(prior_rows[0]["selector"])
+                    elif len(prior_rows) > 1:
+                        raise RuntimeError(
+                            "One installation has multiple active credentials."
+                        )
+
+                if existing is None:
+                    challenge_id = str(uuid.uuid4())
+                    self._conn.execute(
+                        "INSERT INTO mobile_auth_challenges"
+                        " (challenge_id, purpose, normalized_email,"
+                        " code_hmac_key_id, code_hmac, code_challenge,"
+                        " installation_hmac_key_id, installation_hmac,"
+                        " start_ip_hmac_key_id, start_ip_hmac, device_label,"
+                        " created_at, expires_at, last_sent_at, consumed_at,"
+                        " attempts, issued_selector)"
+                        " VALUES (?, 'signin', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                        " NULL, 0, ?)",
+                        (
+                            challenge_id,
+                            normalized_email,
+                            code_hmac_key_id,
+                            code_hmac,
+                            normalized_challenge,
+                            installation_key_id,
+                            installation_hmac,
+                            start_ip_key_id,
+                            start_ip_hmac,
+                            label,
+                            observed_at,
+                            expires_at,
+                            observed_at,
+                            prior_selector,
+                        ),
+                    )
+                else:
+                    challenge_id = str(existing["challenge_id"])
+                    self._conn.execute(
+                        "UPDATE mobile_auth_challenges SET"
+                        " code_hmac_key_id = ?, code_hmac = ?, code_challenge = ?,"
+                        " installation_hmac_key_id = ?, installation_hmac = ?,"
+                        " start_ip_hmac_key_id = ?, start_ip_hmac = ?,"
+                        " device_label = ?, created_at = ?, expires_at = ?,"
+                        " last_sent_at = ?, attempts = 0, issued_selector = ?"
+                        " WHERE challenge_id = ? AND consumed_at IS NULL",
+                        (
+                            code_hmac_key_id,
+                            code_hmac,
+                            normalized_challenge,
+                            installation_key_id,
+                            installation_hmac,
+                            start_ip_key_id,
+                            start_ip_hmac,
+                            label,
+                            observed_at,
+                            expires_at,
+                            observed_at,
+                            prior_selector,
+                            challenge_id,
+                        ),
+                    )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return MobileAuthChallenge(
+            challenge_id=challenge_id,
+            expires_at=expires_at,
+            email_code=email_code,
+            send_required=True,
+        )
+
+    def mobile_auth_challenge_email(self, challenge_id: object) -> str | None:
+        if not isinstance(challenge_id, str) or len(challenge_id) > 64:
+            return None
         with self._lock:
             row = self._conn.execute(
-                "SELECT * FROM users WHERE email = ?", (email,)
+                "SELECT normalized_email FROM mobile_auth_challenges"
+                " WHERE challenge_id = ? AND purpose = 'signin'",
+                (challenge_id,),
             ).fetchone()
-            if row is None:
-                self._conn.execute(
-                    "INSERT INTO users (id, email, password_hash, created_at,"
-                    " email_verified_at, shopify_sync_status)"
-                    " VALUES (?, ?, '', ?, ?, ?)",
-                    (
-                        uuid.uuid4().hex[:12],
-                        email,
-                        now,
-                        now,
+        return str(row["normalized_email"]) if row is not None else None
+
+    def record_mobile_email_signin_failure(
+        self, challenge_id: str, *, now: float | None = None
+    ) -> None:
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT attempts, expires_at, consumed_at"
+                    " FROM mobile_auth_challenges WHERE challenge_id = ?"
+                    " AND purpose = 'signin'",
+                    (challenge_id,),
+                ).fetchone()
+                if row is not None and row["consumed_at"] is None:
+                    attempts = min(
+                        MOBILE_AUTH_MAX_ATTEMPTS,
+                        int(row["attempts"]) + 1,
+                    )
+                    burned = (
+                        attempts >= MOBILE_AUTH_MAX_ATTEMPTS
+                        or float(row["expires_at"]) <= observed_at
+                    )
+                    self._conn.execute(
+                        "UPDATE mobile_auth_challenges SET attempts = ?,"
+                        " consumed_at = CASE WHEN ? THEN ? ELSE consumed_at END"
+                        " WHERE challenge_id = ? AND consumed_at IS NULL",
+                        (attempts, int(burned), observed_at, challenge_id),
+                    )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    @staticmethod
+    def _native_token_secret(code_verifier: str, challenge_id: str) -> str:
+        digest = hashlib.sha256(
+            (
+                code_verifier
+                + "."
+                + challenge_id
+                + ".caddieinsight-token-v1"
+            ).encode("ascii")
+        ).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+    @staticmethod
+    def _mobile_auth_exchange_request_hash(
+        *,
+        challenge_id: str,
+        installation_hmac_key_id: str,
+        installation_hmac: str,
+        replacement_selector: str,
+        code_proof_hmac_key_id: str,
+        code_proof_hmac: str,
+        pkce_proof_hmac_key_id: str,
+        pkce_proof_hmac: str,
+        idempotency_hmac_key_id: str,
+        idempotency_hmac: str,
+    ) -> str:
+        canonical = json.dumps(
+            {
+                "challenge_id": challenge_id,
+                "code_proof_hmac": code_proof_hmac,
+                "code_proof_hmac_key_id": code_proof_hmac_key_id,
+                "idempotency_hmac": idempotency_hmac,
+                "idempotency_hmac_key_id": idempotency_hmac_key_id,
+                "installation_hmac": installation_hmac,
+                "installation_hmac_key_id": installation_hmac_key_id,
+                "operation": "mobile-email-auth-exchange-v1",
+                "pkce_proof_hmac": pkce_proof_hmac,
+                "pkce_proof_hmac_key_id": pkce_proof_hmac_key_id,
+                "replacement_selector": replacement_selector,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        return hashlib.sha256(canonical).hexdigest()
+
+    @staticmethod
+    def _mobile_auth_journal_from_row(row: sqlite3.Row) -> MobileAuthExchangeJournal:
+        return MobileAuthExchangeJournal(
+            exchange_id=str(row["exchange_id"]),
+            challenge_id=str(row["challenge_id"]),
+            user_id=str(row["user_id"]),
+            auth_epoch=int(row["auth_epoch"]),
+            phase=str(row["phase"]),
+            prior_selector=(
+                str(row["prior_selector"])
+                if row["prior_selector"] is not None
+                else None
+            ),
+            replacement_selector=str(row["replacement_selector"]),
+            created_at=float(row["created_at"]),
+            expires_at=float(row["expires_at"]),
+        )
+
+    def _assert_mobile_email_exchange_replay_locked(
+        self,
+        row: sqlite3.Row,
+        *,
+        email_code: object,
+        code_verifier: object,
+        idempotency: bytes,
+        now: float,
+    ) -> MobileAuthExchangeJournal:
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        code = self._normalize_mobile_auth_code(email_code)
+        verifier = self._validate_mobile_auth_verifier(code_verifier)
+        if code is None or verifier is None or float(row["expires_at"]) <= now:
+            raise MobileAuthExchangeConflict("The authentication exchange conflicts.")
+        try:
+            code_proof = keyring.digest_with_key(
+                str(row["code_proof_hmac_key_id"]),
+                MobileStateDomain.AUTH_EXCHANGE_CODE_PROOF,
+                code,
+            )
+            pkce_proof = keyring.digest_with_key(
+                str(row["pkce_verifier_proof_hmac_key_id"]),
+                MobileStateDomain.AUTH_EXCHANGE_PKCE_VERIFIER_PROOF,
+                verifier,
+            )
+            idempotency_hmac = keyring.digest_with_key(
+                str(row["idempotency_hmac_key_id"]),
+                MobileStateDomain.EXCHANGE_IDEMPOTENCY,
+                idempotency,
+            )
+        except KeyError as exc:
+            raise RuntimeError(str(exc)) from exc
+        request_hash = self._mobile_auth_exchange_request_hash(
+            challenge_id=str(row["challenge_id"]),
+            installation_hmac_key_id=str(row["installation_hmac_key_id"]),
+            installation_hmac=str(row["installation_hmac"]),
+            replacement_selector=str(row["replacement_selector"]),
+            code_proof_hmac_key_id=str(row["code_proof_hmac_key_id"]),
+            code_proof_hmac=code_proof,
+            pkce_proof_hmac_key_id=str(row["pkce_verifier_proof_hmac_key_id"]),
+            pkce_proof_hmac=pkce_proof,
+            idempotency_hmac_key_id=str(row["idempotency_hmac_key_id"]),
+            idempotency_hmac=idempotency_hmac,
+        )
+        code_exact = hmac.compare_digest(
+            code_proof, str(row["code_proof_hmac"])
+        )
+        pkce_exact = hmac.compare_digest(
+            pkce_proof, str(row["pkce_verifier_proof_hmac"])
+        )
+        idempotency_exact = hmac.compare_digest(
+            idempotency_hmac, str(row["idempotency_hmac"])
+        )
+        request_exact = hmac.compare_digest(
+            request_hash, str(row["request_hash"])
+        )
+        exact = code_exact and pkce_exact and idempotency_exact and request_exact
+        if not exact:
+            raise MobileAuthExchangeConflict("The authentication exchange conflicts.")
+        return self._mobile_auth_journal_from_row(row)
+
+    def _commit_mobile_auth_proof_failure_locked(
+        self, challenge: sqlite3.Row, *, now: float
+    ) -> None:
+        """Durably burn one proof attempt before another exchange can race."""
+
+        attempts = min(
+            MOBILE_AUTH_MAX_ATTEMPTS,
+            int(challenge["attempts"]) + 1,
+        )
+        burned = attempts >= MOBILE_AUTH_MAX_ATTEMPTS
+        cursor = self._conn.execute(
+            "UPDATE mobile_auth_challenges SET attempts = ?,"
+            " consumed_at = CASE WHEN ? THEN ? ELSE consumed_at END"
+            " WHERE challenge_id = ? AND consumed_at IS NULL",
+            (
+                attempts,
+                int(burned),
+                now,
+                challenge["challenge_id"],
+            ),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("A native authentication attempt changed unexpectedly.")
+        self._conn.commit()
+        raise MobileAuthChallengeRejected("Invalid authentication challenge.")
+
+    def prepare_mobile_email_signin_exchange(
+        self,
+        challenge_id: object,
+        email_code: object,
+        code_verifier: object,
+        idempotency_key: object,
+        *,
+        shopify_sync_pending: bool = False,
+        now: float | None = None,
+    ) -> MobileAuthExchangeJournal:
+        """Consume a proven challenge and prepare an inactive replacement.
+
+        Challenge consumption, verified-identity convergence, device-limit
+        admission, old-selector local fencing, inactive replacement insertion,
+        and the durable journal commit share one ``BEGIN IMMEDIATE``.
+        """
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        if not isinstance(challenge_id, str) or len(challenge_id) > 64:
+            raise MobileAuthChallengeRejected("Invalid authentication challenge.")
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        observed_at = time.time() if now is None else float(now)
+        code = self._normalize_mobile_auth_code(email_code)
+        verifier = self._validate_mobile_auth_verifier(code_verifier)
+
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT * FROM mobile_auth_exchange_journals"
+                    " WHERE purpose = 'email' AND challenge_id = ?",
+                    (challenge_id,),
+                ).fetchone()
+                if existing is not None:
+                    journal = self._assert_mobile_email_exchange_replay_locked(
+                        existing,
+                        email_code=email_code,
+                        code_verifier=code_verifier,
+                        idempotency=idempotency,
+                        now=observed_at,
+                    )
+                    self._conn.commit()
+                    return journal
+
+                challenge = self._conn.execute(
+                    "SELECT * FROM mobile_auth_challenges"
+                    " WHERE challenge_id = ? AND purpose = 'signin'",
+                    (challenge_id,),
+                ).fetchone()
+                if (
+                    challenge is None
+                    or challenge["consumed_at"] is not None
+                    or float(challenge["expires_at"]) <= observed_at
+                    or int(challenge["attempts"]) >= MOBILE_AUTH_MAX_ATTEMPTS
+                ):
+                    raise MobileAuthChallengeRejected(
+                        "Invalid authentication challenge."
+                    )
+                if code is None or verifier is None:
+                    self._commit_mobile_auth_proof_failure_locked(
+                        challenge, now=observed_at
+                    )
+                try:
+                    expected_code = keyring.digest_with_key(
+                        str(challenge["code_hmac_key_id"]),
+                        MobileStateDomain.EMAIL_CODE_VERIFIER,
+                        code,
+                    )
+                except KeyError as exc:
+                    raise RuntimeError(str(exc)) from exc
+                code_matches = hmac.compare_digest(
+                    expected_code, str(challenge["code_hmac"])
+                )
+                pkce_matches = hmac.compare_digest(
+                    self._mobile_auth_pkce_challenge(verifier),
+                    str(challenge["code_challenge"]),
+                )
+                if not (code_matches and pkce_matches):
+                    self._commit_mobile_auth_proof_failure_locked(
+                        challenge, now=observed_at
+                    )
+
+                idempotency_candidates = keyring.candidates(
+                    MobileStateDomain.EXCHANGE_IDEMPOTENCY, idempotency
+                )
+                idem_clause, idem_values = self._mobile_auth_candidate_clause(
+                    "idempotency_hmac_key_id",
+                    "idempotency_hmac",
+                    idempotency_candidates,
+                )
+                for table in (
+                    "mobile_auth_exchange_journals",
+                    "mobile_auth_exchange_receipts",
+                ):
+                    collision = self._conn.execute(
+                        f"SELECT 1 FROM {table} WHERE (" + idem_clause + ") LIMIT 1",
+                        idem_values,
+                    ).fetchone()
+                    if collision is not None:
+                        raise MobileAuthExchangeConflict(
+                            "The authentication exchange conflicts."
+                        )
+
+                normalized_email = str(challenge["normalized_email"])
+                account = self._conn.execute(
+                    "SELECT * FROM users WHERE email = ?", (normalized_email,)
+                ).fetchone()
+                if account is None:
+                    prospective_user_id = None
+                    prospective_auth_epoch = 0
+                else:
+                    prospective_user_id = str(account["id"])
+                    prospective_auth_epoch = int(account["auth_epoch"] or 0)
+                    if (
+                        account["email_verified_at"] is None
+                        and bool(account["password_hash"])
+                    ):
+                        prospective_auth_epoch += 1
+
+                active_rows: list[sqlite3.Row] = []
+                if prospective_user_id is not None:
+                    active_rows = self._conn.execute(
+                        "SELECT selector, token_hash, installation_key_version,"
+                        " installation_key FROM mobile_api_tokens"
+                        " WHERE user_id = ? AND auth_epoch = ?"
+                        " AND revoked_at IS NULL AND expires_at > ?"
+                        " AND state = 'active' AND fenced_at IS NULL"
+                        " ORDER BY created_at DESC, selector",
                         (
-                            SHOPIFY_SYNC_PENDING
-                            if shopify_sync_pending
-                            else SHOPIFY_SYNC_NOT_STARTED
+                            prospective_user_id,
+                            prospective_auth_epoch,
+                            observed_at,
                         ),
+                    ).fetchall()
+                prior_selector = (
+                    str(challenge["issued_selector"])
+                    if challenge["issued_selector"] is not None
+                    else None
+                )
+                matching_rows = [
+                    row
+                    for row in active_rows
+                    if row["installation_key_version"]
+                    == challenge["installation_hmac_key_id"]
+                    and row["installation_key"] == challenge["installation_hmac"]
+                ]
+                if matching_rows:
+                    if len(matching_rows) != 1:
+                        raise RuntimeError(
+                            "One installation has multiple active credentials."
+                        )
+                    matched = str(matching_rows[0]["selector"])
+                    if prior_selector is not None and prior_selector != matched:
+                        raise RuntimeError(
+                            "The challenge installation credential changed."
+                        )
+                    prior_selector = matched
+                prior_row = next(
+                    (
+                        row for row in active_rows
+                        if str(row["selector"]) == prior_selector
+                    ),
+                    None,
+                )
+                if prior_selector is not None and prior_row is None:
+                    prior_selector = None
+                if prior_selector is None and len(active_rows) >= MOBILE_API_TOKEN_ACTIVE_LIMIT:
+                    raise MobileAPITokenLimitError(
+                        "You already have 5 active mobile devices. Revoke one"
+                        " before adding another."
+                    )
+
+                convergence = self.converge_verified_identity_locked(
+                    normalized_email,
+                    shopify_sync_pending=shopify_sync_pending,
+                    now=observed_at,
+                )
+                user = convergence.user
+                if user.auth_epoch != prospective_auth_epoch:
+                    raise RuntimeError(
+                        "Verified identity convergence changed unexpectedly."
+                    )
+
+                replacement_selector = ""
+                for _ in range(5):
+                    candidate = secrets.token_urlsafe(MOBILE_API_TOKEN_SELECTOR_BYTES)
+                    if self._conn.execute(
+                        "SELECT 1 FROM mobile_api_tokens WHERE selector = ?",
+                        (candidate,),
+                    ).fetchone() is None:
+                        replacement_selector = candidate
+                        break
+                if not replacement_selector:
+                    raise RuntimeError("Could not allocate a mobile token selector.")
+                token_secret = self._native_token_secret(verifier, challenge_id)
+                token_hash = self._mobile_api_token_hash(
+                    replacement_selector, token_secret
+                )
+                token_expires_at = observed_at + MOBILE_API_TOKEN_TTL_S
+
+                code_proof_key_id, code_proof = keyring.digest(
+                    MobileStateDomain.AUTH_EXCHANGE_CODE_PROOF, code
+                )
+                pkce_proof_key_id, pkce_proof = keyring.digest(
+                    MobileStateDomain.AUTH_EXCHANGE_PKCE_VERIFIER_PROOF,
+                    verifier,
+                )
+                idempotency_key_id, idempotency_hmac = keyring.digest(
+                    MobileStateDomain.EXCHANGE_IDEMPOTENCY, idempotency
+                )
+                verifier_source = (
+                    str(prior_row["token_hash"])
+                    if prior_row is not None
+                    else token_hash
+                )
+                token_verifier_key_id, token_verifier_hmac = keyring.digest(
+                    MobileStateDomain.RECOVERY_TOKEN_VERIFIER,
+                    verifier_source,
+                )
+                request_hash = self._mobile_auth_exchange_request_hash(
+                    challenge_id=challenge_id,
+                    installation_hmac_key_id=str(
+                        challenge["installation_hmac_key_id"]
+                    ),
+                    installation_hmac=str(challenge["installation_hmac"]),
+                    replacement_selector=replacement_selector,
+                    code_proof_hmac_key_id=code_proof_key_id,
+                    code_proof_hmac=code_proof,
+                    pkce_proof_hmac_key_id=pkce_proof_key_id,
+                    pkce_proof_hmac=pkce_proof,
+                    idempotency_hmac_key_id=idempotency_key_id,
+                    idempotency_hmac=idempotency_hmac,
+                )
+                exchange_id = str(uuid.uuid4())
+                replay_expires_at = max(
+                    float(challenge["expires_at"]), observed_at
+                ) + MOBILE_AUTH_REPLAY_TTL_S
+
+                self._conn.execute(
+                    "INSERT INTO mobile_api_tokens"
+                    " (selector, token_hash, user_id, auth_epoch, label,"
+                    " created_at, last_used_at, expires_at, revoked_at,"
+                    " installation_key, installation_key_version, state, fenced_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, NULL, ?, NULL, ?, ?, 'inactive', NULL)",
+                    (
+                        replacement_selector,
+                        token_hash,
+                        user.id,
+                        user.auth_epoch,
+                        str(challenge["device_label"]),
+                        observed_at,
+                        token_expires_at,
+                        str(challenge["installation_hmac"]),
+                        str(challenge["installation_hmac_key_id"]),
                     ),
                 )
-            else:
-                sets = []
-                values: list[object] = []
-                if row["email_verified_at"] is None:
-                    sets.append("email_verified_at = ?")
-                    values.append(now)
-                    if row["password_hash"]:
-                        # A password created before inbox proof may belong to
-                        # a pre-registration attacker. The first successful
-                        # code establishes the actual owner: revoke that
-                        # password and every earlier stateless session before
-                        # any parked Shopify identity/value can attach.
-                        sets.extend(
-                            (
-                                "password_hash = ''",
-                                "auth_epoch = auth_epoch + 1",
-                            )
-                        )
-                if (
-                    shopify_sync_pending
-                    and row["shopify_customer_id"] is None
-                ):
-                    sets.extend(
+                if prior_selector is not None:
+                    cursor = self._conn.execute(
+                        "UPDATE mobile_api_tokens SET state = 'fenced',"
+                        " fenced_at = COALESCE(fenced_at, ?)"
+                        " WHERE selector = ? AND user_id = ?"
+                        " AND auth_epoch = ? AND revoked_at IS NULL"
+                        " AND expires_at > ? AND state = 'active'"
+                        " AND fenced_at IS NULL",
                         (
-                            "shopify_sync_status = ?",
-                            "shopify_sync_next_attempt_at = NULL",
-                            "shopify_sync_attempt_token = NULL",
+                            observed_at,
+                            prior_selector,
+                            user.id,
+                            user.auth_epoch,
+                            observed_at,
+                        ),
+                    )
+                    if cursor.rowcount != 1:
+                        raise MobileAuthChallengeRejected(
+                            "Invalid authentication challenge."
                         )
-                    )
-                    values.append(SHOPIFY_SYNC_PENDING)
-                if sets:
-                    values.append(row["id"])
-                    self._conn.execute(
-                        f"UPDATE users SET {', '.join(sets)} WHERE id = ?",
-                        values,
-                    )
-            resolved = self._conn.execute(
-                "SELECT id FROM users WHERE email = ?", (email,)
-            ).fetchone()
-            if resolved is not None:
-                self._resolve_verified_shopify_identity_locked(
-                    str(resolved["id"]), email
+                self._conn.execute(
+                    "INSERT INTO mobile_auth_exchange_journals"
+                    " (exchange_id, purpose, challenge_id, user_id, auth_epoch,"
+                    " phase, installation_hmac_key_id, installation_hmac,"
+                    " prior_selector, replacement_selector,"
+                    " token_verifier_hmac_key_id, token_verifier_hmac,"
+                    " code_proof_hmac_key_id, code_proof_hmac,"
+                    " pkce_verifier_proof_hmac_key_id,"
+                    " pkce_verifier_proof_hmac, idempotency_hmac_key_id,"
+                    " idempotency_hmac, request_hash, created_at, updated_at,"
+                    " expires_at) VALUES (?, 'email', ?, ?, ?, 'prepared', ?, ?,"
+                    " ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        exchange_id,
+                        challenge_id,
+                        user.id,
+                        user.auth_epoch,
+                        str(challenge["installation_hmac_key_id"]),
+                        str(challenge["installation_hmac"]),
+                        prior_selector,
+                        replacement_selector,
+                        token_verifier_key_id,
+                        token_verifier_hmac,
+                        code_proof_key_id,
+                        code_proof,
+                        pkce_proof_key_id,
+                        pkce_proof,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        observed_at,
+                        observed_at,
+                        replay_expires_at,
+                    ),
                 )
-            self._conn.commit()
+                self._conn.execute(
+                    "UPDATE mobile_auth_challenges SET consumed_at = ?,"
+                    " issued_selector = ?, exchange_idempotency_hmac_key_id = ?,"
+                    " exchange_idempotency_hmac = ?, canonical_request_hash = ?"
+                    " WHERE challenge_id = ? AND consumed_at IS NULL",
+                    (
+                        observed_at,
+                        replacement_selector,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        challenge_id,
+                    ),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return MobileAuthExchangeJournal(
+            exchange_id=exchange_id,
+            challenge_id=challenge_id,
+            user_id=user.id,
+            auth_epoch=user.auth_epoch,
+            phase="prepared",
+            prior_selector=prior_selector,
+            replacement_selector=replacement_selector,
+            created_at=observed_at,
+            expires_at=replay_expires_at,
+        )
+
+    def recover_mobile_email_exchange_credential(
+        self,
+        journal: MobileAuthExchangeJournal,
+        code_verifier: object,
+    ) -> tuple[str, float]:
+        verifier = self._validate_mobile_auth_verifier(code_verifier)
+        if verifier is None:
+            raise MobileAuthChallengeRejected("Invalid authentication challenge.")
+        secret = self._native_token_secret(verifier, journal.challenge_id)
+        raw_token = (
+            f"{MOBILE_API_TOKEN_PREFIX}{journal.replacement_selector}.{secret}"
+        )
+        candidate_hash = self._mobile_api_token_hash(
+            journal.replacement_selector, secret
+        )
+        with self._lock:
             row = self._conn.execute(
-                "SELECT * FROM users WHERE email = ?", (email,)
+                "SELECT token_hash, expires_at, state, revoked_at"
+                " FROM mobile_api_tokens WHERE selector = ? AND user_id = ?",
+                (journal.replacement_selector, journal.user_id),
             ).fetchone()
-        return self._from_row(row)
+        if (
+            row is None
+            or not hmac.compare_digest(candidate_hash, str(row["token_hash"]))
+            or str(row["state"]) != "active"
+            or row["revoked_at"] is not None
+        ):
+            raise MobileAuthChallengeRejected("Invalid authentication challenge.")
+        return raw_token, float(row["expires_at"])
+
+    def mobile_auth_exchange_journal(
+        self, exchange_id: str
+    ) -> MobileAuthExchangeJournal | None:
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM mobile_auth_exchange_journals"
+                " WHERE exchange_id = ? AND purpose = 'email'",
+                (exchange_id,),
+            ).fetchone()
+        return self._mobile_auth_journal_from_row(row) if row is not None else None
+
+    def nonterminal_mobile_auth_exchange_ids(self) -> list[str]:
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT exchange_id FROM mobile_auth_exchange_journals"
+                " WHERE purpose = 'email' AND phase != 'complete'"
+                " ORDER BY created_at, exchange_id"
+            ).fetchall()
+        return [str(row["exchange_id"]) for row in rows]
+
+    def purge_expired_mobile_auth_state(
+        self, *, now: float | None = None, batch_size: int = 250
+    ) -> int:
+        """Bound retained challenge/replay metadata without touching tokens.
+
+        Completed replay rows expire at their explicit replay deadline.
+        Challenges remain for 24 hours after their ten-minute expiry, while a
+        challenge that still anchors nonterminal recovery is retained until
+        that recovery reaches a terminal phase.
+        """
+
+        if not 1 <= int(batch_size) <= 10_000:
+            raise ValueError("A bounded mobile-auth purge batch is required.")
+        observed_at = time.time() if now is None else float(now)
+        challenge_cutoff = observed_at - MOBILE_AUTH_REPLAY_TTL_S
+        deleted = 0
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                for statement, parameters in (
+                    (
+                        "DELETE FROM mobile_auth_exchange_receipts WHERE rowid IN ("
+                        " SELECT rowid FROM mobile_auth_exchange_receipts"
+                        " WHERE expires_at <= ? ORDER BY expires_at LIMIT ?)",
+                        (observed_at, int(batch_size)),
+                    ),
+                    (
+                        "DELETE FROM mobile_auth_exchange_journals WHERE rowid IN ("
+                        " SELECT rowid FROM mobile_auth_exchange_journals"
+                        " WHERE phase = 'complete' AND expires_at <= ?"
+                        " ORDER BY expires_at LIMIT ?)",
+                        (observed_at, int(batch_size)),
+                    ),
+                    (
+                        "DELETE FROM mobile_auth_challenges WHERE rowid IN ("
+                        " SELECT challenge.rowid FROM mobile_auth_challenges challenge"
+                        " WHERE challenge.expires_at <= ? AND NOT EXISTS ("
+                        "  SELECT 1 FROM mobile_auth_exchange_journals journal"
+                        "  WHERE journal.challenge_id = challenge.challenge_id"
+                        "  AND journal.phase != 'complete')"
+                        " ORDER BY challenge.expires_at LIMIT ?)",
+                        (challenge_cutoff, int(batch_size)),
+                    ),
+                ):
+                    cursor = self._conn.execute(statement, parameters)
+                    deleted += int(cursor.rowcount)
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return deleted
 
     # -- lookup -----------------------------------------------------------
     def get(self, user_id: str) -> User | None:
@@ -6904,7 +7919,7 @@ class UserStore:
             self._conn.commit()
         return row["days"]
 
-    def claim_pending_grant(self, user_id: str, email: str) -> float:
+    def _claim_pending_grant_locked(self, user_id: str, email: str) -> float:
         """Atomically move a parked Shopify grant onto a user.
 
         The older pop-then-grant sequence had a crash window where the
@@ -6914,8 +7929,10 @@ class UserStore:
         """
         email = email.strip().lower()
         with self._lock:
+            owns_transaction = not self._conn.in_transaction
             try:
-                self._conn.execute("BEGIN IMMEDIATE")
+                if owns_transaction:
+                    self._conn.execute("BEGIN IMMEDIATE")
                 grant = self._conn.execute(
                     "SELECT days FROM pro_grants WHERE email = ?", (email,)
                 ).fetchone()
@@ -6926,7 +7943,8 @@ class UserStore:
                     (user_id,),
                 ).fetchone()
                 if grant is None or user is None:
-                    self._conn.rollback()
+                    if owns_transaction:
+                        self._conn.rollback()
                     return 0.0
                 total_days = float(grant["days"])
                 pending_orders = self._conn.execute(
@@ -7078,7 +8096,8 @@ class UserStore:
                     ),
                 )
                 if claim_days <= 0:
-                    self._conn.rollback()
+                    if owns_transaction:
+                        self._conn.rollback()
                     return 0.0
 
                 now = time.time()
@@ -7133,11 +8152,18 @@ class UserStore:
                         ),
                     )
                     cursor = grant_end
-                self._conn.commit()
+                if owns_transaction:
+                    self._conn.commit()
                 return claim_days
             except Exception:
-                self._conn.rollback()
+                if owns_transaction and self._conn.in_transaction:
+                    self._conn.rollback()
                 raise
+
+    def claim_pending_grant(self, user_id: str, email: str) -> float:
+        """Compatibility wrapper around the shared lock-held grant claim."""
+
+        return self._claim_pending_grant_locked(user_id, email)
 
     def reduce_pending_grant(self, email: str, days: float) -> None:
         with self._lock:

@@ -174,6 +174,15 @@ DEFAULTS: dict[str, Any] = {
         # max_active_jobs_per_ip).
         "login_attempts_per_15min": 10,
         "signups_per_hour_per_ip": 5,
+        # Native email auth is an explicit recovery-gated rollout.  These
+        # positive bounds are validated strictly at app composition time.
+        "mobile_native_auth_enabled": False,
+        "mobile_auth_starts_per_15_minutes_per_ip": 20,
+        "mobile_auth_starts_per_15_minutes_per_email": 5,
+        "mobile_auth_failed_exchanges_per_15_minutes_per_ip": 20,
+        "mobile_auth_failed_exchanges_per_15_minutes_per_email": 10,
+        "mobile_auth_live_challenges_per_ip": 20,
+        "mobile_auth_live_challenges_per_email": 3,
         # Bare-code default is an open, no-login instance; the shipped
         # config.yaml turns accounts on.
         "require_account": False,

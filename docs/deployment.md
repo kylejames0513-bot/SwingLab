@@ -122,6 +122,22 @@ verify the exact scratch restore, and mark that same journal accepted. Activate
 dependent routes or fail-closed startup reconciliation only after the accepted
 baseline and current-chain readback are independently verified.
 
+## Native email-auth activation
+
+Keep `web.mobile_native_auth_enabled: false` through schema/recovery cutover.
+Before changing it, verify the accepted baseline and current conditional HEAD
+readback, complete the approved scratch recovery drill, retain every referenced
+`MOBILE_STATE_HMAC_KEYRING` key, configure the canonical HTTPS
+`PUBLIC_BASE_URL`, and prove plaintext/HTML email delivery. The startup
+readiness check must pass before either native email endpoint admits requests;
+`/healthz.native_email_auth` provides the non-sensitive flag and abuse-bound
+readback.
+
+Rollback turns the endpoint flag off, but must retain the HMAC keyring and
+recovery-fence access until every nonterminal auth rotation is complete.
+Feature-off startup deliberately resumes those journals before workers or
+route admission; removing recovery access is not a safe rollback.
+
 Do not enable horizontal replicas while recovery state, SQLite, filesystem
 artifacts, and worker coordination remain process/local-volume based. The root
 container contract and one-replica topology remain unchanged.

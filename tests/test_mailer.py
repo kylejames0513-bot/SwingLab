@@ -7,6 +7,8 @@ and app-level flows capture the outgoing mail and six-digit codes.
 
 from __future__ import annotations
 
+import hashlib
+import hmac
 import io
 import json
 import re
@@ -208,7 +210,19 @@ def test_send_uses_resend_https_api(monkeypatch):
     assert request.get_header("Content-type") == "application/json"
     assert request.get_header("User-agent")
     idempotency_key = request.get_header("Idempotency-key")
-    assert idempotency_key.startswith("caddie-")
+    legacy_material = "\0".join(
+        (
+            "CaddieInsight <no-reply@test.example>",
+            "kyle@example.com",
+            "Your code",
+            "123456 inside",
+            "text",
+        )
+    ).encode("utf-8")
+    expected_idempotency_key = "caddie-" + hmac.new(
+        b"re_test_secret", legacy_material, hashlib.sha256
+    ).hexdigest()
+    assert idempotency_key == expected_idempotency_key
     assert "kyle@example.com" not in idempotency_key
     assert "123456" not in idempotency_key
     assert json.loads(request.data) == {
@@ -278,6 +292,47 @@ def test_resend_html_uses_html_field(monkeypatch):
 
     assert payloads[0]["html"] == "<h1>Drill</h1>"
     assert "text" not in payloads[0]
+
+
+def test_resend_multipart_keeps_plaintext_and_html_alternatives(monkeypatch):
+    payloads = []
+    monkeypatch.setenv("RESEND_API_KEY", "re_test_secret")
+    monkeypatch.delenv("SWINGLAB_SMTP_URL", raising=False)
+    monkeypatch.setenv("SWINGLAB_MAIL_FROM", "CaddieInsight <no-reply@test.example>")
+
+    class FakeResponse:
+        status = 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def getcode(self):
+            return self.status
+
+    def fake_urlopen(request, timeout):
+        payloads.append(json.loads(request.data))
+        return FakeResponse()
+
+    monkeypatch.setattr(mailer.urllib_request, "urlopen", fake_urlopen)
+    mailer.send(
+        "kyle@example.com",
+        "Open the app",
+        "Plain sign-in instructions",
+        html_body="<p>HTML sign-in instructions</p>",
+    )
+
+    assert payloads == [
+        {
+            "from": "CaddieInsight <no-reply@test.example>",
+            "to": ["kyle@example.com"],
+            "subject": "Open the app",
+            "text": "Plain sign-in instructions",
+            "html": "<p>HTML sign-in instructions</p>",
+        }
+    ]
 
 
 def test_resend_http_error_is_sanitized(monkeypatch):

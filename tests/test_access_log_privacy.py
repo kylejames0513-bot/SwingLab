@@ -16,7 +16,7 @@ def test_access_log_filter_removes_query_but_preserves_request_metadata():
         (
             "127.0.0.1:1234",
             "GET",
-            "/auth/callback?hmac=secret&code=code&state=state&host=host",
+            "/app/auth/callback?challenge_id=secret&code=code&state=state&host=host",
             "1.1",
             302,
         ),
@@ -28,12 +28,13 @@ def test_access_log_filter_removes_query_but_preserves_request_metadata():
     assert record.args == (
         "127.0.0.1:1234",
         "GET",
-        "/auth/callback",
+        "/app/auth/callback",
         "1.1",
         302,
     )
     rendered = record.getMessage()
-    assert "/auth/callback" in rendered
+    assert "/app/auth/callback" in rendered
+    assert "challenge_id" not in rendered
     assert "hmac" not in rendered
     assert "host" not in rendered
     assert "code" not in rendered

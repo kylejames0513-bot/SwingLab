@@ -20,12 +20,38 @@ from .contracts import APIError
 logger = logging.getLogger("swinglab.api.errors")
 
 
+class MobileAPIHTTPError(HTTPException):
+    """A closed, structured error for explicitly named native routes."""
+
+    def __init__(
+        self,
+        status_code: int,
+        code: str,
+        message: str,
+        *,
+        retryable: bool = False,
+        headers: dict[str, str] | None = None,
+    ) -> None:
+        if not code or len(code) > 64 or not all(
+            character.islower() or character.isdigit() or character == "_"
+            for character in code
+        ):
+            raise ValueError("A bounded native API error code is required.")
+        super().__init__(status_code, message, headers=headers)
+        self.mobile_error_code = code
+        self.mobile_error_retryable = bool(retryable)
+
+
 def _is_named_mobile_route(request: Request, route_names: Collection[str]) -> bool:
     route = request.scope.get("route")
     return bool(route is not None and getattr(route, "name", None) in route_names)
 
 
-def _response(error: APIError, status_code: int, headers: dict[str, str] | None = None) -> JSONResponse:
+def _response(
+    error: APIError,
+    status_code: int,
+    headers: dict[str, str] | None = None,
+) -> JSONResponse:
     return JSONResponse(
         error.model_dump(mode="json"), status_code=status_code, headers=headers
     )
@@ -44,6 +70,16 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
     async def mobile_http_exception(request: Request, exc: HTTPException):
         if not _is_named_mobile_route(request, names):
             return await http_exception_handler(request, exc)
+        if isinstance(exc, (MobileAuthError, MobileAPIHTTPError)):
+            return _response(
+                APIError(
+                    code=exc.mobile_error_code,
+                    message=str(exc.detail),
+                    retryable=exc.mobile_error_retryable,
+                ),
+                exc.status_code,
+                exc.headers,
+            )
         if exc.status_code >= 500:
             return _response(
                 APIError(
@@ -51,16 +87,6 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
                     message="Internal server error.",
                     retryable=True,
                     reference_id=secrets.token_hex(16),
-                ),
-                exc.status_code,
-                exc.headers,
-            )
-        if isinstance(exc, MobileAuthError):
-            return _response(
-                APIError(
-                    code=exc.mobile_error_code,
-                    message=str(exc.detail),
-                    retryable=exc.mobile_error_retryable,
                 ),
                 exc.status_code,
                 exc.headers,
