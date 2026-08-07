@@ -458,7 +458,7 @@
       {% if navigation.app_url %}
       <a class="primary-action report-control" href="{{ navigation.app_url }}">{{ view.refilm.primary_action_label }}</a>
       {% else %}
-      <p class="primary-action" data-offline-action="true">{{ view.refilm.primary_action_label }} — open CaddieInsight when you are back online.</p>
+      <p class="primary-action" role="note" data-offline-action="true">{{ view.refilm.primary_action_label }}</p>
       {% endif %}
     </section>
     {% else %}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import fields, replace
+import html as html_lib
 from pathlib import Path
 import re
 
@@ -81,6 +82,12 @@ def phase_card(html: str, phase_id: str) -> str:
     return match.group(0)
 
 
+def normalized_html_text(fragment: str) -> str:
+    return " ".join(
+        html_lib.unescape(re.sub(r"<[^>]+>", " ", fragment)).split()
+    )
+
+
 def test_report_document_exposes_all_server_owned_html_depth():
     assert field_names(ReportDocument) == {"view", "depth", "media_by_key"}
     assert {
@@ -140,6 +147,22 @@ def test_production_writer_builds_a_strictly_validated_bundle(tmp_path: Path):
 
     assert staged.report_path.is_file()
     assert staged.manifest.presentation_version == GUIDED_REPORT_PRESENTATION_VERSION
+    evidence = staged.view.visual_evidence
+    assert staged.view.next_move is not None
+    assert evidence is not None and evidence.supporting_measurement is not None
+    assert (
+        staged.view.next_move.measurement_detail_id
+        == evidence.supporting_measurement.id
+    )
+    selected_phase = next(
+        phase
+        for phase in staged.view.phases
+        if phase.id is staged.view.next_move.category
+    )
+    assert evidence.supporting_measurement in selected_phase.measurements
+    rendered = staged.report_path.read_text(encoding="utf-8")
+    assert f'href="#{evidence.supporting_measurement.id}"' in rendered
+    assert "See measurement" in rendered
 
 
 def test_guided_writer_rejects_unknown_media_before_writing(tmp_path: Path):
@@ -267,6 +290,8 @@ def test_dtl_evidence_renders_persisted_event_provenance_in_order(tmp_path: Path
     document = report_document_fixture("coaching-dtl-clear")
     html = render_guided(tmp_path, document)
     understand = report_block(html, "understand", "practice")
+    evidence = document.view.visual_evidence
+    assert evidence is not None and evidence.supporting_measurement is not None
     expected = (
         ("address", "Address", 120, "Address from opening setup"),
         ("top", "Top", 760, "Top from highest hand position"),
@@ -297,6 +322,16 @@ def test_dtl_evidence_renders_persisted_event_provenance_in_order(tmp_path: Path
     assert understand.count("data-event-timestamp=") == 4
     assert "640 ms" not in understand
     assert "330 ms" not in understand
+    measurement = evidence.supporting_measurement
+    disclosure = re.search(
+        rf'<details class="measurement-detail" id="{re.escape(measurement.id)}">.*?</details>',
+        understand,
+        flags=re.DOTALL,
+    )
+    assert disclosure is not None
+    assert measurement.plain_value in disclosure.group(0)
+    assert understand.count(measurement.plain_value) == 1
+    assert measurement.plain_value not in evidence.observed_label
 
 
 def test_visual_unavailable_keeps_explanation_without_fallback_image(tmp_path: Path):
@@ -419,7 +454,16 @@ def test_measurement_limitations_practice_and_refilm_keep_authored_content(
     offline_html = render_guided(tmp_path, offline)
     offline_refilm = report_block(offline_html, "refilm")
     assert 'data-offline-action="true"' in offline_refilm
-    assert offline.view.refilm.primary_action_label in offline_refilm
+    offline_action = re.search(
+        r'<(?P<tag>[a-z]+)[^>]*data-offline-action="true"[^>]*>.*?</(?P=tag)>',
+        offline_refilm,
+        flags=re.DOTALL,
+    )
+    assert offline_action is not None
+    assert 'role="note"' in offline_action.group(0).split(">", 1)[0]
+    assert normalized_html_text(offline_action.group(0)) == (
+        offline.view.refilm.primary_action_label
+    )
     assert re.search(
         rf'<a[^>]*>{re.escape(offline.view.refilm.primary_action_label)}</a>',
         offline_refilm,

@@ -226,6 +226,15 @@ def _validate(view:ReportViewV1)->None:
         if view.practice.illustration_media_key is not None and view.practice.illustration_media_key not in keys:_err("missing media reference")
         if view.capture_guidance is not None:_err("coaching has no capture guidance")
         phase_ids=tuple(phase.id for phase in view.phases); _unique(phase_ids,"phase")
+        phase_measurements=tuple(detail for phase in view.phases for detail in phase.measurements)
+        _unique(tuple(detail.id for detail in phase_measurements),"measurement id")
+        supporting=view.visual_evidence.supporting_measurement
+        linked_id=view.next_move.measurement_detail_id
+        if (supporting is None) != (linked_id is None):_err("measurement link and supporting measurement must both be null or present")
+        if supporting is not None:
+            if linked_id != supporting.id:_err("measurement link must match supporting measurement")
+            canonical=next((detail for detail in phase_measurements if detail.id == linked_id),None)
+            if canonical is None or canonical != supporting:_err("supporting measurement must equal one phase-owned measurement")
         if view.context.angle == Angle.FACE_ON:
             expected=(PhaseId.SETUP,PhaseId.GOING_BACK,PhaseId.TRANSITION_DOWNSWING,PhaseId.IMPACT,PhaseId.FINISH)
             if phase_ids != expected:_err("face-on coaching requires ordered five-phase layout")

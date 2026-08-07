@@ -128,3 +128,69 @@ git status --short
 None for Task 2. Capture-only content remains the intentionally minimal Task 1
 shell for Task 3, and rendered desktop/mobile browser QA remains owned by the
 later presentation verification task.
+
+## Fix round 1 — canonical measurement association
+
+### RED evidence
+
+The focused review regressions failed in all nine expected places before the
+fix:
+
+```text
+python -m pytest tests/test_guided_report_html.py::test_production_writer_builds_a_strictly_validated_bundle tests/test_guided_report_html.py::test_dtl_evidence_renders_persisted_event_provenance_in_order tests/test_guided_report_html.py::test_measurement_limitations_practice_and_refilm_keep_authored_content tests/test_report_view_contract.py::test_coaching_measurement_reference_matches_supporting_evidence tests/test_report_view_contract.py::test_linked_measurement_is_one_equal_phase_owned_detail -q
+9 failed in 0.67s
+```
+
+The failures proved that the production bundle had no supporting measurement,
+DTL repeated its technical value in the observed label, the offline action
+added unsupplied wording, and the typed boundary accepted invalid associations.
+
+### Implementation
+
+- `build_report_view` now builds the canonical phases first and reuses the
+  selected phase-owned `MeasurementDetail` for evidence while placing the same
+  ID on `NextMove`. If the selected metric has no canonical detail, both fields
+  remain null rather than being inferred by the renderer.
+- Report-view validation now requires globally unique phase measurement IDs and
+  accepts only a both-null association or a matching, equal, phase-owned pair.
+- The protect fixture now owns its linked measurement in the selected phase.
+- DTL evidence uses a qualitative observed label; its technical value remains
+  inside the matching measurement disclosure exactly once.
+- The offline primary action is a semantic note containing the supplied action
+  label verbatim and no appended online wording.
+
+### GREEN evidence
+
+Exact fix regressions:
+
+```text
+10 passed in 0.88s
+```
+
+Focused Task 2 gate:
+
+```text
+python -m pytest tests/test_guided_report_html.py -q
+16 passed in 0.94s
+```
+
+Presenter, view-contract, focused-evidence, document, and bundle gates:
+
+```text
+python -m pytest tests/test_report_document.py tests/test_report_presenter_phases.py tests/test_report_presenter_states.py tests/test_report_view_contract.py tests/test_focused_evidence.py tests/test_report_bundle.py -q
+166 passed in 2.56s
+```
+
+Task 2, composition, and legacy regressions:
+
+```text
+python -m pytest tests/test_guided_report_html.py tests/test_guided_report_web_composition.py tests/test_premium_report.py -q
+23 passed in 3.11s
+```
+
+### Concerns
+
+No Task 2 blocker. Metrics without a canonical phase detail intentionally keep
+both association fields null; the template still does not infer or recompute
+measurements. Browser/device QA remains assigned to the later presentation
+verification task.

@@ -134,6 +134,46 @@ def test_clear_coaching_rejects_unavailable_evidence():
     with pytest.raises(ReportViewValidationError): report_view_from_dict(payload)
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda payload: payload["next_move"].update(
+            measurement_detail_id="different-measurement"
+        ),
+        lambda payload: payload["next_move"].update(measurement_detail_id=None),
+        lambda payload: payload["visual_evidence"].update(
+            supporting_measurement=None
+        ),
+    ),
+)
+def test_coaching_measurement_reference_matches_supporting_evidence(mutation):
+    payload = copy.deepcopy(report_view_payload("coaching-improve-clear"))
+    mutation(payload)
+
+    with pytest.raises(ReportViewValidationError, match="measurement"):
+        report_view_from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    (
+        lambda payload: payload["phases"][1].update(measurements=[]),
+        lambda payload: payload["visual_evidence"]["supporting_measurement"].update(
+            plain_value="different value"
+        ),
+        lambda payload: payload["phases"][0]["measurements"].append(
+            copy.deepcopy(payload["phases"][1]["measurements"][0])
+        ),
+    ),
+)
+def test_linked_measurement_is_one_equal_phase_owned_detail(mutation):
+    payload = copy.deepcopy(report_view_payload("coaching-improve-clear"))
+    mutation(payload)
+
+    with pytest.raises(ReportViewValidationError, match="measurement"):
+        report_view_from_dict(payload)
+
+
 @pytest.mark.parametrize("reason", ["no_readable_swing", "no_reliable_strike_event", "priority_evidence_unreliable"])
 def test_limited_coaching_rejects_fatal_reason(reason):
     payload = copy.deepcopy(report_view_payload("coaching-limited-rendered")); payload["trust"]["reasons"] = [reason]

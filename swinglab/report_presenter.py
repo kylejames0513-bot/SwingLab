@@ -695,12 +695,33 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         return _capture_only(source, context, reasons)
 
     assert selected_metric is not None and source.visual_evidence is not None
+    phases = build_phase_summaries(source, cfg)
+    selected_phase = next(
+        phase
+        for phase in phases
+        if phase.id is _selected_phase(selected_metric, angle=source.context.angle)
+    )
+    selected_measurement = next(
+        (
+            detail
+            for detail in selected_phase.measurements
+            if detail.id == f"measurement-{selected_metric}"
+        ),
+        None,
+    )
+    visual_evidence = replace(
+        source.visual_evidence,
+        supporting_measurement=selected_measurement,
+    )
+    measurement_detail_id = (
+        selected_measurement.id if selected_measurement is not None else None
+    )
     mode = JourneyMode.IMPROVE if selected_issue is not None else JourneyMode.PROTECT
     if selected_issue is not None:
-        next_move = NextMove(mode, selected_issue.flag, _selected_phase(selected_issue.metric, angle=source.context.angle), "Work on now", selected_issue.display_name, selected_issue.why, selected_issue.fix, None, "practice", "refilm")
+        next_move = NextMove(mode, selected_issue.flag, _selected_phase(selected_issue.metric, angle=source.context.angle), "Work on now", selected_issue.display_name, selected_issue.why, selected_issue.fix, measurement_detail_id, "practice", "refilm")
     else:
         assert selected_strength is not None
-        next_move = NextMove(mode, selected_strength.key, _selected_phase(selected_strength.metric, angle=source.context.angle), "Protect this", selected_strength.display_name, selected_strength.text, "Repeat the same motion under the same setup.", None, "practice", "refilm")
+        next_move = NextMove(mode, selected_strength.key, _selected_phase(selected_strength.metric, angle=source.context.angle), "Protect this", selected_strength.display_name, selected_strength.text, "Repeat the same motion under the same setup.", measurement_detail_id, "practice", "refilm")
     limited = bool(reasons)
     label = REASON_COPY[reasons[0]].label if limited else "Clear read"
     target = build_refilm_target(source.brief, source.issues, source.strengths, cfg)
@@ -710,7 +731,6 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         for entry in source.media
         if not (source.replay_locked and entry.role is MediaRole.COACH_REPLAY)
     )
-    phases = build_phase_summaries(source, cfg)
     practice = _practice(source.primary_drill, source.alternative_drills, cfg)
     replay_count = sum(entry.role is MediaRole.COACH_REPLAY for entry in media)
     section_counts = (
@@ -747,7 +767,7 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         context,
         Capabilities(
             True,
-            source.visual_evidence.state == "rendered",
+            visual_evidence.state == "rendered",
             optional_by_id[OptionalSectionId.EVERY_SWING].available,
             any(entry.role is MediaRole.SLOW_MOTION for entry in media),
             bool(replay_count),
@@ -756,7 +776,7 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
             optional_by_id[OptionalSectionId.GEAR].available,
             True,
         ),
-        media, optional_sections, next_move, source.visual_evidence,
+        media, optional_sections, next_move, visual_evidence,
         phases, practice, protocol,
     )
 

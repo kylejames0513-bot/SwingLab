@@ -163,3 +163,18 @@ def test_dtl_selected_tempo_uses_timing_rhythm_for_improve_and_protect():
     assert protect.next_move.category is PhaseId.TIMING_RHYTHM
     assert protect.phases[0].status is PhaseStatus.STEADY
     assert protect.phases[0].expanded_by_default is True
+
+
+def test_presenter_reuses_selected_phase_measurement_for_evidence_and_next_move():
+    view = build_report_view(report_source([complete_metrics()]), Config())
+    selected_phase = next(
+        phase for phase in view.phases if phase.id is view.next_move.category
+    )
+    canonical = next(
+        detail
+        for detail in selected_phase.measurements
+        if detail.id == "measurement-head_sway_backswing_sw"
+    )
+
+    assert view.visual_evidence.supporting_measurement is canonical
+    assert view.next_move.measurement_detail_id == canonical.id

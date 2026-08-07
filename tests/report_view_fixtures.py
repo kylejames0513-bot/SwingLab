@@ -145,7 +145,9 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                         if phase.id == PhaseId.GOING_BACK
                         else phase.summary
                     ),
-                    measurements=(),
+                    measurements=(protected_measurement,)
+                    if phase.id == PhaseId.GOING_BACK
+                    else (),
                     expanded_by_default=phase.id == PhaseId.GOING_BACK,
                 )
                 for phase in base_view.phases
@@ -315,7 +317,7 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                 phase_method=PhaseMethod.SESSION_TIMING,
                 timestamp_ms=1090,
                 events=events,
-                observed_label="Tempo measured at 3.2 to 1",
+                observed_label="Transition changed direction quickly",
                 reference_label="Address event",
                 boundary_label="Target rhythm band",
                 readable_swings=2,
