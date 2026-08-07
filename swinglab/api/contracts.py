@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 RESOURCE_VERSION: Literal[1] = 1
@@ -106,12 +107,15 @@ class LegacyTodayResponse(ContractModel):
     practice_checked_in: bool
 
 
-class AnalysisFailureCode(ContractModel):
-    code: Literal["capture", "processing", "retry_exhausted", "unknown"]
+class AnalysisFailureCode(str, Enum):
+    capture = "capture"
+    processing = "processing"
+    retry_exhausted = "retry_exhausted"
+    unknown = "unknown"
 
 
 class AnalysisFailure(ContractModel):
-    code: str
+    code: AnalysisFailureCode
     retryable: bool
     message: str
 
@@ -159,19 +163,83 @@ class BriefResponse(ContractModel):
     caddie_brief: dict[str, Any]
 
 
-class ProofCycleTargetResponse(ContractModel):
-    resource_version: Literal[1] = 1
-    target: dict[str, Any] | None
-
-
 class ComparableContextGroupResponse(ContractModel):
     resource_version: Literal[1] = 1
     sessions: list[MobileSessionResponse]
 
 
+MetricName = Literal[
+    "backswing_s",
+    "downswing_s",
+    "tempo_ratio",
+    "head_sway_backswing_sw",
+    "head_sway_downswing_sw",
+    "hip_slide_backswing_sw",
+    "hip_slide_downswing_sw",
+    "head_dip_sw",
+    "lead_arm_angle_deg",
+    "shoulder_tilt_impact_deg",
+    "shoulder_tilt_delta_deg",
+    "finish_balance_sw",
+]
+
+
+class ProofCycleContext(ContractModel):
+    session_id: str
+    club: str
+    hand: Literal["left", "right"]
+    angle: Literal["face-on", "dtl"]
+
+
+class ProofCycleMeasurement(ContractModel):
+    metric: MetricName
+    aggregation: Literal["mean", "std", "worst"]
+    value: float | None
+    mean: float | None
+    std: float | None
+    readable_swings: int
+
+
+class ProofCycleTarget(ContractModel):
+    rule_version: Literal[1, 2]
+    source_flag: str
+    metric: MetricName
+    display_name: str
+    unit: str
+    worse_direction: Literal["higher", "lower"]
+    aggregation: Literal["mean", "std", "worst"]
+    benchmark_value: float | None
+    benchmark_text: str
+    drill_ids: list[str]
+    drill_names: list[str]
+    baseline_context: ProofCycleContext
+    baseline: ProofCycleMeasurement
+    baseline_completed: bool
+    baseline_coaching_eligible: bool
+    baseline_warning: str | None
+
+
+class ProofCycleTargetResponse(ContractModel):
+    resource_version: Literal[1] = 1
+    target: ProofCycleTarget | None
+
+
+class ProgressMetric(ContractModel):
+    metric: MetricName
+    current: float | None
+    baseline: float | None
+    trend: Literal["improving", "holding", "needs_attention", "unknown"]
+
+
+class ProgressPayload(ContractModel):
+    context: ComparisonTarget
+    metrics: list[ProgressMetric]
+    completed_sessions: int
+
+
 class ProgressResponse(ContractModel):
     resource_version: Literal[1] = 1
-    progress: dict[str, Any]
+    progress: ProgressPayload
 
 
 class PracticeCheckin(ContractModel):
@@ -185,9 +253,16 @@ class PracticeCheckinResponse(ContractModel):
     checkins: list[PracticeCheckin] | None = None
 
 
+class Capabilities(ContractModel):
+    native_auth: bool
+    upload: bool
+    push: bool
+    proof_cycle: bool
+
+
 class CapabilitiesResponse(ContractModel):
     resource_version: Literal[1] = 1
-    capabilities: dict[str, bool]
+    capabilities: Capabilities
 
 
 class NativeAuthStartRequest(ContractModel):
@@ -261,7 +336,20 @@ class PushRegistrationResponse(ContractModel):
 
 
 class NativeEventRequest(ContractModel):
-    event: str
+    event: Literal[
+        "landing_view",
+        "account_verified",
+        "upload_started",
+        "upload_completed",
+        "brief_viewed",
+        "pro_clicked",
+        "gear_match_clicked",
+        "cart_started",
+        "checkout_started",
+        "paid_order",
+        "fulfillment_updated",
+        "repeat_analysis",
+    ]
     session_id: str | None = None
 
 

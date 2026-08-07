@@ -6,6 +6,8 @@ import base64
 import hashlib
 import hmac
 import json
+import os
+import sqlite3
 import threading
 from pathlib import Path
 
@@ -231,8 +233,18 @@ def test_app_owned_resources_close_idempotently_without_worker_or_sqlite_leaks(t
         for thread in owned_workers
         if thread.name.startswith("swinglab-worker") and thread.is_alive()
     ]
-    with pytest.raises(Exception):
-        app.state.jobs._conn.execute("SELECT 1")
+    for resource in (app.state.jobs, app.state.users, app.state.throttle):
+        with pytest.raises(sqlite3.ProgrammingError):
+            resource._conn.execute("SELECT 1")
+
+    database = tmp_path / "sessions" / "swinglab.db"
+    moved = tmp_path / "sessions" / "closed-swinglab.db"
+    os.replace(database, moved)
+    reopened = sqlite3.connect(moved)
+    try:
+        assert reopened.execute("SELECT COUNT(*) FROM jobs").fetchone()[0] == 0
+    finally:
+        reopened.close()
 
 
 def test_job_manager_can_defer_interrupted_recovery(tmp_path, monkeypatch):
@@ -348,9 +360,74 @@ def test_typed_v1_success_bodies_validate_against_the_frozen_models(contract_app
         )
     )
 
-    for model, response in responses:
+    expected_keys = [
+        {"resource_version", "identity", "profile"},
+        {"resource_version", "profile"},
+        {
+            "resource_version",
+            "profile",
+            "latest_session",
+            "caddie_brief",
+            "practice_plan",
+            "practice_checked_in",
+        },
+        {"resource_version", "sessions"},
+        {
+            "resource_version",
+            "id",
+            "status",
+            "created_at",
+            "source_name",
+            "hand",
+            "angle",
+            "club",
+            "level",
+            "fast",
+            "log",
+            "error",
+            "report",
+            "swings_done",
+            "swings_total",
+            "queue_position",
+        },
+        {"resource_version", "checkins"},
+        {"resource_version", "tokens"},
+        {"accepted"},
+        {"resource_version", "token", "device"},
+        {"resource_version", "revoked"},
+    ]
+    for (model, response), expected in zip(responses, expected_keys, strict=True):
         assert response.is_success, response.text
-        model.model_validate(response.json())
+        body = response.json()
+        assert set(body) == expected
+        model.model_validate(body)
+
+    identity = responses[0][1].json()["identity"]
+    assert set(identity) == {
+        "id",
+        "email",
+        "email_verified",
+        "history_epoch",
+        "shopify_customer_linked",
+        "shopify_account_state",
+    }
+    assert responses[0][1].json()["profile"] is None
+    assert responses[1][1].json()["profile"] is None
+
+    legacy_session_keys = expected_keys[4]
+    assert set(responses[2][1].json()["latest_session"]) == legacy_session_keys
+    sessions = responses[3][1].json()["sessions"]
+    assert len(sessions) == 1
+    assert set(sessions[0]) == legacy_session_keys
+    assert set(responses[8][1].json()["device"]) == {
+        "selector",
+        "label",
+        "created_at",
+        "last_used_at",
+        "expires_at",
+        "revoked_at",
+        "active",
+    }
 
 
 def test_valid_signed_payload_has_path_parity(contract_app):

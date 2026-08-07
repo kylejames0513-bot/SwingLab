@@ -32,7 +32,9 @@ def _canonical(schema: dict) -> bytes:
 
 def test_openapi_v1_matches_the_frozen_snapshot(tmp_path):
     """Catches an accidental public-schema change without a deliberate freeze."""
-    app = create_app(Config(), tmp_path / "sessions")
+    app = create_app(
+        Config(), tmp_path / "sessions", start_background_workers=False
+    )
     try:
         assert _canonical(app.openapi()) == SNAPSHOT.read_bytes()
     finally:
