@@ -1,6 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CaddieInsight">
-  <rect width="512" height="512" rx="96" fill="#06110c"/>
-  <circle cx="256" cy="256" r="150" fill="#eef2ef"/>
-  <path d="M157 286c60-123 132-118 198-61-61-26-115-11-155 50z" fill="#e8720c"/>
-  <circle cx="345" cy="192" r="22" fill="#06110c"/>
+  <rect width="512" height="512" rx="96" fill="#0f3d28"/>
+  <!-- Tour Caddie v3: precision arc + fairway flagstick -->
+  <path d="M118 256a138 138 0 0 1 196-124" fill="none" stroke="#e6f2ea" stroke-width="18" stroke-linecap="round"/>
+  <path d="M320 128a138 138 0 0 1 62 48" fill="none" stroke="#e8720c" stroke-width="18" stroke-linecap="round"/>
+  <path d="M390 188a138 138 0 0 1-18 168" fill="none" stroke="#e6f2ea" stroke-width="18" stroke-linecap="round"/>
+  <path d="M360 368a138 138 0 0 1-196-20" fill="none" stroke="#e6f2ea" stroke-width="18" stroke-linecap="round"/>
+  <line x1="256" y1="150" x2="256" y2="340" stroke="#e6f2ea" stroke-width="14" stroke-linecap="round"/>
+  <path d="M263 150 L330 188 L263 226 Z" fill="#e6f2ea"/>
+  <ellipse cx="256" cy="348" rx="46" ry="18" fill="none" stroke="#e6f2ea" stroke-width="12"/>
 </svg>

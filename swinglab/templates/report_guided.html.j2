@@ -148,7 +148,8 @@
       max-width: 54ch;
       margin: 0;
       color: var(--muted);
-      font-size: .92rem;
+      font-size: .88rem;
+      line-height: 1.35;
     }
     .trust-chip {
       display: inline-flex;
@@ -411,10 +412,11 @@
     }
     .media-theater__card video {
       width: 100%;
+      height: auto;
       border-radius: .55rem;
       background: #000;
-      aspect-ratio: 16 / 10;
-      object-fit: cover;
+      /* Preserve natural phone-video framing — never crop evidence. */
+      object-fit: contain;
     }
     .media-theater__card figcaption,
     .media-theater__card p {
@@ -655,29 +657,37 @@
       .report-header,
       main { width: min(calc(100% - 20px), 68rem); }
       .sample-banner { align-items: flex-start; flex-direction: column; }
-      .report-header { padding-top: .9rem; }
+      .report-header {
+        gap: .55rem;
+        padding: .7rem 0 .45rem;
+      }
+      .session-framing { display: none; }
       .context-list {
         display: grid;
         grid-template-columns: minmax(0, 1fr);
-        gap: .4rem;
+        gap: .15rem;
       }
       .context-list div {
         display: grid;
         grid-template-columns: minmax(0, 1fr) auto;
-        align-items: center;
-        min-height: 44px;
-        padding: .25rem 0;
-        border-bottom: 1px solid rgba(212, 221, 214, .7);
+        align-items: baseline;
+        min-height: 0;
+        padding: .12rem 0;
+        border-bottom: 1px solid rgba(212, 221, 214, .55);
       }
-      .context-list dd { margin-top: 0; justify-self: end; }
+      .context-list dd { margin-top: 0; justify-self: end; font-size: .86rem; }
       .focused-evidence { grid-template-columns: 1fr; }
-      .journey-preview { grid-template-columns: 1fr; }
+      .journey-preview { grid-template-columns: 1fr; gap: .35rem; margin-top: .65rem; }
+      .journey-preview a { padding: .45rem .5rem; font-size: .88rem; }
       .event-timeline li { grid-template-columns: 1fr; gap: .1rem; }
       .practice-facts,
       .refilm-confirmations { grid-template-columns: 1fr; }
       .training-deck { grid-template-columns: 1fr; }
-      [data-report-block] { padding: 1rem; }
-      h1 { font-size: clamp(1.8rem, 9vw, 2.35rem); }
+      [data-report-block] { margin-top: .75rem; padding: .85rem; }
+      .next-move { padding-top: .9rem; }
+      h1 { max-width: 20ch; margin: .1rem 0 .4rem; font-size: clamp(1.55rem, 7.5vw, 2.15rem); }
+      .observation { margin: 0 0 .5rem; font-size: .98rem; }
+      .coach-cue { padding: .6rem .75rem .6rem .85rem; font-size: .95rem; }
       .focused-evidence { margin-inline: 0; }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -752,9 +762,13 @@
       <div class="report-brand">
         <span class="report-brand__mark" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M5 17.5c3.2-1.1 5.4-4.2 6.2-7.8.4 2.5 1.7 4.7 3.6 6.2 1.4 1.1 3.1 1.8 4.9 2.1"
-                  stroke="#e6f2ea" stroke-width="1.8" stroke-linecap="round"/>
-            <circle cx="11.2" cy="7.2" r="1.35" fill="#ffad62"/>
+            <path d="M4.5 12a7.5 7.5 0 0 1 10.6-6.7" stroke="#e6f2ea" stroke-width="1.7" stroke-linecap="round"/>
+            <path d="M15.6 5.8a7.5 7.5 0 0 1 3.4 2.6" stroke="#ffad62" stroke-width="1.7" stroke-linecap="round"/>
+            <path d="M19.4 9a7.5 7.5 0 0 1-1 9.1" stroke="#e6f2ea" stroke-width="1.7" stroke-linecap="round"/>
+            <path d="M17.8 18.6A7.5 7.5 0 0 1 7 17.4" stroke="#e6f2ea" stroke-width="1.7" stroke-linecap="round"/>
+            <path d="M12 5.2v11.2" stroke="#e6f2ea" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M12.4 5.2 16.2 7.3 12.4 9.4Z" fill="#e6f2ea"/>
+            <ellipse cx="12" cy="17" rx="2.6" ry="1.05" stroke="#e6f2ea" stroke-width="1.3"/>
           </svg>
         </span>
         <span class="report-brand__text">
@@ -1003,10 +1017,6 @@
         <article class="training-card training-card--pass">
           <span class="training-card__label">Pass mark</span>
           <p><a class="report-control" href="#refilm">Confirm the matched re-film target</a></p>
-        </article>
-        <article class="training-card training-card--miss">
-          <span class="training-card__label">Common miss</span>
-          <p>Dropping the feel cue when you add speed. Keep the cue first, then build effort.</p>
         </article>
       </div>
       <dl class="practice-facts">

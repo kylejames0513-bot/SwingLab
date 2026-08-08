@@ -1,11 +1,10 @@
 """apple-touch-icon.png — the iOS home-screen mark.
 
-Reproduces swinglab/web/static/pwa-icon.svg with Pillow: the night turf
-field, the cool-mist ball-face circle, one orange swing-arc gesture, and
-the ball dot. iOS ignores SVG touch icons and rounds the corners itself,
-so this renders the mark full-bleed on an OPAQUE 180x180 canvas (no alpha,
-no pre-rounded corners). Drawn at supersample scale and downscaled for
-clean edges, like the other generators here.
+Tour Caddie v3: deep-forest tile with the flagstick + precision-arc mark in
+mint and one amber kinetic segment. iOS ignores SVG touch icons and rounds
+the corners itself, so this renders the mark full-bleed on an OPAQUE 180x180
+canvas (no alpha, no pre-rounded corners). Drawn at supersample scale and
+downscaled for clean edges.
 
 Writes straight into the app's static directory:
     python store-assets/make_apple_touch_icon.py
@@ -13,6 +12,7 @@ Writes straight into the app's static directory:
 
 from __future__ import annotations
 
+import math
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -20,50 +20,59 @@ from PIL import Image, ImageDraw
 HERE = Path(__file__).parent
 STATIC = HERE.parent / "swinglab" / "web" / "static"
 
-# palette (from pwa-icon.svg / Turf Instrument)
-NIGHT = "#06110c"
-MIST = "#eef2ef"
+GREEN = "#0f3d28"
+MINT = "#e6f2ea"
 ORANGE = "#e8720c"
 
-SIZE = 180     # Apple's documented touch-icon size
-CANVAS = 512   # draw in the SVG's own 512-unit coordinate space
-S = 2          # supersample factor
+SIZE = 180
+S = 4
 
 
-def _cubic(p0, p1, p2, p3, steps=48):
-    """Sample one cubic bezier as a point list (endpoint excluded)."""
-    points = []
-    for i in range(steps):
-        t = i / steps
-        u = 1 - t
-        x = u**3 * p0[0] + 3 * u**2 * t * p1[0] + 3 * u * t**2 * p2[0] + t**3 * p3[0]
-        y = u**3 * p0[1] + 3 * u**2 * t * p1[1] + 3 * u * t**2 * p2[1] + t**3 * p3[1]
-        points.append((x, y))
-    return points
-
-
-def swing_arc() -> list[tuple[float, float]]:
-    """The SVG swoosh: M157 286c60-123 132-118 198-61-61-26-115-11-155 50z."""
-    top = _cubic((157, 286), (217, 163), (289, 168), (355, 225))
-    belly = _cubic((355, 225), (294, 199), (240, 214), (200, 275))
-    return top + belly + [(200, 275)]
+def _pol(cx: float, cy: float, r: float, ang: float) -> tuple[float, float]:
+    a = math.radians(ang)
+    return cx + r * math.cos(a), cy + r * math.sin(a)
 
 
 def main() -> None:
-    scale = CANVAS * S / 512
-    img = Image.new("RGB", (CANVAS * S, CANVAS * S), NIGHT)
-    draw = ImageDraw.Draw(img)
+    canvas = SIZE * S
+    img = Image.new("RGB", (canvas, canvas), GREEN)
+    d = ImageDraw.Draw(img)
+    cx = cy = canvas / 2
+    R = canvas * 0.32
+    stroke = max(2, int(0.055 * R))
 
-    def xy(x: float, y: float) -> tuple[float, float]:
-        return (x * scale, y * scale)
+    for start, end, fill in (
+        (200, 290, MINT),
+        (295, 340, ORANGE),
+        (345, 430, MINT),
+    ):
+        d.arc([cx - R, cy - R, cx + R, cy + R], start, end, fill=fill, width=stroke)
 
-    draw.ellipse([xy(256 - 150, 256 - 150), xy(256 + 150, 256 + 150)], fill=MIST)
-    draw.polygon([xy(x, y) for x, y in swing_arc()], fill=ORANGE)
-    draw.ellipse([xy(345 - 22, 192 - 22), xy(345 + 22, 192 + 22)], fill=NIGHT)
+    stick_w = max(2, int(0.05 * R))
+    top = cy - 0.55 * R
+    bottom = cy + 0.42 * R
+    d.line([(cx, top), (cx, bottom)], fill=MINT, width=stick_w)
+    flag_h = 0.28 * R
+    flag_w = 0.42 * R
+    d.polygon(
+        [
+            (cx + stick_w * 0.5, top),
+            (cx + flag_w, top + flag_h * 0.45),
+            (cx + stick_w * 0.5, top + flag_h),
+        ],
+        fill=MINT,
+    )
+    cup_rx, cup_ry = 0.22 * R, 0.09 * R
+    d.ellipse(
+        [cx - cup_rx, bottom - cup_ry, cx + cup_rx, bottom + cup_ry],
+        outline=MINT,
+        width=max(2, int(0.04 * R)),
+    )
 
-    out = STATIC / "apple-touch-icon.png"
-    img.resize((SIZE, SIZE), Image.LANCZOS).save(out, format="PNG")
-    print("wrote", out)
+    out = img.resize((SIZE, SIZE), Image.LANCZOS)
+    path = STATIC / "apple-touch-icon.png"
+    out.save(path, "PNG", optimize=True)
+    print("wrote", path)
 
 
 if __name__ == "__main__":
