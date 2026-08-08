@@ -1,0 +1,7 @@
+# Maestro smoke: import path entry.
+appId: com.caddieinsight.app.dev
+---
+- launchApp
+- assertVisible: CaddieInsight
+- tapOn: Analyze
+- assertVisible: Import from library

@@ -1,0 +1,7 @@
+# Maestro smoke: coaching loop against fixture backend (run on device/emulator).
+appId: com.caddieinsight.app.dev
+---
+- launchApp
+- assertVisible: CaddieInsight
+- tapOn: Analyze
+- assertVisible: Analyze a swing

@@ -1,3 +1,8 @@
+import type {
+  ExportDownloadRequest,
+  ExportDownloadResult,
+} from './ExportDownloader.types';
+
 export type ProtectedRoots = {
   pendingUploadsDirectory: string;
   stateDirectory: string;
@@ -11,6 +16,8 @@ export type ProtectedRoots = {
 type CaddieInsightStorageModuleNative = {
   ensureProtectedRoots(): Promise<ProtectedRoots>;
   protectAndVerify(uri: string): Promise<void>;
+  downloadExport(request: ExportDownloadRequest): Promise<ExportDownloadResult>;
+  cancelAndDrain(operationId: string): Promise<void>;
 };
 
 const UNSUPPORTED =
@@ -21,6 +28,14 @@ const CaddieInsightStorageModule: CaddieInsightStorageModuleNative = {
     throw new Error(UNSUPPORTED);
   },
   async protectAndVerify(_uri: string): Promise<void> {
+    throw new Error(UNSUPPORTED);
+  },
+  async downloadExport(
+    _request: ExportDownloadRequest,
+  ): Promise<ExportDownloadResult> {
+    throw new Error(UNSUPPORTED);
+  },
+  async cancelAndDrain(_operationId: string): Promise<void> {
     throw new Error(UNSUPPORTED);
   },
 };

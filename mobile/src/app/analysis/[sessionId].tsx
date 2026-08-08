@@ -1,7 +1,7 @@
-import { useLocalSearchParams } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
 
 import { useAnalysisJob } from '@/features/analysis/useAnalysisJob';
-import { ScrollScreen, StatusBadge, Text } from '@/ui/primitives';
+import { Button, ScrollScreen, StatusBadge, Text } from '@/ui/primitives';
 import { space } from '@/design/tokens';
 
 export default function AnalysisSessionRoute() {
@@ -33,6 +33,12 @@ export default function AnalysisSessionRoute() {
           <Text style={{ marginTop: space.md }}>
             Session {session.id} · {session.club} · {session.angle}
           </Text>
+          {session.status === 'done' && sessionId ? (
+            <Button
+              label="Open Caddie Brief"
+              onPress={() => router.push(`/brief/${sessionId}`)}
+            />
+          ) : null}
         </>
       ) : (
         <Text tone="muted">Waiting for server status…</Text>

@@ -3,7 +3,7 @@ import { Stack } from 'expo-router';
 import { QueryClientProvider } from '@tanstack/react-query';
 import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { AppState, Platform, StyleSheet, Text, View } from 'react-native';
 import * as Application from 'expo-application';
 
 import { AuthStore, wireAuthApiClient } from '@/auth/authStore';
@@ -18,6 +18,8 @@ import {
   setEnvironmentQueryClient,
 } from '@/platform/environmentBoundary';
 import { OrientationController } from '@/platform/orientation';
+import { useDeepLinkRouter } from '@/platform/useDeepLinkRouter';
+import { reconcileOnForeground } from '@/platform/reliability';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // Splash may already be hidden in tests / web.
@@ -30,6 +32,7 @@ type BootState =
 
 export default function RootLayout() {
   const [boot, setBoot] = useState<BootState>({ status: 'loading' });
+  useDeepLinkRouter(boot.status === 'ready');
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +84,18 @@ export default function RootLayout() {
       void OrientationController.leaveCapture();
     };
   }, []);
+
+  useEffect(() => {
+    if (boot.status !== 'ready') {
+      return;
+    }
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        void reconcileOnForeground();
+      }
+    });
+    return () => sub.remove();
+  }, [boot.status]);
 
   if (boot.status === 'loading') {
     return (

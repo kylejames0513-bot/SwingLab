@@ -1,5 +1,6 @@
-import { useState } from 'react';
-import { router } from 'expo-router';
+import { useLocalSearchParams, router } from 'expo-router';
+import { useMemo, useState } from 'react';
+import { Alert } from 'react-native';
 
 import { CaptureSourceSheet } from '@/features/capture/CaptureSourceSheet';
 import { GuidedCameraScreen } from '@/features/capture/GuidedCameraScreen';
@@ -11,6 +12,7 @@ import type {
   CaptureContext,
   UploadCapabilities,
 } from '@/features/capture/types';
+import type { UploadComparison } from '@/features/analysis/uploadTypes';
 import { getFileAdapter } from '@/platform/files';
 import { PrivateCache } from '@/platform/privateCache';
 
@@ -27,14 +29,57 @@ type Phase =
   | { kind: 'camera' }
   | { kind: 'review'; media: CapturedMedia; error?: string };
 
-const DEFAULT_CONTEXT: CaptureContext = {
-  hand: 'right',
-  angle: 'face-on',
-  club: 'iron',
-  comparisonFingerprint: null,
-};
-
 export default function CaptureRoute() {
+  const params = useLocalSearchParams<{
+    mode?: string;
+    baseline_session_id?: string;
+    target_fingerprint?: string;
+    drill_id?: string;
+    club?: string;
+    hand?: string;
+    angle?: string;
+  }>();
+
+  const comparison: UploadComparison = useMemo(() => {
+    if (
+      params.mode === 'matched' &&
+      params.baseline_session_id &&
+      params.target_fingerprint &&
+      params.drill_id
+    ) {
+      return {
+        mode: 'matched',
+        baseline_session_id: String(params.baseline_session_id),
+        target_fingerprint: String(params.target_fingerprint),
+        drill_id: String(params.drill_id),
+      };
+    }
+    if (
+      params.mode === 'new_context' &&
+      params.baseline_session_id &&
+      params.target_fingerprint &&
+      params.drill_id
+    ) {
+      return {
+        mode: 'new_context',
+        baseline_session_id: String(params.baseline_session_id),
+        target_fingerprint: String(params.target_fingerprint),
+        drill_id: String(params.drill_id),
+      };
+    }
+    return null;
+  }, [params]);
+
+  const context: CaptureContext = {
+    hand: (params.hand as 'left' | 'right') ?? 'right',
+    angle: (params.angle as 'face-on' | 'dtl') ?? 'face-on',
+    club:
+      (params.club as CaptureContext['club']) ?? 'iron',
+    comparisonFingerprint: params.target_fingerprint
+      ? String(params.target_fingerprint)
+      : null,
+  };
+
   const [phase, setPhase] = useState<Phase>({ kind: 'source' });
 
   async function handleLibrary() {
@@ -67,15 +112,10 @@ export default function CaptureRoute() {
   }
 
   async function reviewMedia(media: CapturedMedia) {
-    const result = await preflightMedia(
-      media,
-      DEFAULT_CAPABILITIES,
-      DEFAULT_CONTEXT,
-      {
-        fileExists: (uri) => getFileAdapter().exists(uri),
-        currentComparisonFingerprint: null,
-      },
-    );
+    const result = await preflightMedia(media, DEFAULT_CAPABILITIES, context, {
+      fileExists: (uri) => getFileAdapter().exists(uri),
+      currentComparisonFingerprint: context.comparisonFingerprint,
+    });
     if (!result.ok) {
       setPhase({ kind: 'review', media, error: result.message });
       return;
@@ -85,14 +125,45 @@ export default function CaptureRoute() {
     await PrivateCache.writeJson('pending_capture', {
       uri: media.uri,
       source: media.source,
+      comparison,
     });
     setPhase({ kind: 'review', media });
+  }
+
+  function confirmNewContextThenCapture(source: 'camera' | 'library') {
+    if (comparison?.mode === 'matched') {
+      Alert.alert(
+        'Keep matched context?',
+        'Choose Keep matched, or change context deliberately.',
+        [
+          { text: 'Keep matched', onPress: () => startSource(source) },
+          {
+            text: 'New context',
+            onPress: () => {
+              router.setParams({ mode: 'new_context' });
+              startSource(source);
+            },
+          },
+          { text: 'Cancel', style: 'cancel' },
+        ],
+      );
+      return;
+    }
+    startSource(source);
+  }
+
+  function startSource(source: 'camera' | 'library') {
+    if (source === 'camera') {
+      setPhase({ kind: 'camera' });
+      return;
+    }
+    void handleLibrary();
   }
 
   if (phase.kind === 'camera') {
     return (
       <GuidedCameraScreen
-        angle={DEFAULT_CONTEXT.angle}
+        angle={context.angle}
         maxDurationSeconds={DEFAULT_CAPABILITIES.max_video_seconds}
         onCancel={() => setPhase({ kind: 'source' })}
         onMicrophoneDenied={() =>
@@ -113,8 +184,20 @@ export default function CaptureRoute() {
           setPhase({ kind: 'source' });
         }}
         onUpload={() => {
-          // Task 6 wires the resumable upload machine.
-          router.push('/(tabs)/today');
+          router.push({
+            pathname: '/upload',
+            params: {
+              uri: phase.media.uri,
+              sourceName: `swing${phase.media.suffix}`,
+              fileBytes: String(phase.media.sizeBytes || 1),
+              historyEpoch: '0',
+              club: context.club,
+              hand: context.hand,
+              angle: context.angle,
+              comparison: JSON.stringify(comparison),
+              chunkBytes: String(DEFAULT_CAPABILITIES.chunk_bytes),
+            },
+          });
         }}
       />
     );
@@ -126,13 +209,7 @@ export default function CaptureRoute() {
       libraryDenied={phase.libraryDenied}
       onOpenSettings={() => void openSystemSettings()}
       onCancel={() => router.back()}
-      onSelect={(source) => {
-        if (source === 'camera') {
-          setPhase({ kind: 'camera' });
-          return;
-        }
-        void handleLibrary();
-      }}
+      onSelect={(source) => confirmNewContextThenCapture(source)}
     />
   );
 }

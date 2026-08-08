@@ -1,0 +1,5 @@
+# Maestro smoke: terminate after first chunk and reopen to resume.
+appId: com.caddieinsight.app.dev
+---
+- launchApp
+- assertVisible: CaddieInsight

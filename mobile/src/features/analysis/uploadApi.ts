@@ -48,9 +48,9 @@ export async function putUploadChunk(input: {
     {
       method: 'PATCH',
       headers: {
-        'Content-Type': 'application/octet-stream',
+        'Content-Type': 'application/offset+octet-stream',
         'Upload-Offset': String(input.offset),
-        'Upload-Checksum': `sha256 ${input.chunkSha256Base64}`,
+        'Upload-Checksum': input.chunkSha256Base64,
       },
       body: input.chunk as unknown as BodyInit,
       signal: input.signal,

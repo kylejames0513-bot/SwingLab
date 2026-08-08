@@ -26,6 +26,25 @@ jest.mock('expo-crypto', () => ({
   ),
 }));
 
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  getPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  requestPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  getExpoPushTokenAsync: jest.fn(async () => ({ data: 'ExponentPushToken[test]' })),
+  dismissAllNotificationsAsync: jest.fn(async () => undefined),
+  cancelAllScheduledNotificationsAsync: jest.fn(async () => undefined),
+  clearLastNotificationResponseAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock('expo-linking', () => ({
+  getInitialURL: jest.fn(async () => null),
+  addEventListener: jest.fn(() => ({ remove: jest.fn() })),
+}));
+
+jest.mock('expo-web-browser', () => ({
+  openBrowserAsync: jest.fn(async () => ({ type: 'dismiss' })),
+}));
+
 jest.mock('@preeternal/react-native-file-hash', () => ({
   fileHash: jest.fn(async () => 'a'.repeat(64)),
 }));
