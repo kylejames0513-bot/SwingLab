@@ -1248,8 +1248,8 @@ def create_app(
                 "start_url": "/today",
                 "scope": "/",
                 "display": "standalone",
-                "background_color": "#f7f5f0",
-                "theme_color": "#07130d",
+                "background_color": "#eef2ef",
+                "theme_color": "#06110c",
                 "icons": [
                     {
                         "src": "/static/pwa-icon.svg",

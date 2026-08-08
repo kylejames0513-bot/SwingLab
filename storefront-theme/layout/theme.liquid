@@ -17,7 +17,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="{% if premium_chrome %}#07130d{% else %}#14472c{% endif %}">
+  <meta name="theme-color" content="{% if premium_chrome %}#06110c{% else %}#0f3d28{% endif %}">
   <link rel="canonical" href="{{ canonical_url }}">
   {% comment %}theme-check-disable RemoteAsset{% endcomment %}
   <link rel="preconnect" href="https://app.caddieinsight.com" crossorigin>
@@ -66,6 +66,7 @@
     {%- if body_font_black -%}{{ body_font_black | font_face: font_display: 'swap' }}{%- endif -%}
     :root {
       --sl-font-sans: {{ settings.type_body_font.family }}, {{ settings.type_body_font.fallback_families }};
+      --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       --sl-bg: {{ settings.color_page_bg }};
       --sl-green: {{ settings.color_green }};
       --sl-orange: {{ settings.color_accent }};

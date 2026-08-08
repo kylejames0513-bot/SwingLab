@@ -48,9 +48,9 @@ def test_shared_brand_tokens_match_the_storefront_source_of_truth():
 
     # These app values deliberately stay darker than the storefront's display
     # colors so small text and control edges retain AA contrast.
-    assert _token(LAYOUT, "sl-ink-muted") == "#5f6b62"
-    assert _token(LAYOUT, "sl-orange-text") == "#a94708"
-    assert _token(LAYOUT, "sl-control-border") == "#7a867c"
+    assert _token(LAYOUT, "sl-ink-muted") == "#5a655e"
+    assert _token(LAYOUT, "sl-orange-text") == "#8f4509"
+    assert _token(LAYOUT, "sl-control-border") == "#6f7b72"
 
 
 def test_app_shell_uses_homepage_premium_chrome_and_footer():
@@ -60,7 +60,7 @@ def test_app_shell_uses_homepage_premium_chrome_and_footer():
     assert 'class="sl-app-footer"' in LAYOUT
     assert 'class="sl-app-footer__inner"' in LAYOUT
     assert ".sl-premium-chrome .sl-menu .sl-menu__panel" in LAYOUT
-    assert "background: rgba(7, 19, 13, .96);" in LAYOUT
+    assert "background: rgba(6, 17, 12, .96);" in LAYOUT
     assert "background: #f07a18;" in LAYOUT
     assert ".sl-header--premium .sl-header__inner { min-height: 64px;" in LAYOUT
     assert "@media (max-width: 560px)" in LAYOUT
@@ -148,5 +148,5 @@ def test_manifest_uses_the_same_premium_page_chrome(tmp_path):
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
 
     manifest = client.get("/app.webmanifest").json()
-    assert manifest["background_color"] == "#f7f5f0"
-    assert manifest["theme_color"] == "#07130d"
+    assert manifest["background_color"] == "#eef2ef"
+    assert manifest["theme_color"] == "#06110c"

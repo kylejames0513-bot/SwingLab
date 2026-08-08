@@ -154,8 +154,8 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     assert compact_phone_css
     assert ".sl-hero__title" in compact_phone_css
     assert "min-height: 720px" not in mobile_css
-    assert "align-content: center" in mobile_css
-    assert "justify-items: center" in mobile_css
+    assert "align-content: end" in mobile_css
+    assert "justify-items: stretch" in mobile_css
     assert "padding-inline: 18px" not in mobile_css
     assert "--sl-mobile-hero-height:" in mobile_css
     assert "svh" in mobile_css or "dvh" in mobile_css
@@ -169,17 +169,15 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
 
     copy_rules = declarations(mobile_css, ".sl-hero__copy")
     assert copy_rules
-    assert any("text-align: center" in rule for rule in copy_rules)
-    assert any("margin-inline: auto" in rule for rule in copy_rules)
+    assert any("text-align: left" in rule for rule in copy_rules)
     body_rules = declarations(mobile_css, ".sl-hero__body")
-    assert any("text-align: center" in rule for rule in body_rules)
-    assert any("margin-inline: auto" in rule for rule in body_rules)
+    assert any("text-align: left" in rule for rule in body_rules)
     title_rules = declarations(HERO, ".sl-hero__title")
-    assert any("text-align: center" in rule for rule in title_rules)
+    assert any("text-align: left" in rule for rule in title_rules)
     action_rules = declarations(mobile_css, ".sl-hero__actions")
     proof_rules = declarations(mobile_css, ".sl-hero__proof")
-    assert any("margin: 20px auto 0" in rule for rule in action_rules)
-    assert any("margin: 18px auto 0" in rule for rule in proof_rules)
+    assert any("margin: 20px 0 0" in rule for rule in action_rules)
+    assert any("margin: 18px 0 0" in rule for rule in proof_rules)
 
 
 def test_mobile_method_section_is_compact_centered_and_semantic():

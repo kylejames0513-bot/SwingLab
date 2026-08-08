@@ -11,7 +11,7 @@
     padding: 0 var(--sl-pad-x);
   }
   .upload-page {
-    --upload-panel: #fffdf9;
+    --upload-panel: #f8fbf9;
     --upload-wash: #eef5ef;
     --upload-warm: #fff4e7;
     --upload-line: #ddd8cd;
@@ -85,7 +85,7 @@
     gap: 8px;
     padding: 8px 11px;
     border: 1px solid rgba(255, 255, 255, .18);
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     background: rgba(255, 255, 255, .07);
     color: rgba(255, 255, 255, .9);
     font-size: .78rem;
@@ -138,7 +138,7 @@
   .analysis-card__head {
     padding: clamp(24px, 4vw, 36px);
     border-bottom: 1px solid var(--upload-line);
-    background: linear-gradient(180deg, #fffdf9, #fbf8f2);
+    background: linear-gradient(180deg, #f8fbf9, #eef2ef);
   }
   .analysis-card__head h2 {
     margin: 3px 0 8px;
@@ -217,7 +217,7 @@
   .required-badge {
     margin-left: auto;
     padding: 4px 7px;
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     background: #fce9dc;
     color: #8b3b08;
     font-family: var(--sl-font-mono);

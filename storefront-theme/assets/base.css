@@ -1,42 +1,43 @@
 /* ============================================================
    CaddieInsight storefront — base styles & design tokens
-   Fairway Modernism: a warm off-white field, one deep green
-   ink, one kinetic orange accent. Archivo carries the voice;
-   a system monospace stack marks measured evidence labels.
+   Turf Instrument: cool mist field, deep forest ink, one kinetic
+   amber accent. Archivo (Shopify CDN) carries the storefront voice;
+   a system monospace stack marks measured evidence labels. Soft-
+   rectilinear controls keep the storefront and app one instrument.
 
    Shared-pattern contract (available to every template/section):
-   .sl-chip            pill label, mono, letterspaced uppercase
-   .sl-mono-label      small mono specimen label (pin-card note)
-   .sl-drill-grid      responsive card grid
+   .sl-chip            mono label, letterspaced uppercase
+   .sl-mono-label      small mono specimen label
+   .sl-drill-grid      responsive protocol grid
    .sl-drill-card      numbered protocol card; children:
                        __num  __head  __title  __aim
                        __steps (ol)  __dosage  __metric
-   .sl-page-hero       eyebrow + big h1 + __lede paragraph
+   .sl-page-hero       brand/eyebrow + big h1 + __lede paragraph
    .sl-spec-table      hairline table, mono values in td
-   .sl-note            orange left-border callout
+   .sl-note            amber left-border callout
    .sl-two-col         two columns of prose at >=900px
-   .sl-check-list      orange-dot list
+   .sl-check-list      amber-dot list
    .sl-reveal          fade-up when .is-in is added (JS in layout)
    .sl-btn--light      readable button for dark green surfaces
-   .sl-btn--sm         compact pill button
+   .sl-btn--sm         compact control button
    .sl-price-compare   struck compare-at price
-   .sl-badge-save      orange sale badge
+   .sl-badge-save      amber sale badge
    ============================================================ */
 
 :root {
-  --sl-bg: #f7f5f0;          /* warm off-white page */
-  --sl-bg-card: #fffdf9;     /* product card surface */
-  --sl-ink: #17201a;         /* primary text */
-  --sl-ink-soft: #4a544c;    /* secondary text */
+  --sl-bg: #eef2ef;          /* cool mist field */
+  --sl-bg-card: #f8fbf9;     /* quiet surface */
+  --sl-ink: #101a14;         /* primary text */
+  --sl-ink-soft: #445049;    /* secondary text */
   --sl-ink-muted: #626a63;   /* fine print */
-  --sl-green: #14472c;       /* deep green (headings, dark bg) */
-  --sl-green-btn: #1a5c38;   /* action green */
-  --sl-green-ink: #e9f2ec;   /* text on green */
-  --sl-orange: #a84b00;      /* accessible accent text on light surfaces */
-  --sl-orange-bright: #f07a18; /* decorative/action accent on dark surfaces */
-  --sl-orange-soft: #fff3e4; /* accent wash for callouts */
-  --sl-border: #e3ded3;      /* hairline on light */
-  --sl-footer: #0f1712;      /* near-black footer */
+  --sl-green: #0f3d28;       /* deep forest (headings, dark bg) */
+  --sl-green-btn: #1a5c38;   /* action green (brand primary) */
+  --sl-green-ink: #e6f2ea;   /* text on green */
+  --sl-orange: #9a4b0a;      /* accessible amber on light surfaces */
+  --sl-orange-bright: #f07a18; /* kinetic accent on dark surfaces */
+  --sl-orange-soft: #e8f0ea; /* cool wash for callouts */
+  --sl-border: #d4ddd6;      /* hairline on light */
+  --sl-footer: #06110c;      /* night turf footer */
   --sl-footer-ink: #9fb0a4;
 
   --sl-font-sans: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -46,10 +47,11 @@
   --sl-pad-x: clamp(24px, 5vw, 64px);
   --sl-card-inset: clamp(24px, 3vw, 36px);
   --sl-dense-inset: clamp(14px, 1.5vw, 20px);
-  --sl-radius-sm: 8px;
-  --sl-radius: 14px;
-  --sl-radius-lg: 22px;
-  --sl-radius-xl: 32px;
+  --sl-radius-sm: 6px;
+  --sl-radius: 12px;
+  --sl-radius-lg: 16px;
+  --sl-radius-xl: 22px;
+  --sl-radius-control: 12px;
 
   --sl-section-space: clamp(72px, 8vw, 104px);
   --sl-section-space-compact: clamp(52px, 6vw, 76px);
@@ -58,8 +60,8 @@
   --sl-eyebrow-size: 11px;
   --sl-eyebrow-track: 0.18em;
 
-  --sl-shadow-card: 0 1px 2px rgba(15, 42, 27, 0.05), 0 12px 30px -14px rgba(15, 42, 27, 0.18);
-  --sl-shadow-card-hover: 0 2px 4px rgba(15, 42, 27, 0.05), 0 18px 40px -16px rgba(15, 42, 27, 0.24);
+  --sl-shadow-card: 0 1px 2px rgba(6, 17, 12, 0.04), 0 14px 32px -18px rgba(6, 17, 12, 0.16);
+  --sl-shadow-card-hover: 0 2px 4px rgba(6, 17, 12, 0.05), 0 20px 44px -18px rgba(6, 17, 12, 0.2);
 
   /* fluid type scale */
   --sl-text-xs: 12px;
@@ -85,7 +87,11 @@ body {
   font-family: var(--sl-font-sans);
   font-size: var(--sl-text-base);
   line-height: 1.55;
-  background: var(--sl-bg);
+  background:
+    radial-gradient(1200px 520px at 12% -8%, rgba(26, 92, 56, 0.08), transparent 58%),
+    radial-gradient(900px 480px at 92% 4%, rgba(240, 122, 24, 0.05), transparent 52%),
+    var(--sl-bg);
+  background-attachment: fixed;
   color: var(--sl-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
@@ -174,23 +180,23 @@ img { max-width: 100%; display: block; }
   font-size: 16px;
   line-height: 1.2;
   padding: 12px clamp(22px, 3vw, 28px);
-  border-radius: 999px;
+  border-radius: var(--sl-radius-control);
   border: 1.5px solid transparent;
   cursor: pointer;
   transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-.sl-btn--primary { background: var(--sl-green-btn); color: #fdfcf9; }
-.sl-btn--primary:hover { background: var(--sl-green); color: #fdfcf9; }
+.sl-btn--primary { background: var(--sl-green-btn); color: #f8fbf9; }
+.sl-btn--primary:hover { background: var(--sl-green); color: #f8fbf9; }
 .sl-btn--outline { background: transparent; color: var(--sl-green); border-color: var(--sl-green); }
 .sl-btn--outline:hover { background: var(--sl-green); color: var(--sl-bg); }
-.sl-btn--light { background: var(--sl-bg); color: var(--sl-green); }
+.sl-btn--light { background: var(--sl-bg-card); color: var(--sl-green); }
 .sl-btn--light:hover { background: #ffffff; color: var(--sl-green); }
 .sl-btn--sm {
   min-height: 38px;
   padding: 9px 18px;
   font-size: 14px;
   font-weight: 600;
-  border-radius: 999px;
+  border-radius: var(--sl-radius-control);
 }
 .sl-btn[disabled] { opacity: .5; cursor: not-allowed; }
 @media (prefers-reduced-motion: no-preference) {
@@ -211,7 +217,7 @@ img { max-width: 100%; display: block; }
    Shared patterns (contract classes)
    ============================================================ */
 
-/* pill chip — mono, letterspaced, hairline border */
+/* mono chip — letterspaced, soft-rectilinear */
 .sl-chip {
   display: inline-block;
   font-family: var(--sl-font-mono);
@@ -221,9 +227,9 @@ img { max-width: 100%; display: block; }
   text-transform: uppercase;
   color: var(--sl-green);
   background: var(--sl-bg-card);
-  border: 1px solid rgba(20, 71, 44, 0.28);
-  border-radius: 999px;
-  padding: 5px 13px;
+  border: 1px solid rgba(15, 61, 40, 0.28);
+  border-radius: var(--sl-radius-sm);
+  padding: 5px 12px;
   white-space: nowrap;
 }
 .sl-chip--accent {
@@ -297,8 +303,8 @@ img { max-width: 100%; display: block; }
   text-transform: uppercase;
   color: var(--sl-orange);
   border: 1px solid rgba(232, 114, 12, 0.35);
-  border-radius: 999px;
-  padding: 4px 12px;
+  border-radius: var(--sl-radius-sm);
+  padding: 4px 10px;
   white-space: nowrap;
 }
 .sl-drill-card__title {
@@ -440,11 +446,11 @@ img { max-width: 100%; display: block; }
   .sl-spec-table { display: block; overflow-x: auto; }
 }
 
-/* callout note on the warm orange wash */
+/* callout note on the cool amber wash */
 .sl-note {
   background: var(--sl-orange-soft);
   border-left: 3px solid var(--sl-orange);
-  border-radius: 4px 14px 14px 4px;
+  border-radius: 4px 12px 12px 4px;
   padding: 16px 20px 16px 18px;
   font-size: 15px;
   line-height: 1.6;
@@ -668,7 +674,7 @@ img { max-width: 100%; display: block; }
   text-transform: uppercase;
   color: #fff;
   background: var(--sl-orange);
-  border-radius: 999px;
+  border-radius: var(--sl-radius-control);
   padding: 4px 11px;
   white-space: nowrap;
 }
@@ -707,7 +713,7 @@ img { max-width: 100%; display: block; }
 .sl-pcard-badge {
   position: absolute; top: 10px; right: 10px;
   background: var(--sl-bg-card); color: var(--sl-ink-soft);
-  font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: 999px;
+  font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: var(--sl-radius-control);
   border: 1px solid var(--sl-border);
 }
 .sl-pcard-title {

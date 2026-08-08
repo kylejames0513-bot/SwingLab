@@ -261,11 +261,12 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
 
 def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     base = source("assets/base.css")
-    assert "--sl-radius-sm: 8px" in base
-    assert "--sl-radius-lg: 22px" in base
-    assert "--sl-radius-xl: 32px" in base
+    assert "--sl-radius-sm: 6px" in base
+    assert "--sl-radius-lg: 16px" in base
+    assert "--sl-radius-xl: 22px" in base
+    assert "--sl-radius-control: 12px" in base
     assert ".sl-btn {\n  min-height: 46px" in base
-    assert "border-radius: 999px" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
+    assert "border-radius: var(--sl-radius-control)" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
     assert "@media (min-width: 480px)" in base
     assert "@media (min-width: 900px)" in base
     assert "@media (min-width: 1200px)" in base
@@ -371,10 +372,11 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     hero_title = hero.split(".sl-hero__title {", 1)[1].split("}", 1)[0]
     hero_body = hero.split(".sl-hero__body {", 1)[1].split("}", 1)[0]
     hero_proof = hero.split(".sl-hero__proof {", 1)[1].split("}", 1)[0]
-    assert "text-align: center" in hero_title
+    assert "text-align: left" in hero_title
     assert "text-align: left" in hero_body
     assert "justify-content: flex-start" in hero_proof
-    assert "background: rgba(5, 16, 10, 0.46)" in hero_proof
+    assert "background: transparent" in hero_proof
+    assert 'class="sl-hero__brand"' in hero
 
     stats = source("sections/stats-band.liquid")
     stats_cell = stats.split(".sl-stats__cell {", 1)[1].split("}", 1)[0]

@@ -42,13 +42,13 @@
     --accent: {{ brand.accent_color }};
   }
   body { font-family: Arial, Helvetica, sans-serif;
-         margin: 0; color: #17201a; background: #f7f5f0; }
+         margin: 0; color: #101a14; background: #eef2ef; }
   .sample-banner { background: #944600; color: white; padding: 10px 32px;
                    display: flex; align-items: center; justify-content: center;
                    gap: 14px; flex-wrap: wrap; font-size: 0.95rem; }
   .sample-banner a { color: white; font-weight: 700; text-decoration: underline;
                      white-space: nowrap; }
-  .report-header { background: rgba(247,245,240,.94); color: #17201a;
+  .report-header { background: rgba(238,242,239,.94); color: #101a14;
            min-height: 72px; padding: 0 clamp(20px,5vw,56px);
            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
            border-bottom: 1px solid #e3ded3; }
@@ -60,17 +60,17 @@
   .report-actions { display: flex; align-items: center; gap: 12px; margin-left: auto;
                     flex-wrap: wrap; }
   .report-nav { display: flex; align-items: center; gap: 20px; }
-  .report-nav a { color: #17201a; font-size: 14px; font-weight: 600;
+  .report-nav a { color: #101a14; font-size: 14px; font-weight: 600;
                   text-decoration: none; white-space: nowrap; }
   .report-nav a:hover { color: var(--primary); }
   .print-report { appearance: none; background: var(--primary); border: 1px solid var(--primary);
-                  border-radius: 999px; color: white; cursor: pointer; font: inherit;
+                  border-radius: var(--sl-radius-control); color: white; cursor: pointer; font: inherit;
                   font-size: 0.85rem; font-weight: 700; padding: 8px 13px;
                   white-space: nowrap; }
   .print-report:hover, .print-report:focus-visible { background: white; color: var(--primary); }
   .print-report:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
   .hchip { background: rgba(255,255,255,0.18); border: 1px solid rgba(255,255,255,0.45);
-           border-radius: 999px; padding: 3px 12px; font-size: 0.8rem;
+           border-radius: var(--sl-radius-control); padding: 3px 12px; font-size: 0.8rem;
            color: var(--primary); border-color: rgba(20,71,44,.28); }
   main { max-width: 1100px; margin: 0 auto; padding: 24px 32px 48px; }
   h2 { color: var(--primary); border-bottom: 2px solid var(--accent); padding-bottom: 4px; }
@@ -111,7 +111,7 @@
   .replay-locked-note p { margin: 0 0 10px; color: #444; }
   .replay-locked-note a { color: var(--primary); font-weight: 600; }
   .replay-locked-note .lock-badge { display: inline-block;
-    background: var(--primary); color: white; border-radius: 999px;
+    background: var(--primary); color: white; border-radius: var(--sl-radius-control);
     padding: 3px 12px; font-size: 0.75rem; font-weight: 700;
     letter-spacing: 0.02em; margin-bottom: 10px; }
 {%- endif %}
@@ -193,7 +193,7 @@
      sections expand so a saved PDF carries the full coaching record. */
   @media print {
     @page { margin: 12mm; }
-    body { background: white; color: #17201a; font-size: 10pt; }
+    body { background: white; color: #101a14; font-size: 10pt; }
     .report-actions, .video-row, .replay-locked-note { display: none !important; }
     .report-header { background: white; border-bottom: 2px solid var(--primary);
                      min-height: 0; padding: 0 0 5mm; }
@@ -215,7 +215,7 @@
   /* Premium evidence-first presentation. This layer deliberately keeps the
      report self-contained: no remote fonts, assets, scripts, or runtime UI. */
   :root {
-    --ink: #17201a;
+    --ink: #101a14;
     --ink-soft: #4d5850;
     --ink-muted: #5d685f;
     --accent-ink: #944600;
@@ -223,7 +223,7 @@
     --canvas: #f3f1eb;
     --line: #ddd8cc;
     --green-wash: #edf5ef;
-    --warm-wash: #fff3e4;
+    --warm-wash: #e8f0ea;
     --shadow: 0 22px 55px -40px rgba(15, 42, 27, .55);
   }
   * { box-sizing: border-box; }
@@ -477,7 +477,7 @@
   .breakdown-card__status {
     flex: 0 0 auto;
     padding: 5px 9px;
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     background: var(--green-wash);
     color: var(--primary);
     font-size: .7rem;
@@ -679,7 +679,7 @@
     html { scroll-behavior: auto; }
     body {
       background: white !important;
-      color: #17201a;
+      color: #101a14;
       font-size: 9.5pt;
       -webkit-print-color-adjust: exact;
       print-color-adjust: exact;
@@ -702,7 +702,7 @@
       border: 2px solid var(--primary);
       border-radius: 0;
       background: white !important;
-      color: #17201a;
+      color: #101a14;
       box-shadow: none;
     }
     .report-intro .section-kicker,
@@ -711,7 +711,7 @@
     .report-intro__lede { color: #36423a; }
     .report-context div { border-color: #cfd5d0; background: white; }
     .report-context dt { color: var(--primary); }
-    .report-context dd { color: #17201a; }
+    .report-context dd { color: #101a14; }
     .report-intro::after { display: none; }
     .brief,
     .breakdown-card,
