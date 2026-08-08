@@ -49,7 +49,7 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - `httpx` added to the `web` extra. App wires outbox store/worker + observer when push enabled.
 - Tests: `tests/test_push_outbox.py` (10) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry, unregister→re-register, token rotation.
 
-**Push environment fence cutover slice** — tip `e065feb` (impl `c8e165b`).
+**Push environment fence cutover slice** — tip `a95a1d1` (impl `c8e165b`).
 
 - Schema generation **5**: additive `mobile_push_environment_fences` + `mobile_push_cutover_operations`; restore allowlists include generation `5`; detect/ensure stepwise after gen 4.
 - `swinglab/web/push_cutover.py`: `ensure_open_fence` / `require_open_fence` / `fence_status` / `close_fence` / `purge_fence`; fail-closed never-reopen; close terminalizes pending/leased outbox; purge waits `provider_safe_after` then deletes registrations+outbox while keeping fence closed.

@@ -215,8 +215,9 @@ def _compute_provider_safe_after(
     last_provider_accepted_at: float | None,
     provider_may_accept_until: float | None,
 ) -> float:
+    # No provider call ever started: close time is already safe.
     if last_provider_started_at is None:
-        return float(closed_at) + PUSH_TTL_SECONDS + float(frozen_skew)
+        return float(closed_at)
     accepted = (
         float(last_provider_accepted_at)
         if last_provider_accepted_at is not None

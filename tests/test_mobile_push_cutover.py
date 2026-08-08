@@ -345,9 +345,9 @@ def test_purge_refuses_before_safe_after_then_deletes_and_keeps_closed(tmp_path)
             (environment, EXPO_PROJECT_ID),
         ).fetchone()
         safe_after = float(fence["provider_safe_after"])
-        assert safe_after == float(fence["closed_at"]) + 900.0 + float(
-            fence["frozen_cutoff_skew_seconds"]
-        )
+        # No provider I/O occurred: close time is already safe.
+        assert safe_after == float(fence["closed_at"])
+        assert float(fence["frozen_cutoff_skew_seconds"]) == 60.0
 
         purge_id = str(uuid.uuid4())
         with pytest.raises(Exception, match="safe_after|provider.safe|refuse"):
@@ -443,3 +443,109 @@ def test_cli_status_json_smoke(tmp_path, monkeypatch, capsys):
     payload = json.loads(capsys.readouterr().out)
     assert payload["state"] == "open"
     assert payload["activation_revision"] == 1
+
+
+def test_cli_rejects_environment_mismatch(tmp_path, monkeypatch, capsys):
+    app = _app(tmp_path)
+    environment = app.state.mobile_deployment_environment
+    _close(app)
+
+    from swinglab.cli import main
+
+    monkeypatch.setenv("CADDIEINSIGHT_MOBILE_DEPLOYMENT_ENVIRONMENT", environment)
+    monkeypatch.setenv("CADDIEINSIGHT_EXPO_PROJECT_ID", EXPO_PROJECT_ID)
+    wrong = "production" if environment != "production" else "staging"
+    code = main(
+        [
+            "mobile-push-cutover",
+            "--sessions-dir",
+            str(tmp_path / "sessions"),
+            "--environment",
+            wrong,
+            "--expo-project-id",
+            EXPO_PROJECT_ID,
+            "status",
+            "--json",
+        ]
+    )
+    assert code != 0
+    err = capsys.readouterr().err.lower()
+    assert "environment" in err or "mismatch" in err or "match" in err
+
+
+def test_worker_stamps_provider_clocks_and_close_uses_ttl_skew(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setenv(EXPO_ACCESS_TOKEN_ENV, "test-expo-access-token")
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        ensure_open_fence(
+            users,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+            now=1.0,
+        )
+        user, raw, token = _issue(users, "stamp@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        job = Job(
+            id="jobstamp000001",
+            session_dir=tmp_path / "sessions" / "jobstamp000001",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        from swinglab.web.push_delivery import FakeExpoPushProvider, PushOutboxWorker
+
+        worker = PushOutboxWorker(
+            users, FakeExpoPushProvider(), enabled=True, lease_seconds=30
+        )
+        assert worker.drain_once(now=50.0) is True
+        fence = users._conn.execute(
+            "SELECT last_provider_started_at, last_provider_accepted_at,"
+            " provider_may_accept_until FROM mobile_push_environment_fences"
+            " WHERE environment = ? AND expo_project_id = ?",
+            (environment, EXPO_PROJECT_ID),
+        ).fetchone()
+        assert float(fence["last_provider_started_at"]) == 50.0
+        assert float(fence["provider_may_accept_until"]) == 80.0
+        assert fence["last_provider_accepted_at"] is not None
+
+        close_id = str(uuid.uuid4())
+        closed = close_fence(
+            users,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+            operation_id=close_id,
+            request_hash=_request_hash(
+                environment=environment,
+                project=EXPO_PROJECT_ID,
+                command="close",
+                operation_id=close_id,
+            ),
+            apply=True,
+            skew_seconds=60,
+            now=100.0,
+        )
+        after = users._conn.execute(
+            "SELECT provider_safe_after, last_provider_accepted_at,"
+            " provider_may_accept_until FROM mobile_push_environment_fences"
+            " WHERE environment = ? AND expo_project_id = ?",
+            (environment, EXPO_PROJECT_ID),
+        ).fetchone()
+        expected = max(
+            float(after["last_provider_accepted_at"]),
+            float(after["provider_may_accept_until"]),
+        ) + 900.0 + 60.0
+        assert float(after["provider_safe_after"]) == expected
+        assert closed["provider_safe_after"] == expected
+    finally:
+        _close(app)

@@ -463,6 +463,33 @@ class PushOutboxWorker:
                     row["id"],
                 ),
             )
+            # Durably advance fence provider clocks before the first HTTP byte.
+            may_until = observed + float(self._lease_seconds)
+            environment = str(row["environment"])
+            expo_project_id = str(row["expo_project_id"])
+            self._users._conn.execute(
+                "UPDATE mobile_push_environment_fences SET"
+                " last_provider_started_at = CASE"
+                "  WHEN last_provider_started_at IS NULL"
+                "   OR last_provider_started_at < ? THEN ?"
+                "  ELSE last_provider_started_at END,"
+                " provider_may_accept_until = CASE"
+                "  WHEN provider_may_accept_until IS NULL"
+                "   OR provider_may_accept_until < ? THEN ?"
+                "  ELSE provider_may_accept_until END,"
+                " updated_at = ?"
+                " WHERE environment = ? AND expo_project_id = ?"
+                " AND state = 'open'",
+                (
+                    observed,
+                    observed,
+                    may_until,
+                    may_until,
+                    observed,
+                    environment,
+                    expo_project_id,
+                ),
+            )
             self._users._conn.commit()
             token = live_token
             kind = str(row["kind"])
@@ -493,6 +520,7 @@ class PushOutboxWorker:
             return True
 
         ticket = tickets[0] if tickets else PushTicket(status="error", error="empty")
+        accepted_at = time.time()
         with self._users._lock:
             if ticket.status == "ok" and ticket.ticket_id:
                 self._users._conn.execute(
@@ -500,14 +528,30 @@ class PushOutboxWorker:
                     " provider_ticket_id = ?, lease_owner = NULL,"
                     " lease_expires_at = NULL, updated_at = ?"
                     " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
-                    (ticket.ticket_id, time.time(), outbox_id, self._owner),
+                    (ticket.ticket_id, accepted_at, outbox_id, self._owner),
+                )
+                self._users._conn.execute(
+                    "UPDATE mobile_push_environment_fences SET"
+                    " last_provider_accepted_at = CASE"
+                    "  WHEN last_provider_accepted_at IS NULL"
+                    "   OR last_provider_accepted_at < ? THEN ?"
+                    "  ELSE last_provider_accepted_at END,"
+                    " updated_at = ?"
+                    " WHERE environment = ? AND expo_project_id = ?",
+                    (
+                        accepted_at,
+                        accepted_at,
+                        accepted_at,
+                        environment,
+                        expo_project_id,
+                    ),
                 )
             else:
                 self._users._conn.execute(
                     "UPDATE mobile_push_outbox SET status = 'dead',"
                     " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                     " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
-                    (time.time(), outbox_id, self._owner),
+                    (accepted_at, outbox_id, self._owner),
                 )
             self._users._conn.commit()
         return True
