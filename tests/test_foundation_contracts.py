@@ -32,7 +32,9 @@ from swinglab.api.contracts import (
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.jobs import JobManager
+from swinglab.web.mobile_schema import VersionedHMAC
 from swinglab.web.users import UserStore
+from tests.test_mobile_sign_out import FakeRecoveryFenceLedger
 from tests.test_web import fake_analyze_ok
 
 
@@ -84,7 +86,14 @@ def contract_app(tmp_path, monkeypatch):
 
     cfg = Config()
     cfg.web["require_account"] = True
-    return create_app(cfg, sessions_dir=tmp_path / "sessions")
+    # Browser token revocation now routes through the recovery-fenced service,
+    # so an injected development ledger and keyring keep the revoke durable.
+    return create_app(
+        cfg,
+        sessions_dir=tmp_path / "sessions",
+        mobile_state_hmac=VersionedHMAC("k1", {"k1": b"k" * 32}),
+        recovery_fence_ledger=FakeRecoveryFenceLedger(),
+    )
 
 
 def _signed_post(

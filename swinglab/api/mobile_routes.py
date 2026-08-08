@@ -21,9 +21,11 @@ from .contracts import (
     APIError,
     BriefResponse,
     CapabilitiesResponse,
+    DeviceListResponse,
     MobileSessionResponse,
     MobileSessionsResponse,
     MobileTodayResponse,
+    MobileTokenMetadata,
     PracticeEvidenceReceipt,
     PracticeEvidenceRequest,
     ProfileResponse,
@@ -41,6 +43,8 @@ from .contracts import (
 from .errors import MobileAPIHTTPError
 from ..web.credential_mutations import (
     CredentialMutationGuard,
+    MobileDeviceRevokeNotFound,
+    MobileDeviceRevokeService,
     MobileSignOutInvalidRequest,
     MobileSignOutService,
     MobileSignOutUnauthorized,
@@ -87,6 +91,8 @@ MOBILE_TODAY_ROUTE_NAME = "mobile.resources.today"
 MOBILE_PROGRESS_ROUTE_NAME = "mobile.resources.progress"
 MOBILE_PROFILE_WRITE_ROUTE_NAME = "mobile.resources.profile_write"
 MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME = "mobile.resources.practice_evidence"
+MOBILE_DEVICES_LIST_ROUTE_NAME = "mobile.devices.list"
+MOBILE_DEVICE_REVOKE_ROUTE_NAME = "mobile.devices.revoke"
 _MOBILE_BEARER_SCHEME = HTTPBearer(
     auto_error=False,
     scheme_name="MobileBearer",
@@ -123,6 +129,8 @@ def install_mobile_routes(
     app: FastAPI,
     *,
     sign_out_service: MobileSignOutService,
+    device_revoke_service: MobileDeviceRevokeService,
+    device_management_enabled: bool,
     email_auth_service: MobileAuthService,
     review_auth_service: ReviewAuthService,
     native_email_auth_enabled: bool,
@@ -1062,3 +1070,149 @@ def install_mobile_routes(
                 headers={**headers, "Retry-After": "1"},
             )
         return Response(status_code=204, headers=headers)
+
+    @app.get(
+        "/api/v1/devices",
+        name=MOBILE_DEVICES_LIST_ROUTE_NAME,
+        response_model=DeviceListResponse,
+        responses={401: {"model": APIError}, 404: {"model": APIError}},
+        openapi_extra=read_security,
+    )
+    def mobile_devices_list(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        # Default deny precedes even bearer parsing so a disabled flag never
+        # authenticates, reads, or writes device state.
+        if not device_management_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile device management is not enabled.",
+                headers=no_store,
+            )
+        context = require_mobile_bearer(
+            request,
+            users,
+            require_account,
+            review_auth_admission,
+            credential_mutation_guard,
+        )
+        response = DeviceListResponse(
+            devices=[
+                MobileTokenMetadata(
+                    selector=token.selector,
+                    label=token.label,
+                    created_at=token.created_at,
+                    last_used_at=token.last_used_at,
+                    expires_at=token.expires_at,
+                    revoked_at=token.revoked_at,
+                    active=token.active,
+                )
+                for token in users.list_mobile_api_tokens(context.user.id)
+            ]
+        )
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.delete(
+        "/api/v1/devices/{selector}",
+        name=MOBILE_DEVICE_REVOKE_ROUTE_NAME,
+        status_code=204,
+        responses={
+            202: {"model": NativeSignOutPendingResponse},
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "parameters": [
+                {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "required": True,
+                    "description": "Exactly 32 hexadecimal characters (128 bits).",
+                    "schema": {
+                        "type": "string",
+                        "minLength": 32,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Fa-f]{32}$",
+                    },
+                }
+            ],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    def mobile_device_revoke(
+        selector: str,
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        # Default deny precedes bearer parsing, body reads, and every write.
+        if not device_management_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile device management is not enabled.",
+                headers=no_store,
+            )
+        raw_token = mobile_bearer_token(request)
+        if raw_token is None:
+            raise MobileAuthError(
+                "bearer_required", "A mobile access token is required."
+            )
+        idempotency_values = request.headers.getlist("idempotency-key")
+        if len(idempotency_values) != 1:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            )
+        try:
+            result = device_revoke_service.revoke(
+                raw_token,
+                selector,
+                idempotency_values[0],
+            )
+        except MobileSignOutInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            ) from exc
+        except MobileDeviceRevokeNotFound as exc:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile device not found.",
+                headers=no_store,
+            ) from exc
+        except MobileSignOutUnauthorized:
+            raise mobile_bearer_unauthorized()
+        except MobileSignOutUnavailable as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "device_revoke_unavailable",
+                "Device revocation is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            ) from exc
+        if result.pending:
+            pending = NativeSignOutPendingResponse(
+                status="pending",
+                retry_after_seconds=1,
+            )
+            return JSONResponse(
+                pending.model_dump(mode="json"),
+                status_code=202,
+                headers={**no_store, "Retry-After": "1"},
+            )
+        return Response(status_code=204, headers=no_store)

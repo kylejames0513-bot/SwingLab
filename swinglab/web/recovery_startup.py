@@ -131,9 +131,13 @@ def compose_web_recovery_fence(
     require_account = web_config.get("require_account", False)
     native_enabled = web_config.get("mobile_native_auth_enabled", False)
     history_reset = web_config.get("history_reset_enabled", False)
-    if type(require_account) is not bool or type(native_enabled) is not bool or type(
-        history_reset
-    ) is not bool:
+    device_management = web_config.get("mobile_device_management_enabled", False)
+    if (
+        type(require_account) is not bool
+        or type(native_enabled) is not bool
+        or type(history_reset) is not bool
+        or type(device_management) is not bool
+    ):
         raise RecoveryFenceError("A recovery-dependent feature flag is invalid.")
     initial = StartupRecoveryInputs(
         schema_generation=MOBILE_STATE_SCHEMA_GENERATION,
@@ -143,7 +147,13 @@ def compose_web_recovery_fence(
         mobile_native_auth_enabled=bool(
             strict_environment and (native_enabled or review_lane_active)
         ),
-        mobile_device_management_enabled=bool(strict_environment and require_account),
+        # The explicit device-management flag requires the fence in any
+        # environment; production additionally requires it whenever legacy
+        # browser device-token management (require_account) is active, whose
+        # revoke now routes through the same recovery-fenced service.
+        mobile_device_management_enabled=bool(
+            device_management or (strict_environment and require_account)
+        ),
         mobile_privacy_enabled=False,
         history_reset_enabled=bool(strict_environment and history_reset),
         shopify_privacy_webhooks_enabled=bool(

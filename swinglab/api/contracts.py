@@ -657,6 +657,11 @@ class MobileTokenListResponse(ContractModel):
     tokens: list[MobileTokenMetadata]
 
 
+class DeviceListResponse(ContractModel):
+    resource_version: Literal[1] = 1
+    devices: list[MobileTokenMetadata]
+
+
 class MobileTokenIssueResponse(ContractModel):
     resource_version: Literal[1] = 1
     token: str

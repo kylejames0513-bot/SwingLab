@@ -13,6 +13,7 @@ import json
 import logging
 import math
 import re
+import secrets
 import sqlite3
 import threading
 import time
@@ -34,6 +35,7 @@ _IDEMPOTENCY_KEY = re.compile(r"[0-9A-Fa-f]{32}")
 _SIGN_OUT_EXTENSION_ID = re.compile(r"[a-z][a-z0-9.-]{0,63}")
 _SIGN_OUT_EXTENSION_CONTRACT_VERSION = 1
 _SIGN_OUT_REPLAY_SECONDS = 7 * 86400
+_DEVICE_REVOKE_REPLAY_SECONDS = 7 * 86400
 logger = logging.getLogger("swinglab.mobile_sign_out")
 
 
@@ -1171,4 +1173,792 @@ class MobileSignOutService:
             if result.pending:
                 raise RuntimeError(
                     "A pending sign-out could not be recovered before startup."
+                )
+
+
+class MobileDeviceRevokeNotFound(LookupError):
+    """The targeted device selector is unknown or belongs to another owner."""
+
+
+@dataclass(frozen=True)
+class MobileDeviceRevokeResult:
+    pending: bool
+
+
+@dataclass(frozen=True)
+class _DeviceRevokeMaterial:
+    target_selector_hmac_key_id: str
+    target_selector_hmac: str
+    target_token_verifier_hmac_key_id: str
+    target_token_verifier_hmac: str
+    idempotency_hmac_key_id: str
+    idempotency_hmac: str
+    request_hash: str
+
+
+class MobileDeviceRevokeService:
+    """Drive one recovery-fenced device revocation to a terminal receipt.
+
+    This is the Task 3 sign-out state machine adapted for revoking a *target*
+    selector that may differ from the initiator.  Self-revocation fences the
+    caller's own credential through ``validate_and_close_caller`` so a revoked
+    bearer can still replay to a terminal 204.  Other-device revocation keeps
+    the initiator lease valid and fences only the target.  The legacy browser
+    ``/api/v1/mobile-tokens`` revoke reuses the same fenced writes without a
+    bearer credential.
+    """
+
+    def __init__(
+        self,
+        users: UserStore,
+        guard: "CredentialMutationGuard",
+        *,
+        keyring: VersionedHMAC | None,
+        recovery_fence_ledger: RecoveryFencePublisher | None,
+        drain_timeout_seconds: float = 0.25,
+        extensions: tuple[SignOutExtension, ...] = (),
+    ) -> None:
+        self._users = users
+        self._guard = guard
+        self._keyring = keyring
+        self._ledger = recovery_fence_ledger
+        self._drain_timeout_seconds = max(0.0, float(drain_timeout_seconds))
+        self._extensions = tuple(extensions)
+        self._operation_locks = _OperationLockRegistry()
+
+    @property
+    def operation_lock_count(self) -> int:
+        return self._operation_locks.count
+
+    def verify_enabled_recovery_readiness(self, enabled: bool) -> None:
+        """Fail closed when device management is on without a fence path.
+
+        The strict remote chain is validated by ``compose_web_recovery_fence``
+        at startup; this mirror keeps an enabled flag from silently running
+        without a configured keyring and recovery publisher.
+        """
+
+        if not enabled:
+            return
+        if self._keyring is None or self._ledger is None:
+            raise MobileSignOutUnavailable(
+                "Device management requires a configured recovery fence."
+            )
+
+    @staticmethod
+    def _idempotency_bytes(value: object) -> bytes:
+        if not isinstance(value, str) or _IDEMPOTENCY_KEY.fullmatch(value) is None:
+            raise MobileSignOutInvalidRequest("Invalid Idempotency-Key.")
+        return bytes.fromhex(value)
+
+    @staticmethod
+    def _request_hash(
+        *,
+        target_selector_hmac_key_id: str,
+        target_selector_hmac: str,
+        target_token_verifier_hmac_key_id: str,
+        target_token_verifier_hmac: str,
+        idempotency_hmac_key_id: str,
+        idempotency_hmac: str,
+    ) -> str:
+        body = json.dumps(
+            {
+                "operation": "mobile-device-revoke-v1",
+                "target_selector_hmac_key_id": target_selector_hmac_key_id,
+                "target_selector_hmac": target_selector_hmac,
+                "target_token_verifier_hmac_key_id": (
+                    target_token_verifier_hmac_key_id
+                ),
+                "target_token_verifier_hmac": target_token_verifier_hmac,
+                "idempotency_hmac_key_id": idempotency_hmac_key_id,
+                "idempotency_hmac": idempotency_hmac,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        return hashlib.sha256(body).hexdigest()
+
+    def _new_material(
+        self,
+        target_selector: str,
+        target_token_hash: str,
+        idempotency: bytes,
+    ) -> _DeviceRevokeMaterial:
+        if self._keyring is None:
+            raise MobileSignOutUnavailable(
+                "Protected device revocation state is not configured."
+            )
+        selector_key, selector_hmac = self._keyring.digest(
+            MobileStateDomain.RECOVERY_SELECTOR, target_selector
+        )
+        verifier_key, verifier_hmac = self._keyring.digest(
+            MobileStateDomain.RECOVERY_TOKEN_VERIFIER, target_token_hash
+        )
+        idempotency_key, idempotency_hmac = self._keyring.digest(
+            MobileStateDomain.DEVICE_REVOKE_IDEMPOTENCY, idempotency
+        )
+        request_hash = self._request_hash(
+            target_selector_hmac_key_id=selector_key,
+            target_selector_hmac=selector_hmac,
+            target_token_verifier_hmac_key_id=verifier_key,
+            target_token_verifier_hmac=verifier_hmac,
+            idempotency_hmac_key_id=idempotency_key,
+            idempotency_hmac=idempotency_hmac,
+        )
+        return _DeviceRevokeMaterial(
+            selector_key,
+            selector_hmac,
+            verifier_key,
+            verifier_hmac,
+            idempotency_key,
+            idempotency_hmac,
+            request_hash,
+        )
+
+    def _find_replay(
+        self,
+        *,
+        target_selector: str,
+        idempotency: bytes,
+        now: float,
+    ) -> tuple[str, sqlite3.Row] | tuple[str, None] | None:
+        """Return ``(kind, row)`` for a durable replay of this exact request.
+
+        ``kind`` is ``"receipt"`` (terminal), ``"journal"`` (resumable), or
+        ``"conflict"`` when the same idempotency key was bound to a different
+        target selector.
+        """
+
+        if self._keyring is None:
+            return None
+        candidates = self._keyring.candidates(
+            MobileStateDomain.DEVICE_REVOKE_IDEMPOTENCY, idempotency
+        )
+        predicate = " OR ".join(
+            "(idempotency_hmac_key_id = ? AND idempotency_hmac = ?)"
+            for _candidate in candidates
+        )
+        if not predicate:
+            return None
+        parameters = tuple(
+            value
+            for candidate in candidates
+            for value in (candidate.key_id, candidate.digest)
+        )
+        with self._users._lock:
+            receipts = self._users._conn.execute(
+                "SELECT * FROM mobile_device_revoke_receipts"
+                f" WHERE expires_at > ? AND ({predicate})"
+                " ORDER BY completed_at DESC",
+                (now, *parameters),
+            ).fetchall()
+            journals = self._users._conn.execute(
+                "SELECT * FROM mobile_device_revoke_journals"
+                f" WHERE expires_at > ? AND ({predicate})"
+                " ORDER BY created_at DESC",
+                (now, *parameters),
+            ).fetchall()
+        conflict = False
+        for row in receipts:
+            try:
+                selector_digest = self._keyring.digest_with_key(
+                    str(row["target_selector_hmac_key_id"]),
+                    MobileStateDomain.RECOVERY_SELECTOR,
+                    target_selector,
+                )
+            except KeyError as exc:
+                raise RuntimeError(str(exc)) from exc
+            if hmac.compare_digest(
+                selector_digest, str(row["target_selector_hmac"])
+            ):
+                return "receipt", row
+            conflict = True
+        for row in journals:
+            if str(row["target_selector"]) == target_selector:
+                return "journal", row
+            conflict = True
+        if conflict:
+            return "conflict", None
+        return None
+
+    def _target_token_hash(self, target_selector: str, owner_user_id: str) -> str | None:
+        with self._users._lock:
+            row = self._users._conn.execute(
+                "SELECT token_hash FROM mobile_api_tokens"
+                " WHERE selector = ? AND user_id = ?",
+                (target_selector, owner_user_id),
+            ).fetchone()
+        return None if row is None else str(row["token_hash"])
+
+    def _insert_journal_locked(
+        self,
+        connection: sqlite3.Connection,
+        *,
+        operation_id: str,
+        owner_user_id: str,
+        initiator_selector: str | None,
+        target_selector: str,
+        material: _DeviceRevokeMaterial,
+        now: float,
+        expires_at: float,
+    ) -> None:
+        for table in (
+            "mobile_device_revoke_journals",
+            "mobile_device_revoke_receipts",
+        ):
+            if connection.execute(
+                f"SELECT 1 FROM {table}"
+                " WHERE idempotency_hmac_key_id = ?"
+                " AND idempotency_hmac = ? LIMIT 1",
+                (material.idempotency_hmac_key_id, material.idempotency_hmac),
+            ).fetchone() is not None:
+                raise CredentialMutationRejected(
+                    "A device revocation idempotency key is already recorded."
+                )
+        connection.execute(
+            "INSERT INTO mobile_device_revoke_journals"
+            " (operation_id, owner_user_id, initiator_selector, target_selector,"
+            " phase, target_selector_hmac_key_id, target_selector_hmac,"
+            " target_token_verifier_hmac_key_id, target_token_verifier_hmac,"
+            " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+            " recovery_sequence, recovery_record_hash, created_at, updated_at,"
+            " expires_at)"
+            " VALUES (?, ?, ?, ?, 'prepared', ?, ?, ?, ?, ?, ?, ?, NULL, NULL,"
+            " ?, ?, ?)",
+            (
+                operation_id,
+                owner_user_id,
+                initiator_selector,
+                target_selector,
+                material.target_selector_hmac_key_id,
+                material.target_selector_hmac,
+                material.target_token_verifier_hmac_key_id,
+                material.target_token_verifier_hmac,
+                material.idempotency_hmac_key_id,
+                material.idempotency_hmac,
+                material.request_hash,
+                now,
+                now,
+                expires_at,
+            ),
+        )
+
+    def _prepare_target_revoke(
+        self,
+        *,
+        operation_id: str,
+        owner_user_id: str,
+        initiator_selector: str | None,
+        target_selector: str,
+        material: _DeviceRevokeMaterial,
+        now: float,
+        lease: "CredentialMutationLease | None",
+    ) -> CredentialMutationClose:
+        """Fence the target token and journal the operation in one transaction.
+
+        Unlike a self sign-out this never fences the initiator; the initiator
+        lease (when present) is only revalidated so a stale browser/bearer
+        credential cannot drive a revoke.
+        """
+
+        expires_at = now + _DEVICE_REVOKE_REPLAY_SECONDS
+        with self._users._lock:
+            try:
+                self._users._conn.execute("BEGIN IMMEDIATE")
+                if lease is not None:
+                    lease.validate_locked(self._users, now=now)
+                cursor = self._users._conn.execute(
+                    "UPDATE mobile_api_tokens"
+                    " SET state = 'fenced', fenced_at = COALESCE(fenced_at, ?)"
+                    " WHERE selector = ? AND user_id = ? AND expires_at > ?"
+                    " AND revoked_at IS NULL AND state = 'active'"
+                    " AND fenced_at IS NULL",
+                    (now, target_selector, owner_user_id, now),
+                )
+                if cursor.rowcount != 1:
+                    raise MobileDeviceRevokeNotFound("Mobile device not found.")
+                self._insert_journal_locked(
+                    self._users._conn,
+                    operation_id=operation_id,
+                    owner_user_id=owner_user_id,
+                    initiator_selector=initiator_selector,
+                    target_selector=target_selector,
+                    material=material,
+                    now=now,
+                    expires_at=expires_at,
+                )
+                self._users._conn.commit()
+            except Exception:
+                if self._users._conn.in_transaction:
+                    self._users._conn.rollback()
+                raise
+        return self._guard.close_selector(target_selector)
+
+    def revoke(
+        self,
+        raw_token: object,
+        target_selector: object,
+        idempotency_key: object,
+        *,
+        now: float | None = None,
+    ) -> MobileDeviceRevokeResult:
+        observed_at = time.time() if now is None else float(now)
+        idempotency = self._idempotency_bytes(idempotency_key)
+        parsed = self._users._parse_mobile_api_token(raw_token)
+        if parsed is None:
+            raise MobileSignOutUnauthorized("Invalid mobile access token.")
+        initiator_selector, initiator_secret = parsed
+        if not isinstance(target_selector, str) or not target_selector:
+            raise MobileSignOutUnauthorized("Invalid mobile access token.")
+        is_self = target_selector == initiator_selector
+
+        if is_self:
+            replay = self._find_replay(
+                target_selector=target_selector,
+                idempotency=idempotency,
+                now=observed_at,
+            )
+            resolved = self._resolve_replay(replay, target_selector)
+            if resolved is not None:
+                return resolved
+
+        principal = self._users.authenticate_mobile_api_principal(
+            raw_token, now=observed_at
+        )
+        if principal is None or principal.selector != initiator_selector:
+            raise MobileSignOutUnauthorized("Invalid mobile access token.")
+        if self._ledger is None:
+            raise MobileSignOutUnavailable(
+                "Protected device revocation is not configured."
+            )
+        context = self._context(principal)
+
+        if is_self:
+            initiator_token_hash = self._users._mobile_api_token_hash(
+                initiator_selector, initiator_secret
+            )
+            material = self._new_material(
+                target_selector, initiator_token_hash, idempotency
+            )
+            operation_id = str(uuid.uuid4())
+            expires_at = observed_at + _DEVICE_REVOKE_REPLAY_SECONDS
+
+            def prepare_locked(connection: sqlite3.Connection) -> None:
+                self._insert_journal_locked(
+                    connection,
+                    operation_id=operation_id,
+                    owner_user_id=principal.user.id,
+                    initiator_selector=initiator_selector,
+                    target_selector=target_selector,
+                    material=material,
+                    now=observed_at,
+                    expires_at=expires_at,
+                )
+
+            lease: CredentialMutationLease | None = None
+            try:
+                lease = self._guard.admit(context)
+                close = self._guard.validate_and_close_caller(
+                    lease,
+                    self._users,
+                    now=observed_at,
+                    prepare_locked=prepare_locked,
+                )
+            except CredentialMutationRejected:
+                if lease is not None:
+                    lease.release()
+                raced = self._resolve_replay(
+                    self._find_replay(
+                        target_selector=target_selector,
+                        idempotency=idempotency,
+                        now=time.time(),
+                    ),
+                    target_selector,
+                )
+                if raced is not None:
+                    return raced
+                raise MobileSignOutUnauthorized(
+                    "Invalid mobile access token."
+                ) from None
+            except Exception:
+                if lease is not None:
+                    lease.release()
+                raise
+            return self._advance(operation_id, target_selector, close)
+
+        # Other-device revocation keeps the initiator lease valid.
+        target_token_hash = self._target_token_hash(
+            target_selector, principal.user.id
+        )
+        if target_token_hash is None:
+            raise MobileDeviceRevokeNotFound("Mobile device not found.")
+        replay = self._find_replay(
+            target_selector=target_selector,
+            idempotency=idempotency,
+            now=observed_at,
+        )
+        resolved = self._resolve_replay(replay, target_selector)
+        if resolved is not None:
+            return resolved
+        material = self._new_material(
+            target_selector, target_token_hash, idempotency
+        )
+        operation_id = str(uuid.uuid4())
+        lease = None
+        try:
+            lease = self._guard.admit(context)
+            close = self._prepare_target_revoke(
+                operation_id=operation_id,
+                owner_user_id=principal.user.id,
+                initiator_selector=initiator_selector,
+                target_selector=target_selector,
+                material=material,
+                now=observed_at,
+                lease=lease,
+            )
+        except CredentialMutationRejected:
+            raced = self._resolve_replay(
+                self._find_replay(
+                    target_selector=target_selector,
+                    idempotency=idempotency,
+                    now=time.time(),
+                ),
+                target_selector,
+            )
+            if raced is not None:
+                return raced
+            raise MobileSignOutUnauthorized(
+                "Invalid mobile access token."
+            ) from None
+        finally:
+            if lease is not None:
+                lease.release()
+        return self._advance(operation_id, target_selector, close)
+
+    def revoke_owned_selector(
+        self,
+        owner_user_id: str,
+        target_selector: object,
+        *,
+        now: float | None = None,
+    ) -> MobileDeviceRevokeResult:
+        """Fence-revoke one browser-owned selector without a bearer credential.
+
+        The legacy ``/api/v1/mobile-tokens`` DELETE routes through this so a
+        cookie-owner revocation is durably published rather than a local-only
+        delete.  A retry resumes the owned-selector journal.
+        """
+
+        observed_at = time.time() if now is None else float(now)
+        if self._ledger is None:
+            raise MobileSignOutUnavailable(
+                "Protected device revocation is not configured."
+            )
+        if not isinstance(target_selector, str) or not target_selector:
+            raise MobileDeviceRevokeNotFound("Mobile device not found.")
+        with self._users._lock:
+            existing = self._users._conn.execute(
+                "SELECT operation_id FROM mobile_device_revoke_journals"
+                " WHERE owner_user_id = ? AND target_selector = ?"
+                " AND phase != 'complete'"
+                " ORDER BY created_at DESC LIMIT 1",
+                (owner_user_id, target_selector),
+            ).fetchone()
+        if existing is not None:
+            return self._advance(
+                str(existing["operation_id"]),
+                target_selector,
+                self._guard.close_selector(target_selector),
+            )
+        token_hash = self._target_token_hash(target_selector, owner_user_id)
+        if token_hash is None:
+            raise MobileDeviceRevokeNotFound("Mobile device not found.")
+        idempotency = secrets.token_bytes(16)
+        material = self._new_material(target_selector, token_hash, idempotency)
+        operation_id = str(uuid.uuid4())
+        close = self._prepare_target_revoke(
+            operation_id=operation_id,
+            owner_user_id=owner_user_id,
+            initiator_selector=None,
+            target_selector=target_selector,
+            material=material,
+            now=observed_at,
+            lease=None,
+        )
+        return self._advance(operation_id, target_selector, close)
+
+    def _context(self, principal) -> MobileAuthContext:
+        return MobileAuthContext(
+            user=principal.user,
+            via_bearer=True,
+            selector=principal.selector,
+            auth_epoch=principal.auth_epoch,
+            review_provider=principal.review_provider,
+            review_build=principal.review_build,
+            review_expires_at=principal.review_expires_at,
+            review_credential_hmac_key_id=principal.review_credential_hmac_key_id,
+            review_credential_hmac=principal.review_credential_hmac,
+            review_lane_revision=principal.review_lane_revision,
+        )
+
+    def _resolve_replay(
+        self,
+        replay: tuple[str, sqlite3.Row] | tuple[str, None] | None,
+        target_selector: str,
+    ) -> MobileDeviceRevokeResult | None:
+        if replay is None:
+            return None
+        kind, row = replay
+        if kind == "conflict":
+            raise MobileSignOutUnauthorized("Invalid mobile access token.")
+        if kind == "receipt":
+            return MobileDeviceRevokeResult(pending=False)
+        assert row is not None
+        return self._advance(
+            str(row["operation_id"]),
+            target_selector,
+            None,
+        )
+
+    def _operation(self, operation_id: str) -> sqlite3.Row:
+        with self._users._lock:
+            row = self._users._conn.execute(
+                "SELECT * FROM mobile_device_revoke_journals"
+                " WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchone()
+        if row is None:
+            raise RuntimeError("A device revocation journal disappeared.")
+        return row
+
+    def _transition(
+        self,
+        operation_id: str,
+        expected: str,
+        next_phase: str,
+        *,
+        recovery_sequence: int | None = None,
+        recovery_record_hash: str | None = None,
+    ) -> None:
+        updated_at = time.time()
+        assignments = "phase = ?, updated_at = ?"
+        parameters: list[object] = [next_phase, updated_at]
+        if recovery_sequence is not None:
+            assignments += ", recovery_sequence = ?, recovery_record_hash = ?"
+            parameters.extend((recovery_sequence, recovery_record_hash))
+        parameters.extend((operation_id, expected))
+        with self._users._lock:
+            try:
+                self._users._conn.execute("BEGIN IMMEDIATE")
+                self._users._conn.execute(
+                    f"UPDATE mobile_device_revoke_journals SET {assignments}"
+                    " WHERE operation_id = ? AND phase = ?",
+                    tuple(parameters),
+                )
+                self._users._conn.commit()
+            except Exception:
+                if self._users._conn.in_transaction:
+                    self._users._conn.rollback()
+                raise
+
+    def _revoke_and_transition(
+        self,
+        operation_id: str,
+        row: sqlite3.Row,
+        target_selector: str,
+    ) -> None:
+        revoked_at = time.time()
+        with self._users._lock:
+            try:
+                self._users._conn.execute("BEGIN IMMEDIATE")
+                current = self._users._conn.execute(
+                    "SELECT phase FROM mobile_device_revoke_journals"
+                    " WHERE operation_id = ?",
+                    (operation_id,),
+                ).fetchone()
+                if current is None:
+                    raise RuntimeError("A device revocation journal disappeared.")
+                if str(current["phase"]) != "extensions_closed":
+                    self._users._conn.commit()
+                    return
+                self._users._conn.execute(
+                    "UPDATE mobile_api_tokens"
+                    " SET revoked_at = COALESCE(revoked_at, ?),"
+                    " state = 'fenced', fenced_at = COALESCE(fenced_at, ?)"
+                    " WHERE selector = ? AND user_id = ?",
+                    (
+                        revoked_at,
+                        revoked_at,
+                        target_selector,
+                        row["owner_user_id"],
+                    ),
+                )
+                self._users._conn.execute(
+                    "UPDATE mobile_device_revoke_journals"
+                    " SET phase = 'token_revoked', updated_at = ?"
+                    " WHERE operation_id = ? AND phase = 'extensions_closed'",
+                    (revoked_at, operation_id),
+                )
+                self._users._conn.commit()
+            except Exception:
+                if self._users._conn.in_transaction:
+                    self._users._conn.rollback()
+                raise
+
+    def _complete(self, operation_id: str, row: sqlite3.Row) -> None:
+        completed_at = time.time()
+        with self._users._lock:
+            try:
+                self._users._conn.execute("BEGIN IMMEDIATE")
+                current = self._users._conn.execute(
+                    "SELECT * FROM mobile_device_revoke_journals"
+                    " WHERE operation_id = ?",
+                    (operation_id,),
+                ).fetchone()
+                if current is None:
+                    raise RuntimeError("A device revocation journal disappeared.")
+                if str(current["phase"]) == "complete":
+                    self._users._conn.commit()
+                    return
+                if str(current["phase"]) != "token_revoked":
+                    self._users._conn.commit()
+                    return
+                self._users._conn.execute(
+                    "INSERT OR IGNORE INTO mobile_device_revoke_receipts"
+                    " (operation_id, owner_user_id, target_selector_hmac_key_id,"
+                    " target_selector_hmac, idempotency_hmac_key_id,"
+                    " idempotency_hmac, request_hash, completed_at, expires_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        operation_id,
+                        current["owner_user_id"],
+                        current["target_selector_hmac_key_id"],
+                        current["target_selector_hmac"],
+                        current["idempotency_hmac_key_id"],
+                        current["idempotency_hmac"],
+                        current["request_hash"],
+                        completed_at,
+                        current["expires_at"],
+                    ),
+                )
+                self._users._conn.execute(
+                    "UPDATE mobile_device_revoke_journals"
+                    " SET phase = 'complete', updated_at = ?"
+                    " WHERE operation_id = ? AND phase = 'token_revoked'",
+                    (completed_at, operation_id),
+                )
+                self._users._conn.commit()
+            except Exception:
+                if self._users._conn.in_transaction:
+                    self._users._conn.rollback()
+                raise
+
+    def _advance(
+        self,
+        operation_id: str,
+        target_selector: str,
+        close: CredentialMutationClose | None,
+    ) -> MobileDeviceRevokeResult:
+        with self._operation_locks.hold(operation_id):
+            return self._advance_serialized(operation_id, target_selector, close)
+
+    def _advance_serialized(
+        self,
+        operation_id: str,
+        target_selector: str,
+        close: CredentialMutationClose | None,
+    ) -> MobileDeviceRevokeResult:
+        while True:
+            row = self._operation(operation_id)
+            phase = str(row["phase"])
+            if phase == "complete":
+                return MobileDeviceRevokeResult(pending=False)
+            if phase == "prepared":
+                if self._ledger is None:
+                    return MobileDeviceRevokeResult(pending=True)
+                event = TokenRevokeEvent(
+                    event_id=operation_id,
+                    cutoff_at=float(row["created_at"]),
+                    selector_hmac_key_id=str(row["target_selector_hmac_key_id"]),
+                    selector_hmac=str(row["target_selector_hmac"]),
+                    token_verifier_hmac_key_id=str(
+                        row["target_token_verifier_hmac_key_id"]
+                    ),
+                    token_verifier_hmac=str(row["target_token_verifier_hmac"]),
+                )
+                try:
+                    published = self._ledger.append_and_publish(event)
+                except RecoveryFenceError:
+                    return MobileDeviceRevokeResult(pending=True)
+                sequence = int(published.sequence)
+                record_hash = str(published.record_hash)
+                if (
+                    sequence < 1
+                    or re.fullmatch(r"[0-9a-f]{64}", record_hash) is None
+                ):
+                    raise RuntimeError(
+                        "Recovery-fence publication returned invalid readback."
+                    )
+                self._transition(
+                    operation_id,
+                    "prepared",
+                    "recovery_fenced",
+                    recovery_sequence=sequence,
+                    recovery_record_hash=record_hash,
+                )
+                continue
+            if phase == "recovery_fenced":
+                if close is None:
+                    close = self._guard.close_selector(target_selector)
+                if not close.drain(timeout_seconds=self._drain_timeout_seconds):
+                    return MobileDeviceRevokeResult(pending=True)
+                for extension in self._extensions:
+                    try:
+                        closed = extension.close_for_sign_out(
+                            users=self._users,
+                            operation_id=operation_id,
+                            user_id=str(row["owner_user_id"]),
+                            selector=target_selector,
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Mobile device revoke extension remains pending "
+                            "operation_id=%s extension=%s",
+                            operation_id,
+                            type(extension).__name__,
+                        )
+                        return MobileDeviceRevokeResult(pending=True)
+                    if closed is not True:
+                        return MobileDeviceRevokeResult(pending=True)
+                self._transition(
+                    operation_id, "recovery_fenced", "extensions_closed"
+                )
+                continue
+            if phase == "extensions_closed":
+                self._revoke_and_transition(operation_id, row, target_selector)
+                continue
+            if phase == "token_revoked":
+                self._complete(operation_id, row)
+                continue
+            raise RuntimeError("A device revocation journal phase is invalid.")
+
+    def resume_nonterminal(self) -> None:
+        """Finish every crash-interrupted revoke before routes admit traffic."""
+
+        with self._users._lock:
+            rows = self._users._conn.execute(
+                "SELECT operation_id, target_selector FROM"
+                " mobile_device_revoke_journals WHERE phase != 'complete'"
+                " ORDER BY created_at, operation_id"
+            ).fetchall()
+        for row in rows:
+            target_selector = str(row["target_selector"])
+            close = self._guard.close_selector(target_selector)
+            result = self._advance(
+                str(row["operation_id"]), target_selector, close
+            )
+            if result.pending:
+                raise RuntimeError(
+                    "A pending device revocation could not be recovered "
+                    "before startup."
                 )

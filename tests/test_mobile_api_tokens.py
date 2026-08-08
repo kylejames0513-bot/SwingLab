@@ -19,12 +19,14 @@ from fastapi.testclient import TestClient
 from swinglab.config import Config
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
+from swinglab.web.mobile_schema import VersionedHMAC
 from swinglab.web.users import (
     MOBILE_API_TOKEN_ACTIVE_LIMIT,
     MOBILE_API_TOKEN_TTL_S,
     MobileAPITokenLimitError,
     UserStore,
 )
+from tests.test_mobile_sign_out import FakeRecoveryFenceLedger
 from tests.test_web import fake_analyze_ok
 
 
@@ -37,7 +39,15 @@ def app(tmp_path, monkeypatch):
     cfg = Config()
     cfg.web["require_account"] = True
     cfg.billing["free_per_month"] = 10
-    return create_app(cfg, sessions_dir=tmp_path / "sessions")
+    # Legacy browser token revocation now routes through the same
+    # recovery-fenced service as native device revocation, so an injected
+    # development ledger and keyring are required for a durable revoke.
+    return create_app(
+        cfg,
+        sessions_dir=tmp_path / "sessions",
+        mobile_state_hmac=VersionedHMAC("k1", {"k1": b"k" * 32}),
+        recovery_fence_ledger=FakeRecoveryFenceLedger(),
+    )
 
 
 def signup(client: TestClient, email: str = "golfer@example.com") -> None:

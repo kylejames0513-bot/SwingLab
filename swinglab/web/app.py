@@ -93,6 +93,8 @@ from ..api.auth import mobile_bearer_unauthorized, resolve_mobile_auth
 from ..api.errors import install_mobile_error_handlers
 from ..api.mobile_routes import (
     MOBILE_CAPABILITIES_ROUTE_NAME,
+    MOBILE_DEVICES_LIST_ROUTE_NAME,
+    MOBILE_DEVICE_REVOKE_ROUTE_NAME,
     MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
     MOBILE_EMAIL_START_ROUTE_NAME,
     MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME,
@@ -163,7 +165,10 @@ from .jobs import (
 )
 from .credential_mutations import (
     CredentialMutationGuard,
+    MobileDeviceRevokeNotFound,
+    MobileDeviceRevokeService,
     MobileSignOutService,
+    MobileSignOutUnavailable,
     RecoveryFencePublisher,
     SignOutExtension,
 )
@@ -617,6 +622,15 @@ def create_app(
         drain_timeout_seconds=sign_out_drain_timeout_seconds,
         extensions=sign_out_extensions,
     )
+    device_revoke_service = MobileDeviceRevokeService(
+        users,
+        mutation_guard,
+        keyring=users._mobile_state_hmac,
+        recovery_fence_ledger=recovery_fence_ledger,
+        drain_timeout_seconds=sign_out_drain_timeout_seconds,
+        extensions=sign_out_extensions,
+    )
+    device_management_enabled = mobile_resource_settings.device_management_enabled
     mobile_keyed_throttle: KeyedThrottle | None = None
     try:
         if users._mobile_state_hmac is not None:
@@ -649,9 +663,13 @@ def create_app(
         )
         mobile_auth_service.verify_enabled_recovery_readiness()
         review_auth_service.verify_enabled_recovery_readiness()
+        device_revoke_service.verify_enabled_recovery_readiness(
+            device_management_enabled
+        )
         # Crash journals are independent of auth/push/privacy feature flags.
         # Resume them before JobManager recovery, workers, or route admission.
         sign_out_service.resume_nonterminal()
+        device_revoke_service.resume_nonterminal()
         mobile_auth_service.resume_nonterminal()
         if review_auth_service.available():
             review_auth_service.purge_expired()
@@ -678,6 +696,7 @@ def create_app(
     app.state.cfg = cfg
     app.state.credential_mutation_guard = mutation_guard
     app.state.sign_out_service = sign_out_service
+    app.state.device_revoke_service = device_revoke_service
     app.state.mobile_auth_service = mobile_auth_service
     app.state.review_auth_service = review_auth_service
     app.state.review_auth_admission = review_auth_admission
@@ -709,6 +728,10 @@ def create_app(
     }
     mobile_profile_write_route_names = {MOBILE_PROFILE_WRITE_ROUTE_NAME}
     mobile_practice_write_route_names = {MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME}
+    mobile_device_route_names = {
+        MOBILE_DEVICES_LIST_ROUTE_NAME,
+        MOBILE_DEVICE_REVOKE_ROUTE_NAME,
+    }
     concealed_mobile_route_names = set()
     if not mobile_resource_service.settings.resources_enabled:
         concealed_mobile_route_names |= mobile_resource_route_names
@@ -716,6 +739,8 @@ def create_app(
         concealed_mobile_route_names |= mobile_profile_write_route_names
     if not mobile_resource_service.settings.practice_writes_enabled:
         concealed_mobile_route_names |= mobile_practice_write_route_names
+    if not mobile_resource_service.settings.device_management_enabled:
+        concealed_mobile_route_names |= mobile_device_route_names
     install_mobile_error_handlers(
         app,
         {
@@ -727,12 +752,15 @@ def create_app(
         }
         | mobile_resource_route_names
         | mobile_profile_write_route_names
-        | mobile_practice_write_route_names,
+        | mobile_practice_write_route_names
+        | mobile_device_route_names,
         concealed_route_names=concealed_mobile_route_names,
     )
     install_mobile_routes(
         app,
         sign_out_service=sign_out_service,
+        device_revoke_service=device_revoke_service,
+        device_management_enabled=device_management_enabled,
         email_auth_service=mobile_auth_service,
         review_auth_service=review_auth_service,
         native_email_auth_enabled=native_auth_settings.enabled,
@@ -4364,10 +4392,24 @@ def create_app(
     )
     def api_v1_revoke_mobile_token(selector: str, request: Request):
         user = mobile_token_management_user(request)
-        if not users.revoke_mobile_api_token(user.id, selector):
+        # Route the browser owner's revoke through the same recovery-fenced
+        # service as native device revocation instead of a local-only delete.
+        # A publish outage or unreadiness surfaces as a durable 503 and never
+        # as a success that only the local database observed.
+        try:
+            result = device_revoke_service.revoke_owned_selector(user.id, selector)
+        except MobileDeviceRevokeNotFound as exc:
             # Do not distinguish a malformed selector from a different
             # account's device record.
-            raise HTTPException(404, "Mobile device not found.")
+            raise HTTPException(404, "Mobile device not found.") from exc
+        except MobileSignOutUnavailable as exc:
+            raise HTTPException(
+                503, "Device revocation is temporarily unavailable."
+            ) from exc
+        if result.pending:
+            raise HTTPException(
+                503, "Device revocation is temporarily unavailable."
+            )
         return no_store_json({"resource_version": 1, "revoked": True})
 
     @app.get("/api/v1/profile", response_model=ProfileResponse)
