@@ -107,6 +107,8 @@ from ..api.mobile_routes import (
     MOBILE_PRIVACY_EXPORT_CREATE_ROUTE_NAME,
     MOBILE_PRIVACY_EXPORT_STATUS_ROUTE_NAME,
     MOBILE_PRIVACY_EXPORT_DOWNLOAD_ROUTE_NAME,
+    MOBILE_PRIVACY_HISTORY_RESET_ROUTE_NAME,
+    MOBILE_ACCOUNT_DELETE_ROUTE_NAME,
     MOBILE_SESSION_ROUTE_NAME,
     MOBILE_SESSION_BRIEF_ROUTE_NAME,
     MOBILE_TODAY_ROUTE_NAME,
@@ -187,6 +189,13 @@ from .mobile_auth import (
     MobileAuthService,
     validate_mobile_native_auth_settings,
 )
+from .mobile_erasure import (
+    PrivacyErasureBusyError,
+    PrivacyErasureEpochConflictError,
+    PrivacyErasureRejectedError,
+    PrivacyErasureService,
+    PrivacyErasureUnavailable,
+)
 from .mobile_privacy import (
     MobilePrivacyService,
     MobileStepUpService,
@@ -254,6 +263,7 @@ PRODUCT_ANON_SESSION_KEY = "product_anon_id"
 PRODUCT_EVENT_MAX_BODY_BYTES = 8 * 1024
 SHOPIFY_ACCOUNT_BROWSER_SESSION_KEY = "shopify_customer_account_session"
 HISTORY_RESET_SESSION_KEY = "history_reset_confirmation"
+HISTORY_RESET_PENDING_KEY = "history_reset_pending"
 HISTORY_RESET_FLASH_KEY = "history_reset_flash"
 HISTORY_SESSION_EPOCH_KEY = "history_epoch"
 HISTORY_RESET_CONFIRMATION = "START OVER"
@@ -777,6 +787,20 @@ def create_app(
     )
     app.state.resumable_upload_manager = resumable_upload_manager
     app.router.add_event_handler("shutdown", resumable_upload_manager.close)
+    privacy_erasure_service = PrivacyErasureService(
+        users,
+        manager,
+        privacy_export_service,
+        enabled=mobile_privacy_enabled,
+        recovery_fence_ledger=recovery_fence_ledger,
+        upload_manager_provider=lambda: app.state.resumable_upload_manager,
+    )
+    privacy_erasure_service.verify_enabled_readiness()
+    # Erasure journals are independent of the privacy flag once durable: a
+    # journal opened before a rollback must still converge before requests are
+    # served, exactly like the credential journals above.
+    privacy_erasure_service.resume_nonterminal()
+    app.state.privacy_erasure_service = privacy_erasure_service
     mobile_resource_route_names = {
         MOBILE_CAPABILITIES_ROUTE_NAME,
         MOBILE_SESSIONS_ROUTE_NAME,
@@ -807,6 +831,10 @@ def create_app(
         MOBILE_PRIVACY_EXPORT_STATUS_ROUTE_NAME,
         MOBILE_PRIVACY_EXPORT_DOWNLOAD_ROUTE_NAME,
     }
+    mobile_privacy_erasure_route_names = {
+        MOBILE_PRIVACY_HISTORY_RESET_ROUTE_NAME,
+        MOBILE_ACCOUNT_DELETE_ROUTE_NAME,
+    }
     concealed_mobile_route_names = set()
     if not mobile_resource_service.settings.resources_enabled:
         concealed_mobile_route_names |= mobile_resource_route_names
@@ -821,6 +849,7 @@ def create_app(
     if not mobile_privacy_enabled:
         concealed_mobile_route_names |= mobile_step_up_route_names
         concealed_mobile_route_names |= mobile_privacy_export_route_names
+        concealed_mobile_route_names |= mobile_privacy_erasure_route_names
     install_mobile_error_handlers(
         app,
         {
@@ -832,6 +861,7 @@ def create_app(
         }
         | mobile_step_up_route_names
         | mobile_privacy_export_route_names
+        | mobile_privacy_erasure_route_names
         | mobile_resource_route_names
         | mobile_profile_write_route_names
         | mobile_practice_write_route_names
@@ -848,6 +878,7 @@ def create_app(
         review_auth_service=review_auth_service,
         step_up_service=step_up_service,
         privacy_export_service=privacy_export_service,
+        privacy_erasure_service=privacy_erasure_service,
         mobile_privacy_enabled=mobile_privacy_enabled,
         native_email_auth_enabled=native_auth_settings.enabled,
         mobile_deployment_environment=mobile_deployment_environment,
@@ -2735,6 +2766,98 @@ def create_app(
         response.status_code = status_code
         return response
 
+    def history_reset_pending_page(
+        request: Request, user: User, retry_after_seconds: int
+    ) -> HTMLResponse:
+        """Report a committed-but-unfinished reset without redirecting yet.
+
+        The confirmation page never redirects to the account before the journal
+        is complete: a member who lands back on ``/account`` must be looking at
+        a history that is really gone.
+        """
+
+        response = render_no_store(
+            "web_history_delete.html.j2",
+            request,
+            pending=True,
+            confirmation_phrase=HISTORY_RESET_CONFIRMATION,
+            error=None,
+        )
+        response.status_code = 202
+        response.headers["Retry-After"] = str(max(1, int(retry_after_seconds)))
+        return response
+
+    def browser_reset_idempotency_key(nonce: str) -> str:
+        """Bind one confirmation nonce to exactly one durable reset.
+
+        The nonce is already single-use, unguessable, and cookie-bound, so
+        deriving the 128-bit key from it makes a double-submitted form resume
+        its own operation instead of opening a second one.
+        """
+
+        digest = hashlib.sha256(
+            b"caddieinsight-history-reset-browser-v1:"
+            + nonce.encode("utf-8", "replace")
+        ).hexdigest()
+        return digest[:32]
+
+    def history_reset_completed_response(
+        request: Request, user: User, outcome
+    ):
+        request.session.pop(HISTORY_RESET_PENDING_KEY, None)
+        request.session[HISTORY_RESET_FLASH_KEY] = {
+            "deleted_jobs": outcome.deleted_jobs,
+            "cleanup_pending": outcome.cleanup_pending,
+        }
+        updated_user = users.get(user.id)
+        if updated_user is None:
+            request.session.clear()
+            return RedirectResponse("/login", status_code=303)
+        request.session[HISTORY_SESSION_EPOCH_KEY] = updated_user.history_epoch
+        response = RedirectResponse("/account", status_code=303)
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return response
+
+    def resume_pending_browser_reset(request: Request, user: User):
+        """Drive an already-authorized reset forward from a later page view."""
+
+        pending = request.session.get(HISTORY_RESET_PENDING_KEY)
+        if not isinstance(pending, dict):
+            return None
+        nonce = pending.get("nonce")
+        history_epoch = pending.get("history_epoch")
+        expires_at = pending.get("expires_at")
+        if (
+            not isinstance(nonce, str)
+            or isinstance(history_epoch, bool)
+            or not isinstance(history_epoch, int)
+            or history_epoch < 0
+            or isinstance(expires_at, bool)
+            or not isinstance(expires_at, (int, float))
+            or time.time() > float(expires_at)
+        ):
+            request.session.pop(HISTORY_RESET_PENDING_KEY, None)
+            return None
+        try:
+            outcome = privacy_erasure_service.find_replay(
+                "history_reset",
+                browser_reset_idempotency_key(nonce),
+                expected_history_epoch=history_epoch,
+                origin="browser",
+            )
+        except Exception:
+            logger.exception("A pending swing-history reset could not resume.")
+            return history_reset_pending_page(request, user, 5)
+        if outcome is None:
+            request.session.pop(HISTORY_RESET_PENDING_KEY, None)
+            return None
+        if outcome.complete:
+            return history_reset_completed_response(request, user, outcome)
+        return history_reset_pending_page(
+            request, user, outcome.retry_after_seconds
+        )
+
     @app.get("/account/history/delete", response_class=HTMLResponse)
     def account_history_delete(request: Request):
         if request.headers.get("authorization") is not None:
@@ -2746,6 +2869,11 @@ def create_app(
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
+        # A committed reset outranks the pre-reset session generation check:
+        # its own commit is what made this cookie's epoch stale.
+        resumed = resume_pending_browser_reset(request, user)
+        if resumed is not None:
+            return resumed
         stale_session = reset_requires_fresh_session(request, user)
         if stale_session is not None:
             return stale_session
@@ -2769,6 +2897,9 @@ def create_app(
         user = current_user(request)
         if user is None:
             return RedirectResponse("/login", status_code=303)
+        resumed = resume_pending_browser_reset(request, user)
+        if resumed is not None:
+            return resumed
         stale_session = reset_requires_fresh_session(request, user)
         if stale_session is not None:
             return stale_session
@@ -2856,25 +2987,45 @@ def create_app(
                 status_code=403,
             )
 
+        # The confirmation page is one caller of the shared history-reset
+        # authority, not a second implementation of it: the same durable
+        # journal, export quiesce, and recovery fence serve the native endpoint.
         try:
-            with shopify_remote_privacy_lock(sessions_dir / "swinglab.db"):
-                # Discard ephemeral upload reservations before the durable
-                # history reset so parts/capacity cannot outlive the account
-                # history epoch advance.
-                app.state.resumable_upload_manager.discard_for_user(user.id)
-                summary = manager.reset_user_history(
-                    user.id,
-                    delete_related=lambda connection, user_id: (
-                        users.delete_swing_history_related(
-                            connection,
-                            user_id,
-                            expected_auth_epoch=user.auth_epoch,
-                            expected_history_epoch=(
-                                confirmation_history_epoch
-                            ),
-                        )
-                    ),
-                )
+            outcome = privacy_erasure_service.reset_history(
+                user_id=user.id,
+                selector=None,
+                auth_epoch=user.auth_epoch,
+                expected_history_epoch=confirmation_history_epoch,
+                idempotency_key=browser_reset_idempotency_key(nonce),
+                origin="browser",
+            )
+        except PrivacyErasureBusyError:
+            return history_delete_page(
+                request,
+                user,
+                error=(
+                    "An analysis is still uploading or processing, or a "
+                    "requested privacy export still contains this history. "
+                    "Wait for it to finish, then try again."
+                ),
+                status_code=409,
+            )
+        except PrivacyErasureEpochConflictError:
+            return history_delete_page(
+                request,
+                user,
+                error=(
+                    "Your swing history changed after this confirmation "
+                    "was opened. Review the current history and try again."
+                ),
+                status_code=409,
+            )
+        except (PrivacyErasureRejectedError, HistoryAuthEpochError):
+            request.session.clear()
+            response = RedirectResponse("/login", status_code=303)
+            response.headers["Cache-Control"] = "no-store"
+            response.headers["Pragma"] = "no-cache"
+            return response
         except HistoryResetConflict:
             return history_delete_page(
                 request,
@@ -2922,21 +3073,28 @@ def create_app(
                 ),
                 status_code=503,
             )
+        except (HistoryEpochError, PrivacyErasureUnavailable):
+            return history_delete_page(
+                request,
+                user,
+                error=(
+                    "We could not safely commit the reset. Your account and "
+                    "allowance were not reset; please try again after recovery."
+                ),
+                status_code=503,
+            )
 
-        request.session[HISTORY_RESET_FLASH_KEY] = {
-            "deleted_jobs": summary.deleted_jobs,
-            "cleanup_pending": summary.cleanup_pending,
-        }
-        updated_user = users.get(user.id)
-        if updated_user is None:
-            request.session.clear()
-            return RedirectResponse("/login", status_code=303)
-        request.session[HISTORY_SESSION_EPOCH_KEY] = (
-            updated_user.history_epoch
-        )
-        response = RedirectResponse("/account", status_code=303)
-        response.headers["Cache-Control"] = "no-store"
-        response.headers["Pragma"] = "no-cache"
+        if not outcome.complete:
+            # Never redirect to a history that has not actually gone yet.
+            request.session[HISTORY_RESET_PENDING_KEY] = {
+                "nonce": nonce,
+                "history_epoch": confirmation_history_epoch,
+                "expires_at": time.time() + HISTORY_RESET_NONCE_TTL_S,
+            }
+            return history_reset_pending_page(
+                request, user, outcome.retry_after_seconds
+            )
+        response = history_reset_completed_response(request, user, outcome)
         response.headers["Clear-Site-Data"] = '"cache"'
         return response
 

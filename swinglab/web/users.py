@@ -59,7 +59,7 @@ import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator, Mapping
+from typing import Callable, Iterable, Iterator, Mapping
 
 from ..integrations.shopify.identity import customer_gid, normalize_customer_id
 from ..proof_cycle_practice import (
@@ -237,6 +237,26 @@ PRIVACY_EXPORT_MAX_DOWNLOAD_BYTES = 1_100_000_000
 PRIVACY_EXPORT_READY_TTL_S = 60 * 60
 PRIVACY_EXPORT_LEASE_TTL_S = 5 * 60
 PRIVACY_EXPORT_ID_BYTES = 18
+# A lost 202/204 must stay replayable long enough for an offline client to
+# retry; the erasure receipt itself carries no owner identifier.
+HISTORY_RESET_REPLAY_TTL_S = 7 * 86400
+ACCOUNT_DELETE_REPLAY_TTL_S = 30 * 86400
+HISTORY_RESET_PHASES = (
+    "prepared",
+    "exports_quiescing",
+    "erasure_recorded",
+    "local_erased",
+    "complete",
+)
+ACCOUNT_DELETE_PHASES = (
+    "prepared",
+    "analysis_quiescing",
+    "jobs_closed",
+    "files_quarantined",
+    "erasure_recorded",
+    "identity_deleted",
+    "complete",
+)
 _MOBILE_AUTH_PKCE = re.compile(r"[A-Za-z0-9_-]{43}")
 _MOBILE_AUTH_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}")
 _MOBILE_AUTH_IDEMPOTENCY = re.compile(r"[0-9A-Fa-f]{32}")
@@ -611,6 +631,113 @@ CREATE INDEX IF NOT EXISTS privacy_export_receipts_owner
     ON privacy_export_receipts(user_id, export_id);
 CREATE INDEX IF NOT EXISTS privacy_export_receipts_lease
     ON privacy_export_receipts(status, lease_expires_at);
+-- Native + browser swing-history reset journal (Task 6, reset slice). The
+-- journal is the durable operation: it survives a crash, is resumed before
+-- requests are served, and records the accepted recovery-fence coordinates so
+-- a post-record failure can never roll the epoch back. ``origin`` keeps the
+-- browser confirmation flow and the native endpoint on one algorithm without
+-- letting one replay the other. These tables stay outside the closed
+-- ``mobile_`` generation inventory (mirroring uploads/step-up); registering
+-- them for backup attestation is a documented handoff deferral.
+CREATE TABLE IF NOT EXISTS privacy_history_reset_journals (
+    operation_id             TEXT PRIMARY KEY,
+    user_id                  TEXT NOT NULL,
+    origin                   TEXT NOT NULL CHECK (
+        origin IN ('native', 'browser')
+    ),
+    phase                    TEXT NOT NULL CHECK (phase IN (
+        'prepared', 'exports_quiescing', 'erasure_recorded',
+        'local_erased', 'complete'
+    )),
+    selector                 TEXT,
+    auth_epoch               INTEGER NOT NULL,
+    expected_history_epoch   INTEGER NOT NULL,
+    step_up_token_id         TEXT,
+    stable_user_hmac_key_id  TEXT NOT NULL,
+    stable_user_hmac         TEXT NOT NULL,
+    idempotency_hmac_key_id  TEXT NOT NULL,
+    idempotency_hmac         TEXT NOT NULL,
+    request_hash             TEXT NOT NULL,
+    recovery_sequence        INTEGER,
+    recovery_record_hash     TEXT,
+    deleted_jobs             INTEGER,
+    cleanup_pending          INTEGER NOT NULL DEFAULT 0,
+    created_at               REAL NOT NULL,
+    updated_at               REAL NOT NULL,
+    expires_at               REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS privacy_history_reset_journals_replay
+    ON privacy_history_reset_journals(
+        idempotency_hmac_key_id, idempotency_hmac
+    );
+CREATE INDEX IF NOT EXISTS privacy_history_reset_journals_phase
+    ON privacy_history_reset_journals(phase, created_at);
+CREATE TABLE IF NOT EXISTS privacy_history_reset_receipts (
+    operation_id             TEXT PRIMARY KEY,
+    origin                   TEXT NOT NULL,
+    stable_user_hmac_key_id  TEXT NOT NULL,
+    stable_user_hmac         TEXT NOT NULL,
+    idempotency_hmac_key_id  TEXT NOT NULL,
+    idempotency_hmac         TEXT NOT NULL,
+    request_hash             TEXT NOT NULL,
+    history_epoch            INTEGER NOT NULL,
+    deleted_jobs             INTEGER NOT NULL DEFAULT 0,
+    completed_at             REAL NOT NULL,
+    expires_at               REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS privacy_history_reset_receipts_replay
+    ON privacy_history_reset_receipts(
+        idempotency_hmac_key_id, idempotency_hmac
+    );
+-- Native account deletion journal (Task 6, deletion slice). The completed
+-- receipt intentionally retains no ``user_id``: only the versioned stable-user
+-- HMAC plus the idempotency pair, so a lost 204 can be replayed after every
+-- credential is gone without revealing whether an account ever existed.
+CREATE TABLE IF NOT EXISTS privacy_account_delete_journals (
+    operation_id                 TEXT PRIMARY KEY,
+    user_id                      TEXT NOT NULL,
+    phase                        TEXT NOT NULL CHECK (phase IN (
+        'prepared', 'analysis_quiescing', 'jobs_closed',
+        'files_quarantined', 'erasure_recorded', 'identity_deleted',
+        'complete'
+    )),
+    selector                     TEXT,
+    auth_epoch                   INTEGER NOT NULL,
+    history_epoch                INTEGER NOT NULL,
+    step_up_token_id             TEXT,
+    stable_user_hmac_key_id      TEXT NOT NULL,
+    stable_user_hmac             TEXT NOT NULL,
+    normalized_email_hmac_key_id TEXT NOT NULL,
+    normalized_email_hmac        TEXT NOT NULL,
+    idempotency_hmac_key_id      TEXT NOT NULL,
+    idempotency_hmac             TEXT NOT NULL,
+    request_hash                 TEXT NOT NULL,
+    recovery_sequence            INTEGER,
+    recovery_record_hash         TEXT,
+    created_at                   REAL NOT NULL,
+    updated_at                   REAL NOT NULL,
+    expires_at                   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS privacy_account_delete_journals_replay
+    ON privacy_account_delete_journals(
+        idempotency_hmac_key_id, idempotency_hmac
+    );
+CREATE INDEX IF NOT EXISTS privacy_account_delete_journals_phase
+    ON privacy_account_delete_journals(phase, created_at);
+CREATE TABLE IF NOT EXISTS privacy_account_delete_receipts (
+    operation_id                 TEXT PRIMARY KEY,
+    stable_user_hmac_key_id      TEXT NOT NULL,
+    stable_user_hmac             TEXT NOT NULL,
+    idempotency_hmac_key_id      TEXT NOT NULL,
+    idempotency_hmac             TEXT NOT NULL,
+    request_hash                 TEXT NOT NULL,
+    completed_at                 REAL NOT NULL,
+    expires_at                   REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS privacy_account_delete_receipts_replay
+    ON privacy_account_delete_receipts(
+        idempotency_hmac_key_id, idempotency_hmac
+    );
 """
 
 
@@ -1008,6 +1135,50 @@ class PrivacyExportRejected(RuntimeError):
 
 class PrivacyExportConflict(RuntimeError):
     """A privacy-export idempotency key conflicts with a different request."""
+
+
+@dataclass(frozen=True)
+class PrivacyErasureJournal:
+    """One durable erasure operation resolved from journal or receipt.
+
+    A completed account-deletion receipt has no ``user_id`` left to report, so
+    ``user_id`` is empty and ``phase`` is ``complete``.
+    """
+
+    operation_id: str
+    kind: str
+    phase: str
+    user_id: str
+    origin: str
+    selector: str | None
+    auth_epoch: int
+    expected_history_epoch: int
+    recovery_sequence: int | None
+    recovery_record_hash: str | None
+    deleted_jobs: int
+    cleanup_pending: bool
+    created_at: float
+    replayed: bool = False
+
+    @property
+    def complete(self) -> bool:
+        return self.phase == "complete"
+
+
+class PrivacyErasureRejected(RuntimeError):
+    """A step-up token is not a usable, unclaimed grant for this operation."""
+
+
+class PrivacyErasureConflict(RuntimeError):
+    """An idempotency key conflicts with a different erasure request."""
+
+
+class PrivacyErasureEpochConflict(RuntimeError):
+    """The owner's swing history changed before this reset was authorized."""
+
+
+class PrivacyErasureBusy(RuntimeError):
+    """Owned analysis work must finish before this erasure can proceed."""
 
 
 class StepUpChallengeRejected(RuntimeError):
@@ -6610,6 +6781,61 @@ class UserStore:
             ),
         )
 
+    def _claim_step_up_token_locked(
+        self,
+        step_up_token: object,
+        *,
+        purpose: str,
+        user_id: str,
+        selector: str,
+        auth_epoch: int,
+        now: float,
+        rejection: Callable[[str], Exception],
+        message: str,
+    ) -> tuple[str, int]:
+        """Claim one unclaimed purpose-bound token bound to this bearer.
+
+        Returns the claimed ``token_id`` and the owner's current
+        ``history_epoch`` captured inside the same transaction. Any mismatch of
+        purpose, owner, selector, auth epoch, claim state, or expiry raises one
+        non-enumerating rejection built by ``rejection``.
+        """
+
+        parsed = self._parse_step_up_token(step_up_token)
+        if parsed is None:
+            raise rejection(message)
+        token_id, secret = parsed
+        row = self._conn.execute(
+            "SELECT * FROM step_up_tokens WHERE token_id = ?",
+            (token_id,),
+        ).fetchone()
+        if row is None or not self._step_up_token_matches(
+            row, token_id=token_id, secret=secret, raw_token=str(step_up_token)
+        ):
+            raise rejection(message)
+        if (
+            str(row["purpose"]) != purpose
+            or row["claimed_at"] is not None
+            or float(row["expires_at"]) <= now
+            or str(row["user_id"]) != user_id
+            or str(row["selector"]) != selector
+            or int(row["auth_epoch"]) != int(auth_epoch)
+        ):
+            raise rejection(message)
+        current = self._conn.execute(
+            "SELECT history_epoch FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if current is None:
+            raise rejection(message)
+        claimed = self._conn.execute(
+            "UPDATE step_up_tokens SET claimed_at = ?"
+            " WHERE token_id = ? AND claimed_at IS NULL",
+            (now, token_id),
+        )
+        if claimed.rowcount != 1:
+            raise rejection(message)
+        return token_id, int(current["history_epoch"] or 0)
+
     def _claim_data_export_token_locked(
         self,
         step_up_token: object,
@@ -6619,48 +6845,16 @@ class UserStore:
         auth_epoch: int,
         now: float,
     ) -> tuple[str, int]:
-        """Claim one unclaimed ``data_export`` token bound to this bearer.
-
-        Returns the claimed ``token_id`` and the owner's current
-        ``history_epoch`` captured inside the same transaction. Any mismatch of
-        purpose, owner, selector, auth epoch, claim state, or expiry raises a
-        single non-enumerating :class:`PrivacyExportRejected`.
-        """
-
-        parsed = self._parse_step_up_token(step_up_token)
-        if parsed is None:
-            raise PrivacyExportRejected("Invalid data-export authorization.")
-        token_id, secret = parsed
-        row = self._conn.execute(
-            "SELECT * FROM step_up_tokens WHERE token_id = ?",
-            (token_id,),
-        ).fetchone()
-        if row is None or not self._step_up_token_matches(
-            row, token_id=token_id, secret=secret, raw_token=str(step_up_token)
-        ):
-            raise PrivacyExportRejected("Invalid data-export authorization.")
-        if (
-            str(row["purpose"]) != "data_export"
-            or row["claimed_at"] is not None
-            or float(row["expires_at"]) <= now
-            or str(row["user_id"]) != user_id
-            or str(row["selector"]) != selector
-            or int(row["auth_epoch"]) != int(auth_epoch)
-        ):
-            raise PrivacyExportRejected("Invalid data-export authorization.")
-        current = self._conn.execute(
-            "SELECT history_epoch FROM users WHERE id = ?", (user_id,)
-        ).fetchone()
-        if current is None:
-            raise PrivacyExportRejected("Invalid data-export authorization.")
-        claimed = self._conn.execute(
-            "UPDATE step_up_tokens SET claimed_at = ?"
-            " WHERE token_id = ? AND claimed_at IS NULL",
-            (now, token_id),
+        return self._claim_step_up_token_locked(
+            step_up_token,
+            purpose="data_export",
+            user_id=user_id,
+            selector=selector,
+            auth_epoch=auth_epoch,
+            now=now,
+            rejection=PrivacyExportRejected,
+            message="Invalid data-export authorization.",
         )
-        if claimed.rowcount != 1:
-            raise PrivacyExportRejected("Invalid data-export authorization.")
-        return token_id, int(current["history_epoch"] or 0)
 
     def create_privacy_export(
         self,
@@ -6894,6 +7088,878 @@ class UserStore:
                 if self._conn.in_transaction:
                     self._conn.rollback()
                 raise
+
+    # -- durable erasure journals (Task 6, reset + deletion slices) --------
+    _ERASURE_TABLES = {
+        "history_reset": (
+            "privacy_history_reset_journals",
+            "privacy_history_reset_receipts",
+        ),
+        "account_delete": (
+            "privacy_account_delete_journals",
+            "privacy_account_delete_receipts",
+        ),
+    }
+    _ERASURE_IDEMPOTENCY_DOMAINS = {
+        "history_reset": MobileStateDomain.HISTORY_RESET_IDEMPOTENCY,
+        "account_delete": MobileStateDomain.ACCOUNT_DELETE_IDEMPOTENCY,
+    }
+
+    @staticmethod
+    def _privacy_erasure_request_hash(
+        kind: str,
+        *,
+        expected_history_epoch: int | None = None,
+        origin: str = "native",
+    ) -> str:
+        """Hash only the operation kind and semantic, non-secret fields.
+
+        Deliberately excluded: bearer, step-up token, cookies, transport
+        headers, and any owner identifier, so a lost response can be replayed
+        by possession of the exact 128-bit key after credentials are gone.
+        """
+
+        canonical = json.dumps(
+            {
+                "expected_history_epoch": (
+                    None
+                    if expected_history_epoch is None
+                    else int(expected_history_epoch)
+                ),
+                "operation": f"mobile-privacy-{kind.replace('_', '-')}-v1",
+                "origin": origin,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _erasure_journal_from_row(self, kind: str, row) -> PrivacyErasureJournal:
+        keys = row.keys()
+        return PrivacyErasureJournal(
+            operation_id=str(row["operation_id"]),
+            kind=kind,
+            phase=str(row["phase"]),
+            user_id=str(row["user_id"]),
+            origin=str(row["origin"]) if "origin" in keys else "native",
+            selector=(
+                str(row["selector"]) if row["selector"] is not None else None
+            ),
+            auth_epoch=int(row["auth_epoch"] or 0),
+            expected_history_epoch=int(
+                row["expected_history_epoch"]
+                if "expected_history_epoch" in keys
+                else row["history_epoch"]
+            ),
+            recovery_sequence=(
+                int(row["recovery_sequence"])
+                if row["recovery_sequence"] is not None
+                else None
+            ),
+            recovery_record_hash=(
+                str(row["recovery_record_hash"])
+                if row["recovery_record_hash"] is not None
+                else None
+            ),
+            deleted_jobs=(
+                int(row["deleted_jobs"] or 0) if "deleted_jobs" in keys else 0
+            ),
+            cleanup_pending=(
+                bool(row["cleanup_pending"]) if "cleanup_pending" in keys else False
+            ),
+            created_at=float(row["created_at"]),
+        )
+
+    def _find_erasure_replay_locked(
+        self,
+        kind: str,
+        *,
+        idempotency: bytes,
+        request_hash: str,
+    ) -> PrivacyErasureJournal | None:
+        """Resolve an exact journal/receipt replay or raise on a conflict."""
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        journal_table, receipt_table = self._ERASURE_TABLES[kind]
+        candidates = keyring.candidates(
+            self._ERASURE_IDEMPOTENCY_DOMAINS[kind], idempotency
+        )
+        clause, values = self._mobile_auth_candidate_clause(
+            "idempotency_hmac_key_id", "idempotency_hmac", candidates
+        )
+        journal = self._conn.execute(
+            f"SELECT * FROM {journal_table} WHERE ({clause})", values
+        ).fetchone()
+        if journal is not None:
+            if not hmac.compare_digest(
+                request_hash, str(journal["request_hash"])
+            ):
+                raise PrivacyErasureConflict("The erasure request conflicts.")
+            return self._erasure_journal_from_row(kind, journal)
+        receipt = self._conn.execute(
+            f"SELECT * FROM {receipt_table} WHERE ({clause})", values
+        ).fetchone()
+        if receipt is None:
+            return None
+        if not hmac.compare_digest(request_hash, str(receipt["request_hash"])):
+            raise PrivacyErasureConflict("The erasure request conflicts.")
+        return PrivacyErasureJournal(
+            operation_id=str(receipt["operation_id"]),
+            kind=kind,
+            phase="complete",
+            user_id="",
+            origin=(
+                str(receipt["origin"])
+                if "origin" in receipt.keys()
+                else "native"
+            ),
+            selector=None,
+            auth_epoch=0,
+            expected_history_epoch=(
+                int(receipt["history_epoch"])
+                if "history_epoch" in receipt.keys()
+                else 0
+            ),
+            recovery_sequence=None,
+            recovery_record_hash=None,
+            deleted_jobs=(
+                int(receipt["deleted_jobs"] or 0)
+                if "deleted_jobs" in receipt.keys()
+                else 0
+            ),
+            cleanup_pending=False,
+            created_at=float(receipt["completed_at"]),
+            replayed=True,
+        )
+
+    def find_privacy_erasure_operation(
+        self,
+        kind: str,
+        idempotency_key: object,
+        *,
+        expected_history_epoch: int | None = None,
+        origin: str = "native",
+    ) -> PrivacyErasureJournal | None:
+        """Look up a durable erasure replay before requiring fresh step-up."""
+
+        if kind not in self._ERASURE_TABLES:
+            raise ValueError("A supported erasure kind is required.")
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        request_hash = self._privacy_erasure_request_hash(
+            kind,
+            expected_history_epoch=expected_history_epoch,
+            origin=origin,
+        )
+        with self._lock:
+            return self._find_erasure_replay_locked(
+                kind, idempotency=idempotency, request_hash=request_hash
+            )
+
+    def active_owned_job_ids(self, user_id: str) -> tuple[str, ...]:
+        """Report queued/processing analyses that block an owner erasure."""
+
+        with self._lock:
+            if self._conn.execute(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table'"
+                " AND name = 'jobs'"
+            ).fetchone() is None:
+                return ()
+            rows = self._conn.execute(
+                "SELECT id FROM jobs WHERE user_id = ?"
+                " AND status IN ('queued', 'processing') ORDER BY id",
+                (user_id,),
+            ).fetchall()
+        return tuple(str(row["id"]) for row in rows)
+
+    def _undelivered_privacy_export_conflict_locked(self, user_id: str) -> bool:
+        """Mirror :meth:`delete_swing_history_related`'s Shopify export gate.
+
+        This is a read-only preflight so a conflict can be reported before any
+        step-up token is claimed or a durable journal exists; the authoritative
+        check still runs inside the reset transaction.
+        """
+
+        for row in self._conn.execute(
+            "SELECT snapshot_json, delivered_at FROM shopify_privacy_requests"
+        ).fetchall():
+            if row["delivered_at"] is not None:
+                continue
+            try:
+                snapshot = json.loads(str(row["snapshot_json"]))
+            except (TypeError, ValueError):
+                return True
+            if not isinstance(snapshot, dict) or snapshot.get(
+                "schema_version"
+            ) != 1:
+                return True
+            if self._privacy_snapshot_matches_customer(
+                snapshot,
+                customer_id=None,
+                order_ids=set(),
+                emails=set(),
+                user_ids={user_id},
+            ):
+                return True
+        return False
+
+    def begin_history_reset(
+        self,
+        *,
+        user_id: str,
+        selector: str | None,
+        auth_epoch: int,
+        expected_history_epoch: object,
+        idempotency_key: object,
+        step_up_token: object = None,
+        origin: str = "native",
+        now: float | None = None,
+    ) -> PrivacyErasureJournal:
+        """Open (or resume) one durable swing-history reset operation.
+
+        Replay lookup, epoch validation, active-analysis preflight, step-up
+        token claim, and the ``prepared`` journal insert share one
+        ``BEGIN IMMEDIATE``, so a claimed token always has a durable operation
+        and a lost response can be resumed by the same idempotency key.
+        """
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        if origin not in ("native", "browser"):
+            raise ValueError("A supported history-reset origin is required.")
+        if (
+            isinstance(expected_history_epoch, bool)
+            or not isinstance(expected_history_epoch, int)
+            or expected_history_epoch < 0
+        ):
+            raise ValueError("An exact expected history epoch is required.")
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        observed_at = time.time() if now is None else float(now)
+        request_hash = self._privacy_erasure_request_hash(
+            "history_reset",
+            expected_history_epoch=int(expected_history_epoch),
+            origin=origin,
+        )
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._find_erasure_replay_locked(
+                    "history_reset",
+                    idempotency=idempotency,
+                    request_hash=request_hash,
+                )
+                if existing is not None:
+                    if existing.user_id and existing.user_id != user_id:
+                        raise PrivacyErasureConflict(
+                            "The erasure request conflicts."
+                        )
+                    self._conn.commit()
+                    return existing
+                owner = self._conn.execute(
+                    "SELECT auth_epoch, history_epoch FROM users WHERE id = ?",
+                    (user_id,),
+                ).fetchone()
+                if owner is None or int(owner["auth_epoch"] or 0) != int(
+                    auth_epoch
+                ):
+                    raise PrivacyErasureRejected(
+                        "Invalid history-reset authorization."
+                    )
+                if int(owner["history_epoch"] or 0) != int(
+                    expected_history_epoch
+                ):
+                    raise PrivacyErasureEpochConflict(
+                        "Swing history changed before this reset was authorized."
+                    )
+                active = self._conn.execute(
+                    "SELECT 1 FROM jobs WHERE user_id = ?"
+                    " AND status IN ('queued', 'processing') LIMIT 1",
+                    (user_id,),
+                ).fetchone()
+                if active is not None:
+                    raise PrivacyErasureBusy(
+                        "An analysis is still uploading or processing."
+                    )
+                if self._undelivered_privacy_export_conflict_locked(user_id):
+                    raise PrivacyErasureBusy(
+                        "A requested privacy export still contains this history."
+                    )
+                token_id: str | None = None
+                if step_up_token is not None:
+                    token_id, _epoch = self._claim_step_up_token_locked(
+                        step_up_token,
+                        purpose="history_reset",
+                        user_id=user_id,
+                        selector=str(selector or ""),
+                        auth_epoch=int(auth_epoch),
+                        now=observed_at,
+                        rejection=PrivacyErasureRejected,
+                        message="Invalid history-reset authorization.",
+                    )
+                stable_key_id, stable_hmac = keyring.digest(
+                    MobileStateDomain.ERASURE_STABLE_USER_ID, user_id
+                )
+                idempotency_key_id, idempotency_hmac = keyring.digest(
+                    MobileStateDomain.HISTORY_RESET_IDEMPOTENCY, idempotency
+                )
+                operation_id = str(uuid.uuid4())
+                self._conn.execute(
+                    "INSERT INTO privacy_history_reset_journals"
+                    " (operation_id, user_id, origin, phase, selector,"
+                    " auth_epoch, expected_history_epoch, step_up_token_id,"
+                    " stable_user_hmac_key_id, stable_user_hmac,"
+                    " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+                    " recovery_sequence, recovery_record_hash, deleted_jobs,"
+                    " cleanup_pending, created_at, updated_at, expires_at)"
+                    " VALUES (?, ?, ?, 'prepared', ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                    " NULL, NULL, NULL, 0, ?, ?, ?)",
+                    (
+                        operation_id,
+                        user_id,
+                        origin,
+                        selector,
+                        int(auth_epoch),
+                        int(expected_history_epoch),
+                        token_id,
+                        stable_key_id,
+                        stable_hmac,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        observed_at,
+                        observed_at,
+                        observed_at + HISTORY_RESET_REPLAY_TTL_S,
+                    ),
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM privacy_history_reset_journals"
+                    " WHERE operation_id = ?",
+                    (operation_id,),
+                ).fetchone()
+                journal = self._erasure_journal_from_row("history_reset", row)
+                self._conn.commit()
+                return journal
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def begin_account_delete(
+        self,
+        *,
+        user_id: str,
+        selector: str | None,
+        auth_epoch: int,
+        idempotency_key: object,
+        step_up_token: object,
+        now: float | None = None,
+    ) -> PrivacyErasureJournal:
+        """Open (or resume) one durable account deletion.
+
+        The ``prepared`` transaction also revokes and fences every device
+        credential and advances ``users.auth_epoch``, so no bearer or browser
+        cookie can authenticate a new write once deletion is durable. Retries
+        arrive through the pre-authentication idempotency replay instead.
+        """
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        observed_at = time.time() if now is None else float(now)
+        request_hash = self._privacy_erasure_request_hash("account_delete")
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._find_erasure_replay_locked(
+                    "account_delete",
+                    idempotency=idempotency,
+                    request_hash=request_hash,
+                )
+                if existing is not None:
+                    if existing.user_id and existing.user_id != user_id:
+                        raise PrivacyErasureConflict(
+                            "The erasure request conflicts."
+                        )
+                    self._conn.commit()
+                    return existing
+                owner = self._conn.execute(
+                    "SELECT email, auth_epoch, history_epoch FROM users"
+                    " WHERE id = ?",
+                    (user_id,),
+                ).fetchone()
+                if owner is None or int(owner["auth_epoch"] or 0) != int(
+                    auth_epoch
+                ):
+                    raise PrivacyErasureRejected(
+                        "Invalid account-deletion authorization."
+                    )
+                token_id, history_epoch = self._claim_step_up_token_locked(
+                    step_up_token,
+                    purpose="account_delete",
+                    user_id=user_id,
+                    selector=str(selector or ""),
+                    auth_epoch=int(auth_epoch),
+                    now=observed_at,
+                    rejection=PrivacyErasureRejected,
+                    message="Invalid account-deletion authorization.",
+                )
+                stable_key_id, stable_hmac = keyring.digest(
+                    MobileStateDomain.ERASURE_STABLE_USER_ID, user_id
+                )
+                email_key_id, email_hmac = keyring.digest(
+                    MobileStateDomain.ERASURE_NORMALIZED_EMAIL,
+                    str(owner["email"] or "").strip().lower(),
+                )
+                idempotency_key_id, idempotency_hmac = keyring.digest(
+                    MobileStateDomain.ACCOUNT_DELETE_IDEMPOTENCY, idempotency
+                )
+                operation_id = str(uuid.uuid4())
+                self._conn.execute(
+                    "INSERT INTO privacy_account_delete_journals"
+                    " (operation_id, user_id, phase, selector, auth_epoch,"
+                    " history_epoch, step_up_token_id,"
+                    " stable_user_hmac_key_id, stable_user_hmac,"
+                    " normalized_email_hmac_key_id, normalized_email_hmac,"
+                    " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+                    " recovery_sequence, recovery_record_hash, created_at,"
+                    " updated_at, expires_at)"
+                    " VALUES (?, ?, 'prepared', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                    " ?, NULL, NULL, ?, ?, ?)",
+                    (
+                        operation_id,
+                        user_id,
+                        selector,
+                        int(auth_epoch),
+                        int(history_epoch),
+                        token_id,
+                        stable_key_id,
+                        stable_hmac,
+                        email_key_id,
+                        email_hmac,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        observed_at,
+                        observed_at,
+                        observed_at + ACCOUNT_DELETE_REPLAY_TTL_S,
+                    ),
+                )
+                self._conn.execute(
+                    "UPDATE mobile_api_tokens"
+                    " SET revoked_at = COALESCE(revoked_at, ?),"
+                    " state = 'fenced', fenced_at = COALESCE(fenced_at, ?)"
+                    " WHERE user_id = ?",
+                    (observed_at, observed_at, user_id),
+                )
+                self._conn.execute(
+                    "UPDATE users SET auth_epoch = auth_epoch + 1 WHERE id = ?",
+                    (user_id,),
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM privacy_account_delete_journals"
+                    " WHERE operation_id = ?",
+                    (operation_id,),
+                ).fetchone()
+                journal = self._erasure_journal_from_row("account_delete", row)
+                self._conn.commit()
+                return journal
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def advance_privacy_erasure_phase(
+        self,
+        kind: str,
+        operation_id: str,
+        expected_phase: str,
+        next_phase: str,
+        *,
+        recovery_sequence: int | None = None,
+        recovery_record_hash: str | None = None,
+        deleted_jobs: int | None = None,
+        cleanup_pending: bool | None = None,
+        now: float | None = None,
+    ) -> bool:
+        journal_table, _receipts = self._ERASURE_TABLES[kind]
+        phases = (
+            HISTORY_RESET_PHASES
+            if kind == "history_reset"
+            else ACCOUNT_DELETE_PHASES
+        )
+        if expected_phase not in phases or next_phase not in phases:
+            raise ValueError("A closed erasure journal phase is required.")
+        if phases.index(next_phase) <= phases.index(expected_phase):
+            raise ValueError("An erasure journal phase cannot regress.")
+        observed_at = time.time() if now is None else float(now)
+        assignments = ["phase = ?", "updated_at = ?"]
+        parameters: list[object] = [next_phase, observed_at]
+        if recovery_sequence is not None:
+            assignments.extend(
+                ["recovery_sequence = ?", "recovery_record_hash = ?"]
+            )
+            parameters.extend([int(recovery_sequence), recovery_record_hash])
+        if deleted_jobs is not None:
+            assignments.append("deleted_jobs = ?")
+            parameters.append(int(deleted_jobs))
+        if cleanup_pending is not None:
+            assignments.append("cleanup_pending = ?")
+            parameters.append(int(bool(cleanup_pending)))
+        parameters.extend([operation_id, expected_phase])
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cursor = self._conn.execute(
+                    f"UPDATE {journal_table} SET " + ", ".join(assignments)
+                    + " WHERE operation_id = ? AND phase = ?",
+                    tuple(parameters),
+                )
+                self._conn.commit()
+                return cursor.rowcount == 1
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def privacy_erasure_operation(
+        self, kind: str, operation_id: str
+    ) -> PrivacyErasureJournal | None:
+        journal_table, _receipts = self._ERASURE_TABLES[kind]
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT * FROM {journal_table} WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchone()
+        return self._erasure_journal_from_row(kind, row) if row else None
+
+    def privacy_erasure_hmac(
+        self, kind: str, operation_id: str, column: str
+    ) -> str | None:
+        """Read one stored owner digest so a fence record never re-keys it."""
+
+        journal_table, _receipts = self._ERASURE_TABLES[kind]
+        if column not in {
+            "stable_user_hmac_key_id",
+            "stable_user_hmac",
+            "normalized_email_hmac_key_id",
+            "normalized_email_hmac",
+        }:
+            raise ValueError("An erasure digest column is required.")
+        with self._lock:
+            row = self._conn.execute(
+                f"SELECT {column} AS digest FROM {journal_table}"
+                " WHERE operation_id = ?",
+                (operation_id,),
+            ).fetchone()
+        return str(row["digest"]) if row is not None else None
+
+    def nonterminal_privacy_erasure_operations(
+        self, kind: str
+    ) -> tuple[PrivacyErasureJournal, ...]:
+        journal_table, _receipts = self._ERASURE_TABLES[kind]
+        with self._lock:
+            rows = self._conn.execute(
+                f"SELECT * FROM {journal_table} WHERE phase != 'complete'"
+                " ORDER BY created_at, operation_id"
+            ).fetchall()
+        return tuple(
+            self._erasure_journal_from_row(kind, row) for row in rows
+        )
+
+    def complete_history_reset(
+        self, operation_id: str, *, now: float | None = None
+    ) -> bool:
+        """Publish the non-owner receipt and close a ``local_erased`` reset."""
+
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT * FROM privacy_history_reset_journals"
+                    " WHERE operation_id = ?",
+                    (operation_id,),
+                ).fetchone()
+                if row is None:
+                    raise RuntimeError("A history-reset journal disappeared.")
+                if str(row["phase"]) == "complete":
+                    self._conn.commit()
+                    return True
+                if str(row["phase"]) != "local_erased":
+                    self._conn.commit()
+                    return False
+                epoch = self._conn.execute(
+                    "SELECT history_epoch FROM users WHERE id = ?",
+                    (str(row["user_id"]),),
+                ).fetchone()
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO privacy_history_reset_receipts"
+                    " (operation_id, origin, stable_user_hmac_key_id,"
+                    " stable_user_hmac, idempotency_hmac_key_id,"
+                    " idempotency_hmac, request_hash, history_epoch,"
+                    " deleted_jobs, completed_at, expires_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        operation_id,
+                        str(row["origin"]),
+                        str(row["stable_user_hmac_key_id"]),
+                        str(row["stable_user_hmac"]),
+                        str(row["idempotency_hmac_key_id"]),
+                        str(row["idempotency_hmac"]),
+                        str(row["request_hash"]),
+                        int(
+                            (epoch["history_epoch"] or 0)
+                            if epoch is not None
+                            else int(row["expected_history_epoch"]) + 1
+                        ),
+                        int(row["deleted_jobs"] or 0),
+                        observed_at,
+                        float(row["expires_at"]),
+                    ),
+                )
+                self._conn.execute(
+                    "UPDATE privacy_history_reset_journals"
+                    " SET phase = 'complete', updated_at = ?"
+                    " WHERE operation_id = ? AND phase = 'local_erased'",
+                    (observed_at, operation_id),
+                )
+                self._conn.commit()
+                return True
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def complete_account_delete(
+        self, operation_id: str, *, now: float | None = None
+    ) -> bool:
+        """Replace an ``identity_deleted`` journal with a non-PII receipt."""
+
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT * FROM privacy_account_delete_journals"
+                    " WHERE operation_id = ?",
+                    (operation_id,),
+                ).fetchone()
+                if row is None:
+                    # The journal is deliberately removed on completion; the
+                    # receipt alone answers later replays.
+                    return (
+                        self._conn.execute(
+                            "SELECT 1 FROM privacy_account_delete_receipts"
+                            " WHERE operation_id = ?",
+                            (operation_id,),
+                        ).fetchone()
+                        is not None
+                    )
+                if str(row["phase"]) != "identity_deleted":
+                    self._conn.commit()
+                    return False
+                self._conn.execute(
+                    "INSERT OR IGNORE INTO privacy_account_delete_receipts"
+                    " (operation_id, stable_user_hmac_key_id,"
+                    " stable_user_hmac, idempotency_hmac_key_id,"
+                    " idempotency_hmac, request_hash, completed_at, expires_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        operation_id,
+                        str(row["stable_user_hmac_key_id"]),
+                        str(row["stable_user_hmac"]),
+                        str(row["idempotency_hmac_key_id"]),
+                        str(row["idempotency_hmac"]),
+                        str(row["request_hash"]),
+                        observed_at,
+                        float(row["expires_at"]),
+                    ),
+                )
+                self._conn.execute(
+                    "DELETE FROM privacy_account_delete_journals"
+                    " WHERE operation_id = ? AND phase = 'identity_deleted'",
+                    (operation_id,),
+                )
+                self._conn.commit()
+                return True
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def purge_privacy_exports_for_user(
+        self, user_id: str, *, max_history_epoch: int | None = None
+    ) -> tuple[str, ...]:
+        """Drop an owner's export receipts and report their artifact IDs.
+
+        The caller unlinks the returned ZIPs. Receipt rows go first so a
+        lagging leased worker can neither publish a ready archive nor keep a
+        downloadable receipt for an epoch that is about to be erased.
+        """
+
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                if max_history_epoch is None:
+                    rows = self._conn.execute(
+                        "SELECT export_id FROM privacy_export_receipts"
+                        " WHERE user_id = ? ORDER BY export_id",
+                        (user_id,),
+                    ).fetchall()
+                else:
+                    rows = self._conn.execute(
+                        "SELECT export_id FROM privacy_export_receipts"
+                        " WHERE user_id = ? AND history_epoch <= ?"
+                        " ORDER BY export_id",
+                        (user_id, int(max_history_epoch)),
+                    ).fetchall()
+                export_ids = tuple(str(row["export_id"]) for row in rows)
+                for export_id in export_ids:
+                    self._conn.execute(
+                        "DELETE FROM privacy_export_receipts"
+                        " WHERE export_id = ?",
+                        (export_id,),
+                    )
+                self._conn.commit()
+                return export_ids
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def privacy_export_ids(self) -> frozenset[str]:
+        """Every export ID that still has a receipt row.
+
+        The erasure service uses this to unlink archives whose receipt is gone,
+        which is the only way a published ZIP can become unreachable-but-present
+        (a worker that lost its lease after ``os.replace``).
+        """
+
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT export_id FROM privacy_export_receipts"
+            ).fetchall()
+        return frozenset(str(row["export_id"]) for row in rows)
+
+    def delete_account_identity(
+        self, user_id: str, *, now: float | None = None
+    ) -> None:
+        """Delete one owner's remaining private rows and the account itself.
+
+        Store-side order records are unlinked rather than deleted: account
+        deletion never mutates Shopify, and the Shopify privacy webhooks own
+        merchant-side erasure. Email-keyed credentials and grants tied to this
+        address are removed with the account.
+        """
+
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT email FROM users WHERE id = ?", (user_id,)
+                ).fetchone()
+                email = (
+                    str(row["email"] or "").strip().lower()
+                    if row is not None
+                    else ""
+                )
+                self._delete_user_children_locked((user_id,))
+                for table in (
+                    "privacy_export_receipts",
+                    "step_up_challenges",
+                    "step_up_tokens",
+                    "step_up_exchange_journals",
+                    # Credential journals are moot once the account is gone,
+                    # and their owner column is the last raw identifier left.
+                    # Their recovery-fence records stay published and remain
+                    # idempotent without a local journal.
+                    "mobile_auth_exchange_journals",
+                    "mobile_signout_journals",
+                ):
+                    self._conn.execute(
+                        f"DELETE FROM {table} WHERE user_id = ?", (user_id,)
+                    )
+                self._conn.execute(
+                    "UPDATE shopify_orders SET user_id = NULL"
+                    " WHERE user_id = ?",
+                    (user_id,),
+                )
+                self._conn.execute(
+                    "UPDATE gear_orders SET user_id = NULL WHERE user_id = ?",
+                    (user_id,),
+                )
+                if email:
+                    for table in (
+                        "email_codes",
+                        "signup_intents",
+                        "pro_grants",
+                        "shopify_pending_customer_links",
+                    ):
+                        self._conn.execute(
+                            f"DELETE FROM {table} WHERE email = ?", (email,)
+                        )
+                self._conn.execute(
+                    "DELETE FROM users WHERE id = ?", (user_id,)
+                )
+                self._conn.execute(
+                    "DELETE FROM privacy_history_reset_journals"
+                    " WHERE user_id = ?",
+                    (user_id,),
+                )
+                self._conn.execute(
+                    "UPDATE privacy_account_delete_journals"
+                    " SET updated_at = ? WHERE user_id = ?",
+                    (observed_at, user_id),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def purge_expired_privacy_erasure_state(
+        self, *, now: float | None = None, batch_size: int = 250
+    ) -> int:
+        if not 1 <= int(batch_size) <= 10_000:
+            raise ValueError("A bounded erasure purge batch is required.")
+        observed_at = time.time() if now is None else float(now)
+        deleted = 0
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                for table in (
+                    "privacy_history_reset_receipts",
+                    "privacy_account_delete_receipts",
+                ):
+                    cursor = self._conn.execute(
+                        f"DELETE FROM {table} WHERE rowid IN ("
+                        f" SELECT rowid FROM {table} WHERE expires_at <= ?"
+                        " ORDER BY expires_at LIMIT ?)",
+                        (observed_at, int(batch_size)),
+                    )
+                    deleted += int(cursor.rowcount)
+                for table in (
+                    "privacy_history_reset_journals",
+                    "privacy_account_delete_journals",
+                ):
+                    cursor = self._conn.execute(
+                        f"DELETE FROM {table} WHERE rowid IN ("
+                        f" SELECT rowid FROM {table}"
+                        " WHERE phase = 'complete' AND expires_at <= ?"
+                        " ORDER BY expires_at LIMIT ?)",
+                        (observed_at, int(batch_size)),
+                    )
+                    deleted += int(cursor.rowcount)
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return deleted
 
     def expired_mobile_review_token_selectors(
         self, *, now: float | None = None, batch_size: int = 250

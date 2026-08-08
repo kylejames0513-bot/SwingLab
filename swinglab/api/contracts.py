@@ -599,6 +599,31 @@ class PrivacyExportReceiptResponse(ContractModel):
     expires_at: float | None = None
 
 
+class HistoryResetRequest(ContractModel):
+    """Consume one ``history_reset`` step-up token at an exact epoch.
+
+    ``expected_history_epoch`` makes the reset a compare-and-set: a client that
+    saw an older history cannot erase swings uploaded after it decided to.
+    """
+
+    step_up_token: str = Field(min_length=1, max_length=256)
+    expected_history_epoch: int = Field(ge=0, le=2**31 - 1)
+
+
+class AccountDeleteRequest(ContractModel):
+    """Consume one ``account_delete`` step-up token."""
+
+    step_up_token: str = Field(min_length=1, max_length=256)
+
+
+class PrivacyErasurePendingResponse(ContractModel):
+    """Post-record work (drain, fence readback, cleanup) is still running."""
+
+    resource_version: Literal[1] = 1
+    status: Literal["pending"] = "pending"
+    retry_after_seconds: int = Field(ge=1, le=3600)
+
+
 class NativeReviewAuthStartRequest(ContractModel):
     provider: Literal["apple", "google"]
     account: str = Field(min_length=1, max_length=160)

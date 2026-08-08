@@ -110,7 +110,12 @@
       <h2 id="confirmation-heading">Confirm this reset</h2>
       {% if error %}<p class="reset-error" role="alert">{{ error }}</p>{% endif %}
 
-      {% if recent_auth_required %}
+      {% if pending %}
+        <p class="reauth-note" role="status">Your reset is committed and still finishing. Nothing is left half-deleted — check again in a few seconds and we will take you back to your account as soon as it is done.</p>
+        <div class="reset-actions">
+          <a class="reset-cancel" href="/account/history/delete">Check again</a>
+        </div>
+      {% elif recent_auth_required %}
         <p class="reauth-note">To protect a signed-in browser that may have been left open, authenticate again before deleting its history.</p>
         <div class="reset-actions">
           <form action="{% if shopify_customer_accounts_enabled and user.shopify_account_migration_state == 'shopify_authenticated' %}/auth/shopify/logout{% else %}/logout{% endif %}" method="post">

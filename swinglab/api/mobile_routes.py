@@ -23,10 +23,12 @@ from .auth import (
     require_mobile_bearer,
 )
 from .contracts import (
+    AccountDeleteRequest,
     APIError,
     BriefResponse,
     CapabilitiesResponse,
     DeviceListResponse,
+    HistoryResetRequest,
     MobileSessionResponse,
     MobileSessionsResponse,
     MobileTodayResponse,
@@ -47,6 +49,7 @@ from .contracts import (
     NativeReviewAuthExchangeRequest,
     NativeReviewAuthStartRequest,
     NativeSignOutPendingResponse,
+    PrivacyErasurePendingResponse,
     PrivacyExportCreateRequest,
     PrivacyExportReceiptResponse,
     StepUpExchangeRequest,
@@ -72,6 +75,16 @@ from ..web.mobile_auth import (
     MobileNativeAuthRateLimited,
     MobileNativeAuthRejected,
     MobileNativeAuthUnavailable,
+)
+from ..web.mobile_erasure import (
+    ErasureOutcome,
+    PrivacyErasureBusyError,
+    PrivacyErasureConflictError,
+    PrivacyErasureEpochConflictError,
+    PrivacyErasureInvalidRequest,
+    PrivacyErasureRejectedError,
+    PrivacyErasureService,
+    PrivacyErasureUnavailable,
 )
 from ..web.mobile_privacy import (
     MobilePrivacyService,
@@ -139,6 +152,8 @@ MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME = "mobile.auth.step_up_exchange"
 MOBILE_PRIVACY_EXPORT_CREATE_ROUTE_NAME = "mobile.privacy.export_create"
 MOBILE_PRIVACY_EXPORT_STATUS_ROUTE_NAME = "mobile.privacy.export_status"
 MOBILE_PRIVACY_EXPORT_DOWNLOAD_ROUTE_NAME = "mobile.privacy.export_download"
+MOBILE_PRIVACY_HISTORY_RESET_ROUTE_NAME = "mobile.privacy.history_reset"
+MOBILE_ACCOUNT_DELETE_ROUTE_NAME = "mobile.privacy.account_delete"
 MOBILE_SIGN_OUT_ROUTE_NAME = "mobile.auth.sign_out"
 MOBILE_AUTH_CALLBACK_ROUTE_NAME = "mobile.auth.callback"
 MOBILE_CAPABILITIES_ROUTE_NAME = "mobile.resources.capabilities"
@@ -198,6 +213,7 @@ def install_mobile_routes(
     review_auth_service: ReviewAuthService,
     step_up_service: MobileStepUpService,
     privacy_export_service: MobilePrivacyService,
+    privacy_erasure_service: PrivacyErasureService,
     mobile_privacy_enabled: bool,
     native_email_auth_enabled: bool,
     mobile_deployment_environment: str,
@@ -1715,6 +1731,258 @@ def install_mobile_routes(
             media_type="application/zip",
             headers=headers,
         )
+
+    def _erasure_idempotency_key(request: Request) -> str:
+        values = request.headers.getlist("idempotency-key")
+        if len(values) != 1:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            )
+        try:
+            UserStore._mobile_auth_idempotency_bytes(values[0])
+        except ValueError as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            ) from exc
+        return values[0]
+
+    def _erasure_response(outcome: ErasureOutcome) -> Response:
+        if outcome.complete:
+            return Response(status_code=204, headers=no_store)
+        retry_after = max(1, int(outcome.retry_after_seconds))
+        body = PrivacyErasurePendingResponse(retry_after_seconds=retry_after)
+        return JSONResponse(
+            body.model_dump(mode="json"),
+            status_code=202,
+            headers={**no_store, "Retry-After": str(retry_after)},
+        )
+
+    _ERASURE_FAILURES = (
+        PrivacyErasureRejectedError,
+        PrivacyErasureEpochConflictError,
+        PrivacyErasureBusyError,
+        PrivacyErasureConflictError,
+        PrivacyErasureInvalidRequest,
+        PrivacyErasureUnavailable,
+    )
+
+    def _erasure_failure(exc: Exception, *, rejection: str) -> MobileAPIHTTPError:
+        if isinstance(exc, PrivacyErasureRejectedError):
+            return MobileAPIHTTPError(
+                401, "authentication_rejected", rejection, headers=no_store
+            )
+        if isinstance(exc, PrivacyErasureEpochConflictError):
+            return MobileAPIHTTPError(
+                409,
+                "history_epoch_conflict",
+                "Swing history changed before this request was authorized.",
+                headers=no_store,
+            )
+        if isinstance(exc, PrivacyErasureBusyError):
+            return MobileAPIHTTPError(
+                409,
+                "erasure_busy",
+                "Owned work must finish before this request can be accepted.",
+                retryable=True,
+                headers=no_store,
+            )
+        if isinstance(exc, PrivacyErasureConflictError):
+            return MobileAPIHTTPError(
+                409,
+                "erasure_conflict",
+                "The erasure request conflicts.",
+                headers=no_store,
+            )
+        if isinstance(exc, PrivacyErasureInvalidRequest):
+            return MobileAPIHTTPError(
+                422, "validation_error", "Invalid request.", headers=no_store
+            )
+        return MobileAPIHTTPError(
+            503,
+            "erasure_unavailable",
+            "Privacy erasure is temporarily unavailable.",
+            retryable=True,
+            headers=no_store,
+        )
+
+    _erasure_idempotency_parameter = {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": True,
+        "description": "Exactly 32 hexadecimal characters (128 bits).",
+        "schema": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 32,
+            "pattern": "^[0-9A-Fa-f]{32}$",
+        },
+    }
+
+    @app.post(
+        "/api/v1/privacy/history-reset",
+        name=MOBILE_PRIVACY_HISTORY_RESET_ROUTE_NAME,
+        status_code=202,
+        response_model=PrivacyErasurePendingResponse,
+        responses={
+            204: {"description": "The reset is durably complete."},
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": HistoryResetRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": [_erasure_idempotency_parameter],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    async def privacy_history_reset(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        if not mobile_privacy_enabled:
+            raise _privacy_not_enabled()
+        payload = await _native_auth_payload(request, HistoryResetRequest)
+        idempotency_key = _erasure_idempotency_key(request)
+        # A lost 202/204 is answered from the durable journal or receipt
+        # before a fresh step-up token is required, so an offline retry never
+        # needs a second emailed code for work that already happened.
+        try:
+            replay = privacy_erasure_service.find_replay(
+                "history_reset",
+                idempotency_key,
+                expected_history_epoch=payload.expected_history_epoch,
+            )
+        except _ERASURE_FAILURES as exc:
+            raise _erasure_failure(
+                exc, rejection="Invalid history-reset authorization."
+            ) from exc
+        if replay is not None:
+            return _erasure_response(replay)
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            # Swing-history reset is an ordinary-owner control; a review-scoped
+            # bearer has no owned history to erase.
+            if context.review_provider is not None or context.selector is None:
+                raise mobile_bearer_unauthorized()
+            outcome = privacy_erasure_service.reset_history(
+                user_id=context.user.id,
+                selector=context.selector,
+                auth_epoch=context.auth_epoch,
+                expected_history_epoch=payload.expected_history_epoch,
+                idempotency_key=idempotency_key,
+                step_up_token=payload.step_up_token,
+                origin="native",
+            )
+        except MobileAuthError:
+            raise
+        except _ERASURE_FAILURES as exc:
+            raise _erasure_failure(
+                exc, rejection="Invalid history-reset authorization."
+            ) from exc
+        return _erasure_response(outcome)
+
+    @app.delete(
+        "/api/v1/account",
+        name=MOBILE_ACCOUNT_DELETE_ROUTE_NAME,
+        status_code=202,
+        response_model=PrivacyErasurePendingResponse,
+        responses={
+            204: {"description": "The account is durably deleted."},
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": AccountDeleteRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": [_erasure_idempotency_parameter],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    async def account_delete(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        if not mobile_privacy_enabled:
+            raise _privacy_not_enabled()
+        payload = await _native_auth_payload(request, AccountDeleteRequest)
+        idempotency_key = _erasure_idempotency_key(request)
+        # Deletion revokes every credential while it is still running, so the
+        # replay lookup must precede authentication: possession of the exact
+        # 128-bit key is the only thing left that can resume or replay it.
+        try:
+            replay = privacy_erasure_service.find_replay(
+                "account_delete", idempotency_key
+            )
+        except _ERASURE_FAILURES as exc:
+            raise _erasure_failure(
+                exc, rejection="Invalid account-deletion authorization."
+            ) from exc
+        if replay is not None:
+            return _erasure_response(replay)
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            # Review-scoped deletion is a separate, entitlement-aware control
+            # and is not part of this slice.
+            if context.review_provider is not None or context.selector is None:
+                raise mobile_bearer_unauthorized()
+            outcome = privacy_erasure_service.delete_account(
+                user_id=context.user.id,
+                selector=context.selector,
+                auth_epoch=context.auth_epoch,
+                idempotency_key=idempotency_key,
+                step_up_token=payload.step_up_token,
+            )
+        except MobileAuthError:
+            raise
+        except _ERASURE_FAILURES as exc:
+            raise _erasure_failure(
+                exc, rejection="Invalid account-deletion authorization."
+            ) from exc
+        return _erasure_response(outcome)
 
     def _review_identity(request: Request):
         try:

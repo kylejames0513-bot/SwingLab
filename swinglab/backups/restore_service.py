@@ -680,6 +680,15 @@ def _require_key_coverage(
             key_id = record.payload.get("expo_project_hmac_key_id")
             if key_id is not None:
                 key_ids.add(str(key_id))
+        elif record.kind == RecoveryRecordKind.HISTORY_RESET.value:
+            key_ids.add(str(record.payload["stable_user_hmac_key_id"]))
+        elif record.kind == RecoveryRecordKind.ACCOUNT_DELETE.value:
+            key_ids.update(
+                {
+                    str(record.payload["stable_user_hmac_key_id"]),
+                    str(record.payload["normalized_email_hmac_key_id"]),
+                }
+            )
         elif record.kind == RecoveryRecordKind.REVIEW_ACCESS_REVISION.value:
             credentials = record.payload.get("credential_hmacs", [])
             if isinstance(credentials, list):
@@ -900,6 +909,8 @@ def _preflight_chain_owners(
     built_in = {
         RecoveryRecordKind.CUTOVER_BASELINE.value,
         RecoveryRecordKind.TOKEN_REVOKE.value,
+        RecoveryRecordKind.HISTORY_RESET.value,
+        RecoveryRecordKind.ACCOUNT_DELETE.value,
     }
     reserved = {
         RecoveryRecordKind.PUSH_ENVIRONMENT_CUTOFF.value,
@@ -946,6 +957,178 @@ def _apply_token_revoke(
             connection.execute(
                 "DELETE FROM mobile_api_tokens WHERE selector = ?", (selector,)
             )
+
+
+def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?",
+        (table,),
+    ).fetchone() is not None
+
+
+def _matched_erasure_users(
+    connection: sqlite3.Connection,
+    record: PublishedRecoveryRecord,
+    keyring: VersionedHMAC,
+) -> tuple[str, ...]:
+    key_id = str(record.payload["stable_user_hmac_key_id"])
+    expected = str(record.payload["stable_user_hmac"])
+    matched: list[str] = []
+    for row in connection.execute("SELECT id FROM users").fetchall():
+        user_id = str(row[0])
+        digest = keyring.digest_with_key(
+            key_id, MobileStateDomain.ERASURE_STABLE_USER_ID, user_id
+        )
+        if hmac.compare_digest(digest, expected):
+            matched.append(user_id)
+    return tuple(matched)
+
+
+_OWNER_HISTORY_TABLES = (
+    "practice_checkins",
+    "proof_cycle_practice_evidence",
+    "mobile_practice_evidence_details",
+    "proof_cycle_transfer_checks",
+    "privacy_export_receipts",
+)
+
+_OWNER_ACCOUNT_TABLES = (
+    "golfer_profiles",
+    "practice_checkins",
+    "proof_cycle_practice_evidence",
+    "mobile_practice_evidence_details",
+    "proof_cycle_transfer_checks",
+    "product_events",
+    "mobile_api_tokens",
+    "shopify_customer_account_oauth_states",
+    "shopify_customer_account_browser_sessions",
+    "lifecycle_email_sends",
+    "privacy_export_receipts",
+    "step_up_challenges",
+    "step_up_tokens",
+    "step_up_exchange_journals",
+)
+
+
+def _quarantine_owned_sessions(
+    connection: sqlite3.Connection, user_id: str
+) -> None:
+    """Delete a restored owner's job rows behind a committed cleanup journal.
+
+    The application's ``JobManager`` finishes a committed
+    ``history_reset_operations`` row on startup by deleting the journaled
+    session directories from both the live sessions root and the history
+    trash, so the restored service converges to erased media without this
+    module reaching into the sessions tree itself.
+    """
+
+    if not _table_exists(connection, "jobs"):
+        return
+    job_ids = [
+        str(row[0])
+        for row in connection.execute(
+            "SELECT id FROM jobs WHERE user_id = ? ORDER BY id", (user_id,)
+        ).fetchall()
+    ]
+    if not job_ids:
+        return
+    if _table_exists(connection, "history_reset_operations"):
+        encoded = _canonical_json(job_ids).decode("utf-8").strip()
+        now = time.time()
+        connection.execute(
+            "INSERT INTO history_reset_operations"
+            " (operation_id, kind, subject_hash, state, job_ids_json,"
+            " artifact_job_ids_json, created_at, updated_at)"
+            " VALUES (?, 'restore_reconcile', NULL, 'committed', ?, ?, ?, ?)",
+            (uuid.uuid4().hex, encoded, encoded, now, now),
+        )
+    connection.execute("DELETE FROM jobs WHERE user_id = ?", (user_id,))
+
+
+def _apply_history_reset(
+    connection: sqlite3.Connection,
+    record: PublishedRecoveryRecord,
+    keyring: VersionedHMAC,
+) -> None:
+    erased_through = int(record.payload["erased_through_history_epoch"])
+    for user_id in _matched_erasure_users(connection, record, keyring):
+        row = connection.execute(
+            "SELECT history_epoch FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if row is None or int(row[0] or 0) >= erased_through:
+            continue
+        _quarantine_owned_sessions(connection, user_id)
+        for table in _OWNER_HISTORY_TABLES:
+            if _table_exists(connection, table):
+                connection.execute(
+                    f"DELETE FROM {_quoted_sqlite_identifier(table)}"
+                    " WHERE user_id = ?",
+                    (user_id,),
+                )
+        if _table_exists(connection, "product_events"):
+            connection.execute(
+                "DELETE FROM product_events WHERE user_id = ?"
+                " AND session_id IS NOT NULL",
+                (user_id,),
+            )
+        connection.execute(
+            "UPDATE users SET history_epoch = ? WHERE id = ?",
+            (erased_through, user_id),
+        )
+
+
+def _delete_matched_email_credentials(
+    connection: sqlite3.Connection,
+    record: PublishedRecoveryRecord,
+    keyring: VersionedHMAC,
+) -> None:
+    key_id = str(record.payload["normalized_email_hmac_key_id"])
+    expected = str(record.payload["normalized_email_hmac"])
+    for table in ("email_codes", "signup_intents", "pro_grants"):
+        if not _table_exists(connection, table):
+            continue
+        quoted = _quoted_sqlite_identifier(table)
+        for row in connection.execute(
+            f"SELECT DISTINCT email FROM {quoted}"
+        ).fetchall():
+            email = str(row[0] or "").strip().lower()
+            if not email:
+                continue
+            digest = keyring.digest_with_key(
+                key_id, MobileStateDomain.ERASURE_NORMALIZED_EMAIL, email
+            )
+            if hmac.compare_digest(digest, expected):
+                connection.execute(
+                    f"DELETE FROM {quoted} WHERE lower(email) = ?", (email,)
+                )
+
+
+def _apply_account_delete(
+    connection: sqlite3.Connection,
+    record: PublishedRecoveryRecord,
+    keyring: VersionedHMAC,
+) -> None:
+    for user_id in _matched_erasure_users(connection, record, keyring):
+        _quarantine_owned_sessions(connection, user_id)
+        for table in _OWNER_ACCOUNT_TABLES:
+            if _table_exists(connection, table):
+                connection.execute(
+                    f"DELETE FROM {_quoted_sqlite_identifier(table)}"
+                    " WHERE user_id = ?",
+                    (user_id,),
+                )
+        if _table_exists(connection, "shopify_orders"):
+            connection.execute(
+                "UPDATE shopify_orders SET user_id = NULL WHERE user_id = ?",
+                (user_id,),
+            )
+        if _table_exists(connection, "gear_orders"):
+            connection.execute(
+                "UPDATE gear_orders SET user_id = NULL WHERE user_id = ?",
+                (user_id,),
+            )
+        connection.execute("DELETE FROM users WHERE id = ?", (user_id,))
+    _delete_matched_email_credentials(connection, record, keyring)
 
 
 def _apply_recovery_chain(
@@ -1021,6 +1204,10 @@ def _apply_recovery_chain(
         for record in snapshot.records[restored_checkpoint_sequence:]:
             if record.kind == RecoveryRecordKind.TOKEN_REVOKE.value:
                 _apply_token_revoke(connection, record, keyring)
+            elif record.kind == RecoveryRecordKind.HISTORY_RESET.value:
+                _apply_history_reset(connection, record, keyring)
+            elif record.kind == RecoveryRecordKind.ACCOUNT_DELETE.value:
+                _apply_account_delete(connection, record, keyring)
             elif record.kind in {
                 RecoveryRecordKind.PUSH_ENVIRONMENT_CUTOFF.value,
                 RecoveryRecordKind.REVIEW_ACCESS_REVISION.value,

@@ -64,6 +64,8 @@ class RecoveryRecordKind(str, Enum):
     TOKEN_REVOKE = "token_revoke"
     PUSH_ENVIRONMENT_CUTOFF = "push_environment_cutoff"
     REVIEW_ACCESS_REVISION = "review_access_revision"
+    HISTORY_RESET = "history_reset"
+    ACCOUNT_DELETE = "account_delete"
 
 
 def _canonical_json(value: Any) -> bytes:
@@ -230,6 +232,96 @@ class TokenRevokeEvent:
 
 
 @dataclass(frozen=True)
+class HistoryResetEvent:
+    """One accepted swing-history erasure, identified only by owner HMAC."""
+
+    event_id: str
+    cutoff_at: float
+    stable_user_hmac_key_id: str
+    stable_user_hmac: str
+    erased_through_history_epoch: int
+    kind: RecoveryRecordKind = RecoveryRecordKind.HISTORY_RESET
+
+    @classmethod
+    def from_raw(
+        cls,
+        *,
+        event_id: str,
+        cutoff_at: float,
+        user_id: bytes | str,
+        erased_through_history_epoch: int,
+        keyring: VersionedHMAC,
+    ) -> "HistoryResetEvent":
+        key_id, digest = keyring.digest(
+            MobileStateDomain.ERASURE_STABLE_USER_ID, user_id
+        )
+        return cls(
+            event_id=event_id,
+            cutoff_at=cutoff_at,
+            stable_user_hmac_key_id=key_id,
+            stable_user_hmac=digest,
+            erased_through_history_epoch=int(erased_through_history_epoch),
+        )
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "stable_user_hmac_key_id": self.stable_user_hmac_key_id,
+            "stable_user_hmac": self.stable_user_hmac,
+            "erased_through_history_epoch": self.erased_through_history_epoch,
+        }
+
+
+@dataclass(frozen=True)
+class AccountDeleteEvent:
+    """One accepted account erasure carrying no raw identifier or email."""
+
+    event_id: str
+    cutoff_at: float
+    stable_user_hmac_key_id: str
+    stable_user_hmac: str
+    normalized_email_hmac_key_id: str
+    normalized_email_hmac: str
+    erased_through_history_epoch: int
+    kind: RecoveryRecordKind = RecoveryRecordKind.ACCOUNT_DELETE
+
+    @classmethod
+    def from_raw(
+        cls,
+        *,
+        event_id: str,
+        cutoff_at: float,
+        user_id: bytes | str,
+        normalized_email: bytes | str,
+        erased_through_history_epoch: int,
+        keyring: VersionedHMAC,
+    ) -> "AccountDeleteEvent":
+        user_key_id, user_digest = keyring.digest(
+            MobileStateDomain.ERASURE_STABLE_USER_ID, user_id
+        )
+        email_key_id, email_digest = keyring.digest(
+            MobileStateDomain.ERASURE_NORMALIZED_EMAIL, normalized_email
+        )
+        return cls(
+            event_id=event_id,
+            cutoff_at=cutoff_at,
+            stable_user_hmac_key_id=user_key_id,
+            stable_user_hmac=user_digest,
+            normalized_email_hmac_key_id=email_key_id,
+            normalized_email_hmac=email_digest,
+            erased_through_history_epoch=int(erased_through_history_epoch),
+        )
+
+    def payload(self) -> dict[str, Any]:
+        return {
+            "stable_user_hmac_key_id": self.stable_user_hmac_key_id,
+            "stable_user_hmac": self.stable_user_hmac,
+            "normalized_email_hmac_key_id": self.normalized_email_hmac_key_id,
+            "normalized_email_hmac": self.normalized_email_hmac,
+            "erased_through_history_epoch": self.erased_through_history_epoch,
+        }
+
+
+@dataclass(frozen=True)
 class PushEnvironmentCutoffEvent:
     """Reserved Task-7 record shape; Gate 3B performs no provider call."""
 
@@ -297,6 +389,8 @@ class ReviewAccessRevisionEvent:
 RecoveryFenceEvent = (
     CutoverBaselineEvent
     | TokenRevokeEvent
+    | HistoryResetEvent
+    | AccountDeleteEvent
     | PushEnvironmentCutoffEvent
     | ReviewAccessRevisionEvent
 )
@@ -342,6 +436,35 @@ def _validated_payload(kind: str, payload: object) -> dict[str, Any]:
         _exact_keys(payload, expected, label="token revoke payload")
         _valid_hmac_pair(payload, "selector")
         _valid_hmac_pair(payload, "token_verifier")
+    elif kind == RecoveryRecordKind.HISTORY_RESET.value:
+        expected = {
+            "stable_user_hmac_key_id",
+            "stable_user_hmac",
+            "erased_through_history_epoch",
+        }
+        _exact_keys(payload, expected, label="history reset payload")
+        _valid_hmac_pair(payload, "stable_user")
+        _valid_int(
+            payload["erased_through_history_epoch"],
+            minimum=1,
+            label="erased-through history epoch",
+        )
+    elif kind == RecoveryRecordKind.ACCOUNT_DELETE.value:
+        expected = {
+            "stable_user_hmac_key_id",
+            "stable_user_hmac",
+            "normalized_email_hmac_key_id",
+            "normalized_email_hmac",
+            "erased_through_history_epoch",
+        }
+        _exact_keys(payload, expected, label="account delete payload")
+        _valid_hmac_pair(payload, "stable_user")
+        _valid_hmac_pair(payload, "normalized_email")
+        _valid_int(
+            payload["erased_through_history_epoch"],
+            minimum=0,
+            label="erased-through history epoch",
+        )
     elif kind == RecoveryRecordKind.PUSH_ENVIRONMENT_CUTOFF.value:
         expected = {
             "deployment_environment",
@@ -449,6 +572,13 @@ def _require_payload_hmac_key_coverage(
             payload["selector_hmac_key_id"],
             payload["token_verifier_hmac_key_id"],
         )
+    elif kind == RecoveryRecordKind.HISTORY_RESET.value:
+        key_ids = (payload["stable_user_hmac_key_id"],)
+    elif kind == RecoveryRecordKind.ACCOUNT_DELETE.value:
+        key_ids = (
+            payload["stable_user_hmac_key_id"],
+            payload["normalized_email_hmac_key_id"],
+        )
     elif kind == RecoveryRecordKind.PUSH_ENVIRONMENT_CUTOFF.value:
         key_ids = (payload["expo_project_hmac_key_id"],)
     elif kind == RecoveryRecordKind.REVIEW_ACCESS_REVISION.value:
@@ -471,6 +601,8 @@ def _event_core(
     if not isinstance(event, (
         CutoverBaselineEvent,
         TokenRevokeEvent,
+        HistoryResetEvent,
+        AccountDeleteEvent,
         PushEnvironmentCutoffEvent,
         ReviewAccessRevisionEvent,
     )):

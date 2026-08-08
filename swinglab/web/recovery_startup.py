@@ -80,6 +80,10 @@ def _local_counts(connection: sqlite3.Connection) -> tuple[int, int, int]:
         " + (SELECT COUNT(*) FROM mobile_signout_journals"
         " WHERE phase != 'complete')"
         " + (SELECT COUNT(*) FROM mobile_device_revoke_journals"
+        " WHERE phase != 'complete')"
+        " + (SELECT COUNT(*) FROM privacy_history_reset_journals"
+        " WHERE phase != 'complete')"
+        " + (SELECT COUNT(*) FROM privacy_account_delete_journals"
         " WHERE phase != 'complete')",
     )
     return recovery_rows, baseline_journals, nonterminal
@@ -132,11 +136,13 @@ def compose_web_recovery_fence(
     native_enabled = web_config.get("mobile_native_auth_enabled", False)
     history_reset = web_config.get("history_reset_enabled", False)
     device_management = web_config.get("mobile_device_management_enabled", False)
+    mobile_privacy = web_config.get("mobile_privacy_enabled", False)
     if (
         type(require_account) is not bool
         or type(native_enabled) is not bool
         or type(history_reset) is not bool
         or type(device_management) is not bool
+        or type(mobile_privacy) is not bool
     ):
         raise RecoveryFenceError("A recovery-dependent feature flag is invalid.")
     initial = StartupRecoveryInputs(
@@ -154,7 +160,9 @@ def compose_web_recovery_fence(
         mobile_device_management_enabled=bool(
             device_management or (strict_environment and require_account)
         ),
-        mobile_privacy_enabled=False,
+        # Native privacy erasure publishes recovery-fence records, so a
+        # production deployment that enables it must prove the chain first.
+        mobile_privacy_enabled=bool(strict_environment and mobile_privacy),
         history_reset_enabled=bool(strict_environment and history_reset),
         shopify_privacy_webhooks_enabled=bool(
             strict_environment and shopify_privacy_webhooks_enabled

@@ -504,6 +504,50 @@ class MobilePrivacyService:
     def _artifact_path(self, export_id: str) -> Path:
         return self._exports_dir / f"{export_id}.zip"
 
+    def unlink_export_artifacts(self, export_ids: tuple[str, ...]) -> int:
+        """Remove archives whose receipts an erasure has already deleted."""
+
+        removed = 0
+        for export_id in export_ids:
+            try:
+                self._artifact_path(export_id).unlink(missing_ok=True)
+            except OSError:
+                logger.warning("A privacy export archive could not be removed.")
+                continue
+            removed += 1
+        return removed
+
+    def sweep_orphan_export_artifacts(self) -> int:
+        """Unlink published archives that no receipt can reach any more.
+
+        A worker that loses its lease after ``os.replace`` deliberately keeps
+        the ZIP rather than risk deleting another worker's ready archive, and an
+        erasure deletes receipt rows before their files. Both leave a file with
+        no receipt, which no request can authorize; this sweep is the only thing
+        that removes them.
+        """
+
+        try:
+            live = self._users.privacy_export_ids()
+        except sqlite3.Error:
+            logger.exception("Privacy export receipts are unreadable.")
+            return 0
+        removed = 0
+        try:
+            entries = sorted(self._exports_dir.glob("*.zip"))
+        except OSError:
+            return 0
+        for path in entries:
+            if path.stem in live:
+                continue
+            try:
+                path.unlink(missing_ok=True)
+            except OSError:
+                logger.warning("An orphan privacy export could not be removed.")
+                continue
+            removed += 1
+        return removed
+
     def create_export(
         self,
         *,

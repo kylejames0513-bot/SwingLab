@@ -478,6 +478,8 @@ def test_record_kinds_are_closed_and_reserved_shapes_store_no_provider_secrets(
     assert {kind.value for kind in module.RecoveryRecordKind} == {
         "cutover_baseline",
         "token_revoke",
+        "history_reset",
+        "account_delete",
         "push_environment_cutoff",
         "review_access_revision",
     }
