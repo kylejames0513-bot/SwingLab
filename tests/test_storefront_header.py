@@ -82,11 +82,22 @@ def test_storefront_homepage_prominently_welcomes_signed_in_members():
     assert "summary.textContent = summaryText;" in HEADER
     assert "summary.textContent = authenticated ? welcomeText : accountLabel;" not in HEADER
     assert "node.dataset.appPro = isPro ? 'true' : 'false';" in HEADER
-    assert "isPro ? proActionLabel : analyzeLabel" in HEADER
+    assert "authenticated ? analyzeLabel : signedOutLabel" in HEADER
+    assert "isPro ? proActionLabel : analyzeLabel" not in HEADER
     assert ".sl-member-rail__greeting" in HEADER
     assert "min-height: 44px" in HEADER
     assert ".sl-header__account > summary" in HEADER
     assert "text-overflow: ellipsis" in HEADER
+    assert (
+        '.sl-header[data-app-authenticated="true"] .sl-header__search { display: none; }'
+        in HEADER
+    )
+    assert (
+        '.sl-header[data-app-authenticated="true"] .sl-header__account > summary'
+        in HEADER
+    )
+    assert "[data-app-auth-summary]" in HEADER
+    assert "flex: 1 1 auto" in HEADER.split("[data-app-auth-summary]", 1)[1]
 
 
 def test_premium_header_is_scoped_to_home_and_the_pro_product():

@@ -111,7 +111,13 @@ def test_pro_member_rail_and_primary_cta_use_distinct_actions():
     assert "data-app-pro-action-label=" in HEADER
     assert "var memberActionLabel = header.getAttribute" in HEADER
     assert "isPro ? memberActionLabel : analyzeLabel" in HEADER
-    assert "isPro ? proActionLabel : analyzeLabel" in HEADER
+    # Header/menu CTA stays short when signed in; long Pro copy stays on the rail.
+    assert "authenticated ? analyzeLabel : signedOutLabel" in HEADER
+    assert "isPro ? proActionLabel : analyzeLabel" not in HEADER
+    assert (
+        '.sl-header[data-app-authenticated="true"] .sl-header__search { display: none; }'
+        in HEADER
+    )
 
 
 def test_authenticated_header_centers_member_content_across_modern_iphone_widths():

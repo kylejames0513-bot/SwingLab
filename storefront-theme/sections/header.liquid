@@ -490,13 +490,26 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   min-width: 0;
   overflow: hidden;
 }
+.sl-header__account > summary.sl-header__dropdown-trigger {
+  /* Keep the label + chevron as one clipped flex unit so a signed-in
+     display name never spills into the search control. */
+  gap: 6px;
+}
 [data-app-auth-summary] {
   display: block;
+  flex: 1 1 auto;
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.sl-header__account .sl-header__chevron {
+  flex: 0 0 auto;
+}
+.sl-header[data-app-authenticated="true"] .sl-header__account > summary,
+.sl-header[data-app-authenticated="true"] .sl-header__account .sl-header__dropdown-trigger {
+  max-width: 108px;
 }
 .sl-app-auth__state {
   min-width: 0;
@@ -537,8 +550,10 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
 .sl-header__actions {
   display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 10px;
-  flex-shrink: 0;
+  flex-shrink: 1;
+  min-width: 0;
 }
 @media (min-width: 981px) {
   .sl-header__inner {
@@ -892,6 +907,20 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   .sl-member-rail__action { padding-inline: 8px; font-size: 12px; }
   .sl-header__account > summary,
   .sl-header__account .sl-header__dropdown-trigger { max-width: 120px; }
+  .sl-header[data-app-authenticated="true"] .sl-header__account > summary,
+  .sl-header[data-app-authenticated="true"] .sl-header__account .sl-header__dropdown-trigger {
+    max-width: 96px;
+  }
+}
+/* Signed-in chrome adds the account chip (+ denser CTA). Park search in the
+   menu until the row has room so the icon never overlaps nav or account. */
+@media (max-width: 1280px) {
+  .sl-header[data-app-authenticated="true"] .sl-header__search { display: none; }
+}
+@media (min-width: 981px) and (max-width: 1180px) {
+  .sl-header[data-app-authenticated="true"] .sl-header__account,
+  .sl-header[data-app-authenticated="true"] .sl-header__app { display: none; }
+  .sl-header[data-app-authenticated="true"] .sl-header__toggle { display: flex; }
 }
 @media (max-width: 980px) {
   .shopify-section:has(> .sl-header--overlay) { margin-bottom: -64px; }
@@ -1172,9 +1201,9 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
         eachAppAuthNode('[data-app-primary-cta]', function (node) {
           var signedOutLabel = node.getAttribute('data-app-signed-out-label') || analyzeLabel;
           var signedOutUrl = node.getAttribute('data-app-signed-out-url') || appUrl;
-          var resolvedLabel = authenticated
-            ? (isPro ? proActionLabel : analyzeLabel)
-            : signedOutLabel;
+          // Keep the long Pro rail line ("Let's work on your swing") out of the
+          // compact header/menu CTA — that string is what crowded search/account.
+          var resolvedLabel = authenticated ? analyzeLabel : signedOutLabel;
           var labelNode = node.querySelector('[data-app-cta-label]');
           if (labelNode) {
             labelNode.textContent = resolvedLabel;
