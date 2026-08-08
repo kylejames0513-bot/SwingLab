@@ -1451,7 +1451,6 @@ def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:
         if name in _GENERATION_TWO_INDEXES:
             continue
         connection.execute(ddl)
-    validate_mobile_state_schema(connection, 1)
 
     tables = {
         str(row[0])
