@@ -261,8 +261,9 @@
         </div>
       </section>
 
-      {% if user.shopify_customer_id or shopify_customer_accounts_enabled or storefront_url or user.shopify_sync_status %}
-        {% set sync_status = user.shopify_sync_status|default('not_started') %}
+      {%- set sync_status = user.shopify_sync_status|default('not_started') -%}
+      {%- set show_store_hub = user.shopify_customer_id or shopify_customer_accounts_enabled or (sync_status and sync_status != 'not_started') -%}
+      {% if show_store_hub %}
         {% if sync_status == 'synced' %}
           {% set sync_label = 'Synced' %}
         {% elif sync_status == 'pending' %}
