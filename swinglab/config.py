@@ -198,6 +198,13 @@ DEFAULTS: dict[str, Any] = {
         "mobile_upload_chunk_mb": 5,
         "mobile_active_uploads_per_user": 2,
         "mobile_upload_ttl_seconds": 86400,
+        # Durable analysis-retry policy. The window/attempt defaults ship
+        # positive; the two capacity guards ship as 0 (disabled) and must be
+        # given measured positive values before resumable uploads are enabled.
+        "mobile_analysis_retry_window_seconds": 86400,
+        "mobile_analysis_retry_max_attempts": 2,
+        "mobile_upload_global_max_reserved_bytes": 0,
+        "mobile_upload_min_filesystem_free_bytes": 0,
         "review_auth_starts_per_15_minutes_per_ip": 20,
         "review_auth_starts_per_15_minutes_per_account": 5,
         "review_auth_failed_exchanges_per_15_minutes_per_ip": 20,

@@ -64,6 +64,18 @@ _NUMERIC_BOUNDS: dict[str, tuple[int, int]] = {
     "mobile_upload_chunk_mb": (1, 64),
     "mobile_active_uploads_per_user": (1, 10),
     "mobile_upload_ttl_seconds": (60, 7 * 24 * 60 * 60),
+    # Retry window/attempts are always positive-bounded (their defaults ship
+    # positive); the classifier and route need a finite, sane range.
+    "mobile_analysis_retry_window_seconds": (1, 7 * 24 * 60 * 60),
+    "mobile_analysis_retry_max_attempts": (1, 10),
+}
+# Capacity guards ship as 0 (feature-off) and are permitted to be 0 until the
+# resumable-upload route is enabled, at which point they must be measured,
+# strictly-positive values.  8 TiB is a generous absolute ceiling that also
+# rejects nonsense overflow values.
+_UPLOAD_CAPACITY_BOUNDS: dict[str, tuple[int, int]] = {
+    "mobile_upload_global_max_reserved_bytes": (0, 1 << 43),
+    "mobile_upload_min_filesystem_free_bytes": (0, 1 << 43),
 }
 
 
@@ -81,6 +93,10 @@ class MobileResourceSettings:
     upload_chunk_bytes: int
     active_uploads_per_user: int
     upload_ttl_seconds: int
+    analysis_retry_window_seconds: int
+    analysis_retry_max_attempts: int
+    upload_global_max_reserved_bytes: int
+    upload_min_filesystem_free_bytes: int
 
 
 class MobileResourceNotFound(LookupError):
@@ -138,6 +154,19 @@ def validate_mobile_resource_settings(
                 f"web.{name} must be an integer from {minimum} to {maximum}."
             )
         numbers[name] = value
+    resumable_enabled = flags["mobile_resumable_upload_enabled"]
+    for name, (minimum, maximum) in _UPLOAD_CAPACITY_BOUNDS.items():
+        value = web.get(name, 0)
+        if type(value) is not int or not minimum <= value <= maximum:
+            raise ValueError(
+                f"web.{name} must be an integer from {minimum} to {maximum}."
+            )
+        if resumable_enabled and value <= 0:
+            raise ValueError(
+                f"web.{name} must be a measured positive value before "
+                "mobile_resumable_upload_enabled is turned on."
+            )
+        numbers[name] = value
     return MobileResourceSettings(
         resources_enabled=flags["mobile_resources_enabled"],
         profile_writes_enabled=flags["mobile_profile_writes_enabled"],
@@ -151,6 +180,14 @@ def validate_mobile_resource_settings(
         upload_chunk_bytes=numbers["mobile_upload_chunk_mb"] * 1024 * 1024,
         active_uploads_per_user=numbers["mobile_active_uploads_per_user"],
         upload_ttl_seconds=numbers["mobile_upload_ttl_seconds"],
+        analysis_retry_window_seconds=numbers["mobile_analysis_retry_window_seconds"],
+        analysis_retry_max_attempts=numbers["mobile_analysis_retry_max_attempts"],
+        upload_global_max_reserved_bytes=numbers[
+            "mobile_upload_global_max_reserved_bytes"
+        ],
+        upload_min_filesystem_free_bytes=numbers[
+            "mobile_upload_min_filesystem_free_bytes"
+        ],
     )
 
 

@@ -224,6 +224,14 @@ web:
   mobile_upload_chunk_mb: 5
   mobile_active_uploads_per_user: 2
   mobile_upload_ttl_seconds: 86400
+  # Durable analysis-retry policy for native uploads. Window/attempts ship
+  # positive; the two capacity guards ship at 0 (disabled) and must be set to
+  # measured, positive values before mobile_resumable_upload_enabled is turned
+  # on (the app refuses to compose otherwise).
+  mobile_analysis_retry_window_seconds: 86400
+  mobile_analysis_retry_max_attempts: 2
+  mobile_upload_global_max_reserved_bytes: 0
+  mobile_upload_min_filesystem_free_bytes: 0
   # Independent review-lane abuse bounds. The shipped admission implementation
   # always denies; reviewer accounts/credentials never belong in this file.
   review_auth_starts_per_15_minutes_per_ip: 20
