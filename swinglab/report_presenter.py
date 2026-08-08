@@ -329,6 +329,45 @@ class ReportNavigation:
     app_url: str | None
     storefront_url: str | None
     gear_collection_url: str | None
+    practice_url: str | None = None
+    progress_url: str | None = None
+    pricing_url: str | None = None
+    film_url: str | None = None
+
+
+def complete_report_navigation(
+    navigation: ReportNavigation | None,
+    cfg: Config,
+) -> ReportNavigation:
+    """Fill app deep-links when the report is connected to the live product."""
+    base = navigation or ReportNavigation(None, None, gear_shop_url(cfg))
+    gear = base.gear_collection_url or gear_shop_url(cfg)
+    if base.app_url is None:
+        return ReportNavigation(
+            None,
+            base.storefront_url,
+            gear,
+            base.practice_url,
+            base.progress_url,
+            base.pricing_url,
+            base.film_url,
+        )
+    return ReportNavigation(
+        base.app_url,
+        base.storefront_url,
+        gear,
+        base.practice_url or "/today#practice-plan",
+        base.progress_url or "/progress",
+        base.pricing_url or "/pricing",
+        base.film_url or "/#upload-form",
+    )
+
+
+TRUST_PLAIN_LABELS: Mapping[TrustState, str] = MappingProxyType({
+    TrustState.CLEAR: "Clear read",
+    TrustState.LIMITED: "Usable with limits",
+    TrustState.REFILM_REQUIRED: "Re-film needed",
+})
 
 
 @dataclass(frozen=True)
@@ -499,11 +538,31 @@ def _capture_only(source: ReportPresentationInput, context: ReportContext, reaso
     copy = REASON_COPY[primary]
     allowed = tuple(key for key in source.safe_media_keys if any(media.key == key for media in source.media))
     media = tuple(media for media in source.media if media.key in allowed)
-    guidance = CaptureGuidance(primary, copy.label, copy.explanation, copy.remediation, ("Place the phone on a stable support.", "Keep the full body and club visible from address through finish.", "Record one clear swing in even light."), allowed, "refilm", "Re-film a clear swing", "choose_video", "Choose another clip")
+    guidance = CaptureGuidance(
+        primary,
+        copy.label,
+        copy.explanation,
+        copy.remediation,
+        (
+            "Place the phone on a stable support.",
+            "Keep the full body and club visible from address through finish.",
+            "Record one clear swing in even light.",
+        ),
+        allowed,
+        "refilm",
+        "Re-film a clear swing",
+        "choose_video",
+        "Choose another clip",
+    )
     return CaptureOnlyReportView(
         "report-view-v1", "structured", GUIDED_REPORT_PRESENTATION_VERSION,
         ReportOutcome.CAPTURE_ONLY, JourneyMode.CAPTURE_RETRY,
-        Trust(TrustState.REFILM_REQUIRED, copy.label, reasons, copy.explanation),
+        Trust(
+            TrustState.REFILM_REQUIRED,
+            TRUST_PLAIN_LABELS[TrustState.REFILM_REQUIRED],
+            reasons,
+            copy.explanation,
+        ),
         context, Capabilities(True, False, False, False, False, False, False, False, True),
         media, (), None, None, (), None, None, guidance,
     )
@@ -815,9 +874,25 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         assert selected_strength is not None
         next_move = NextMove(mode, selected_strength.key, _selected_phase(selected_strength.metric, angle=source.context.angle), "Protect this", selected_strength.display_name, selected_strength.text, "Repeat the same motion under the same setup.", measurement_detail_id, "practice", "refilm")
     limited = bool(reasons)
-    label = REASON_COPY[reasons[0]].label if limited else "Clear read"
+    plain_trust = (
+        TRUST_PLAIN_LABELS[TrustState.LIMITED]
+        if limited
+        else TRUST_PLAIN_LABELS[TrustState.CLEAR]
+    )
+    label = plain_trust if not limited else (
+        f"{TRUST_PLAIN_LABELS[TrustState.LIMITED]} · {REASON_COPY[reasons[0]].label}"
+    )
     target = build_refilm_target(source.brief, source.issues, source.strengths, cfg)
-    protocol = RefilmProtocol("refilm", ("Use the same club, hand, camera angle, height, framing, and effort.",), target, "Re-film this drill", source.context.club is not None, True, True, True, True, True)
+    protocol = RefilmProtocol(
+        "refilm",
+        (
+            "Use the same club, hand, camera angle, height, framing, and effort.",
+        ),
+        target,
+        "Practice, then re-film",
+        source.context.club is not None,
+        True, True, True, True, True,
+    )
     media = tuple(
         entry
         for entry in source.media
@@ -988,7 +1063,7 @@ def prepare_report_input(
             coach_replay_media_key=None if replay_locked else _explicit_media_key(swing.get("replay"), media),
             coach_replay_caption=f"Coach replay for swing {getattr(metric, 'swing', index)}",
             locked_replay_explanation=(
-                "Coach replay is available with Pro; the measured coaching remains available here."
+                "Coach replay is a Pro feature; the measured coaching remains available here."
                 if replay_locked else None
             ),
             video_poster_media_key=_explicit_media_key(swing.get("poster"), media),
@@ -1094,7 +1169,10 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
         for detail in phase.measurements
         if detail.limitation
     ))
-    navigation = source.navigation or ReportNavigation(None, None, gear_shop_url(cfg))
+    navigation = complete_report_navigation(
+        source.navigation or ReportNavigation("/", None, gear_shop_url(cfg)),
+        cfg,
+    )
     gear_url = gear_shop_url(cfg)
     gear = (() if capture_only or not gear_url or source.primary_drill is None else (GearDetail(
         source.primary_drill.gear_tag, "Matched training aid",

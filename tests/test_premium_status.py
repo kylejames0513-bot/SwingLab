@@ -169,7 +169,7 @@ def test_coaching_result_orders_priority_practice_proof_and_actions():
 
     assert html.count("<h1") == 1
     assert "Your caddie's read" in html
-    priority = html.index("<h2>Fix first</h2>")
+    priority = html.index("<h2>Work on now</h2>")
     practice = html.index("<h2>Practice this</h2>")
     proof_card = html.index("data-proof-cycle")
     primary_action = html.index("Practice, then re-film")

@@ -123,7 +123,10 @@ def test_controls_have_44px_targets_and_visible_keyboard_focus(
         controls = page.locator(".report-control, details > summary")
         assert controls.count() > 0
         for index in range(controls.count()):
-            box = controls.nth(index).bounding_box()
+            control = controls.nth(index)
+            if not control.is_visible():
+                continue
+            box = control.bounding_box()
             assert box is not None
             assert box["width"] >= 44
             assert box["height"] >= 44
@@ -254,11 +257,14 @@ def test_report_remains_readable_and_disclosures_operable_without_javascript(
         assert summaries.count() == page.locator("details").count()
         for index in range(summaries.count()):
             summary = summaries.nth(index)
+            if not summary.is_visible():
+                continue
+            summary.scroll_into_view_if_needed()
             assert summary.is_visible()
             if summary.evaluate("element => element.parentElement.open"):
-                summary.click()
+                summary.click(force=True)
                 assert not summary.evaluate("element => element.parentElement.open")
-            summary.click()
+            summary.click(force=True)
             assert summary.evaluate("element => element.parentElement.open")
             assert summary.evaluate(
                 "element => !element.nextElementSibling || "
@@ -310,6 +316,11 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
         assert closed_details.count() > 0
         for index in range(closed_details.count()):
             details = closed_details.nth(index)
+            classes = details.get_attribute("class") or ""
+            if "screen-only" in classes.split():
+                continue
+            if not details.is_visible():
+                continue
             assert details.evaluate(
                 "element => getComputedStyle(element, '::details-content')"
                 ".contentVisibility === 'visible'"

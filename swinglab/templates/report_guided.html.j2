@@ -115,11 +115,152 @@
     h1 { max-width: 22ch; margin: .2rem 0 .8rem; font-size: clamp(1.9rem, 6vw, 3.6rem); }
     h2 { margin: .25rem 0 1rem; font-size: clamp(1.45rem, 4vw, 2.2rem); }
     .observation { max-width: 62ch; font-size: 1.08rem; }
+    .journey-sticky {
+      position: sticky;
+      top: 0;
+      z-index: 6;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .45rem;
+      width: min(calc(100% - 2rem), 68rem);
+      margin: .35rem auto 1rem;
+      padding: .55rem .75rem;
+      background: rgba(255, 253, 248, .96);
+      border: 1px solid var(--line);
+      border-radius: .75rem;
+      box-shadow: 0 .25rem .8rem rgba(23, 32, 26, .08);
+    }
+    .journey-sticky a {
+      flex: 1 1 auto;
+      justify-content: center;
+      min-height: 44px;
+      padding: .45rem .7rem;
+      text-decoration: none;
+      color: var(--ink);
+      background: var(--soft);
+      border: 1px solid var(--control-border);
+      border-radius: .5rem;
+      font-weight: 700;
+      font-size: .9rem;
+    }
+    .trust-chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 1.6rem;
+      padding: .15rem .55rem;
+      border-radius: .4rem;
+      font-size: .82rem;
+      font-weight: 800;
+      background: #e7efe9;
+      color: #155d35;
+    }
+    .trust-chip--limited { background: #fff0e4; color: #8d3b10; }
+    .trust-chip--refilm_required { background: #fff0e4; color: #8d3b10; }
+    .action-strip {
+      margin: 1.1rem 0 0;
+      padding: .85rem 1rem;
+      background: linear-gradient(135deg, #fffdfa, #fff4e5);
+      border: 1px solid #e2d2bb;
+      border-radius: .75rem;
+    }
+    .action-strip__lead {
+      margin: 0 0 .45rem;
+      color: var(--accent-text);
+      font-size: .78rem;
+      font-weight: 800;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .action-strip ol {
+      margin: 0;
+      padding-left: 1.2rem;
+    }
+    .action-strip li { margin: .35rem 0; }
+    .action-strip a { font-weight: 700; text-decoration: none; }
+    .share-cue {
+      margin-top: .85rem;
+      padding: .65rem .85rem;
+      background: var(--soft);
+      border-radius: .55rem;
+    }
+    .share-cue__text {
+      margin: .55rem 0;
+      padding: .7rem .8rem;
+      background: #fff;
+      border: 1px dashed var(--line);
+      border-radius: .45rem;
+      font-size: .95rem;
+    }
     .coach-cue {
       max-width: 62ch;
       padding: .8rem 1rem;
       background: var(--soft);
       border-left: .28rem solid var(--brand-primary);
+      font-size: clamp(1.05rem, 2.6vw, 1.22rem);
+    }
+    .unit-glossary {
+      margin: .55rem 0 0;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+    .event-chapters {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .45rem;
+      margin: .85rem 0 0;
+      padding: 0;
+      list-style: none;
+    }
+    .event-chapters a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 44px;
+      padding: .45rem .7rem;
+      text-decoration: none;
+      background: #fff;
+      border: 1px solid var(--control-border);
+      border-radius: .45rem;
+      font-weight: 700;
+    }
+    .checklist-item {
+      display: flex;
+      gap: .65rem;
+      align-items: flex-start;
+      margin: .55rem 0;
+    }
+    .checklist-item input {
+      width: 1.25rem;
+      height: 1.25rem;
+      margin-top: .2rem;
+      flex: 0 0 auto;
+    }
+    .app-bridge {
+      display: grid;
+      gap: .7rem;
+      margin-top: 1rem;
+    }
+    .app-bridge .primary-action { display: inline-flex; width: fit-content; }
+    .compare-teaser {
+      margin-top: 1rem;
+      padding: .85rem 1rem;
+      background: var(--soft);
+      border-left: .28rem solid var(--brand-primary);
+      border-radius: .45rem;
+    }
+    [data-field="pass-mark"] {
+      font-size: clamp(1.08rem, 2.8vw, 1.35rem);
+      font-weight: 700;
+      line-height: 1.35;
+    }
+    @media (max-width: 40rem) {
+      .journey-sticky {
+        width: min(calc(100% - 20px), 68rem);
+        top: 0;
+      }
+      .journey-sticky a { flex: 1 1 calc(50% - .45rem); }
+    }
+    @media print {
+      .journey-sticky { display: none !important; }
     }
     .journey-preview {
       display: grid;
@@ -392,6 +533,9 @@
         break-after: avoid;
         page-break-after: avoid;
       }
+      .journey-sticky,
+      .share-cue,
+      .action-strip { break-inside: avoid; }
     }
   </style>
 </head>
@@ -416,7 +560,13 @@
         <dt>Priority readable</dt>
         <dd>{{ view.context.priority_readable_swings }}</dd>
       </div>
-      <div><dt>Trust</dt><dd>{{ view.trust.label }}</dd></div>
+      <div>
+        <dt>Read quality</dt>
+        <dd>
+          <span class="trust-chip trust-chip--{{ view.trust.state }}"
+                data-trust-chip="{{ view.trust.state }}">{{ view.trust.label }}</span>
+        </dd>
+      </div>
     </dl>
   </header>
   <main id="report-main">
@@ -436,7 +586,7 @@
       </p>
       {% if view.trust.state == "limited" and view.trust.explanation %}
       <p class="trust-note" role="note" data-trust-state="limited">
-        {{ view.trust.explanation }}
+        <strong>Usable with limits.</strong> {{ view.trust.explanation }}
       </p>
       {% endif %}
       {% if measurement and view.next_move.measurement_detail_id == measurement.id %}
@@ -462,7 +612,21 @@
           </a>
         </li>
       </ol>
+      <aside class="action-strip" aria-label="Do this in 30 seconds">
+        <p class="action-strip__lead">Do this in 30 seconds</p>
+        <ol>
+          <li><a class="report-control" href="#report-title">Find your priority</a></li>
+          <li><a class="report-control" href="#practice">Open your drill</a></li>
+          <li><a class="report-control" href="#refilm">Check your pass mark</a></li>
+        </ol>
+      </aside>
     </section>
+    <nav class="journey-sticky screen-only" aria-label="Report steps">
+      <a class="report-control" href="#report-title">Priority</a>
+      <a class="report-control" href="#understand">Understand</a>
+      <a class="report-control" href="#practice">Practice</a>
+      <a class="report-control" href="#refilm">Re-film</a>
+    </nav>
 
     <section id="understand" data-report-block="understand"
              aria-labelledby="understand-heading">
@@ -559,6 +723,19 @@
         </li>
         {% endfor %}
       </ol>
+      {% set chapter_swing = (depth.swings | selectattr('swing', 'equalto', evidence.swing) | list) %}
+      {% if chapter_swing and chapter_swing[0].slow_motion_media_key %}
+      <ul class="event-chapters" aria-label="Jump to swing moments">
+        {% for event in evidence.events %}
+        <li>
+          <a class="report-control"
+             href="{{ media_path(chapter_swing[0].slow_motion_media_key) }}#t={{ (event.timestamp_ms / 1000)|round(3) }}">
+            {{ event.label }}
+          </a>
+        </li>
+        {% endfor %}
+      </ul>
+      {% endif %}
       {% endif %}
 
       {% if measurement %}
@@ -568,6 +745,12 @@
         {% if measurement.benchmark_label %}<p>{{ measurement.benchmark_label }}</p>{% endif %}
         <p>{{ measurement.explanation }}</p>
         {% if measurement.limitation %}<p>{{ measurement.limitation }}</p>{% endif %}
+        {% if "shoulder width" in measurement.plain_value|lower or measurement.unit == "shoulder_widths" %}
+        <details class="unit-glossary">
+          <summary>What is a shoulder width?</summary>
+          <p>One shoulder width is the distance between your shoulders in the video. The report uses it so movement stays comparable when you stand closer or farther from the camera.</p>
+        </details>
+        {% endif %}
       </details>
       {% endif %}
 
@@ -578,7 +761,11 @@
       <details class="priority-playback" data-priority-playback="{{ evidence.swing }}">
         <summary>Watch this swing</summary>
         {% if priority_swing.replay_locked and priority_swing.locked_replay_explanation %}
-        <p>{{ priority_swing.locked_replay_explanation }}</p>
+        <p>{{ priority_swing.locked_replay_explanation }}
+          {% if navigation.pricing_url %}
+          <a class="report-control" href="{{ navigation.pricing_url }}">See Pro plans</a>
+          {% endif %}
+        </p>
         {% endif %}
         {% if priority_swing.slow_motion_media_key %}
         <div class="screen-only">
@@ -645,7 +832,10 @@
           {% if phase.unavailable_reasons %}
           <ul aria-label="Why this phase was not measured">
             {% for reason in phase.unavailable_reasons %}
-            <li>{{ reason_labels[reason] }}</li>
+            <li>
+              <strong>{{ reason_labels[reason] }}.</strong>
+              {{ reason_remediations[reason] }}
+            </li>
             {% endfor %}
           </ul>
           {% endif %}
@@ -718,16 +908,39 @@
         {% endif %}
       </details>
       {% endif %}
-      <p><a class="report-control" href="#refilm">Ready to re-film</a></p>
+      <div class="app-bridge screen-only">
+        {% if navigation.practice_url %}
+        <a class="primary-action report-control" href="{{ navigation.practice_url }}">
+          Save this drill to Today
+        </a>
+        {% endif %}
+        <details class="share-cue">
+          <summary class="report-control">Share this cue</summary>
+          <p>Copy or send this to a coach or practice partner:</p>
+          <p class="share-cue__text">
+            {{ brand.name }} cue — {{ view.next_move.title }}:
+            {{ view.next_move.cue }}
+          </p>
+          <p><a class="report-control" href="mailto:?subject={{ brand.name }}%20swing%20cue&amp;body={{ view.next_move.cue | urlencode }}">Email this cue</a></p>
+        </details>
+        <p><a class="report-control" href="#refilm">Ready to re-film</a></p>
+      </div>
+      <p class="print-only">Ready to re-film — continue to the Re-film section above.</p>
     </section>
 
     <section id="refilm" data-report-block="refilm"
              data-canonical="refilm" aria-labelledby="refilm-heading">
       <p class="step-label">3 · Re-film</p>
       <h2 id="refilm-heading">Repeat the same test</h2>
-      <ol class="refilm-checklist">
-        {% for item in view.refilm.checklist %}<li>{{ item }}</li>{% endfor %}
-      </ol>
+      <ul class="refilm-checklist" aria-label="Re-film checklist">
+        {% for item in view.refilm.checklist %}
+        <li class="checklist-item">
+          <input type="checkbox" id="refilm-check-{{ loop.index }}"
+                 name="refilm-check-{{ loop.index }}">
+          <label for="refilm-check-{{ loop.index }}">{{ item }}</label>
+        </li>
+        {% endfor %}
+      </ul>
       <h3>Pass mark</h3>
       <p data-field="pass-mark">{{ view.refilm.target.text }}</p>
       <dl class="refilm-confirmations" aria-label="Re-film controls">
@@ -738,11 +951,30 @@
         <dt>Same framing</dt><dd>{{ "Confirmed" if view.refilm.preserves_framing else "Match the original framing" }}</dd>
         <dt>Same effort</dt><dd>{{ "Confirmed" if view.refilm.preserves_effort else "Match the original effort" }}</dd>
       </dl>
-      {% if navigation.app_url %}
-      <a class="primary-action report-control" href="{{ navigation.app_url }}">{{ view.refilm.primary_action_label }}</a>
-      {% else %}
-      <p class="primary-action" role="note" data-offline-action="true">{{ view.refilm.primary_action_label }}</p>
-      {% endif %}
+      <div class="app-bridge">
+        {% if navigation.practice_url %}
+        <a class="primary-action report-control" href="{{ navigation.practice_url }}">{{ view.refilm.primary_action_label }}</a>
+        {% elif navigation.film_url %}
+        <a class="primary-action report-control" href="{{ navigation.film_url }}">{{ view.refilm.primary_action_label }}</a>
+        {% elif navigation.app_url %}
+        <a class="primary-action report-control" href="{{ navigation.app_url }}">{{ view.refilm.primary_action_label }}</a>
+        {% else %}
+        <p class="primary-action" role="note" data-offline-action="true">{{ view.refilm.primary_action_label }}</p>
+        {% endif %}
+        {% if navigation.film_url %}
+        <p><a class="report-control" href="{{ navigation.film_url }}">Film the matched re-film</a></p>
+        {% endif %}
+      </div>
+      <aside class="compare-teaser" data-compare-teaser>
+        <p><strong>Know whether the change worked.</strong>
+          After you re-film with the same setup, CaddieInsight compares the new clip to this pass mark.</p>
+        {% if navigation.progress_url %}
+        <p class="screen-only">
+          <a class="report-control" href="{{ navigation.progress_url }}">See progress over time</a>
+          <span class="hint"> — trend charts are included with Pro.</span>
+        </p>
+        {% endif %}
+      </aside>
     </section>
 
     <section class="optional-depth" aria-label="More report detail">
@@ -775,14 +1007,24 @@
         <summary>{{ section.label }} · {{ section.item_count }}</summary>
         {% if section.locked %}
           {% for swing in depth.swings %}
-            {% if swing.locked_replay_explanation %}<p>{{ swing.locked_replay_explanation }}</p>{% endif %}
+            {% if swing.locked_replay_explanation %}
+            <p>{{ swing.locked_replay_explanation }}
+              {% if navigation.pricing_url %}
+              <a class="report-control" href="{{ navigation.pricing_url }}">See Pro plans</a>
+              {% endif %}
+            </p>
+            {% endif %}
           {% endfor %}
         {% else %}
           {% for swing in depth.swings %}
           <article>
             <h3>{{ swing.summary }}</h3>
             {% if swing.replay_locked %}
-            <p>{{ swing.locked_replay_explanation }}</p>
+            <p>{{ swing.locked_replay_explanation }}
+              {% if navigation.pricing_url %}
+              <a class="report-control" href="{{ navigation.pricing_url }}">See Pro plans</a>
+              {% endif %}
+            </p>
             {% else %}
               {% if swing.slow_motion_media_key %}
               <div class="screen-only">
@@ -926,7 +1168,12 @@
         {% endif %}
       {% endfor %}
       <div class="capture-actions">
-        {% if navigation.app_url %}
+        {% if navigation.film_url %}
+        <a class="primary-action report-control" data-capture-action="primary" href="{{ navigation.film_url }}">{{ view.capture_guidance.primary_action_label }}</a>
+        {% if view.capture_guidance.secondary_action_label %}
+        <a class="report-control" data-capture-action="secondary" href="{{ navigation.app_url or navigation.film_url }}">{{ view.capture_guidance.secondary_action_label }}</a>
+        {% endif %}
+        {% elif navigation.app_url %}
         <a class="primary-action report-control" data-capture-action="primary" href="{{ navigation.app_url }}">{{ view.capture_guidance.primary_action_label }}</a>
         {% if view.capture_guidance.secondary_action_label %}<a class="report-control" data-capture-action="secondary" href="{{ navigation.app_url }}">{{ view.capture_guidance.secondary_action_label }}</a>{% endif %}
         {% else %}

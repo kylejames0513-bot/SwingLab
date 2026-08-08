@@ -604,6 +604,10 @@ def build_guided_sample_report(sample_dir: Path, cfg: Config) -> Path:
             app_url="/",
             storefront_url=None,
             gear_collection_url=None,
+            practice_url="/today#practice-plan",
+            progress_url="/progress",
+            pricing_url="/pricing",
+            film_url="/#upload-form",
         ),
     )
     document = build_report_document(source, cfg)

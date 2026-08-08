@@ -13,8 +13,13 @@ from jinja2 import (
 from .coaching import priority_rule_version
 from .config import Config
 from .report import REPORT_FORMAT_VERSION
-from .report_presenter import REASON_COPY, ReportDocument
+from .report_presenter import (
+    REASON_COPY,
+    ReportDocument,
+    complete_report_navigation,
+)
 from .report_view import GUIDED_REPORT_PRESENTATION_VERSION
+from dataclasses import replace
 
 
 GUIDED_TEMPLATE = "report_guided.html.j2"
@@ -37,6 +42,10 @@ REASON_LABELS = MappingProxyType({
     **{code: copy.label for code, copy in REASON_COPY.items()},
     **{code.value: copy.label for code, copy in REASON_COPY.items()},
 })
+REASON_REMEDIATIONS = MappingProxyType({
+    **{code: copy.remediation for code, copy in REASON_COPY.items()},
+    **{code.value: copy.remediation for code, copy in REASON_COPY.items()},
+})
 
 
 def _media_path(document: ReportDocument, key: str) -> str:
@@ -55,6 +64,11 @@ def write_report_document_html(
 ) -> Path:
     if document.view.presentation_version != GUIDED_REPORT_PRESENTATION_VERSION:
         raise ValueError("guided renderer requires guided-report-v1")
+    navigation = complete_report_navigation(document.depth.navigation, cfg)
+    document = replace(
+        document,
+        depth=replace(document.depth, navigation=navigation),
+    )
     env = Environment(
         loader=FileSystemLoader(Path(__file__).parent / "templates"),
         autoescape=select_autoescape(["html", "j2"]),
@@ -74,6 +88,7 @@ def write_report_document_html(
         status_icons=STATUS_ICONS,
         phase_method_labels=PHASE_METHOD_LABELS,
         reason_labels=REASON_LABELS,
+        reason_remediations=REASON_REMEDIATIONS,
         report_format_version=REPORT_FORMAT_VERSION,
         priority_rule_version=priority_rule_version(cfg),
         sample_banner=sample_banner,

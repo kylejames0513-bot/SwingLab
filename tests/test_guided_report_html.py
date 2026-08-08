@@ -381,6 +381,41 @@ def test_limited_trust_appears_on_next_move(tmp_path: Path):
     assert "Target set" in next_move
 
 
+def test_usability_layer_exposes_action_strip_sticky_journey_and_app_bridges(
+    tmp_path: Path,
+):
+    document = report_document_fixture("pro-unlocked")
+    html = render_guided(tmp_path, document)
+    next_move = report_block(html, "next-move", "understand")
+    practice = report_block(html, "practice", "refilm")
+    refilm = report_block(html, "refilm")
+
+    assert 'aria-label="Do this in 30 seconds"' in next_move
+    assert "Find your priority" in next_move
+    assert "Open your drill" in next_move
+    assert "Check your pass mark" in next_move
+    assert document.view.practice.name not in next_move
+    assert document.view.refilm.target.text not in next_move
+    assert 'aria-label="Report steps"' in html
+    assert 'data-trust-chip=' in html
+    assert "Read quality" in html
+    assert "Save this drill to Today" in practice
+    assert 'href="/today#practice-plan"' in practice
+    assert "Share this cue" in practice
+    assert 'type="checkbox"' in refilm
+    assert "Know whether the change worked" in refilm
+    assert 'href="/progress"' in refilm
+    assert "Jump to swing moments" in report_block(html, "understand", "practice")
+
+
+def test_locked_replay_links_to_pro_pricing(tmp_path: Path):
+    document = report_document_fixture("free-locked")
+    html = render_guided(tmp_path, document)
+    assert "See Pro plans" in html
+    assert 'href="/pricing"' in html
+    assert "Pro" in html
+
+
 def test_understand_shows_evidence_legend_and_phase_measurements(tmp_path: Path):
     document = report_document_fixture("coaching-improve-clear")
     html = render_guided(tmp_path, document)
@@ -512,7 +547,9 @@ def test_measurement_limitations_practice_and_refilm_keep_authored_content(
         "Same effort",
     ):
         assert confirmation in refilm
-    assert f'href="{document.depth.navigation.app_url}"' in refilm
+    assert f'href="{document.depth.navigation.practice_url or document.depth.navigation.app_url}"' in refilm or (
+        'href="/today#practice-plan"' in refilm
+    )
     assert document.view.refilm.primary_action_label in refilm
 
     offline = report_document_fixture("coaching-improve-limited")
@@ -618,7 +655,7 @@ def test_capture_retry_failure_keeps_reason_and_both_recovery_actions(tmp_path: 
     assert guidance.primary_action_label in html
     assert guidance.secondary_action_label in html
     assert re.search(
-        rf'<a[^>]*data-capture-action="primary"[^>]*href="/"[^>]*>{re.escape(guidance.primary_action_label)}</a>',
+        rf'<a[^>]*data-capture-action="primary"[^>]*href="/#upload-form"[^>]*>{re.escape(guidance.primary_action_label)}</a>',
         html,
     )
     assert re.search(

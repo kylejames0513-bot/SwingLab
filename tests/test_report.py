@@ -162,7 +162,7 @@ def test_report_leads_with_coaching_and_collapses_raw_measurements(tmp_path):
     html = out.read_text(encoding="utf-8")
     assert 'name="caddieinsight-report-outcome" content="coaching_ready"' in html
     assert "Your caddie's read" in html
-    assert "Fix first" in html
+    assert "Work on now" in html
     assert "Practice this" in html
     assert "Set a swing metronome to a steady beat" in html
     assert html.index("Set a swing metronome to a steady beat") < html.index("Swing evidence")

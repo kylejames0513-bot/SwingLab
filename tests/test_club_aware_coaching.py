@@ -212,7 +212,7 @@ def test_report_brief_cards_plan_and_scope_copy_share_one_priority(tmp_path):
         club="driver",
     ).read_text(encoding="utf-8")
 
-    assert "Fix first" in html and "Finish balance" in html
+    assert "Work on now" in html and "Finish balance" in html
     assert "This week:\n  <strong>Finish balance</strong>" in html
     practice_start = html.index("<h2>Practice plan</h2>")
     assert html.index("<h3>Finish balance</h3>", practice_start) < html.index(
@@ -247,7 +247,7 @@ def test_rule_one_report_preserves_the_established_practice_plan_order(tmp_path)
     # floor, while the legacy practice plan followed raw session_flags order.
     # Rule 1 deliberately preserves that compatibility behavior byte-for-
     # semantics; rule 2 is where the surfaces become one ordered policy.
-    assert "Fix first" in html and "Tempo" in html
+    assert "Work on now" in html and "Tempo" in html
     practice_start = html.index("<h2>Practice plan</h2>")
     assert html.index("<h3>Head sway</h3>", practice_start) < html.index(
         "<h3>Tempo</h3>", practice_start

@@ -840,7 +840,7 @@
   {% endif %}
   <div class="brief-grid">
     <div class="brief-block focus">
-      <h3>{{ "Protect" if caddie_brief.clean else "Fix first" }}</h3>
+      <h3>{{ "Protect this" if caddie_brief.clean else "Work on now" }}</h3>
       <p class="brief-value"><strong>{{ caddie_brief.focus_name }}</strong>
         {% if caddie_brief.focus_value %} — {{ caddie_brief.focus_value }}
           {% if caddie_brief.benchmark_text %}
@@ -849,7 +849,7 @@
         {% endif %}
       </p>
       <p>{{ caddie_brief.why }}</p>
-      <p><strong>Coach's cue:</strong> {{ caddie_brief.fix }}</p>
+      <p><strong>Coach cue:</strong> {{ caddie_brief.fix }}</p>
     </div>
     <div class="brief-block">
       <h3>Practice this</h3>

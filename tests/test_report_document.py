@@ -267,11 +267,13 @@ def test_production_document_owns_priority_prescription_target_and_navigation():
         navigation=navigation, visual_evidence=fixture.view.visual_evidence,
         media=tuple(fixture.media_by_key.values()),
     )
+    from swinglab.report_presenter import complete_report_navigation
+
     document = build_report_document(source, cfg)
     assert document.view.next_move.title == source.brief.focus_name
     assert document.view.practice.full_steps == source.primary_drill.protocol
     assert document.view.refilm.target.text
-    assert document.depth.navigation == navigation
+    assert document.depth.navigation == complete_report_navigation(navigation, cfg)
     strings = _typed_strings(document)
     assert strings.count(document.view.next_move.title) == 1
     assert strings.count(document.view.refilm.target.text) == 1

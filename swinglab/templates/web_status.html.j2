@@ -276,7 +276,7 @@
 
           <div class="result-path">
             <section class="coach-block focus">
-              <h2>{{ "Protect" if caddie_brief.clean else "Fix first" }}</h2>
+              <h2>{{ "Protect this" if caddie_brief.clean else "Work on now" }}</h2>
               <p class="coach-value"><strong>{{ caddie_brief.focus_name }}</strong>
                 {% if caddie_brief.focus_value %} — {{ caddie_brief.focus_value }}
                   {% if caddie_brief.benchmark_text %}
@@ -285,7 +285,7 @@
                 {% endif %}
               </p>
               <p>{{ caddie_brief.why }}</p>
-              <p><strong>Coach's cue:</strong> {{ caddie_brief.fix }}</p>
+              <p><strong>Coach cue:</strong> {{ caddie_brief.fix }}</p>
               {% if caddie_brief.recurring_sessions > 1 %}
               <p class="hint">This priority has appeared in
                 {{ caddie_brief.recurring_sessions }} comparable sessions.</p>
