@@ -616,3 +616,35 @@ def test_theme_check_is_pinned_and_release_docs_have_no_stale_theme_ids():
     assert "source PR is not a Shopify preview" in readme
     assert "duplicate\nunpublished theme" in readme
     assert not re.search(r"OnlineStoreTheme/\d+", readme)
+
+
+def test_brand_marks_do_not_resolve_against_retired_filenames():
+    """A Shopify Files entry always beats a theme asset of the same name.
+
+    The store still holds og-swinglab.png and swinglab-favicon.png in Files
+    from the v3 brand. If theme.liquid looked those names up, uploading a new
+    theme would silently keep serving the retired mark — the theme asset would
+    never be reached. Both lookups therefore use the current brand filenames,
+    which do not exist in Files yet, so the packaged asset wins until they are
+    uploaded deliberately.
+    """
+    layout = (THEME / "layout" / "theme.liquid").read_text(encoding="utf-8")
+
+    assert "images['og-caddieinsight.png']" in layout
+    assert "images['caddieinsight-favicon.png']" in layout
+    assert "images['og-swinglab.png']" not in layout
+    assert "images['swinglab-favicon.png']" not in layout
+
+    # Every branch must still resolve to something when Files is empty.
+    assert "'og-caddieinsight.png' | asset_url" in layout
+    assert "'caddieinsight-favicon.png' | asset_url" in layout
+
+
+def test_current_brand_marks_ship_inside_the_theme():
+    for name, size in (
+        ("caddieinsight-favicon.png", (512, 512)),
+        ("og-caddieinsight.png", (1200, 630)),
+    ):
+        asset = THEME / "assets" / name
+        assert asset.exists(), name
+        assert png_dimensions(asset) == size, name
