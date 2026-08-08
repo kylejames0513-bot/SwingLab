@@ -466,6 +466,65 @@ def test_mobile_profile_history_reset_race_never_recreates_profile(
         _close(app)
 
 
+def test_mobile_profile_missing_owner_at_epoch_fence_is_unauthorized_not_409(
+    tmp_path, monkeypatch
+):
+    """Catches a deleted account at the epoch fence returning history conflict."""
+
+    app, client, user = _app_client(tmp_path)
+    try:
+        token = issue_token(client, "Profile phone")["token"]
+        from swinglab.web.credential_mutations import CredentialMutationLease
+
+        original = CredentialMutationLease.validate_locked
+
+        def validate_then_delete_owner(self, user_store, *, now=None):
+            original(self, user_store, now=now)
+            user_store._conn.execute(
+                "DELETE FROM users WHERE id = ?", (user.id,)
+            )
+            return None
+
+        monkeypatch.setattr(
+            CredentialMutationLease,
+            "validate_locked",
+            validate_then_delete_owner,
+        )
+
+        response = client.put(
+            "/api/v1/mobile/profile",
+            headers=bearer(token),
+            json=_mobile_profile_body(user),
+        )
+        assert response.status_code == 401
+        assert response.json()["message"] == "Invalid mobile access token."
+        assert response.json()["code"] != "history_epoch_conflict"
+        assert response.headers["cache-control"] == "no-store"
+        assert app.state.users.get_golfer_profile(user.id) is None
+    finally:
+        _close(app)
+
+
+def test_mobile_profile_wrong_selector_token_never_writes(tmp_path):
+    """Catches an unknown/wrong selector bearer mutating the caller's profile."""
+
+    app, client, user = _app_client(tmp_path)
+    try:
+        before = _profile_count(app)
+        response = client.put(
+            "/api/v1/mobile/profile",
+            headers=bearer("ciat_" + ("a" * 64)),
+            json=_mobile_profile_body(user),
+        )
+        assert response.status_code == 401
+        assert response.json()["message"] == "Invalid mobile access token."
+        assert response.headers["cache-control"] == "no-store"
+        assert _profile_count(app) == before
+        assert app.state.users.get_golfer_profile(user.id) is None
+    finally:
+        _close(app)
+
+
 def test_mobile_profile_deletion_race_never_recreates_profile(tmp_path, monkeypatch):
     app, client, user = _app_client(tmp_path)
     try:
@@ -555,10 +614,39 @@ def test_legacy_profile_put_remains_byte_compatible_beside_native_route(tmp_path
         }
         response = client.put("/api/v1/profile", json=legacy_v1_payload)
         assert response.status_code == 200
+        assert response.json() == {
+            "resource_version": 1,
+            "profile": response.json()["profile"],
+        }
         assert response.json()["profile"]["display_name"] is None
         assert response.json()["profile"]["primary_goal"] is None
         assert response.json()["profile"]["is_complete"] is False
         assert "expected_history_epoch" not in response.json()["profile"]
+
+        # Incomplete legacy body still returns the pre-native 400 detail string.
+        incomplete = client.put(
+            "/api/v1/profile",
+            json={"experience_mode": "improve"},
+        )
+        assert incomplete.status_code == 400
+        assert incomplete.json() == {
+            "detail": "A complete golfer profile is required."
+        }
+
+        # Cross-origin cookie posts keep the pre-native origin rejection.
+        forged_origin = client.put(
+            "/api/v1/profile",
+            json=legacy_v1_payload,
+            headers={"Origin": "https://evil.example"},
+        )
+        assert forged_origin.status_code == 403
+        assert forged_origin.json() == {"detail": "Invalid request origin."}
+
+        # Unauthenticated legacy calls keep the old unauthorized body.
+        client.cookies.clear()
+        anonymous = client.put("/api/v1/profile", json=legacy_v1_payload)
+        assert anonymous.status_code == 401
+        assert anonymous.json() == {"detail": "Log in first."}
     finally:
         _close(app)
 

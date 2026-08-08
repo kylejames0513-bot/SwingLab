@@ -252,6 +252,16 @@ class MobileResourceService:
                 try:
                     self._users._conn.execute("BEGIN IMMEDIATE")
                     lease.validate_locked(self._users, now=timestamp)
+                    owner = self._users._conn.execute(
+                        "SELECT 1 FROM users WHERE id = ?",
+                        (context.user.id,),
+                    ).fetchone()
+                    if owner is None:
+                        # Deleted identity must never surface as a history-epoch
+                        # conflict from the epoch fence below.
+                        raise CredentialMutationRejected(
+                            "The authenticated mobile credential changed."
+                        )
                     self._users._assert_history_epoch_locked(
                         context.user.id,
                         request.expected_history_epoch,
