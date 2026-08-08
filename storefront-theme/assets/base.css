@@ -1,7 +1,7 @@
 /* ============================================================
    CaddieInsight storefront — base styles & design tokens
    Turf Instrument: cool mist field, deep forest ink, one kinetic
-   amber accent. Sora carries display + interface; IBM Plex Mono
+   amber accent. Archivo carries display + interface; IBM Plex Mono
    marks measured evidence. Soft-rectilinear controls keep the
    storefront and app one instrument.
 
@@ -40,8 +40,8 @@
   --sl-footer: #06110c;      /* night turf footer */
   --sl-footer-ink: #9fb0a4;
 
-  --sl-font-sans: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-  --sl-font-display: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+  --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+  --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
   --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   --sl-maxw: 1280px;

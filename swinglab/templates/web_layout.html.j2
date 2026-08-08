@@ -20,7 +20,11 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+{# Archivo is the wordmark's own typeface, so the shipped lockup and the
+   headings it sits beside are finally cut from the same shape. The guided
+   report already asks for Archivo first and relies on the app shell having
+   loaded it — until now it silently fell back. #}
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --primary: {{ brand.primary_color }};
@@ -54,8 +58,8 @@
     --sl-shadow-lg: 0 34px 80px -42px rgba(6, 17, 12, .45);
     --sl-content: 1280px;
     --sl-pad-x: clamp(24px, 5vw, 64px);
-    --sl-font-sans: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-    --sl-font-display: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
     --sl-text-xs: 12px;
     --sl-text-sm: clamp(13.5px, 13px + .15vw, 14.5px);
