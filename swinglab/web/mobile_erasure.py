@@ -18,11 +18,11 @@ Phases, and what each transition has already finished:
 
 ``account_delete``
     ``prepared`` → upload reservations discarded → ``analysis_quiescing`` →
-    no owned analysis is queued or processing → ``jobs_closed`` → sessions and
-    export archives removed → ``files_quarantined`` → recovery-fence
-    ``account_delete`` record published → ``erasure_recorded`` → identity and
-    private rows deleted → ``identity_deleted`` → non-PII receipt written →
-    ``complete``.
+    no owned analysis is queued or processing → ``jobs_closed`` → old-epoch
+    privacy-export receipts cancelled/purged → ``files_quarantined`` →
+    recovery-fence ``account_delete`` record published → ``erasure_recorded`` →
+    local swing history erased and identity/private rows deleted →
+    ``identity_deleted`` → non-PII receipt written → ``complete``.
 
 The recovery fence is published *before* the local erase so a later restore of
 an older backup can never resurrect erased history: the chain replay re-applies
@@ -640,33 +640,13 @@ class PrivacyErasureService:
                     "jobs_closed",
                 )
             elif phase == "jobs_closed":
-                if self._users.get(current.user_id) is None:
-                    self._users.advance_privacy_erasure_phase(
-                        "account_delete",
-                        operation_id,
-                        "jobs_closed",
-                        "files_quarantined",
-                    )
-                    current = self._reload("account_delete", operation_id)
-                    continue
-                self._quiesce_owner_exports(current.user_id)
-                try:
-                    self._local_history_erase(
-                        user_id=current.user_id,
-                        expected_auth_epoch=None,
-                        expected_history_epoch=None,
-                    )
-                except (
-                    HistoryResetConflict,
-                    HistoryResetError,
-                    HistoryEpochError,
-                    HistoryPrivacyExportConflict,
-                ):
-                    logger.warning(
-                        "Account deletion stays pending operation_id=%s",
-                        operation_id,
-                    )
-                    return self._pending(current, replayed=replayed)
+                # Export receipts are cancelled before the fence so a lagging
+                # worker cannot publish a ready ZIP for an account that is about
+                # to be erased. Session/history destruction waits until after
+                # ``erasure_recorded`` so a fence outage never half-erases.
+                if self._users.get(current.user_id) is not None:
+                    if not self._quiesce_owner_exports(current.user_id):
+                        return self._pending(current, replayed=replayed)
                 self._users.advance_privacy_erasure_phase(
                     "account_delete",
                     operation_id,
@@ -693,9 +673,9 @@ class PrivacyErasureService:
                         self._erasure_hmac(current, "normalized_email_hmac")
                     ),
                     erased_through_history_epoch=(
-                        owner.history_epoch
+                        int(owner.history_epoch)
                         if owner is not None
-                        else current.expected_history_epoch
+                        else int(current.expected_history_epoch or 0)
                     ),
                 )
                 try:
@@ -711,7 +691,29 @@ class PrivacyErasureService:
                     recovery_record_hash=record_hash,
                 )
             elif phase == "erasure_recorded":
-                self._users.delete_account_identity(current.user_id)
+                owner = self._users.get(current.user_id)
+                if owner is not None:
+                    try:
+                        self._local_history_erase(
+                            user_id=current.user_id,
+                            expected_auth_epoch=None,
+                            expected_history_epoch=None,
+                        )
+                    except (
+                        HistoryResetConflict,
+                        HistoryResetError,
+                        HistoryEpochError,
+                        HistoryPrivacyExportConflict,
+                    ):
+                        logger.warning(
+                            "Account deletion stays pending operation_id=%s",
+                            operation_id,
+                        )
+                        return self._pending(current, replayed=replayed)
+                    # Exports may have been republished by a lagging worker
+                    # between the pre-fence quiesce and this post-fence erase.
+                    self._quiesce_owner_exports(current.user_id)
+                    self._users.delete_account_identity(current.user_id)
                 self._users.advance_privacy_erasure_phase(
                     "account_delete",
                     operation_id,

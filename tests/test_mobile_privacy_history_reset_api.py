@@ -478,6 +478,38 @@ def test_a_second_reset_needs_a_fresh_key_and_epoch(tmp_path, messages):
         _close(app)
 
 
+def test_another_owners_key_replays_without_erasing_the_survivor(
+    tmp_path, messages
+):
+    app = _make_app(tmp_path)
+    try:
+        with TestClient(app) as client:
+            first = _sign_in(client, messages, email="first@example.com")
+            first_token = _mint_step_up_token(client, first, messages)
+            assert _reset(client, first, first_token).status_code == 204
+
+            second = _sign_in(client, messages, email="second@example.com")
+            survivor = app.state.users.get_by_email("second@example.com")
+            _terminal_job(app, survivor.id)
+            second_token = _mint_step_up_token(
+                client,
+                second,
+                messages,
+                verifier="q" * 43,
+                idempotency_key=OTHER_IDEMPOTENCY_KEY,
+            )
+            # Possession of the first owner's exact key answers 204 from the
+            # receipt before auth; it must not erase a different live account.
+            reused = _reset(client, second, second_token)
+            survivor = app.state.users.get_by_email("second@example.com")
+            surviving_jobs = app.state.jobs.list_recent(10, user_id=survivor.id)
+        assert reused.status_code == 204, reused.text
+        assert survivor.history_epoch == 0
+        assert len(surviving_jobs) == 1
+    finally:
+        _close(app)
+
+
 # -- export quiesce ---------------------------------------------------------
 
 
