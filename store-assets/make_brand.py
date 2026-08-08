@@ -30,6 +30,7 @@ from brand_mark import GREEN, MINT, ORANGE, draw_mark, mark_svg  # noqa: E402
 OUT = HERE / "out"
 STATIC = HERE.parent / "swinglab" / "web" / "static"
 THEME = HERE.parent / "storefront-theme" / "assets"
+MOBILE = HERE.parent / "mobile" / "assets"
 
 ARCHIVO = str(HERE / "Archivo-var.ttf")
 SS = 4  # supersample factor; everything downscales with LANCZOS
@@ -156,6 +157,11 @@ def main() -> None:
     # and square.
     icon_png(OUT / "apple-touch-icon.png", 180, radius_ratio=0.0, ticks=24,
              bold=1.2, opaque=True)
+    # The native app icon. Same rule as the touch icon — the platforms mask it
+    # themselves and an alpha channel is rejected outright by App Store
+    # submission — at the 1024 the stores require.
+    icon_png(OUT / "app-icon-1024.png", 1024, radius_ratio=0.0, ticks=36,
+             bold=1.0, opaque=True)
 
     lockup(inverse=False)
     lockup(inverse=True)
@@ -169,6 +175,7 @@ def main() -> None:
         "pwa-icon-192.png": (STATIC,),
         "pwa-icon-512.png": (STATIC,),
         "pwa-icon-maskable-512.png": (STATIC,),
+        "app-icon-1024.png": (MOBILE,),
     }
     for name, targets in ship.items():
         for target in targets:

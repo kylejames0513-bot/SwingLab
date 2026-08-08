@@ -21,6 +21,7 @@ own visual language.
 | `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon — Tour Caddie v4 dial lockup |
 | `caddie-mark.svg`, `pwa-icon.svg` | The mark alone: transparent for in-page chrome, tiled for the tab favicon and installed-app icon |
 | `pwa-icon-192.png`, `pwa-icon-512.png`, `pwa-icon-maskable-512.png`, `apple-touch-icon.png` | Installed-app icons declared by `/app.webmanifest`, plus the opaque iOS home-screen tile |
+| `app-icon-1024.png` | The native client's app icon (`mobile/assets/`) — opaque and 1024, because the stores mask it themselves and reject an alpha channel |
 | `collection-gear.png` | CaddieInsight Gear collection image |
 | `caddieinsight-premium-range-hero-0852e38d.png` | Premium desktop homepage hero campaign image |
 | `caddieinsight-premium-range-hero-mobile-2e4ee946.png` | Purpose-built portrait companion for the mobile homepage hero |
