@@ -521,31 +521,31 @@ def build_drill_presentations(
             "Rehearse slow turns that stay clear of the stick while pressure loads inside the trail foot.",
             "Hit at 80 percent effort and stop if the body or club can contact the stick.",
         ), "Turf station with the stick outside and behind the swing arc.",
-           "Turn into the trail hip instead of drifting over it.", "Alignment stick"),
+           "Turn into the trail hip — pressure inside, head quiet.", "Alignment stick"),
         "hip-slide-banded-turn": DrillPresentation((
             "Loop the band above the knees and begin with light outward tension.",
             "Turn to the top while both sides keep even tension.",
             "Hold for one beat, feel the trail glute loaded, then swing through.",
         ), "Stable shoes and a band that does not restrict circulation.",
-           "The trail pocket turns back; it does not slide sideways.", "Hip resistance band"),
+           "Trail pocket turns back; it does not slide sideways.", "Hip resistance band"),
         "dip-chair-drill": DrillPresentation((
             "Set the chair for light glute contact at address.",
             "Rehearse to the top and a held impact while keeping the contact light.",
             "Move the chair one hand-width back and hit at 80 percent with the same height.",
         ), "Chair behind the hips and outside the club path.",
-           "Keep the chest tall through the ball.", "Chair or range basket"),
+           "Keep the chest tall through the ball — same height you started.", "Chair or range basket"),
         "arm-towel-under-lead": DrillPresentation((
             "Trap a folded towel lightly under the lead upper arm.",
             "Make half swings and keep the towel through impact.",
             "Build to three-quarter swings only while the towel stays until follow-through.",
         ), "Half-swing station with a soft towel and clear club path.",
-           "Keep the lead arm connected and long through the strike.", "Golf towel or headcover"),
+           "Lead arm stays connected and long through the strike.", "Golf towel or headcover"),
         "shoulder-impact-freeze": DrillPresentation((
             "Note the shoulder line at address in a face-on mirror or phone.",
             "Swing at half speed and freeze at impact for three seconds.",
             "Confirm the trail shoulder stayed lower, then blend five freezes into one ball.",
         ), "Face-on mirror or phone at hip height.",
-           "Let the trail shoulder work down through impact.", "Mirror or phone tripod"),
+           "Trail shoulder works down and under through impact.", "Mirror or phone tripod"),
         "balance-feet-together": DrillPresentation((
             "Tee the ball and begin with the feet touching.",
             "Make smooth three-quarter swings and hold each finish for three counts.",
@@ -557,13 +557,13 @@ def build_drill_presentations(
             "Hit ten wedges and ten mid-irons without changing that count.",
             "Step out and rehearse once whenever a swing feels rushed.",
         ), "Two clubs, one target, and one fixed beat.",
-           "Make every club run on the same clock.", "Metronome optional"),
+           "Every club runs on the same clock.", "Metronome optional"),
         "clean-baseline-refilm": DrillPresentation((
             "Recreate the same club, hand, camera angle, height, and framing.",
             "Make three swings with the same count and similar effort.",
             "Save the report as the next matched maintenance checkpoint.",
         ), "The same capture station used for the baseline.",
-           "Protect the selected steady measurement, not a perfect-looking pose.", "Phone support"),
+           "Protect the selected steady measurement — not a perfect-looking pose.", "Phone support"),
         "rhythm-baseline-refilm": DrillPresentation((
             "Recreate the same club and DTL camera setup.",
             "Make three swings with one count and similar effort.",
@@ -575,7 +575,7 @@ def build_drill_presentations(
             "Use bright even light and keep other people out of frame.",
             "Make three swings with the same club and camera position.",
         ), "Stable face-on phone support and uncluttered background.",
-           "Make the motion readable before judging it.", "Phone support or tripod"),
+           "Make the motion readable before you judge it.", "Phone support or tripod"),
     }
 
 

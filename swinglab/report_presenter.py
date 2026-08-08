@@ -790,7 +790,7 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         ),
         (
             OptionalSectionId.GEAR,
-            "Matched gear",
+            "Gear",
             1 if gear_shop_url(cfg) else 0,
             False,
         ),
@@ -1061,7 +1061,7 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
             source.replay_locked,
         ),
         (OptionalSectionId.SECONDARY_FINDINGS, "Secondary findings", len(findings), False),
-        (OptionalSectionId.ALTERNATIVE_DRILLS, "Alternative drills", len(view.practice.alternatives) if view.practice else 0, False),
+        (OptionalSectionId.ALTERNATIVE_DRILLS, "Try a different drill", len(view.practice.alternatives) if view.practice else 0, False),
         (OptionalSectionId.MORE_STRENGTHS, "More strengths", len(strengths), False),
         (OptionalSectionId.MEASUREMENTS, "Measurements", len(measurements), False),
         (OptionalSectionId.GLOSSARY, "Glossary", len(glossary), False),
