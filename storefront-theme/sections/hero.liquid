@@ -85,7 +85,9 @@
         <p class="sl-hero__fine">{{ section.settings.fine_print }}</p>
       {%- endif -%}
     </div>
+  </div>
 
+  <div class="sl-hero__signal-band sl-wrap">
     <aside class="sl-hero__signal sl-reveal sl-reveal--d1 is-in" aria-label="{{ 'homepage.hero.signal_label' | t }}">
       <div class="sl-hero__signal-head">
         <span>{{ 'homepage.hero.signal_status' | t }}</span>
@@ -158,13 +160,21 @@
   padding-top: clamp(96px, 11vw, 140px);
   padding-bottom: clamp(72px, 9vw, 120px);
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.5fr);
-  gap: clamp(28px, 4vw, 64px);
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
   align-items: end;
 }
 .sl-hero__copy {
   width: 100%;
   max-width: 720px;
+}
+.sl-hero__signal-band {
+  position: relative;
+  z-index: 4;
+  margin-top: -28px;
+  padding-bottom: clamp(36px, 5vw, 64px);
+  display: flex;
+  justify-content: flex-end;
 }
 .sl-hero__brand {
   margin: 0 0 18px;
@@ -296,9 +306,8 @@
 }
 .sl-hero__signal {
   width: min(100%, 320px);
-  margin: 0 0 8px auto;
+  margin: 0;
   padding: 18px 18px 16px;
-  align-self: end;
   text-align: left;
   border: 1px solid rgba(238, 242, 239, 0.16);
   border-radius: var(--sl-radius);
@@ -398,7 +407,6 @@
   text-align: left;
 }
 @media (max-width: 980px) {
-  .sl-hero__inner { grid-template-columns: minmax(0, 1fr) minmax(240px, 0.46fr); }
   .sl-hero__title { font-size: clamp(40px, 6.2vw, 58px); }
 }
 @media (max-width: 749px) {
@@ -426,6 +434,7 @@
     justify-items: stretch;
     gap: 0;
   }
+  .sl-hero__signal-band { display: none; }
   .sl-hero__copy {
     margin-inline: 0;
     text-align: left;

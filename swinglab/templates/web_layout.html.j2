@@ -238,10 +238,12 @@
   }
   .sl-header__member {
     min-height: 40px;
-    padding: 7px 13px 7px 8px;
+    max-width: min(188px, 22vw);
+    min-width: 0;
+    padding: 7px 12px 7px 8px;
     display: inline-flex;
     align-items: center;
-    gap: 9px;
+    gap: 8px;
     border: 1px solid #b9cdbf;
     border-radius: var(--sl-radius-control);
     background: #edf6ef;
@@ -250,6 +252,7 @@
     font-weight: 700;
     text-decoration: none;
     white-space: nowrap;
+    overflow: hidden;
   }
   .sl-header__member:hover { border-color: var(--sl-green-btn); background: #e3f1e7; color: var(--sl-green); }
   .sl-header--premium .sl-header__member {
@@ -263,7 +266,8 @@
     color: #fff;
   }
   .sl-header__member > span:last-child {
-    max-width: clamp(130px, 17vw, 230px);
+    min-width: 0;
+    max-width: clamp(64px, 10vw, 112px);
     overflow: hidden;
     text-overflow: ellipsis;
   }
@@ -692,6 +696,12 @@
     color: #7f9184;
   }
   .sl-app-footer__bottom p { margin: 0; }
+  @media (min-width: 981px) and (max-width: 1200px) {
+    .sl-header__actions { gap: 8px; }
+    .sl-header__member { max-width: 156px; }
+    .sl-header__member > span:last-child { max-width: 72px; }
+    .sl-header__account .sl-header__dropdown-trigger { max-width: 120px; }
+  }
   @media (max-width: 980px) {
     .sl-header { min-height: 64px; }
     .sl-header__inner,
@@ -710,7 +720,11 @@
   }
   @media (max-width: 560px) {
     .sl-app-banner { padding-inline: 14px; }
-    .sl-app-banner__inner { gap: 8px; }
+    .sl-app-banner__inner {
+      min-width: 0;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
     .sl-app-banner__detail { display: none; }
   }
   @media (max-width: 390px) {
@@ -746,6 +760,10 @@
 </head>
 <body class="sl-premium-chrome{% if header_profile and header_profile.reduced_motion %} sl-reduced-motion{% endif %}">
 {% set member_name = header_profile.display_name if header_profile and header_profile.display_name else '' %}
+{% set member_chip_label = 'Game plan' %}
+{% if member_name %}
+  {% set member_chip_label = member_name[:16] ~ ('…' if member_name|length > 16 else '') %}
+{% endif %}
 {% set free_limit = free_per_month|default(1) %}
 <a class="sl-skip" href="#MainContent">Skip to content</a>
 <aside class="sl-app-banner{% if user and user.is_pro %} sl-app-banner--pro{% endif %}" aria-label="Membership status">
@@ -797,9 +815,9 @@
       {% endif %}
       {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
       {% if user and user.is_pro %}
-      <a class="sl-header__member" href="/today" data-pro-member-nav>
+      <a class="sl-header__member" href="/today" data-pro-member-nav title="{{ member_name or 'Game plan' }}">
         <span class="sl-header__member-badge">PRO</span>
-        <span>{{ "Welcome back, " ~ member_name if member_name else "Your Pro game plan" }}</span>
+        <span>{{ member_chip_label }}</span>
       </a>
       {% else %}
       <a class="sl-header__link{% if current_path == '/pricing' %} is-current{% endif %}" href="/pricing" {% if current_path == '/pricing' %}aria-current="page"{% endif %}>Pro</a>
@@ -883,7 +901,7 @@
         </a>
         {% if user and user.is_pro %}
         <a class="sl-menu__link" href="/today" data-menu-link data-pro-member-nav>
-          <span>{{ "Welcome back, " ~ member_name if member_name else "Your Pro game plan" }}</span><span class="sl-header__member-badge">PRO</span>
+          <span>{{ member_chip_label }}</span><span class="sl-header__member-badge">PRO</span>
         </a>
         {% endif %}
       </div>
@@ -960,7 +978,10 @@
       {% endif %}
       {% if shop_enabled %}<a href="/shop">Training gear</a>{% endif %}
       {% if not (user and user.is_pro) %}<a href="/pricing">Pro membership</a>{% endif %}
-      {% if storefront_url %}<a href="{{ storefront_url }}">Visit the storefront</a>{% endif %}
+      {% if storefront_url %}
+        <a href="{{ storefront_url }}/account">Orders &amp; subscriptions</a>
+        <a href="{{ storefront_url }}">Store home</a>
+      {% endif %}
     </nav>
   </div>
   <div class="sl-app-footer__bottom">

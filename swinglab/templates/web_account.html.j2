@@ -261,20 +261,41 @@
         </div>
       </section>
 
-      {% if user.shopify_customer_id or shopify_customer_accounts_enabled %}
+      {% if user.shopify_customer_id or shopify_customer_accounts_enabled or storefront_url or user.shopify_sync_status %}
+        {% set sync_status = user.shopify_sync_status|default('not_started') %}
+        {% if sync_status == 'synced' %}
+          {% set sync_label = 'Synced' %}
+        {% elif sync_status == 'pending' %}
+          {% set sync_label = 'Pending' %}
+        {% elif sync_status == 'failed' %}
+          {% set sync_label = 'Failed' %}
+        {% elif sync_status == 'requires_review' %}
+          {% set sync_label = 'Requires review' %}
+        {% else %}
+          {% set sync_label = 'Not started' %}
+        {% endif %}
         <section class="account-card account-card--wide" aria-labelledby="shopify-heading">
           <header class="account-card__header">
-            <p class="sl-eyebrow">Store identity</p>
+            <p class="sl-eyebrow">Store hub</p>
             <h2 id="shopify-heading">Shopify connection</h2>
-            <p>Store identity and CaddieInsight sign-in stay explicit and separate from your golf data.</p>
+            <p>Store identity, order history, and CaddieInsight sign-in stay explicit and separate from your golf data. Passwords are never synced.</p>
           </header>
           {% if user.shopify_customer_id %}
             <p class="store-status"><strong>Connected to the {{ brand.name }} store.</strong> Qualifying purchases can apply access to this CaddieInsight account; no store password is copied here.</p>
           {% endif %}
-          {% if shopify_customer_accounts_enabled %}
-            <dl class="account-facts{% if user.shopify_customer_id %} account-subsection{% endif %}">
+          <dl class="account-facts{% if user.shopify_customer_id %} account-subsection{% endif %}">
+            <div class="account-row"><dt>Hub sync</dt><dd>{{ sync_label }}</dd></div>
+            {% if shopify_customer_accounts_enabled %}
               <div class="account-row"><dt>Shopify sign-in</dt><dd>{% if user.shopify_account_migration_state == 'shopify_authenticated' %}Connected{% elif user.shopify_account_migration_state == 'linked_pending_first_sign_in' %}Linked — sign in once to finish{% else %}Not connected{% endif %}</dd></div>
-            </dl>
+            {% endif %}
+          </dl>
+          {% if storefront_url %}
+            <div class="account-subsection account-actions">
+              <a class="button secondary" href="{{ storefront_url }}/account">Store account &amp; orders</a>
+              <a class="button secondary" href="{{ storefront_url }}">Store home</a>
+            </div>
+          {% endif %}
+          {% if shopify_customer_accounts_enabled %}
             {% if user.shopify_account_migration_state == 'shopify_authenticated' %}
               <p class="hint">Your Shopify Customer Account is the sign-in currently used in this browser. Your CaddieInsight golf data stays here.</p>
             {% else %}
@@ -285,6 +306,7 @@
               </div>
             {% endif %}
           {% endif %}
+          <p class="hint">Passwords are never synced between the store and CaddieInsight.</p>
         </section>
       {% endif %}
 
