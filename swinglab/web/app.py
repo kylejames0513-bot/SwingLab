@@ -107,6 +107,11 @@ from ..api.mobile_routes import (
     MOBILE_TODAY_ROUTE_NAME,
     MOBILE_PROGRESS_ROUTE_NAME,
     MOBILE_SESSIONS_ROUTE_NAME,
+    MOBILE_UPLOAD_CREATE_ROUTE_NAME,
+    MOBILE_UPLOAD_STATUS_ROUTE_NAME,
+    MOBILE_UPLOAD_CHUNK_ROUTE_NAME,
+    MOBILE_UPLOAD_COMPLETE_ROUTE_NAME,
+    MOBILE_UPLOAD_ABORT_ROUTE_NAME,
     install_mobile_routes,
 )
 from ..caddie_brief import (
@@ -182,6 +187,7 @@ from .mobile_resources import (
     VIDEO_SUFFIXES,
     validate_mobile_resource_settings,
 )
+from .resumable_uploads import ResumableUploadManager
 from .review_auth import (
     APPLICATION_ID_POLICY_REVISION,
     DenyReviewAuthAdmission,
@@ -718,6 +724,18 @@ def create_app(
     app.state.mobile_resource_service = mobile_resource_service
     if mobile_keyed_throttle is not None:
         app.router.add_event_handler("shutdown", mobile_keyed_throttle.close)
+    # The resumable-upload manager is constructed unconditionally so its
+    # crash-recovery convergence runs before any request is served, even when
+    # new resumable uploads are feature-disabled.  Capacity guards are zero and
+    # the routes are concealed until the feature is enabled with positive,
+    # validated guards.
+    resumable_upload_manager = ResumableUploadManager(
+        manager,
+        mobile_resource_settings,
+        state_hmac=users._mobile_state_hmac,
+    )
+    app.state.resumable_upload_manager = resumable_upload_manager
+    app.router.add_event_handler("shutdown", resumable_upload_manager.close)
     mobile_resource_route_names = {
         MOBILE_CAPABILITIES_ROUTE_NAME,
         MOBILE_SESSIONS_ROUTE_NAME,
@@ -728,6 +746,13 @@ def create_app(
     }
     mobile_profile_write_route_names = {MOBILE_PROFILE_WRITE_ROUTE_NAME}
     mobile_practice_write_route_names = {MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME}
+    mobile_upload_route_names = {
+        MOBILE_UPLOAD_CREATE_ROUTE_NAME,
+        MOBILE_UPLOAD_STATUS_ROUTE_NAME,
+        MOBILE_UPLOAD_CHUNK_ROUTE_NAME,
+        MOBILE_UPLOAD_COMPLETE_ROUTE_NAME,
+        MOBILE_UPLOAD_ABORT_ROUTE_NAME,
+    }
     mobile_device_route_names = {
         MOBILE_DEVICES_LIST_ROUTE_NAME,
         MOBILE_DEVICE_REVOKE_ROUTE_NAME,
@@ -739,6 +764,8 @@ def create_app(
         concealed_mobile_route_names |= mobile_profile_write_route_names
     if not mobile_resource_service.settings.practice_writes_enabled:
         concealed_mobile_route_names |= mobile_practice_write_route_names
+    if not mobile_resource_service.settings.resumable_upload_enabled:
+        concealed_mobile_route_names |= mobile_upload_route_names
     if not mobile_resource_service.settings.device_management_enabled:
         concealed_mobile_route_names |= mobile_device_route_names
     install_mobile_error_handlers(
@@ -753,6 +780,7 @@ def create_app(
         | mobile_resource_route_names
         | mobile_profile_write_route_names
         | mobile_practice_write_route_names
+        | mobile_upload_route_names
         | mobile_device_route_names,
         concealed_route_names=concealed_mobile_route_names,
     )
@@ -778,6 +806,10 @@ def create_app(
         users=users,
         credential_mutation_guard=mutation_guard,
         review_auth_admission=review_auth_admission,
+        resumable_upload_manager=resumable_upload_manager,
+        resumable_upload_enabled=(
+            mobile_resource_service.settings.resumable_upload_enabled
+        ),
     )
     static_dir = Path(__file__).parent / "static"
     # Static assets contain only versioned public brand imagery and the

@@ -28,6 +28,7 @@ def export_openapi(output: Path) -> None:
                     + "\n"
                 )
         finally:
+            app.state.resumable_upload_manager.close()
             app.state.jobs.close()
             app.state.users.close()
             app.state.throttle.close()

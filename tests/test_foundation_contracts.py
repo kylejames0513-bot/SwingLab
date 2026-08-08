@@ -233,6 +233,11 @@ def test_app_owned_resources_close_idempotently_without_worker_or_sqlite_leaks(t
     known_workers = set(threading.enumerate())
     app.state.jobs._pool.submit(lambda: None).result()
     owned_workers = set(threading.enumerate()) - known_workers
+    # The resumable-upload manager owns extra SQLite handles on the shared
+    # database; closing it is required for the WAL to checkpoint back into the
+    # main file before the move-and-reopen assertion below.
+    app.state.resumable_upload_manager.close()
+    app.state.resumable_upload_manager.close()
     for resource in (app.state.jobs, app.state.users, app.state.throttle):
         resource.close()
         resource.close()
@@ -245,6 +250,8 @@ def test_app_owned_resources_close_idempotently_without_worker_or_sqlite_leaks(t
     for resource in (app.state.jobs, app.state.users, app.state.throttle):
         with pytest.raises(sqlite3.ProgrammingError):
             resource._conn.execute("SELECT 1")
+    with pytest.raises(sqlite3.ProgrammingError):
+        app.state.resumable_upload_manager._conn.execute("SELECT 1")
 
     database = tmp_path / "sessions" / "swinglab.db"
     moved = tmp_path / "sessions" / "closed-swinglab.db"

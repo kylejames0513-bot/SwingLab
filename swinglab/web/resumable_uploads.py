@@ -1,6 +1,6 @@
 """Durable, resumable mobile uploads with atomic job completion.
 
-The reservation row in ``mobile_uploads`` (next to the session tree, in the same
+The reservation row in ``resumable_uploads`` (next to the session tree, in the same
 ``swinglab.db``) is the source of truth for an in-flight upload; the part file
 under ``sessions_dir/.uploads/<upload_id>.part`` is its bytes. SQLite always
 holds the *acknowledged* offset: bytes are fsynced to the part file first, then
@@ -51,7 +51,7 @@ _ALLOWED_SUFFIXES = frozenset({".avi", ".m4v", ".mkv", ".mov", ".mp4"})
 _ABORT_RECEIPT_TTL_SECONDS = 7 * 24 * 60 * 60
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS mobile_uploads (
+CREATE TABLE IF NOT EXISTS resumable_uploads (
     upload_id           TEXT PRIMARY KEY,
     user_id             TEXT NOT NULL,
     status              TEXT NOT NULL,
@@ -77,12 +77,12 @@ CREATE TABLE IF NOT EXISTS mobile_uploads (
     updated_at          REAL NOT NULL,
     expires_at          REAL NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS mobile_uploads_idem
-    ON mobile_uploads(user_id, idempotency_hmac);
-CREATE INDEX IF NOT EXISTS mobile_uploads_user_status
-    ON mobile_uploads(user_id, status);
+CREATE UNIQUE INDEX IF NOT EXISTS resumable_uploads_idem
+    ON resumable_uploads(user_id, idempotency_hmac);
+CREATE INDEX IF NOT EXISTS resumable_uploads_user_status
+    ON resumable_uploads(user_id, status);
 
-CREATE TABLE IF NOT EXISTS mobile_upload_abort_receipts (
+CREATE TABLE IF NOT EXISTS resumable_upload_abort_receipts (
     upload_id           TEXT PRIMARY KEY,
     user_id             TEXT NOT NULL,
     idempotency_key_id  TEXT NOT NULL,
@@ -91,8 +91,8 @@ CREATE TABLE IF NOT EXISTS mobile_upload_abort_receipts (
     created_at          REAL NOT NULL,
     expires_at          REAL NOT NULL
 );
-CREATE INDEX IF NOT EXISTS mobile_upload_abort_receipts_expiry
-    ON mobile_upload_abort_receipts(expires_at);
+CREATE INDEX IF NOT EXISTS resumable_upload_abort_receipts_expiry
+    ON resumable_upload_abort_receipts(expires_at);
 """
 
 
@@ -196,8 +196,9 @@ class ResumableUploadManager:
         self._jobs = jobs
         self.settings = settings
         self.sessions_dir = jobs.sessions_dir
+        # Created lazily on the first reserved part so a server that never
+        # accepts a resumable upload leaves no artifact in the sessions tree.
         self.uploads_dir = self.sessions_dir / ".uploads"
-        self.uploads_dir.mkdir(parents=True, exist_ok=True)
         self._clock = clock
         self._state_hmac = state_hmac
         self._comparison_resolver = comparison_resolver
@@ -219,6 +220,7 @@ class ResumableUploadManager:
 
             maintenance_lock = SessionMaintenanceLock(self.sessions_dir)
         self._maintenance = maintenance_lock
+        self._owns_ledger = ledger is None
         if ledger is None:
             import sqlite3 as _sqlite3
 
@@ -236,10 +238,22 @@ class ResumableUploadManager:
         self.recover()
 
     def close(self) -> None:
+        """Release every owned SQLite handle to ``swinglab.db`` (idempotent).
+
+        The last close of every connection on the shared database is what lets
+        SQLite checkpoint the WAL back into the main file, so both this
+        manager's connection and its internally-owned ledger connection are
+        closed here.  A ledger injected by a caller is left for that owner.
+        """
         with self._tx:
             self._conn.close()
+        if self._owns_ledger:
+            self._ledger._conn.close()
 
     # -- helpers ----------------------------------------------------------
+    def _ensure_uploads_dir(self) -> None:
+        self.uploads_dir.mkdir(parents=True, exist_ok=True)
+
     def _part_path(self, upload_id: str) -> Path:
         return self.uploads_dir / f"{upload_id}.part"
 
@@ -309,7 +323,7 @@ class ResumableUploadManager:
     def _row(self, upload_id: str):
         with self._tx:
             return self._conn.execute(
-                "SELECT * FROM mobile_uploads WHERE upload_id = ?", (upload_id,)
+                "SELECT * FROM resumable_uploads WHERE upload_id = ?", (upload_id,)
             ).fetchone()
 
     def _owned_row(self, upload_id: str, user_id: str):
@@ -383,7 +397,7 @@ class ResumableUploadManager:
         # Idempotent replay / conflict decision (own connection transaction).
         with self._tx:
             existing = self._conn.execute(
-                "SELECT * FROM mobile_uploads "
+                "SELECT * FROM resumable_uploads "
                 "WHERE user_id = ? AND idempotency_key_id = ? AND idempotency_hmac = ?",
                 (user_id, key_id, key_hmac),
             ).fetchone()
@@ -394,7 +408,7 @@ class ResumableUploadManager:
                     )
                 return self._reservation_from_row(existing)
             active = self._conn.execute(
-                "SELECT COUNT(*) FROM mobile_uploads "
+                "SELECT COUNT(*) FROM resumable_uploads "
                 "WHERE user_id = ? AND status IN (?, ?)",
                 (user_id, PENDING, FINALIZING),
             ).fetchone()[0]
@@ -423,7 +437,7 @@ class ResumableUploadManager:
         try:
             with self._tx:
                 self._conn.execute(
-                    "INSERT INTO mobile_uploads "
+                    "INSERT INTO resumable_uploads "
                     "(upload_id, user_id, status, source_name, suffix, file_bytes, "
                     " file_sha256, club, hand, angle, level, history_epoch, "
                     " idempotency_key_id, idempotency_hmac, request_hash, "
@@ -465,6 +479,7 @@ class ResumableUploadManager:
             self._ledger.release("upload_part", upload_id)
             raise
         # Create the (empty) part file and durably record its directory entry.
+        self._ensure_uploads_dir()
         part = self._part_path(upload_id)
         fd = os.open(part, os.O_CREAT | os.O_WRONLY, 0o600)
         os.close(fd)
@@ -547,7 +562,7 @@ class ResumableUploadManager:
             try:
                 with self._tx:
                     self._conn.execute(
-                        "UPDATE mobile_uploads SET committed_offset = ?, updated_at = ? "
+                        "UPDATE resumable_uploads SET committed_offset = ?, updated_at = ? "
                         "WHERE upload_id = ? AND committed_offset = ? AND status = ?",
                         (new_offset, self._clock(), upload_id, acknowledged, PENDING),
                     )
@@ -573,7 +588,7 @@ class ResumableUploadManager:
         except OSError:
             with self._tx:
                 self._conn.execute(
-                    "UPDATE mobile_uploads SET status = ?, updated_at = ? "
+                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
                     "WHERE upload_id = ?",
                     (REPAIR_REQUIRED, self._clock(), upload_id),
                 )
@@ -595,7 +610,7 @@ class ResumableUploadManager:
                 os.close(fd)
         with self._tx:
             self._conn.execute(
-                "UPDATE mobile_uploads SET status = ?, updated_at = ? WHERE upload_id = ?",
+                "UPDATE resumable_uploads SET status = ?, updated_at = ? WHERE upload_id = ?",
                 (PENDING, self._clock(), upload_id),
             )
             self._conn.commit()
@@ -633,7 +648,7 @@ class ResumableUploadManager:
             # Phase one: mark finalizing (recoverable) before any job exists.
             with self._tx:
                 self._conn.execute(
-                    "UPDATE mobile_uploads SET status = ?, updated_at = ? "
+                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
                     "WHERE upload_id = ? AND status = ?",
                     (FINALIZING, self._clock(), upload_id, PENDING),
                 )
@@ -644,7 +659,7 @@ class ResumableUploadManager:
             # Phase two: bind the job and mark the reservation complete.
             with self._tx:
                 self._conn.execute(
-                    "UPDATE mobile_uploads SET status = ?, job_id = ?, updated_at = ? "
+                    "UPDATE resumable_uploads SET status = ?, job_id = ?, updated_at = ? "
                     "WHERE upload_id = ?",
                     (COMPLETE, job.id, self._clock(), upload_id),
                 )
@@ -674,7 +689,7 @@ class ResumableUploadManager:
     def _mark_failed(self, upload_id: str) -> None:
         with self._tx:
             self._conn.execute(
-                "UPDATE mobile_uploads SET status = ?, updated_at = ? WHERE upload_id = ?",
+                "UPDATE resumable_uploads SET status = ?, updated_at = ? WHERE upload_id = ?",
                 (FAILED, self._clock(), upload_id),
             )
             self._conn.commit()
@@ -716,7 +731,7 @@ class ResumableUploadManager:
         try:
             with self._tx:
                 receipt = self._conn.execute(
-                    "SELECT * FROM mobile_upload_abort_receipts WHERE upload_id = ?",
+                    "SELECT * FROM resumable_upload_abort_receipts WHERE upload_id = ?",
                     (upload_id,),
                 ).fetchone()
             if receipt is not None:
@@ -738,7 +753,7 @@ class ResumableUploadManager:
             # Journal the aborting intent before any filesystem mutation.
             with self._tx:
                 self._conn.execute(
-                    "UPDATE mobile_uploads SET status = ?, updated_at = ? "
+                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
                     "WHERE upload_id = ?",
                     (ABORTING, self._clock(), upload_id),
                 )
@@ -751,12 +766,12 @@ class ResumableUploadManager:
             now = self._clock()
             with self._tx:
                 self._conn.execute(
-                    "UPDATE mobile_uploads SET status = ?, updated_at = ? "
+                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
                     "WHERE upload_id = ?",
                     (ABORTED, now, upload_id),
                 )
                 self._conn.execute(
-                    "INSERT OR REPLACE INTO mobile_upload_abort_receipts "
+                    "INSERT OR REPLACE INTO resumable_upload_abort_receipts "
                     "(upload_id, user_id, idempotency_key_id, idempotency_hmac, "
                     " request_hash, created_at, expires_at) "
                     "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -780,7 +795,7 @@ class ResumableUploadManager:
         now = self._clock()
         with self._tx:
             rows = self._conn.execute(
-                "SELECT upload_id FROM mobile_uploads "
+                "SELECT upload_id FROM resumable_uploads "
                 "WHERE status = ? AND expires_at < ?",
                 (PENDING, now),
             ).fetchall()
@@ -797,7 +812,7 @@ class ResumableUploadManager:
                 self._ledger.release("upload_part", upload_id)
                 with self._tx:
                     self._conn.execute(
-                        "UPDATE mobile_uploads SET status = ?, updated_at = ? "
+                        "UPDATE resumable_uploads SET status = ?, updated_at = ? "
                         "WHERE upload_id = ?",
                         (FAILED, self._clock(), upload_id),
                     )
@@ -811,7 +826,7 @@ class ResumableUploadManager:
         """History reset / account deletion discards active reservations."""
         with self._tx:
             rows = self._conn.execute(
-                "SELECT upload_id FROM mobile_uploads "
+                "SELECT upload_id FROM resumable_uploads "
                 "WHERE user_id = ? AND status IN (?, ?)",
                 (user_id, PENDING, FINALIZING),
             ).fetchall()
@@ -821,7 +836,7 @@ class ResumableUploadManager:
             self._ledger.release("upload_part", upload_id)
             with self._tx:
                 self._conn.execute(
-                    "UPDATE mobile_uploads SET status = ?, updated_at = ? "
+                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
                     "WHERE upload_id = ?",
                     (FAILED, self._clock(), upload_id),
                 )
@@ -840,7 +855,7 @@ class ResumableUploadManager:
         """
         with self._tx:
             rows = self._conn.execute(
-                "SELECT * FROM mobile_uploads WHERE status IN (?, ?, ?, ?)",
+                "SELECT * FROM resumable_uploads WHERE status IN (?, ?, ?, ?)",
                 (PENDING, FINALIZING, ABORTING, REPAIR_REQUIRED),
             ).fetchall()
         for row in rows:
@@ -863,7 +878,7 @@ class ResumableUploadManager:
                     if status == REPAIR_REQUIRED:
                         with self._tx:
                             self._conn.execute(
-                                "UPDATE mobile_uploads SET status = ? WHERE upload_id = ?",
+                                "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
                                 (PENDING, upload_id),
                             )
                             self._conn.commit()
@@ -875,7 +890,7 @@ class ResumableUploadManager:
                 self._ledger.release("upload_part", upload_id)
                 with self._tx:
                     self._conn.execute(
-                        "UPDATE mobile_uploads SET status = ? WHERE upload_id = ?",
+                        "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
                         (ABORTED, upload_id),
                     )
                     self._conn.commit()
@@ -894,7 +909,7 @@ class ResumableUploadManager:
                 return
             with self._tx:
                 self._conn.execute(
-                    "UPDATE mobile_uploads SET status = ?, job_id = ? WHERE upload_id = ?",
+                    "UPDATE resumable_uploads SET status = ?, job_id = ? WHERE upload_id = ?",
                     (COMPLETE, job.id, upload_id),
                 )
                 self._conn.commit()
@@ -909,7 +924,7 @@ class ResumableUploadManager:
             if row["job_id"]:
                 with self._tx:
                     self._conn.execute(
-                        "UPDATE mobile_uploads SET status = ? WHERE upload_id = ?",
+                        "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
                         (COMPLETE, upload_id),
                     )
                     self._conn.commit()
@@ -921,7 +936,7 @@ class ResumableUploadManager:
         self._part_path(upload_id).unlink(missing_ok=True)
         with self._tx:
             self._conn.execute(
-                "UPDATE mobile_uploads SET status = ? WHERE upload_id = ?",
+                "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
                 (FAILED, upload_id),
             )
             self._conn.commit()
@@ -930,7 +945,7 @@ class ResumableUploadManager:
         present: dict[tuple[str, str], int] = {}
         with self._tx:
             rows = self._conn.execute(
-                "SELECT upload_id, status, committed_offset FROM mobile_uploads "
+                "SELECT upload_id, status, committed_offset FROM resumable_uploads "
                 "WHERE status IN (?, ?)",
                 (PENDING, FINALIZING),
             ).fetchall()
@@ -950,6 +965,6 @@ class ResumableUploadManager:
     def _non_upload_ledger_rows(self) -> list[tuple[str, str, int]]:
         rows = self._ledger._conn.execute(
             "SELECT kind, object_id, materialized_bytes "
-            "FROM mobile_storage_allocations WHERE kind != 'upload_part'"
+            "FROM storage_capacity_allocations WHERE kind != 'upload_part'"
         ).fetchall()
         return [(r[0], r[1], int(r[2])) for r in rows]

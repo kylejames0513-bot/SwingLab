@@ -31,6 +31,9 @@ from .contracts import (
     ProfileResponse,
     ProfileUpdateRequest,
     ProgressResponse,
+    UploadCompleteResponse,
+    UploadCreateRequest,
+    UploadReservationResponse,
     NativeAuthExchangePendingResponse,
     NativeAuthExchangeRequest,
     NativeAuthExchangeSuccessResponse,
@@ -43,6 +46,7 @@ from .contracts import (
 from .errors import MobileAPIHTTPError
 from ..web.credential_mutations import (
     CredentialMutationGuard,
+    CredentialMutationRejected,
     MobileDeviceRevokeNotFound,
     MobileDeviceRevokeService,
     MobileSignOutInvalidRequest,
@@ -69,6 +73,23 @@ from ..web.mobile_resources import (
     MobileProfileUnavailable,
     MobileResourceNotFound,
     MobileResourceService,
+    serialize_mobile_session,
+)
+from ..web.resumable_uploads import (
+    Reservation,
+    ResumableUploadManager,
+    UploadBusy,
+    UploadCapacityError,
+    UploadChecksumMismatch,
+    UploadChunkTooLarge,
+    UploadComparisonConflict,
+    UploadExpired,
+    UploadHistoryConflict,
+    UploadIdempotencyConflict,
+    UploadNotFound,
+    UploadOffsetMismatch,
+    UploadRepairRequired,
+    UploadStateConflict,
 )
 from ..web.users import MobileAPITokenLimitError, UserStore
 from ..web.review_auth import (
@@ -93,6 +114,11 @@ MOBILE_PROFILE_WRITE_ROUTE_NAME = "mobile.resources.profile_write"
 MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME = "mobile.resources.practice_evidence"
 MOBILE_DEVICES_LIST_ROUTE_NAME = "mobile.devices.list"
 MOBILE_DEVICE_REVOKE_ROUTE_NAME = "mobile.devices.revoke"
+MOBILE_UPLOAD_CREATE_ROUTE_NAME = "mobile.uploads.create"
+MOBILE_UPLOAD_STATUS_ROUTE_NAME = "mobile.uploads.status"
+MOBILE_UPLOAD_CHUNK_ROUTE_NAME = "mobile.uploads.chunk"
+MOBILE_UPLOAD_COMPLETE_ROUTE_NAME = "mobile.uploads.complete"
+MOBILE_UPLOAD_ABORT_ROUTE_NAME = "mobile.uploads.abort"
 _MOBILE_BEARER_SCHEME = HTTPBearer(
     auto_error=False,
     scheme_name="MobileBearer",
@@ -142,6 +168,8 @@ def install_mobile_routes(
     users: UserStore,
     credential_mutation_guard: CredentialMutationGuard,
     review_auth_admission=None,
+    resumable_upload_manager: ResumableUploadManager | None = None,
+    resumable_upload_enabled: bool = False,
 ) -> None:
     no_store = {"Cache-Control": "no-store", "Pragma": "no-cache"}
     read_security = {"security": [{"MobileBearer": []}]}
@@ -509,6 +537,418 @@ def install_mobile_routes(
             status_code=201,
             headers=no_store,
         )
+
+    # -- resumable uploads ------------------------------------------------
+    def _uploads_ready() -> ResumableUploadManager:
+        if resumable_upload_manager is None or not resumable_upload_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Resumable uploads are not enabled.",
+                headers=no_store,
+            )
+        return resumable_upload_manager
+
+    def _upload_bearer(request: Request) -> MobileAuthContext:
+        return require_mobile_bearer(
+            request,
+            users,
+            require_account,
+            review_auth_admission,
+            credential_mutation_guard,
+        )
+
+    def _single_idempotency_key(request: Request) -> str:
+        values = request.headers.getlist("idempotency-key")
+        if len(values) != 1:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            )
+        try:
+            UserStore._mobile_auth_idempotency_bytes(values[0])
+        except ValueError as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            ) from exc
+        return values[0]
+
+    def _reservation_response(
+        reservation: Reservation, *, status_code: int = 200
+    ) -> JSONResponse:
+        body = UploadReservationResponse(
+            upload_id=reservation.upload_id,
+            status=reservation.status,
+            offset=reservation.committed_offset,
+            file_bytes=reservation.file_bytes,
+            chunk_bytes=reservation.chunk_bytes,
+            expires_at=reservation.expires_at,
+        )
+        return JSONResponse(
+            body.model_dump(mode="json"),
+            status_code=status_code,
+            headers=no_store,
+        )
+
+    def _map_upload_error(exc: Exception) -> MobileAPIHTTPError:
+        if isinstance(exc, UploadNotFound):
+            return MobileAPIHTTPError(
+                404, "not_found", "Upload not found.", headers=no_store
+            )
+        if isinstance(exc, UploadIdempotencyConflict):
+            return MobileAPIHTTPError(
+                409, "idempotency_conflict", str(exc), headers=no_store
+            )
+        if isinstance(exc, UploadHistoryConflict):
+            return MobileAPIHTTPError(
+                409, "history_epoch_conflict", str(exc), headers=no_store
+            )
+        if isinstance(exc, UploadComparisonConflict):
+            return MobileAPIHTTPError(
+                409, "comparison_conflict", str(exc), headers=no_store
+            )
+        if isinstance(exc, UploadOffsetMismatch):
+            headers = dict(no_store)
+            headers["Upload-Offset"] = str(exc.acknowledged_offset)
+            return MobileAPIHTTPError(
+                409, "offset_mismatch", str(exc), headers=headers
+            )
+        if isinstance(exc, UploadRepairRequired):
+            return MobileAPIHTTPError(
+                409, "upload_repairing", str(exc), retryable=True, headers=no_store
+            )
+        if isinstance(exc, UploadBusy):
+            return MobileAPIHTTPError(
+                409, "upload_busy", str(exc), retryable=True, headers=no_store
+            )
+        if isinstance(exc, UploadStateConflict):
+            return MobileAPIHTTPError(
+                409, "upload_conflict", str(exc), headers=no_store
+            )
+        if isinstance(exc, UploadExpired):
+            return MobileAPIHTTPError(
+                410, "upload_expired", str(exc), headers=no_store
+            )
+        if isinstance(exc, UploadChunkTooLarge):
+            return MobileAPIHTTPError(
+                413, "chunk_too_large", str(exc), headers=no_store
+            )
+        if isinstance(exc, UploadChecksumMismatch):
+            return MobileAPIHTTPError(
+                422, "checksum_mismatch", str(exc), headers=no_store
+            )
+        if isinstance(exc, UploadCapacityError):
+            headers = dict(no_store)
+            headers["Retry-After"] = str(int(exc.retry_after_seconds))
+            return MobileAPIHTTPError(
+                507,
+                "insufficient_storage",
+                str(exc),
+                retryable=True,
+                headers=headers,
+            )
+        return MobileAPIHTTPError(
+            500, "internal_error", "Internal server error.", retryable=True
+        )
+
+    async def _read_raw_chunk(request: Request, limit: int) -> bytes:
+        declared = request.headers.get("content-length")
+        if declared is not None:
+            try:
+                if int(declared) > limit:
+                    raise MobileAPIHTTPError(
+                        413,
+                        "chunk_too_large",
+                        "The chunk exceeds the configured size.",
+                        headers=no_store,
+                    )
+            except ValueError as exc:
+                raise MobileAPIHTTPError(
+                    400,
+                    "validation_error",
+                    "Invalid Content-Length.",
+                    headers=no_store,
+                ) from exc
+        chunks: list[bytes] = []
+        received = 0
+        async for piece in request.stream():
+            received += len(piece)
+            if received > limit:
+                raise MobileAPIHTTPError(
+                    413,
+                    "chunk_too_large",
+                    "The chunk exceeds the configured size.",
+                    headers=no_store,
+                )
+            chunks.append(piece)
+        return b"".join(chunks)
+
+    upload_idempotency_parameter = {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": True,
+        "description": "Exactly 32 hexadecimal characters (128 bits).",
+        "schema": {
+            "type": "string",
+            "minLength": 32,
+            "maxLength": 32,
+            "pattern": "^[0-9A-Fa-f]{32}$",
+        },
+    }
+
+    @app.post(
+        "/api/v1/uploads",
+        name=MOBILE_UPLOAD_CREATE_ROUTE_NAME,
+        status_code=201,
+        response_model=UploadReservationResponse,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+            507: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": UploadCreateRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": [upload_idempotency_parameter],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    async def mobile_upload_create(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        manager = _uploads_ready()
+        payload = await _native_auth_payload(request, UploadCreateRequest)
+        idempotency_key = _single_idempotency_key(request)
+        try:
+            context = _upload_bearer(request)
+            with credential_mutation_guard.admit(context):
+                reservation = manager.create(
+                    context.user.id, payload, idempotency_key
+                )
+        except MobileAuthError:
+            raise
+        except CredentialMutationRejected as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except Exception as exc:
+            raise _map_upload_error(exc) from exc
+        return _reservation_response(reservation, status_code=201)
+
+    @app.get(
+        "/api/v1/uploads/{upload_id}",
+        name=MOBILE_UPLOAD_STATUS_ROUTE_NAME,
+        response_model=UploadReservationResponse,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+        },
+        openapi_extra={"security": [{"MobileBearer": []}]},
+    )
+    def mobile_upload_status(
+        upload_id: str,
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        manager = _uploads_ready()
+        try:
+            context = _upload_bearer(request)
+            reservation = manager.status(context.user.id, upload_id)
+        except MobileAuthError:
+            raise
+        except Exception as exc:
+            raise _map_upload_error(exc) from exc
+        return _reservation_response(reservation)
+
+    @app.patch(
+        "/api/v1/uploads/{upload_id}",
+        name=MOBILE_UPLOAD_CHUNK_ROUTE_NAME,
+        response_model=UploadReservationResponse,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            410: {"model": APIError},
+            413: {"model": APIError},
+            422: {"model": APIError},
+            507: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/offset+octet-stream": {
+                        "schema": {"type": "string", "format": "binary"}
+                    }
+                },
+            },
+            "parameters": [
+                {
+                    "name": "Upload-Offset",
+                    "in": "header",
+                    "required": True,
+                    "schema": {"type": "integer", "minimum": 0},
+                },
+                {
+                    "name": "Upload-Checksum",
+                    "in": "header",
+                    "required": True,
+                    "description": "Base64 SHA-256 digest of the chunk bytes.",
+                    "schema": {"type": "string"},
+                },
+            ],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    async def mobile_upload_chunk(
+        upload_id: str,
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        manager = _uploads_ready()
+        offset_header = request.headers.get("upload-offset")
+        checksum_header = request.headers.get("upload-checksum")
+        if offset_header is None or checksum_header is None:
+            raise MobileAPIHTTPError(
+                400,
+                "validation_error",
+                "Upload-Offset and Upload-Checksum are required.",
+                headers=no_store,
+            )
+        try:
+            offset = int(offset_header)
+            if offset < 0:
+                raise ValueError
+        except ValueError as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "validation_error",
+                "Invalid Upload-Offset.",
+                headers=no_store,
+            ) from exc
+        chunk = await _read_raw_chunk(request, manager.settings.upload_chunk_bytes)
+        try:
+            context = _upload_bearer(request)
+            with credential_mutation_guard.admit(context):
+                reservation = manager.patch_chunk(
+                    context.user.id,
+                    upload_id,
+                    offset=offset,
+                    chunk=chunk,
+                    checksum_b64=checksum_header,
+                )
+        except MobileAuthError:
+            raise
+        except CredentialMutationRejected as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except Exception as exc:
+            raise _map_upload_error(exc) from exc
+        return _reservation_response(reservation)
+
+    @app.post(
+        "/api/v1/uploads/{upload_id}/complete",
+        name=MOBILE_UPLOAD_COMPLETE_ROUTE_NAME,
+        response_model=UploadCompleteResponse,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            410: {"model": APIError},
+            422: {"model": APIError},
+        },
+        openapi_extra={"security": [{"MobileBearer": []}]},
+    )
+    def mobile_upload_complete(
+        upload_id: str,
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        manager = _uploads_ready()
+        try:
+            context = _upload_bearer(request)
+            with credential_mutation_guard.admit(context):
+                job, replayed = manager.complete_mobile_upload(
+                    context.user.id, upload_id
+                )
+        except MobileAuthError:
+            raise
+        except CredentialMutationRejected as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except Exception as exc:
+            raise _map_upload_error(exc) from exc
+        session = serialize_mobile_session(
+            job,
+            context.user,
+            queue_position=manager._jobs.queue_position(job),
+            coaching_eligible=None,
+            retry_max_attempts=resource_service.settings.analysis_retry_max_attempts,
+        )
+        body = UploadCompleteResponse(job=session, replayed=replayed)
+        return JSONResponse(body.model_dump(mode="json"), headers=no_store)
+
+    @app.delete(
+        "/api/v1/uploads/{upload_id}",
+        name=MOBILE_UPLOAD_ABORT_ROUTE_NAME,
+        status_code=204,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+        },
+        openapi_extra={
+            "parameters": [upload_idempotency_parameter],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    def mobile_upload_abort(
+        upload_id: str,
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        manager = _uploads_ready()
+        idempotency_key = _single_idempotency_key(request)
+        try:
+            context = _upload_bearer(request)
+            with credential_mutation_guard.admit(context):
+                manager.abort(context.user.id, upload_id, idempotency_key)
+        except MobileAuthError:
+            raise
+        except CredentialMutationRejected as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except Exception as exc:
+            raise _map_upload_error(exc) from exc
+        return Response(status_code=204, headers=no_store)
 
     @app.post(
         "/api/v1/auth/email/start",

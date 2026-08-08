@@ -1,6 +1,6 @@
 """The single durable capacity authority for mobile storage.
 
-One SQLite table (``mobile_storage_allocations``) tracks every byte the server
+One SQLite table (``storage_capacity_allocations``) tracks every byte the server
 may be holding on behalf of native clients: in-flight upload parts, the
 immutable ``source.<suffix>`` of a queued/processing/retryable-failed job, and
 (later) privacy-export temporaries. Each unique ``(kind, object_id)`` row
@@ -29,7 +29,7 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 SCHEMA = """
-CREATE TABLE IF NOT EXISTS mobile_storage_allocations (
+CREATE TABLE IF NOT EXISTS storage_capacity_allocations (
     kind               TEXT NOT NULL,
     object_id          TEXT NOT NULL,
     reserved_bytes     INTEGER NOT NULL,
@@ -38,8 +38,8 @@ CREATE TABLE IF NOT EXISTS mobile_storage_allocations (
     updated_at         REAL NOT NULL,
     PRIMARY KEY (kind, object_id)
 );
-CREATE INDEX IF NOT EXISTS mobile_storage_allocations_kind
-    ON mobile_storage_allocations(kind);
+CREATE INDEX IF NOT EXISTS storage_capacity_allocations_kind
+    ON storage_capacity_allocations(kind);
 """
 
 
@@ -106,7 +106,7 @@ class StorageCapacityLedger:
 
     def _sum(self, cur: sqlite3.Cursor, expr: str) -> int:
         row = cur.execute(
-            f"SELECT COALESCE(SUM({expr}), 0) FROM mobile_storage_allocations"
+            f"SELECT COALESCE(SUM({expr}), 0) FROM storage_capacity_allocations"
         ).fetchone()
         return int(row[0])
 
@@ -129,7 +129,7 @@ class StorageCapacityLedger:
     def kind_of(self, object_id: str, kind: str) -> str | None:
         with self._tx_guard:
             row = self._conn.execute(
-                "SELECT kind FROM mobile_storage_allocations "
+                "SELECT kind FROM storage_capacity_allocations "
                 "WHERE kind = ? AND object_id = ?",
                 (kind, object_id),
             ).fetchone()
@@ -140,7 +140,7 @@ class StorageCapacityLedger:
             raise ValueError("declared_bytes must be non-negative")
         with self._admission() as cur:
             existing = cur.execute(
-                "SELECT reserved_bytes FROM mobile_storage_allocations "
+                "SELECT reserved_bytes FROM storage_capacity_allocations "
                 "WHERE kind = ? AND object_id = ?",
                 (kind, object_id),
             ).fetchone()
@@ -165,7 +165,7 @@ class StorageCapacityLedger:
                 )
             now = self._clock()
             cur.execute(
-                "INSERT INTO mobile_storage_allocations "
+                "INSERT INTO storage_capacity_allocations "
                 "(kind, object_id, reserved_bytes, materialized_bytes, "
                 " created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?)",
                 (kind, object_id, declared_bytes, now, now),
@@ -198,7 +198,7 @@ class StorageCapacityLedger:
         with self._admission() as cur:
             row = cur.execute(
                 "SELECT reserved_bytes, materialized_bytes "
-                "FROM mobile_storage_allocations WHERE kind = ? AND object_id = ?",
+                "FROM storage_capacity_allocations WHERE kind = ? AND object_id = ?",
                 (kind, object_id),
             ).fetchone()
             if row is None:
@@ -210,7 +210,7 @@ class StorageCapacityLedger:
             # stale/retried update cannot un-account committed bytes.
             new_value = max(current, materialized_bytes)
             cur.execute(
-                "UPDATE mobile_storage_allocations "
+                "UPDATE storage_capacity_allocations "
                 "SET materialized_bytes = ?, updated_at = ? "
                 "WHERE kind = ? AND object_id = ?",
                 (new_value, self._clock(), kind, object_id),
@@ -226,7 +226,7 @@ class StorageCapacityLedger:
         with self._admission() as cur:
             row = cur.execute(
                 "SELECT reserved_bytes, materialized_bytes, created_at "
-                "FROM mobile_storage_allocations WHERE kind = ? AND object_id = ?",
+                "FROM storage_capacity_allocations WHERE kind = ? AND object_id = ?",
                 (from_kind, from_object_id),
             ).fetchone()
             if row is None:
@@ -235,11 +235,11 @@ class StorageCapacityLedger:
             # Same transaction: the source row is removed and the destination
             # row inserted with no window in which the bytes are unaccounted.
             cur.execute(
-                "DELETE FROM mobile_storage_allocations WHERE kind = ? AND object_id = ?",
+                "DELETE FROM storage_capacity_allocations WHERE kind = ? AND object_id = ?",
                 (from_kind, from_object_id),
             )
             cur.execute(
-                "INSERT OR REPLACE INTO mobile_storage_allocations "
+                "INSERT OR REPLACE INTO storage_capacity_allocations "
                 "(kind, object_id, reserved_bytes, materialized_bytes, "
                 " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
                 (
@@ -260,7 +260,7 @@ class StorageCapacityLedger:
         """
         with self._admission() as cur:
             cur.execute(
-                "DELETE FROM mobile_storage_allocations WHERE kind = ? AND object_id = ?",
+                "DELETE FROM storage_capacity_allocations WHERE kind = ? AND object_id = ?",
                 (kind, object_id),
             )
             return cur.rowcount > 0
@@ -274,21 +274,21 @@ class StorageCapacityLedger:
         """
         with self._admission() as cur:
             rows = cur.execute(
-                "SELECT kind, object_id, reserved_bytes FROM mobile_storage_allocations"
+                "SELECT kind, object_id, reserved_bytes FROM storage_capacity_allocations"
             ).fetchall()
             now = self._clock()
             for kind, object_id, reserved in rows:
                 key = (kind, object_id)
                 if key not in present:
                     cur.execute(
-                        "DELETE FROM mobile_storage_allocations "
+                        "DELETE FROM storage_capacity_allocations "
                         "WHERE kind = ? AND object_id = ?",
                         (kind, object_id),
                     )
                     continue
                 actual = min(int(present[key]), int(reserved))
                 cur.execute(
-                    "UPDATE mobile_storage_allocations "
+                    "UPDATE storage_capacity_allocations "
                     "SET materialized_bytes = ?, updated_at = ? "
                     "WHERE kind = ? AND object_id = ?",
                     (actual, now, kind, object_id),
@@ -305,7 +305,7 @@ class StorageCapacityLedger:
             )
             active = int(
                 cur.execute(
-                    "SELECT COUNT(*) FROM mobile_storage_allocations"
+                    "SELECT COUNT(*) FROM storage_capacity_allocations"
                 ).fetchone()[0]
             )
         free = self._disk_free()

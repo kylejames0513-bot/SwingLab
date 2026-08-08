@@ -161,7 +161,7 @@ def test_finalizing_with_full_part_requeues_the_job(env):
     # (no job yet, part still present and complete).
     with uploads._tx:
         uploads._conn.execute(
-            "UPDATE mobile_uploads SET status = ? WHERE upload_id = ?",
+            "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
             (FINALIZING, reservation.upload_id),
         )
         uploads._conn.commit()
@@ -188,7 +188,7 @@ def test_recovery_runs_even_when_feature_disabled(env):
     _upload_all(uploads, reservation.upload_id, body, 100)
     with uploads._tx:
         uploads._conn.execute(
-            "UPDATE mobile_uploads SET status = ? WHERE upload_id = ?",
+            "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
             (FINALIZING, reservation.upload_id),
         )
         uploads._conn.commit()
@@ -226,7 +226,7 @@ def test_aborting_journal_completes_on_restart(env):
 
     with uploads._tx:
         uploads._conn.execute(
-            "UPDATE mobile_uploads SET status = ? WHERE upload_id = ?",
+            "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
             (ABORTING, reservation.upload_id),
         )
         uploads._conn.commit()
