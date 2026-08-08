@@ -43,6 +43,13 @@ class MobilePushNotRegistered(LookupError):
     """Preferences were requested for a selector with no registration."""
 
 
+class MobilePushDrainPending(Exception):
+    """In-flight push delivery has not drained; client should retry (202)."""
+
+    def __init__(self, message: str = "Push delivery drain is still pending.") -> None:
+        super().__init__(message)
+
+
 def _dead_letter_selector_outbox(
     conn,
     *,
@@ -201,6 +208,7 @@ class PushRegistrationService:
         deployment_environment: str,
         guard: CredentialMutationGuard,
         delivery_guard=None,
+        outbox=None,
         clock=None,
     ) -> None:
         self._users = users
@@ -208,6 +216,7 @@ class PushRegistrationService:
         self._environment = deployment_environment
         self._guard = guard
         self._delivery_guard = delivery_guard
+        self._outbox = outbox
         self._clock = clock or (lambda: __import__("time").time())
 
     def close_for_sign_out(
@@ -303,6 +312,7 @@ class PushRegistrationService:
 
         timestamp = float(self._clock())
         project_id = self._settings.expo_project_id
+        notify_others = False
         try:
             with self._users._lock:
                 try:
@@ -450,6 +460,8 @@ class PushRegistrationService:
                             ),
                         )
                         registered_at = timestamp
+                        # New insert (not same-token metadata update / replay).
+                        notify_others = True
                     row = _RegistrationRow(
                         platform=identity.platform,
                         app_version=identity.app_version,
@@ -459,7 +471,6 @@ class PushRegistrationService:
                         registered_at=registered_at,
                     )
                     self._users._conn.commit()
-                    return row.response()
                 except PushFenceClosedError:
                     if self._users._conn.in_transaction:
                         self._users._conn.rollback()
@@ -468,6 +479,16 @@ class PushRegistrationService:
                     if self._users._conn.in_transaction:
                         self._users._conn.rollback()
                     raise
+            if notify_others and self._outbox is not None:
+                self._outbox.enqueue_security_notices_for_other_devices(
+                    user_id=context.user.id,
+                    new_selector=context.selector,
+                    environment=self._environment,
+                    expo_project_id=project_id,
+                    source_id=f"{context.selector}:{registered_at}",
+                    now=timestamp,
+                )
+            return row.response()
         except CredentialMutationRejected as exc:
             raise MobilePushUnauthorized(
                 "Invalid mobile access token."
@@ -569,9 +590,12 @@ class PushRegistrationService:
             timeout = float(
                 getattr(self._settings, "send_envelope_seconds", 30) or 30
             )
-            self._delivery_guard.drain_selector(
+            if not self._delivery_guard.drain_selector(
                 context.selector, timeout_seconds=max(timeout, 2.0)
-            )
+            ):
+                raise MobilePushDrainPending(
+                    "Push delivery is still draining for this device."
+                )
         try:
             with self._users._lock:
                 try:

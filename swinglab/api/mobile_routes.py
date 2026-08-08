@@ -141,6 +141,7 @@ from ..web.resumable_uploads import (
 )
 from ..web.users import MobileAPITokenLimitError, UserStore
 from ..web.push_store import (
+    MobilePushDrainPending,
     MobilePushInvalidRequest,
     MobilePushNotRegistered,
     MobilePushUnauthorized,
@@ -2546,6 +2547,7 @@ def install_mobile_routes(
         name=MOBILE_PUSH_UNREGISTER_ROUTE_NAME,
         status_code=204,
         responses={
+            202: {"model": NativeSignOutPendingResponse},
             401: {"model": APIError},
             404: {"model": APIError},
         },
@@ -2574,6 +2576,16 @@ def install_mobile_routes(
             raise
         except MobilePushUnauthorized as exc:
             raise mobile_bearer_unauthorized() from exc
+        except MobilePushDrainPending:
+            pending = NativeSignOutPendingResponse(
+                status="pending",
+                retry_after_seconds=1,
+            )
+            return JSONResponse(
+                pending.model_dump(mode="json"),
+                status_code=202,
+                headers={**no_store, "Retry-After": "1"},
+            )
         return Response(status_code=204, headers=no_store)
 
     @app.delete(

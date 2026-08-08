@@ -12,11 +12,16 @@ from swinglab.web.push_delivery import (
     EXPO_ACCESS_TOKEN_ENV,
     FakeExpoPushProvider,
     KIND_ANALYSIS_READY,
+    KIND_REFILM,
+    PENDING_MAX_AGE_SECONDS,
     PUSH_TTL_SECONDS,
+    PushDeliveryGuard,
     PushOutboxStore,
     PushOutboxWorker,
+    TERMINAL_RETENTION_SECONDS,
     attach_job_push_observer,
     expo_delivery_configured,
+    purge_terminal_outbox,
 )
 from swinglab.web.push_store import MobilePushSettings, PushRegistrationService
 from tests.test_mobile_push import (
@@ -709,5 +714,352 @@ def test_awaiting_receipt_survives_worker_restart(tmp_path, expo_token):
             ).fetchone()["status"]
             == "delivered"
         )
+    finally:
+        _close(app)
+
+
+def test_practice_reminder_respects_preference_off(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        user, raw, token = _issue(users, "remind@example.com", "Phone")
+        client = TestClient(app)
+        assert (
+            client.put(
+                "/api/v1/devices/push",
+                headers={"Authorization": f"Bearer {raw}", **_identity()},
+                json=_put_body(practice_reminders_enabled=False),
+            ).status_code
+            == 200
+        )
+        store = PushOutboxStore(users)
+        assert (
+            store.enqueue_practice_reminder(
+                user_id=user.id,
+                selector=token.selector,
+                environment=environment,
+                expo_project_id=EXPO_PROJECT_ID,
+                source_id="due-1",
+            )
+            is False
+        )
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+            ).fetchone()[0]
+            == 0
+        )
+        assert (
+            client.patch(
+                "/api/v1/devices/push/preferences",
+                headers={"Authorization": f"Bearer {raw}", **_identity()},
+                json={"practice_reminders_enabled": True},
+            ).status_code
+            == 200
+        )
+        assert store.enqueue_practice_reminder(
+            user_id=user.id,
+            selector=token.selector,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+            source_id="due-1",
+        )
+        row = users._conn.execute(
+            "SELECT kind, source_kind FROM mobile_push_outbox"
+        ).fetchone()
+        assert row["kind"] == "practice_reminder"
+        assert row["source_kind"] == "practice_reminder"
+    finally:
+        _close(app)
+
+
+def test_security_notice_on_new_device_not_self(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw_a, token_a = _issue(users, "sec@example.com", "Phone A")
+        client = TestClient(app)
+        _register(client, raw_a)
+        user = users.get(user.id)
+        raw_b, token_b = users.issue_mobile_api_token(
+            user.id,
+            "Phone B",
+            expected_auth_epoch=user.auth_epoch,
+        )
+        assert (
+            client.put(
+                "/api/v1/devices/push",
+                headers={"Authorization": f"Bearer {raw_b}", **_identity()},
+                json=_put_body(token=EXPO_TOKEN_B),
+            ).status_code
+            == 200
+        )
+        rows = users._conn.execute(
+            "SELECT kind, selector, source_kind FROM mobile_push_outbox"
+            " ORDER BY selector"
+        ).fetchall()
+        assert len(rows) == 1
+        assert rows[0]["kind"] == "security_notice"
+        assert rows[0]["selector"] == token_a.selector
+        assert rows[0]["selector"] != token_b.selector
+        # Identical replay must not create another security notice.
+        assert (
+            client.put(
+                "/api/v1/devices/push",
+                headers={"Authorization": f"Bearer {raw_b}", **_identity()},
+                json=_put_body(token=EXPO_TOKEN_B),
+            ).status_code
+            == 200
+        )
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+                " WHERE kind = 'security_notice'"
+            ).fetchone()[0]
+            == 1
+        )
+    finally:
+        _close(app)
+
+
+def test_backfill_missing_for_terminal_jobs(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        user, raw, token = _issue(users, "backfill@example.com", "Phone")
+        client = TestClient(app)
+        store = PushOutboxStore(users)
+
+        # Job finished before registration — must not backfill.
+        early = app.state.jobs.create_session(
+            source_name="early.mov", user_id=user.id
+        )
+        (early.session_dir / "source.mov").write_bytes(b"video")
+        early.status = DONE
+        app.state.jobs._save(early)
+        early_updated = users._conn.execute(
+            "SELECT updated_at FROM jobs WHERE id = ?", (early.id,)
+        ).fetchone()["updated_at"]
+        time.sleep(0.02)
+        _register(client, raw)
+
+        assert (
+            store.backfill_missing_for_terminal_jobs(
+                environment=environment,
+                expo_project_id=EXPO_PROJECT_ID,
+                now=time.time(),
+            )
+            == 0
+        )
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+            ).fetchone()[0]
+            == 0
+        )
+
+        late = app.state.jobs.create_session(
+            source_name="late.mov", user_id=user.id
+        )
+        (late.session_dir / "source.mov").write_bytes(b"video")
+        late.status = DONE
+        app.state.jobs._save(late)
+        # Clear any observer enqueue so backfill is the only writer.
+        users._conn.execute("DELETE FROM mobile_push_outbox")
+        users._conn.commit()
+
+        assert (
+            store.backfill_missing_for_terminal_jobs(
+                environment=environment,
+                expo_project_id=EXPO_PROJECT_ID,
+                now=time.time(),
+            )
+            == 1
+        )
+        row = users._conn.execute(
+            "SELECT kind, source_id, selector FROM mobile_push_outbox"
+        ).fetchone()
+        assert row["kind"] == KIND_ANALYSIS_READY
+        assert row["source_id"] == late.id
+        assert row["selector"] == token.selector
+
+        # Existing unique key is a no-op.
+        assert (
+            store.backfill_missing_for_terminal_jobs(
+                environment=environment,
+                expo_project_id=EXPO_PROJECT_ID,
+                now=time.time(),
+            )
+            == 0
+        )
+        assert early_updated < users._conn.execute(
+            "SELECT registered_at FROM mobile_push_registrations"
+            " WHERE selector = ?",
+            (token.selector,),
+        ).fetchone()["registered_at"]
+    finally:
+        _close(app)
+
+
+def test_pending_older_than_24h_marked_dead_on_drain(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        user, raw, token = _issue(users, "stale@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        job = Job(
+            id="jobstale000001",
+            session_dir=tmp_path / "sessions" / "jobstale000001",
+            status=DONE,
+            user_id=user.id,
+        )
+        now = time.time()
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+            now=now,
+        )
+        old = now - PENDING_MAX_AGE_SECONDS - 10
+        users._conn.execute(
+            "UPDATE mobile_push_outbox SET created_at = ?, expires_at = ?",
+            (old, old + 900),
+        )
+        users._conn.commit()
+        worker = _worker(users, FakeExpoPushProvider())
+        assert worker.drain_once(now=now) is False
+        assert (
+            users._conn.execute(
+                "SELECT status FROM mobile_push_outbox"
+            ).fetchone()["status"]
+            == "dead"
+        )
+    finally:
+        _close(app)
+
+
+def test_purge_terminal_outbox_deletes_old_and_respects_limit(
+    tmp_path, expo_token
+):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        now = 10_000_000.0
+        old = now - TERMINAL_RETENTION_SECONDS - 100
+        for index in range(5):
+            users._conn.execute(
+                "INSERT INTO mobile_push_outbox ("
+                " id, environment, expo_project_id, user_id, selector,"
+                " source_kind, source_id, kind, status, token,"
+                " attempts, created_at, updated_at, expires_at"
+                ") VALUES (?, 'development', ?, 'u', 's',"
+                " 'job', ?, 'analysis_ready', 'dead', 'tok',"
+                " 0, ?, ?, ?)",
+                (
+                    f"purge{index}",
+                    EXPO_PROJECT_ID,
+                    f"job{index}",
+                    old,
+                    old,
+                    old + 900,
+                ),
+            )
+        users._conn.commit()
+        deleted = purge_terminal_outbox(users._conn, now=now, limit=3)
+        users._conn.commit()
+        assert deleted == 3
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+            ).fetchone()[0]
+            == 2
+        )
+        deleted2 = purge_terminal_outbox(users._conn, now=now, limit=1000)
+        users._conn.commit()
+        assert deleted2 == 2
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        _close(app)
+
+
+def test_failed_capture_enqueues_refilm(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "refilm@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        settings = MobilePushSettings(
+            enabled=True, expo_project_id=EXPO_PROJECT_ID
+        )
+        app.state.jobs._completion_observers.clear()
+        attach_job_push_observer(
+            app.state.jobs,
+            outbox=store,
+            settings=settings,
+            deployment_environment="development",
+        )
+        job = app.state.jobs.create_session(
+            source_name="clip.mov", user_id=user.id
+        )
+        (job.session_dir / "source.mov").write_bytes(b"video")
+        job.status = FAILED
+        job.failure_code = "capture_no_strike"
+        app.state.jobs._save(job)
+        app.state.jobs._notify_completion_observers(job)
+        row = users._conn.execute(
+            "SELECT kind FROM mobile_push_outbox"
+        ).fetchone()
+        assert row["kind"] == KIND_REFILM
+    finally:
+        _close(app)
+
+
+def test_unregister_drain_timeout_returns_202(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "drain202@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        guard = app.state.push_delivery_guard
+        assert isinstance(guard, PushDeliveryGuard)
+        original_drain = guard.drain_selector
+
+        def _fail_drain(selector, *, timeout_seconds):
+            return False
+
+        guard.drain_selector = _fail_drain  # type: ignore[method-assign]
+        response = client.delete(
+            "/api/v1/devices/push",
+            headers={"Authorization": f"Bearer {raw}", **_identity()},
+        )
+        assert response.status_code == 202
+        body = response.json()
+        assert body["status"] == "pending"
+        assert body["retry_after_seconds"] == 1
+        assert response.headers.get("Retry-After") == "1"
+        # Registration must still exist (unregister aborted before delete).
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_registrations"
+                " WHERE selector = ?",
+                (token.selector,),
+            ).fetchone()[0]
+            == 1
+        )
+        guard.drain_selector = original_drain  # type: ignore[method-assign]
     finally:
         _close(app)

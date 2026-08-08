@@ -33,11 +33,52 @@ PUSH_TTL_SECONDS = 900
 
 KIND_ANALYSIS_READY = "analysis_ready"
 KIND_REFILM = "refilm_needed"
+KIND_PRACTICE_REMINDER = "practice_reminder"
+KIND_SECURITY_NOTICE = "security_notice"
 
 _MESSAGE_BODIES = {
     KIND_ANALYSIS_READY: "Your swing analysis is ready.",
     KIND_REFILM: "A quick re-film is needed.",
+    KIND_PRACTICE_REMINDER: "Ready for your next practice check-in.",
+    KIND_SECURITY_NOTICE: (
+        "A new device signed in to your CaddieInsight account."
+    ),
 }
+
+# Typed failure codes already persisted on Job that mean "re-film needed".
+# DONE jobs that need re-film via report/metrics classification do not carry a
+# reliable Job field today — see attach_job_push_observer TODO.
+_REFILM_FAILURE_CODES = frozenset({"capture_no_strike", "capture_pose_unusable"})
+
+PENDING_MAX_AGE_SECONDS = 24 * 60 * 60
+TERMINAL_RETENTION_SECONDS = 30 * 24 * 60 * 60
+TICKET_DETAIL_RETENTION_SECONDS = 7 * 24 * 60 * 60
+BACKFILL_LOOKBACK_SECONDS = 24 * 60 * 60
+WORKER_SCAN_EVERY_N = 60
+
+
+def message_path_for_kind(kind: str, source_id: str) -> str:
+    if kind in (KIND_ANALYSIS_READY, KIND_REFILM):
+        return f"/sessions/{source_id}"
+    if kind == KIND_PRACTICE_REMINDER:
+        return "/practice"
+    if kind == KIND_SECURITY_NOTICE:
+        return "/devices"
+    return "/"
+
+
+def job_push_kind(job: Job) -> str | None:
+    """Return the outbox kind for a terminal job, or None to skip."""
+
+    failure = getattr(job, "failure_code", None)
+    if isinstance(failure, str) and failure in _REFILM_FAILURE_CODES:
+        return KIND_REFILM
+    if job.status == DONE:
+        # TODO: DONE + report-level refilm (coaching-ineligible / capture
+        # outcome) is not a field on Job; until that classification is wired
+        # into the observer, enqueue analysis_ready for DONE only.
+        return KIND_ANALYSIS_READY
+    return None
 
 
 @dataclass(frozen=True)
@@ -338,6 +379,62 @@ def build_push_provider(
     )
 
 
+def mark_stale_pending_dead(conn, *, now: float) -> int:
+    """Mark pending/leased rows older than 24h from created_at as dead."""
+
+    cutoff = float(now) - PENDING_MAX_AGE_SECONDS
+    cursor = conn.execute(
+        "UPDATE mobile_push_outbox SET status = 'dead',"
+        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+        " WHERE status IN ('pending', 'leased')"
+        " AND created_at < ?",
+        (now, cutoff),
+    )
+    return int(cursor.rowcount or 0)
+
+
+def purge_terminal_outbox(
+    conn, *, now: float, limit: int = 1000
+) -> int:
+    """Delete delivered|dead rows older than 30 days, at most ``limit`` rows.
+
+    Also clears provider ticket details on awaiting_receipt rows older than
+    seven days by nulling ticket fields when past detail retention (rows stay).
+    """
+
+    max_rows = max(0, int(limit))
+    if max_rows == 0:
+        return 0
+    terminal_cutoff = float(now) - TERMINAL_RETENTION_SECONDS
+    detail_cutoff = float(now) - TICKET_DETAIL_RETENTION_SECONDS
+    conn.execute(
+        "UPDATE mobile_push_outbox SET provider_ticket_id = NULL,"
+        " receipt_due_at = NULL, updated_at = ?"
+        " WHERE status = 'awaiting_receipt'"
+        " AND provider_ticket_id IS NOT NULL"
+        " AND created_at < ?",
+        (now, detail_cutoff),
+    )
+    ids = [
+        str(row["id"])
+        for row in conn.execute(
+            "SELECT id FROM mobile_push_outbox"
+            " WHERE status IN ('delivered', 'dead')"
+            " AND updated_at < ?"
+            " ORDER BY updated_at ASC LIMIT ?",
+            (terminal_cutoff, max_rows),
+        ).fetchall()
+    ]
+    if not ids:
+        return 0
+    placeholders = ",".join("?" for _ in ids)
+    cursor = conn.execute(
+        f"DELETE FROM mobile_push_outbox WHERE id IN ({placeholders})",
+        ids,
+    )
+    return int(cursor.rowcount or 0)
+
+
 class PushOutboxStore:
     """SQLite outbox helpers bound to the shared users connection."""
 
@@ -352,6 +449,98 @@ class PushOutboxStore:
         self._global_cap = int(global_cap)
         self._per_selector_cap = int(per_selector_cap)
 
+    def _global_capacity_ok(
+        self,
+        *,
+        environment: str,
+        expo_project_id: str,
+        observed: float,
+    ) -> bool:
+        nonterminal = int(
+            self._users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+                " WHERE environment = ? AND expo_project_id = ?"
+                " AND status IN ('pending', 'leased', 'awaiting_receipt')",
+                (environment, expo_project_id),
+            ).fetchone()[0]
+        )
+        if nonterminal >= self._global_cap:
+            self._users._conn.execute(
+                "UPDATE mobile_push_environment_fences"
+                " SET aggregate_drop_count = aggregate_drop_count + 1,"
+                " updated_at = ?"
+                " WHERE environment = ? AND expo_project_id = ?",
+                (observed, environment, expo_project_id),
+            )
+            return False
+        return True
+
+    def _admit_capacity(
+        self,
+        *,
+        environment: str,
+        expo_project_id: str,
+        selector: str,
+        observed: float,
+    ) -> bool:
+        selector_nonterminal = int(
+            self._users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+                " WHERE selector = ?"
+                " AND status IN ('pending', 'leased', 'awaiting_receipt')",
+                (selector,),
+            ).fetchone()[0]
+        )
+        if selector_nonterminal >= self._per_selector_cap:
+            self._users._conn.execute(
+                "UPDATE mobile_push_environment_fences"
+                " SET aggregate_drop_count = aggregate_drop_count + 1,"
+                " updated_at = ?"
+                " WHERE environment = ? AND expo_project_id = ?",
+                (observed, environment, expo_project_id),
+            )
+            return False
+        return True
+
+    def _insert_outbox_row(
+        self,
+        *,
+        environment: str,
+        expo_project_id: str,
+        user_id: str,
+        selector: str,
+        source_kind: str,
+        source_id: str,
+        kind: str,
+        token: str,
+        observed: float,
+    ) -> bool:
+        try:
+            self._users._conn.execute(
+                "INSERT INTO mobile_push_outbox ("
+                " id, environment, expo_project_id, user_id, selector,"
+                " source_kind, source_id, kind, status, token,"
+                " attempts, created_at, updated_at, expires_at"
+                ") VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 0, ?, ?, ?)",
+                (
+                    uuid.uuid4().hex,
+                    environment,
+                    expo_project_id,
+                    user_id,
+                    selector,
+                    source_kind,
+                    source_id,
+                    kind,
+                    token,
+                    observed,
+                    observed,
+                    observed + PUSH_TTL_SECONDS,
+                ),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+
     def enqueue_job_notification(
         self,
         job: Job,
@@ -360,6 +549,7 @@ class PushOutboxStore:
         environment: str,
         expo_project_id: str,
         now: float | None = None,
+        terminal_at: float | None = None,
     ) -> bool:
         """Insert one unique outbox row per selector when delivery is live."""
 
@@ -368,8 +558,11 @@ class PushOutboxStore:
         if not expo_delivery_configured():
             return False
         observed = time.time() if now is None else float(now)
-        terminal_at = observed
+        finished_at = observed if terminal_at is None else float(terminal_at)
+        if finished_at < observed - PENDING_MAX_AGE_SECONDS:
+            return False
         with self._users._lock:
+            mark_stale_pending_dead(self._users._conn, now=observed)
             try:
                 require_open_fence(
                     self._users._conn,
@@ -377,6 +570,7 @@ class PushOutboxStore:
                     expo_project_id=expo_project_id,
                 )
             except PushFenceClosedError:
+                self._users._conn.commit()
                 return False
             nonterminal = int(
                 self._users._conn.execute(
@@ -402,6 +596,7 @@ class PushOutboxStore:
                 (job.user_id, environment, expo_project_id),
             ).fetchall()
             if not registrations:
+                self._users._conn.commit()
                 return False
             watermark = self._users._conn.execute(
                 "SELECT push_not_before FROM mobile_push_activation_watermarks"
@@ -414,55 +609,273 @@ class PushOutboxStore:
             inserted = False
             for row in registrations:
                 registered_at = float(row["registered_at"])
-                if terminal_at < max(registered_at, push_not_before):
+                if finished_at < max(registered_at, push_not_before):
                     continue
                 selector = str(row["selector"])
-                selector_nonterminal = int(
-                    self._users._conn.execute(
-                        "SELECT COUNT(*) FROM mobile_push_outbox"
-                        " WHERE selector = ?"
-                        " AND status IN ('pending', 'leased', 'awaiting_receipt')",
-                        (selector,),
-                    ).fetchone()[0]
-                )
-                if selector_nonterminal >= self._per_selector_cap:
-                    self._users._conn.execute(
-                        "UPDATE mobile_push_environment_fences"
-                        " SET aggregate_drop_count = aggregate_drop_count + 1,"
-                        " updated_at = ?"
-                        " WHERE environment = ? AND expo_project_id = ?",
-                        (observed, environment, expo_project_id),
-                    )
+                if not self._admit_capacity(
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                    selector=selector,
+                    observed=observed,
+                ):
                     continue
-                try:
-                    self._users._conn.execute(
-                        "INSERT INTO mobile_push_outbox ("
-                        " id, environment, expo_project_id, user_id, selector,"
-                        " source_kind, source_id, kind, status, token,"
-                        " attempts, created_at, updated_at, expires_at"
-                        ") VALUES (?, ?, ?, ?, ?, 'job', ?, ?, 'pending', ?, 0, ?, ?, ?)",
-                        (
-                            uuid.uuid4().hex,
-                            environment,
-                            expo_project_id,
-                            job.user_id,
-                            selector,
-                            job.id,
-                            kind,
-                            str(row["token"]),
-                            observed,
-                            observed,
-                            observed + PUSH_TTL_SECONDS,
-                        ),
-                    )
+                if self._insert_outbox_row(
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                    user_id=job.user_id,
+                    selector=selector,
+                    source_kind="job",
+                    source_id=job.id,
+                    kind=kind,
+                    token=str(row["token"]),
+                    observed=observed,
+                ):
                     inserted = True
                     nonterminal += 1
                     if nonterminal >= self._global_cap:
                         break
-                except sqlite3.IntegrityError:
-                    continue
             self._users._conn.commit()
             return inserted
+
+    def enqueue_refilm_needed(
+        self,
+        job: Job,
+        *,
+        environment: str,
+        expo_project_id: str,
+        now: float | None = None,
+        terminal_at: float | None = None,
+    ) -> bool:
+        """Helper for KIND_REFILM enqueue (typed failure / future DONE refilm)."""
+
+        return self.enqueue_job_notification(
+            job,
+            kind=KIND_REFILM,
+            environment=environment,
+            expo_project_id=expo_project_id,
+            now=now,
+            terminal_at=terminal_at,
+        )
+
+    def enqueue_security_notices_for_other_devices(
+        self,
+        *,
+        user_id: str,
+        new_selector: str,
+        environment: str,
+        expo_project_id: str,
+        source_id: str,
+        now: float | None = None,
+    ) -> int:
+        """Notify other active selectors that a new device registered."""
+
+        if not expo_delivery_configured():
+            return 0
+        observed = time.time() if now is None else float(now)
+        inserted = 0
+        with self._users._lock:
+            mark_stale_pending_dead(self._users._conn, now=observed)
+            try:
+                require_open_fence(
+                    self._users._conn,
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                )
+            except PushFenceClosedError:
+                self._users._conn.commit()
+                return 0
+            nonterminal = int(
+                self._users._conn.execute(
+                    "SELECT COUNT(*) FROM mobile_push_outbox"
+                    " WHERE environment = ? AND expo_project_id = ?"
+                    " AND status IN ('pending', 'leased', 'awaiting_receipt')",
+                    (environment, expo_project_id),
+                ).fetchone()[0]
+            )
+            if nonterminal >= self._global_cap:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_environment_fences"
+                    " SET aggregate_drop_count = aggregate_drop_count + 1,"
+                    " updated_at = ?"
+                    " WHERE environment = ? AND expo_project_id = ?",
+                    (observed, environment, expo_project_id),
+                )
+                self._users._conn.commit()
+                return 0
+            others = self._users._conn.execute(
+                "SELECT selector, token FROM mobile_push_registrations"
+                " WHERE user_id = ? AND environment = ? AND expo_project_id = ?"
+                " AND selector != ?",
+                (user_id, environment, expo_project_id, new_selector),
+            ).fetchall()
+            for row in others:
+                selector = str(row["selector"])
+                if not self._admit_capacity(
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                    selector=selector,
+                    observed=observed,
+                ):
+                    continue
+                if self._insert_outbox_row(
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                    user_id=user_id,
+                    selector=selector,
+                    source_kind="security_notice",
+                    source_id=source_id,
+                    kind=KIND_SECURITY_NOTICE,
+                    token=str(row["token"]),
+                    observed=observed,
+                ):
+                    inserted += 1
+                    nonterminal += 1
+                    if nonterminal >= self._global_cap:
+                        break
+            self._users._conn.commit()
+        return inserted
+
+    def enqueue_practice_reminder(
+        self,
+        *,
+        user_id: str,
+        selector: str,
+        environment: str,
+        expo_project_id: str,
+        source_id: str | None = None,
+        now: float | None = None,
+    ) -> bool:
+        """Enqueue a practice reminder when the selector preference allows it.
+
+        Full due-time cron is deferred: registrations have no next-due column
+        yet. Callers (or a future scanner) supply a unique ``source_id``.
+        """
+
+        if not expo_delivery_configured():
+            return False
+        observed = time.time() if now is None else float(now)
+        reminder_id = source_id or f"{selector}:{int(observed)}"
+        with self._users._lock:
+            mark_stale_pending_dead(self._users._conn, now=observed)
+            try:
+                require_open_fence(
+                    self._users._conn,
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                )
+            except PushFenceClosedError:
+                self._users._conn.commit()
+                return False
+            registration = self._users._conn.execute(
+                "SELECT token, practice_reminders_enabled"
+                " FROM mobile_push_registrations"
+                " WHERE user_id = ? AND selector = ?"
+                " AND environment = ? AND expo_project_id = ?",
+                (user_id, selector, environment, expo_project_id),
+            ).fetchone()
+            if registration is None:
+                self._users._conn.commit()
+                return False
+            if not bool(registration["practice_reminders_enabled"]):
+                self._users._conn.commit()
+                return False
+            if not self._global_capacity_ok(
+                environment=environment,
+                expo_project_id=expo_project_id,
+                observed=observed,
+            ):
+                self._users._conn.commit()
+                return False
+            if not self._admit_capacity(
+                environment=environment,
+                expo_project_id=expo_project_id,
+                selector=selector,
+                observed=observed,
+            ):
+                self._users._conn.commit()
+                return False
+            inserted = self._insert_outbox_row(
+                environment=environment,
+                expo_project_id=expo_project_id,
+                user_id=user_id,
+                selector=selector,
+                source_kind="practice_reminder",
+                source_id=reminder_id,
+                kind=KIND_PRACTICE_REMINDER,
+                token=str(registration["token"]),
+                observed=observed,
+            )
+            self._users._conn.commit()
+            return inserted
+
+    def backfill_missing_for_terminal_jobs(
+        self,
+        *,
+        environment: str,
+        expo_project_id: str,
+        now: float | None = None,
+        lookback_seconds: float = BACKFILL_LOOKBACK_SECONDS,
+        limit: int = 100,
+    ) -> int:
+        """Insert missing analysis_ready rows for recent DONE jobs.
+
+        Uses jobs.updated_at as terminal_at. Jobs that finished before
+        registration / activation watermark are skipped by enqueue rules.
+        Existing unique keys are no-ops.
+        """
+
+        if not expo_delivery_configured():
+            return 0
+        observed = time.time() if now is None else float(now)
+        since = observed - float(lookback_seconds)
+        with self._users._lock:
+            mark_stale_pending_dead(self._users._conn, now=observed)
+            try:
+                require_open_fence(
+                    self._users._conn,
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                )
+            except PushFenceClosedError:
+                self._users._conn.commit()
+                return 0
+            rows = self._users._conn.execute(
+                "SELECT id, user_id, updated_at, failure_code, status"
+                " FROM jobs"
+                " WHERE status = ? AND user_id IS NOT NULL"
+                " AND updated_at >= ?"
+                " ORDER BY updated_at DESC LIMIT ?",
+                (DONE, since, max(1, int(limit))),
+            ).fetchall()
+            self._users._conn.commit()
+
+        from pathlib import Path
+
+        inserted = 0
+        for row in rows:
+            job = Job(
+                id=str(row["id"]),
+                session_dir=Path("."),
+                status=DONE,
+                user_id=str(row["user_id"]),
+                failure_code=(
+                    str(row["failure_code"])
+                    if row["failure_code"] is not None
+                    else None
+                ),
+            )
+            # session_dir unused by enqueue; only id/user_id/kind matter.
+            kind = job_push_kind(job) or KIND_ANALYSIS_READY
+            if self.enqueue_job_notification(
+                job,
+                kind=kind,
+                environment=environment,
+                expo_project_id=expo_project_id,
+                now=observed,
+                terminal_at=float(row["updated_at"]),
+            ):
+                inserted += 1
+        return inserted
 
     def discard_for_selector(self, *, user_id: str, selector: str) -> None:
         with self._users._lock:
@@ -499,6 +912,10 @@ class PushOutboxWorker:
         lease_seconds: int = 30,
         delivery_guard: PushDeliveryGuard | None = None,
         receipt_delay_seconds: float = RECEIPT_POLL_DELAY_SECONDS,
+        outbox: PushOutboxStore | None = None,
+        environment: str | None = None,
+        expo_project_id: str | None = None,
+        scan_every_n: int = WORKER_SCAN_EVERY_N,
     ) -> None:
         self._users = users
         self._provider = provider
@@ -506,9 +923,14 @@ class PushOutboxWorker:
         self._lease_seconds = int(lease_seconds)
         self._delivery_guard = delivery_guard or PushDeliveryGuard()
         self._receipt_delay_seconds = float(receipt_delay_seconds)
+        self._outbox = outbox
+        self._environment = environment
+        self._expo_project_id = expo_project_id
+        self._scan_every_n = max(1, int(scan_every_n))
         self._owner = secrets.token_hex(8)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._iterations = 0
 
     def start(self) -> None:
         if not self._enabled or self._thread is not None:
@@ -527,13 +949,46 @@ class PushOutboxWorker:
         self._thread = None
 
     def _loop(self) -> None:
+        # Startup retention pass; subsequent scans run every N drain loops.
+        try:
+            self.scan_once()
+        except Exception:
+            logger.exception("Push outbox startup scan failed.")
         while not self._stop.wait(1.0):
             try:
                 while self.drain_once():
                     if self._stop.is_set():
                         return
+                self._iterations += 1
+                if self._iterations % self._scan_every_n == 0:
+                    self.scan_once()
             except Exception:
                 logger.exception("Push outbox worker iteration failed.")
+
+    def scan_once(self, *, now: float | None = None) -> None:
+        """Infrequent maintenance: stale pending, retention purge, backfill."""
+
+        if not self._enabled:
+            return
+        observed = time.time() if now is None else float(now)
+        with self._users._lock:
+            mark_stale_pending_dead(self._users._conn, now=observed)
+            purge_terminal_outbox(self._users._conn, now=observed, limit=1000)
+            self._users._conn.commit()
+        if (
+            self._outbox is not None
+            and self._environment
+            and self._expo_project_id
+            and expo_delivery_configured()
+        ):
+            try:
+                self._outbox.backfill_missing_for_terminal_jobs(
+                    environment=self._environment,
+                    expo_project_id=self._expo_project_id,
+                    now=observed,
+                )
+            except Exception:
+                logger.exception("Push outbox terminal-job backfill failed.")
 
     def drain_once(self, *, now: float | None = None) -> bool:
         if not self._enabled:
@@ -541,6 +996,9 @@ class PushOutboxWorker:
         if isinstance(self._provider, DeliveryDisabledProvider):
             return False
         observed = time.time() if now is None else float(now)
+        with self._users._lock:
+            mark_stale_pending_dead(self._users._conn, now=observed)
+            self._users._conn.commit()
         if self._drain_receipt(observed):
             return True
         return self._drain_send(observed)
@@ -819,8 +1277,11 @@ class PushOutboxWorker:
         message = PushMessage(
             to=token,
             title="CaddieInsight",
-            body=_MESSAGE_BODIES[kind],
-            data={"kind": kind, "path": f"/sessions/{source_id}"},
+            body=_MESSAGE_BODIES.get(kind, _MESSAGE_BODIES[KIND_ANALYSIS_READY]),
+            data={
+                "kind": kind,
+                "path": message_path_for_kind(kind, source_id),
+            },
             ttl=PUSH_TTL_SECONDS,
         )
         try:
@@ -913,13 +1374,12 @@ def attach_job_push_observer(
     """Register an exception-isolated completion observer on JobManager."""
 
     def _observer(job: Job) -> None:
-        if job.status != DONE:
+        kind = job_push_kind(job)
+        if kind is None:
             return
-        # Generic analysis-ready notification. Refilm-specific copy is deferred
-        # until report-outcome classification is wired into the observer.
         outbox.enqueue_job_notification(
             job,
-            kind=KIND_ANALYSIS_READY,
+            kind=kind,
             environment=deployment_environment,
             expo_project_id=settings.expo_project_id,
         )

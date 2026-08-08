@@ -659,14 +659,21 @@ def create_app(
     push_registration_service: PushRegistrationService | None = None
     composed_sign_out_extensions = tuple(sign_out_extensions)
     push_delivery_guard: PushDeliveryGuard | None = None
+    push_outbox_store: PushOutboxStore | None = None
     if mobile_push_enabled:
         push_delivery_guard = PushDeliveryGuard()
+        push_outbox_store = PushOutboxStore(
+            users,
+            global_cap=mobile_push_settings.outbox_global_cap,
+            per_selector_cap=mobile_push_settings.outbox_per_selector_cap,
+        )
         push_registration_service = PushRegistrationService(
             users,
             mobile_push_settings,
             deployment_environment=mobile_deployment_environment,
             guard=mutation_guard,
             delivery_guard=push_delivery_guard,
+            outbox=push_outbox_store,
         )
         composed_sign_out_extensions = (
             *composed_sign_out_extensions,
@@ -794,11 +801,7 @@ def create_app(
         app.router.add_event_handler("startup", privacy_export_worker.start)
         app.router.add_event_handler("shutdown", privacy_export_worker.stop)
     if mobile_push_enabled:
-        push_outbox_store = PushOutboxStore(
-            users,
-            global_cap=mobile_push_settings.outbox_global_cap,
-            per_selector_cap=mobile_push_settings.outbox_per_selector_cap,
-        )
+        assert push_outbox_store is not None
         push_provider = build_push_provider(
             envelope_seconds=mobile_push_settings.send_envelope_seconds
         )
@@ -808,6 +811,9 @@ def create_app(
             enabled=expo_delivery_configured(),
             lease_seconds=mobile_push_settings.send_envelope_seconds,
             delivery_guard=push_delivery_guard or PushDeliveryGuard(),
+            outbox=push_outbox_store,
+            environment=mobile_deployment_environment,
+            expo_project_id=mobile_push_settings.expo_project_id,
         )
         app.state.push_outbox_store = push_outbox_store
         app.state.push_outbox_worker = push_outbox_worker

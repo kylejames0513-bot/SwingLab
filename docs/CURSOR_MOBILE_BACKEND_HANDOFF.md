@@ -22,7 +22,7 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
 
 ## Current gate: Task 7
 
-Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **Registration + outbox delivery + cutover + receipt/guard slices are landed** on this branch; scanner backfill / reminder kinds remain deferred.
+Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **Ordinary push vertical is complete** on this branch (registration, outbox delivery, cutover, receipts/guard, message kinds, security notice, practice-reminder helper, terminal backfill, age/retention, unregister 202).
 
 ### Task 7 progress (in this branch)
 
@@ -68,13 +68,22 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - Shared guard wired through `PushRegistrationService` + `PushOutboxWorker` on app startup; DELETE unregister also closes+drains.
 - Tests: receipt→delivered, DeviceNotRegistered, awaiting_receipt restart survival.
 
-**Still deferred (next Task 7 slices):**
+**Push kinds + scanner/retention slice** — completes ordinary Task 7 vertical.
 
-- Terminal-job scanner backfill; 24h pending age cutoff; daily 1k retention purge
-- Practice-reminder enqueue; refilm kind classification; security notice on new device
-- Full app-composition recovery-ledger wiring for offline CLI close/purge (library path supports publish)
-- Unregister drain-timeout → 202 (currently still 204 after best-effort drain)
-- Deploy or mutate live providers
+- Message kinds: `analysis_ready`, `refilm_needed`, `practice_reminder`, `security_notice` with plan copy.
+- Observer: typed `Job.failure_code` in `{capture_no_strike, capture_pose_unusable}` → `refilm_needed`; DONE otherwise → `analysis_ready`. DONE report-level refilm classification deferred (no reliable Job field; `enqueue_refilm_needed` helper shipped).
+- New registration INSERT (not same-token metadata update / identical replay) enqueues `security_notice` to other active selectors via optional `outbox` on `PushRegistrationService`.
+- `enqueue_practice_reminder` respects `practice_reminders_enabled`; full due-time cron deferred (no next-due column on registrations).
+- `backfill_missing_for_terminal_jobs` (bounded 24h by `jobs.updated_at`) + worker `scan_once` every N iterations; 24h pending age → dead; `purge_terminal_outbox` deletes delivered|dead older than 30 days (limit 1000).
+- DELETE unregister drain timeout → `MobilePushDrainPending` → HTTP 202 pending (matches sign-out).
+- OpenAPI regenerated for DELETE 202.
+
+**Task 7 leftovers (true remaining only):**
+
+- Practice-reminder due-time column + cron/scanner (helper + preference gate only today).
+- DONE-job refilm via report/metrics classification in the observer (typed failure codes work; report-level refilm does not).
+- Full app-composition recovery-ledger wiring for offline CLI close/purge (library path supports publish).
+- Deploy or mutate live providers (explicitly out of scope for agents).
 
 **Earlier deferrals still open (non-blocking):**
 
