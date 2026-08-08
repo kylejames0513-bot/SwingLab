@@ -94,18 +94,17 @@ def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
         assert png_dimensions(path) == (1536, 1024)
 
 
-def test_membership_card_media_labels_make_each_plan_unmistakable():
+def test_membership_card_media_is_photoreal_without_overlay_stickers():
     plans = INDEX["sections"]["plans"]["blocks"]
     plans_band = source("sections/plans-band.liquid")
 
-    assert plans["monthly"]["settings"]["image_label"] == "Pro · Monthly"
-    assert plans["season"]["settings"]["image_label"] == "Pro · Season Pass"
-    assert plans["founders"]["settings"]["image_label"] == "Founders Pass"
+    assert plans["monthly"]["settings"]["name"]
+    assert plans["season"]["settings"]["name"]
+    assert plans["founders"]["settings"]["name"] == "Founders Pass"
     assert plans["free"]["settings"]["name"] == "CaddieInsight Free"
-    assert "assign media_label = b.image_label | default: b.name" in plans_band
-    assert 'class="sl-plans__media-label" aria-hidden="true"' in plans_band
-    assert ".sl-plans__media-label" in plans_band
-    assert "position: absolute" in plans_band
+    # Plan identity lives in the card body — no detached labels on the photo.
+    assert 'class="sl-plans__media-label"' not in plans_band
+    assert 'class="sl-plans__name"' in plans_band
     for asset_name in (
         "caddieinsight-pro-card-v2.png",
         "caddieinsight-founders-card-v2.png",

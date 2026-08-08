@@ -882,18 +882,54 @@ def _wordmark(d, x, y, px, ink=GREEN):
 
 
 def logo(inverse=False):
-    """Lockup: gauge mark beside the heavy wordmark, transparent field.
+    """Premium lockup: dual-arc precision gauge + heavy wordmark.
+
     The inverse is re-inked in mint for deep-green / near-black contexts —
-    the orange sweep is the one color both versions share. Output filenames
-    keep the historical swinglab- names so every CDN and theme reference
-    keeps resolving."""
+    the orange sweep is the one kinetic color both versions share. Output
+    filenames keep the historical swinglab- names so every CDN and theme
+    reference keeps resolving.
+    """
     sc = 4
     ink = GREEN_INK if inverse else GREEN
-    img = Image.new("RGBA", (1960 * sc, 340 * sc), (0, 0, 0, 0))
+    img = Image.new("RGBA", (2000 * sc, 360 * sc), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    R = 215 * sc
-    mark_protractor(d, 40 * sc, 272 * sc, R, ink=ink)
-    _wordmark(d, 40 * sc + R + 66 * sc, 66 * sc, 172 * sc, ink=ink)
+    cx, cy, R = 220 * sc, 250 * sc, 170 * sc
+    for i, ang in enumerate(range(200, 341, 7)):
+        rad = math.radians(ang)
+        inner = R - (18 if i % 2 == 0 else 10) * sc
+        outer = R + 2 * sc
+        d.line(
+            [
+                cx + inner * math.cos(rad),
+                cy + inner * math.sin(rad),
+                cx + outer * math.cos(rad),
+                cy + outer * math.sin(rad),
+            ],
+            fill=ink,
+            width=max(2, int(2.2 * sc)),
+        )
+    box = [cx - R, cy - R, cx + R, cy + R]
+    d.arc(box, 205, 335, fill=ink, width=int(10 * sc))
+    r2 = R - 28 * sc
+    box2 = [cx - r2, cy - r2, cx + r2, cy + r2]
+    d.arc(box2, 215, 300, fill=ORANGE, width=int(16 * sc))
+    a = math.radians(300)
+    bx = cx + r2 * math.cos(a)
+    by = cy + r2 * math.sin(a)
+    d.ellipse([bx - 14 * sc, by - 14 * sc, bx + 14 * sc, by + 14 * sc], fill=ORANGE)
+    d.ellipse([cx - 22 * sc, cy - 22 * sc, cx + 22 * sc, cy + 22 * sc], fill=ink)
+    pivot_fill = GREEN_INK if inverse else ORANGE
+    d.ellipse([cx - 10 * sc, cy - 10 * sc, cx + 10 * sc, cy + 10 * sc], fill=pivot_fill)
+    f = archivo(int(148 * sc), 750, 100)
+    x0, y0 = 440 * sc, 90 * sc
+    tracking = int(-1.5 * sc)
+    w1 = tracked(d, (x0, y0), "Caddie", f, ink, tracking=tracking)
+    w2 = tracked(d, (x0 + w1 + 6 * sc, y0), "Insight", f, ink, tracking=tracking)
+    d.line(
+        [x0 + w1 + 6 * sc, y0 + 170 * sc, x0 + w1 + 6 * sc + w2, y0 + 170 * sc],
+        fill=ORANGE,
+        width=int(5 * sc),
+    )
     img = img.crop(img.getbbox())
     k = min(1400 / img.width, 276 / img.height)
     img = img.resize((round(img.width * k), round(img.height * k)),

@@ -119,7 +119,6 @@
             if b.plan == 'founders'
               assign default_art = 'caddieinsight-founders-card-v2.png'
             endif
-            assign media_label = b.image_label | default: b.name
           -%}
           <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
             <div class="sl-plans__media">
@@ -143,9 +142,6 @@
                   alt=""
                   loading="lazy"
                   decoding="async">
-              {%- endif -%}
-              {%- if media_label != blank -%}
-                <span class="sl-plans__media-label" aria-hidden="true">{{ media_label | escape }}</span>
               {%- endif -%}
             </div>
             <div class="sl-plans__card-body">

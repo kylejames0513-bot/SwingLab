@@ -20,6 +20,13 @@ LOCALE = json.loads(
 )
 
 
+def test_storefront_header_falls_back_to_theme_logo_asset():
+    assert "swinglab-logo.png' | asset_url" in HEADER
+    assert 'class="sl-header__logo-img"' in HEADER
+    theme_logo = THEME_ROOT / "assets" / "swinglab-logo.png"
+    assert theme_logo.is_file()
+
+
 def test_storefront_header_has_one_state_aware_app_action():
     assert "app_login_url = app_url | append: '/login'" in HEADER
     assert "app_signup_url = app_url | append: '/signup'" in HEADER

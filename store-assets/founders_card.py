@@ -1,13 +1,10 @@
-"""CaddieInsight Founders Pass card — Fairway Modernism, membership series.
+"""CaddieInsight Founders Pass — reproducible instrument-card drawing.
 
-The Pro and Free cards in the v2 series are photoreal campaign scenes; the
-Founders Pass is a capped, never-renews instrument of membership, so it is
-drawn as an instrument card instead: the membership-card object itself,
-flat on the brand field, labored over like the product sheets. Same 1536 x
-1024 frame as its two siblings so the three ship as one series.
-
-One orange gesture: the pendulum arc swept across the card face, ball at
-its terminus. Everything else is green ink and mint on the warm field.
+The live storefront ships photoreal Founders art
+(`out/caddieinsight-founders-card-v2.png`) so Pro and Founders match as one
+campaign series. This module keeps a flat instrument-card generator for
+offline brand studies and print specimens: membership-card object on the
+brand field, same 1536 x 1024 frame, one orange pendulum arc.
 """
 
 from __future__ import annotations

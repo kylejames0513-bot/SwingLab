@@ -70,7 +70,14 @@
       {%- if logo -%}
         {{ logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
       {%- else -%}
-        {{ section.settings.logo_text | default: shop.name }}
+        <img
+          class="sl-header__logo-img"
+          src="{{ 'swinglab-logo.png' | asset_url }}"
+          width="280"
+          height="40"
+          alt="{{ shop.name | escape }}"
+          loading="eager"
+          decoding="async">
       {%- endif -%}
     </a>
 
