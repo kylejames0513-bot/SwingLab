@@ -429,13 +429,13 @@ def test_cli_status_json_smoke(tmp_path, monkeypatch, capsys):
     code = main(
         [
             "mobile-push-cutover",
-            "status",
             "--sessions-dir",
             str(tmp_path / "sessions"),
             "--environment",
             environment,
             "--expo-project-id",
             EXPO_PROJECT_ID,
+            "status",
             "--json",
         ]
     )

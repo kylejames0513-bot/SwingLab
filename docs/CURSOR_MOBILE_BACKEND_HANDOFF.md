@@ -22,7 +22,7 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
 
 ## Current gate: Task 7
 
-Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **Registration + outbox delivery slices are landed** on this branch; cutover CLI / environment fences / receipt polling / caps remain deferred.
+Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **Registration + outbox delivery + environment-fence cutover slices are landed** on this branch; receipt polling / caps / full recovery-ledger publish remain deferred.
 
 ### Task 7 progress (in this branch)
 
@@ -49,19 +49,27 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - `httpx` added to the `web` extra. App wires outbox store/worker + observer when push enabled.
 - Tests: `tests/test_push_outbox.py` (10) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry, unregister→re-register, token rotation.
 
+**Push environment fence cutover slice** — tip `TIP_SHA_PLACEHOLDER`.
+
+- Schema generation **5**: additive `mobile_push_environment_fences` + `mobile_push_cutover_operations`; restore allowlists include generation `5`; detect/ensure stepwise after gen 4.
+- `swinglab/web/push_cutover.py`: `ensure_open_fence` / `require_open_fence` / `fence_status` / `close_fence` / `purge_fence`; fail-closed never-reopen; close terminalizes pending/leased outbox; purge waits `provider_safe_after` then deletes registrations+outbox while keeping fence closed.
+- Admission: register/preferences require open fence; enqueue returns false when closed; worker dead-letters without send when fence not open; flag-on startup calls `ensure_open_fence` (fails closed if previously closed).
+- CLI: `swinglab mobile-push-cutover status|close|purge` with `--sessions-dir` / `--environment` / `--expo-project-id`; close/purge `--operation-id` + dry-run default / `--apply`; rejects env/project mismatch vs server config.
+- Optional `ledger`+`keyring` kwargs on close can publish `PushEnvironmentCutoffEvent`; without them local close/purge still completes (full recovery publish deferred).
+- Tests: `tests/test_mobile_push_cutover.py` (7); focused suite with outbox/push/rate-limits/backups green.
+
 **Still deferred (next Task 7 slices):**
 
-- Environment fence cutover CLI / `PushEnvironmentCutoff` publishing / `swinglab mobile-push-cutover`
+- Full mandatory recovery-ledger `PushEnvironmentCutoff` publish/readback on every close/purge (optional callback path exists)
 - Receipt polling / `awaiting_receipt` lifecycle / `PushDeliveryGuard` drain-before-sign-out
 - Outbox caps/flood/purge + terminal-job scanner backfill
 - Practice-reminder enqueue; refilm kind classification; security notice on new device
-- Full plan “generation 5” numbering for fences/cutover journals (code used gen **3** registration + gen **4** outbox)
 - Deploy or mutate live providers
 
 **Earlier deferrals still open (non-blocking):**
 
 - Store-review step-up variant / full review-scoped account deletion.
-- Broader mobile backup registration for step-up/export/erasure/capacity/upload tables (partially advanced by gen-3/4 push tables).
+- Broader mobile backup registration for step-up/export/erasure/capacity/upload tables (partially advanced by gen-3/4/5 push tables).
 - Full durable download-admission slot/byte budgets.
 - Full machine-checked writer inventory / every OwnerErasureExtension if oversized.
 

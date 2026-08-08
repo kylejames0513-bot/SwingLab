@@ -1422,7 +1422,7 @@ def test_generation_one_manifest_attests_the_frozen_snapshot_not_live_writer(
     [
         (lambda manifest: manifest.pop("mobile_state"), "mobile state"),
         (
-            lambda manifest: manifest["mobile_state"].__setitem__("generation", 5),
+            lambda manifest: manifest["mobile_state"].__setitem__("generation", 6),
             "generation",
         ),
         (
