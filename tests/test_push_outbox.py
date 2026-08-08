@@ -95,6 +95,21 @@ def test_no_enqueue_without_expo_access_token(tmp_path, monkeypatch):
         _close(app)
 
 
+def _worker(users, provider, **kwargs):
+    return PushOutboxWorker(
+        users,
+        provider,
+        enabled=True,
+        receipt_delay_seconds=0,
+        **kwargs,
+    )
+
+
+def _drain_send_and_receipt(worker, *, send_now=None, receipt_now=None):
+    assert worker.drain_once(now=send_now) is True
+    assert worker.drain_once(now=receipt_now) is True
+
+
 def test_terminal_job_enqueues_and_drain_delivers(tmp_path, expo_token, monkeypatch):
     app = _app(tmp_path)
     try:
@@ -104,7 +119,7 @@ def test_terminal_job_enqueues_and_drain_delivers(tmp_path, expo_token, monkeypa
         _register(client, raw)
         provider = FakeExpoPushProvider()
         store = PushOutboxStore(users)
-        worker = PushOutboxWorker(users, provider, enabled=True)
+        worker = _worker(users, provider)
         settings = MobilePushSettings(
             enabled=True, expo_project_id=EXPO_PROJECT_ID
         )
@@ -137,6 +152,12 @@ def test_terminal_job_enqueues_and_drain_delivers(tmp_path, expo_token, monkeypa
         assert provider.sent[0].ttl == PUSH_TTL_SECONDS
         assert provider.sent[0].to == EXPO_TOKEN_A
         assert "Your swing analysis is ready." in provider.sent[0].body
+        awaiting = users._conn.execute(
+            "SELECT status, provider_ticket_id FROM mobile_push_outbox"
+        ).fetchone()
+        assert awaiting["status"] == "awaiting_receipt"
+        assert awaiting["provider_ticket_id"]
+        assert worker.drain_once() is True
         delivered = users._conn.execute(
             "SELECT status, provider_ticket_id FROM mobile_push_outbox"
         ).fetchone()
@@ -145,7 +166,6 @@ def test_terminal_job_enqueues_and_drain_delivers(tmp_path, expo_token, monkeypa
         assert app.state.jobs.get(job.id).status == DONE
     finally:
         _close(app)
-
 
 def test_provider_outage_leaves_job_done_and_outbox_retryable(
     tmp_path, expo_token
@@ -323,7 +343,7 @@ def test_sign_out_during_leased_send_keeps_outbox_dead(
                 return super().send(messages)
 
         provider = SignOutDuringSend()
-        worker = PushOutboxWorker(users, provider, enabled=True)
+        worker = _worker(users, provider)
         assert worker.drain_once() is True
         assert len(provider.sent) == 1
         final = users._conn.execute(
@@ -334,7 +354,6 @@ def test_sign_out_during_leased_send_keeps_outbox_dead(
         assert final["lease_owner"] is None
     finally:
         _close(app)
-
 
 def test_expired_pending_outbox_is_marked_dead(tmp_path, expo_token):
     app = _app(tmp_path)
@@ -559,5 +578,136 @@ def test_outbox_global_cap_skips_and_counts_drop(tmp_path, expo_token):
             (environment, EXPO_PROJECT_ID),
         ).fetchone()[0]
         assert int(drops) >= 1
+    finally:
+        _close(app)
+
+
+def test_awaiting_receipt_then_delivered(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        user, raw, token = _issue(users, "receipt@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        provider = FakeExpoPushProvider()
+        worker = _worker(users, provider)
+        job = Job(
+            id="jobreceipt0001",
+            session_dir=tmp_path / "sessions" / "jobreceipt0001",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        assert worker.drain_once(now=10.0) is True
+        row = users._conn.execute(
+            "SELECT status, provider_ticket_id, receipt_due_at FROM mobile_push_outbox"
+        ).fetchone()
+        assert row["status"] == "awaiting_receipt"
+        assert row["provider_ticket_id"]
+        assert worker.drain_once(now=12.0) is True
+        assert (
+            users._conn.execute(
+                "SELECT status FROM mobile_push_outbox"
+            ).fetchone()["status"]
+            == "delivered"
+        )
+    finally:
+        _close(app)
+
+
+def test_device_not_registered_dead_letters_and_removes_registration(
+    tmp_path, expo_token
+):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        user, raw, token = _issue(users, "gone@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        provider = FakeExpoPushProvider()
+        worker = _worker(users, provider)
+        job = Job(
+            id="jobdevicenot01",
+            session_dir=tmp_path / "sessions" / "jobdevicenot01",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        assert worker.drain_once(now=10.0) is True
+        ticket_id = users._conn.execute(
+            "SELECT provider_ticket_id FROM mobile_push_outbox"
+        ).fetchone()[0]
+        provider.device_not_registered.add(ticket_id)
+        assert worker.drain_once(now=12.0) is True
+        assert (
+            users._conn.execute(
+                "SELECT status FROM mobile_push_outbox"
+            ).fetchone()["status"]
+            == "dead"
+        )
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_registrations"
+                " WHERE selector = ?",
+                (token.selector,),
+            ).fetchone()[0]
+            == 0
+        )
+    finally:
+        _close(app)
+
+
+def test_awaiting_receipt_survives_worker_restart(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        user, raw, token = _issue(users, "restart@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        provider = FakeExpoPushProvider()
+        first = _worker(users, provider)
+        job = Job(
+            id="jobrestart0001",
+            session_dir=tmp_path / "sessions" / "jobrestart0001",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        assert first.drain_once(now=10.0) is True
+        assert (
+            users._conn.execute(
+                "SELECT status FROM mobile_push_outbox"
+            ).fetchone()["status"]
+            == "awaiting_receipt"
+        )
+        second = _worker(users, provider)
+        assert second.drain_once(now=12.0) is True
+        assert (
+            users._conn.execute(
+                "SELECT status FROM mobile_push_outbox"
+            ).fetchone()["status"]
+            == "delivered"
+        )
     finally:
         _close(app)

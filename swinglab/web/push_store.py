@@ -50,13 +50,14 @@ def _dead_letter_selector_outbox(
     now: float,
     user_id: str | None = None,
 ) -> None:
-    """Mark pending/leased outbox rows dead and clear any active lease."""
+    """Mark pending/leased/awaiting_receipt outbox rows dead and clear leases."""
 
     if user_id is None:
         conn.execute(
             "UPDATE mobile_push_outbox SET status = 'dead',"
             " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-            " WHERE selector = ? AND status IN ('pending', 'leased')",
+            " WHERE selector = ?"
+            " AND status IN ('pending', 'leased', 'awaiting_receipt')",
             (now, selector),
         )
         return
@@ -64,7 +65,7 @@ def _dead_letter_selector_outbox(
         "UPDATE mobile_push_outbox SET status = 'dead',"
         " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
         " WHERE user_id = ? AND selector = ?"
-        " AND status IN ('pending', 'leased')",
+        " AND status IN ('pending', 'leased', 'awaiting_receipt')",
         (now, user_id, selector),
     )
 
@@ -199,12 +200,14 @@ class PushRegistrationService:
         *,
         deployment_environment: str,
         guard: CredentialMutationGuard,
+        delivery_guard=None,
         clock=None,
     ) -> None:
         self._users = users
         self._settings = settings
         self._environment = deployment_environment
         self._guard = guard
+        self._delivery_guard = delivery_guard
         self._clock = clock or (lambda: __import__("time").time())
 
     def close_for_sign_out(
@@ -216,6 +219,12 @@ class PushRegistrationService:
         selector: str,
     ) -> bool:
         del operation_id
+        if self._delivery_guard is not None:
+            self._delivery_guard.close_selector(selector)
+            if not self._delivery_guard.drain_selector(
+                selector, timeout_seconds=2.0
+            ):
+                return False
         with users._lock:
             try:
                 users._conn.execute("BEGIN IMMEDIATE")

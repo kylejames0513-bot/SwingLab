@@ -150,6 +150,12 @@ def run_mobile_push_cutover_command(args: argparse.Namespace) -> int:
         return 2
 
     users = UserStore(db_path)
+    # Offline CLI stays local-only unless a caller injects a ledger via the
+    # library API. Composition of the remote recovery fence requires the full
+    # app recovery baseline and is not forced here.
+    ledger = None
+    keyring = getattr(users, "_mobile_state_hmac", None)
+
     try:
         if args.cutover_action == "status":
             payload = fence_status(
@@ -174,6 +180,9 @@ def run_mobile_push_cutover_command(args: argparse.Namespace) -> int:
             command=args.cutover_action,
             operation_id=operation_id,
         )
+        publish_kwargs = {}
+        if ledger is not None and keyring is not None:
+            publish_kwargs = {"ledger": ledger, "keyring": keyring}
         if args.cutover_action == "close":
             result = close_fence(
                 users,
@@ -183,6 +192,7 @@ def run_mobile_push_cutover_command(args: argparse.Namespace) -> int:
                 request_hash=request_hash,
                 apply=apply,
                 skew_seconds=float(settings.cutover_clock_skew_seconds),
+                **publish_kwargs,
             )
         elif args.cutover_action == "purge":
             result = purge_fence(
@@ -192,6 +202,7 @@ def run_mobile_push_cutover_command(args: argparse.Namespace) -> int:
                 operation_id=operation_id,
                 request_hash=request_hash,
                 apply=apply,
+                **publish_kwargs,
             )
         else:
             print("mobile-push-cutover: unknown action", file=sys.stderr)

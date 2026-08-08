@@ -396,7 +396,7 @@ def close_fence(
                 "UPDATE mobile_push_outbox SET status = 'dead',"
                 " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                 " WHERE environment = ? AND expo_project_id = ?"
-                " AND status IN ('pending', 'leased')",
+                " AND status IN ('pending', 'leased', 'awaiting_receipt')",
                 (observed, environment, expo_project_id),
             )
             recovery_sequence = None
@@ -513,9 +513,10 @@ def purge_fence(
     """Delete registrations/outbox for a closed fence after provider_safe_after.
 
     Never reopens the fence. Dry-run reports counts without deleting.
+    When ``ledger`` and ``keyring`` are supplied, publishes a later
+    ``push_environment_cutoff`` recovery revision before deleting raw state.
     """
 
-    del ledger, keyring  # purge publish of a later cutoff revision is deferred
     observed = time.time() if now is None else float(now)
     conn = _conn_of(users_or_conn)
     with _lock_of(users_or_conn):
@@ -625,6 +626,48 @@ def purge_fence(
                     "would_delete_outbox": outbox_count,
                 }
 
+            cutoff_revision = int(row["cutoff_revision"]) + 1
+            recovery_sequence = None
+            recovery_record_hash = None
+            if ledger is not None and keyring is not None:
+                from .recovery_fence_ledger import PushEnvironmentCutoffEvent
+
+                key_id, digest = keyring.digest(
+                    MobileStateDomain.PUSH_EXPO_PROJECT, expo_project_id
+                )
+                published = ledger.append_and_publish(
+                    PushEnvironmentCutoffEvent(
+                        event_id=str(uuid.uuid4()),
+                        cutoff_at=observed,
+                        deployment_environment=environment,
+                        expo_project_hmac_key_id=key_id,
+                        expo_project_hmac=digest,
+                        activation_revision=int(row["activation_revision"]),
+                        cutoff_revision=cutoff_revision,
+                        last_provider_started_at=(
+                            float(row["last_provider_started_at"])
+                            if row["last_provider_started_at"] is not None
+                            else None
+                        ),
+                        last_provider_accepted_at=(
+                            float(row["last_provider_accepted_at"])
+                            if row["last_provider_accepted_at"] is not None
+                            else None
+                        ),
+                        provider_may_accept_until=(
+                            float(row["provider_may_accept_until"])
+                            if row["provider_may_accept_until"] is not None
+                            else None
+                        ),
+                        closed_at=float(closed_at or observed),
+                        cutoff_skew_seconds=float(frozen or 0.0),
+                        provider_safe_after=float(safe_after),
+                        state="closed",
+                    )
+                )
+                recovery_sequence = int(published.sequence)
+                recovery_record_hash = str(published.record_hash)
+
             conn.execute(
                 "DELETE FROM mobile_push_registrations"
                 " WHERE environment = ? AND expo_project_id = ?",
@@ -637,8 +680,17 @@ def purge_fence(
             )
             conn.execute(
                 "UPDATE mobile_push_environment_fences SET state = 'closed',"
-                " updated_at = ? WHERE environment = ? AND expo_project_id = ?",
-                (observed, environment, expo_project_id),
+                " cutoff_revision = ?, recovery_record_hash = ?,"
+                " recovery_sequence = ?, updated_at = ?"
+                " WHERE environment = ? AND expo_project_id = ?",
+                (
+                    cutoff_revision,
+                    recovery_record_hash,
+                    recovery_sequence,
+                    observed,
+                    environment,
+                    expo_project_id,
+                ),
             )
             conn.execute(
                 "INSERT INTO mobile_push_cutover_operations ("
@@ -665,6 +717,7 @@ def purge_fence(
             status["apply"] = True
             status["phase"] = "purged"
             status["provider_safe_after"] = safe_after
+            status["cutoff_revision"] = cutoff_revision
             return status
         except Exception:
             if isinstance(users_or_conn, UserStore) and conn.in_transaction:

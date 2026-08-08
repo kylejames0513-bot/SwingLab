@@ -212,6 +212,7 @@ from .mobile_resources import (
 )
 from .push_store import PushRegistrationService, load_mobile_push_settings
 from .push_delivery import (
+    PushDeliveryGuard,
     PushOutboxStore,
     PushOutboxWorker,
     attach_job_push_observer,
@@ -657,12 +658,15 @@ def create_app(
     mutation_guard = credential_mutation_guard or CredentialMutationGuard()
     push_registration_service: PushRegistrationService | None = None
     composed_sign_out_extensions = tuple(sign_out_extensions)
+    push_delivery_guard: PushDeliveryGuard | None = None
     if mobile_push_enabled:
+        push_delivery_guard = PushDeliveryGuard()
         push_registration_service = PushRegistrationService(
             users,
             mobile_push_settings,
             deployment_environment=mobile_deployment_environment,
             guard=mutation_guard,
+            delivery_guard=push_delivery_guard,
         )
         composed_sign_out_extensions = (
             *composed_sign_out_extensions,
@@ -803,9 +807,11 @@ def create_app(
             push_provider,
             enabled=expo_delivery_configured(),
             lease_seconds=mobile_push_settings.send_envelope_seconds,
+            delivery_guard=push_delivery_guard or PushDeliveryGuard(),
         )
         app.state.push_outbox_store = push_outbox_store
         app.state.push_outbox_worker = push_outbox_worker
+        app.state.push_delivery_guard = push_delivery_guard
         attach_job_push_observer(
             manager,
             outbox=push_outbox_store,

@@ -506,7 +506,8 @@ def test_worker_stamps_provider_clocks_and_close_uses_ttl_skew(
         from swinglab.web.push_delivery import FakeExpoPushProvider, PushOutboxWorker
 
         worker = PushOutboxWorker(
-            users, FakeExpoPushProvider(), enabled=True, lease_seconds=30
+            users, FakeExpoPushProvider(), enabled=True, lease_seconds=30,
+            receipt_delay_seconds=0,
         )
         assert worker.drain_once(now=50.0) is True
         fence = users._conn.execute(
@@ -518,6 +519,10 @@ def test_worker_stamps_provider_clocks_and_close_uses_ttl_skew(
         assert float(fence["last_provider_started_at"]) == 50.0
         assert float(fence["provider_may_accept_until"]) == 80.0
         assert fence["last_provider_accepted_at"] is not None
+        status = users._conn.execute(
+            "SELECT status FROM mobile_push_outbox"
+        ).fetchone()["status"]
+        assert status == "awaiting_receipt"
 
         close_id = str(uuid.uuid4())
         closed = close_fence(

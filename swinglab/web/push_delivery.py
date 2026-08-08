@@ -86,6 +86,9 @@ class FakeExpoPushProvider:
         self.sent: list[PushMessage] = []
         self._tickets: dict[str, PushTicket] = {}
         self.fail_send = False
+        self.fail_receipt = False
+        self.device_not_registered: set[str] = set()
+        self.pending_receipts: set[str] = set()
 
     def send(self, messages: Sequence[PushMessage]) -> Sequence[PushTicket]:
         if self.fail_send:
@@ -101,12 +104,106 @@ class FakeExpoPushProvider:
         return tickets
 
     def receipts(self, ticket_ids: Sequence[str]) -> Sequence[PushReceipt]:
-        return [
-            PushReceipt(ticket_id=ticket_id, status="ok")
-            for ticket_id in ticket_ids
-            if ticket_id in self._tickets
-        ]
+        if self.fail_receipt:
+            raise RuntimeError("synthetic Expo receipt outage")
+        results: list[PushReceipt] = []
+        for ticket_id in ticket_ids:
+            if ticket_id not in self._tickets:
+                continue
+            if ticket_id in self.pending_receipts:
+                continue
+            if ticket_id in self.device_not_registered:
+                results.append(
+                    PushReceipt(
+                        ticket_id=ticket_id,
+                        status="error",
+                        error="DeviceNotRegistered",
+                    )
+                )
+                continue
+            results.append(PushReceipt(ticket_id=ticket_id, status="ok"))
+        return results
 
+
+class PushDeliveryClosed(RuntimeError):
+    """Selector admission is closed; new provider work must not start."""
+
+
+@dataclass(frozen=True)
+class _DeliveryGuardToken:
+    selector: str
+    token_id: int
+
+
+class PushDeliveryGuard:
+    """Tracks in-flight Expo send/receipt work by selector."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._inflight: dict[str, set[int]] = {}
+        self._token_threads: dict[int, int] = {}
+        self._closed: set[str] = set()
+        self._next_id = 1
+        self._condition = threading.Condition(self._lock)
+
+    def begin(self, *, selector: str) -> _DeliveryGuardToken:
+        with self._condition:
+            if selector in self._closed:
+                raise PushDeliveryClosed(
+                    "Push delivery admission is closed for this selector."
+                )
+            token_id = self._next_id
+            self._next_id += 1
+            self._inflight.setdefault(selector, set()).add(token_id)
+            self._token_threads[token_id] = threading.get_ident()
+            return _DeliveryGuardToken(selector=selector, token_id=token_id)
+
+    def end(self, token: _DeliveryGuardToken) -> None:
+        with self._condition:
+            active = self._inflight.get(token.selector)
+            if active is not None:
+                active.discard(token.token_id)
+                if not active:
+                    self._inflight.pop(token.selector, None)
+            self._token_threads.pop(token.token_id, None)
+            self._condition.notify_all()
+
+    def close_selector(self, selector: str) -> None:
+        with self._condition:
+            self._closed.add(selector)
+            self._condition.notify_all()
+
+    def reopen_selector(self, selector: str) -> None:
+        """Test helper: allow registration again after a closed drain."""
+
+        with self._condition:
+            self._closed.discard(selector)
+            self._condition.notify_all()
+
+    def drain_selector(
+        self, selector: str, *, timeout_seconds: float
+    ) -> bool:
+        """Wait for other threads' in-flight work; ignore this thread's tokens."""
+
+        deadline = time.time() + float(timeout_seconds)
+        caller = threading.get_ident()
+        with self._condition:
+            while True:
+                active = self._inflight.get(selector, set())
+                foreign = {
+                    token_id
+                    for token_id in active
+                    if self._token_threads.get(token_id) != caller
+                }
+                if not foreign:
+                    return True
+                remaining = deadline - time.time()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(timeout=remaining)
+
+RECEIPT_POLL_DELAY_SECONDS = 2.0
+RECEIPT_POLL_BACKOFF_SECONDS = 5.0
 
 class ExpoPushProvider:
     """Real Expo HTTP provider (requires httpx + EXPO_ACCESS_TOKEN)."""
@@ -196,8 +293,18 @@ class ExpoPushProvider:
                     ticket_id=ticket_id,
                     status=str(row.get("status") or "error"),
                     error=(
-                        str(row.get("message"))
-                        if row.get("message") is not None
+                        str(
+                            (row.get("details") or {}).get("error")
+                            if isinstance(row.get("details"), dict)
+                            else row.get("message")
+                        )
+                        if (
+                            (
+                                isinstance(row.get("details"), dict)
+                                and row.get("details", {}).get("error") is not None
+                            )
+                            or row.get("message") is not None
+                        )
                         else None
                     ),
                 )
@@ -359,7 +466,7 @@ class PushOutboxStore:
                 "UPDATE mobile_push_outbox SET status = 'dead',"
                 " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                 " WHERE user_id = ? AND selector = ?"
-                " AND status IN ('pending', 'leased')",
+                " AND status IN ('pending', 'leased', 'awaiting_receipt')",
                 (time.time(), user_id, selector),
             )
             self._users._conn.commit()
@@ -386,11 +493,15 @@ class PushOutboxWorker:
         *,
         enabled: bool,
         lease_seconds: int = 30,
+        delivery_guard: PushDeliveryGuard | None = None,
+        receipt_delay_seconds: float = RECEIPT_POLL_DELAY_SECONDS,
     ) -> None:
         self._users = users
         self._provider = provider
         self._enabled = enabled
         self._lease_seconds = int(lease_seconds)
+        self._delivery_guard = delivery_guard or PushDeliveryGuard()
+        self._receipt_delay_seconds = float(receipt_delay_seconds)
         self._owner = secrets.token_hex(8)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -426,6 +537,152 @@ class PushOutboxWorker:
         if isinstance(self._provider, DeliveryDisabledProvider):
             return False
         observed = time.time() if now is None else float(now)
+        if self._drain_receipt(observed):
+            return True
+        return self._drain_send(observed)
+
+    def _drain_receipt(self, observed: float) -> bool:
+        with self._users._lock:
+            self._users._conn.execute(
+                "UPDATE mobile_push_outbox SET status = 'dead',"
+                " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                " WHERE status = 'awaiting_receipt' AND expires_at <= ?",
+                (observed, observed),
+            )
+            row = self._users._conn.execute(
+                "SELECT * FROM mobile_push_outbox"
+                " WHERE status = 'awaiting_receipt'"
+                " AND provider_ticket_id IS NOT NULL"
+                " AND (receipt_due_at IS NULL OR receipt_due_at <= ?)"
+                " AND expires_at > ?"
+                " ORDER BY COALESCE(receipt_due_at, created_at) ASC LIMIT 1",
+                (observed, observed),
+            ).fetchone()
+            if row is None:
+                self._users._conn.commit()
+                return False
+            try:
+                require_open_fence(
+                    self._users._conn,
+                    environment=str(row["environment"]),
+                    expo_project_id=str(row["expo_project_id"]),
+                )
+            except PushFenceClosedError:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'awaiting_receipt'",
+                    (observed, row["id"]),
+                )
+                self._users._conn.commit()
+                return True
+            self._users._conn.execute(
+                "UPDATE mobile_push_outbox SET lease_owner = ?,"
+                " lease_expires_at = ?, updated_at = ?, attempts = attempts + 1"
+                " WHERE id = ? AND status = 'awaiting_receipt'",
+                (
+                    self._owner,
+                    observed + self._lease_seconds,
+                    observed,
+                    row["id"],
+                ),
+            )
+            self._users._conn.commit()
+            outbox_id = str(row["id"])
+            ticket_id = str(row["provider_ticket_id"])
+            selector = str(row["selector"])
+            user_id = str(row["user_id"])
+            environment = str(row["environment"])
+            expo_project_id = str(row["expo_project_id"])
+            token = str(row["token"])
+
+        try:
+            guard_token = self._delivery_guard.begin(selector=selector)
+        except PushDeliveryClosed:
+            with self._users._lock:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'awaiting_receipt'"
+                    " AND lease_owner = ?",
+                    (time.time(), outbox_id, self._owner),
+                )
+                self._users._conn.commit()
+            return True
+
+        try:
+            receipts = list(self._provider.receipts([ticket_id]))
+        except Exception:
+            logger.warning("Push receipt poll failed outbox_id=%s", outbox_id)
+            with self._users._lock:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET receipt_due_at = ?,"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'awaiting_receipt'"
+                    " AND lease_owner = ?",
+                    (
+                        time.time() + RECEIPT_POLL_BACKOFF_SECONDS,
+                        time.time(),
+                        outbox_id,
+                        self._owner,
+                    ),
+                )
+                self._users._conn.commit()
+            self._delivery_guard.end(guard_token)
+            return True
+
+        receipt = receipts[0] if receipts else None
+        now = time.time()
+        with self._users._lock:
+            if receipt is None:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET receipt_due_at = ?,"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'awaiting_receipt'"
+                    " AND lease_owner = ?",
+                    (
+                        now + RECEIPT_POLL_BACKOFF_SECONDS,
+                        now,
+                        outbox_id,
+                        self._owner,
+                    ),
+                )
+            elif receipt.status == "ok":
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'delivered',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'awaiting_receipt'"
+                    " AND lease_owner = ?",
+                    (now, outbox_id, self._owner),
+                )
+            elif receipt.error and "devicenotregistered" in receipt.error.lower():
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'awaiting_receipt'"
+                    " AND lease_owner = ?",
+                    (now, outbox_id, self._owner),
+                )
+                self._users._conn.execute(
+                    "DELETE FROM mobile_push_registrations"
+                    " WHERE user_id = ? AND selector = ?"
+                    " AND environment = ? AND expo_project_id = ?"
+                    " AND token = ?",
+                    (user_id, selector, environment, expo_project_id, token),
+                )
+            else:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'awaiting_receipt'"
+                    " AND lease_owner = ?",
+                    (now, outbox_id, self._owner),
+                )
+            self._users._conn.commit()
+        self._delivery_guard.end(guard_token)
+        return True
+
+    def _drain_send(self, observed: float) -> bool:
         with self._users._lock:
             self._users._conn.execute(
                 "UPDATE mobile_push_outbox SET status = 'pending',"
@@ -434,7 +691,6 @@ class PushOutboxWorker:
                 " AND lease_expires_at < ?",
                 (observed, observed),
             )
-            # Expire stale pending rows so TTL is terminal, not just a skip filter.
             self._users._conn.execute(
                 "UPDATE mobile_push_outbox SET status = 'dead',"
                 " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
@@ -465,7 +721,6 @@ class PushOutboxWorker:
                 )
                 self._users._conn.commit()
                 return True
-            # Recheck live registration and bind send to the live token.
             live = self._users._conn.execute(
                 "SELECT token FROM mobile_push_registrations"
                 " WHERE user_id = ? AND selector = ?"
@@ -488,8 +743,6 @@ class PushOutboxWorker:
                 return True
             live_token = str(live["token"])
             if live_token != str(row["token"]):
-                # Registration rotated without matching outbox token: refuse
-                # the frozen token and dead-letter rather than send stale.
                 self._users._conn.execute(
                     "UPDATE mobile_push_outbox SET status = 'dead',"
                     " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
@@ -509,7 +762,6 @@ class PushOutboxWorker:
                     row["id"],
                 ),
             )
-            # Durably advance fence provider clocks before the first HTTP byte.
             may_until = observed + float(self._lease_seconds)
             environment = str(row["environment"])
             expo_project_id = str(row["expo_project_id"])
@@ -541,6 +793,7 @@ class PushOutboxWorker:
             kind = str(row["kind"])
             outbox_id = str(row["id"])
             source_id = str(row["source_id"])
+            selector = str(row["selector"])
 
         message = PushMessage(
             to=token,
@@ -550,14 +803,11 @@ class PushOutboxWorker:
             ttl=PUSH_TTL_SECONDS,
         )
         try:
-            tickets = list(self._provider.send([message]))
-        except Exception:
-            logger.warning("Push send failed outbox_id=%s", outbox_id)
+            guard_token = self._delivery_guard.begin(selector=selector)
+        except PushDeliveryClosed:
             with self._users._lock:
-                # CAS: only revive if still leased by us (sign-out may have
-                # already marked the row dead and cleared the lease).
                 self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'pending',"
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
                     " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                     " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
                     (time.time(), outbox_id, self._owner),
@@ -565,16 +815,38 @@ class PushOutboxWorker:
                 self._users._conn.commit()
             return True
 
+        try:
+            tickets = list(self._provider.send([message]))
+        except Exception:
+            logger.warning("Push send failed outbox_id=%s", outbox_id)
+            with self._users._lock:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'pending',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
+                    (time.time(), outbox_id, self._owner),
+                )
+                self._users._conn.commit()
+            self._delivery_guard.end(guard_token)
+            return True
+
         ticket = tickets[0] if tickets else PushTicket(status="error", error="empty")
-        accepted_at = time.time()
+        # Prefer the drain clock so receipt_due_at is testable via now=.
+        accepted_at = observed
         with self._users._lock:
             if ticket.status == "ok" and ticket.ticket_id:
                 self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'delivered',"
-                    " provider_ticket_id = ?, lease_owner = NULL,"
-                    " lease_expires_at = NULL, updated_at = ?"
+                    "UPDATE mobile_push_outbox SET status = 'awaiting_receipt',"
+                    " provider_ticket_id = ?, receipt_due_at = ?,"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                     " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
-                    (ticket.ticket_id, accepted_at, outbox_id, self._owner),
+                    (
+                        ticket.ticket_id,
+                        accepted_at + self._receipt_delay_seconds,
+                        accepted_at,
+                        outbox_id,
+                        self._owner,
+                    ),
                 )
                 self._users._conn.execute(
                     "UPDATE mobile_push_environment_fences SET"
@@ -600,6 +872,7 @@ class PushOutboxWorker:
                     (accepted_at, outbox_id, self._owner),
                 )
             self._users._conn.commit()
+        self._delivery_guard.end(guard_token)
         return True
 
 

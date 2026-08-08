@@ -906,6 +906,7 @@ _GENERATION_FOUR_TABLE_DDL: dict[str, str] = {
             lease_owner TEXT,
             lease_expires_at REAL,
             provider_ticket_id TEXT,
+            receipt_due_at REAL,
             created_at REAL NOT NULL,
             updated_at REAL NOT NULL,
             expires_at REAL NOT NULL,
@@ -930,6 +931,7 @@ _GENERATION_FOUR_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "lease_owner",
         "lease_expires_at",
         "provider_ticket_id",
+        "receipt_due_at",
         "created_at",
         "updated_at",
         "expires_at",
@@ -1418,6 +1420,24 @@ _GENERATION_ONE_RESTORED_CREDENTIAL_TABLES = (
 )
 
 
+def _ensure_outbox_receipt_due_at(connection: sqlite3.Connection) -> None:
+    """Add receipt_due_at to older gen-4 outbox tables created before the column."""
+
+    tables = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    if "mobile_push_outbox" not in tables:
+        return
+    columns = set(_table_columns(connection, "mobile_push_outbox"))
+    if "receipt_due_at" not in columns:
+        connection.execute(
+            "ALTER TABLE mobile_push_outbox ADD COLUMN receipt_due_at REAL"
+        )
+
+
 MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
     0: MobileStateGeneration(
         generation=0,
@@ -1885,10 +1905,12 @@ def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:
                 "Incompatible partial generation-4 mobile schema; missing "
                 "table(s): " + ", ".join(missing)
             )
+        _ensure_outbox_receipt_due_at(connection)
         _validate_required_columns(connection, 4)
     else:
         for ddl in _GENERATION_FOUR_TABLE_DDL.values():
             connection.execute(ddl)
+        _ensure_outbox_receipt_due_at(connection)
         _validate_required_columns(connection, 4)
     for name, (table, columns) in _GENERATION_FOUR_INDEXES.items():
         connection.execute(
