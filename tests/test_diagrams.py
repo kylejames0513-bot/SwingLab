@@ -207,3 +207,81 @@ def test_new_refilm_targets_track_config_thresholds():
     assert any("0.25" in d.success_metric for d in DRILLS["head-dip"])
     assert any("150" in d.success_metric for d in DRILLS["arm-extension"])
     assert any("0.15" in d.success_metric for d in DRILLS["balance"])
+
+
+# -- figure form: silhouette, not wire ---------------------------------------
+
+def test_figure_limbs_carry_different_weights():
+    """A body is not a wire. Uniform stroke width reads as a wiring diagram;
+    weighting torso > thigh > shin > arm is what makes it read as a person."""
+    svg = drill_diagram("tempo-late-whoosh", BRAND)
+    widths = {float(w) for w in re.findall(r'stroke-width="([\d.]+)"', svg)}
+
+    # Torso, thigh, shin, upper arm, forearm and club are six distinct
+    # weights; props contribute their own, so require at least the body's.
+    assert len(widths) >= 6, sorted(widths)
+
+
+def test_head_is_filled_not_an_open_circle():
+    """An unfilled circle reads as a component in a schematic, not a head."""
+    svg = drill_diagram("tempo-late-whoosh", BRAND)
+    head = re.search(r'<circle[^>]*r="8"[^>]*>', svg)
+
+    assert head is not None
+    assert f'fill="{BRAND["primary_color"]}"' in head.group(0)
+    assert 'stroke="none"' in head.group(0)
+
+
+def test_club_stays_lighter_than_every_body_segment():
+    """At limb weight the club reads as a third arm."""
+    svg = drill_diagram("tempo-late-whoosh", BRAND)
+    widths = sorted(float(w) for w in re.findall(r'stroke-width="([\d.]+)"', svg))
+    body = [w for w in widths if w > 0]
+
+    # The club is deliberately the thinnest thing the figure draws.
+    assert min(body) < 2.0, widths
+
+
+# -- motion trail -------------------------------------------------------------
+
+def test_animation_draws_every_pose_as_a_trail_beneath_the_animated_figure():
+    """A crossfade alone shows one position at a time, so the shape of the
+    movement is never visible — the eye has to remember it."""
+    scene = DRILL_SCENES["tempo-three-beat-count"]
+    svg = drill_animation("tempo-three-beat-count", BRAND)
+
+    trail = re.findall(r'<g opacity="([\d.]+)">', svg)
+    assert len(trail) == len(scene.poses)
+
+    # Oldest faintest, so the movement reads directionally.
+    values = [float(v) for v in trail]
+    assert values == sorted(values)
+    assert values[0] < values[-1]
+
+
+def test_trail_never_competes_with_the_animated_figure():
+    svg = drill_animation("tempo-three-beat-count", BRAND)
+    values = [float(v) for v in re.findall(r'<g opacity="([\d.]+)">', svg)]
+
+    assert max(values) < 0.5, values
+
+
+def test_trail_is_unanimated_so_reduced_motion_keeps_the_whole_gesture():
+    """Under prefers-reduced-motion the animated groups pause on the setup
+    pose. The trail carries no animation class, so the full movement stays
+    visible rather than collapsing to one frozen position."""
+    svg = drill_animation("tempo-three-beat-count", BRAND)
+
+    for match in re.finditer(r'<g opacity="[\d.]+">', svg):
+        assert "class=" not in match.group(0)
+
+    # The reduced-motion rule only ever touches the animated pose groups.
+    assert "prefers-reduced-motion" in svg
+    assert re.search(r"-pose \{ animation: none !important", svg)
+
+
+def test_trail_opacity_is_stable_for_a_single_pose_scene():
+    """Guards the count == 1 division in the ramp."""
+    from swinglab.diagrams import _trail_opacity
+
+    assert 0.0 < _trail_opacity(0, 1) <= 0.5

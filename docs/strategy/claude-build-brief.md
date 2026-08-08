@@ -142,6 +142,25 @@ saying so.
 ~2,000 tests. Shopify theme is Liquid in `storefront-theme/`. Native client is
 Expo + Expo Router + TanStack Query in `mobile/`.
 
+**Two kinds of measurement.** `metrics.py` is positional — where a joint was
+at address, top, or impact. `sequence.py` is temporal: the order body segments
+reach peak rotation speed through the downswing, which is how a swing either
+transmits speed or leaks it. The distinction matters when choosing what to
+measure next, because a swing can pass every positional check and still be
+badly out of order — casting, arms-first and a stalled pelvis are all
+sequencing faults that head-sway and hip-slide cannot see.
+
+`sequence.py` refuses more than it answers, on purpose: not face-on, too few
+downswing samples, any tracking gap in the phase, or peaks closer together
+than the frame rate can resolve all return a named failure rather than a
+number. **It is not yet wired into the guided report** — see the build order.
+
+**Drill figures are silhouettes, not stick figures.** `diagrams.py` strokes
+each body segment at its own weight from the same joint vocabulary, and the
+animation draws every pose at once as a fading trail beneath the animated
+figure so the shape of a movement is visible rather than remembered. If you
+add a scene, you get all of this for free — do not hand-author SVG bodies.
+
 **Deploy paths differ, and this catches people out:**
 
 - The app **auto-deploys from `main`** via Railway. Merging is deploying.
@@ -185,7 +204,18 @@ but say why.
 - Add a test that **fails when a drill's `gear_tag` has no matching product**.
   This gap was invisible precisely because nothing checked for it.
 
-### 2. Make the store safe to advertise
+### 2. Wire kinematic sequence into the guided report
+
+`sequence.py` is built, tested and unused. Surfacing it means deciding how a
+sequencing fault competes with the positional faults for the single priority
+slot — that is a coaching-rules change, not a rendering change, and it touches
+the `guided-report-v1` contract and the priority-selection order.
+
+Worth doing carefully rather than quickly. A sequencing fault is often the
+*cause* of a positional one, so if it simply joins the ranking as a peer, the
+report will keep naming symptoms while the cause sits one row down.
+
+### 3. Make the store safe to advertise
 
 Blocking paid traffic today: no Shipping Policy, no Terms of Service (Pro
 auto-renews, so this matters legally), a Refund Policy promising prepaid
@@ -194,18 +224,18 @@ personal iCloud address, two shipping methods both named "Standard", and a
 live sold-out variant. Drafts are in `docs/runbooks/store-policies.md` and
 need real values, not placeholders.
 
-### 3. Ship the v4 brand to the storefront
+### 4. Ship the v4 brand to the storefront
 
 The app is already on it; the store is not, and a customer meeting both sees
 two companies. Note that a Shopify **Files** entry beats a theme asset of the
 same name — the store still holds v3-brand filenames.
 
-### 4. Photography
+### 5. Photography
 
 The single largest remaining visual gap. Existing art is from an earlier
 brand. Prompts are written and reference the exact filenames the code binds.
 
-### 5. The native app, honestly
+### 6. The native app, honestly
 
 `mobile/` builds but has never been run. Before the stores:
 
@@ -218,7 +248,7 @@ brand. Prompts are written and reference the exact filenames the code binds.
 - Build the report screen.
 - Then: Apple Developer Program, Play Console, EAS builds, store listings.
 
-### 6. Pay down the API contract
+### 7. Pay down the API contract
 
 None of the twelve `/api/` handlers declares a response schema — they return
 bare `JSONResponse`. So `docs/api/openapi-v1.json` has accurate paths and no
@@ -244,6 +274,14 @@ class of silent drift.
   `images['…']` at a retired filename expecting the theme copy to win.
 - **CSS source order.** A base rule placed after a media query silently
   overrides it at equal specificity. This hid a bottom tab bar entirely.
+- **Angles need unwrapping before differencing.** A segment crossing the atan2
+  branch cut jumps 2π, which is otherwise the largest apparent rotation in the
+  swing and captures every peak. Anything differentiating an angle series has
+  this bug until proven otherwise.
+- **Frame rate bounds what can honestly be claimed.** A downswing is about a
+  quarter of a second; at 30fps that is roughly eight samples. Any measurement
+  resolving events *within* the downswing has to state what it cannot separate
+  rather than report the argmax as fact.
 
 ---
 
@@ -255,6 +293,18 @@ review. Merge commits, not squash. A red build is the only exception.
 **Verify before claiming.** "Typechecks" is not "runs". "Tests pass" is not
 "works". If you say something is verified, say precisely what you ran. If you
 could not verify something, say that plainly instead of implying you did.
+
+**Break the thing and watch the test fail.** A green test proves nothing until
+you have seen it go red. This has bitten twice in one session: once a literal
+tautology (`assert measured or failure is not None`), and once a fixture whose
+ramp went flat, so the angle it was meant to sweep through 180° parked exactly
+on it and never crossed — the test passed with the behaviour it existed to
+protect deleted. Both looked completely reasonable on the page.
+
+For anything non-obvious — a smoothing step, a guard threshold, a rendering
+rule — delete or invert it, run the test, confirm the *specific* test fails,
+then restore. It takes a minute and it is the difference between coverage and
+the appearance of coverage.
 
 **Say when the plan is wrong.** Several documented plans in this repo assume
 prerequisites that do not exist. Surfacing that is more valuable than building
