@@ -47,6 +47,11 @@ Implement native privacy controls and safe account deletion from the plan Task 6
 - Browser `POST /account/history/delete` uses the same journal/fence authority.
 - Tests: `tests/test_mobile_privacy_history_reset_api.py`, `tests/test_mobile_account_delete_api.py`, plus browser/core regressions.
 
+**Erasure follow-ups landed after `d862943`:**
+
+- Replay TTL is now enforced: `purge_expired_privacy_erasure_state` existed but nothing called it, and the replay lookup matches on the idempotency digest alone, so a completed receipt answered 204 forever. Every erasure entry point now sweeps first (`25b81ce`).
+- A fenced `account_delete` no longer fails the restore: the post-reconciler credential audit compared surviving users against an exact pre-chain snapshot, so removing an owner aborted the whole restore. The user set may now shrink while a new row, a regained password, and a rolled-back epoch stay rejected. Both restore reconcilers are covered end-to-end in `tests/test_backups.py` (`32d7ca1`).
+
 **Task 6 gate:** complete for ordinary-customer privacy (step-up → export → history-reset → account-delete).
 
 **Still next after Task 6:** Task 7+ per plan; deferred items below remain open but non-blocking for this gate.
