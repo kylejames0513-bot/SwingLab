@@ -173,6 +173,10 @@ class PushDeliveryGuard:
             self._closed.add(selector)
             self._condition.notify_all()
 
+    def is_closed(self, selector: str) -> bool:
+        with self._condition:
+            return selector in self._closed
+
     def reopen_selector(self, selector: str) -> None:
         """Test helper: allow registration again after a closed drain."""
 
@@ -605,83 +609,100 @@ class PushOutboxWorker:
                     " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                     " WHERE id = ? AND status = 'awaiting_receipt'"
                     " AND lease_owner = ?",
-                    (time.time(), outbox_id, self._owner),
+                    (observed, outbox_id, self._owner),
                 )
                 self._users._conn.commit()
             return True
 
         try:
-            receipts = list(self._provider.receipts([ticket_id]))
-        except Exception:
-            logger.warning("Push receipt poll failed outbox_id=%s", outbox_id)
+            try:
+                receipts = list(self._provider.receipts([ticket_id]))
+            except Exception:
+                logger.warning("Push receipt poll failed outbox_id=%s", outbox_id)
+                with self._users._lock:
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET receipt_due_at = ?,"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'awaiting_receipt'"
+                        " AND lease_owner = ?",
+                        (
+                            observed + RECEIPT_POLL_BACKOFF_SECONDS,
+                            observed,
+                            outbox_id,
+                            self._owner,
+                        ),
+                    )
+                    self._users._conn.commit()
+                return True
+
+            receipt = receipts[0] if receipts else None
+            now = observed
             with self._users._lock:
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET receipt_due_at = ?,"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'awaiting_receipt'"
-                    " AND lease_owner = ?",
-                    (
-                        time.time() + RECEIPT_POLL_BACKOFF_SECONDS,
-                        time.time(),
-                        outbox_id,
-                        self._owner,
-                    ),
-                )
+                if self._delivery_guard.is_closed(selector):
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'dead',"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'awaiting_receipt'"
+                        " AND lease_owner = ?",
+                        (now, outbox_id, self._owner),
+                    )
+                elif receipt is None:
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET receipt_due_at = ?,"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'awaiting_receipt'"
+                        " AND lease_owner = ?",
+                        (
+                            now + RECEIPT_POLL_BACKOFF_SECONDS,
+                            now,
+                            outbox_id,
+                            self._owner,
+                        ),
+                    )
+                elif receipt.status == "ok":
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'delivered',"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'awaiting_receipt'"
+                        " AND lease_owner = ?",
+                        (now, outbox_id, self._owner),
+                    )
+                elif (
+                    receipt.error
+                    and "devicenotregistered" in receipt.error.lower()
+                ):
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'dead',"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'awaiting_receipt'"
+                        " AND lease_owner = ?",
+                        (now, outbox_id, self._owner),
+                    )
+                    self._users._conn.execute(
+                        "DELETE FROM mobile_push_registrations"
+                        " WHERE user_id = ? AND selector = ?"
+                        " AND environment = ? AND expo_project_id = ?"
+                        " AND token = ?",
+                        (
+                            user_id,
+                            selector,
+                            environment,
+                            expo_project_id,
+                            token,
+                        ),
+                    )
+                else:
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'dead',"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'awaiting_receipt'"
+                        " AND lease_owner = ?",
+                        (now, outbox_id, self._owner),
+                    )
                 self._users._conn.commit()
-            self._delivery_guard.end(guard_token)
             return True
-
-        receipt = receipts[0] if receipts else None
-        now = time.time()
-        with self._users._lock:
-            if receipt is None:
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET receipt_due_at = ?,"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'awaiting_receipt'"
-                    " AND lease_owner = ?",
-                    (
-                        now + RECEIPT_POLL_BACKOFF_SECONDS,
-                        now,
-                        outbox_id,
-                        self._owner,
-                    ),
-                )
-            elif receipt.status == "ok":
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'delivered',"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'awaiting_receipt'"
-                    " AND lease_owner = ?",
-                    (now, outbox_id, self._owner),
-                )
-            elif receipt.error and "devicenotregistered" in receipt.error.lower():
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'dead',"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'awaiting_receipt'"
-                    " AND lease_owner = ?",
-                    (now, outbox_id, self._owner),
-                )
-                self._users._conn.execute(
-                    "DELETE FROM mobile_push_registrations"
-                    " WHERE user_id = ? AND selector = ?"
-                    " AND environment = ? AND expo_project_id = ?"
-                    " AND token = ?",
-                    (user_id, selector, environment, expo_project_id, token),
-                )
-            else:
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'dead',"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'awaiting_receipt'"
-                    " AND lease_owner = ?",
-                    (now, outbox_id, self._owner),
-                )
-            self._users._conn.commit()
-        self._delivery_guard.end(guard_token)
-        return True
-
+        finally:
+            self._delivery_guard.end(guard_token)
     def _drain_send(self, observed: float) -> bool:
         with self._users._lock:
             self._users._conn.execute(
@@ -810,71 +831,77 @@ class PushOutboxWorker:
                     "UPDATE mobile_push_outbox SET status = 'dead',"
                     " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                     " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
-                    (time.time(), outbox_id, self._owner),
+                    (observed, outbox_id, self._owner),
                 )
                 self._users._conn.commit()
             return True
 
         try:
-            tickets = list(self._provider.send([message]))
-        except Exception:
-            logger.warning("Push send failed outbox_id=%s", outbox_id)
+            try:
+                tickets = list(self._provider.send([message]))
+            except Exception:
+                logger.warning("Push send failed outbox_id=%s", outbox_id)
+                with self._users._lock:
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'pending',"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
+                        (observed, outbox_id, self._owner),
+                    )
+                    self._users._conn.commit()
+                return True
+
+            ticket = tickets[0] if tickets else PushTicket(status="error", error="empty")
+            accepted_at = observed
             with self._users._lock:
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'pending',"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
-                    (time.time(), outbox_id, self._owner),
-                )
+                if self._delivery_guard.is_closed(selector):
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'dead',"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
+                        (accepted_at, outbox_id, self._owner),
+                    )
+                elif ticket.status == "ok" and ticket.ticket_id:
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'awaiting_receipt',"
+                        " provider_ticket_id = ?, receipt_due_at = ?,"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
+                        (
+                            ticket.ticket_id,
+                            accepted_at + self._receipt_delay_seconds,
+                            accepted_at,
+                            outbox_id,
+                            self._owner,
+                        ),
+                    )
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_environment_fences SET"
+                        " last_provider_accepted_at = CASE"
+                        "  WHEN last_provider_accepted_at IS NULL"
+                        "   OR last_provider_accepted_at < ? THEN ?"
+                        "  ELSE last_provider_accepted_at END,"
+                        " updated_at = ?"
+                        " WHERE environment = ? AND expo_project_id = ?",
+                        (
+                            accepted_at,
+                            accepted_at,
+                            accepted_at,
+                            environment,
+                            expo_project_id,
+                        ),
+                    )
+                else:
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_outbox SET status = 'dead',"
+                        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                        " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
+                        (accepted_at, outbox_id, self._owner),
+                    )
                 self._users._conn.commit()
-            self._delivery_guard.end(guard_token)
             return True
-
-        ticket = tickets[0] if tickets else PushTicket(status="error", error="empty")
-        # Prefer the drain clock so receipt_due_at is testable via now=.
-        accepted_at = observed
-        with self._users._lock:
-            if ticket.status == "ok" and ticket.ticket_id:
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'awaiting_receipt',"
-                    " provider_ticket_id = ?, receipt_due_at = ?,"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
-                    (
-                        ticket.ticket_id,
-                        accepted_at + self._receipt_delay_seconds,
-                        accepted_at,
-                        outbox_id,
-                        self._owner,
-                    ),
-                )
-                self._users._conn.execute(
-                    "UPDATE mobile_push_environment_fences SET"
-                    " last_provider_accepted_at = CASE"
-                    "  WHEN last_provider_accepted_at IS NULL"
-                    "   OR last_provider_accepted_at < ? THEN ?"
-                    "  ELSE last_provider_accepted_at END,"
-                    " updated_at = ?"
-                    " WHERE environment = ? AND expo_project_id = ?",
-                    (
-                        accepted_at,
-                        accepted_at,
-                        accepted_at,
-                        environment,
-                        expo_project_id,
-                    ),
-                )
-            else:
-                self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'dead',"
-                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
-                    (accepted_at, outbox_id, self._owner),
-                )
-            self._users._conn.commit()
-        self._delivery_guard.end(guard_token)
-        return True
-
+        finally:
+            self._delivery_guard.end(guard_token)
 
 def attach_job_push_observer(
     manager: JobManager,

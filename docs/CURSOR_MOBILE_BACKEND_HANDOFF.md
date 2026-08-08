@@ -22,7 +22,7 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
 
 ## Current gate: Task 7
 
-Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **Registration + outbox delivery + environment-fence cutover slices are landed** on this branch; receipt polling / caps / full recovery-ledger publish remain deferred.
+Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **Registration + outbox delivery + cutover + receipt/guard slices are landed** on this branch; scanner backfill / reminder kinds remain deferred.
 
 ### Task 7 progress (in this branch)
 
@@ -40,32 +40,39 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 
 **Push outbox delivery slice** — tip `815a04d` (impl `8b32eb3`, race/test harden `8f72512`, unregister/token dead-letter `815a04d`).
 
-- Schema generation **4**: additive `mobile_push_outbox`; restore allowlists include generation `4`.
+- Schema generation **4**: additive `mobile_push_outbox` (includes `receipt_due_at`); restore allowlists include generation `4`.
 - `swinglab/web/push_delivery.py`: `FakeExpoPushProvider` / `ExpoPushProvider`, `PushOutboxStore`, `PushOutboxWorker`, `attach_job_push_observer`.
 - Missing `EXPO_ACCESS_TOKEN` → no enqueue/send; jobs still succeed. Payload `ttl=900`. Unique `(source_kind, source_id, kind, selector)`.
 - `JobManager.add_completion_observer`: DONE → `analysis_ready` enqueue after terminal `_save`.
-- Sign-out / DELETE unregister / token-rotating PUT dead-letter pending/leased outbox and clear leases; worker completion CAS on `status='leased' AND lease_owner=?`; drain binds to live registration token (mismatch → dead).
+- Sign-out / DELETE unregister / token-rotating PUT dead-letter pending/leased/`awaiting_receipt` outbox and clear leases; worker completion CAS on `status='leased' AND lease_owner=?`; drain binds to live registration token (mismatch → dead).
 - Expired pending/leased rows are marked `dead` on drain. Config envelope/skew validated when push on; outbox global/per-selector caps are enforced on enqueue (see cutover/caps notes below).
 - `httpx` added to the `web` extra. App wires outbox store/worker + observer when push enabled.
-- Tests: `tests/test_push_outbox.py` (10) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry, unregister→re-register, token rotation.
+- Tests: `tests/test_push_outbox.py` including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry, unregister→re-register, token rotation, caps.
 
 **Push environment fence cutover slice** — tip `2f5df55` (impl `c8e165b`, timing/clock harden `fc12a3e`, caps `2f5df55`).
 
 - Schema generation **5**: additive `mobile_push_environment_fences` + `mobile_push_cutover_operations` (includes `aggregate_drop_count`); restore allowlists include generation `5`; detect/ensure stepwise after gen 4.
-- `swinglab/web/push_cutover.py`: `ensure_open_fence` / `require_open_fence` / `fence_status` / `close_fence` / `purge_fence`; fail-closed never-reopen; close terminalizes pending/leased outbox; purge waits `provider_safe_after` then deletes registrations+outbox while keeping fence closed.
+- `swinglab/web/push_cutover.py`: `ensure_open_fence` / `require_open_fence` / `fence_status` / `close_fence` / `purge_fence`; fail-closed never-reopen; close terminalizes pending/leased/`awaiting_receipt` outbox; purge waits `provider_safe_after` then deletes registrations+outbox while keeping fence closed.
 - Safe-after: `closed_at` when no provider I/O; otherwise `max(accepted, may_accept) + 900 + frozen_skew`. Worker stamps fence start/accept clocks before/after Expo send.
 - Admission: register/preferences require open fence; enqueue returns false when closed; worker dead-letters without send when fence not open; flag-on startup calls `ensure_open_fence` (fails closed if previously closed).
 - CLI: `swinglab mobile-push-cutover status|close|purge` with `--sessions-dir` / `--environment` / `--expo-project-id`; close/purge `--operation-id` + dry-run default / `--apply`; rejects env/project mismatch vs server config.
-- Optional `ledger`+`keyring` kwargs on close can publish `PushEnvironmentCutoffEvent`; without them local close/purge still completes (full recovery publish deferred).
+- Close/purge accept optional `ledger`+`keyring` and publish `PushEnvironmentCutoffEvent` (purge bumps cutoff revision before delete). Offline CLI remains local-only unless a ledger is injected via the library API.
 - Outbox caps: `mobile_push_outbox_global_cap` / `per_selector_cap` enforced on enqueue; overflows increment fence `aggregate_drop_count` without affecting job status.
-- Tests: `tests/test_mobile_push_cutover.py` (9); outbox cap coverage in `tests/test_push_outbox.py`.
+- Tests: `tests/test_mobile_push_cutover.py`.
+
+**Push receipt + delivery guard slice** — tip `ef19d29`.
+
+- Successful Expo send → `awaiting_receipt` + `receipt_due_at` (not immediate `delivered`).
+- Worker polls due receipts via `provider.receipts`; ok → `delivered`; `DeviceNotRegistered` → `dead` + delete matching registration; missing receipt → backoff due time.
+- `PushDeliveryGuard` tracks in-flight send/receipt by selector; sign-out closes admission and drains other threads (same-thread tokens ignored to avoid re-entrancy deadlock).
+- Shared guard wired through `PushRegistrationService` + `PushOutboxWorker` on app startup.
+- Tests: receipt→delivered, DeviceNotRegistered, awaiting_receipt restart survival.
 
 **Still deferred (next Task 7 slices):**
 
-- Full mandatory recovery-ledger `PushEnvironmentCutoff` publish/readback on every close/purge (optional callback path exists)
-- Receipt polling / `awaiting_receipt` lifecycle / `PushDeliveryGuard` drain-before-sign-out
 - Terminal-job scanner backfill; 24h pending age cutoff; daily 1k retention purge
 - Practice-reminder enqueue; refilm kind classification; security notice on new device
+- Full app-composition recovery-ledger wiring for offline CLI close/purge (library path supports publish)
 - Deploy or mutate live providers
 
 **Earlier deferrals still open (non-blocking):**

@@ -221,8 +221,11 @@ class PushRegistrationService:
         del operation_id
         if self._delivery_guard is not None:
             self._delivery_guard.close_selector(selector)
+            timeout = float(
+                getattr(self._settings, "send_envelope_seconds", 30) or 30
+            )
             if not self._delivery_guard.drain_selector(
-                selector, timeout_seconds=2.0
+                selector, timeout_seconds=max(timeout, 2.0)
             ):
                 return False
         with users._lock:
@@ -561,6 +564,14 @@ class PushRegistrationService:
 
         timestamp = float(self._clock())
         project_id = self._settings.expo_project_id
+        if self._delivery_guard is not None:
+            self._delivery_guard.close_selector(context.selector)
+            timeout = float(
+                getattr(self._settings, "send_envelope_seconds", 30) or 30
+            )
+            self._delivery_guard.drain_selector(
+                context.selector, timeout_seconds=max(timeout, 2.0)
+            )
         try:
             with self._users._lock:
                 try:
