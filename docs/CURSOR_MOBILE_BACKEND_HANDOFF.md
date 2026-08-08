@@ -26,21 +26,25 @@ Implement native privacy controls and safe account deletion from the plan Task 6
 
 ### Task 6 progress (in this branch)
 
-First vertical slice landed: email step-up start/exchange behind default-off `mobile_privacy_enabled`, modeled on native email auth.
+**Email step-up** — independently reviewed **PASS** at `c7cf7bd` (60s same-PKCE resend; versioned `STEP_UP_TOKEN_VERIFIER` HMAC).
 
-- `POST /api/v1/auth/step-up/start` — bearer-only (ambient cookie rejected, review-scoped bearer rejected), body `{purpose, code_challenge}`. Binds the initiating stable user, bearer selector, `auth_epoch`, installation HMAC, and purpose; emails a purpose-bound 10-minute grouped 8-digit code plus a challenge-only universal link (never bearer or verifier). Returns no-store `202 {challenge_id, expires_at}`.
-- `POST /api/v1/auth/step-up/exchange` — never falls back to bearer/cookie; body `{challenge_id, email_code, code_verifier}` + 128-bit `Idempotency-Key`. Rechecks the still-active initiating selector/epoch/installation (including that the token's `auth_epoch` still matches the user's current epoch), mints a no-store `201 {step_up_token, purpose, expires_at}` bound to owner/selector/epoch/installation/purpose with 5-minute expiry. An exact lost-response replay returns the same deterministic token; conflicting idempotency/proofs return generic `409`; wrong code/verifier return generic `401` and burn after five failures.
-- Flag off → `404` before auth/body/DB (routes registered but concealed; runtime 404, mirroring email-auth/upload/device concealment).
-- Rate limits via `KeyedThrottle.consume_many`: `stepup-start-selector` (5/15m), `stepup-start-user` (5/15m), `stepup-start-client-ip` (20/15m); failed-exchange `stepup-exchange-user` (5/15m), `stepup-exchange-client-ip` (20/15m). Live-challenge caps: ≤2 per `(selector, purpose)`, ≤5 per user; resend ≥60s.
-- New `MobileStateDomain` values added (`step-up-*`) with distinct `VersionedHMAC` domains; challenge/journal/receipt/token rows store only versioned HMAC pairs.
-- New service `swinglab/web/mobile_privacy.py::MobileStepUpService`; DB methods + tables in `users.py`; contracts in `swinglab/api/contracts.py`; routes in `swinglab/api/mobile_routes.py`; wiring in `app.py`.
-- Tests: `tests/test_mobile_privacy_api.py` (16 tests). OpenAPI regenerated (step-up paths always appear in the schema, consistent with other default-off native routes).
+- `POST /api/v1/auth/step-up/start` / `POST /api/v1/auth/step-up/exchange` behind `mobile_privacy_enabled`.
+- Tests: `tests/test_mobile_privacy_api.py`.
 
-**Deferrals (this slice):**
+**Privacy export** — landed at `fe35762` (pending independent review).
 
-- Export / history-reset / account-delete endpoints that will *consume* the minted step-up token are not implemented; the token binding is asserted, not its consumption.
-- Store-review step-up variant is not implemented; a `method='email'` discriminator is carried on every step-up row so the review path can share the shape later without overloading the email path.
-- New tables (`step_up_challenges`, `step_up_exchange_journals`, `step_up_exchange_receipts`, `step_up_tokens`) are held **outside** the closed mobile-state generation inventory (deliberately not `mobile_`-prefixed), mirroring the Task 5 resumable-upload precedent. Registering them in a bumped gen-3 for backup attestation remains a documented deferral tracked alongside the existing gen-3 backup-registration item.
+- `POST /api/v1/privacy/exports` consumes a `data_export` step-up token + `Idempotency-Key` → 202 pending receipt (exact replay).
+- Leased `PrivacyExportWorker` builds ZIP under `sessions_dir/.privacy_exports` (profile + sessions summary); rechecks `history_epoch` before publish.
+- `GET /api/v1/privacy/exports/{id}` and `.../download` (same-origin stream, exact `Content-Length`, Range rejected).
+- Tests: `tests/test_mobile_privacy_export_api.py` (19 passed).
+
+**Still next:** history-reset journal wrap, then account deletion; review step-up; full download-admission budgets if not yet complete; gen-3 backup registration for step-up/export tables.
+
+**Deferrals:**
+
+- Store-review step-up variant.
+- Gen-3 mobile backup registration for step-up/export/capacity/upload tables (outside closed inventory for now).
+- Full durable download-admission slot/byte budgets if the export slice shipped a minimal guard — confirm in review.
 
 ## Standing decisions and hazards
 
