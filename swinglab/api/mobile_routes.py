@@ -15,6 +15,7 @@ from .auth import (
     MobileAuthError,
     mobile_bearer_token,
     mobile_bearer_unauthorized,
+    require_mobile_bearer,
 )
 from .contracts import (
     APIError,
@@ -23,6 +24,8 @@ from .contracts import (
     MobileSessionResponse,
     MobileSessionsResponse,
     MobileTodayResponse,
+    ProfileResponse,
+    ProfileUpdateRequest,
     ProgressResponse,
     NativeAuthExchangePendingResponse,
     NativeAuthExchangeRequest,
@@ -35,6 +38,7 @@ from .contracts import (
 )
 from .errors import MobileAPIHTTPError
 from ..web.credential_mutations import (
+    CredentialMutationGuard,
     MobileSignOutInvalidRequest,
     MobileSignOutService,
     MobileSignOutUnauthorized,
@@ -48,8 +52,14 @@ from ..web.mobile_auth import (
     MobileNativeAuthRejected,
     MobileNativeAuthUnavailable,
 )
-from ..web.mobile_resources import MobileResourceNotFound, MobileResourceService
-from ..web.users import MobileAPITokenLimitError
+from ..web.mobile_resources import (
+    MobileProfileHistoryConflict,
+    MobileProfileUnauthorized,
+    MobileProfileUnavailable,
+    MobileResourceNotFound,
+    MobileResourceService,
+)
+from ..web.users import MobileAPITokenLimitError, UserStore
 from ..web.review_auth import (
     ReviewAuthService,
     parse_app_identity_headers,
@@ -68,6 +78,7 @@ MOBILE_SESSION_ROUTE_NAME = "mobile.resources.session"
 MOBILE_SESSION_BRIEF_ROUTE_NAME = "mobile.resources.session_brief"
 MOBILE_TODAY_ROUTE_NAME = "mobile.resources.today"
 MOBILE_PROGRESS_ROUTE_NAME = "mobile.resources.progress"
+MOBILE_PROFILE_WRITE_ROUTE_NAME = "mobile.resources.profile_write"
 _MOBILE_BEARER_SCHEME = HTTPBearer(
     auto_error=False,
     scheme_name="MobileBearer",
@@ -112,9 +123,22 @@ def install_mobile_routes(
     require_account: bool,
     resource_service: MobileResourceService,
     resolve_read_auth: Callable[[Request], MobileAuthContext],
+    users: UserStore,
+    credential_mutation_guard: CredentialMutationGuard,
+    review_auth_admission=None,
 ) -> None:
     no_store = {"Cache-Control": "no-store", "Pragma": "no-cache"}
     read_security = {"security": [{"MobileBearer": []}]}
+    write_security = {
+        "requestBody": {
+            "required": True,
+            "content": {
+                "application/json": {
+                    "schema": ProfileUpdateRequest.model_json_schema()
+                }
+            },
+        },
+    }
     identity_parameters = [
         {
             "name": name,
@@ -284,6 +308,66 @@ def install_mobile_routes(
                 404,
                 "not_found",
                 "Account history not found.",
+                headers=no_store,
+            ) from exc
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.put(
+        "/api/v1/mobile/profile",
+        name=MOBILE_PROFILE_WRITE_ROUTE_NAME,
+        response_model=ProfileResponse,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+        },
+        openapi_extra=write_security,
+    )
+    async def mobile_profile_write(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        if not resource_service.settings.profile_writes_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile profile writes are not enabled.",
+                headers=no_store,
+            )
+        payload = await _native_auth_payload(request, ProfileUpdateRequest)
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            response = resource_service.update_profile(
+                context,
+                payload,
+                guard=credential_mutation_guard,
+            )
+        except MobileAuthError:
+            raise
+        except MobileProfileUnauthorized as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except MobileProfileUnavailable as exc:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Account history not found.",
+                headers=no_store,
+            ) from exc
+        except MobileProfileHistoryConflict as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "history_epoch_conflict",
+                str(exc),
                 headers=no_store,
             ) from exc
         return JSONResponse(response.model_dump(mode="json"), headers=no_store)

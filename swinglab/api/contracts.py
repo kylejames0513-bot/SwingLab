@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import unicodedata
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 RESOURCE_VERSION: Literal[1] = 1
@@ -60,17 +61,66 @@ class ProfileResponse(ContractModel):
 
 
 class ProfileUpdateRequest(ContractModel):
-    experience_mode: str
-    handicap_range: str | None
-    primary_goal: str | None
-    practice_minutes: int
-    sessions_per_week: int
-    handedness: Literal["left", "right"]
+    """Closed native profile write body; legacy PUT /api/v1/profile stays manual."""
+
+    display_name: str = Field(min_length=1, max_length=50)
+    experience_mode: Literal["start", "improve", "compete"]
+    handicap_range: (
+        Literal[
+            "new_to_golf",
+            "30_plus",
+            "20_to_29",
+            "15_to_19",
+            "10_to_14",
+            "under_10",
+            "prefer_not_to_say",
+        ]
+        | None
+    )
+    primary_goal: Literal[
+        "consistency",
+        "tempo",
+        "weight_shift",
+        "strike_quality",
+        "balance",
+        "confidence",
+    ]
+    practice_minutes: Literal[10, 20, 45]
+    sessions_per_week: Literal[1, 2, 3]
+    handedness: Literal["right", "left"]
     camera_angle: Literal["face-on", "dtl"]
-    preferred_club: str | None
-    reduced_motion: bool
-    marketing_email_opt_in: bool
-    display_name: str | None = None
+    preferred_club: Literal[
+        "driver", "fairway-wood", "hybrid", "iron", "wedge"
+    ]
+    reduced_motion: bool = Field(strict=True)
+    marketing_email_opt_in: bool = Field(strict=True)
+    expected_history_epoch: int = Field(ge=0, strict=True)
+
+    @field_validator("display_name")
+    @classmethod
+    def normalize_display_name(cls, value: str) -> str:
+        if any(
+            character in "\r\n"
+            or unicodedata.category(character).startswith("C")
+            or unicodedata.category(character) in {"Zl", "Zp"}
+            for character in value
+        ):
+            raise ValueError("Your display name contains invalid characters.")
+        normalized = " ".join(unicodedata.normalize("NFKC", value).split())
+        if not normalized:
+            raise ValueError("Enter the name you want CaddieInsight to use.")
+        if len(normalized) > 50:
+            raise ValueError(
+                "Your display name must be 50 characters or fewer."
+            )
+        if any(
+            character in "\r\n"
+            or unicodedata.category(character).startswith("C")
+            or unicodedata.category(character) in {"Zl", "Zp"}
+            for character in normalized
+        ):
+            raise ValueError("Your display name contains invalid characters.")
+        return normalized
 
 
 class LegacySessionResponse(ContractModel):

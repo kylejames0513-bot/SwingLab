@@ -17,9 +17,16 @@ from ..api.contracts import (
     MobileSessionsResponse,
     MobileTodayResponse,
     Profile,
+    ProfileResponse,
+    ProfileUpdateRequest,
     ProgressResponse,
     ProofCycleTargetResponse,
 )
+from .credential_mutations import (
+    CredentialMutationGuard,
+    CredentialMutationRejected,
+)
+from .users import HistoryEpochError
 from ..clubs import CLUB_LABELS
 from ..config import Config
 from ..drills import gear_shop_url
@@ -72,6 +79,18 @@ class MobileResourceSettings:
 
 class MobileResourceNotFound(LookupError):
     """An owned native resource is absent, stale, or belongs to another user."""
+
+
+class MobileProfileUnauthorized(PermissionError):
+    """The bearer credential is no longer admissible for a profile write."""
+
+
+class MobileProfileHistoryConflict(RuntimeError):
+    """The client expected a history epoch that is no longer current."""
+
+
+class MobileProfileUnavailable(LookupError):
+    """The account vanished or became unclaimable before the profile write."""
 
 
 def validate_mobile_resource_settings(
@@ -196,6 +215,74 @@ class MobileResourceService:
         ):
             raise MobileResourceNotFound("Account history is no longer current.")
         return current
+
+    def update_profile(
+        self,
+        context: MobileAuthContext,
+        request: ProfileUpdateRequest,
+        *,
+        guard: CredentialMutationGuard,
+        now: float | None = None,
+    ) -> ProfileResponse:
+        """Upsert the caller's profile under one credential-mutation lease."""
+
+        try:
+            lease = guard.admit(context)
+        except CredentialMutationRejected as exc:
+            raise MobileProfileUnauthorized(
+                "Invalid mobile access token."
+            ) from exc
+
+        normalized = self._users._normalize_golfer_profile_values(
+            display_name=request.display_name,
+            experience_mode=request.experience_mode,
+            handicap_range=request.handicap_range,
+            primary_goal=request.primary_goal,
+            practice_minutes=request.practice_minutes,
+            sessions_per_week=request.sessions_per_week,
+            handedness=request.handedness,
+            camera_angle=request.camera_angle,
+            preferred_club=request.preferred_club,
+            reduced_motion=request.reduced_motion,
+            marketing_email_opt_in=request.marketing_email_opt_in,
+        )
+        timestamp = self._clock() if now is None else float(now)
+        try:
+            with self._users._lock:
+                try:
+                    self._users._conn.execute("BEGIN IMMEDIATE")
+                    lease.validate_locked(self._users, now=timestamp)
+                    self._users._assert_history_epoch_locked(
+                        context.user.id,
+                        request.expected_history_epoch,
+                    )
+                    profile = self._users._upsert_golfer_profile_locked(
+                        context.user.id,
+                        normalized=normalized,
+                        timestamp=timestamp,
+                    )
+                    self._users._conn.commit()
+                except Exception:
+                    if self._users._conn.in_transaction:
+                        self._users._conn.rollback()
+                    raise
+        except CredentialMutationRejected as exc:
+            raise MobileProfileUnauthorized(
+                "Invalid mobile access token."
+            ) from exc
+        except HistoryEpochError as exc:
+            raise MobileProfileHistoryConflict(str(exc)) from exc
+        except ValueError as exc:
+            message = str(exc)
+            if message in {
+                "Your account is no longer available.",
+                "Verify your account before creating a golfer profile.",
+            }:
+                raise MobileProfileUnavailable(message) from exc
+            raise
+        finally:
+            lease.release()
+        return ProfileResponse(profile=serialize_profile(profile))
 
     def capabilities(self, context: MobileAuthContext) -> CapabilitiesResponse:
         with self._manager.history_delivery_guard():

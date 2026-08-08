@@ -95,6 +95,7 @@ from ..api.mobile_routes import (
     MOBILE_CAPABILITIES_ROUTE_NAME,
     MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
     MOBILE_EMAIL_START_ROUTE_NAME,
+    MOBILE_PROFILE_WRITE_ROUTE_NAME,
     MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
     MOBILE_REVIEW_START_ROUTE_NAME,
     MOBILE_SIGN_OUT_ROUTE_NAME,
@@ -705,6 +706,12 @@ def create_app(
         MOBILE_TODAY_ROUTE_NAME,
         MOBILE_PROGRESS_ROUTE_NAME,
     }
+    mobile_profile_write_route_names = {MOBILE_PROFILE_WRITE_ROUTE_NAME}
+    concealed_mobile_route_names = set()
+    if not mobile_resource_service.settings.resources_enabled:
+        concealed_mobile_route_names |= mobile_resource_route_names
+    if not mobile_resource_service.settings.profile_writes_enabled:
+        concealed_mobile_route_names |= mobile_profile_write_route_names
     install_mobile_error_handlers(
         app,
         {
@@ -714,12 +721,9 @@ def create_app(
             MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
             MOBILE_SIGN_OUT_ROUTE_NAME,
         }
-        | mobile_resource_route_names,
-        concealed_route_names=(
-            mobile_resource_route_names
-            if not mobile_resource_service.settings.resources_enabled
-            else ()
-        ),
+        | mobile_resource_route_names
+        | mobile_profile_write_route_names,
+        concealed_route_names=concealed_mobile_route_names,
     )
     install_mobile_routes(
         app,
@@ -738,6 +742,9 @@ def create_app(
             review_auth_admission,
             mutation_guard,
         ),
+        users=users,
+        credential_mutation_guard=mutation_guard,
+        review_auth_admission=review_auth_admission,
     )
     static_dir = Path(__file__).parent / "static"
     # Static assets contain only versioned public brand imagery and the

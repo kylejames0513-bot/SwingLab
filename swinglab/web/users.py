@@ -59,7 +59,7 @@ import uuid
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable, Iterator
+from typing import Iterable, Iterator, Mapping
 
 from ..integrations.shopify.identity import customer_gid, normalize_customer_id
 from ..proof_cycle_practice import (
@@ -7682,6 +7682,143 @@ class UserStore:
         assert row is not None
         return self._profile_from_row(row)
 
+    def _normalize_golfer_profile_values(
+        self,
+        *,
+        display_name: object = _GOLFER_DISPLAY_NAME_OMITTED,
+        experience_mode: object,
+        handicap_range: object,
+        primary_goal: object,
+        practice_minutes: object,
+        sessions_per_week: object,
+        handedness: object,
+        camera_angle: object,
+        preferred_club: object,
+        reduced_motion: bool = False,
+        marketing_email_opt_in: bool = False,
+    ) -> dict[str, object]:
+        """Normalize profile fields without touching SQLite."""
+
+        return {
+            "display_name": (
+                _GOLFER_DISPLAY_NAME_OMITTED
+                if display_name is _GOLFER_DISPLAY_NAME_OMITTED
+                else self._profile_display_name(display_name)
+            ),
+            "experience_mode": self._profile_choice(
+                experience_mode, GOLFER_EXPERIENCE_MODES, "experience mode"
+            ),
+            "handicap_range": self._profile_choice(
+                handicap_range,
+                GOLFER_HANDICAP_RANGES,
+                "handicap range",
+                optional=True,
+            ),
+            "primary_goal": self._profile_choice(
+                primary_goal,
+                GOLFER_PRIMARY_GOALS,
+                "main goal",
+                optional=True,
+            ),
+            "practice_minutes": self._profile_integer(
+                practice_minutes, GOLFER_PRACTICE_MINUTES, "practice time"
+            ),
+            "sessions_per_week": self._profile_integer(
+                sessions_per_week,
+                GOLFER_SESSIONS_PER_WEEK,
+                "weekly practice frequency",
+            ),
+            "handedness": self._profile_choice(
+                handedness, ("right", "left"), "handedness"
+            ),
+            "camera_angle": self._profile_choice(
+                camera_angle, ("face-on", "dtl"), "camera angle"
+            ),
+            "preferred_club": self._profile_club(preferred_club),
+            "reduced_motion": bool(reduced_motion),
+            "marketing_email_opt_in": bool(marketing_email_opt_in),
+        }
+
+    def _upsert_golfer_profile_locked(
+        self,
+        user_id: str,
+        *,
+        normalized: Mapping[str, object],
+        timestamp: float,
+    ) -> GolferProfile:
+        """Upsert one profile row inside the caller's ``BEGIN IMMEDIATE``."""
+
+        owner = self._conn.execute(
+            "SELECT password_hash, email_verified_at,"
+            " shopify_account_migration_state"
+            " FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if owner is None:
+            raise ValueError("Your account is no longer available.")
+        if not self._user_row_is_claimed(owner):
+            raise ValueError(
+                "Verify your account before creating a golfer profile."
+            )
+        existing_profile = self._conn.execute(
+            "SELECT display_name FROM golfer_profiles"
+            " WHERE user_id = ?",
+            (user_id,),
+        ).fetchone()
+        normalized_display_name = normalized["display_name"]
+        stored_display_name = (
+            (
+                existing_profile["display_name"]
+                if existing_profile is not None
+                else None
+            )
+            if normalized_display_name is _GOLFER_DISPLAY_NAME_OMITTED
+            else normalized_display_name
+        )
+        self._conn.execute(
+            "INSERT INTO golfer_profiles"
+            " (user_id, display_name, experience_mode, handicap_range,"
+            "  primary_goal,"
+            "  practice_minutes, sessions_per_week, handedness,"
+            "  camera_angle, preferred_club, reduced_motion,"
+            "  marketing_email_opt_in, created_at, updated_at)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(user_id) DO UPDATE SET"
+            " display_name = excluded.display_name,"
+            " experience_mode = excluded.experience_mode,"
+            " handicap_range = excluded.handicap_range,"
+            " primary_goal = excluded.primary_goal,"
+            " practice_minutes = excluded.practice_minutes,"
+            " sessions_per_week = excluded.sessions_per_week,"
+            " handedness = excluded.handedness,"
+            " camera_angle = excluded.camera_angle,"
+            " preferred_club = excluded.preferred_club,"
+            " reduced_motion = excluded.reduced_motion,"
+            " marketing_email_opt_in = excluded.marketing_email_opt_in,"
+            " updated_at = excluded.updated_at",
+            (
+                user_id,
+                stored_display_name,
+                normalized["experience_mode"],
+                normalized["handicap_range"],
+                normalized["primary_goal"],
+                normalized["practice_minutes"],
+                normalized["sessions_per_week"],
+                normalized["handedness"],
+                normalized["camera_angle"],
+                normalized["preferred_club"],
+                int(bool(normalized["reduced_motion"])),
+                int(bool(normalized["marketing_email_opt_in"])),
+                timestamp,
+                timestamp,
+            ),
+        )
+        row = self._conn.execute(
+            "SELECT * FROM golfer_profiles WHERE user_id = ?", (user_id,)
+        ).fetchone()
+        assert row is not None
+        return self._profile_from_row(row)
+
     def upsert_golfer_profile(
         self,
         user_id: str,
@@ -7706,119 +7843,34 @@ class UserStore:
         older clients; omitting it preserves a previously saved name.
         """
 
-        mode = self._profile_choice(
-            experience_mode, GOLFER_EXPERIENCE_MODES, "experience mode"
+        normalized = self._normalize_golfer_profile_values(
+            display_name=display_name,
+            experience_mode=experience_mode,
+            handicap_range=handicap_range,
+            primary_goal=primary_goal,
+            practice_minutes=practice_minutes,
+            sessions_per_week=sessions_per_week,
+            handedness=handedness,
+            camera_angle=camera_angle,
+            preferred_club=preferred_club,
+            reduced_motion=reduced_motion,
+            marketing_email_opt_in=marketing_email_opt_in,
         )
-        normalized_display_name = (
-            _GOLFER_DISPLAY_NAME_OMITTED
-            if display_name is _GOLFER_DISPLAY_NAME_OMITTED
-            else self._profile_display_name(display_name)
-        )
-        handicap = self._profile_choice(
-            handicap_range,
-            GOLFER_HANDICAP_RANGES,
-            "handicap range",
-            optional=True,
-        )
-        goal = self._profile_choice(
-            primary_goal,
-            GOLFER_PRIMARY_GOALS,
-            "main goal",
-            optional=True,
-        )
-        minutes = self._profile_integer(
-            practice_minutes, GOLFER_PRACTICE_MINUTES, "practice time"
-        )
-        sessions = self._profile_integer(
-            sessions_per_week,
-            GOLFER_SESSIONS_PER_WEEK,
-            "weekly practice frequency",
-        )
-        hand = self._profile_choice(
-            handedness, ("right", "left"), "handedness"
-        )
-        angle = self._profile_choice(
-            camera_angle, ("face-on", "dtl"), "camera angle"
-        )
-        club = self._profile_club(preferred_club)
         timestamp = time.time() if now is None else float(now)
         with self._lock:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
-                owner = self._conn.execute(
-                    "SELECT password_hash, email_verified_at,"
-                    " shopify_account_migration_state"
-                    " FROM users WHERE id = ?",
-                    (user_id,),
-                ).fetchone()
-                if owner is None:
-                    raise ValueError("Your account is no longer available.")
-                if not self._user_row_is_claimed(owner):
-                    raise ValueError(
-                        "Verify your account before creating a golfer profile."
-                    )
-                existing_profile = self._conn.execute(
-                    "SELECT display_name FROM golfer_profiles"
-                    " WHERE user_id = ?",
-                    (user_id,),
-                ).fetchone()
-                stored_display_name = (
-                    (
-                        existing_profile["display_name"]
-                        if existing_profile is not None
-                        else None
-                    )
-                    if normalized_display_name is _GOLFER_DISPLAY_NAME_OMITTED
-                    else normalized_display_name
+                profile = self._upsert_golfer_profile_locked(
+                    user_id,
+                    normalized=normalized,
+                    timestamp=timestamp,
                 )
-                self._conn.execute(
-                    "INSERT INTO golfer_profiles"
-                    " (user_id, display_name, experience_mode, handicap_range,"
-                    "  primary_goal,"
-                    "  practice_minutes, sessions_per_week, handedness,"
-                    "  camera_angle, preferred_club, reduced_motion,"
-                    "  marketing_email_opt_in, created_at, updated_at)"
-                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
-                    " ON CONFLICT(user_id) DO UPDATE SET"
-                    " display_name = excluded.display_name,"
-                    " experience_mode = excluded.experience_mode,"
-                    " handicap_range = excluded.handicap_range,"
-                    " primary_goal = excluded.primary_goal,"
-                    " practice_minutes = excluded.practice_minutes,"
-                    " sessions_per_week = excluded.sessions_per_week,"
-                    " handedness = excluded.handedness,"
-                    " camera_angle = excluded.camera_angle,"
-                    " preferred_club = excluded.preferred_club,"
-                    " reduced_motion = excluded.reduced_motion,"
-                    " marketing_email_opt_in = excluded.marketing_email_opt_in,"
-                    " updated_at = excluded.updated_at",
-                    (
-                        user_id,
-                        stored_display_name,
-                        mode,
-                        handicap,
-                        goal,
-                        minutes,
-                        sessions,
-                        hand,
-                        angle,
-                        club,
-                        int(bool(reduced_motion)),
-                        int(bool(marketing_email_opt_in)),
-                        timestamp,
-                        timestamp,
-                    ),
-                )
-                row = self._conn.execute(
-                    "SELECT * FROM golfer_profiles WHERE user_id = ?", (user_id,)
-                ).fetchone()
                 self._conn.commit()
             except Exception:
                 if self._conn.in_transaction:
                     self._conn.rollback()
                 raise
-        assert row is not None
-        return self._profile_from_row(row)
+        return profile
 
     def _assert_history_epoch_locked(
         self,

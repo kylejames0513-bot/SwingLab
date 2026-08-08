@@ -90,6 +90,7 @@ def test_openapi_exposes_only_closed_native_resource_contracts(tmp_path):
             "/api/v1/mobile/sessions/{session_id}",
             "/api/v1/mobile/sessions/{session_id}/brief",
             "/api/v1/mobile/today",
+            "/api/v1/mobile/profile",
         } <= set(schema["paths"])
         for path in (
             "/api/v1/capabilities",
@@ -102,6 +103,14 @@ def test_openapi_exposes_only_closed_native_resource_contracts(tmp_path):
             assert schema["paths"][path]["get"]["security"] == [
                 {"MobileBearer": []}
             ]
+        profile_put = schema["paths"]["/api/v1/mobile/profile"]["put"]
+        assert profile_put["security"] == [{"MobileBearer": []}]
+        assert (
+            profile_put["requestBody"]["content"]["application/json"]["schema"][
+                "title"
+            ]
+            == "ProfileUpdateRequest"
+        )
         for path in (
             "/api/v1/mobile/sessions/{session_id}",
             "/api/v1/mobile/sessions/{session_id}/brief",
