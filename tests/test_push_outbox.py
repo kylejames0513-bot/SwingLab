@@ -509,3 +509,55 @@ def test_schema_generation_is_five(tmp_path):
         )
     finally:
         _close(app)
+
+
+def test_outbox_global_cap_skips_and_counts_drop(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        environment = app.state.mobile_deployment_environment
+        user, raw, token = _issue(users, "cap@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users, global_cap=1, per_selector_cap=50)
+        first = Job(
+            id="jobcapfirst001",
+            session_dir=tmp_path / "sessions" / "jobcapfirst001",
+            status=DONE,
+            user_id=user.id,
+        )
+        second = Job(
+            id="jobcapsecond01",
+            session_dir=tmp_path / "sessions" / "jobcapsecond01",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            first,
+            kind=KIND_ANALYSIS_READY,
+            environment=environment,
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        assert (
+            store.enqueue_job_notification(
+                second,
+                kind=KIND_ANALYSIS_READY,
+                environment=environment,
+                expo_project_id=EXPO_PROJECT_ID,
+            )
+            is False
+        )
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+            ).fetchone()[0]
+            == 1
+        )
+        drops = users._conn.execute(
+            "SELECT aggregate_drop_count FROM mobile_push_environment_fences"
+            " WHERE environment = ? AND expo_project_id = ?",
+            (environment, EXPO_PROJECT_ID),
+        ).fetchone()[0]
+        assert int(drops) >= 1
+    finally:
+        _close(app)

@@ -166,6 +166,7 @@ def fence_status(
                 "last_provider_started": False,
                 "last_provider_accepted": False,
                 "provider_safe_after": None,
+                "aggregate_drop_count": 0,
             }
         registration_count = int(
             conn.execute(
@@ -204,6 +205,7 @@ def fence_status(
             "provider_safe_after": (
                 float(safe_after) if safe_after is not None else None
             ),
+            "aggregate_drop_count": int(row["aggregate_drop_count"] or 0),
         }
 
 

@@ -790,7 +790,11 @@ def create_app(
         app.router.add_event_handler("startup", privacy_export_worker.start)
         app.router.add_event_handler("shutdown", privacy_export_worker.stop)
     if mobile_push_enabled:
-        push_outbox_store = PushOutboxStore(users)
+        push_outbox_store = PushOutboxStore(
+            users,
+            global_cap=mobile_push_settings.outbox_global_cap,
+            per_selector_cap=mobile_push_settings.outbox_per_selector_cap,
+        )
         push_provider = build_push_provider(
             envelope_seconds=mobile_push_settings.send_envelope_seconds
         )

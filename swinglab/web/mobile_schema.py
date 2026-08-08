@@ -964,6 +964,7 @@ _GENERATION_FIVE_TABLE_DDL: dict[str, str] = {
             provider_safe_after REAL,
             recovery_record_hash TEXT,
             recovery_sequence INTEGER,
+            aggregate_drop_count INTEGER NOT NULL DEFAULT 0,
             updated_at REAL NOT NULL,
             PRIMARY KEY (environment, expo_project_id)
         )
@@ -999,6 +1000,7 @@ _GENERATION_FIVE_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
         "provider_safe_after",
         "recovery_record_hash",
         "recovery_sequence",
+        "aggregate_drop_count",
         "updated_at",
     ),
     "mobile_push_cutover_operations": (

@@ -49,20 +49,22 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - `httpx` added to the `web` extra. App wires outbox store/worker + observer when push enabled.
 - Tests: `tests/test_push_outbox.py` (10) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry, unregister→re-register, token rotation.
 
-**Push environment fence cutover slice** — tip `a95a1d1` (impl `c8e165b`).
+**Push environment fence cutover slice** — tip `fc12a3e` (impl `c8e165b`, timing/clock harden `fc12a3e`).
 
-- Schema generation **5**: additive `mobile_push_environment_fences` + `mobile_push_cutover_operations`; restore allowlists include generation `5`; detect/ensure stepwise after gen 4.
+- Schema generation **5**: additive `mobile_push_environment_fences` + `mobile_push_cutover_operations` (includes `aggregate_drop_count`); restore allowlists include generation `5`; detect/ensure stepwise after gen 4.
 - `swinglab/web/push_cutover.py`: `ensure_open_fence` / `require_open_fence` / `fence_status` / `close_fence` / `purge_fence`; fail-closed never-reopen; close terminalizes pending/leased outbox; purge waits `provider_safe_after` then deletes registrations+outbox while keeping fence closed.
+- Safe-after: `closed_at` when no provider I/O; otherwise `max(accepted, may_accept) + 900 + frozen_skew`. Worker stamps fence start/accept clocks before/after Expo send.
 - Admission: register/preferences require open fence; enqueue returns false when closed; worker dead-letters without send when fence not open; flag-on startup calls `ensure_open_fence` (fails closed if previously closed).
 - CLI: `swinglab mobile-push-cutover status|close|purge` with `--sessions-dir` / `--environment` / `--expo-project-id`; close/purge `--operation-id` + dry-run default / `--apply`; rejects env/project mismatch vs server config.
 - Optional `ledger`+`keyring` kwargs on close can publish `PushEnvironmentCutoffEvent`; without them local close/purge still completes (full recovery publish deferred).
-- Tests: `tests/test_mobile_push_cutover.py` (7); focused suite with outbox/push/rate-limits/backups green.
+- Outbox caps: `mobile_push_outbox_global_cap` / `per_selector_cap` enforced on enqueue; overflows increment fence `aggregate_drop_count` without affecting job status.
+- Tests: `tests/test_mobile_push_cutover.py` (9); outbox cap coverage in `tests/test_push_outbox.py`.
 
 **Still deferred (next Task 7 slices):**
 
 - Full mandatory recovery-ledger `PushEnvironmentCutoff` publish/readback on every close/purge (optional callback path exists)
 - Receipt polling / `awaiting_receipt` lifecycle / `PushDeliveryGuard` drain-before-sign-out
-- Outbox caps/flood/purge + terminal-job scanner backfill
+- Terminal-job scanner backfill; 24h pending age cutoff; daily 1k retention purge
 - Practice-reminder enqueue; refilm kind classification; security notice on new device
 - Deploy or mutate live providers
 

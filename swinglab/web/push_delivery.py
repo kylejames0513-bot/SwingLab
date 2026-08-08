@@ -230,8 +230,16 @@ def build_push_provider(
 class PushOutboxStore:
     """SQLite outbox helpers bound to the shared users connection."""
 
-    def __init__(self, users: UserStore) -> None:
+    def __init__(
+        self,
+        users: UserStore,
+        *,
+        global_cap: int = 10000,
+        per_selector_cap: int = 50,
+    ) -> None:
         self._users = users
+        self._global_cap = int(global_cap)
+        self._per_selector_cap = int(per_selector_cap)
 
     def enqueue_job_notification(
         self,
@@ -259,6 +267,24 @@ class PushOutboxStore:
                 )
             except PushFenceClosedError:
                 return False
+            nonterminal = int(
+                self._users._conn.execute(
+                    "SELECT COUNT(*) FROM mobile_push_outbox"
+                    " WHERE environment = ? AND expo_project_id = ?"
+                    " AND status IN ('pending', 'leased', 'awaiting_receipt')",
+                    (environment, expo_project_id),
+                ).fetchone()[0]
+            )
+            if nonterminal >= self._global_cap:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_environment_fences"
+                    " SET aggregate_drop_count = aggregate_drop_count + 1,"
+                    " updated_at = ?"
+                    " WHERE environment = ? AND expo_project_id = ?",
+                    (observed, environment, expo_project_id),
+                )
+                self._users._conn.commit()
+                return False
             registrations = self._users._conn.execute(
                 "SELECT selector, token, registered_at FROM mobile_push_registrations"
                 " WHERE user_id = ? AND environment = ? AND expo_project_id = ?",
@@ -280,6 +306,23 @@ class PushOutboxStore:
                 if terminal_at < max(registered_at, push_not_before):
                     continue
                 selector = str(row["selector"])
+                selector_nonterminal = int(
+                    self._users._conn.execute(
+                        "SELECT COUNT(*) FROM mobile_push_outbox"
+                        " WHERE selector = ?"
+                        " AND status IN ('pending', 'leased', 'awaiting_receipt')",
+                        (selector,),
+                    ).fetchone()[0]
+                )
+                if selector_nonterminal >= self._per_selector_cap:
+                    self._users._conn.execute(
+                        "UPDATE mobile_push_environment_fences"
+                        " SET aggregate_drop_count = aggregate_drop_count + 1,"
+                        " updated_at = ?"
+                        " WHERE environment = ? AND expo_project_id = ?",
+                        (observed, environment, expo_project_id),
+                    )
+                    continue
                 try:
                     self._users._conn.execute(
                         "INSERT INTO mobile_push_outbox ("
@@ -302,6 +345,9 @@ class PushOutboxStore:
                         ),
                     )
                     inserted = True
+                    nonterminal += 1
+                    if nonterminal >= self._global_cap:
+                        break
                 except sqlite3.IntegrityError:
                     continue
             self._users._conn.commit()

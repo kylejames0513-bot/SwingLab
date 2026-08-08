@@ -75,6 +75,8 @@ class MobilePushSettings:
     expo_project_id: str
     send_envelope_seconds: int = 30
     cutover_clock_skew_seconds: int = 60
+    outbox_global_cap: int = 10000
+    outbox_per_selector_cap: int = 50
 
 
 def _canonical_uuid(value: str, *, label: str) -> str:
@@ -120,11 +122,23 @@ def load_mobile_push_settings(
     )
     envelope = web.get("mobile_push_send_envelope_seconds", 30)
     skew = web.get("mobile_push_cutover_clock_skew_seconds", 60)
+    global_cap = web.get("mobile_push_outbox_global_cap", 10000)
+    per_selector_cap = web.get("mobile_push_outbox_per_selector_cap", 50)
     if type(envelope) is not int or isinstance(envelope, bool):
         raise ValueError("web.mobile_push_send_envelope_seconds must be an int.")
     if type(skew) is not int or isinstance(skew, bool):
         raise ValueError(
             "web.mobile_push_cutover_clock_skew_seconds must be an int."
+        )
+    if type(global_cap) is not int or isinstance(global_cap, bool) or global_cap < 1:
+        raise ValueError("web.mobile_push_outbox_global_cap must be a positive int.")
+    if (
+        type(per_selector_cap) is not int
+        or isinstance(per_selector_cap, bool)
+        or per_selector_cap < 1
+    ):
+        raise ValueError(
+            "web.mobile_push_outbox_per_selector_cap must be a positive int."
         )
     if enabled:
         if not project_id:
@@ -146,6 +160,8 @@ def load_mobile_push_settings(
         expo_project_id=project_id,
         send_envelope_seconds=int(envelope),
         cutover_clock_skew_seconds=int(skew),
+        outbox_global_cap=int(global_cap),
+        outbox_per_selector_cap=int(per_selector_cap),
     )
 
 

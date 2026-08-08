@@ -199,7 +199,7 @@ DEFAULTS: dict[str, Any] = {
         "mobile_push_expo_project_id": "",
         "mobile_push_send_envelope_seconds": 30,
         "mobile_push_cutover_clock_skew_seconds": 60,
-        # Reserved for a later flood/purge slice; not enforced by enqueue yet.
+        # Enforced nonterminal outbox caps (global / per selector).
         "mobile_push_outbox_global_cap": 10000,
         "mobile_push_outbox_per_selector_cap": 50,
         "mobile_native_billing_enabled": False,
