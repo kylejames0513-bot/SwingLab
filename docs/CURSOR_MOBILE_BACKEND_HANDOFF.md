@@ -45,11 +45,11 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - Missing `EXPO_ACCESS_TOKEN` → no enqueue/send; jobs still succeed. Payload `ttl=900`. Unique `(source_kind, source_id, kind, selector)`.
 - `JobManager.add_completion_observer`: DONE → `analysis_ready` enqueue after terminal `_save`.
 - Sign-out / DELETE unregister / token-rotating PUT dead-letter pending/leased outbox and clear leases; worker completion CAS on `status='leased' AND lease_owner=?`; drain binds to live registration token (mismatch → dead).
-- Expired pending/leased rows are marked `dead` on drain. Config envelope/skew validated when push on; outbox global/per-selector caps are **config placeholders only** (not enforced yet).
+- Expired pending/leased rows are marked `dead` on drain. Config envelope/skew validated when push on; outbox global/per-selector caps are enforced on enqueue (see cutover/caps notes below).
 - `httpx` added to the `web` extra. App wires outbox store/worker + observer when push enabled.
 - Tests: `tests/test_push_outbox.py` (10) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry, unregister→re-register, token rotation.
 
-**Push environment fence cutover slice** — tip `fc12a3e` (impl `c8e165b`, timing/clock harden `fc12a3e`).
+**Push environment fence cutover slice** — tip `2f5df55` (impl `c8e165b`, timing/clock harden `fc12a3e`, caps `2f5df55`).
 
 - Schema generation **5**: additive `mobile_push_environment_fences` + `mobile_push_cutover_operations` (includes `aggregate_drop_count`); restore allowlists include generation `5`; detect/ensure stepwise after gen 4.
 - `swinglab/web/push_cutover.py`: `ensure_open_fence` / `require_open_fence` / `fence_status` / `close_fence` / `purge_fence`; fail-closed never-reopen; close terminalizes pending/leased outbox; purge waits `provider_safe_after` then deletes registrations+outbox while keeping fence closed.
