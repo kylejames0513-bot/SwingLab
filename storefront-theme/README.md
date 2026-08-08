@@ -4,11 +4,10 @@ Source-controlled copy of the custom CaddieInsight Shopify theme. GitHub is
 the source of truth for theme code; Shopify theme state, preview state, and
 publication state must be verified separately during a release.
 
-Version 1.4 refines the "Caddie Window" premium campaign layer with a
-transparent homepage header that gains a dark glass surface on scroll,
-consistent section rhythm, accessible accent colors, and tighter commerce
-states. Archivo remains the display voice and a system monospace stack marks
-measured evidence labels.
+Version 2.0 ships the Turf Instrument system across the storefront hub:
+cool mist field, Sora + IBM Plex Mono, soft-rectilinear controls, brand-first
+full-bleed hero, and token parity with app.caddieinsight.com. The transparent
+homepage header still gains a dark glass surface on scroll.
 
 ## Layout
 

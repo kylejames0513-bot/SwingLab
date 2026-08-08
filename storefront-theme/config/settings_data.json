@@ -1,15 +1,15 @@
 {
   "current": {
-    "color_page_bg": "#f7f5f0",
-    "color_green": "#14472c",
-    "color_accent": "#a84b00",
+    "color_page_bg": "#eef2ef",
+    "color_green": "#0f3d28",
+    "color_accent": "#9a4b0a",
     "type_body_font": "archivo_n4"
   },
   "presets": {
     "CaddieInsight Storefront": {
-      "color_page_bg": "#f7f5f0",
-      "color_green": "#14472c",
-      "color_accent": "#a84b00",
+      "color_page_bg": "#eef2ef",
+      "color_green": "#0f3d28",
+      "color_accent": "#9a4b0a",
       "type_body_font": "archivo_n4"
     }
   }

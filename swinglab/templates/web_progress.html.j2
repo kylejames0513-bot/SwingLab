@@ -28,13 +28,13 @@
              gap: 12px 16px; }
   }
   .flags { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
-  .flag-chip { background: var(--sl-surface-soft); border-radius: 999px; padding: 4px 12px;
+  .flag-chip { background: var(--sl-surface-soft); border-radius: var(--sl-radius-control); padding: 4px 12px;
                font-size: 0.82rem; color: var(--sl-ink-soft); }
   .flag-chip b { color: var(--primary); }
   .cta { text-align: center; margin-top: 22px; }
   .club-filter { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;
                  margin: 4px 0 16px; }
-  .club-filter a { border: 1px solid var(--sl-control-border); border-radius: 999px; padding: 6px 14px;
+  .club-filter a { border: 1px solid var(--sl-control-border); border-radius: var(--sl-radius-control); padding: 6px 14px;
                    font-size: 0.85rem; color: var(--sl-ink); text-decoration: none; }
   .club-filter a.active { background: var(--sl-green); border-color: var(--sl-green);
                           color: white; }
@@ -46,7 +46,7 @@
                  border: 1px dashed var(--sl-control-border); }
   .locked-card h2 { margin: 10px 0 8px; }
   .lock-badge { display: inline-block; background: var(--primary); color: white;
-                border-radius: 999px; padding: 4px 14px; font-size: 0.8rem;
+                border-radius: var(--sl-radius-control); padding: 4px 14px; font-size: 0.8rem;
                 font-weight: 700; letter-spacing: 0.02em; }
 {% endblock %}
 {% block main %}

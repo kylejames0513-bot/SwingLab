@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="theme-color" content="#07130d">
+<meta name="theme-color" content="#06110c">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <title>{% block title %}{{ brand.name }}{% endblock %}</title>
@@ -14,41 +14,42 @@
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
   :root {
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
-    --sl-bg: #f7f5f0;
-    --sl-bg-card: #fffdf9;
-    --sl-surface-soft: #edf3ee;
-    --sl-surface-dark: #103c27;
-    --sl-night: #07130d;
-    --sl-ink: #17201a;
-    --sl-ink-soft: #4a544c;
-    --sl-ink-muted: #5f6b62;
-    --sl-green: #14472c;
+    --sl-bg: #eef2ef;
+    --sl-bg-card: #f8fbf9;
+    --sl-surface-soft: #e2ebe4;
+    --sl-surface-dark: #0c2e1f;
+    --sl-night: #06110c;
+    --sl-ink: #101a14;
+    --sl-ink-soft: #445049;
+    --sl-ink-muted: #5a655e;
+    --sl-green: #0f3d28;
     --sl-green-btn: #1a5c38;
-    --sl-green-ink: #e9f2ec;
-    --sl-orange: #a84b00;
-    --sl-orange-text: #a94708;
-    --sl-orange-soft: #fff3e4;
+    --sl-green-ink: #e6f2ea;
+    --sl-orange: #9a4b0a;
+    --sl-orange-text: #8f4509;
+    --sl-orange-soft: #e8f0ea;
     --sl-premium-accent: #ffad62;
-    --sl-premium-gradient: linear-gradient(135deg, #07130d 0%, #103c27 62%, #14472c 100%);
-    --sl-border: #e3ded3;
-    --sl-border-strong: #c9c3b8;
-    --sl-control-border: #7a867c;
-    --sl-radius-sm: 8px;
-    --sl-radius-md: 14px;
-    --sl-radius-lg: 22px;
-    --sl-radius-xl: 32px;
-    --sl-shadow-sm: 0 1px 2px rgba(15, 42, 27, .05);
-    --sl-shadow-md: 0 12px 30px -14px rgba(15, 42, 27, .18);
-    --sl-shadow-lg: 0 34px 80px -42px rgba(8, 35, 21, .5);
+    --sl-premium-gradient: linear-gradient(135deg, #06110c 0%, #0c2e1f 62%, #0f3d28 100%);
+    --sl-border: #d4ddd6;
+    --sl-border-strong: #b7c3bb;
+    --sl-control-border: #6f7b72;
+    --sl-radius-sm: 6px;
+    --sl-radius-md: 12px;
+    --sl-radius-lg: 16px;
+    --sl-radius-xl: 22px;
+    --sl-radius-control: 12px;
+    --sl-shadow-sm: 0 1px 2px rgba(6, 17, 12, .04);
+    --sl-shadow-md: 0 14px 32px -18px rgba(6, 17, 12, .16);
+    --sl-shadow-lg: 0 34px 80px -42px rgba(6, 17, 12, .45);
     --sl-content: 1280px;
     --sl-pad-x: clamp(24px, 5vw, 64px);
-    --sl-font-sans: "Archivo", Helvetica, Arial, sans-serif;
-    --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --sl-font-sans: "Sora", Helvetica, Arial, sans-serif;
+    --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
     --sl-text-xs: 12px;
     --sl-text-sm: clamp(13.5px, 13px + .15vw, 14.5px);
     --sl-text-base: clamp(15.5px, 15px + .2vw, 17px);
@@ -60,7 +61,11 @@
   body {
     margin: 0;
     min-height: 100vh;
-    background: var(--sl-bg);
+    background:
+      radial-gradient(1200px 520px at 12% -8%, rgba(26, 92, 56, 0.08), transparent 58%),
+      radial-gradient(900px 480px at 92% 4%, rgba(240, 122, 24, 0.05), transparent 52%),
+      var(--sl-bg);
+    background-attachment: fixed;
     color: var(--sl-ink);
     font-family: var(--sl-font-sans);
     font-size: var(--sl-text-base);
@@ -150,14 +155,14 @@
     z-index: 40;
     min-height: 72px;
     padding: 0 var(--sl-pad-x);
-    background: rgba(245, 244, 239, 0.92);
+    background: rgba(238, 242, 239, 0.92);
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
     border-bottom: 1px solid var(--sl-border);
   }
   .sl-header--premium {
     min-height: 76px;
-    background: rgba(7, 19, 13, .96);
+    background: rgba(6, 17, 12, .96);
     border-bottom-color: rgba(239, 241, 232, .12);
     box-shadow: 0 18px 48px -32px rgba(0, 0, 0, .85);
   }
@@ -198,7 +203,7 @@
     display: inline-flex;
     align-items: center;
     gap: 7px;
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     color: var(--sl-ink);
     font-size: 14px;
     font-weight: 600;
@@ -238,7 +243,7 @@
     align-items: center;
     gap: 9px;
     border: 1px solid #b9cdbf;
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     background: #edf6ef;
     color: var(--sl-green);
     font-size: 13px;
@@ -264,14 +269,14 @@
   }
   .sl-header__member-badge {
     padding: 4px 7px;
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     background: var(--sl-green);
     color: #fff;
     font-family: var(--sl-font-mono);
     font-size: 10px;
     letter-spacing: .08em;
   }
-  .sl-header--premium .sl-header__member-badge { background: #75d59b; color: #07130d; }
+  .sl-header--premium .sl-header__member-badge { background: #75d59b; color: #06110c; }
   .sl-header__dropdown { position: relative; }
   .sl-header__dropdown summary { list-style: none; }
   .sl-header__dropdown summary::-webkit-details-marker { display: none; }
@@ -348,7 +353,7 @@
     align-items: center;
     justify-content: center;
     border: 1.5px solid var(--sl-green);
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     font-size: 14px;
     font-weight: 700;
     line-height: 1;
@@ -363,13 +368,13 @@
     min-height: 44px;
     border-color: #f07a18;
     background: #f07a18;
-    color: #07130d;
+    color: #06110c;
     box-shadow: 0 12px 30px -18px rgba(240, 122, 24, .9);
   }
   .sl-header--premium .sl-header__cta:hover {
     border-color: #ff9a42;
     background: #ff9a42;
-    color: #07130d;
+    color: #06110c;
   }
   .sl-header--premium .sl-header__cart {
     border-color: rgba(245, 242, 233, .48);
@@ -545,7 +550,7 @@
     background: rgba(232, 114, 12, .16);
     color: #ffad62;
   }
-  .sl-premium-chrome .sl-menu .sl-menu__cta { color: #07130d; }
+  .sl-premium-chrome .sl-menu .sl-menu__cta { color: #06110c; }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {
     background: var(--sl-bg-card);
@@ -583,7 +588,7 @@
     font: inherit;
     font-weight: 700;
     line-height: 1.2;
-    border-radius: 999px;
+    border-radius: var(--sl-radius-control);
     cursor: pointer;
     text-decoration: none;
     box-shadow: 0 10px 24px -16px rgba(9, 50, 29, .65);
@@ -632,7 +637,7 @@
     align-items: center;
     justify-content: center;
     gap: 12px;
-    background: #fff3e4;
+    background: #e8f0ea;
     border-bottom: 1px solid #efd3b3;
     color: var(--sl-ink-soft);
     font-size: .9rem;

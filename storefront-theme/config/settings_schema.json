@@ -2,7 +2,7 @@
   {
     "name": "theme_info",
     "theme_name": "CaddieInsight Storefront",
-    "theme_version": "1.5.0",
+    "theme_version": "2.0.0",
     "theme_author": "CaddieInsight",
     "theme_documentation_url": "https://app.caddieinsight.com",
     "theme_support_url": "https://app.caddieinsight.com"
@@ -15,9 +15,9 @@
         "content": "Brand palette",
         "info": "These colors control the page background, primary green, and accessible accent text across the storefront."
       },
-      { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#f7f5f0" },
-      { "type": "color", "id": "color_green", "label": "Deep green", "default": "#14472c" },
-      { "type": "color", "id": "color_accent", "label": "Accessible accent text", "default": "#a84b00" }
+      { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#eef2ef" },
+      { "type": "color", "id": "color_green", "label": "Deep green", "default": "#0f3d28" },
+      { "type": "color", "id": "color_accent", "label": "Accessible accent text", "default": "#9a4b0a" }
     ]
   },
   {
@@ -31,7 +31,7 @@
       },
       {
         "type": "paragraph",
-        "content": "The selected font is served from Shopify's CDN. Evidence labels use a system monospace stack for fast, stable rendering."
+        "content": "Sora and IBM Plex Mono load from Google Fonts for Turf Instrument parity with the app. The picker below is retained as a fallback face for environments that block remote fonts."
       }
     ]
   }

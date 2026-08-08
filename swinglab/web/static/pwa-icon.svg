@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CaddieInsight">
-  <rect width="512" height="512" rx="112" fill="#07130d"/>
-  <circle cx="256" cy="256" r="150" fill="#f7f5f0"/>
+  <rect width="512" height="512" rx="96" fill="#06110c"/>
+  <circle cx="256" cy="256" r="150" fill="#eef2ef"/>
   <path d="M157 286c60-123 132-118 198-61-61-26-115-11-155 50z" fill="#e8720c"/>
-  <circle cx="345" cy="192" r="22" fill="#07130d"/>
+  <circle cx="345" cy="192" r="22" fill="#06110c"/>
 </svg>
