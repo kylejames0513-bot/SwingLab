@@ -7,5 +7,10 @@
       "command": "cd /workspace && . .venv/bin/activate && exec swinglab serve --host 127.0.0.1 --port 8000 --sessions-dir /workspace/sessions"
     }
   ],
-  "ports": [8000]
+  "ports": [
+    {
+      "name": "web",
+      "port": 8000
+    }
+  ]
 }
