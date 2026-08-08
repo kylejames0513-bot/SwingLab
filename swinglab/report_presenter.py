@@ -648,7 +648,7 @@ def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple
         if status is PhaseStatus.PRIORITY:
             status_label, summary = (
                 "Priority",
-                "Work on this movement first — it is the clearest lever in this clip.",
+                "Your caddie priority — the clearest lever in this clip.",
             )
         elif protect and expanded:
             status_label, summary = (
@@ -658,12 +658,12 @@ def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple
         elif status is PhaseStatus.REVIEW_LATER:
             status_label, summary = (
                 "Review later",
-                "A secondary measured issue is available after the priority feels solid.",
+                "A secondary measured issue waits after the priority feels solid.",
             )
         elif status is PhaseStatus.BASELINE:
             status_label, summary = (
                 "Baseline",
-                "Context for comparable re-films — useful for matching the next session.",
+                "Context for comparable re-films — match this next session.",
             )
         elif status is PhaseStatus.NOT_MEASURED:
             status_label, summary = (
@@ -673,7 +673,7 @@ def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple
         else:
             status_label, summary = (
                 "Steady",
-                "Measured values are steady in this phone-video read.",
+                "Measured values hold steady in this phone-video read.",
             )
         summaries.append(PhaseSummary(phase, _PHASE_LABELS[phase], status, status_label, summary, len(source.swings), details, tuple(unavailable), f"phase-{phase.value}", expanded))
     return tuple(summaries)
@@ -740,7 +740,7 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
             mode,
             selected_issue.flag,
             _selected_phase(selected_issue.metric, angle=source.context.angle),
-            "Work on now",
+            "Your caddie priority",
             selected_issue.display_name,
             selected_issue.why,
             selected_issue.fix,
@@ -778,7 +778,7 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         (OptionalSectionId.REPLAY, "Coach replay", replay_count, source.replay_locked),
         (
             OptionalSectionId.ALTERNATIVE_DRILLS,
-            "Alternative drills",
+            "Try a different drill",
             len(practice.alternatives),
             False,
         ),
@@ -1061,7 +1061,7 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
             source.replay_locked,
         ),
         (OptionalSectionId.SECONDARY_FINDINGS, "Secondary findings", len(findings), False),
-        (OptionalSectionId.ALTERNATIVE_DRILLS, "Alternative drills", len(view.practice.alternatives) if view.practice else 0, False),
+        (OptionalSectionId.ALTERNATIVE_DRILLS, "Try a different drill", len(view.practice.alternatives) if view.practice else 0, False),
         (OptionalSectionId.MORE_STRENGTHS, "More strengths", len(strengths), False),
         (OptionalSectionId.MEASUREMENTS, "Measurements", len(measurements), False),
         (OptionalSectionId.GLOSSARY, "Glossary", len(glossary), False),

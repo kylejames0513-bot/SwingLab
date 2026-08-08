@@ -81,7 +81,7 @@ def _rhythm_card(
     needs_attention = any(value < threshold for value in values)
     summary = (
         f"Your backswing lasted about {average:.2f} times as long as your "
-        "downswing. In plain terms, that is what the rhythm number means."
+        "downswing. That ratio is the rhythm number this camera can prove."
         + _range_sentence(values, "{:.2f}-to-1", "swing")
     )
     if needs_attention:
@@ -134,7 +134,8 @@ def _stance_card(
         tone="context",
         summary=(
             f"Your feet started {average:.2f} shoulder-widths apart — "
-            f"{description}. This is your repeatable setup baseline{club_context}."
+            f"{description}. Treat that as your repeatable setup baseline"
+            f"{club_context}."
             + _range_sentence(values, "{:.2f}", "swing")
         ),
         why=(
@@ -233,8 +234,8 @@ def _body_control_card(
         summary=summary,
         why=(
             "Large shifts make returning to the same strike area more dependent "
-            "on last-second timing. Smaller, quieter movement is easier to "
-            "repeat under the same camera setup."
+            "on last-second timing. Quieter movement is easier to repeat under "
+            "the same camera setup."
         ),
         limit=(
             "These are sideways and vertical movements in a face-on phone "
@@ -301,7 +302,7 @@ def _impact_card(
         summary=summary,
         why=(
             "These positions show how your body arrived at the likely strike "
-            "frame and make extension or shoulder-angle cues visible on the "
+            "frame — so extension or shoulder-angle cues stay visible on the "
             "same clip you can re-film."
         ),
         limit=(
@@ -380,8 +381,8 @@ def _finish_card(
         tone="warning" if needs_attention else "good",
         summary=summary,
         why=(
-            "A stance center that stays settled is one visible sign that the "
-            "motion ended under control."
+            "A stance center that stays settled is one visible sign the motion "
+            "ended under control."
         ),
         limit=(
             "This measures ankle-midpoint drift, not every movement of either "

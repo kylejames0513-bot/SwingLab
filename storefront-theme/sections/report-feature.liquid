@@ -89,30 +89,34 @@
   min-width: 0;
 }
 .sl-report__eyebrow {
-  margin: 0 auto 18px;
+  margin: 0 auto 14px;
   color: #ff9a42;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-eyebrow-size);
   font-weight: 500;
   letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
 }
 .sl-report .sl-h2 {
-  max-width: 11ch;
+  max-width: 12ch;
   margin-inline: auto;
   color: #f5f2e9;
+  font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
-  font-weight: 900;
-  letter-spacing: -0.048em;
-  line-height: 0.98;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
   text-align: center;
   text-wrap: balance;
 }
 .sl-report__body {
-  max-width: 48ch;
-  margin: 24px 0 0;
-  font-size: 17px;
-  line-height: 1.65;
-  color: rgba(245, 242, 233, 0.7);
+  max-width: 42ch;
+  margin: 16px 0 0;
+  font-size: var(--sl-text-lg);
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
+  color: rgba(245, 242, 233, 0.72);
   text-align: left;
   text-wrap: pretty;
 }
@@ -147,7 +151,9 @@
   background: var(--sl-bg-card);
   border: 1px solid var(--sl-border);
   border-radius: var(--sl-radius-lg);
-  box-shadow: 0 44px 90px -40px rgba(0, 0, 0, 0.9);
+  box-shadow:
+    0 1px 2px rgba(6, 17, 12, 0.04),
+    0 44px 90px -40px rgba(0, 0, 0, 0.9);
   padding: var(--sl-card-inset);
 }
 /* faint quarter-arc — the movement's mark, kept subordinate */
@@ -336,7 +342,7 @@
   "name": "Report feature",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "report" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Know what to practice next." },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "See the priority before you practice." },
     { "type": "textarea", "id": "body", "label": "Body", "default": "Explore a sample report to see how CaddieInsight turns phone-video evidence into one priority, a focused drill, and a measurable pass mark." },
     { "type": "image_picker", "id": "image", "label": "Key-position strip image", "info": "Shown inside the report card. Leave blank to use the versioned CaddieInsight report preview." },
     { "type": "image_picker", "id": "detail_image", "label": "Detail image (unused)", "info": "No longer shown — kept so older templates stay valid." },

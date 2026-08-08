@@ -96,6 +96,56 @@
   .security-note { padding: 13px 15px; border-radius: 10px; background: var(--sl-surface-soft); color: var(--sl-ink-soft); font-size: .88rem; }
   .store-status { padding: 14px 15px; border: 1px solid #c9d9cd; border-radius: 11px; background: #f1f7f2; color: var(--sl-ink-soft); }
   .store-status strong { color: var(--sl-green); }
+  .hub-sync {
+    margin: 0 0 4px;
+    padding: 14px 15px;
+    display: grid;
+    gap: 8px;
+    border: 1px solid var(--sl-border);
+    border-radius: 11px;
+    background: #f6f9f7;
+  }
+  .hub-sync--synced { border-color: #bcd7c5; background: #eef7f1; }
+  .hub-sync--pending { border-color: #e2d4b8; background: #fff9ef; }
+  .hub-sync--failed,
+  .hub-sync--requires_review { border-color: #e2c3be; background: #fff6f3; }
+  .hub-sync--empty { border-style: dashed; background: #f8fbf9; }
+  .hub-sync__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .hub-sync__label {
+    color: var(--sl-ink-muted);
+    font-size: .8rem;
+    font-weight: 650;
+  }
+  .hub-sync__pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: var(--sl-radius-control);
+    background: #e8ece9;
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: .68rem;
+    font-weight: 600;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .hub-sync--synced .hub-sync__pill { background: #124529; color: #e6f2ea; }
+  .hub-sync--pending .hub-sync__pill { background: #8f4509; color: #fff7eb; }
+  .hub-sync--failed .hub-sync__pill,
+  .hub-sync--requires_review .hub-sync__pill { background: #8a2820; color: #fff5f2; }
+  .hub-sync__detail { margin: 0; color: var(--sl-ink-soft); font-size: .9rem; line-height: 1.45; }
+  .hub-sync__error {
+    margin: 0;
+    color: #8a2820;
+    font-size: .86rem;
+    line-height: 1.4;
+  }
   .danger-card { border-color: #e2c3be; background: linear-gradient(135deg, #fffefa, #fff8f6); }
   .danger-card .sl-eyebrow { color: #8a2820; }
   .danger-card h2 { color: #741f19; }
@@ -266,14 +316,32 @@
       {% if show_store_hub %}
         {% if sync_status == 'synced' %}
           {% set sync_label = 'Synced' %}
+          {% set sync_tone = 'synced' %}
+          {% set sync_detail = 'Store identity and qualifying purchases are linked to this CaddieInsight account.' %}
         {% elif sync_status == 'pending' %}
           {% set sync_label = 'Pending' %}
+          {% set sync_tone = 'pending' %}
+          {% set sync_detail = 'Hub sync is in progress. Orders and membership updates usually appear within a few minutes.' %}
         {% elif sync_status == 'failed' %}
           {% set sync_label = 'Failed' %}
+          {% set sync_tone = 'failed' %}
+          {% if storefront_url %}
+            {% set sync_detail = 'We could not finish hub sync. Your golf data is safe here — open store orders below, then try again later.' %}
+          {% else %}
+            {% set sync_detail = 'We could not finish hub sync. Your golf data is safe here — try again later.' %}
+          {% endif %}
         {% elif sync_status == 'requires_review' %}
-          {% set sync_label = 'Requires review' %}
+          {% set sync_label = 'Needs review' %}
+          {% set sync_tone = 'requires_review' %}
+          {% set sync_detail = 'Hub sync needs a quick review before store identity can finish linking to this account.' %}
         {% else %}
           {% set sync_label = 'Not started' %}
+          {% set sync_tone = 'empty' %}
+          {% if user.shopify_customer_id %}
+            {% set sync_detail = 'Store customer is linked. Outbound hub sync has not run yet for this account.' %}
+          {% else %}
+            {% set sync_detail = 'No outbound hub sync yet. Connect a store purchase or Shopify sign-in when you are ready.' %}
+          {% endif %}
         {% endif %}
         <section class="account-card account-card--wide" aria-labelledby="shopify-heading">
           <header class="account-card__header">
@@ -284,15 +352,31 @@
           {% if user.shopify_customer_id %}
             <p class="store-status"><strong>Connected to the {{ brand.name }} store.</strong> Qualifying purchases can apply access to this CaddieInsight account; no store password is copied here.</p>
           {% endif %}
-          <dl class="account-facts{% if user.shopify_customer_id %} account-subsection{% endif %}">
-            <div class="account-row"><dt>Hub sync</dt><dd>{{ sync_label }}</dd></div>
+          <div class="hub-sync hub-sync--{{ sync_tone }}{% if user.shopify_customer_id %} account-subsection{% endif %}" role="status">
+            <div class="hub-sync__row">
+              <span class="hub-sync__label">Hub sync</span>
+              <span class="hub-sync__pill">{{ sync_label }}</span>
+            </div>
+            <p class="hub-sync__detail">{{ sync_detail }}</p>
+            {% if user.shopify_sync_error and sync_status in ['failed', 'requires_review', 'pending'] %}
+              <p class="hub-sync__error">{{ user.shopify_sync_error }}</p>
+            {% endif %}
+          </div>
+          {% if shopify_customer_accounts_enabled or user.shopify_customer_id or sync_status == 'not_started' %}
+          <dl class="account-facts account-subsection">
             {% if shopify_customer_accounts_enabled %}
               <div class="account-row"><dt>Shopify sign-in</dt><dd>{% if user.shopify_account_migration_state == 'shopify_authenticated' %}Connected{% elif user.shopify_account_migration_state == 'linked_pending_first_sign_in' %}Linked — sign in once to finish{% else %}Not connected{% endif %}</dd></div>
             {% endif %}
+            {% if user.shopify_customer_id %}
+              <div class="account-row"><dt>Store customer</dt><dd>Linked</dd></div>
+            {% elif sync_status == 'not_started' %}
+              <div class="account-row"><dt>Store customer</dt><dd>Not linked yet</dd></div>
+            {% endif %}
           </dl>
+          {% endif %}
           {% if storefront_url %}
             <div class="account-subsection account-actions">
-              <a class="button secondary" href="{{ storefront_url }}/account">Store account &amp; orders</a>
+              <a class="button secondary" href="{{ storefront_url }}/account">View store orders</a>
               <a class="button secondary" href="{{ storefront_url }}">Store home</a>
             </div>
           {% endif %}

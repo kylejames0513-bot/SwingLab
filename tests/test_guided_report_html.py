@@ -545,7 +545,7 @@ def test_capture_only_is_an_ordered_recovery_path_without_partial_coaching(
         'data-report-block="refilm"',
         'data-phase-id=',
         'data-canonical="priority"',
-        "Coach cue:",
+        "Caddie cue:",
         "Pass mark",
         "Coach replay",
     )

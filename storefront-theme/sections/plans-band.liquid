@@ -51,10 +51,10 @@
       <p class="sl-plans__eyebrow">{{ 'homepage.plans.eyebrow' | t }}</p>
       <h2 class="sl-plans__title">
         {%- if section.settings.membership_section -%}
-          <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Start free. Go Pro when repetition matters.' }}</span>
+          <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}</span>
           <span data-app-auth-signed-in hidden>{{ 'homepage.plans.member_heading' | t }}</span>
         {%- else -%}
-          {{ section.settings.heading | default: 'Start free. Go Pro when repetition matters.' }}
+          {{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}
         {%- endif -%}
       </h2>
       {%- if section.settings.subheading != blank -%}
@@ -244,33 +244,37 @@
 }
 .sl-plans__head {
   position: relative;
-  max-width: 880px;
+  max-width: 720px;
   margin-inline: auto;
   text-align: center;
 }
 .sl-plans__eyebrow {
-  margin: 0 0 18px;
+  margin: 0 0 14px;
   color: #ff9a42;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-eyebrow-size);
   font-weight: 500;
   letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
 }
 .sl-plans__title {
-  max-width: 16ch;
+  max-width: 14ch;
   margin: 0 auto;
   color: #f5f2e9;
+  font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
-  font-weight: 900;
-  letter-spacing: -0.05em;
-  line-height: 0.98;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
   text-wrap: balance;
 }
 .sl-plans__sub {
-  max-width: 60ch;
-  margin: 20px auto 0;
-  font-size: 17px;
-  line-height: 1.6;
+  max-width: 42ch;
+  margin: 14px auto 0;
+  font-size: var(--sl-text-lg);
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
   color: rgba(245, 242, 233, 0.72);
   text-align: center;
   text-wrap: pretty;
@@ -325,6 +329,8 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center 42%;
+  transform: scale(1.01);
 }
 .sl-plans__card-body {
   padding: var(--sl-card-inset);
@@ -568,7 +574,7 @@
   "name": "Plans band",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "plans" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Start free. Go Pro when repetition matters." },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Start free. Go Pro when the reps matter." },
     { "type": "textarea", "id": "subheading", "label": "Subheading", "default": "The coaching engine stays the same. Pro removes the monthly limit and adds replay plus progress tracking." },
     { "type": "checkbox", "id": "membership_section", "label": "Personalize this as a membership section", "default": true },
     { "type": "textarea", "id": "footnote", "label": "Footnote", "default": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup." }

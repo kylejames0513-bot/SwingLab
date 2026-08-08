@@ -152,9 +152,9 @@ def build_caddie_brief(
             why=(
                 (
                     "No tempo issue crossed its coaching line in this "
-                    "down-the-line session. This angle does not support honest "
-                    "sway or slide maintenance checks yet — keep the read "
-                    "narrow to what the camera can prove."
+                    "down-the-line session. Keep the read narrow to what "
+                    "this angle can prove — sway and slide maintenance "
+                    "still need a face-on baseline."
                 )
                 if dtl
                 else (
@@ -394,7 +394,7 @@ def rhythm_maintenance_drill(cfg: Config) -> Drill:
             "Make three swings with the same count and effort.",
             "Keep the rhythm identical from swing to swing — no hero swings.",
         ),
-        dosage="3 swings, monthly",
+        dosage="3 matched swings, monthly",
         success_metric=(
             f"Keep every measured tempo ratio at or above {tempo_warn:.1f}:1."
         ),
@@ -413,7 +413,7 @@ def readability_maintenance_drill() -> Drill:
             "Use bright, even light and keep other people out of the view.",
             "Make three swings with the same club and camera position.",
         ),
-        dosage="3 swings, next session",
+        dosage="3 matched swings, next session",
         success_metric=(
             "The next report reads tempo plus sway and slide before setting a "
             "maintenance target."
@@ -474,8 +474,8 @@ def _refilm_brief(warning: str) -> CaddieBrief:
             "direction."
         ),
         fix=(
-            "Check the selected camera angle, film your full body clearly "
-            "from hip height, and upload the clip again."
+            "Confirm the camera angle, film the full body clearly from hip "
+            "height, and upload a matched clip."
         ),
         drill=None,
         trend=None,

@@ -30,46 +30,52 @@
 
 {% stylesheet %}
 .sl-how {
-  background: #f0eee7;
+  background:
+    radial-gradient(900px 360px at 50% 0%, rgba(26, 92, 56, 0.06), transparent 60%),
+    var(--sl-bg);
   color: var(--sl-ink);
   padding: var(--sl-section-space) 0;
 }
 .sl-how__head {
   padding-bottom: clamp(28px, 4vw, 48px);
-  border-bottom: 1px solid #d8d3c8;
+  border-bottom: 1px solid var(--sl-border);
   text-align: center;
 }
 .sl-how__eyebrow {
-  margin: 0 0 18px;
+  margin: 0 0 16px;
   color: var(--sl-orange);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-eyebrow-size);
   font-weight: 500;
   letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
 }
 .sl-how__intro {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: clamp(16px, 2vw, 22px);
-  max-width: 880px;
+  gap: 14px;
+  max-width: 720px;
   margin-inline: auto;
 }
 .sl-how__title {
   margin: 0 auto;
-  max-width: 15ch;
-  color: #0d2d1d;
+  max-width: 14ch;
+  color: var(--sl-green);
+  font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
-  font-weight: 900;
-  letter-spacing: -0.05em;
-  line-height: 0.96;
+  font-weight: 700;
+  letter-spacing: -0.04em;
+  line-height: 1.02;
   text-wrap: balance;
 }
 .sl-how__intro > p {
   margin: 0 auto;
-  max-width: 58ch;
+  max-width: 42ch;
   color: var(--sl-ink-soft);
-  font-size: clamp(16px, 1.5vw, 19px);
-  line-height: 1.6;
+  font-size: var(--sl-text-lg);
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
   text-align: center;
   text-wrap: pretty;
 }
@@ -97,8 +103,8 @@
   border-radius: var(--sl-radius-lg);
   padding: clamp(24px, 2.5vw, 32px);
   text-align: left;
-  background: rgba(255, 253, 249, 0.86);
-  box-shadow: 0 22px 48px -40px rgba(15, 42, 27, 0.42);
+  background: var(--sl-bg-card);
+  box-shadow: var(--sl-shadow-card);
 }
 .sl-step::after {
   content: "";
@@ -128,29 +134,31 @@
   align-self: flex-start;
 }
 .sl-step__title {
-  margin: 26px 0 10px;
+  margin: 22px 0 10px;
   color: var(--sl-green);
-  font-size: 22px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-family: var(--sl-font-display);
+  font-size: clamp(20px, 2vw, 23px);
+  font-weight: 700;
+  letter-spacing: -0.03em;
   text-align: left;
 }
 .sl-step__body {
   margin: 0;
   max-width: 34ch;
-  font-size: 15.5px;
-  line-height: 1.62;
+  font-size: var(--sl-text-sm);
+  line-height: 1.55;
+  letter-spacing: -0.01em;
   color: var(--sl-ink-soft);
 }
 .sl-step__caption {
   width: 100%;
   margin: auto 0 0;
   padding-top: 14px;
-  border-top: 1px solid #e3ded3;
+  border-top: 1px solid var(--sl-border);
   font-family: var(--sl-font-mono);
   font-size: 10.5px;
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--sl-ink-muted);
   text-align: left;
@@ -159,7 +167,7 @@
 .sl-how__foot {
   margin-top: 32px;
   padding-top: 24px;
-  border-top: 1px solid #d8d3c8;
+  border-top: 1px solid var(--sl-border);
   display: flex;
   align-items: center;
   justify-content: center;

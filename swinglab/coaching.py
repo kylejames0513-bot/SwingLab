@@ -496,7 +496,10 @@ FIX_TEXT = {
         "Turn into the trail hip rather than drifting across it — the stick "
         "and mirror drills give the body a hard reference."
     ),
-    FLAG_TEMPO: "Rehearse one count until it is boring — metronome or out loud.",
+    FLAG_TEMPO: (
+        "Rehearse one count until it is boring — metronome or out loud — "
+        "then keep that clock when you add a ball."
+    ),
     FLAG_HIP_SLIDE: (
         "Give the hips something to turn against — the band and wall drills."
     ),

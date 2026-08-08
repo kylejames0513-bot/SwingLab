@@ -881,47 +881,65 @@ def _wordmark(d, x, y, px, ink=GREEN):
     return w1 + t + w2
 
 
+def mark_flagstick(d, cx, cy, R, ink=GREEN, accent=ORANGE, bold=1.0):
+    """Tour Caddie v3 mark: precision arc + fairway flagstick.
+
+    Segmented circular border (one amber kinetic segment), vertical pin with
+    triangular flag, and a small cup ellipse. Reads as golf + measurement.
+    """
+    stroke = max(2, int(0.055 * bold * R))
+    # three arc segments; upper-right is amber
+    for start, end, fill in (
+        (200, 290, ink),
+        (295, 340, accent),
+        (345, 430, ink),
+    ):
+        box = [cx - R, cy - R, cx + R, cy + R]
+        d.arc(box, start, end, fill=fill, width=stroke)
+    # flagstick
+    stick_w = max(2, int(0.045 * bold * R))
+    top = cy - 0.55 * R
+    bottom = cy + 0.42 * R
+    d.line([(cx, top), (cx, bottom)], fill=ink, width=stick_w)
+    # triangular flag pointing right
+    flag_h = 0.28 * R
+    flag_w = 0.42 * R
+    d.polygon(
+        [
+            (cx + stick_w * 0.5, top),
+            (cx + flag_w, top + flag_h * 0.45),
+            (cx + stick_w * 0.5, top + flag_h),
+        ],
+        fill=ink,
+    )
+    # cup
+    cup_rx, cup_ry = 0.22 * R, 0.09 * R
+    d.ellipse(
+        [cx - cup_rx, bottom - cup_ry, cx + cup_rx, bottom + cup_ry],
+        outline=ink,
+        width=max(2, int(0.04 * bold * R)),
+    )
+
+
 def logo(inverse=False):
-    """Premium lockup: dual-arc precision gauge + heavy wordmark.
+    """Premium lockup: flagstick precision mark + heavy wordmark.
 
     The inverse is re-inked in mint for deep-green / near-black contexts —
-    the orange sweep is the one kinetic color both versions share. Output
-    filenames keep the historical swinglab- names so every CDN and theme
-    reference keeps resolving.
+    the orange arc segment is the one kinetic color both versions share.
+    Output filenames keep the historical swinglab- names so every CDN and
+    theme reference keeps resolving.
+
+    Note: the shipped Tour Caddie v3 lockup in theme/app static may be the
+    campaign-refined raster; regenerating here keeps a reproducible sibling.
     """
     sc = 4
     ink = GREEN_INK if inverse else GREEN
     img = Image.new("RGBA", (2000 * sc, 360 * sc), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    cx, cy, R = 220 * sc, 250 * sc, 170 * sc
-    for i, ang in enumerate(range(200, 341, 7)):
-        rad = math.radians(ang)
-        inner = R - (18 if i % 2 == 0 else 10) * sc
-        outer = R + 2 * sc
-        d.line(
-            [
-                cx + inner * math.cos(rad),
-                cy + inner * math.sin(rad),
-                cx + outer * math.cos(rad),
-                cy + outer * math.sin(rad),
-            ],
-            fill=ink,
-            width=max(2, int(2.2 * sc)),
-        )
-    box = [cx - R, cy - R, cx + R, cy + R]
-    d.arc(box, 205, 335, fill=ink, width=int(10 * sc))
-    r2 = R - 28 * sc
-    box2 = [cx - r2, cy - r2, cx + r2, cy + r2]
-    d.arc(box2, 215, 300, fill=ORANGE, width=int(16 * sc))
-    a = math.radians(300)
-    bx = cx + r2 * math.cos(a)
-    by = cy + r2 * math.sin(a)
-    d.ellipse([bx - 14 * sc, by - 14 * sc, bx + 14 * sc, by + 14 * sc], fill=ORANGE)
-    d.ellipse([cx - 22 * sc, cy - 22 * sc, cx + 22 * sc, cy + 22 * sc], fill=ink)
-    pivot_fill = GREEN_INK if inverse else ORANGE
-    d.ellipse([cx - 10 * sc, cy - 10 * sc, cx + 10 * sc, cy + 10 * sc], fill=pivot_fill)
+    cx, cy, R = 220 * sc, 180 * sc, 140 * sc
+    mark_flagstick(d, cx, cy, R, ink=ink, accent=ORANGE, bold=1.15)
     f = archivo(int(148 * sc), 750, 100)
-    x0, y0 = 440 * sc, 90 * sc
+    x0, y0 = 420 * sc, 90 * sc
     tracking = int(-1.5 * sc)
     w1 = tracked(d, (x0, y0), "Caddie", f, ink, tracking=tracking)
     w2 = tracked(d, (x0 + w1 + 6 * sc, y0), "Insight", f, ink, tracking=tracking)
@@ -940,16 +958,15 @@ def logo(inverse=False):
 
 
 def favicon():
-    """512 tile: deep-green rounded square, the gauge mark re-inked in mint.
-    Coarser, bolder tick fan so the gauge still reads at 32 px."""
+    """512 tile: deep-green rounded square, flagstick mark in mint + amber."""
     w, sc = 512, 4
     img = Image.new("RGBA", (w * sc, w * sc), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     rrect(d, [0, 0, w * sc, w * sc], 110 * sc, fill=GREEN)
     lay = Image.new("RGBA", (800 * sc, 800 * sc), (0, 0, 0, 0))
     dl = ImageDraw.Draw(lay)
-    mark_protractor(dl, 110 * sc, 690 * sc, 560 * sc, ink=GREEN_INK,
-                    tick_step=8, bold=1.45)
+    mark_flagstick(dl, 400 * sc, 400 * sc, 280 * sc, ink=GREEN_INK,
+                   accent=ORANGE, bold=1.35)
     lay = lay.crop(lay.getbbox())
     box = (w - 2 * 66) * sc
     k = min(box / lay.width, box / lay.height)

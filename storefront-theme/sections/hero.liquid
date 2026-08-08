@@ -53,7 +53,7 @@
       {%- if section.settings.eyebrow != blank -%}
         <p class="sl-hero__brand"><span aria-hidden="true"></span>{{ section.settings.eyebrow }}</p>
       {%- endif -%}
-      <h1 id="HeroTitle-{{ section.id }}" class="sl-hero__title">{{ section.settings.heading | default: 'Practice the move that matters.' }}</h1>
+      <h1 id="HeroTitle-{{ section.id }}" class="sl-hero__title">{{ section.settings.heading | default: 'Bring one clear move to the range.' }}</h1>
       {%- if section.settings.body != blank -%}
         <p class="sl-hero__body">{{ section.settings.body }}</p>
       {%- endif -%}
@@ -178,13 +178,14 @@
   justify-content: flex-end;
 }
 .sl-hero__brand {
-  margin: 0 0 18px;
+  margin: 0 0 16px;
   display: inline-flex;
   align-items: center;
   gap: 12px;
   color: #f8fbf9;
-  font-size: clamp(28px, 3.4vw, 42px);
-  font-weight: 800;
+  font-family: var(--sl-font-display);
+  font-size: clamp(32px, 3.8vw, 46px);
+  font-weight: 700;
   letter-spacing: -0.04em;
   line-height: 1;
 }
@@ -201,22 +202,25 @@
   50% { box-shadow: 0 0 0 10px rgba(240, 122, 24, 0.04); }
 }
 .sl-hero__title {
-  max-width: 14ch;
+  max-width: 15ch;
   margin: 0;
   color: #f8fbf9;
+  font-family: var(--sl-font-display);
   font-size: clamp(42px, 5.4vw, 72px);
   font-weight: 700;
-  letter-spacing: -0.045em;
+  letter-spacing: -0.042em;
   line-height: 1.02;
   text-align: left;
   text-wrap: balance;
 }
 .sl-hero__body {
-  max-width: 46ch;
-  margin: 20px 0 0;
+  max-width: 40ch;
+  margin: 18px 0 0;
   color: rgba(238, 242, 239, 0.78);
-  font-size: clamp(16px, 1.35vw, 19px);
+  font-size: clamp(16px, 1.3vw, 18.5px);
+  font-weight: 400;
   line-height: 1.55;
+  letter-spacing: -0.01em;
   text-align: left;
   text-wrap: pretty;
 }
@@ -507,7 +511,7 @@
   "name": "Premium hero",
   "settings": [
     { "type": "text", "id": "eyebrow", "label": "Brand wordmark", "default": "CaddieInsight" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Practice the move that matters." },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Bring one clear move to the range." },
     { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club, film one repeatable view, and get one prioritized coaching plan with a pass mark for your next clip." },
     { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Analyze a swing free" },
     { "type": "url", "id": "primary_url", "label": "Primary button link" },
