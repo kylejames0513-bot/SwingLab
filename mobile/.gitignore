@@ -1,0 +1,46 @@
+# dependencies
+node_modules/
+
+# Expo
+.expo/
+dist/
+web-build/
+expo-env.d.ts
+
+# Native (CNG generated — do not commit)
+.kotlin/
+/ios
+/android
+*.orig.*
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Metro
+.metro-health-check*
+
+# debug
+npm-debug.*
+yarn-debug.*
+yarn-error.*
+
+# macOS
+.DS_Store
+*.pem
+
+# local env files
+.env
+.env.*
+!.env.example
+.env*.local
+
+# typescript
+*.tsbuildinfo
+
+# tests / coverage
+coverage/
+
+# temporary API schema check output
+/tmp/

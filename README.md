@@ -903,6 +903,10 @@ ffmpeg auto-skip when it is not installed.
   the Shopify account sync above.)
 - A native mobile app can sit on top of the existing JSON API (`/upload`,
   `/api/session/{id}`) without server changes.
+- **Expo coaching client (`mobile/`)** — Expo SDK 57 TypeScript app (Node
+  22.13+) that consumes the versioned mobile API. From `mobile/`: `npm start`,
+  `npm test`, `npm run typecheck`. See
+  [docs/CURSOR_MOBILE_APP_HANDOFF.md](docs/CURSOR_MOBILE_APP_HANDOFF.md).
 
 ## License notes
 

@@ -32,3 +32,17 @@ store-assets/*.ttf
 
 # Isolated implementation worktrees.
 /.worktrees/
+
+# Expo mobile client (mobile/)
+mobile/.expo/
+mobile/dist/
+mobile/web-build/
+mobile/expo-env.d.ts
+mobile/ios/
+mobile/android/
+mobile/coverage/
+mobile/*.jks
+mobile/*.p8
+mobile/*.p12
+mobile/*.mobileprovision
+mobile/.kotlin/

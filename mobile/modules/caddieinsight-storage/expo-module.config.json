@@ -1,0 +1,10 @@
+{
+  "name": "caddieinsight-storage",
+  "platforms": ["ios", "android"],
+  "ios": {
+    "modules": ["CaddieInsightStorageModule"]
+  },
+  "android": {
+    "modules": ["expo.modules.caddieinsightstorage.CaddieInsightStorageModule"]
+  }
+}

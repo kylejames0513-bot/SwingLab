@@ -1,0 +1,30 @@
+{
+  "cli": {
+    "version": ">= 16.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "development"
+      }
+    },
+    "staging": {
+      "distribution": "internal",
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "staging"
+      }
+    },
+    "production": {
+      "autoIncrement": true,
+      "env": {
+        "EXPO_PUBLIC_APP_ENV": "production"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

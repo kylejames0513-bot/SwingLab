@@ -1,0 +1,15 @@
+{
+  "name": "caddieinsight-storage",
+  "version": "1.0.0",
+  "description": "Private no-backup storage roots for CaddieInsight staged media and state",
+  "main": "index.ts",
+  "types": "index.ts",
+  "scripts": {},
+  "keywords": ["expo", "caddieinsight", "storage"],
+  "license": "UNLICENSED",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}
