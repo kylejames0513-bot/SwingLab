@@ -38,16 +38,16 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - Capabilities already expose `features.push` from `mobile_push_enabled`.
 - Tests: `tests/test_mobile_push.py` (12); backup/rate-limit gen bump covered.
 
-**Push outbox delivery slice** — tip `HEAD_PLACEHOLDER` (impl `8b32eb3`, race/test harden `8f72512`, unregister/token dead-letter follow-up).
+**Push outbox delivery slice** — tip `815a04d` (impl `8b32eb3`, race/test harden `8f72512`, unregister/token dead-letter `815a04d`).
 
 - Schema generation **4**: additive `mobile_push_outbox`; restore allowlists include generation `4`.
 - `swinglab/web/push_delivery.py`: `FakeExpoPushProvider` / `ExpoPushProvider`, `PushOutboxStore`, `PushOutboxWorker`, `attach_job_push_observer`.
 - Missing `EXPO_ACCESS_TOKEN` → no enqueue/send; jobs still succeed. Payload `ttl=900`. Unique `(source_kind, source_id, kind, selector)`.
 - `JobManager.add_completion_observer`: DONE → `analysis_ready` enqueue after terminal `_save`.
-- Sign-out dead-letters pending/leased outbox and clears leases; worker completion CAS on `status='leased' AND lease_owner=?` so mid-send sign-out cannot revive rows.
+- Sign-out / DELETE unregister / token-rotating PUT dead-letter pending/leased outbox and clear leases; worker completion CAS on `status='leased' AND lease_owner=?`; drain binds to live registration token (mismatch → dead).
 - Expired pending/leased rows are marked `dead` on drain. Config envelope/skew validated when push on; outbox global/per-selector caps are **config placeholders only** (not enforced yet).
 - `httpx` added to the `web` extra. App wires outbox store/worker + observer when push enabled.
-- Tests: `tests/test_push_outbox.py` (8) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry.
+- Tests: `tests/test_push_outbox.py` (10) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry, unregister→re-register, token rotation.
 
 **Still deferred (next Task 7 slices):**
 
