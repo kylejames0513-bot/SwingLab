@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
 from swinglab.api import create_app
 from swinglab.config import Config
-from scripts.export_openapi import export_openapi
+from scripts.export_openapi import export_openapi, hoist_nested_defs
 
 
 SNAPSHOT = Path(__file__).parents[1] / "docs" / "api" / "openapi-v1.json"
@@ -26,7 +27,9 @@ LEGACY_PATHS = {
 
 
 def _canonical(schema: dict) -> bytes:
+    schema = copy.deepcopy(schema)
     schema.pop("servers", None)
+    hoist_nested_defs(schema)
     return (json.dumps(schema, sort_keys=True, separators=(",", ":")) + "\n").encode()
 
 
@@ -37,6 +40,8 @@ def test_openapi_v1_matches_the_frozen_snapshot(tmp_path):
     )
     try:
         assert _canonical(app.openapi()) == SNAPSHOT.read_bytes()
+        assert b"#/$defs/" not in SNAPSHOT.read_bytes()
+        assert b"UploadComparisonMatched" in SNAPSHOT.read_bytes()
     finally:
         for resource in (app.state.jobs, app.state.users, app.state.throttle):
             resource.close()

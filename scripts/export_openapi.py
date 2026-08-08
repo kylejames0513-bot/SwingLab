@@ -6,9 +6,48 @@ import argparse
 import json
 import tempfile
 from pathlib import Path
+from typing import Any
 
 from swinglab.api import create_app
 from swinglab.config import Config
+
+
+def hoist_nested_defs(schema: dict[str, Any]) -> None:
+    """Promote nested Pydantic ``$defs`` into ``components.schemas``.
+
+    Inline ``model_json_schema()`` bodies emit ``#/$defs/...`` pointers that
+    openapi-typescript (and other document-root resolvers) cannot follow when
+    ``$defs`` lives under a path schema. Rewrite every ``#/$defs/`` string to
+    ``#/components/schemas/`` after hoisting.
+    """
+
+    components = schema.setdefault("components", {})
+    schemas = components.setdefault("schemas", {})
+
+    def walk(node: Any) -> None:
+        if isinstance(node, dict):
+            nested = node.pop("$defs", None)
+            if isinstance(nested, dict):
+                for name, definition in nested.items():
+                    existing = schemas.get(name)
+                    if existing is not None and existing != definition:
+                        raise ValueError(
+                            f"OpenAPI $defs conflict for schema name {name!r}"
+                        )
+                    schemas[name] = definition
+                    walk(definition)
+            for key, value in list(node.items()):
+                if isinstance(value, str) and value.startswith("#/$defs/"):
+                    node[key] = "#/components/schemas/" + value.removeprefix(
+                        "#/$defs/"
+                    )
+                else:
+                    walk(value)
+        elif isinstance(node, list):
+            for item in node:
+                walk(item)
+
+    walk(schema)
 
 
 def export_openapi(output: Path) -> None:
@@ -22,6 +61,7 @@ def export_openapi(output: Path) -> None:
         try:
             schema = app.openapi()
             schema.pop("servers", None)
+            hoist_nested_defs(schema)
             with output.open("w", encoding="utf-8", newline="\n") as exported:
                 exported.write(
                     json.dumps(schema, sort_keys=True, separators=(",", ":"))

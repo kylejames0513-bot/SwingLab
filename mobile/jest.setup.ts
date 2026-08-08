@@ -4,6 +4,21 @@ jest.mock('expo-splash-screen', () => ({
   hideAsync: jest.fn(async () => undefined),
 }));
 
+jest.mock('expo-secure-store', () => ({
+  WHEN_UNLOCKED_THIS_DEVICE_ONLY: 'WHEN_UNLOCKED_THIS_DEVICE_ONLY',
+  getItemAsync: jest.fn(async () => null),
+  setItemAsync: jest.fn(async () => undefined),
+  deleteItemAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock('expo-crypto', () => ({
+  CryptoDigestAlgorithm: { SHA256: 'SHA-256' },
+  digestStringAsync: jest.fn(async () => 'abcdef0123456789abcdef0123456789ffff'),
+  getRandomBytesAsync: jest.fn(async (size: number) =>
+    Uint8Array.from({ length: size }, (_, i) => i + 1),
+  ),
+}));
+
 // Default process env for modules that read it at import time.
 process.env.EXPO_PUBLIC_APP_ENV =
   process.env.EXPO_PUBLIC_APP_ENV ?? 'development';
