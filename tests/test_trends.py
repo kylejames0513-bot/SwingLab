@@ -27,6 +27,11 @@ from swinglab.web.app import create_app
 
 BRAND = {"primary_color": "#1a5c38", "accent_color": "#e8720c"}
 
+# The trend chart's own opening tag. Progress asserts on this rather than on
+# "<svg" in general, because the shared bottom tab bar inlines its icons as
+# SVG on every page — including the empty states that must draw no chart.
+CHART_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120"'
+
 
 def payload_for(swings: list[dict]) -> dict:
     return {"swings": [{"metrics": m} for m in swings], "session_stats": {}}
@@ -576,12 +581,15 @@ def test_progress_empty_states_are_honest(accounts_app):
     client = TestClient(accounts_app)
     signup(client)
     html = client.get("/progress").text
-    assert "Nothing to chart yet" in html and "<svg" not in html
+    # "no chart", not "no SVG" — the bottom tab bar draws its icons inline
+    # on every page. CHART_SVG is the signature asserted by the populated
+    # case below.
+    assert "Nothing to chart yet" in html and CHART_SVG not in html
 
     upload_and_wait(client)
     html = client.get("/progress").text
     assert "Baseline on the books" in html   # one session: no fake trend lines
-    assert "Re-film this week" in html and "<svg" not in html
+    assert "Re-film this week" in html and CHART_SVG not in html
 
 
 def test_progress_renders_cards_flags_and_cta(accounts_app):
@@ -591,7 +599,7 @@ def test_progress_renders_cards_flags_and_cta(accounts_app):
     upload_and_wait(client)
     html = client.get("/progress").text
     assert "Tempo" in html and "Head sway (backswing)" in html
-    assert '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 320 120"' in html
+    assert CHART_SVG in html
     assert "2.70:1" in html                       # latest, mono stat
     assert "+0.50:1" in html                      # delta vs first
     assert "flagged below 2.4:1" in html          # the benchmark line

@@ -42,6 +42,31 @@ def test_small_text_tokens_meet_aa_on_primary_light_surfaces():
         assert min(_contrast(foreground, background) for background in backgrounds) >= 4.5
 
 
+def _declaration(selector: str, prop: str) -> str:
+    """The last value of `prop` inside the rule block for `selector`."""
+    block = re.search(
+        rf"{re.escape(selector)}\s*\{{(.*?)\}}", LAYOUT, re.S
+    )
+    assert block is not None, f"missing rule for {selector}"
+    values = re.findall(rf"{re.escape(prop)}:\s*([^;]+);", block.group(1))
+    assert values, f"{selector} declares no {prop}"
+    return values[-1].strip()
+
+
+def test_mobile_menu_cta_ink_sits_on_the_background_it_was_written_for():
+    """This rule once set only the ink, leaving the base green background
+    underneath: #06110c on #0f3d28 is 1.57:1, effectively unreadable. The
+    bottom tab bar's More button routes into this menu, so it is a primary
+    surface, not a corner."""
+    selector = ".sl-premium-chrome .sl-menu .sl-menu__cta"
+    ink = _declaration(selector, "color")
+    background = _declaration(selector, "background")
+
+    assert re.fullmatch(r"#[0-9a-fA-F]{6}", ink), ink
+    assert re.fullmatch(r"#[0-9a-fA-F]{6}", background), background
+    assert _contrast(ink, background) >= 4.5
+
+
 def test_control_border_token_has_three_to_one_non_text_contrast():
     border = _token("sl-control-border")
 

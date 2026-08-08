@@ -2,19 +2,29 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+{# viewport-fit=cover lets the installed app paint under the notch and the
+   home indicator; every edge is then re-inset with env(safe-area-inset-*)
+   below, so nothing lands under the hardware. #}
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#06110c">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="{{ brand.name }}">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>{% block title %}{{ brand.name }}{% endblock %}</title>
 <link rel="manifest" href="/app.webmanifest">
 <link rel="icon" href="/static/pwa-icon.svg" type="image/svg+xml">
+<link rel="icon" href="/static/swinglab-favicon.png" sizes="512x512" type="image/png">
 {# iOS ignores SVG touch icons — this PNG is generated from the same mark
-   by store-assets/make_apple_touch_icon.py (opaque, 180x180). #}
+   by store-assets/make_brand.py (opaque, 180x180). #}
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+{# Archivo is the wordmark's own typeface, so the shipped lockup and the
+   headings it sits beside are finally cut from the same shape. The guided
+   report already asks for Archivo first and relies on the app shell having
+   loaded it — until now it silently fell back. #}
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
     --primary: {{ brand.primary_color }};
@@ -48,14 +58,21 @@
     --sl-shadow-lg: 0 34px 80px -42px rgba(6, 17, 12, .45);
     --sl-content: 1280px;
     --sl-pad-x: clamp(24px, 5vw, 64px);
-    --sl-font-sans: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-    --sl-font-display: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
     --sl-text-xs: 12px;
     --sl-text-sm: clamp(13.5px, 13px + .15vw, 14.5px);
     --sl-text-base: clamp(15.5px, 15px + .2vw, 17px);
     --sl-text-lg: clamp(17px, 16.2px + .35vw, 19px);
     --sl-text-xl: clamp(20px, 18.8px + .55vw, 23px);
+    /* Hardware insets, resolved once so every edge can reference them.
+       They are 0 in a browser tab and non-zero on a notched installed app. */
+    --sl-safe-top: env(safe-area-inset-top, 0px);
+    --sl-safe-right: env(safe-area-inset-right, 0px);
+    --sl-safe-bottom: env(safe-area-inset-bottom, 0px);
+    --sl-safe-left: env(safe-area-inset-left, 0px);
+    --sl-tabbar-h: 0px;
   }
   * { box-sizing: border-box; }
   html { -webkit-text-size-adjust: 100%; }
@@ -560,6 +577,37 @@
     cursor: pointer;
   }
   .sl-menu__group form { margin: 0; }
+  /* iOS install hint. Safari never fires beforeinstallprompt, so the install
+     card below can never appear there and an iPhone visitor would otherwise
+     get no install affordance at all. Revealed by the script only on iOS
+     Safari outside standalone — hidden by default so no other platform is
+     told to look for a Share menu it does not have. */
+  .sl-menu__ios-install { display: none; }
+  .sl-menu__ios-install.is-available { display: grid; }
+  .sl-menu__ios-hint {
+    margin: 0;
+    padding: 11px 12px;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+    background: var(--sl-bg-card);
+    color: var(--sl-ink-soft);
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .sl-menu__ios-hint strong { color: var(--sl-green); }
+  .sl-menu__ios-share {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin-bottom: -2px;
+    vertical-align: baseline;
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__ios-hint {
+    border-color: rgba(245, 242, 233, .18);
+    background: rgba(245, 242, 233, .06);
+    color: rgba(245, 242, 233, .78);
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__ios-hint strong { color: #f5f2e9; }
   .sl-menu__link.is-current {
     padding-inline: 10px;
     background: var(--sl-orange-soft);
@@ -584,7 +632,20 @@
     background: rgba(232, 114, 12, .16);
     color: #ffad62;
   }
-  .sl-premium-chrome .sl-menu .sl-menu__cta { color: #06110c; }
+  /* The premium header CTA is dark ink on amber. This rule previously took
+     only the ink and left the base green background underneath, putting
+     #06110c on #0f3d28 — 1.57:1, effectively unreadable. It now carries the
+     background it was always meant to sit on (6.9:1). */
+  .sl-premium-chrome .sl-menu .sl-menu__cta {
+    border-color: #f07a18;
+    background: #f07a18;
+    color: #06110c;
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__cta:hover {
+    border-color: #ff9a42;
+    background: #ff9a42;
+    color: #06110c;
+  }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {
     background: var(--sl-bg-card);
@@ -726,6 +787,111 @@
     color: #7f9184;
   }
   .sl-app-footer__bottom p { margin: 0; }
+  /* ---------------------------------------------------------------- app
+     Bottom tab bar. This is what turns the installed PWA from "a website in
+     a window" into something that navigates like an app: the four routes a
+     golfer actually moves between, plus the existing menu dialog behind
+     More. Hidden entirely at desktop widths, where the header nav leads. */
+  .sl-tabbar { display: none; }
+  .sl-tabbar__item {
+    flex: 1 1 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 3px;
+    /* 44px is the accessible minimum target; the bar is taller than that so
+       the label never crowds the icon. */
+    min-height: 52px;
+    padding: 6px 2px 4px;
+    border: 0;
+    background: none;
+    color: rgba(245, 242, 233, .62);
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 600;
+    letter-spacing: -.005em;
+    text-decoration: none;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .sl-tabbar__icon { display: block; width: 23px; height: 23px; }
+  .sl-tabbar__icon path,
+  .sl-tabbar__icon circle,
+  .sl-tabbar__icon line,
+  .sl-tabbar__icon ellipse,
+  .sl-tabbar__icon rect { vector-effect: non-scaling-stroke; }
+  .sl-tabbar__label {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .sl-tabbar__item:hover { color: rgba(245, 242, 233, .86); }
+  .sl-tabbar__item.is-current { color: #f5f2e9; }
+  /* The active tab is marked by a short rule above the icon, not by color
+     alone — color is not a sufficient state signal on its own. */
+  .sl-tabbar__item.is-current::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 26px;
+    height: 3px;
+    border-radius: 0 0 3px 3px;
+    background: var(--sl-premium-accent);
+  }
+  .sl-tabbar__item { position: relative; }
+  .sl-tabbar__item:focus-visible { outline-offset: -4px; border-radius: 10px; }
+  .sl-tabbar__badge {
+    position: absolute;
+    top: 7px;
+    left: calc(50% + 7px);
+    min-width: 7px;
+    height: 7px;
+    border-radius: 999px;
+    background: var(--sl-premium-accent);
+  }
+
+  /* Install affordance. Chromium fires beforeinstallprompt and the script
+     below reveals this; iOS never fires it, so the card stays hidden there
+     and the Share-sheet route is explained in the menu instead. */
+  .sl-install {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    max-width: var(--sl-content);
+    margin: 18px auto 0;
+    padding: 13px 16px;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  .sl-install.is-available { display: flex; }
+  .sl-install__text { flex: 1 1 auto; min-width: 0; font-size: var(--sl-text-sm); }
+  .sl-install__text strong { display: block; color: var(--sl-green); }
+  .sl-install__text span { color: var(--sl-ink-soft); }
+  .sl-install__go,
+  .sl-install__dismiss {
+    flex: 0 0 auto;
+    min-height: 40px;
+    padding: 9px 15px;
+    border-radius: var(--sl-radius-control);
+    border: 1px solid transparent;
+    font: inherit;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .sl-install__go { background: var(--sl-green); color: var(--sl-green-ink); }
+  .sl-install__go:hover { background: var(--sl-green-btn); }
+  .sl-install__dismiss {
+    background: transparent;
+    border-color: var(--sl-border-strong);
+    color: var(--sl-ink-soft);
+  }
+  .sl-install__dismiss:hover { border-color: var(--sl-control-border); color: var(--sl-ink); }
+
   @media (min-width: 981px) and (max-width: 1200px) {
     .sl-header__desktop-nav { gap: 4px; }
     .sl-header__link,
@@ -753,6 +919,39 @@
     .sl-app-footer__inner { grid-template-columns: 1fr 1fr; }
     .sl-app-footer__brand { grid-column: 1 / -1; }
     .sl-app-banner__allowance { max-width: min(48vw, 220px); }
+
+    /* The tab bar owns the bottom edge below 980px. */
+    :root { --sl-tabbar-h: 56px; }
+    .sl-tabbar {
+      position: fixed;
+      z-index: 44;
+      inset: auto 0 0 0;
+      display: flex;
+      align-items: stretch;
+      padding-left: var(--sl-safe-left);
+      padding-right: var(--sl-safe-right);
+      /* The home indicator sits in this padding, so the row of targets stays
+         above it instead of fighting the system gesture. */
+      padding-bottom: var(--sl-safe-bottom);
+      background: rgba(6, 17, 12, .97);
+      border-top: 1px solid rgba(245, 242, 233, .13);
+      -webkit-backdrop-filter: saturate(150%) blur(12px);
+      backdrop-filter: saturate(150%) blur(12px);
+    }
+    /* Reserve the bar's height plus the inset so the last card, the footer,
+       and any sticky CTA all clear it. */
+    .sl-app-footer {
+      padding-bottom: calc(38px + var(--sl-tabbar-h) + var(--sl-safe-bottom));
+    }
+    .sl-header { padding-top: var(--sl-safe-top); }
+    .sl-app-banner { padding-left: max(14px, var(--sl-safe-left)); padding-right: max(14px, var(--sl-safe-right)); }
+    .sl-install { margin-inline: 18px; }
+  }
+  /* An installed app has no browser chrome to fall back on, so the banner —
+     which only restates plan status — gives its room back to the content. */
+  @media (display-mode: standalone), (display-mode: minimal-ui) {
+    .sl-app-banner { display: none; }
+    .sl-install { display: none !important; }
   }
   @media (max-width: 560px) {
     .sl-app-banner { padding-inline: 14px; }
@@ -987,9 +1186,37 @@
         {% endif %}
       </div>
       {% endif %}
+
+      {# Safari has no beforeinstallprompt, so the install card never fires on
+         iOS. This is the only install route an iPhone visitor gets, and the
+         script below is what reveals it. #}
+      <div class="sl-menu__group sl-menu__ios-install" data-ios-install hidden>
+        <p class="sl-menu__eyebrow">Install</p>
+        <p class="sl-menu__ios-hint">
+          <strong>Add {{ brand.name }} to your Home Screen.</strong>
+          Tap
+          <svg class="sl-menu__ios-share" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" role="img"
+               aria-label="the Share button">
+            <path d="M12 3.6v11"/>
+            <path d="M8.3 7.1 12 3.4l3.7 3.7"/>
+            <path d="M6.2 12.4v6.6a1.4 1.4 0 0 0 1.4 1.4h8.8a1.4 1.4 0 0 0 1.4-1.4v-6.6"/>
+          </svg>
+          in the Safari toolbar, then <strong>Add to Home Screen</strong>. It opens
+          without browser chrome, the way an installed app does.
+        </p>
+      </div>
     </nav>
   </div>
 </dialog>
+<aside class="sl-install" id="sl-install" hidden>
+  <div class="sl-install__text">
+    <strong>Install {{ brand.name }}</strong>
+    <span>Add it to your home screen so a range session is one tap from the camera roll.</span>
+  </div>
+  <button class="sl-install__go" type="button" data-install-accept>Install</button>
+  <button class="sl-install__dismiss" type="button" data-install-dismiss>Not now</button>
+</aside>
 <main id="MainContent">
 {% block main %}{% endblock %}
 </main>
@@ -1027,22 +1254,125 @@
     <p>Supported 2D movement and timing estimates from phone video.</p>
   </div>
 </footer>
+{# Persistent bottom navigation for phone and tablet widths. Deliberately the
+   four destinations a golfer moves between mid-session; everything else stays
+   behind More, which opens the same dialog as the header toggle. #}
+{% set tabbed_paths = ['/', '/upload'] %}
+{% if require_account and user %}{% set tabbed_paths = tabbed_paths + ['/today'] %}{% endif %}
+{% if user or not require_account %}{% set tabbed_paths = tabbed_paths + ['/sessions'] %}{% endif %}
+{% set tabbed_paths = tabbed_paths + ['/drills'] %}
+{% if not (user and user.is_pro) and not (require_account and user) %}{% set tabbed_paths = tabbed_paths + ['/pricing'] %}{% endif %}
+<nav class="sl-tabbar" aria-label="App sections">
+  <a class="sl-tabbar__item{% if current_path == '/' or current_path == '/upload' %} is-current{% endif %}"
+     href="{% if user or not require_account %}/{% else %}/signup{% endif %}"
+     {% if current_path == '/' %}aria-current="page"{% endif %}>
+    <svg class="sl-tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="2.6" y="6.4" width="13.2" height="11.2" rx="2.6"/>
+      <path d="M15.8 10.9l4.3-2.6a.7.7 0 0 1 1.1.6v6.2a.7.7 0 0 1-1.1.6l-4.3-2.6z"/>
+      <circle cx="9.2" cy="12" r="2.5"/>
+    </svg>
+    <span class="sl-tabbar__label">Analyze</span>
+  </a>
+
+  {% if require_account and user %}
+  <a class="sl-tabbar__item{% if current_path == '/today' %} is-current{% endif %}"
+     href="/today" {% if current_path == '/today' %}aria-current="page"{% endif %}>
+    <svg class="sl-tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <rect x="3.5" y="5" width="17" height="15.5" rx="2.5"/>
+      <path d="M3.5 9.75h17M8 3.5v3M16 3.5v3"/>
+      <circle cx="12" cy="15" r="1.9" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="sl-tabbar__label">Today</span>
+  </a>
+  {% endif %}
+
+  {% if user or not require_account %}
+  <a class="sl-tabbar__item{% if current_path == '/sessions' %} is-current{% endif %}"
+     href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>
+    <svg class="sl-tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M3.6 12a8.4 8.4 0 1 0 2.2-5.7"/>
+      <path d="M3.4 4.4v3.6h3.6"/>
+      <path d="M12 7.6V12l3 1.9"/>
+    </svg>
+    <span class="sl-tabbar__label">History</span>
+  </a>
+  {% endif %}
+
+  <a class="sl-tabbar__item{% if current_path == '/drills' %} is-current{% endif %}"
+     href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>
+    <svg class="sl-tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.4"/>
+      <circle cx="12" cy="12" r="4.1"/>
+      <circle cx="12" cy="12" r="1.3" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="sl-tabbar__label">Drills</span>
+  </a>
+
+  {# A signed-out visitor has no Today or History to reach, so Pro takes the
+     free slot rather than leaving the bar lopsided. #}
+  {% if not (user and user.is_pro) and not (require_account and user) %}
+  <a class="sl-tabbar__item{% if current_path == '/pricing' %} is-current{% endif %}"
+     href="/pricing" {% if current_path == '/pricing' %}aria-current="page"{% endif %}>
+    <svg class="sl-tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path d="M12 3.6l2.5 5.2 5.7.8-4.1 4 1 5.7-5.1-2.7-5.1 2.7 1-5.7-4.1-4 5.7-.8z"/>
+    </svg>
+    <span class="sl-tabbar__label">Pro</span>
+  </a>
+  {% endif %}
+
+  {# Account, Progress, and the rest live behind More, so More carries the
+     active marker whenever the page has no tab of its own — the bar always
+     answers "where am I" rather than going blank. #}
+  <button class="sl-tabbar__item{% if current_path not in tabbed_paths %} is-current{% endif %}" type="button"
+          aria-label="More"
+          aria-expanded="false"
+          aria-haspopup="dialog"
+          aria-controls="sl-mobile-menu"
+          data-menu-open>
+    <svg class="sl-tabbar__icon" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="1.75" stroke-linecap="round" aria-hidden="true">
+      <circle cx="5.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+      <circle cx="18.5" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+    </svg>
+    <span class="sl-tabbar__label">More</span>
+    {% if require_account and user and (not header_profile or not header_profile.is_complete) %}
+    <span class="sl-tabbar__badge" aria-hidden="true"></span>
+    {% endif %}
+  </button>
+</nav>
 <script>
   (function () {
     var header = document.querySelector('[data-sl-header]');
     if (!header) return;
 
     var menu = document.getElementById(header.getAttribute('data-menu-id'));
-    var openButton = header.querySelector('[data-menu-open]');
+    /* Both the header hamburger and the bottom tab bar's More button open the
+       same dialog, so the openers are collected document-wide. Focus returns
+       to whichever one was actually used. */
+    var openButtons = document.querySelectorAll('[data-menu-open]');
+    var openButton = openButtons[0];
+    var lastOpener = null;
     var closeButton = menu && menu.querySelector('[data-menu-close]');
     var menuLinks = menu ? menu.querySelectorAll('[data-menu-link]') : [];
     var desktopMenus = header.querySelectorAll('[data-header-dropdown]');
     var restoreMenuFocus = false;
 
+    function setOpenerState(expanded) {
+      for (var i = 0; i < openButtons.length; i++) {
+        openButtons[i].setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      }
+    }
+
     function finishMenuClose() {
-      openButton.setAttribute('aria-expanded', 'false');
+      setOpenerState(false);
       document.documentElement.classList.remove('sl-menu-open');
-      if (restoreMenuFocus) openButton.focus();
+      if (restoreMenuFocus && lastOpener) lastOpener.focus();
       restoreMenuFocus = false;
     }
 
@@ -1057,20 +1387,23 @@
       }
     }
 
-    function openMenu() {
+    function openMenu(event) {
       if (!menu || menu.hasAttribute('open')) return;
+      if (event && event.currentTarget) lastOpener = event.currentTarget;
       if (typeof menu.showModal === 'function') {
         menu.showModal();
       } else {
         menu.setAttribute('open', '');
       }
-      openButton.setAttribute('aria-expanded', 'true');
+      setOpenerState(true);
       document.documentElement.classList.add('sl-menu-open');
       if (closeButton) closeButton.focus();
     }
 
     if (menu && openButton) {
-      openButton.addEventListener('click', openMenu);
+      for (var o = 0; o < openButtons.length; o++) {
+        openButtons[o].addEventListener('click', openMenu);
+      }
       if (closeButton) closeButton.addEventListener('click', function () { closeMenu(true); });
       menu.addEventListener('cancel', function (event) {
         event.preventDefault();
@@ -1131,6 +1464,86 @@
       });
     });
   }
+
+  // Install affordance. Chromium hands us the deferred prompt; we surface our
+  // own card rather than letting the mini-infobar interrupt an upload. Safari
+  // never fires this event, so iOS simply never sees the card — the Share
+  // sheet is the install route there and needs no scripting.
+  (function () {
+    var card = document.getElementById("sl-install");
+    if (!card) return;
+    var DISMISSED = "ci-install-dismissed";
+    var deferred = null;
+
+    function stored(key) {
+      // Private-mode Safari throws on storage access; a missing preference is
+      // not worth breaking the page over.
+      try { return window.localStorage.getItem(key); } catch (e) { return null; }
+    }
+    function remember(key) {
+      try { window.localStorage.setItem(key, "1"); } catch (e) { /* ignore */ }
+    }
+    function hide() {
+      card.classList.remove("is-available");
+      card.hidden = true;
+    }
+
+    window.addEventListener("beforeinstallprompt", function (event) {
+      event.preventDefault();
+      if (stored(DISMISSED)) return;
+      deferred = event;
+      card.hidden = false;
+      card.classList.add("is-available");
+    });
+
+    card.querySelector("[data-install-accept]").addEventListener("click", function () {
+      if (!deferred) return hide();
+      var prompt = deferred;
+      deferred = null;
+      hide();
+      prompt.prompt();
+    });
+
+    card.querySelector("[data-install-dismiss]").addEventListener("click", function () {
+      deferred = null;
+      remember(DISMISSED);
+      hide();
+    });
+
+    window.addEventListener("appinstalled", function () {
+      deferred = null;
+      remember(DISMISSED);
+      hide();
+    });
+  })();
+
+  // iOS install hint. Safari fires no beforeinstallprompt and exposes no
+  // install API, so the Share sheet is the only route and the user has to be
+  // told about it. Shown only where that instruction is actually true: iOS
+  // Safari, not already installed.
+  (function () {
+    var hint = document.querySelector("[data-ios-install]");
+    if (!hint) return;
+
+    // iPadOS 13+ reports itself as a Mac, so the touch-point check is what
+    // separates an iPad from a desktop Safari that has no Share-to-Home-Screen.
+    var ua = window.navigator.userAgent;
+    var isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      (ua.indexOf("Macintosh") > -1 && navigator.maxTouchPoints > 1);
+    if (!isIOS) return;
+
+    // Chrome and Firefox on iOS are Safari underneath but have no
+    // Add to Home Screen, so pointing at the Share button would be wrong.
+    if (/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) return;
+
+    // navigator.standalone is the iOS-specific installed-app flag.
+    var installed = window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    if (installed) return;
+
+    hint.hidden = false;
+    hint.classList.add("is-available");
+  })();
 </script>
 {% block script %}{% endblock %}
 </body>

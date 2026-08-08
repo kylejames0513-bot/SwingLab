@@ -7,3 +7,11 @@ sessions
 **/__pycache__
 *.egg-info
 swinglab/models/*.task
+# The native client is not part of the server image. Excluded from the
+# build context too, so a local `docker build` after `npm install` does
+# not ship ~400MB of node_modules to the daemon.
+mobile
+store-assets
+storefront-theme
+docs
+
