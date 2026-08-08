@@ -1,6 +1,6 @@
-"""CaddieInsight brand assets — Fairway Modernism.
+"""CaddieInsight brand assets — Turf Instrument.
 
-Flat catalog illustrations: warm off-white field, deep green ink, one orange
+Flat catalog illustrations: cool mist field, deep forest ink, one orange
 kinetic gesture per piece, systematic corner labels. Everything is drawn at
 SS× and downscaled for clean edges.
 
@@ -21,18 +21,18 @@ HERE = Path(__file__).parent
 OUT = HERE / "out"
 OUT.mkdir(exist_ok=True)
 
-# palette (from the storefront theme's base.css)
-BG = "#f7f5f0"
-CARD = "#fffdf9"
-INK = "#17201a"
-INK_SOFT = "#4a544c"
-INK_MUTED = "#7a8279"
-GREEN = "#14472c"
+# palette (from the storefront theme's base.css — Turf Instrument)
+BG = "#eef2ef"
+CARD = "#f8fbf9"
+INK = "#101a14"
+INK_SOFT = "#445049"
+INK_MUTED = "#626a63"
+GREEN = "#0f3d28"
 GREEN_BTN = "#1a5c38"
-GREEN_INK = "#e9f2ec"
+GREEN_INK = "#e6f2ea"
 ORANGE = "#e8720c"
-BORDER = "#e3ded3"
-ARC_FAINT = "#e9e4d6"
+BORDER = "#d4ddd6"
+ARC_FAINT = "#d9e3dc"
 
 S = 2          # supersample factor for 1600px product cards
 SIZE = 1600

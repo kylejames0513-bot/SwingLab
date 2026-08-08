@@ -20,7 +20,9 @@ LOCALE = json.loads(
 )
 
 
-def test_storefront_header_falls_back_to_theme_logo_asset():
+def test_storefront_header_prefers_theme_packaged_logo_asset():
+    assert "section.settings.logo != blank" in HEADER
+    assert "images['swinglab-logo.png']" not in HEADER
     assert "swinglab-logo.png' | asset_url" in HEADER
     assert 'class="sl-header__logo-img"' in HEADER
     theme_logo = THEME_ROOT / "assets" / "swinglab-logo.png"

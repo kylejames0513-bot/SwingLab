@@ -326,37 +326,6 @@
   height: 100%;
   object-fit: cover;
 }
-.sl-plans__media-label {
-  position: absolute;
-  z-index: 1;
-  top: 14px;
-  left: 14px;
-  display: inline-flex;
-  align-items: center;
-  min-height: 29px;
-  max-width: calc(100% - 28px);
-  padding: 0 10px;
-  overflow: hidden;
-  border: 1px solid rgba(245, 242, 233, 0.34);
-  border-radius: var(--sl-radius-control);
-  background: rgba(7, 19, 13, 0.78);
-  box-shadow: 0 10px 24px -12px rgba(7, 19, 13, 0.9);
-  color: #f5f2e9;
-  font-family: var(--sl-font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.14em;
-  line-height: 1;
-  text-overflow: ellipsis;
-  text-transform: uppercase;
-  white-space: nowrap;
-  pointer-events: none;
-  -webkit-backdrop-filter: blur(8px);
-  backdrop-filter: blur(8px);
-}
-.sl-plans__card--featured .sl-plans__media-label {
-  border-color: rgba(240, 122, 24, 0.76);
-}
 .sl-plans__card-body {
   padding: var(--sl-card-inset);
   display: flex;
@@ -572,13 +541,6 @@
     width: 100%;
     text-align: center;
   }
-  .sl-plans__media-label {
-    top: 12px;
-    left: 50%;
-    max-width: calc(100% - 24px);
-    transform: translateX(-50%);
-    text-align: center;
-  }
   .sl-plans__free {
     flex-direction: column;
     padding: var(--sl-card-inset);
@@ -631,8 +593,7 @@
         { "type": "url", "id": "url", "label": "Button link", "info": "Leave blank to deep-link the matching variant on the Pro product page." },
         { "type": "checkbox", "id": "featured", "label": "Feature this plan", "default": false },
         { "type": "checkbox", "id": "show_save", "label": "Show the savings chip", "default": false, "info": "Computed against twelve months of the monthly price." },
-        { "type": "image_picker", "id": "image", "label": "Card art", "info": "Leave blank to use the packaged membership card artwork." },
-        { "type": "text", "id": "image_label", "label": "Art label", "info": "Short plan name shown over the art. Leave blank to use the plan name." }
+        { "type": "image_picker", "id": "image", "label": "Card art", "info": "Leave blank to use the packaged membership card artwork." }
       ]
     },
     {
@@ -667,8 +628,7 @@
             "term": "/mo",
             "description": "Unlimited swing analyses, annotated coach replay, and progress tracking, billed month to month so you can start and stop freely.",
             "note": "RENEWS MONTHLY · CANCEL ANYTIME",
-            "cta_label": "Go Pro monthly",
-            "image_label": "Pro · Monthly"
+            "cta_label": "Go Pro monthly"
           }
         },
         {
@@ -682,8 +642,7 @@
             "note": "12 MONTHS OF PRO · ONE PAYMENT",
             "cta_label": "Get the Season Pass",
             "featured": true,
-            "show_save": true,
-            "image_label": "Pro · Season Pass"
+            "show_save": true
           }
         },
         {
@@ -695,8 +654,7 @@
             "term": "one payment",
             "description": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
             "note": "FIRST 100 MEMBERS · NEVER RENEWS",
-            "cta_label": "Get the Founders Pass",
-            "image_label": "Founders Pass"
+            "cta_label": "Get the Founders Pass"
           }
         },
         { "type": "free_band" }

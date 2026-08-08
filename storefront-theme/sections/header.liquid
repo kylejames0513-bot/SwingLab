@@ -66,9 +66,13 @@
   {%- endif -%}
   <div class="sl-header__inner">
     <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
-      {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
-      {%- if logo -%}
-        {{ logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
+      {%- comment -%}
+        Prefer the theme-packaged lockup so a revamp ships with the theme zip.
+        Merchants can still override via the section logo picker; Shopify Files
+        remain available as a secondary fallback for older installs.
+      {%- endcomment -%}
+      {%- if section.settings.logo != blank -%}
+        {{ section.settings.logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
       {%- else -%}
         <img
           class="sl-header__logo-img"

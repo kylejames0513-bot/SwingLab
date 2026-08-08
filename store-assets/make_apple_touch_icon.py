@@ -1,9 +1,9 @@
 """apple-touch-icon.png — the iOS home-screen mark.
 
-Reproduces swinglab/web/static/pwa-icon.svg with Pillow: the dark green
-field, the cream ball-face circle, one orange swing-arc gesture, and the
-ball dot. iOS ignores SVG touch icons and rounds the corners itself, so
-this renders the mark full-bleed on an OPAQUE 180x180 canvas (no alpha,
+Reproduces swinglab/web/static/pwa-icon.svg with Pillow: the night turf
+field, the cool-mist ball-face circle, one orange swing-arc gesture, and
+the ball dot. iOS ignores SVG touch icons and rounds the corners itself,
+so this renders the mark full-bleed on an OPAQUE 180x180 canvas (no alpha,
 no pre-rounded corners). Drawn at supersample scale and downscaled for
 clean edges, like the other generators here.
 
@@ -20,9 +20,9 @@ from PIL import Image, ImageDraw
 HERE = Path(__file__).parent
 STATIC = HERE.parent / "swinglab" / "web" / "static"
 
-# palette (from pwa-icon.svg)
-NIGHT = "#07130d"
-CREAM = "#f7f5f0"
+# palette (from pwa-icon.svg / Turf Instrument)
+NIGHT = "#06110c"
+MIST = "#eef2ef"
 ORANGE = "#e8720c"
 
 SIZE = 180     # Apple's documented touch-icon size
@@ -57,7 +57,7 @@ def main() -> None:
     def xy(x: float, y: float) -> tuple[float, float]:
         return (x * scale, y * scale)
 
-    draw.ellipse([xy(256 - 150, 256 - 150), xy(256 + 150, 256 + 150)], fill=CREAM)
+    draw.ellipse([xy(256 - 150, 256 - 150), xy(256 + 150, 256 + 150)], fill=MIST)
     draw.polygon([xy(x, y) for x, y in swing_arc()], fill=ORANGE)
     draw.ellipse([xy(345 - 22, 192 - 22), xy(345 + 22, 192 + 22)], fill=NIGHT)
 

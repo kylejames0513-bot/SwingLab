@@ -106,6 +106,19 @@ def test_shipped_config_activates_guided_customer_and_sample_reports():
     assert shipped.report["guided_sample_enabled"] is True
 
 
+def test_shipped_brand_logo_uses_packaged_static_lockup():
+    shipped = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+    assert shipped.brand["logo_url"] == "/static/swinglab-logo.png"
+    static_logo = (
+        Path(__file__).resolve().parents[1]
+        / "swinglab"
+        / "web"
+        / "static"
+        / "swinglab-logo.png"
+    )
+    assert static_logo.is_file()
+
+
 def test_guided_sample_flag_deep_merges_without_replacing_report_policy(
     tmp_path,
 ):
