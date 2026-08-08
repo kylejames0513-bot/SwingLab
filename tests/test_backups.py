@@ -2399,7 +2399,7 @@ def _baseline_chain_snapshot(
             "minimum_backup_created_at": minimum_created_at,
             "baseline_backup_id": baseline_backup_id,
             "manifest_sha256": baseline_manifest_sha256,
-            "schema_generation": 1,
+            "schema_generation": int(manifest["mobile_state"]["generation"]),
             "baseline_db_checkpoint": baseline_db_checkpoint,
         },
         chain_hmac_key_id="chain-key",
