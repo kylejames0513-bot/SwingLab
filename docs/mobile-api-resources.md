@@ -151,16 +151,71 @@ Startup fails closed: when `web.mobile_device_management_enabled` is true,
 `create_app` requires a valid recovery-fence readiness (a configured keyring
 and recovery publisher), mirroring native authentication.
 
-The server-owned resumable-upload policy is also explicit, even while its
-mutation route is disabled:
+## Resumable uploads
+
+The durable resumable-upload surface is gated only by
+`web.mobile_resumable_upload_enabled` (default off). While the flag is false,
+every upload route returns the same no-store 404 before bearer authentication,
+`Idempotency-Key` parsing, database work, or filesystem access. Crash recovery
+for any in-flight reservation still runs at startup even while the feature is
+disabled, so a flag flip never resumes onto unconverged state.
+
+Routes (all strict Bearer, `Cache-Control: no-store`, closed `APIError`):
+
+- `POST /api/v1/uploads` reserves one upload. Requires exactly one 128-bit hex
+  `Idempotency-Key` and a closed `UploadCreateRequest` body (`source_name`,
+  lowercase-hex `file_sha256`, positive `file_bytes`, `club`/`hand`/`angle`,
+  optional `level`, optional comparison triple, and `expected_history_epoch`).
+  Returns `201 UploadReservationResponse` with the acknowledged `offset`,
+  `file_bytes`, `chunk_bytes`, and `expires_at`. Exact replay of the same key
+  and body returns the same reservation; reuse with a different body is typed
+  409 (`idempotency_conflict`). History-epoch mismatch is 409
+  (`history_epoch_conflict`); a comparison claim that no longer matches the
+  current owned Proof Cycle assignment is 409 (`comparison_conflict`); exceeding
+  the per-user active cap is 409 (`upload_conflict`). Capacity exhaustion is a
+  retryable 507 (`insufficient_storage`) with `Retry-After`.
+- `GET /api/v1/uploads/{upload_id}` returns the owned reservation status. A
+  reservation being repaired is 409 (`upload_repairing`, retryable).
+- `PATCH /api/v1/uploads/{upload_id}` appends one chunk. The body is the raw
+  bytes (`application/offset+octet-stream`); `Upload-Offset` must equal the
+  acknowledged offset and `Upload-Checksum` is the base64 SHA-256 of the chunk.
+  Returns `200 UploadReservationResponse` with the new acknowledged offset.
+  An offset mismatch is 409 (`offset_mismatch`) and echoes the acknowledged
+  `Upload-Offset` header; an oversized chunk or one beyond the declared size is
+  413 (`chunk_too_large`); a bad chunk digest is 422 (`checksum_mismatch`) and
+  never advances; an expired reservation is 410 (`upload_expired`); a
+  concurrent operation on the same upload is 409 (`upload_busy`, retryable).
+- `POST /api/v1/uploads/{upload_id}/complete` verifies the full digest and
+  atomically publishes exactly one queued job, returning
+  `200 UploadCompleteResponse` (`job` as a `MobileSessionResponse`, `replayed`).
+  Re-completing an already-completed upload replays the same job with
+  `replayed: true`. A digest mismatch fails the reservation with no job.
+- `DELETE /api/v1/uploads/{upload_id}` aborts, releasing capacity and returning
+  `204`. It requires its own 128-bit hex `Idempotency-Key`; an exact replay
+  returns `204` and a different key against the abort receipt is 409
+  (`idempotency_conflict`). A completed upload cannot be aborted (409).
+
+Every create/PATCH/complete/abort enters `CredentialMutationGuard`, so a
+concurrent sign-out, revoke, or history reset closes the credential and the
+route returns the generic 401 rather than mutating durable state.
+
+The server-owned resumable-upload policy is explicit even while the route is
+disabled:
 
 - `web.mobile_upload_chunk_mb: 5` (valid range 1-64 MiB)
 - `web.mobile_active_uploads_per_user: 2` (valid range 1-10)
 - `web.mobile_upload_ttl_seconds: 86400` (valid range 60-604800)
+- `web.mobile_upload_global_max_reserved_bytes` and
+  `web.mobile_upload_min_filesystem_free_bytes` ship as `0` and must be measured
+  strictly-positive values before `mobile_resumable_upload_enabled` is turned on.
 
 Invalid booleans or numeric bounds stop application startup. The native chunk
 policy does not change the legacy web upload reader, which remains at 1 MiB per
-read.
+read. Upload reservations and the storage-capacity ledger are transient
+operational tables (`resumable_uploads`, `resumable_upload_abort_receipts`,
+`storage_capacity_allocations`) that are reconciled from filesystem truth on
+restart; they are intentionally outside the closed mobile-state backup
+inventory, so registering them for backup remains a follow-up.
 
 The generated contract is frozen in `docs/api/openapi-v1.json`. After a
 deliberate contract change, regenerate it with:

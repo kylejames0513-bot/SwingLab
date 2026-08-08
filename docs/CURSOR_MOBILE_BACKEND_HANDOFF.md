@@ -22,6 +22,23 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
 
 Implement durable resumable uploads with atomic job completion from the plan Task 5 section. Do not start Task 6 until Task 5 is implemented, committed, and independently reviewed.
 
+### Task 5 progress (in this branch)
+
+Implemented and committed:
+
+- Typed FFmpeg failure kinds (`FFmpegMediaError`/`FFmpegRuntimeError`/`FFmpegStorageError`) classified by call site/return code/signal/timeout/`errno`, never by text.
+- Server-owned analysis-failure classifier (`swinglab/web/analysis_failures.py`) mapping exceptions to the closed `AnalysisFailureCode` set with retryability and customer-safe messages; wired into `JobManager._run` and surfaced (failure code / retryable / retry-expiry / remaining-retry) in `MobileSessionResponse`.
+- Cross-process `SessionMaintenanceLock` and the durable `StorageCapacityLedger` (logical reserved cap + filesystem free floor, atomic upload_part→job_source transfer, exactly-once release, filesystem reconcile).
+- Closed upload/retry contracts and the durable `ResumableUploadManager` (create/status/patch/complete/abort + crash recovery, per-upload keyed lock, versioned idempotency HMAC pairs, comparison hook, seven-day abort receipts).
+- HTTP wiring behind `web.mobile_resumable_upload_enabled` (default off): `POST /api/v1/uploads`, `GET/PATCH /api/v1/uploads/{id}`, `POST /api/v1/uploads/{id}/complete`, `DELETE /api/v1/uploads/{id}`, each with `Idempotency-Key` (where applicable) and `CredentialMutationGuard` admission. `create_app` constructs the manager unconditionally so recovery runs even when the feature is off. Frozen OpenAPI regenerated.
+- New config bounds (`mobile_analysis_retry_window_seconds`, `mobile_analysis_retry_max_attempts`, `mobile_upload_global_max_reserved_bytes`, `mobile_upload_min_filesystem_free_bytes`) with strict enable-time validation.
+
+Deferrals still open before Task 5 can be called complete:
+
+- Generation-3 mobile backup registration of the durable upload/capacity/retry objects and their restore/migration tests. The upload/capacity tables currently live outside the closed mobile-state inventory (`resumable_uploads`, `resumable_upload_abort_receipts`, `storage_capacity_allocations`) and are reconciled from filesystem truth on restart rather than restored from backup.
+- The `POST` analysis retry and retry-source-discard endpoints/journals (the classifier and session serialization already expose retryability, but the retry mutation route and its discard journal are not yet wired).
+- Server-side matched/new-context comparison resolution: with no comparison resolver injected in `create_app`, a non-null comparison claim conservatively returns 409 `comparison_conflict`; null-comparison uploads work fully.
+
 ## Standing decisions and hazards
 
 - Preserve the existing five-device cap.
