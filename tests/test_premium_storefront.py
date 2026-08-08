@@ -380,8 +380,8 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
 
     stats = source("sections/stats-band.liquid")
     stats_cell = stats.split(".sl-stats__cell {", 1)[1].split("}", 1)[0]
-    assert "align-items: center" in stats_cell
-    assert "text-align: center" in stats_cell
+    assert "align-items: flex-start" in stats_cell
+    assert "text-align: left" in stats_cell
     assert "margin-top: -54px" not in stats
     assert "padding-top: clamp(36px, 5vw, 64px)" in stats
 
