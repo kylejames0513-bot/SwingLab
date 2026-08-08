@@ -1,8 +1,15 @@
 # CaddieInsight native client
 
-Expo client for the owned mobile surface. **Scaffold status — it typechecks,
-it has never been run.** No simulator, device, or Expo dev server has executed
-this code. Treat every screen as unverified until someone launches it.
+Expo client for the owned mobile surface.
+
+**Status — it builds, it has never been interacted with.** Verified here:
+strict TypeScript passes, `expo-doctor` passes 18/18, and it bundles cleanly
+for both iOS and Android (`expo export`). Not verified: nobody has opened a
+screen, tapped anything, or pointed it at a live server. Treat the screens as
+unproven until you have run it on a phone.
+
+That distinction matters — "it typechecks" hid a missing `expo-asset`
+dependency that failed the moment a bundler touched it.
 
 ## What exists
 
@@ -16,18 +23,55 @@ this code. Treat every screen as unverified until someone launches it.
 | `src/api/types.ts` | Hand-written response shapes (see below) |
 | `src/auth/token.ts` | Keychain read/write via `expo-secure-store` |
 
-## Running it
+## Getting the beta onto your phone
+
+Fastest path, no developer account and no build service:
 
 ```bash
 cd mobile
 npm install
-npm run typecheck     # this is what has actually been verified
-npx expo start        # never executed in this repo's CI or by the author
+npx expo start
 ```
 
+Install **Expo Go** from the App Store or Play Store, then scan the QR code in
+the terminal. Every package here runs inside Expo Go — including
+`expo-secure-store`, so the device-token flow works — which is why the
+scaffold deliberately avoids native modules that would force a custom build.
+
+Your phone and this machine must be on the same network. If the QR code fails
+to connect, `npx expo start --tunnel` routes around it.
+
 Point it at a server with `EXPO_PUBLIC_API_BASE_URL`, or edit
-`expo.extra.apiBaseUrl` in `app.json`. It defaults to production, which is
-almost certainly not what you want while developing.
+`expo.extra.apiBaseUrl` in `app.json`. It defaults to production — fine for a
+first look at real data, wrong once you start changing things.
+
+```bash
+EXPO_PUBLIC_API_BASE_URL=https://app.caddieinsight.com npx expo start
+```
+
+### When Expo Go stops being enough
+
+Expo Go runs the JavaScript but cannot add native modules. The moment you add
+in-app camera capture — which is both the missing product and Apple's answer
+to guideline 4.2 — you need a development build:
+
+```bash
+npx eas build --profile development --platform ios
+```
+
+That needs an Expo account and, for a device install, an Apple Developer
+Program membership.
+
+### Checks
+
+```bash
+npm run typecheck                 # strict TypeScript
+npx expo-doctor                   # SDK/dependency alignment
+npx expo export --platform ios    # proves it bundles
+```
+
+Run the export one before claiming the app works. Typechecking alone missed a
+missing dependency that broke the bundler outright.
 
 ## Connecting a device
 
