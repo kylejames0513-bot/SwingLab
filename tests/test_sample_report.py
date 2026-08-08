@@ -54,6 +54,19 @@ def test_ensure_sample_report_writes_report_and_media(tmp_path):
     assert "Slow motion" not in html
 
 
+def test_shipped_config_generates_the_guided_public_sample(tmp_path):
+    cfg = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+
+    path = sample.ensure_sample_report(tmp_path / "shipped", cfg)
+    html = path.read_text(encoding="utf-8")
+
+    assert 'content="guided-report-v1"' in html
+    assert (path.parent / "media" / "focused-priority.png").is_file()
+    assert "Understand" in html
+    assert "Practice" in html
+    assert "Re-film" in html
+
+
 def test_ensure_sample_report_is_idempotent(tmp_path):
     first = sample.ensure_sample_report(tmp_path / "sr", Config())
     marker = "<!-- untouched -->"
