@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
@@ -98,6 +99,43 @@ def test_capabilities_publish_server_limits_canonical_domains_and_free_quota(tmp
         flattened = repr(response.json())
         assert "SWINGLAB_SECRET" not in flattened
         assert "MOBILE_STATE_HMAC" not in flattened
+    finally:
+        _close(app)
+
+
+def test_capabilities_quota_snapshot_is_zero_write_and_leaves_cleanup_to_legacy(
+    tmp_path,
+):
+    """Catches a native GET deleting expired durable usage receipts."""
+
+    app, client, user = _authenticated_client(tmp_path)
+    manager = app.state.jobs
+    try:
+        with manager._lock:
+            manager._conn.execute(
+                "INSERT INTO analysis_usage_monthly"
+                " (user_hash, month_start, coaching_eligible, refilm_rejections,"
+                " expires_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)",
+                ("ab" * 32, 0, 1, 1, time.time() - 1, time.time() - 2),
+            )
+            manager._conn.commit()
+            changes_before = manager._conn.total_changes
+
+        response = client.get("/api/v1/capabilities")
+
+        assert response.status_code == 200
+        assert response.json()["capabilities"]["quota"]["used"] == 0
+        with manager._lock:
+            assert manager._conn.total_changes == changes_before
+            assert manager._conn.execute(
+                "SELECT COUNT(*) FROM analysis_usage_monthly"
+            ).fetchone()[0] == 1
+
+        assert manager.usage_this_month(user.id) == 0
+        with manager._lock:
+            assert manager._conn.execute(
+                "SELECT COUNT(*) FROM analysis_usage_monthly"
+            ).fetchone()[0] == 0
     finally:
         _close(app)
 
@@ -214,7 +252,7 @@ def test_capabilities_flag_off_is_no_store_404_before_auth_or_quota_work(tmp_pat
     def unexpected_usage(_user_id):
         raise AssertionError("disabled capabilities touched quota state")
 
-    app.state.jobs.usage_this_month = unexpected_usage
+    app.state.jobs.usage_this_month_snapshot = unexpected_usage
     try:
         response = client.get("/api/v1/capabilities")
 
@@ -257,7 +295,9 @@ def test_capabilities_rechecks_history_epoch_before_reading_quota(
         raise AssertionError("stale capability request touched quota state")
 
     monkeypatch.setattr(app.state.users, "get", racing_get)
-    monkeypatch.setattr(app.state.jobs, "usage_this_month", unexpected_usage)
+    monkeypatch.setattr(
+        app.state.jobs, "usage_this_month_snapshot", unexpected_usage
+    )
     try:
         response = client.get("/api/v1/capabilities")
 

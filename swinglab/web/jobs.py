@@ -405,26 +405,36 @@ class JobManager:
         pseudonymous monthly receipts keep both facts after history deletion.
         """
         now = datetime.now(timezone.utc)
-        month_start, month_end, _expires_at = self._month_window(now.timestamp())
         with self._lock:
             self._purge_usage_receipts_locked()
             self._conn.commit()
-            rows = self._conn.execute(
-                "SELECT * FROM jobs WHERE user_id = ? AND created_at >= ?"
-                " AND created_at < ? AND status != ?",
-                (user_id, month_start, month_end, FAILED),
-            ).fetchall()
-            receipt = self._conn.execute(
-                "SELECT coaching_eligible, refilm_rejections"
-                " FROM analysis_usage_monthly"
-                " WHERE user_hash = ? AND month_start = ? AND expires_at > ?",
-                (self._user_hash(user_id), month_start, now.timestamp()),
-            ).fetchone()
-            jobs = [self._from_row(row) for row in rows]
-            active = sum(job.status in ACTIVE for job in jobs)
-            finished = [job for job in jobs if job.status == DONE]
-            eligible = sum(self.coaching_eligible(job) for job in finished)
-            rejected = len(finished) - eligible
+            return self._usage_this_month_locked(user_id, now.timestamp())
+
+    def usage_this_month_snapshot(self, user_id: str) -> int:
+        """Read the current UTC-month usage without cleanup or other writes."""
+
+        now = datetime.now(timezone.utc).timestamp()
+        with self._lock:
+            return self._usage_this_month_locked(user_id, now)
+
+    def _usage_this_month_locked(self, user_id: str, now: float) -> int:
+        month_start, month_end, _expires_at = self._month_window(now)
+        rows = self._conn.execute(
+            "SELECT * FROM jobs WHERE user_id = ? AND created_at >= ?"
+            " AND created_at < ? AND status != ?",
+            (user_id, month_start, month_end, FAILED),
+        ).fetchall()
+        receipt = self._conn.execute(
+            "SELECT coaching_eligible, refilm_rejections"
+            " FROM analysis_usage_monthly"
+            " WHERE user_hash = ? AND month_start = ? AND expires_at > ?",
+            (self._user_hash(user_id), month_start, now),
+        ).fetchone()
+        jobs = [self._from_row(row) for row in rows]
+        active = sum(job.status in ACTIVE for job in jobs)
+        finished = [job for job in jobs if job.status == DONE]
+        eligible = sum(self.coaching_eligible(job) for job in finished)
+        rejected = len(finished) - eligible
         if receipt is not None:
             eligible += int(receipt["coaching_eligible"])
             rejected += int(receipt["refilm_rejections"])

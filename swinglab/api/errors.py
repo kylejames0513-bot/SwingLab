@@ -13,6 +13,8 @@ from fastapi.exception_handlers import (
 )
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.routing import Match
 
 from .auth import MobileAuthError
 from .contracts import APIError
@@ -42,9 +44,25 @@ class MobileAPIHTTPError(HTTPException):
         self.mobile_error_retryable = bool(retryable)
 
 
-def _is_named_mobile_route(request: Request, route_names: Collection[str]) -> bool:
+def _named_mobile_route(
+    request: Request, route_names: Collection[str]
+) -> str | None:
     route = request.scope.get("route")
-    return bool(route is not None and getattr(route, "name", None) in route_names)
+    name = getattr(route, "name", None) if route is not None else None
+    if name in route_names:
+        return name
+
+    # Starlette raises method-mismatch errors while routing, before it places
+    # the partial route on the request scope. Match only opted-in route names
+    # so similarly prefixed legacy and unknown paths retain their contracts.
+    for candidate in request.app.routes:
+        candidate_name = getattr(candidate, "name", None)
+        if candidate_name not in route_names:
+            continue
+        match, _child_scope = candidate.matches(request.scope)
+        if match is not Match.NONE:
+            return candidate_name
+    return None
 
 
 def _response(
@@ -65,7 +83,12 @@ def _response(
     )
 
 
-def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[str]) -> None:
+def install_mobile_error_handlers(
+    app: FastAPI,
+    mobile_route_names: Collection[str],
+    *,
+    concealed_route_names: Collection[str] = (),
+) -> None:
     """Install structured errors only for explicitly named native routes.
 
     A route must opt in by name. This keeps PWA and browser compatibility
@@ -73,11 +96,24 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
     """
 
     names = frozenset(mobile_route_names)
+    concealed_names = frozenset(concealed_route_names)
+    if not concealed_names.issubset(names):
+        raise ValueError("Concealed native route names must be opted in.")
 
+    @app.exception_handler(StarletteHTTPException)
     @app.exception_handler(HTTPException)
-    async def mobile_http_exception(request: Request, exc: HTTPException):
-        if not _is_named_mobile_route(request, names):
+    async def mobile_http_exception(request: Request, exc: StarletteHTTPException):
+        route_name = _named_mobile_route(request, names)
+        if route_name is None:
             return await http_exception_handler(request, exc)
+        if exc.status_code == 405 and route_name in concealed_names:
+            return _response(
+                APIError(
+                    code="not_found",
+                    message="Mobile resources are not enabled.",
+                ),
+                404,
+            )
         if exc.status_code >= 500:
             return _response(
                 APIError(
@@ -111,7 +147,7 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
 
     @app.exception_handler(RequestValidationError)
     async def mobile_validation_error(request: Request, exc: RequestValidationError):
-        if not _is_named_mobile_route(request, names):
+        if _named_mobile_route(request, names) is None:
             return await request_validation_exception_handler(request, exc)
         return _response(
             APIError(code="validation_error", message="Invalid request."), 422
@@ -119,7 +155,7 @@ def install_mobile_error_handlers(app: FastAPI, mobile_route_names: Collection[s
 
     @app.exception_handler(Exception)
     async def mobile_unhandled_exception(request: Request, exc: Exception):
-        if not _is_named_mobile_route(request, names):
+        if _named_mobile_route(request, names) is None:
             raise exc
         reference_id = secrets.token_hex(16)
         logger.exception("Unhandled native API failure reference_id=%s", reference_id)

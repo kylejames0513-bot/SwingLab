@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from swinglab.api.contracts import MobileSessionResponse
@@ -95,7 +96,7 @@ def test_mobile_session_list_and_detail_allowlist_owned_state_and_diagnostics(tm
             "report_url": None,
             "metrics_url": None,
             "outcome": None,
-            "failure_code": "analysis_internal_error",
+            "failure_code": None,
             "retryable": False,
             "retry_expires_at": None,
             "remaining_retry_count": 0,
@@ -118,6 +119,55 @@ def test_mobile_session_list_and_detail_allowlist_owned_state_and_diagnostics(tm
         assert legacy.json()["log"] == failed.log
         assert legacy.json()["error"] == failed.error
         assert legacy.json()["report"] == failed.report_rel
+    finally:
+        _close(app)
+
+
+@pytest.mark.parametrize(
+    "raw_error",
+    (
+        "Video is longer than the 300 second analysis limit.",
+        "Capture failed because no complete golfer pose was detected.",
+        "Unexpected worker exception: provider diagnostics are private.",
+    ),
+)
+def test_failed_mobile_sessions_do_not_invent_unpersisted_failure_codes(
+    tmp_path, raw_error
+):
+    """Catches raw worker failures being falsely classified before Task 5."""
+
+    app, client, user = _app_client(tmp_path)
+    try:
+        failed = app.state.jobs.create_session(
+            hand="right",
+            angle="face-on",
+            club="driver",
+            user_id=user.id,
+            expected_history_epoch=user.history_epoch,
+        )
+        failed.status = FAILED
+        failed.error = raw_error
+        failed.swings_done = 1
+        failed.swings_total = 2
+        app.state.jobs._save(failed)
+
+        detail = client.get(f"/api/v1/mobile/sessions/{failed.id}")
+        listing = client.get("/api/v1/mobile/sessions")
+
+        assert detail.status_code == listing.status_code == 200
+        listed = next(
+            item for item in listing.json()["sessions"] if item["id"] == failed.id
+        )
+        assert detail.json() == listed
+        assert detail.json()["status"] == "failed"
+        assert detail.json()["failure_code"] is None
+        assert detail.json()["retryable"] is False
+        assert detail.json()["retry_expires_at"] is None
+        assert detail.json()["remaining_retry_count"] == 0
+        assert detail.json()["swings_done"] == 1
+        assert detail.json()["swings_total"] == 2
+        assert raw_error not in detail.text
+        assert raw_error not in listing.text
     finally:
         _close(app)
 

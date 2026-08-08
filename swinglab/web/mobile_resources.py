@@ -200,7 +200,7 @@ class MobileResourceService:
     def capabilities(self, context: MobileAuthContext) -> CapabilitiesResponse:
         with self._manager.history_delivery_guard():
             user = self._current_owner(context)
-            used = max(0, int(self._manager.usage_this_month(user.id)))
+            used = max(0, int(self._manager.usage_this_month_snapshot(user.id)))
             limit = int(
                 self._cfg.billing[
                     "pro_per_month" if user.is_pro else "free_per_month"
@@ -573,7 +573,9 @@ def serialize_mobile_session(
         report_url=None,
         metrics_url=None,
         outcome=outcome,
-        failure_code=("analysis_internal_error" if status == FAILED else None),
+        # Task 4A has no durable typed failure classification. Raw worker
+        # strings are private diagnostics and must not be guessed into one.
+        failure_code=None,
         retryable=False,
         retry_expires_at=None,
         remaining_retry_count=0,

@@ -10,6 +10,18 @@ from pydantic import BaseModel
 
 from swinglab.api.auth import MobileAuthError
 from swinglab.api.errors import MobileAPIHTTPError, install_mobile_error_handlers
+from swinglab.config import Config
+from swinglab.web.app import create_app
+
+
+_GATE_4A_RESOURCE_PATHS = (
+    "/api/v1/capabilities",
+    "/api/v1/progress",
+    "/api/v1/mobile/sessions",
+    "/api/v1/mobile/sessions/session-id",
+    "/api/v1/mobile/sessions/session-id/brief",
+    "/api/v1/mobile/today",
+)
 
 
 class _RequiredPayload(BaseModel):
@@ -171,3 +183,95 @@ def test_mobile_auth_error_keeps_its_bounded_code_on_named_routes_only():
     assert legacy.status_code == 401
     assert legacy.json() == {"detail": "A mobile access token is required."}
     assert legacy.headers["www-authenticate"] == "Bearer"
+
+
+def _resource_app(tmp_path, *, enabled: bool) -> FastAPI:
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.web["mobile_resources_enabled"] = enabled
+    return create_app(
+        cfg,
+        sessions_dir=tmp_path / "sessions",
+        start_background_workers=False,
+    )
+
+
+def _close_resource_app(app: FastAPI) -> None:
+    for resource in (app.state.jobs, app.state.users, app.state.throttle):
+        resource.close()
+
+
+def test_exact_gate_4a_method_mismatches_use_native_no_store_errors(tmp_path):
+    """Catches route-resolution 405s escaping the named native boundary."""
+
+    app = _resource_app(tmp_path, enabled=True)
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        for path in _GATE_4A_RESOURCE_PATHS:
+            post = client.post(path)
+            head = client.head(path)
+
+            assert post.status_code == head.status_code == 405
+            assert post.json() == {
+                "resource_version": 1,
+                "code": "http_405",
+                "message": "Method Not Allowed",
+                "retryable": False,
+                "reference_id": None,
+            }
+            assert head.content == b""
+            for response in (post, head):
+                assert response.headers["allow"] == "GET"
+                assert response.headers["cache-control"] == "no-store"
+                assert response.headers["pragma"] == "no-cache"
+    finally:
+        _close_resource_app(app)
+
+
+def test_exact_gate_4a_method_mismatches_are_concealed_while_default_off(
+    tmp_path,
+):
+    """Catches disabled resources disclosing their GET routes through 405s."""
+
+    app = _resource_app(tmp_path, enabled=False)
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        for path in _GATE_4A_RESOURCE_PATHS:
+            post = client.post(path)
+            head = client.head(path)
+
+            assert post.status_code == head.status_code == 404
+            assert post.json() == {
+                "resource_version": 1,
+                "code": "not_found",
+                "message": "Mobile resources are not enabled.",
+                "retryable": False,
+                "reference_id": None,
+            }
+            assert head.content == b""
+            for response in (post, head):
+                assert "allow" not in response.headers
+                assert response.headers["cache-control"] == "no-store"
+                assert response.headers["pragma"] == "no-cache"
+    finally:
+        _close_resource_app(app)
+
+
+def test_unrelated_legacy_method_mismatches_keep_fastapi_contract(tmp_path):
+    """Catches exact-path method handling spilling into an existing API."""
+
+    app = _resource_app(tmp_path, enabled=False)
+    client = TestClient(app, raise_server_exceptions=False)
+    try:
+        post = client.post("/api/v1/today")
+        head = client.head("/api/v1/today")
+
+        assert post.status_code == head.status_code == 405
+        assert post.json() == {"detail": "Method Not Allowed"}
+        assert head.content == b""
+        for response in (post, head):
+            assert response.headers["allow"] == "GET"
+            assert "cache-control" not in response.headers
+            assert "pragma" not in response.headers
+    finally:
+        _close_resource_app(app)

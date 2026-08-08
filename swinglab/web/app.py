@@ -697,6 +697,14 @@ def create_app(
     app.state.mobile_resource_service = mobile_resource_service
     if mobile_keyed_throttle is not None:
         app.router.add_event_handler("shutdown", mobile_keyed_throttle.close)
+    mobile_resource_route_names = {
+        MOBILE_CAPABILITIES_ROUTE_NAME,
+        MOBILE_SESSIONS_ROUTE_NAME,
+        MOBILE_SESSION_ROUTE_NAME,
+        MOBILE_SESSION_BRIEF_ROUTE_NAME,
+        MOBILE_TODAY_ROUTE_NAME,
+        MOBILE_PROGRESS_ROUTE_NAME,
+    }
     install_mobile_error_handlers(
         app,
         {
@@ -705,13 +713,13 @@ def create_app(
             MOBILE_REVIEW_START_ROUTE_NAME,
             MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
             MOBILE_SIGN_OUT_ROUTE_NAME,
-            MOBILE_CAPABILITIES_ROUTE_NAME,
-            MOBILE_SESSIONS_ROUTE_NAME,
-            MOBILE_SESSION_ROUTE_NAME,
-            MOBILE_SESSION_BRIEF_ROUTE_NAME,
-            MOBILE_TODAY_ROUTE_NAME,
-            MOBILE_PROGRESS_ROUTE_NAME,
-        },
+        }
+        | mobile_resource_route_names,
+        concealed_route_names=(
+            mobile_resource_route_names
+            if not mobile_resource_service.settings.resources_enabled
+            else ()
+        ),
     )
     install_mobile_routes(
         app,
