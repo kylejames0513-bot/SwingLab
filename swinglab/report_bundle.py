@@ -16,6 +16,7 @@ from pathlib import Path, PurePosixPath
 from typing import Iterator, Protocol, Sequence
 
 from .config import Config
+from .diagrams import drill_diagram
 from .evidence import EvidenceSnapshot
 from .ffmpeg import VideoInfo
 from .focused_evidence import (
@@ -1216,6 +1217,37 @@ def _append_reason(reasons: Sequence[ReasonCode], reason: ReasonCode) -> tuple[R
     return tuple(dict.fromkeys((*reasons, reason)))
 
 
+def _append_drill_illustration(
+    attempt: ReportBundleAttempt,
+    media: Sequence[MediaEntry],
+    *,
+    drill_id: str | None,
+    cfg: Config,
+) -> tuple[MediaEntry, ...]:
+    """Persist the instructional drill SVG beside other owned report media."""
+    if drill_id is None:
+        return tuple(media)
+    if any(entry.role is MediaRole.DRILL_ILLUSTRATION for entry in media):
+        return tuple(media)
+    try:
+        svg = drill_diagram(drill_id, cfg.brand)
+    except KeyError:
+        return tuple(media)
+    relative = "media/drill-illustration.svg"
+    path = attempt.media_dir / "drill-illustration.svg"
+    path.write_text(svg, encoding="utf-8")
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    entry = MediaEntry(
+        "drill-illustration",
+        MediaRole.DRILL_ILLUSTRATION,
+        "image/svg+xml",
+        Entitlement.FREE,
+        relative,
+        digest,
+    )
+    return (*media, entry)
+
+
 def _remove_work_and_empty_media(attempt: ReportBundleAttempt) -> None:
     with ExitStack() as stack:
         work = stack.enter_context(
@@ -1378,6 +1410,16 @@ def build_report_bundle(
                 safe_media_keys=safe_media_keys,
             )
         else:
+            final_media = _append_drill_illustration(
+                attempt,
+                final_media,
+                drill_id=(
+                    source.primary_drill.id
+                    if source.primary_drill is not None
+                    else None
+                ),
+                cfg=cfg,
+            )
             source = replace(
                 source,
                 visual_evidence=visual,

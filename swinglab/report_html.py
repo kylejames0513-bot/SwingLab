@@ -13,7 +13,7 @@ from jinja2 import (
 from .coaching import priority_rule_version
 from .config import Config
 from .report import REPORT_FORMAT_VERSION
-from .report_presenter import ReportDocument
+from .report_presenter import REASON_COPY, ReportDocument
 from .report_view import GUIDED_REPORT_PRESENTATION_VERSION
 
 
@@ -32,6 +32,10 @@ PHASE_METHOD_LABELS = MappingProxyType({
     "manual_strike": "Impact marked by you",
     "configured_finish_offset": "Finish after impact",
     "session_timing": "Measured swing timing",
+})
+REASON_LABELS = MappingProxyType({
+    **{code: copy.label for code, copy in REASON_COPY.items()},
+    **{code.value: copy.label for code, copy in REASON_COPY.items()},
 })
 
 
@@ -69,6 +73,7 @@ def write_report_document_html(
         media_path=lambda key: _media_path(document, key),
         status_icons=STATUS_ICONS,
         phase_method_labels=PHASE_METHOD_LABELS,
+        reason_labels=REASON_LABELS,
         report_format_version=REPORT_FORMAT_VERSION,
         priority_rule_version=priority_rule_version(cfg),
         sample_banner=sample_banner,

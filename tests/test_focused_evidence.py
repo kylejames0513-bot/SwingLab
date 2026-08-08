@@ -141,6 +141,32 @@ def test_head_boundary_confidence_controls_dashed_line_and_label(tmp_path, monke
         assert ("configured coaching boundary" in artifact.evidence.alt_text.lower()) is confident
 
 
+def test_head_boundary_uses_rule_benchmark_for_dashed_line(tmp_path, monkeypatch):
+    from swinglab import focused_evidence as focused
+    from swinglab import pose
+
+    calls = []
+    monkeypatch.setattr(
+        focused,
+        "draw_dashed_line",
+        lambda *args, **kwargs: calls.append(args),
+    )
+    snapshot = _snapshot(tmp_path, confident=True)
+    rule = replace(_rule(), benchmark=0.5)
+    focused.render_focused_evidence(
+        focused.FocusedEvidenceSelection(rule, snapshot, 1, 1, 1, None),
+        out_path=tmp_path / "head-benchmark.png",
+        relative_path="media/head-benchmark.png",
+        cfg=Config(),
+    )
+    assert len(calls) == 1
+    ctx = focused._prepare_render(rule, snapshot, Config(), (pose.NOSE,))
+    start = focused._point(ctx.address, pose.NOSE, ctx.offset)
+    expected_x = start[0] + snapshot.target_direction * snapshot.shoulder_width_px * 0.5
+    assert calls[0][1][0] == pytest.approx(expected_x)
+    assert calls[0][2][0] == pytest.approx(expected_x)
+
+
 @pytest.mark.parametrize("hand,expected_elbow", [("right", pose.LEFT_ELBOW), ("left", pose.RIGHT_ELBOW)])
 def test_lead_arm_uses_handed_elbow_for_line_and_arc(tmp_path, monkeypatch, hand, expected_elbow):
     from swinglab import focused_evidence as focused

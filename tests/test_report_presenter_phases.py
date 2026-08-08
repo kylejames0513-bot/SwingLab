@@ -104,7 +104,60 @@ def test_protect_expands_selected_phase_but_keeps_ordinary_steady_status_and_own
     assert selected.expanded_by_default is True
     assert selected.status is PhaseStatus.STEADY
     assert "Strength to protect" in selected.summary
+    assert "Strong." in selected.summary
     assert all(phase.status is not PhaseStatus.PRIORITY for phase in phases)
+
+
+def test_priority_and_steady_phase_copy_uses_existing_coaching_facts():
+    source = report_source([complete_metrics()])
+    phases = {phase.id: phase for phase in build_phase_summaries(source, Config())}
+    assert phases[PhaseId.GOING_BACK].summary == "Why."
+    assert "Tempo ratio stayed readable" in phases[PhaseId.TRANSITION_DOWNSWING].summary
+    assert "Stance width is" in phases[PhaseId.SETUP].summary
+
+
+def test_presenter_replaces_placeholder_evidence_observation_with_issue_why():
+    from dataclasses import replace
+
+    from swinglab.report_presenter import _PLACEHOLDER_EVIDENCE_OBSERVATION
+    from tests.test_report_presenter_states import evidence as make_evidence
+
+    source = report_source([complete_metrics()])
+    source = replace(
+        source,
+        visual_evidence=replace(
+            make_evidence(),
+            observation=_PLACEHOLDER_EVIDENCE_OBSERVATION,
+        ),
+    )
+    view = build_report_view(source, Config())
+    assert view.visual_evidence.observation == "Why."
+    assert view.visual_evidence.observation != _PLACEHOLDER_EVIDENCE_OBSERVATION
+
+
+def test_presenter_wires_drill_illustration_from_media_role():
+    from swinglab.report_view import Entitlement, MediaEntry, MediaRole
+
+    source = report_source([complete_metrics()])
+    media = (
+        *source.media,
+        MediaEntry(
+            "drill-illustration",
+            MediaRole.DRILL_ILLUSTRATION,
+            "image/svg+xml",
+            Entitlement.FREE,
+            "media/drill-illustration.svg",
+            "c" * 64,
+        ),
+    )
+    from dataclasses import replace
+
+    source = replace(source, media=media)
+    view = build_report_view(source, Config())
+    assert view.practice.illustration_media_key == "drill-illustration"
+    assert view.practice.illustration_label == (
+        "Instructional illustration — not your measured pose"
+    )
 
 
 def test_dtl_is_timing_only_and_drops_stale_face_on_values():

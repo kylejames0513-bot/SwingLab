@@ -101,7 +101,6 @@
       border-radius: 1rem;
       box-shadow: 0 .35rem 1.2rem rgba(23, 32, 26, .06);
     }
-    .next-move { border-top: .35rem solid var(--brand-accent); }
     .eyebrow,
     .step-label,
     .strength-label {
@@ -132,8 +131,10 @@
     }
     .journey-preview a {
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: .2rem;
       padding: .65rem;
       text-align: center;
       text-decoration: none;
@@ -141,6 +142,77 @@
       border: 1px solid var(--control-border);
       border-radius: .55rem;
       font-weight: 700;
+      transition: transform .2s ease, border-color .2s ease;
+    }
+    .journey-preview a:hover { border-color: var(--brand-primary); }
+    .journey-note {
+      color: var(--muted);
+      font-size: .74rem;
+      font-weight: 600;
+    }
+    .trust-note {
+      max-width: 62ch;
+      margin: .85rem 0 0;
+      padding: .7rem .9rem;
+      background: #fff7e8;
+      border-left: .28rem solid var(--brand-accent);
+    }
+    .evidence-legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: .55rem 1rem;
+      margin: .85rem 0 0;
+      padding: 0;
+      list-style: none;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+    .evidence-legend li {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+    }
+    .swatch {
+      width: .85rem;
+      height: .85rem;
+      border-radius: .2rem;
+      flex: 0 0 auto;
+    }
+    .swatch-observed { background: var(--brand-accent); }
+    .swatch-reference { background: var(--brand-primary); }
+    .swatch-boundary {
+      background: transparent;
+      border: 2px dashed var(--brand-primary);
+    }
+    .tracking-notes,
+    .phase-measurements {
+      margin: .75rem 0 0;
+      padding-left: 1.2rem;
+    }
+    .phase-measurements li { margin: .55rem 0; }
+    .phase-measurements .benchmark {
+      display: inline-block;
+      margin-left: .35rem;
+      color: var(--muted);
+      font-size: .9rem;
+    }
+    .priority-playback {
+      margin-top: 1rem;
+      padding: .75rem 1rem;
+      background: var(--soft);
+      border-radius: .6rem;
+    }
+    .priority-playback video {
+      width: min(100%, 42rem);
+      margin-top: .65rem;
+    }
+    .next-move {
+      border-top: .35rem solid var(--brand-accent);
+      animation: report-rise .45s ease-out;
+    }
+    @keyframes report-rise {
+      from { opacity: 0; transform: translateY(.4rem); }
+      to { opacity: 1; transform: translateY(0); }
     }
     .focused-evidence {
       display: grid;
@@ -304,7 +376,8 @@
       video { display: none !important; }
       .print-only { display: block !important; }
       details > summary { display: none !important; }
-      details:not([open]) > :not(summary) { display: block !important; }
+      details:not([open]) > :not(summary):not(.screen-only) { display: block !important; }
+      details:not([open]) > .screen-only { display: none !important; }
       details::details-content {
         content-visibility: visible !important;
         height: auto !important;
@@ -361,13 +434,33 @@
       <p class="coach-cue" data-field="cue">
         <strong>Coach cue:</strong> {{ view.next_move.cue }}
       </p>
+      {% if view.trust.state == "limited" and view.trust.explanation %}
+      <p class="trust-note" role="note" data-trust-state="limited">
+        {{ view.trust.explanation }}
+      </p>
+      {% endif %}
       {% if measurement and view.next_move.measurement_detail_id == measurement.id %}
       <p><a class="report-control" href="#{{ measurement.id }}">See measurement</a></p>
       {% endif %}
       <ol class="journey-preview" aria-label="Your report journey">
-        <li><a class="report-control" href="#understand">Understand</a></li>
-        <li><a class="report-control" href="#practice">Practice</a></li>
-        <li><a class="report-control" href="#refilm">Re-film</a></li>
+        <li>
+          <a class="report-control" href="#understand">
+            <span>Understand</span>
+            <span class="journey-note">See the pattern</span>
+          </a>
+        </li>
+        <li>
+          <a class="report-control" href="#practice">
+            <span>Practice</span>
+            <span class="journey-note">Drill ready</span>
+          </a>
+        </li>
+        <li>
+          <a class="report-control" href="#refilm">
+            <span>Re-film</span>
+            <span class="journey-note">Target set</span>
+          </a>
+        </li>
       </ol>
     </section>
 
@@ -395,9 +488,21 @@
             <strong>Tracking:</strong>
             {{ evidence.tracking_state | replace("_", " ") | title }}
           </p>
+          {% if evidence.tracking_reasons %}
+          <ul class="tracking-notes" aria-label="Tracking notes">
+            {% for reason in evidence.tracking_reasons %}
+            <li>{{ reason_labels[reason] }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
           <p>{{ evidence.observation }}</p>
         </figcaption>
       </figure>
+      <ul class="evidence-legend" aria-label="Evidence color key">
+        <li><span class="swatch swatch-observed" aria-hidden="true"></span> Orange marks what was observed</li>
+        <li><span class="swatch swatch-reference" aria-hidden="true"></span> Green marks the starting reference</li>
+        <li><span class="swatch swatch-boundary" aria-hidden="true"></span> Dashed line marks the coaching boundary</li>
+      </ul>
       {% else %}
       <article class="visual-unavailable" role="note">
         <h3>Visual unavailable</h3>
@@ -414,10 +519,17 @@
           <strong>Tracking:</strong>
           {{ evidence.tracking_state | replace("_", " ") | title }}
         </p>
+        {% if evidence.tracking_reasons %}
+        <ul class="tracking-notes" aria-label="Tracking notes">
+          {% for reason in evidence.tracking_reasons %}
+          <li>{{ reason_labels[reason] }}</li>
+          {% endfor %}
+        </ul>
+        {% endif %}
         {% if evidence.render_reasons %}
         <ul aria-label="Why the visual is unavailable">
           {% for reason in evidence.render_reasons %}
-          <li>{{ reason | replace("_", " ") | capitalize }}</li>
+          <li>{{ reason_labels[reason] }}</li>
           {% endfor %}
         </ul>
         {% endif %}
@@ -459,6 +571,63 @@
       </details>
       {% endif %}
 
+      {% set priority_matches = depth.swings | selectattr('swing', 'equalto', evidence.swing) | list %}
+      {% if priority_matches %}
+      {% set priority_swing = priority_matches[0] %}
+      {% if priority_swing.slow_motion_media_key or priority_swing.coach_replay_media_key or priority_swing.replay_locked %}
+      <details class="priority-playback" data-priority-playback="{{ evidence.swing }}">
+        <summary>Watch this swing</summary>
+        {% if priority_swing.replay_locked and priority_swing.locked_replay_explanation %}
+        <p>{{ priority_swing.locked_replay_explanation }}</p>
+        {% endif %}
+        {% if priority_swing.slow_motion_media_key %}
+        <div class="screen-only">
+          <video controls preload="metadata" muted playsinline
+                 src="{{ media_path(priority_swing.slow_motion_media_key) }}{% if evidence.timestamp_ms is not none %}#t={{ (evidence.timestamp_ms / 1000)|round(3) }}{% endif %}"
+                 {% if priority_swing.video_poster_media_key %}poster="{{ media_path(priority_swing.video_poster_media_key) }}"{% endif %}
+                 aria-label="{{ priority_swing.slow_motion_caption }}"></video>
+          <p>{{ priority_swing.slow_motion_caption }}</p>
+          {% if evidence.timestamp_ms is not none %}
+          <p>
+            <a class="report-control"
+               href="{{ media_path(priority_swing.slow_motion_media_key) }}#t={{ (evidence.timestamp_ms / 1000)|round(3) }}">
+              Open at this moment
+            </a>
+          </p>
+          {% endif %}
+        </div>
+        {% if priority_swing.video_poster_media_key %}
+        <figure class="print-only playback-print">
+          <img src="{{ media_path(priority_swing.video_poster_media_key) }}"
+               alt="{{ priority_swing.video_poster_alt_text }}">
+          <figcaption>{{ priority_swing.slow_motion_caption }} · {{ priority_swing.print_playback_reference }}</figcaption>
+        </figure>
+        {% else %}
+        <p class="print-only">{{ priority_swing.slow_motion_caption }} · {{ priority_swing.print_playback_reference }}</p>
+        {% endif %}
+        {% endif %}
+        {% if priority_swing.coach_replay_media_key %}
+        <div class="screen-only">
+          <video controls preload="metadata" muted playsinline
+                 src="{{ media_path(priority_swing.coach_replay_media_key) }}{% if evidence.timestamp_ms is not none %}#t={{ (evidence.timestamp_ms / 1000)|round(3) }}{% endif %}"
+                 {% if priority_swing.video_poster_media_key %}poster="{{ media_path(priority_swing.video_poster_media_key) }}"{% endif %}
+                 aria-label="{{ priority_swing.coach_replay_caption }}"></video>
+          <p>{{ priority_swing.coach_replay_caption }}</p>
+        </div>
+        {% if priority_swing.video_poster_media_key %}
+        <figure class="print-only playback-print">
+          <img src="{{ media_path(priority_swing.video_poster_media_key) }}"
+               alt="{{ priority_swing.video_poster_alt_text }}">
+          <figcaption>{{ priority_swing.coach_replay_caption }} · {{ priority_swing.print_playback_reference }}</figcaption>
+        </figure>
+        {% else %}
+        <p class="print-only">{{ priority_swing.coach_replay_caption }} · {{ priority_swing.print_playback_reference }}</p>
+        {% endif %}
+        {% endif %}
+      </details>
+      {% endif %}
+      {% endif %}
+
       <div class="phase-list" aria-label="Whole-swing breakdown">
         {% for phase in view.phases %}
         <details class="phase-card phase-card--{{ phase.status }}"
@@ -476,7 +645,21 @@
           {% if phase.unavailable_reasons %}
           <ul aria-label="Why this phase was not measured">
             {% for reason in phase.unavailable_reasons %}
-            <li>{{ reason | replace("_", " ") | capitalize }}</li>
+            <li>{{ reason_labels[reason] }}</li>
+            {% endfor %}
+          </ul>
+          {% endif %}
+          {% if phase.measurements %}
+          <ul class="phase-measurements" aria-label="{{ phase.label }} measurements">
+            {% for detail in phase.measurements %}
+            <li>
+              <strong>{{ detail.label }}:</strong> {{ detail.plain_value }}
+              {% if detail.benchmark_label %}
+              <span class="benchmark">{{ detail.benchmark_label }}</span>
+              {% endif %}
+              <p>{{ detail.explanation }}</p>
+              {% if detail.limitation %}<p>{{ detail.limitation }}</p>{% endif %}
+            </li>
             {% endfor %}
           </ul>
           {% endif %}
@@ -603,7 +786,7 @@
             {% else %}
               {% if swing.slow_motion_media_key %}
               <div class="screen-only">
-                <video controls preload="metadata"
+                <video controls preload="metadata" muted playsinline
                        src="{{ media_path(swing.slow_motion_media_key) }}"
                        {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
                        aria-label="{{ swing.slow_motion_caption }}"></video>
@@ -621,7 +804,7 @@
               {% endif %}
               {% if swing.coach_replay_media_key %}
               <div class="screen-only">
-                <video controls preload="metadata"
+                <video controls preload="metadata" muted playsinline
                        src="{{ media_path(swing.coach_replay_media_key) }}"
                        {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
                        aria-label="{{ swing.coach_replay_caption }}"></video>
@@ -725,7 +908,8 @@
       {% for swing in depth.swings %}
         {% if swing.slow_motion_media_key and swing.slow_motion_media_key in view.capture_guidance.safe_media_keys %}
         <figure class="capture-playback screen-only" data-capture-playback="{{ swing.slow_motion_media_key }}">
-          <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}"
+          <video controls preload="metadata" muted playsinline
+                 src="{{ media_path(swing.slow_motion_media_key) }}"
                  {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
                  aria-label="{{ swing.video_poster_alt_text or swing.slow_motion_caption }}"></video>
           <figcaption>{{ swing.slow_motion_caption }}</figcaption>

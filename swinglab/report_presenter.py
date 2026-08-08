@@ -624,6 +624,78 @@ def _phase_status(source: ReportPresentationInput, phase: PhaseId, measurements:
     return PhaseStatus.STEADY
 
 
+_PLACEHOLDER_EVIDENCE_OBSERVATION = "Focused evidence from the selected swing."
+
+
+def _phase_issue(
+    source: ReportPresentationInput,
+    phase: PhaseId,
+    *,
+    exclude_metric: str | None = None,
+) -> IssueCard | None:
+    for item in source.issues:
+        if exclude_metric is not None and item.metric == exclude_metric:
+            continue
+        if _selected_phase(item.metric, angle=source.context.angle) is phase:
+            return item
+    return None
+
+
+def _phase_status_copy(
+    source: ReportPresentationInput,
+    phase: PhaseId,
+    details: tuple[MeasurementDetail, ...],
+    status: PhaseStatus,
+    *,
+    protect: bool,
+    expanded: bool,
+    selected: str | None,
+) -> tuple[str, str]:
+    """Author plain-English phase copy from existing coaching facts only."""
+    if status is PhaseStatus.PRIORITY:
+        issue = _phase_issue(source, phase)
+        if issue is not None:
+            return "Priority", issue.why
+        return "Priority", "Work on this movement."
+    if protect and expanded:
+        strength = next(
+            (item for item in source.strengths if item.metric == selected),
+            None,
+        )
+        if strength is not None:
+            return "Steady", f"Strength to protect. {strength.text}"
+        return "Steady", "Strength to protect. Keep this movement familiar."
+    if status is PhaseStatus.REVIEW_LATER:
+        secondary = _phase_issue(source, phase, exclude_metric=selected)
+        if secondary is not None:
+            return "Review later", secondary.why
+        return "Review later", "A secondary measured issue is available to revisit."
+    if status is PhaseStatus.BASELINE:
+        measured = next(
+            (detail for detail in details if detail.numeric_value is not None),
+            None,
+        )
+        if measured is not None:
+            return (
+                "Baseline",
+                f"{measured.label} is {measured.plain_value} — context for "
+                "comparable re-films.",
+            )
+        return "Baseline", "Context for comparable re-films."
+    if status is PhaseStatus.NOT_MEASURED:
+        return "Not measured", "This phase was not measured from the readable swings."
+    measured = next(
+        (detail for detail in details if detail.numeric_value is not None),
+        None,
+    )
+    if measured is not None:
+        return (
+            "Steady",
+            f"{measured.label} stayed readable at {measured.plain_value}.",
+        )
+    return "Steady", "Measured values are steady."
+
+
 def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple[PhaseSummary, ...]:
     """Map supported facts into the fixed camera-angle phase layout."""
     if source.brief is None:
@@ -645,35 +717,51 @@ def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple
         if uncertain_direction and any(metric_id in _LATERAL_METRICS for metric_id in metric_ids):
             unavailable.append(ReasonCode.TARGET_DIRECTION_UNCERTAIN)
         expanded = selected is not None and _selected_phase(selected, angle=source.context.angle) is phase
-        if status is PhaseStatus.PRIORITY:
-            status_label, summary = "Priority", "Work on this movement."
-        elif protect and expanded:
-            status_label, summary = "Steady", "Strength to protect. Keep this movement familiar."
-        elif status is PhaseStatus.REVIEW_LATER:
-            status_label, summary = "Review later", "A secondary measured issue is available to revisit."
-        elif status is PhaseStatus.BASELINE:
-            status_label, summary = "Baseline", "Context for comparable re-films."
-        elif status is PhaseStatus.NOT_MEASURED:
-            status_label, summary = "Not measured", "This phase was not measured from the readable swings."
-        else:
-            status_label, summary = "Steady", "Measured values are steady."
+        status_label, summary = _phase_status_copy(
+            source, phase, details, status,
+            protect=protect, expanded=expanded, selected=selected,
+        )
         summaries.append(PhaseSummary(phase, _PHASE_LABELS[phase], status, status_label, summary, len(source.swings), details, tuple(unavailable), f"phase-{phase.value}", expanded))
     return tuple(summaries)
 
 
 def _practice(
-    drill: Drill, alternatives: Sequence[Drill], cfg: Config
+    drill: Drill,
+    alternatives: Sequence[Drill],
+    cfg: Config,
+    *,
+    illustration_media_key: str | None = None,
 ) -> PracticePrescription:
     presentation = drill_presentation(drill, cfg)
+    illustration_label = (
+        "Instructional illustration — not your measured pose"
+        if illustration_media_key is not None
+        else None
+    )
     return PracticePrescription(
         "practice", drill.id, drill.name, drill.aim,
         presentation.summary_steps, tuple(drill.protocol), presentation.setup,
-        presentation.feel_cue, drill.dosage, presentation.equipment, None, None,
+        presentation.feel_cue, drill.dosage, presentation.equipment,
+        illustration_media_key, illustration_label,
         tuple(
             DrillAlternative(item.id, item.name, item.aim, "alternative-drills")
             for item in alternatives
         ),
     )
+
+
+def _evidence_observation(
+    visual: EvidenceView,
+    issue: IssueCard | None,
+    strength: StrengthCard | None,
+) -> str:
+    if visual.observation != _PLACEHOLDER_EVIDENCE_OBSERVATION:
+        return visual.observation
+    if issue is not None:
+        return issue.why
+    if strength is not None:
+        return strength.text
+    return visual.observation
 
 
 def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportViewV1:
@@ -709,9 +797,13 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         ),
         None,
     )
+    observation = _evidence_observation(
+        source.visual_evidence, selected_issue, selected_strength,
+    )
     visual_evidence = replace(
         source.visual_evidence,
         supporting_measurement=selected_measurement,
+        observation=observation,
     )
     measurement_detail_id = (
         selected_measurement.id if selected_measurement is not None else None
@@ -731,7 +823,20 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
         for entry in source.media
         if not (source.replay_locked and entry.role is MediaRole.COACH_REPLAY)
     )
-    practice = _practice(source.primary_drill, source.alternative_drills, cfg)
+    illustration_key = next(
+        (
+            entry.key
+            for entry in media
+            if entry.role is MediaRole.DRILL_ILLUSTRATION
+        ),
+        None,
+    )
+    practice = _practice(
+        source.primary_drill,
+        source.alternative_drills,
+        cfg,
+        illustration_media_key=illustration_key,
+    )
     replay_count = sum(entry.role is MediaRole.COACH_REPLAY for entry in media)
     section_counts = (
         (OptionalSectionId.EVERY_SWING, "Every swing", len(source.swings), False),

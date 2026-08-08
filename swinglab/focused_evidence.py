@@ -146,13 +146,23 @@ def _body_result(snapshot: EvidenceSnapshot, ctx: _RenderContext, observed: str,
     return _RenderResult(ctx.image, observed, reference, boundary, alt, ctx.event, ctx.provenance)
 
 
+def _boundary_offset_px(rule: PriorityEvidenceRule, snapshot: EvidenceSnapshot) -> float | None:
+    """Convert the configured shoulder-width benchmark into a pixel offset."""
+    if rule.benchmark is None or not math.isfinite(rule.benchmark):
+        return None
+    if snapshot.shoulder_width_px <= 0:
+        return None
+    return float(snapshot.target_direction) * float(snapshot.shoulder_width_px) * float(rule.benchmark)
+
+
 def _render_head_boundary(rule, snapshot, selection, cfg):
     ctx = _prepare_render(rule, snapshot, cfg, (pose.NOSE,))
     observed, start = _point(ctx.landmarks, pose.NOSE, ctx.offset), _point(ctx.address, pose.NOSE, ctx.offset)
     draw_marker(ctx.draw, start, ctx.green); draw_marker(ctx.draw, observed, ctx.orange); draw_displacement_arrow(ctx.draw, start, observed, ctx.orange)
     boundary = None
-    if snapshot.target_confident:
-        x = start[0] + snapshot.target_direction * snapshot.shoulder_width_px * .35
+    offset = _boundary_offset_px(rule, snapshot) if snapshot.target_confident else None
+    if offset is not None:
+        x = start[0] + offset
         draw_dashed_line(ctx.draw, (x, 10), (x, ctx.image.height - 10), ctx.green)
         ctx.draw.text((x + 8, 20), "Configured coaching boundary", fill=ctx.green, font=ctx.font)
         boundary = "Configured coaching boundary"
@@ -167,8 +177,9 @@ def _render_hip_boundary(rule, snapshot, selection, cfg):
     start = (float(start_raw[0] - ctx.offset[0]), float(start_raw[1] - ctx.offset[1]))
     draw_marker(ctx.draw, start, ctx.green); draw_marker(ctx.draw, observed, ctx.orange); draw_displacement_arrow(ctx.draw, start, observed, ctx.orange)
     boundary = None
-    if snapshot.target_confident:
-        x = start[0] + snapshot.target_direction * snapshot.shoulder_width_px * .35
+    offset = _boundary_offset_px(rule, snapshot) if snapshot.target_confident else None
+    if offset is not None:
+        x = start[0] + offset
         draw_dashed_line(ctx.draw, (x, 10), (x, ctx.image.height - 10), ctx.green)
         ctx.draw.text((x + 8, 20), "Configured coaching boundary", fill=ctx.green, font=ctx.font)
         boundary = "Configured coaching boundary"

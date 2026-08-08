@@ -118,6 +118,7 @@ def test_builds_clear_limited_and_capture_only_complete_bundles(
     }
     if isinstance(staged.view, CoachingReportView):
         expected.add("media/priority-evidence.png")
+        expected.add("media/drill-illustration.svg")
     assert _file_names(attempt.staging_dir) == expected
     assert OWNER not in _file_names(attempt.staging_dir)
     assert staged.view == staged.document.view
@@ -228,7 +229,9 @@ def test_optional_media_is_declared_only_when_actual_inputs_exist(tmp_path):
         MediaRole.SLOW_MOTION,
         MediaRole.COACH_REPLAY,
         MediaRole.PRIORITY_EVIDENCE,
+        MediaRole.DRILL_ILLUSTRATION,
     ]
+    assert staged.view.practice.illustration_media_key == "drill-illustration"
     assert staged.view.capabilities.slow_motion is True
     assert staged.view.capabilities.coach_replay is True
     payload = json.loads((attempt.staging_dir / "metrics.json").read_text(encoding="utf-8"))
@@ -260,6 +263,7 @@ def test_dtl_preserves_timing_focus_with_optional_raw_slowmo_only(tmp_path):
     assert tuple(media.role for media in staged.view.media) == (
         MediaRole.SLOW_MOTION,
         MediaRole.PRIORITY_EVIDENCE,
+        MediaRole.DRILL_ILLUSTRATION,
     )
     assert staged.view.capabilities.slow_motion is True
     assert all(media.role is not MediaRole.KEY_POSITIONS for media in staged.view.media)

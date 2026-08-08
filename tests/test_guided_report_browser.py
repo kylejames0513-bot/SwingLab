@@ -286,9 +286,16 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
             swing.video_poster_media_key
         ].relative_path
         screen_videos = page.locator("video")
-        assert screen_videos.count() == 2
+        # Priority playback reuses the representative swing videos on the
+        # Understand path, and the optional Coach replay section keeps its own
+        # copies for every-swing depth.
+        assert screen_videos.count() == 4
         assert all(
             screen_videos.nth(index).get_attribute("poster") == poster_path
+            for index in range(screen_videos.count())
+        )
+        assert all(
+            screen_videos.nth(index).get_attribute("muted") is not None
             for index in range(screen_videos.count())
         )
         assert all(
@@ -322,7 +329,7 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
         assert not page.get_by_role("link", name=sample["cta_label"]).is_visible()
 
         print_figures = page.locator(".playback-print:visible")
-        assert print_figures.count() == 2
+        assert print_figures.count() == 4
         for index in range(print_figures.count()):
             figure = print_figures.nth(index)
             assert figure.locator("img").get_attribute("alt") == swing.video_poster_alt_text
@@ -332,6 +339,8 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
             assert swing.print_playback_reference in caption
         assert swing.slow_motion_caption in page.locator("body").text_content()
         assert swing.coach_replay_caption in page.locator("body").text_content()
+        assert page.locator("[data-priority-playback]").count() == 1
+        assert page.get_by_text("Open at this moment").count() >= 1
 
         pdf = page.pdf(print_background=True)
         assert pdf.startswith(b"%PDF")

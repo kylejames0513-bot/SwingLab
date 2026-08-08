@@ -343,8 +343,14 @@ def test_dtl_evidence_renders_persisted_event_provenance_in_order(tmp_path: Path
     )
     assert disclosure is not None
     assert measurement.plain_value in disclosure.group(0)
-    assert understand.count(measurement.plain_value) == 1
+    assert understand.count(measurement.plain_value) >= 1
     assert measurement.plain_value not in evidence.observed_label
+    assert f'id="{measurement.id}"' in understand
+    assert measurement.plain_value in re.search(
+        rf'<details class="measurement-detail" id="{re.escape(measurement.id)}">.*?</details>',
+        understand,
+        flags=re.DOTALL,
+    ).group(0)
 
 
 def test_visual_unavailable_keeps_explanation_without_fallback_image(tmp_path: Path):
@@ -358,11 +364,57 @@ def test_visual_unavailable_keeps_explanation_without_fallback_image(tmp_path: P
     assert evidence.observation in understand
     assert "Top from highest hand position" in understand
     assert 'data-evidence-tracking="clear"' in understand
-    assert "Focused media render failed" in understand
+    assert "Focused replay is unavailable" in understand
     assert document.view.trust.explanation in understand
     assert 'class="focused-evidence"' not in understand
     assert 'src="media/focus-1.jpg"' not in html
     assert "See measurement" in understand
+
+
+def test_limited_trust_appears_on_next_move(tmp_path: Path):
+    document = report_document_fixture("coaching-improve-limited")
+    html = render_guided(tmp_path, document)
+    next_move = report_block(html, "next-move", "understand")
+    assert 'data-trust-state="limited"' in next_move
+    assert document.view.trust.explanation in next_move
+    assert "Drill ready" in next_move
+    assert "Target set" in next_move
+
+
+def test_understand_shows_evidence_legend_and_phase_measurements(tmp_path: Path):
+    document = report_document_fixture("coaching-improve-clear")
+    html = render_guided(tmp_path, document)
+    understand = report_block(html, "understand", "practice")
+    assert "Evidence color key" in understand
+    assert "Orange marks what was observed" in understand
+    assert "Green marks the starting reference" in understand
+    assert "Dashed line marks the coaching boundary" in understand
+    going_back = phase_card(html, "going_back")
+    measurement = document.view.phases[1].measurements[0]
+    assert measurement.label in going_back
+    assert measurement.plain_value in going_back
+    assert measurement.explanation in going_back
+
+
+def test_priority_playback_links_timestamp_when_depth_has_matching_swing(
+    tmp_path: Path,
+):
+    document = report_document_fixture("pro-unlocked")
+    evidence = document.view.visual_evidence
+    assert evidence is not None and evidence.timestamp_ms is not None
+    assert document.depth.swings
+    assert document.depth.swings[0].slow_motion_media_key == "slow-motion-1"
+
+    html = render_guided(tmp_path, document)
+    understand = report_block(html, "understand", "practice")
+    assert 'data-priority-playback="1"' in understand
+    assert "Watch this swing" in understand
+    assert " muted" in understand
+    assert " playsinline" in understand
+    assert "Open at this moment" in understand
+    stamp = f"#t={(evidence.timestamp_ms / 1000):g}"
+    assert stamp in understand
+    assert "slow-motion-1" in understand
 
 
 def test_phase_cards_follow_server_order_status_and_expansion(tmp_path: Path):
@@ -412,7 +464,7 @@ def test_phase_cards_follow_server_order_status_and_expansion(tmp_path: Path):
     impact = phase_card(limited_html, "impact")
     assert "Not measured" in impact
     assert "Impact timing could not be measured from this clip." in impact
-    assert "Event estimate limited" in impact
+    assert "Swing timing is estimated" in impact
 
 
 def test_measurement_limitations_practice_and_refilm_keep_authored_content(
