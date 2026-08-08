@@ -428,7 +428,7 @@
           "type": "qa",
           "settings": {
             "question": "How long does gear take to arrive?",
-            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and U.S. delivery typically takes 6–12 business days, with tracking emailed at dispatch."
+            "answer": "Training aids ship from partner warehouses via DSers. Orders are processed in 1–2 business days. United States: Standard $8 or Express $15, typically 6–12 business days. Asia: Standard $9 or Express $18, typically 5–14 business days. Tracking is emailed at dispatch."
           }
         },
         "q_returns": {
