@@ -148,5 +148,5 @@ def test_manifest_uses_the_same_premium_page_chrome(tmp_path):
     client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
 
     manifest = client.get("/app.webmanifest").json()
-    assert manifest["background_color"] == "#eef2ef"
+    assert manifest["background_color"] == "#e4ece8"
     assert manifest["theme_color"] == "#06110c"

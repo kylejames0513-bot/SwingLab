@@ -15,7 +15,7 @@
         "content": "Brand palette",
         "info": "These colors control the page background, primary green, and accessible accent text across the storefront."
       },
-      { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#eef2ef" },
+      { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#e4ece8" },
       { "type": "color", "id": "color_green", "label": "Deep green", "default": "#0f3d28" },
       { "type": "color", "id": "color_accent", "label": "Accessible accent text", "default": "#9a4b0a" }
     ]

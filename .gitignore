@@ -28,3 +28,4 @@ sessions/
 store-assets/*.ttf
 # Isolated implementation worktrees.
 /.worktrees/
+node_modules/

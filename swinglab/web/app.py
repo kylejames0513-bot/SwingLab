@@ -1248,7 +1248,7 @@ def create_app(
                 "start_url": "/today",
                 "scope": "/",
                 "display": "standalone",
-                "background_color": "#eef2ef",
+                "background_color": "#e4ece8",
                 "theme_color": "#06110c",
                 "icons": [
                     {
