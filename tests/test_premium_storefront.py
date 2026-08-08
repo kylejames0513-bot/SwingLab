@@ -107,10 +107,12 @@ def test_membership_card_media_is_photoreal_without_overlay_stickers():
     assert 'class="sl-plans__name"' in plans_band
     # Full landscape PNGs must use asset_url; asset_img_url size suffixes
     # square-crop theme assets and cut the membership photos in half.
-    assert "asset_img_url" not in plans_band
+    assert "| asset_img_url" not in plans_band
     assert plans_band.count("| asset_url") >= 2
     assert "object-position: center center" in plans_band
     assert "aspect-ratio: 3 / 2" in plans_band
+    assert "default_art | asset_url" in plans_band
+    assert "'caddieinsight-free-card-v2.png' | asset_url" in plans_band
     for asset_name in (
         "caddieinsight-pro-card-v2.png",
         "caddieinsight-founders-card-v2.png",
