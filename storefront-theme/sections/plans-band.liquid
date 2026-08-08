@@ -133,10 +133,14 @@
                   loading="lazy"
                   decoding="async">
               {%- else -%}
+                {%- comment -%}
+                  Serve packaged PNGs whole via asset_url. asset_img_url size
+                  suffixes (including named sizes like large/master) go through
+                  the square-bounded CDN resize path and crop landscape
+                  membership art — the same reason hero webps use asset_url.
+                {%- endcomment -%}
                 <img
-                  src="{{ default_art | asset_img_url: '720x' }}"
-                  srcset="{{ default_art | asset_img_url: '480x' }} 480w, {{ default_art | asset_img_url: '720x' }} 720w, {{ default_art | asset_img_url: '1080x' }} 1080w"
-                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
+                  src="{{ default_art | asset_url }}"
                   width="1536"
                   height="1024"
                   alt=""
@@ -189,9 +193,7 @@
                 decoding="async">
             {%- else -%}
               <img
-                src="{{ 'caddieinsight-free-card-v2.png' | asset_img_url: '320x' }}"
-                srcset="{{ 'caddieinsight-free-card-v2.png' | asset_img_url: '320x' }} 320w, {{ 'caddieinsight-free-card-v2.png' | asset_img_url: '480x' }} 480w"
-                sizes="148px"
+                src="{{ 'caddieinsight-free-card-v2.png' | asset_url }}"
                 width="1536"
                 height="1024"
                 alt=""
@@ -325,6 +327,7 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
+  object-position: center center;
 }
 .sl-plans__card-body {
   padding: var(--sl-card-inset);
