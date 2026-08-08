@@ -1,0 +1,98 @@
+{
+  "source": "https://caddieinsight.com/api/2026-07/graphql.json",
+  "collection": "swinglab-gear",
+  "note": "Regenerate with scripts/refresh_gear_catalog.py \u2014 do not hand-edit. Only fields the recommendation path reads are stored.",
+  "products": [
+    {
+      "title": "Arm Link",
+      "tags": [
+        "arm-connection",
+        "caddieinsight",
+        "golf",
+        "starter",
+        "swinglab",
+        "swinglab:arm-extension",
+        "swinglab:consistency",
+        "swinglab:general",
+        "training-aid"
+      ],
+      "available": true
+    },
+    {
+      "title": "Connection Ball",
+      "tags": [
+        "arm-connection",
+        "caddieinsight",
+        "golf",
+        "starter",
+        "swinglab",
+        "swinglab:arm-extension",
+        "swinglab:consistency",
+        "swinglab:general",
+        "training-aid"
+      ],
+      "available": true
+    },
+    {
+      "title": "Rotation Trainer",
+      "tags": [
+        "caddieinsight",
+        "core",
+        "golf",
+        "rotation-drill",
+        "starter",
+        "swing-path",
+        "swinglab",
+        "swinglab:consistency",
+        "swinglab:general",
+        "training-aid"
+      ],
+      "available": true
+    },
+    {
+      "title": "Swing Path Mat",
+      "tags": [
+        "caddieinsight",
+        "golf",
+        "practice-mat",
+        "starter",
+        "swing-path",
+        "swinglab",
+        "swinglab:general",
+        "training-aid"
+      ],
+      "available": true
+    },
+    {
+      "title": "Tempo Rope",
+      "tags": [
+        "caddieinsight",
+        "golf",
+        "premium",
+        "swing-path",
+        "swing-tempo",
+        "swinglab",
+        "swinglab:consistency",
+        "swinglab:general",
+        "swinglab:tempo",
+        "training-aid"
+      ],
+      "available": true
+    },
+    {
+      "title": "Tempo Trainer",
+      "tags": [
+        "caddieinsight",
+        "core",
+        "golf",
+        "swing-tempo",
+        "swinglab",
+        "swinglab:consistency",
+        "swinglab:general",
+        "swinglab:tempo",
+        "training-aid"
+      ],
+      "available": true
+    }
+  ]
+}

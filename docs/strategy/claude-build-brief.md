@@ -71,29 +71,38 @@ Analysis → prescription → commerce → proof. Competitors do one or two of
 those. Nobody does the round trip, and the round trip is why the store and the
 app must not drift apart.
 
-**It is already built, and it is broken at the tag layer.**
+**It is already built, and it is broken in two places, not one.** The table
+below was written against the tag layer alone and is corrected in
+`docs/runbooks/gear-coverage.md`: the tag gaps are real, but they are not what
+is stopping the loop. `shop.first_sale_catalog_only` is on in `config.yaml`
+and its allowlist names three products that were all archived in the
+2026-08-03 restock, so the gate filters the entire live catalogue to nothing.
+**The app recommends no gear at all today, for any flag, and `/shop` is
+empty** — the tag coverage below is moot until that is settled.
+
 `swinglab/drills.py` gives every drill a `gear_tag`, and `swinglab/web/shop.py`
-matches that tag to Shopify products. But the live catalogue only carries tags
-for 3 of 8 drill categories:
+matches that tag to Shopify products. The live catalogue carries tags for 3 of
+8 drill categories (4 since Connection Ball and Arm Link were retagged):
 
 | `gear_tag` | Drills | Product in store? |
 | --- | --- | --- |
 | `swinglab:tempo` | 3 | yes — Tempo Trainer, Tempo Rope |
 | `swinglab:consistency` | 2 | yes |
 | `swinglab:general` | 2 | yes |
-| `swinglab:arm-extension` | 3 | **no** |
+| `swinglab:arm-extension` | 3 | yes — Connection Ball, Arm Link (retagged) |
 | `swinglab:sway` | 2 | **no** |
 | `swinglab:hip-slide` | 2 | **no** |
 | `swinglab:head-dip` | 2 | **no** |
 | `swinglab:balance` | 2 | **no** |
 
-**11 of 18 drills prescribe something the store cannot sell against.** The
+**8 of 18 drills prescribe something the store carries no product for.** The
 flywheel breaks exactly where the coaching is most specific — the moment the
 app says something genuinely useful, commerce goes silent.
 
-Some of this is a tagging error, not a catalogue gap: **Connection Ball** and
-**Arm Link** are arm-extension products, tagged `swinglab:consistency`.
-Retagging them closes 3 drills' worth of the hole in about a minute.
+Some of this was a tagging error, not a catalogue gap: **Connection Ball** and
+**Arm Link** are arm-extension products, tagged `swinglab:consistency` only.
+Both now also carry `swinglab:arm-extension` (added, not swapped — they serve
+both drill families), closing 3 drills' worth of the hole.
 
 The rest is a sourcing question — there is no anti-sway or balance product in
 the catalogue yet.
@@ -183,6 +192,7 @@ Refund, Contact and Cancellations.
 
 **Key documents.** `CLAUDE.md` for working agreements.
 `docs/quality/local-visual-verification.md` before trusting any screenshot.
+`docs/runbooks/gear-coverage.md` for the drill-to-product coverage ledger.
 `docs/runbooks/store-policies.md` for policy drafts.
 `docs/runbooks/rebrand-cutover.md` for theme deploy sequence.
 `store-assets/prompts/` for campaign imagery specs.
@@ -201,7 +211,9 @@ but say why.
   `swinglab:head-dip`, `swinglab:balance` — or, if that is not viable,
   collapse those drill categories onto gear that does exist rather than
   leaving the recommendation silent.
-- Add a test that **fails when a drill's `gear_tag` has no matching product**.
+- ~~Add a test that **fails when a drill's `gear_tag` has no matching
+  product**.~~ Done — `tests/test_gear_coverage.py`, checked at two layers
+  (stocked, and recommendable through the shipped first-sale gate).
   This gap was invisible precisely because nothing checked for it.
 
 ### 2. Wire kinematic sequence into the guided report
