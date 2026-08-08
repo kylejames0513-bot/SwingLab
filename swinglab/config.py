@@ -183,6 +183,21 @@ DEFAULTS: dict[str, Any] = {
         "mobile_auth_failed_exchanges_per_15_minutes_per_email": 10,
         "mobile_auth_live_challenges_per_ip": 20,
         "mobile_auth_live_challenges_per_email": 3,
+        # Native product surfaces are independently default-off. Read-only
+        # resources may be rolled out before any mutation capability.
+        "mobile_resources_enabled": False,
+        "mobile_profile_writes_enabled": False,
+        "mobile_practice_writes_enabled": False,
+        "mobile_device_management_enabled": False,
+        "mobile_resumable_upload_enabled": False,
+        "mobile_privacy_enabled": False,
+        "mobile_events_enabled": False,
+        "mobile_push_enabled": False,
+        "mobile_native_billing_enabled": False,
+        # Resumable-upload policy is server owned even while its route is off.
+        "mobile_upload_chunk_mb": 5,
+        "mobile_active_uploads_per_user": 2,
+        "mobile_upload_ttl_seconds": 86400,
         "review_auth_starts_per_15_minutes_per_ip": 20,
         "review_auth_starts_per_15_minutes_per_account": 5,
         "review_auth_failed_exchanges_per_15_minutes_per_ip": 20,

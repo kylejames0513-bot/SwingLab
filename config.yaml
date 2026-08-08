@@ -208,6 +208,22 @@ web:
   mobile_auth_failed_exchanges_per_15_minutes_per_email: 10
   mobile_auth_live_challenges_per_ip: 20
   mobile_auth_live_challenges_per_email: 3
+  # Native surfaces roll out independently. Reads can be enabled without any
+  # profile, practice, device, upload, privacy, event, push, or billing write.
+  mobile_resources_enabled: false
+  mobile_profile_writes_enabled: false
+  mobile_practice_writes_enabled: false
+  mobile_device_management_enabled: false
+  mobile_resumable_upload_enabled: false
+  mobile_privacy_enabled: false
+  mobile_events_enabled: false
+  mobile_push_enabled: false
+  mobile_native_billing_enabled: false
+  # Server-owned resumable-upload policy, published through capabilities even
+  # while the mutation route remains disabled.
+  mobile_upload_chunk_mb: 5
+  mobile_active_uploads_per_user: 2
+  mobile_upload_ttl_seconds: 86400
   # Independent review-lane abuse bounds. The shipped admission implementation
   # always denies; reviewer accounts/credentials never belong in this file.
   review_auth_starts_per_15_minutes_per_ip: 20

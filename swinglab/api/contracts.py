@@ -108,10 +108,13 @@ class LegacyTodayResponse(ContractModel):
 
 
 class AnalysisFailureCode(str, Enum):
-    capture = "capture"
-    processing = "processing"
-    retry_exhausted = "retry_exhausted"
-    unknown = "unknown"
+    video_too_long = "video_too_long"
+    capture_no_strike = "capture_no_strike"
+    capture_pose_unusable = "capture_pose_unusable"
+    media_decode_failed = "media_decode_failed"
+    analysis_runtime_unavailable = "analysis_runtime_unavailable"
+    analysis_storage_unavailable = "analysis_storage_unavailable"
+    analysis_internal_error = "analysis_internal_error"
 
 
 class AnalysisFailure(ContractModel):
@@ -131,41 +134,75 @@ class MobileSessionResponse(ContractModel):
     """Allowlisted native session detail; never carries raw job diagnostics."""
 
     resource_version: Literal[1] = 1
-    id: str
-    status: str
+    id: str = Field(min_length=1, max_length=64)
+    status: Literal["queued", "processing", "done", "failed"]
     created_at: str
-    source_name: str | None
-    hand: Literal["left", "right"]
-    angle: Literal["face-on", "dtl"]
-    club: str | None
-    level: str | None
+    source_name: None = None
+    hand: Literal["left", "right"] | None
+    angle: Literal["face-on", "dtl"] | None
+    club: Literal["driver", "fairway-wood", "hybrid", "iron", "wedge"] | None
+    level: Literal["new", "improving", "experienced"] | None
     fast: bool
-    swings_done: int
-    swings_total: int
-    queue_position: int | None
-    report_url: str | None = None
-    metrics_url: str | None = None
+    swings_done: int = Field(ge=0)
+    swings_total: int = Field(ge=0)
+    queue_position: int | None = Field(default=None, ge=1)
+    report_url: None = None
+    metrics_url: None = None
+    outcome: Literal["coaching_ready", "refilm_required"] | None = None
+    failure_code: AnalysisFailureCode | None = None
+    retryable: bool = False
+    retry_expires_at: float | None = None
+    remaining_retry_count: int = Field(default=0, ge=0)
     comparison: ComparisonTarget | None = None
-    failure: AnalysisFailure | None = None
+
+
+class MobileSessionsResponse(ContractModel):
+    resource_version: Literal[1] = 1
+    sessions: list[MobileSessionResponse]
+
+
+class PracticePlanOptionResponse(ContractModel):
+    minutes: Literal[10, 20, 45]
+    title: str = Field(min_length=1, max_length=160)
+    detail: str = Field(min_length=1, max_length=500)
+    selected: bool
+    drill_name: str = Field(min_length=1, max_length=160)
+    aim: str = Field(min_length=1, max_length=500)
+    dosage: str = Field(min_length=1, max_length=320)
+    pass_mark: str = Field(min_length=1, max_length=500)
 
 
 class MobileTodayResponse(ContractModel):
     resource_version: Literal[1] = 1
     profile: Profile | None
     latest_session: MobileSessionResponse | None
-    caddie_brief: dict[str, Any] | None
-    practice_plan: list[dict[str, Any]]
+    caddie_brief: BriefResponse | None
+    practice_plan: list[PracticePlanOptionResponse]
     practice_checked_in: bool
+    cohort_day_since_first_analysis: int | None = Field(default=None, ge=0, le=365000)
 
 
-class BriefResponse(ContractModel):
+class LegacyBriefResponse(ContractModel):
     resource_version: Literal[1] = 1
     caddie_brief: dict[str, Any]
 
 
 class ComparableContextGroupResponse(ContractModel):
-    resource_version: Literal[1] = 1
+    club: Club
+    hand: Hand
+    angle: CameraAngle
     sessions: list[MobileSessionResponse]
+    outcome: Literal[
+        "improved_and_holding", "early_signal", "inconclusive", "no_transfer_yet"
+    ]
+    decision: Literal["continue", "adjust", "stop", "coach_handoff"]
+    outcome_label: Literal[
+        "Improved and holding", "Early signal", "Inconclusive", "No transfer yet"
+    ]
+    decision_label: Literal["Continue", "Adjust", "Stop", "Coach handoff"]
+    summary: str = Field(min_length=1, max_length=500)
+    next_step: str = Field(min_length=1, max_length=500)
+    proof_cycle_target: ProofCycleTargetResponse | None
 
 
 MetricName = Literal[
@@ -220,26 +257,61 @@ class ProofCycleTarget(ContractModel):
 
 
 class ProofCycleTargetResponse(ContractModel):
+    baseline_session_id: str = Field(min_length=1, max_length=64)
+    target_fingerprint: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    drill_id: str = Field(min_length=1, max_length=128)
+    club: Club
+    hand: Hand
+    angle: CameraAngle
+
+
+class BriefPriorityResponse(ContractModel):
+    key: str | None = Field(default=None, max_length=64)
+    name: str = Field(min_length=1, max_length=160)
+    value: str | None = Field(default=None, max_length=160)
+    benchmark: str | None = Field(default=None, max_length=320)
+
+
+class BriefEvidenceResponse(ContractModel):
+    strength: str | None = Field(default=None, max_length=320)
+    trend: str | None = Field(default=None, max_length=320)
+    recurring_sessions: int = Field(ge=0, le=1000)
+    remaining_issues: int = Field(ge=0, le=1000)
+
+
+class PrescribedDrillResponse(ContractModel):
+    id: str = Field(min_length=1, max_length=128)
+    name: str = Field(min_length=1, max_length=160)
+    aim: str = Field(min_length=1, max_length=500)
+    dosage: str = Field(min_length=1, max_length=320)
+    pass_mark: str = Field(min_length=1, max_length=500)
+
+
+class MeasurementBoundaryResponse(ContractModel):
+    club: Club
+    hand: Hand
+    angle: CameraAngle
+
+
+class BriefResponse(ContractModel):
     resource_version: Literal[1] = 1
-    target: ProofCycleTarget | None
-
-
-class ProgressMetric(ContractModel):
-    metric: MetricName
-    current: float | None
-    baseline: float | None
-    trend: Literal["improving", "holding", "needs_attention", "unknown"]
-
-
-class ProgressPayload(ContractModel):
-    context: ComparisonTarget
-    metrics: list[ProgressMetric]
-    completed_sessions: int
+    status: Literal["coaching_ready", "brief_not_ready", "refilm_required"]
+    priority: BriefPriorityResponse | None
+    evidence: BriefEvidenceResponse | None
+    confidence: Literal["high", "limited", "not_available"]
+    hypothesis: str | None = Field(default=None, max_length=500)
+    cue: str | None = Field(default=None, max_length=500)
+    prescribed_drill: PrescribedDrillResponse | None
+    measurement_boundary: MeasurementBoundaryResponse
+    proof_cycle_target: ProofCycleTargetResponse | None
+    message: str | None = Field(default=None, max_length=320)
 
 
 class ProgressResponse(ContractModel):
     resource_version: Literal[1] = 1
-    progress: ProgressPayload
+    groups: list[ComparableContextGroupResponse]
 
 
 class PracticeCheckin(ContractModel):
@@ -253,11 +325,59 @@ class PracticeCheckinResponse(ContractModel):
     checkins: list[PracticeCheckin] | None = None
 
 
-class Capabilities(ContractModel):
+Club = Literal["driver", "fairway-wood", "hybrid", "iron", "wedge"]
+Hand = Literal["left", "right"]
+CameraAngle = Literal["face-on", "dtl"]
+AnalysisState = Literal[
+    "queued",
+    "processing",
+    "done",
+    "failed",
+]
+
+
+class UploadCapabilities(ContractModel):
+    max_bytes: int = Field(ge=1)
+    max_video_seconds: int = Field(ge=1)
+    chunk_bytes: int = Field(ge=1)
+    active_limit: int = Field(ge=1)
+    allowed_suffixes: list[Literal[".avi", ".m4v", ".mkv", ".mov", ".mp4"]]
+
+
+class CanonicalCapabilities(ContractModel):
+    hands: list[Hand]
+    angles: list[CameraAngle]
+    clubs: list[Club]
+    analysis_states: list[AnalysisState]
+
+
+class QuotaCapabilities(ContractModel):
+    plan: Literal["free", "pro"]
+    monthly_limit: int | None = Field(default=None, ge=0)
+    used: int = Field(ge=0)
+    remaining: int | None = Field(default=None, ge=0)
+
+
+class MobileFeatureCapabilities(ContractModel):
     native_auth: bool
-    upload: bool
+    resources: bool
+    profile_writes: bool
+    practice_writes: bool
+    device_management: bool
+    resumable_upload: bool
+    privacy: bool
+    events: bool
     push: bool
+    native_billing: bool
     proof_cycle: bool
+
+
+class Capabilities(ContractModel):
+    upload: UploadCapabilities
+    canonical: CanonicalCapabilities
+    quota: QuotaCapabilities
+    features: MobileFeatureCapabilities
+    physical_store_url: str | None = Field(default=None, max_length=2048)
 
 
 class CapabilitiesResponse(ContractModel):

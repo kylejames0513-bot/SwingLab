@@ -77,13 +77,11 @@ from starlette.requests import ClientDisconnect
 
 from .. import sample
 from ..api.contracts import (
-    BriefResponse,
+    LegacyBriefResponse,
     IdentityResponse,
     LegacySessionResponse,
     LegacySessionsResponse,
     LegacyTodayResponse,
-    MobileSessionResponse,
-    MobileTodayResponse,
     MobileTokenIssueResponse,
     MobileTokenListResponse,
     MobileTokenRevokeResponse,
@@ -94,11 +92,17 @@ from ..api.contracts import (
 from ..api.auth import mobile_bearer_unauthorized, resolve_mobile_auth
 from ..api.errors import install_mobile_error_handlers
 from ..api.mobile_routes import (
+    MOBILE_CAPABILITIES_ROUTE_NAME,
     MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
     MOBILE_EMAIL_START_ROUTE_NAME,
     MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
     MOBILE_REVIEW_START_ROUTE_NAME,
     MOBILE_SIGN_OUT_ROUTE_NAME,
+    MOBILE_SESSION_ROUTE_NAME,
+    MOBILE_SESSION_BRIEF_ROUTE_NAME,
+    MOBILE_TODAY_ROUTE_NAME,
+    MOBILE_PROGRESS_ROUTE_NAME,
+    MOBILE_SESSIONS_ROUTE_NAME,
     install_mobile_routes,
 )
 from ..caddie_brief import (
@@ -166,6 +170,11 @@ from .mobile_auth import (
     MobileAuthService,
     validate_mobile_native_auth_settings,
 )
+from .mobile_resources import (
+    MobileResourceService,
+    VIDEO_SUFFIXES,
+    validate_mobile_resource_settings,
+)
 from .review_auth import (
     APPLICATION_ID_POLICY_REVISION,
     DenyReviewAuthAdmission,
@@ -195,7 +204,6 @@ from .users import (
 
 logger = logging.getLogger("swinglab.web")
 
-VIDEO_SUFFIXES = {".mov", ".mp4", ".m4v", ".avi", ".mkv"}
 UPLOAD_CHUNK = 1024 * 1024
 
 LOGIN_WINDOW_S = 15 * 60  # window for web.login_attempts_per_15min
@@ -227,60 +235,6 @@ HISTORY_SESSION_EPOCH_KEY = "history_epoch"
 HISTORY_RESET_CONFIRMATION = "START OVER"
 
 
-def serialize_mobile_session(job: Job, owner: User) -> MobileSessionResponse:
-    """Return the allowlisted native view of one owned analysis session."""
-    if job.user_id != owner.id:
-        raise ValueError("A mobile session must belong to its authenticated owner.")
-    failure = None
-    if job.status == FAILED:
-        failure = {
-            "code": "processing",
-            "retryable": False,
-            "message": "This analysis could not be completed.",
-        }
-    return MobileSessionResponse(
-        id=job.id,
-        status=job.status,
-        created_at=job.as_dict()["created_at"],
-        source_name=job.source_name,
-        hand=job.hand,
-        angle=job.angle,
-        club=job.club,
-        level=job.level,
-        fast=job.fast,
-        swings_done=job.swings_done,
-        swings_total=job.swings_total,
-        queue_position=None,
-        report_url=(
-            f"/session/{job.id}/files/{job.report_rel}"
-            if job.status == DONE and job.report_rel
-            else None
-        ),
-        failure=failure,
-    )
-
-
-def serialize_mobile_today(
-    *,
-    profile: dict | None,
-    latest_session: Job | None,
-    owner: User,
-    caddie_brief: dict | None,
-    practice_plan: list[dict],
-    practice_checked_in: bool,
-) -> MobileTodayResponse:
-    """Build a native dashboard without embedding the legacy job payload."""
-    return MobileTodayResponse(
-        profile=profile,
-        latest_session=(
-            serialize_mobile_session(latest_session, owner)
-            if latest_session is not None
-            else None
-        ),
-        caddie_brief=caddie_brief,
-        practice_plan=practice_plan,
-        practice_checked_in=practice_checked_in,
-    )
 HISTORY_RESET_NONCE_TTL_S = 10 * 60
 HISTORY_RESET_RECENT_AUTH_S = 15 * 60
 PASSWORD_ADDED_REAUTH_SESSION_KEY = "password_added_requires_reauth"
@@ -594,6 +548,7 @@ def create_app(
     cfg = cfg or Config.load()
     mobile_deployment_environment = resolve_mobile_deployment_environment()
     native_auth_settings = validate_mobile_native_auth_settings(cfg.web)
+    mobile_resource_settings = validate_mobile_resource_settings(cfg.web)
     try:
         mobile_public_origin = canonical_mobile_public_origin(
             os.environ.get("PUBLIC_BASE_URL"), mobile_deployment_environment
@@ -728,6 +683,18 @@ def create_app(
     app.state.mobile_public_origin = mobile_public_origin
     app.state.recovery_startup = recovery_startup
     app.state.mobile_keyed_throttle = mobile_keyed_throttle
+    mobile_resource_service = MobileResourceService(
+        manager,
+        users,
+        cfg,
+        mobile_resource_settings,
+        brief_provider=lambda job: caddie_brief_for(job),
+        proof_artifact_provider=lambda job: proof_cycle_artifact_for(job),
+        practice_plan_provider=lambda brief, profile: current_practice_plan(
+            brief, profile
+        ),
+    )
+    app.state.mobile_resource_service = mobile_resource_service
     if mobile_keyed_throttle is not None:
         app.router.add_event_handler("shutdown", mobile_keyed_throttle.close)
     install_mobile_error_handlers(
@@ -738,6 +705,12 @@ def create_app(
             MOBILE_REVIEW_START_ROUTE_NAME,
             MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
             MOBILE_SIGN_OUT_ROUTE_NAME,
+            MOBILE_CAPABILITIES_ROUTE_NAME,
+            MOBILE_SESSIONS_ROUTE_NAME,
+            MOBILE_SESSION_ROUTE_NAME,
+            MOBILE_SESSION_BRIEF_ROUTE_NAME,
+            MOBILE_TODAY_ROUTE_NAME,
+            MOBILE_PROGRESS_ROUTE_NAME,
         },
     )
     install_mobile_routes(
@@ -749,6 +722,14 @@ def create_app(
         mobile_deployment_environment=mobile_deployment_environment,
         client_ip_resolver=client_ip,
         require_account=bool(cfg.web.get("require_account")),
+        resource_service=mobile_resource_service,
+        resolve_read_auth=lambda request: resolve_mobile_auth(
+            request,
+            users,
+            bool(cfg.web.get("require_account")),
+            review_auth_admission,
+            mutation_guard,
+        ),
     )
     static_dir = Path(__file__).parent / "static"
     # Static assets contain only versioned public brand imagery and the
@@ -4475,7 +4456,7 @@ def create_app(
             )
         )
 
-    @app.get("/api/v1/sessions/{job_id}/brief", response_model=BriefResponse)
+    @app.get("/api/v1/sessions/{job_id}/brief", response_model=LegacyBriefResponse)
     def api_v1_session_brief(job_id: str, request: Request):
         user, _ = api_v1_auth(request)
         job = get_job_or_404(job_id, request, authenticated_user=user)

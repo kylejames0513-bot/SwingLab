@@ -845,9 +845,13 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `analysis` | window size, working/full resolutions, takeaway threshold, finish-hold frames for the balance metric (`finish_hold_frames`), per-clip length cap (`max_video_s`, shipped 300 s, 0 = off), high-fps analysis (`auto_fps`: sources ≥ 50 fps analyzed at min(source, 60)) |
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
-| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, staged history-reset activation (`history_reset_enabled`), email-code sign-in (`passwordless_login`, shipped on — self-disables without email delivery), weekly digest on/off (`digest_enabled`) |
+| `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, staged history-reset activation (`history_reset_enabled`), email-code sign-in (`passwordless_login`, shipped on — self-disables without email delivery), weekly digest on/off (`digest_enabled`), and independently gated native resources and mutations |
 | `billing` | free/Pro analyses per month, the coach-replay and progress-dashboard Pro gates (`replay_pro_only` / `progress_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
+
+The default-off native coaching reads, independent mutation flags, upload
+policy bounds, authentication behavior, and schema-freeze workflow are
+documented in [docs/mobile-api-resources.md](docs/mobile-api-resources.md).
 
 ## Tests
 

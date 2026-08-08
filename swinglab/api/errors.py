@@ -52,8 +52,16 @@ def _response(
     status_code: int,
     headers: dict[str, str] | None = None,
 ) -> JSONResponse:
+    response_headers = {
+        key: value
+        for key, value in (headers or {}).items()
+        if key.lower() not in {"cache-control", "pragma"}
+    }
+    response_headers.update({"Cache-Control": "no-store", "Pragma": "no-cache"})
     return JSONResponse(
-        error.model_dump(mode="json"), status_code=status_code, headers=headers
+        error.model_dump(mode="json"),
+        status_code=status_code,
+        headers=response_headers,
     )
 
 

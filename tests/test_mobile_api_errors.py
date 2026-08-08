@@ -75,6 +75,8 @@ def test_named_mobile_routes_use_the_exact_api_error_shape_and_keep_headers():
             "reference_id": None,
         }
         assert response.headers["www-authenticate"] == "Bearer"
+        assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
         if status == 429:
             assert response.headers["retry-after"] == "60"
 
@@ -91,6 +93,8 @@ def test_named_mobile_validation_and_failures_do_not_leak_request_or_exception_d
         "retryable": False,
         "reference_id": None,
     }
+    assert validation.headers["cache-control"] == "no-store"
+    assert validation.headers["pragma"] == "no-cache"
 
     failure = client.get("/mobile/failure")
     assert failure.status_code == 500
@@ -100,6 +104,8 @@ def test_named_mobile_validation_and_failures_do_not_leak_request_or_exception_d
     assert failure.json()["retryable"] is True
     assert re.fullmatch(r"[0-9a-f]{32}", failure.json()["reference_id"])
     assert "secret implementation detail" not in failure.text
+    assert failure.headers["cache-control"] == "no-store"
+    assert failure.headers["pragma"] == "no-cache"
 
 
 def test_named_structured_5xx_is_sanitized_with_fresh_reference_and_safe_headers():
@@ -111,6 +117,7 @@ def test_named_structured_5xx_is_sanitized_with_fresh_reference_and_safe_headers
     for response in responses:
         assert response.status_code == 503
         assert response.headers["cache-control"] == "no-store"
+        assert response.headers["pragma"] == "no-cache"
         assert response.headers["retry-after"] == "7"
         assert response.json()["resource_version"] == 1
         assert response.json()["code"] == "internal_error"
@@ -128,6 +135,8 @@ def test_legacy_routes_keep_fastapis_detail_error_contract():
     response = TestClient(_app(), raise_server_exceptions=False).get("/legacy")
     assert response.status_code == 404
     assert response.json() == {"detail": "legacy detail"}
+    assert "cache-control" not in response.headers
+    assert "pragma" not in response.headers
 
 
 def test_mobile_auth_error_keeps_its_bounded_code_on_named_routes_only():
@@ -155,6 +164,8 @@ def test_mobile_auth_error_keeps_its_bounded_code_on_named_routes_only():
         "reference_id": None,
     }
     assert mobile.headers["www-authenticate"] == "Bearer"
+    assert mobile.headers["cache-control"] == "no-store"
+    assert mobile.headers["pragma"] == "no-cache"
 
     legacy = client.get("/legacy/bearer")
     assert legacy.status_code == 401

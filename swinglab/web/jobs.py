@@ -331,6 +331,21 @@ class JobManager:
                 ).fetchall()
         return [self._from_row(r) for r in rows]
 
+    def earliest_coaching_eligible_created_at(self, user_id: str) -> float | None:
+        """Return the first current coaching-ready session time for one owner."""
+
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM jobs WHERE user_id = ? AND status = ?"
+                " ORDER BY created_at ASC",
+                (user_id, DONE),
+            ).fetchall()
+        for row in rows:
+            job = self._from_row(row)
+            if self.coaching_eligible(job):
+                return float(job.created_at)
+        return None
+
     def list_comparable(
         self,
         *,

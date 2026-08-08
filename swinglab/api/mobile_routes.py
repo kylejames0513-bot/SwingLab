@@ -11,12 +11,19 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .auth import (
+    MobileAuthContext,
     MobileAuthError,
     mobile_bearer_token,
     mobile_bearer_unauthorized,
 )
 from .contracts import (
     APIError,
+    BriefResponse,
+    CapabilitiesResponse,
+    MobileSessionResponse,
+    MobileSessionsResponse,
+    MobileTodayResponse,
+    ProgressResponse,
     NativeAuthExchangePendingResponse,
     NativeAuthExchangeRequest,
     NativeAuthExchangeSuccessResponse,
@@ -41,6 +48,7 @@ from ..web.mobile_auth import (
     MobileNativeAuthRejected,
     MobileNativeAuthUnavailable,
 )
+from ..web.mobile_resources import MobileResourceNotFound, MobileResourceService
 from ..web.users import MobileAPITokenLimitError
 from ..web.review_auth import (
     ReviewAuthService,
@@ -54,6 +62,12 @@ MOBILE_REVIEW_START_ROUTE_NAME = "mobile.auth.review_start"
 MOBILE_REVIEW_EXCHANGE_ROUTE_NAME = "mobile.auth.review_exchange"
 MOBILE_SIGN_OUT_ROUTE_NAME = "mobile.auth.sign_out"
 MOBILE_AUTH_CALLBACK_ROUTE_NAME = "mobile.auth.callback"
+MOBILE_CAPABILITIES_ROUTE_NAME = "mobile.resources.capabilities"
+MOBILE_SESSIONS_ROUTE_NAME = "mobile.resources.sessions"
+MOBILE_SESSION_ROUTE_NAME = "mobile.resources.session"
+MOBILE_SESSION_BRIEF_ROUTE_NAME = "mobile.resources.session_brief"
+MOBILE_TODAY_ROUTE_NAME = "mobile.resources.today"
+MOBILE_PROGRESS_ROUTE_NAME = "mobile.resources.progress"
 _MOBILE_BEARER_SCHEME = HTTPBearer(
     auto_error=False,
     scheme_name="MobileBearer",
@@ -96,8 +110,11 @@ def install_mobile_routes(
     mobile_deployment_environment: str,
     client_ip_resolver: Callable[[Request], str | None],
     require_account: bool,
+    resource_service: MobileResourceService,
+    resolve_read_auth: Callable[[Request], MobileAuthContext],
 ) -> None:
     no_store = {"Cache-Control": "no-store", "Pragma": "no-cache"}
+    read_security = {"security": [{"MobileBearer": []}]}
     identity_parameters = [
         {
             "name": name,
@@ -113,6 +130,163 @@ def install_mobile_routes(
             "X-CaddieInsight-Application-Id",
         )
     ]
+
+    @app.get(
+        "/api/v1/capabilities",
+        name=MOBILE_CAPABILITIES_ROUTE_NAME,
+        response_model=CapabilitiesResponse,
+        responses={401: {"model": APIError}, 404: {"model": APIError}},
+        openapi_extra=read_security,
+    )
+    def mobile_capabilities(request: Request):
+        if not resource_service.settings.resources_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile resources are not enabled.",
+                headers=no_store,
+            )
+        try:
+            response = resource_service.capabilities(resolve_read_auth(request))
+        except MobileResourceNotFound as exc:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Account history not found.",
+                headers=no_store,
+            ) from exc
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    def _resource_not_found(exc: MobileResourceNotFound):
+        raise MobileAPIHTTPError(
+            404,
+            "not_found",
+            "Session not found.",
+            headers=no_store,
+        ) from exc
+
+    @app.get(
+        "/api/v1/mobile/sessions",
+        name=MOBILE_SESSIONS_ROUTE_NAME,
+        response_model=MobileSessionsResponse,
+        responses={401: {"model": APIError}, 404: {"model": APIError}},
+        openapi_extra=read_security,
+    )
+    def mobile_sessions(request: Request):
+        if not resource_service.settings.resources_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile resources are not enabled.",
+                headers=no_store,
+            )
+        try:
+            response = resource_service.sessions(resolve_read_auth(request))
+        except MobileResourceNotFound as exc:
+            _resource_not_found(exc)
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.get(
+        "/api/v1/mobile/sessions/{session_id}",
+        name=MOBILE_SESSION_ROUTE_NAME,
+        response_model=MobileSessionResponse,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+            422: {"model": APIError},
+        },
+        openapi_extra=read_security,
+    )
+    def mobile_session(session_id: str, request: Request):
+        if not resource_service.settings.resources_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile resources are not enabled.",
+                headers=no_store,
+            )
+        try:
+            response = resource_service.session(resolve_read_auth(request), session_id)
+        except MobileResourceNotFound as exc:
+            _resource_not_found(exc)
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.get(
+        "/api/v1/mobile/sessions/{session_id}/brief",
+        name=MOBILE_SESSION_BRIEF_ROUTE_NAME,
+        response_model=BriefResponse,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+            422: {"model": APIError},
+        },
+        openapi_extra=read_security,
+    )
+    def mobile_session_brief(session_id: str, request: Request):
+        if not resource_service.settings.resources_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile resources are not enabled.",
+                headers=no_store,
+            )
+        try:
+            response = resource_service.brief(resolve_read_auth(request), session_id)
+        except MobileResourceNotFound as exc:
+            _resource_not_found(exc)
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.get(
+        "/api/v1/mobile/today",
+        name=MOBILE_TODAY_ROUTE_NAME,
+        response_model=MobileTodayResponse,
+        responses={401: {"model": APIError}, 404: {"model": APIError}},
+        openapi_extra=read_security,
+    )
+    def mobile_today(request: Request):
+        if not resource_service.settings.resources_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile resources are not enabled.",
+                headers=no_store,
+            )
+        try:
+            response = resource_service.today(resolve_read_auth(request))
+        except MobileResourceNotFound as exc:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Account history not found.",
+                headers=no_store,
+            ) from exc
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.get(
+        "/api/v1/progress",
+        name=MOBILE_PROGRESS_ROUTE_NAME,
+        response_model=ProgressResponse,
+        responses={401: {"model": APIError}, 404: {"model": APIError}},
+        openapi_extra=read_security,
+    )
+    def mobile_progress(request: Request):
+        if not resource_service.settings.resources_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile resources are not enabled.",
+                headers=no_store,
+            )
+        try:
+            response = resource_service.progress(resolve_read_auth(request))
+        except MobileResourceNotFound as exc:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Account history not found.",
+                headers=no_store,
+            ) from exc
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
 
     @app.post(
         "/api/v1/auth/email/start",

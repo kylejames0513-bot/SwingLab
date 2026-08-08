@@ -73,3 +73,67 @@ def test_exporter_writes_a_deterministic_schema_without_a_persistent_session_dir
     assert first.read_bytes() == second.read_bytes()
     assert first.read_bytes().endswith(b"\n")
     assert b"\r\n" not in first.read_bytes()
+
+
+def test_openapi_exposes_only_closed_native_resource_contracts(tmp_path):
+    """Catches generated clients accepting diagnostic or invented target fields."""
+
+    app = create_app(
+        Config(), tmp_path / "sessions", start_background_workers=False
+    )
+    try:
+        schema = app.openapi()
+        assert {
+            "/api/v1/capabilities",
+            "/api/v1/progress",
+            "/api/v1/mobile/sessions",
+            "/api/v1/mobile/sessions/{session_id}",
+            "/api/v1/mobile/sessions/{session_id}/brief",
+            "/api/v1/mobile/today",
+        } <= set(schema["paths"])
+        for path in (
+            "/api/v1/capabilities",
+            "/api/v1/progress",
+            "/api/v1/mobile/sessions",
+            "/api/v1/mobile/sessions/{session_id}",
+            "/api/v1/mobile/sessions/{session_id}/brief",
+            "/api/v1/mobile/today",
+        ):
+            assert schema["paths"][path]["get"]["security"] == [
+                {"MobileBearer": []}
+            ]
+        for path in (
+            "/api/v1/mobile/sessions/{session_id}",
+            "/api/v1/mobile/sessions/{session_id}/brief",
+        ):
+            validation = schema["paths"][path]["get"]["responses"]["422"]
+            assert validation["content"]["application/json"]["schema"] == {
+                "$ref": "#/components/schemas/APIError"
+            }
+        target = schema["components"]["schemas"]["ProofCycleTargetResponse"]
+        assert target["additionalProperties"] is False
+        assert set(target["properties"]) == {
+            "baseline_session_id",
+            "target_fingerprint",
+            "drill_id",
+            "club",
+            "hand",
+            "angle",
+        }
+        assert set(target["required"]) == set(target["properties"])
+
+        session = schema["components"]["schemas"]["MobileSessionResponse"]
+        assert {"log", "error", "traceback", "command", "path"}.isdisjoint(
+            session["properties"]
+        )
+        assert session["properties"]["report_url"] == {
+            "type": "null",
+            "title": "Report Url",
+        }
+        assert session["properties"]["metrics_url"] == {
+            "type": "null",
+            "title": "Metrics Url",
+        }
+    finally:
+        for resource in (app.state.jobs, app.state.users, app.state.throttle):
+            resource.close()
