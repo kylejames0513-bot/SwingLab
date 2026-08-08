@@ -38,16 +38,18 @@ Implement native privacy controls and safe account deletion from the plan Task 6
 - `GET /api/v1/privacy/exports/{id}` and `.../download` (same-origin stream, exact `Content-Length`, Range rejected).
 - Tests: `tests/test_mobile_privacy_export_api.py`.
 
-**History reset + account deletion** — implementation at `67d1fe1`; focused suites green (pending independent review).
+**History reset + account deletion** — independently reviewed **PASS** at `d862943` (fence before local erase for both paths).
 
 - Recovery-fence `history_reset` / `account_delete` kinds + restore reconcilers.
 - Durable journals/receipts in UserStore; `PrivacyErasureService` drives phases.
 - `POST /api/v1/privacy/history-reset` (`step_up_token` + `expected_history_epoch` + `Idempotency-Key`) → 202/204; pre-auth exact replay.
-- `DELETE /api/v1/account` (`step_up_token` + `Idempotency-Key`) → 202/204; pre-auth replay after credential revoke.
+- `DELETE /api/v1/account` (`step_up_token` + `Idempotency-Key`) → 202/204; pre-auth replay after credential revoke; fence published before history erase.
 - Browser `POST /account/history/delete` uses the same journal/fence authority.
 - Tests: `tests/test_mobile_privacy_history_reset_api.py`, `tests/test_mobile_account_delete_api.py`, plus browser/core regressions.
 
-**Still next after Task 6 PASS:** review step-up (Entitlements); gen-3 backup registration; full download-admission budgets; full OwnerErasureExtension inventory if not deferred.
+**Task 6 gate:** complete for ordinary-customer privacy (step-up → export → history-reset → account-delete).
+
+**Still next after Task 6:** Task 7+ per plan; deferred items below remain open but non-blocking for this gate.
 
 **Deferrals (acceptable for Task 6 PASS):**
 
