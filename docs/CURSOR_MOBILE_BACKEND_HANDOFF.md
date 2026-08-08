@@ -22,11 +22,11 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
 
 ## Current gate: Task 7
 
-Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **First vertical slice (registration only) is landed** on this branch; delivery/outbox/cutover remain deferred.
+Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **Registration + outbox delivery slices are landed** on this branch; cutover CLI / environment fences / receipt polling / caps remain deferred.
 
 ### Task 7 progress (in this branch)
 
-**Push registration slice** — tip `46d7e13` (registration impl `a84d269`).
+**Push registration slice** — tip `1fe0a66` / impl `a84d269` (earlier tip `46d7e13`).
 
 - Schema generation **3**: additive `mobile_push_registrations` + `mobile_push_activation_watermarks`; restore allowlists include generation `3`; HMAC domains `push-expo-project` and `push-cutover-operation-id`.
 - Config: `mobile_push_enabled: false`, `mobile_push_expo_project_id: ""`; non-secret `CADDIEINSIGHT_EXPO_PROJECT_ID` override; flag-on requires canonical UUID; flag-off tolerates blank.
@@ -38,19 +38,30 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - Capabilities already expose `features.push` from `mobile_push_enabled`.
 - Tests: `tests/test_mobile_push.py` (12); backup/rate-limit gen bump covered.
 
-**Still deferred (next Task 7 slices — do not implement in the registration-only gate):**
+**Push outbox delivery slice** — tip `HEAD_PLACEHOLDER` (impl `8b32eb3`, race/test harden `8f72512`, unregister/token dead-letter follow-up).
 
-- `PushOutboxWorker` / Expo HTTP delivery / `EXPO_ACCESS_TOKEN`
-- Environment fence cutover CLI / `PushEnvironmentCutoff` publishing
-- JobManager completion observer / reminder enqueue
-- Full plan “generation 5” numbering for outbox/fences (this slice used code gen **3**)
-- Envelope/skew send settings beyond project-id config
+- Schema generation **4**: additive `mobile_push_outbox`; restore allowlists include generation `4`.
+- `swinglab/web/push_delivery.py`: `FakeExpoPushProvider` / `ExpoPushProvider`, `PushOutboxStore`, `PushOutboxWorker`, `attach_job_push_observer`.
+- Missing `EXPO_ACCESS_TOKEN` → no enqueue/send; jobs still succeed. Payload `ttl=900`. Unique `(source_kind, source_id, kind, selector)`.
+- `JobManager.add_completion_observer`: DONE → `analysis_ready` enqueue after terminal `_save`.
+- Sign-out dead-letters pending/leased outbox and clears leases; worker completion CAS on `status='leased' AND lease_owner=?` so mid-send sign-out cannot revive rows.
+- Expired pending/leased rows are marked `dead` on drain. Config envelope/skew validated when push on; outbox global/per-selector caps are **config placeholders only** (not enforced yet).
+- `httpx` added to the `web` extra. App wires outbox store/worker + observer when push enabled.
+- Tests: `tests/test_push_outbox.py` (8) including outage, FAILED-no-enqueue, leased+sign-out race, TTL expiry.
+
+**Still deferred (next Task 7 slices):**
+
+- Environment fence cutover CLI / `PushEnvironmentCutoff` publishing / `swinglab mobile-push-cutover`
+- Receipt polling / `awaiting_receipt` lifecycle / `PushDeliveryGuard` drain-before-sign-out
+- Outbox caps/flood/purge + terminal-job scanner backfill
+- Practice-reminder enqueue; refilm kind classification; security notice on new device
+- Full plan “generation 5” numbering for fences/cutover journals (code used gen **3** registration + gen **4** outbox)
 - Deploy or mutate live providers
 
 **Earlier deferrals still open (non-blocking):**
 
 - Store-review step-up variant / full review-scoped account deletion.
-- Broader mobile backup registration for step-up/export/erasure/capacity/upload tables (partially advanced by gen-3 push tables).
+- Broader mobile backup registration for step-up/export/erasure/capacity/upload tables (partially advanced by gen-3/4 push tables).
 - Full durable download-admission slot/byte budgets.
 - Full machine-checked writer inventory / every OwnerErasureExtension if oversized.
 

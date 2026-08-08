@@ -301,7 +301,8 @@ class PushOutboxStore:
     def discard_for_selector(self, *, user_id: str, selector: str) -> None:
         with self._users._lock:
             self._users._conn.execute(
-                "UPDATE mobile_push_outbox SET status = 'dead', updated_at = ?"
+                "UPDATE mobile_push_outbox SET status = 'dead',"
+                " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                 " WHERE user_id = ? AND selector = ?"
                 " AND status IN ('pending', 'leased')",
                 (time.time(), user_id, selector),
@@ -311,7 +312,8 @@ class PushOutboxStore:
     def discard_for_user(self, user_id: str) -> None:
         with self._users._lock:
             self._users._conn.execute(
-                "UPDATE mobile_push_outbox SET status = 'dead', updated_at = ?"
+                "UPDATE mobile_push_outbox SET status = 'dead',"
+                " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
                 " WHERE user_id = ?"
                 " AND status IN ('pending', 'leased', 'awaiting_receipt')",
                 (time.time(), user_id),
@@ -393,9 +395,9 @@ class PushOutboxWorker:
             if row is None:
                 self._users._conn.commit()
                 return False
-            # Recheck live registration before leasing.
+            # Recheck live registration and bind send to the live token.
             live = self._users._conn.execute(
-                "SELECT 1 FROM mobile_push_registrations"
+                "SELECT token FROM mobile_push_registrations"
                 " WHERE user_id = ? AND selector = ?"
                 " AND environment = ? AND expo_project_id = ? LIMIT 1",
                 (
@@ -414,6 +416,18 @@ class PushOutboxWorker:
                 )
                 self._users._conn.commit()
                 return True
+            live_token = str(live["token"])
+            if live_token != str(row["token"]):
+                # Registration rotated without matching outbox token: refuse
+                # the frozen token and dead-letter rather than send stale.
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status = 'pending'",
+                    (observed, row["id"]),
+                )
+                self._users._conn.commit()
+                return True
             self._users._conn.execute(
                 "UPDATE mobile_push_outbox SET status = 'leased',"
                 " lease_owner = ?, lease_expires_at = ?, updated_at = ?,"
@@ -426,7 +440,7 @@ class PushOutboxWorker:
                 ),
             )
             self._users._conn.commit()
-            token = str(row["token"])
+            token = live_token
             kind = str(row["kind"])
             outbox_id = str(row["id"])
             source_id = str(row["source_id"])

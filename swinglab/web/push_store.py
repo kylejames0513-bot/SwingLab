@@ -42,6 +42,32 @@ class MobilePushNotRegistered(LookupError):
     """Preferences were requested for a selector with no registration."""
 
 
+def _dead_letter_selector_outbox(
+    conn,
+    *,
+    selector: str,
+    now: float,
+    user_id: str | None = None,
+) -> None:
+    """Mark pending/leased outbox rows dead and clear any active lease."""
+
+    if user_id is None:
+        conn.execute(
+            "UPDATE mobile_push_outbox SET status = 'dead',"
+            " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+            " WHERE selector = ? AND status IN ('pending', 'leased')",
+            (now, selector),
+        )
+        return
+    conn.execute(
+        "UPDATE mobile_push_outbox SET status = 'dead',"
+        " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+        " WHERE user_id = ? AND selector = ?"
+        " AND status IN ('pending', 'leased')",
+        (now, user_id, selector),
+    )
+
+
 @dataclass(frozen=True)
 class MobilePushSettings:
     enabled: bool
@@ -181,12 +207,11 @@ class PushRegistrationService:
                     " WHERE user_id = ? AND selector = ?",
                     (user_id, selector),
                 )
-                users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'dead',"
-                    " lease_owner = NULL, lease_expires_at = NULL,"
-                    " updated_at = ? WHERE user_id = ? AND selector = ?"
-                    " AND status IN ('pending', 'leased')",
-                    (__import__("time").time(), user_id, selector),
+                _dead_letter_selector_outbox(
+                    users._conn,
+                    user_id=user_id,
+                    selector=selector,
+                    now=__import__("time").time(),
                 )
                 users._conn.commit()
             except Exception:
@@ -279,6 +304,26 @@ class PushRegistrationService:
                         return row.response()
 
                     # Token takeover: another selector owning this token loses it.
+                    victims = self._users._conn.execute(
+                        "SELECT user_id, selector FROM mobile_push_registrations"
+                        " WHERE environment = ? AND expo_project_id = ?"
+                        " AND provider = ? AND token = ?"
+                        " AND selector != ?",
+                        (
+                            self._environment,
+                            project_id,
+                            request.provider,
+                            request.token,
+                            context.selector,
+                        ),
+                    ).fetchall()
+                    for victim in victims:
+                        _dead_letter_selector_outbox(
+                            self._users._conn,
+                            user_id=str(victim["user_id"]),
+                            selector=str(victim["selector"]),
+                            now=timestamp,
+                        )
                     self._users._conn.execute(
                         "DELETE FROM mobile_push_registrations"
                         " WHERE environment = ? AND expo_project_id = ?"
@@ -331,7 +376,14 @@ class PushRegistrationService:
                         )
                         registered_at = float(current["registered_at"])
                     else:
-                        # Selector replacement or first registration.
+                        # Selector replacement / token rotation / first registration.
+                        if current is not None:
+                            _dead_letter_selector_outbox(
+                                self._users._conn,
+                                user_id=context.user.id,
+                                selector=context.selector,
+                                now=timestamp,
+                            )
                         self._users._conn.execute(
                             "DELETE FROM mobile_push_registrations"
                             " WHERE environment = ? AND expo_project_id = ?"
@@ -475,6 +527,12 @@ class PushRegistrationService:
                         " WHERE environment = ? AND expo_project_id = ?"
                         " AND selector = ?",
                         (self._environment, project_id, context.selector),
+                    )
+                    _dead_letter_selector_outbox(
+                        self._users._conn,
+                        user_id=context.user.id,
+                        selector=context.selector,
+                        now=timestamp,
                     )
                     self._users._conn.commit()
                 except Exception:

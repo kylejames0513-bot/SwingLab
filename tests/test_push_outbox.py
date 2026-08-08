@@ -22,6 +22,7 @@ from swinglab.web.push_store import MobilePushSettings, PushRegistrationService
 from tests.test_mobile_push import (
     EXPO_PROJECT_ID,
     EXPO_TOKEN_A,
+    EXPO_TOKEN_B,
     _app,
     _close,
     _identity,
@@ -370,6 +371,115 @@ def test_expired_pending_outbox_is_marked_dead(tmp_path, expo_token):
             ).fetchone()["status"]
             == "dead"
         )
+    finally:
+        _close(app)
+
+
+def test_unregister_then_reregister_does_not_send_stale_token(
+    tmp_path, expo_token
+):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "golfer@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        job = Job(
+            id="jobunreg000001",
+            session_dir=tmp_path / "sessions" / "jobunreg000001",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment="development",
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        assert (
+            client.delete(
+                "/api/v1/devices/push",
+                headers={
+                    "Authorization": f"Bearer {raw}",
+                    **_identity(),
+                },
+            ).status_code
+            == 204
+        )
+        dead = users._conn.execute(
+            "SELECT status, lease_owner FROM mobile_push_outbox"
+        ).fetchone()
+        assert dead["status"] == "dead"
+        assert dead["lease_owner"] is None
+
+        # Re-register with a new token; worker must not revive the dead row.
+        assert (
+            client.put(
+                "/api/v1/devices/push",
+                headers={
+                    "Authorization": f"Bearer {raw}",
+                    **_identity(),
+                },
+                json=_put_body(token=EXPO_TOKEN_B),
+            ).status_code
+            == 200
+        )
+        provider = FakeExpoPushProvider()
+        worker = PushOutboxWorker(users, provider, enabled=True)
+        assert worker.drain_once() is False
+        assert provider.sent == []
+        assert (
+            users._conn.execute(
+                "SELECT status FROM mobile_push_outbox"
+            ).fetchone()["status"]
+            == "dead"
+        )
+    finally:
+        _close(app)
+
+
+def test_token_rotation_dead_letters_pending_outbox(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "golfer@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        job = Job(
+            id="jobrotate00001",
+            session_dir=tmp_path / "sessions" / "jobrotate00001",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment="development",
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        assert (
+            client.put(
+                "/api/v1/devices/push",
+                headers={
+                    "Authorization": f"Bearer {raw}",
+                    **_identity(),
+                },
+                json=_put_body(token=EXPO_TOKEN_B),
+            ).status_code
+            == 200
+        )
+        row = users._conn.execute(
+            "SELECT status, token FROM mobile_push_outbox"
+        ).fetchone()
+        assert row["status"] == "dead"
+        assert row["token"] == EXPO_TOKEN_A
+
+        provider = FakeExpoPushProvider()
+        worker = PushOutboxWorker(users, provider, enabled=True)
+        assert worker.drain_once() is False
+        assert provider.sent == []
     finally:
         _close(app)
 
