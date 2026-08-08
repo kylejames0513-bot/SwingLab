@@ -83,10 +83,14 @@ def _assert_processing_without_publication(manager: JobManager, job: Job) -> Non
     ) == (None, None, None, None, False)
 
 
-def test_guided_report_presentation_gate_is_strict_and_ships_disabled(tmp_path: Path):
+def test_guided_report_presentation_gate_is_strict_and_ships_enabled(tmp_path: Path):
     assert Config().report["guided_presentation_enabled"] is False
     shipped = Config.load(Path(__file__).parent.parent / "config.yaml")
-    assert shipped.report["guided_presentation_enabled"] is False
+    assert shipped.report["guided_presentation_enabled"] is True
+    assert (
+        jobs_module.configured_report_presentation(shipped)
+        == GUIDED_REPORT_PRESENTATION_VERSION
+    )
 
     assert jobs_module.configured_report_presentation(Config()) == REPORT_PRESENTATION_VERSION
     for malformed in ("true", 1, "1", None):

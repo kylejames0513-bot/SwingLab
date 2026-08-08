@@ -54,6 +54,19 @@ def test_ensure_sample_report_writes_report_and_media(tmp_path):
     assert "Slow motion" not in html
 
 
+def test_shipped_config_generates_the_guided_public_sample(tmp_path):
+    cfg = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+
+    path = sample.ensure_sample_report(tmp_path / "shipped", cfg)
+    html = path.read_text(encoding="utf-8")
+
+    assert 'content="guided-report-v1"' in html
+    assert (path.parent / "media" / "focused-priority.png").is_file()
+    assert "Understand" in html
+    assert "Practice" in html
+    assert "Re-film" in html
+
+
 def test_ensure_sample_report_is_idempotent(tmp_path):
     first = sample.ensure_sample_report(tmp_path / "sr", Config())
     marker = "<!-- untouched -->"
@@ -247,11 +260,14 @@ def test_guided_sample_activation_is_strict_and_rolls_back_to_legacy(
     guided_html = guided.read_text(encoding="utf-8")
     assert 'content="guided-report-v1"' in guided_html
     assert "media/focused-priority.png" in guided_html
+    focused = sample_dir / "media" / "focused-priority.png"
+    assert focused.is_file()
 
     rolled_back = sample.ensure_sample_report(sample_dir, Config())
     legacy_html = rolled_back.read_text(encoding="utf-8")
     assert 'content="premium-coach-v2"' in legacy_html
     assert "media/focused-priority.png" not in legacy_html
+    assert not focused.exists()
 
 
 def test_failed_guided_switch_keeps_legacy_report_and_its_media(

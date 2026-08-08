@@ -63,14 +63,13 @@ coaching:
                              # jitter (~0.02 SW)
 
 report:
-  guided_presentation_enabled: false
-                             # Future jobs use the guided structured report
-                             # only after the production writer is composed.
+  guided_presentation_enabled: true
+                             # New jobs use the guided structured report.
                              # Set false to roll new jobs back to legacy;
                              # persisted jobs keep their assigned presentation.
-  guided_sample_enabled: false
-                             # Separate public-sample preview gate. Set true
-                             # only after sample QA; false restores the legacy
+  guided_sample_enabled: true
+                             # The public sample uses the guided presentation.
+                             # Set false to restore the legacy
                              # sample without changing customer-job reports.
 
 proof_cycle:

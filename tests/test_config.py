@@ -92,16 +92,18 @@ def test_matched_refilm_credit_defaults_off_and_ships_on():
     assert Config().allowances["free_matched_refilm"] is False
 
 
-def test_guided_sample_defaults_and_shipped_config_stay_off():
+def test_guided_report_bare_defaults_stay_off_for_white_label_installs():
     assert DEFAULTS["report"]["guided_presentation_enabled"] is False
     assert DEFAULTS["report"]["guided_sample_enabled"] is False
     assert Config().report["guided_presentation_enabled"] is False
     assert Config().report["guided_sample_enabled"] is False
 
+
+def test_shipped_config_activates_guided_customer_and_sample_reports():
     shipped = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
 
-    assert shipped.report["guided_presentation_enabled"] is False
-    assert shipped.report["guided_sample_enabled"] is False
+    assert shipped.report["guided_presentation_enabled"] is True
+    assert shipped.report["guided_sample_enabled"] is True
 
 
 def test_guided_sample_flag_deep_merges_without_replacing_report_policy(
