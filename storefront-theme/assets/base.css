@@ -135,8 +135,12 @@ img { max-width: 100%; display: block; }
 .sl-wrap {
   max-width: var(--sl-maxw);
   margin: 0 auto;
-  padding-left: var(--sl-pad-x);
-  padding-right: var(--sl-pad-x);
+  /* theme.liquid opts into viewport-fit=cover so the page paints to the
+     hardware edges. Every wrapper then takes the larger of the design gutter
+     and the hardware inset, so a landscape notch eats the bleed rather than
+     the copy. The insets are 0 on any device without them. */
+  padding-left: max(var(--sl-pad-x), env(safe-area-inset-left, 0px));
+  padding-right: max(var(--sl-pad-x), env(safe-area-inset-right, 0px));
   box-sizing: border-box;
 }
 

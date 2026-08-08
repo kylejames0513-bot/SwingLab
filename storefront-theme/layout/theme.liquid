@@ -16,7 +16,12 @@
 <html lang="{{ request.locale.iso_code }}">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  {%- comment -%}
+    Matches the app shell: cover lets the page paint to the hardware edges in
+    landscape on a notched phone, and the sections re-inset with
+    env(safe-area-inset-*) rather than leaving letterbox bars.
+  {%- endcomment -%}
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="{% if premium_chrome %}#06110c{% else %}#0f3d28{% endif %}">
   <link rel="canonical" href="{{ canonical_url }}">
   {% comment %}theme-check-disable RemoteAsset{% endcomment %}
