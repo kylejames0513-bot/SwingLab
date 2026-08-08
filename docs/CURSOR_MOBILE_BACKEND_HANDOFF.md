@@ -60,12 +60,12 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - Outbox caps: `mobile_push_outbox_global_cap` / `per_selector_cap` enforced on enqueue; overflows increment fence `aggregate_drop_count` without affecting job status.
 - Tests: `tests/test_mobile_push_cutover.py`.
 
-**Push receipt + delivery guard slice** — tip `ef19d29`.
+**Push receipt + delivery guard slice** — tip `c9664cb` (impl `ef19d29`, guard finally/harden `c9664cb`).
 
 - Successful Expo send → `awaiting_receipt` + `receipt_due_at` (not immediate `delivered`).
 - Worker polls due receipts via `provider.receipts`; ok → `delivered`; `DeviceNotRegistered` → `dead` + delete matching registration; missing receipt → backoff due time.
-- `PushDeliveryGuard` tracks in-flight send/receipt by selector; sign-out closes admission and drains other threads (same-thread tokens ignored to avoid re-entrancy deadlock).
-- Shared guard wired through `PushRegistrationService` + `PushOutboxWorker` on app startup.
+- `PushDeliveryGuard` tracks in-flight send/receipt by selector; sign-out closes admission and drains other threads (same-thread tokens ignored to avoid re-entrancy deadlock); `end()` always in `finally`; closed-admission recheck before commit.
+- Shared guard wired through `PushRegistrationService` + `PushOutboxWorker` on app startup; DELETE unregister also closes+drains.
 - Tests: receipt→delivered, DeviceNotRegistered, awaiting_receipt restart survival.
 
 **Still deferred (next Task 7 slices):**
@@ -73,6 +73,7 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 - Terminal-job scanner backfill; 24h pending age cutoff; daily 1k retention purge
 - Practice-reminder enqueue; refilm kind classification; security notice on new device
 - Full app-composition recovery-ledger wiring for offline CLI close/purge (library path supports publish)
+- Unregister drain-timeout → 202 (currently still 204 after best-effort drain)
 - Deploy or mutate live providers
 
 **Earlier deferrals still open (non-blocking):**
