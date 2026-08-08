@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import os
+import time
 
 import pytest
+from fastapi.testclient import TestClient
 
-from swinglab.web.jobs import DONE, Job
+from swinglab.web.jobs import DONE, FAILED, Job
 from swinglab.web.push_delivery import (
     EXPO_ACCESS_TOKEN_ENV,
     FakeExpoPushProvider,
@@ -17,7 +18,7 @@ from swinglab.web.push_delivery import (
     attach_job_push_observer,
     expo_delivery_configured,
 )
-from swinglab.web.push_store import MobilePushSettings
+from swinglab.web.push_store import MobilePushSettings, PushRegistrationService
 from tests.test_mobile_push import (
     EXPO_PROJECT_ID,
     EXPO_TOKEN_A,
@@ -27,13 +28,37 @@ from tests.test_mobile_push import (
     _issue,
     _put_body,
 )
-from fastapi.testclient import TestClient
 
 
 @pytest.fixture
 def expo_token(monkeypatch):
     monkeypatch.setenv(EXPO_ACCESS_TOKEN_ENV, "test-expo-access-token")
     return "test-expo-access-token"
+
+
+def _register(client, raw: str) -> None:
+    assert (
+        client.put(
+            "/api/v1/devices/push",
+            headers={
+                "Authorization": f"Bearer {raw}",
+                **_identity(),
+            },
+            json=_put_body(),
+        ).status_code
+        == 200
+    )
+
+
+def _sign_out_extension(app):
+    extensions = [
+        ext
+        for ext in app.state.sign_out_service._extensions
+        if getattr(ext, "extension_id", None)
+        == PushRegistrationService.extension_id
+    ]
+    assert len(extensions) == 1
+    return extensions[0]
 
 
 def test_no_enqueue_without_expo_access_token(tmp_path, monkeypatch):
@@ -44,17 +69,7 @@ def test_no_enqueue_without_expo_access_token(tmp_path, monkeypatch):
         users = app.state.users
         user, raw, token = _issue(users, "golfer@example.com", "Phone")
         client = TestClient(app)
-        assert (
-            client.put(
-                "/api/v1/devices/push",
-                headers={
-                    "Authorization": f"Bearer {raw}",
-                    **_identity(),
-                },
-                json=_put_body(),
-            ).status_code
-            == 200
-        )
+        _register(client, raw)
         store = PushOutboxStore(users)
         job = Job(
             id="jobdeadbeef01",
@@ -85,24 +100,13 @@ def test_terminal_job_enqueues_and_drain_delivers(tmp_path, expo_token, monkeypa
         users = app.state.users
         user, raw, token = _issue(users, "golfer@example.com", "Phone")
         client = TestClient(app)
-        assert (
-            client.put(
-                "/api/v1/devices/push",
-                headers={
-                    "Authorization": f"Bearer {raw}",
-                    **_identity(),
-                },
-                json=_put_body(),
-            ).status_code
-            == 200
-        )
+        _register(client, raw)
         provider = FakeExpoPushProvider()
         store = PushOutboxStore(users)
         worker = PushOutboxWorker(users, provider, enabled=True)
         settings = MobilePushSettings(
             enabled=True, expo_project_id=EXPO_PROJECT_ID
         )
-        # Replace any default observer with one bound to our store.
         app.state.jobs._completion_observers.clear()
         attach_job_push_observer(
             app.state.jobs,
@@ -137,8 +141,88 @@ def test_terminal_job_enqueues_and_drain_delivers(tmp_path, expo_token, monkeypa
         ).fetchone()
         assert delivered["status"] == "delivered"
         assert delivered["provider_ticket_id"]
-        # Provider outage must not change job status.
         assert app.state.jobs.get(job.id).status == DONE
+    finally:
+        _close(app)
+
+
+def test_provider_outage_leaves_job_done_and_outbox_retryable(
+    tmp_path, expo_token
+):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "golfer@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        provider = FakeExpoPushProvider()
+        provider.fail_send = True
+        store = PushOutboxStore(users)
+        worker = PushOutboxWorker(users, provider, enabled=True)
+        settings = MobilePushSettings(
+            enabled=True, expo_project_id=EXPO_PROJECT_ID
+        )
+        app.state.jobs._completion_observers.clear()
+        attach_job_push_observer(
+            app.state.jobs,
+            outbox=store,
+            settings=settings,
+            deployment_environment="development",
+        )
+
+        job = app.state.jobs.create_session(
+            source_name="clip.mov", user_id=user.id
+        )
+        (job.session_dir / "source.mov").write_bytes(b"video")
+        job.status = DONE
+        app.state.jobs._save(job)
+        app.state.jobs._notify_completion_observers(job)
+
+        assert worker.drain_once() is True
+        assert provider.sent == []
+        row = users._conn.execute(
+            "SELECT status, lease_owner FROM mobile_push_outbox"
+        ).fetchone()
+        assert row["status"] == "pending"
+        assert row["lease_owner"] is None
+        assert app.state.jobs.get(job.id).status == DONE
+    finally:
+        _close(app)
+
+
+def test_failed_job_does_not_enqueue(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "golfer@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        settings = MobilePushSettings(
+            enabled=True, expo_project_id=EXPO_PROJECT_ID
+        )
+        app.state.jobs._completion_observers.clear()
+        attach_job_push_observer(
+            app.state.jobs,
+            outbox=store,
+            settings=settings,
+            deployment_environment="development",
+        )
+
+        job = app.state.jobs.create_session(
+            source_name="clip.mov", user_id=user.id
+        )
+        (job.session_dir / "source.mov").write_bytes(b"video")
+        job.status = FAILED
+        app.state.jobs._save(job)
+        app.state.jobs._notify_completion_observers(job)
+
+        assert (
+            users._conn.execute(
+                "SELECT COUNT(*) FROM mobile_push_outbox"
+            ).fetchone()[0]
+            == 0
+        )
     finally:
         _close(app)
 
@@ -151,17 +235,7 @@ def test_unique_outbox_key_and_sign_out_kills_pending(
         users = app.state.users
         user, raw, token = _issue(users, "golfer@example.com", "Phone")
         client = TestClient(app)
-        assert (
-            client.put(
-                "/api/v1/devices/push",
-                headers={
-                    "Authorization": f"Bearer {raw}",
-                    **_identity(),
-                },
-                json=_put_body(),
-            ).status_code
-            == 200
-        )
+        _register(client, raw)
         store = PushOutboxStore(users)
         job = Job(
             id="jobunique0001",
@@ -191,27 +265,111 @@ def test_unique_outbox_key_and_sign_out_kills_pending(
             == 1
         )
 
-        # Sign-out extension clears registration and pending outbox.
-        assert app.state.sign_out_service is not None
-        from swinglab.web.push_store import PushRegistrationService
-
-        extensions = [
-            ext
-            for ext in app.state.sign_out_service._extensions
-            if getattr(ext, "extension_id", None)
-            == PushRegistrationService.extension_id
-        ]
-        assert len(extensions) == 1
-        extensions[0].close_for_sign_out(
+        _sign_out_extension(app).close_for_sign_out(
             users=users,
             operation_id="op1",
             user_id=user.id,
             selector=token.selector,
         )
         status = users._conn.execute(
-            "SELECT status FROM mobile_push_outbox"
-        ).fetchone()["status"]
-        assert status == "dead"
+            "SELECT status, lease_owner FROM mobile_push_outbox"
+        ).fetchone()
+        assert status["status"] == "dead"
+        assert status["lease_owner"] is None
+    finally:
+        _close(app)
+
+
+def test_sign_out_during_leased_send_keeps_outbox_dead(
+    tmp_path, expo_token
+):
+    """Sign-out mid-send must not be revived by the worker completion UPDATE."""
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "golfer@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        job = Job(
+            id="jobleasedrace01",
+            session_dir=tmp_path / "sessions" / "jobleasedrace01",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment="development",
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+
+        extension = _sign_out_extension(app)
+
+        class SignOutDuringSend(FakeExpoPushProvider):
+            def send(self, messages):
+                extension.close_for_sign_out(
+                    users=users,
+                    operation_id="op-race",
+                    user_id=user.id,
+                    selector=token.selector,
+                )
+                mid = users._conn.execute(
+                    "SELECT status, lease_owner FROM mobile_push_outbox"
+                ).fetchone()
+                assert mid["status"] == "dead"
+                assert mid["lease_owner"] is None
+                return super().send(messages)
+
+        provider = SignOutDuringSend()
+        worker = PushOutboxWorker(users, provider, enabled=True)
+        assert worker.drain_once() is True
+        assert len(provider.sent) == 1
+        final = users._conn.execute(
+            "SELECT status, provider_ticket_id, lease_owner FROM mobile_push_outbox"
+        ).fetchone()
+        assert final["status"] == "dead"
+        assert final["provider_ticket_id"] is None
+        assert final["lease_owner"] is None
+    finally:
+        _close(app)
+
+
+def test_expired_pending_outbox_is_marked_dead(tmp_path, expo_token):
+    app = _app(tmp_path)
+    try:
+        users = app.state.users
+        user, raw, token = _issue(users, "golfer@example.com", "Phone")
+        client = TestClient(app)
+        _register(client, raw)
+        store = PushOutboxStore(users)
+        job = Job(
+            id="jobexpired0001",
+            session_dir=tmp_path / "sessions" / "jobexpired0001",
+            status=DONE,
+            user_id=user.id,
+        )
+        assert store.enqueue_job_notification(
+            job,
+            kind=KIND_ANALYSIS_READY,
+            environment="development",
+            expo_project_id=EXPO_PROJECT_ID,
+        )
+        users._conn.execute(
+            "UPDATE mobile_push_outbox SET expires_at = ?",
+            (time.time() - 1,),
+        )
+        users._conn.commit()
+        worker = PushOutboxWorker(
+            users, FakeExpoPushProvider(), enabled=True
+        )
+        assert worker.drain_once() is False
+        assert (
+            users._conn.execute(
+                "SELECT status FROM mobile_push_outbox"
+            ).fetchone()["status"]
+            == "dead"
+        )
     finally:
         _close(app)
 

@@ -183,6 +183,7 @@ class PushRegistrationService:
                 )
                 users._conn.execute(
                     "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL,"
                     " updated_at = ? WHERE user_id = ? AND selector = ?"
                     " AND status IN ('pending', 'leased')",
                     (__import__("time").time(), user_id, selector),

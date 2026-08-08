@@ -377,6 +377,13 @@ class PushOutboxWorker:
                 " AND lease_expires_at < ?",
                 (observed, observed),
             )
+            # Expire stale pending rows so TTL is terminal, not just a skip filter.
+            self._users._conn.execute(
+                "UPDATE mobile_push_outbox SET status = 'dead',"
+                " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                " WHERE status IN ('pending', 'leased') AND expires_at <= ?",
+                (observed, observed),
+            )
             row = self._users._conn.execute(
                 "SELECT * FROM mobile_push_outbox"
                 " WHERE status = 'pending' AND expires_at > ?"
@@ -400,8 +407,9 @@ class PushOutboxWorker:
             ).fetchone()
             if live is None:
                 self._users._conn.execute(
-                    "UPDATE mobile_push_outbox SET status = 'dead', updated_at = ?"
-                    " WHERE id = ?",
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status IN ('pending', 'leased')",
                     (observed, row["id"]),
                 )
                 self._users._conn.commit()
@@ -409,7 +417,7 @@ class PushOutboxWorker:
             self._users._conn.execute(
                 "UPDATE mobile_push_outbox SET status = 'leased',"
                 " lease_owner = ?, lease_expires_at = ?, updated_at = ?,"
-                " attempts = attempts + 1 WHERE id = ?",
+                " attempts = attempts + 1 WHERE id = ? AND status = 'pending'",
                 (
                     self._owner,
                     observed + self._lease_seconds,
@@ -435,10 +443,12 @@ class PushOutboxWorker:
         except Exception:
             logger.warning("Push send failed outbox_id=%s", outbox_id)
             with self._users._lock:
+                # CAS: only revive if still leased by us (sign-out may have
+                # already marked the row dead and cleared the lease).
                 self._users._conn.execute(
                     "UPDATE mobile_push_outbox SET status = 'pending',"
                     " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND lease_owner = ?",
+                    " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
                     (time.time(), outbox_id, self._owner),
                 )
                 self._users._conn.commit()
@@ -451,14 +461,14 @@ class PushOutboxWorker:
                     "UPDATE mobile_push_outbox SET status = 'delivered',"
                     " provider_ticket_id = ?, lease_owner = NULL,"
                     " lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND lease_owner = ?",
+                    " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
                     (ticket.ticket_id, time.time(), outbox_id, self._owner),
                 )
             else:
                 self._users._conn.execute(
                     "UPDATE mobile_push_outbox SET status = 'dead',"
                     " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
-                    " WHERE id = ? AND lease_owner = ?",
+                    " WHERE id = ? AND status = 'leased' AND lease_owner = ?",
                     (time.time(), outbox_id, self._owner),
                 )
             self._users._conn.commit()
