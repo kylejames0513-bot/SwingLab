@@ -401,7 +401,9 @@ def build_legacy_sample_report(sample_dir: Path, cfg: Config) -> Path:
     """Build or refresh the rollback-safe legacy public sample."""
     sample_dir = Path(sample_dir)
     report_path = sample_dir / "report.html"
+    focused_path = sample_dir / "media" / "focused-priority.png"
     if _report_is_current(report_path, REPORT_PRESENTATION_VERSION):
+        focused_path.unlink(missing_ok=True)
         return report_path
     sample_dir.mkdir(parents=True, exist_ok=True)
     swings = build_sample_swings(sample_dir, cfg)
@@ -424,7 +426,39 @@ def build_legacy_sample_report(sample_dir: Path, cfg: Config) -> Path:
             "cta_url": "/",
         },
     )
-    temporary_report.replace(report_path)
+    backup_dir = Path(
+        tempfile.mkdtemp(
+            prefix=f".{sample_dir.name}-guided-media-",
+            dir=sample_dir.parent,
+        )
+    )
+    backup_path = backup_dir / focused_path.name
+    staged = False
+    try:
+        if focused_path.is_file():
+            focused_path.replace(backup_path)
+            staged = True
+        temporary_report.replace(report_path)
+    except BaseException:
+        if staged and backup_path.is_file():
+            backup_path.replace(focused_path)
+        try:
+            backup_dir.rmdir()
+        except OSError:
+            pass
+        raise
+    if staged:
+        try:
+            backup_path.unlink()
+        except OSError:
+            # The backup is outside the publicly served sample root. Retaining
+            # it is safer than reporting rollback failure after the atomic
+            # HTML switch has completed.
+            pass
+    try:
+        backup_dir.rmdir()
+    except OSError:
+        pass
     return report_path
 
 
