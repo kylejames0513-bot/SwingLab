@@ -138,12 +138,35 @@
   @media (max-width: 720px) {
     .today-shell { gap: 16px; }
     .today-intro { border-radius: 22px; }
-    .today-metrics, .practice-options { grid-template-columns: 1fr; }
-    .today-metric { padding: 15px; }
+    .practice-options { grid-template-columns: 1fr; }
+    /* The three context readings stay a row on phones. Stacking them turned
+       three short facts into three full-width cards of mostly dead space —
+       the single biggest reason Today read like a web page rather than an
+       app. They are stat tiles, so they keep tile proportions. */
+    .today-metrics { gap: 9px; }
+    .today-metric { padding: 13px 12px; }
+    /* Two of the three labels wrap at this width and one does not, which
+       left the readings sitting at three different heights. Reserving two
+       lines lands every value on the same baseline. */
+    .today-metric__label {
+      min-height: 2.3em;
+      margin-bottom: 4px;
+      font-size: .6rem;
+      letter-spacing: .1em;
+      line-height: 1.15;
+    }
+    .today-metric__value { font-size: .98rem; line-height: 1.2; }
+    .today-metric__detail { font-size: .76rem; line-height: 1.4; }
     .next-move, .dashboard-panel { border-radius: 17px; }
     .dashboard-panel__header { align-items: flex-start; }
     .today-actions { align-items: stretch; }
     .today-actions > *, .today-actions .button, .today-actions button { width: 100%; text-align: center; }
+  }
+  @media (max-width: 430px) {
+    /* Below this the third column cannot hold a readable sentence, so the
+       tiles keep the reading and drop the explanation of it. */
+    .today-metric__detail { display: none; }
+    .today-metric { padding: 12px 10px; }
   }
 {% endblock %}
 {% block main %}

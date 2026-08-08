@@ -58,14 +58,18 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
         encoding="utf-8"
     )
 
-    assert 'family=Sora:wght@400;500;600;700;800' in theme
+    # Archivo is the wordmark's own typeface, so headings and the shipped
+    # lockup are cut from one shape. The guided report already lists it
+    # first and depends on the shell having loaded it.
+    assert 'family=Archivo:wght@400;500;600;700;800' in theme
     assert "family=IBM+Plex+Mono" in theme
-    assert '"Sora"' in _token(STOREFRONT, "sl-font-sans")
-    assert '"Sora"' in _token(STOREFRONT, "sl-font-display")
+    assert '"Archivo"' in _token(STOREFRONT, "sl-font-sans")
+    assert '"Archivo"' in _token(STOREFRONT, "sl-font-display")
     assert '"IBM Plex Mono"' in _token(STOREFRONT, "sl-font-mono")
-    assert '"Sora"' in _token(LAYOUT, "sl-font-sans")
-    assert '"Sora"' in _token(LAYOUT, "sl-font-display")
+    assert '"Archivo"' in _token(LAYOUT, "sl-font-sans")
+    assert '"Archivo"' in _token(LAYOUT, "sl-font-display")
     assert '"IBM Plex Mono"' in _token(LAYOUT, "sl-font-mono")
+    assert "Sora" not in _token(LAYOUT, "sl-font-display")
     assert "--sl-font-display" in STOREFRONT
     assert ".sl-section-head" in STOREFRONT
 

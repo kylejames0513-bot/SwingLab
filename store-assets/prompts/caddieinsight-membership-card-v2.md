@@ -4,8 +4,9 @@ These images are AI-generated campaign scenes. They are not customer photos,
 testimonials, or analyzed swings. Use them as supporting membership-plan art
 only, without representing the people or shown results as real customers.
 
-Both Pro and Founders cards are crop-safe for the homepage card's 20:13 media
-area (canonical files are 1536×1024). Theme assets bind them via
+Both Pro and Founders cards are 1536×1024. The homepage card's media area is
+`aspect-ratio: 3 / 2` in `plans-band.liquid`, which matches them exactly, so
+the full frame renders uncropped. Theme assets bind them via
 `asset_img_url` in `plans-band.liquid`. Filenames keep the `-v2` suffix so
 theme bindings and tests stay stable across this revamp.
 

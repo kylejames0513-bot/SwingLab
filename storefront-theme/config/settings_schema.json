@@ -28,11 +28,11 @@
         "id": "type_body_font",
         "label": "Legacy font picker (unused)",
         "default": "archivo_n4",
-        "info": "Tour Caddie v3 loads Sora + IBM Plex Mono in theme.liquid to match the app. This picker is retained for theme editor compatibility only."
+        "info": "Tour Caddie v4 loads Archivo + IBM Plex Mono in theme.liquid to match the app. This picker is retained for theme editor compatibility only."
       },
       {
         "type": "paragraph",
-        "content": "Sora carries display and interface type. IBM Plex Mono marks measured evidence (chips, dosages, specimen labels). The same pairing ships on app.caddieinsight.com."
+        "content": "Archivo carries display and interface type — the wordmark's own typeface. IBM Plex Mono marks measured evidence (chips, dosages, specimen labels). The same pairing ships on app.caddieinsight.com."
       }
     ]
   }

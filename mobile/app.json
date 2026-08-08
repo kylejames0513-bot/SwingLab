@@ -1,0 +1,35 @@
+{
+  "expo": {
+    "name": "CaddieInsight",
+    "slug": "caddieinsight",
+    "scheme": "caddieinsight",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "icon": "./assets/app-icon-1024.png",
+    "splash": {
+      "image": "./assets/app-icon-1024.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#06110c"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.caddieinsight.app"
+    },
+    "android": {
+      "package": "com.caddieinsight.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/app-icon-1024.png",
+        "backgroundColor": "#0f3d28"
+      }
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store"
+    ],
+    "extra": {
+      "apiBaseUrl": "https://app.caddieinsight.com"
+    }
+  }
+}

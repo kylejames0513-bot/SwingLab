@@ -36,6 +36,7 @@ def _open_report(
     name: str = "coaching-improve-clear",
     *,
     sample_banner: dict | None = None,
+    settle_animations: bool = True,
 ) -> Path:
     path = render_fixture_path(
         tmp_path, name, sample_banner=sample_banner
@@ -51,6 +52,19 @@ def _open_report(
         page.wait_for_function(
             "Array.from(document.querySelectorAll('video')).every(video => "
             "video.readyState >= 1 && !video.error)"
+        )
+    # The opening blocks animate in with a translateY. Translation does not
+    # change an element's height, but while a box sits on a fractional y its
+    # rect height is computed as bottom - top in floats and can come back a
+    # hair under its own min-height (44px measured as 43.99997). Every
+    # geometry assertion therefore waits for animations to settle rather than
+    # racing them. Skipped for the no-JavaScript context, which cannot
+    # evaluate the predicate and asserts on text rather than geometry.
+    if settle_animations:
+        page.wait_for_function(
+            "document.getAnimations().every(animation => "
+            "animation.playState === 'finished' "
+            "|| animation.playState === 'idle')"
         )
     return path
 
@@ -237,7 +251,7 @@ def test_report_remains_readable_and_disclosures_operable_without_javascript(
             java_script_enabled=False,
         )
         page = context.new_page()
-        _open_report(page, tmp_path)
+        _open_report(page, tmp_path, settle_animations=False)
 
         body_text = page.locator("body").text_content() or ""
         assert document.view.next_move.title in body_text

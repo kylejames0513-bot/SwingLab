@@ -1241,22 +1241,85 @@ def create_app(
     # -- pages ------------------------------------------------------------
     @app.get("/app.webmanifest")
     def web_manifest():
+        brand_name = cfg.brand["name"]
         return JSONResponse(
             {
-                "name": cfg.brand["name"],
-                "short_name": cfg.brand["name"],
+                # A stable id keeps an already-installed app pointed at this
+                # entry if start_url ever changes; without it the browser
+                # treats a new start_url as a different app.
+                "id": "/",
+                "name": f"{brand_name} — swing analysis",
+                "short_name": brand_name,
+                "description": (
+                    "Film one swing, get one priority, one drill, and a "
+                    "re-film target that tests the change."
+                ),
                 "start_url": "/today",
                 "scope": "/",
                 "display": "standalone",
+                # Falls back left to right, so a browser that supports the
+                # tab-strip-free window uses it and everything else lands on
+                # plain standalone.
+                "display_override": ["minimal-ui", "standalone"],
+                "orientation": "portrait",
+                "categories": ["sports", "health", "fitness"],
                 "background_color": "#eef2ef",
                 "theme_color": "#06110c",
+                "lang": "en",
+                "dir": "ltr",
                 "icons": [
+                    # Android reads the maskable entry for the launcher and
+                    # the "any" entries everywhere else. Declaring one icon
+                    # as both leaves the mark padded in one context or
+                    # clipped in the other, so they are separate files.
                     {
                         "src": "/static/pwa-icon.svg",
                         "sizes": "any",
                         "type": "image/svg+xml",
-                        "purpose": "any maskable",
-                    }
+                        "purpose": "any",
+                    },
+                    {
+                        "src": "/static/pwa-icon-192.png",
+                        "sizes": "192x192",
+                        "type": "image/png",
+                        "purpose": "any",
+                    },
+                    {
+                        "src": "/static/pwa-icon-512.png",
+                        "sizes": "512x512",
+                        "type": "image/png",
+                        "purpose": "any",
+                    },
+                    {
+                        "src": "/static/pwa-icon-maskable-512.png",
+                        "sizes": "512x512",
+                        "type": "image/png",
+                        "purpose": "maskable",
+                    },
+                ],
+                "shortcuts": [
+                    {
+                        "name": "Analyze a swing",
+                        "short_name": "Analyze",
+                        "url": "/",
+                        "icons": [
+                            {
+                                "src": "/static/pwa-icon-192.png",
+                                "sizes": "192x192",
+                                "type": "image/png",
+                            }
+                        ],
+                    },
+                    {
+                        "name": "Today",
+                        "short_name": "Today",
+                        "url": "/today",
+                    },
+                    {
+                        "name": "Swing history",
+                        "short_name": "History",
+                        "url": "/sessions",
+                    },
                 ],
             },
             media_type="application/manifest+json",

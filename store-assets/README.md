@@ -18,7 +18,10 @@ own visual language.
 | `detail-cap.png` | Second gallery image on the cap: flat-lay construction study |
 | `product-pro.png`, `pro-report-strip.png`, `pro-overlay-detail.png`, `pro-plans.png` | The CaddieInsight Pro product gallery |
 | `caddieinsight-pro-card-v2.png`, `caddieinsight-founders-card-v2.png`, `caddieinsight-free-card-v2.png` | Photoreal membership cards bound in `storefront-theme/assets` via `plans-band.liquid` |
-| `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon — Tour Caddie v3 flagstick lockup |
+| `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon — Tour Caddie v4 dial lockup |
+| `caddie-mark.svg`, `pwa-icon.svg` | The mark alone: transparent for in-page chrome, tiled for the tab favicon and installed-app icon |
+| `pwa-icon-192.png`, `pwa-icon-512.png`, `pwa-icon-maskable-512.png`, `apple-touch-icon.png` | Installed-app icons declared by `/app.webmanifest`, plus the opaque iOS home-screen tile |
+| `app-icon-1024.png` | The native client's app icon (`mobile/assets/`) — opaque and 1024, because the stores mask it themselves and reject an alpha channel |
 | `collection-gear.png` | CaddieInsight Gear collection image |
 | `caddieinsight-premium-range-hero-0852e38d.png` | Premium desktop homepage hero campaign image |
 | `caddieinsight-premium-range-hero-mobile-2e4ee946.png` | Purpose-built portrait companion for the mobile homepage hero |
@@ -59,10 +62,19 @@ curl -sSL -o DMMono-Regular.ttf \
 Then (needs Pillow, which the main package already depends on):
 
 ```bash
-python3 make_assets.py       # gear products, logo, favicon, collection banner
+python3 make_brand.py        # the mark: lockups, favicon, PWA + iOS icons
+python3 make_assets.py       # gear products, collection banner
 python3 campaign_assets.py   # drill diagrams, cap study, page banners, og card
 python3 pro_home_assets.py   # Pro gallery + homepage hero and report band
 ```
+
+`make_brand.py` is the only script that writes outside `out/`: it copies the
+shipped marks into `swinglab/web/static/` and `storefront-theme/assets/` under
+their historical filenames. Its geometry lives in `brand_mark.py`, which emits
+the same dial-and-flagstick from one definition as both Pillow draw calls and
+SVG, so the raster icons and the vector favicon cannot drift apart. Tick counts
+drop at small sizes (36 → 24 → 16) because a fine fan silts into a grey ring
+below about 64px.
 
 Everything renders supersampled and lands in `out/`. Palette, chrome, and
 shared drawing/drafting helpers (dimension lines, callouts, insets, arrows)

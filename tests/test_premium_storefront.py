@@ -450,13 +450,13 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     )
     assert font_setting["type"] == "font_picker"
     assert "Legacy font picker" in font_setting["label"]
-    assert "Sora carries display" in typography["settings"][-1]["content"]
+    assert "Archivo carries display" in typography["settings"][-1]["content"]
     assert "IBM Plex Mono" in typography["settings"][-1]["content"]
-    assert 'family=Sora:wght@400;500;600;700;800' in layout
+    assert 'family=Archivo:wght@400;500;600;700;800' in layout
     assert "family=IBM+Plex+Mono" in layout
     assert "fonts.googleapis.com" in layout
     assert "fonts.gstatic.com" in layout
-    assert '"Sora"' in base_css
+    assert '"Archivo"' in base_css
     assert '"IBM Plex Mono"' in base_css
     assert "--sl-font-display" in base_css
     assert "font_face" not in layout

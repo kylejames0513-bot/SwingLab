@@ -1,13 +1,57 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — You’re offline{% endblock %}
 {% block style %}
-  .notice-card h1 { margin: 0 0 10px; color: var(--sl-green); font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1; letter-spacing: -.045em; }
-  .notice-card p { color: var(--sl-ink-soft); }
+  .notice-card { display: grid; justify-items: start; gap: 4px; }
+  .notice-card h1 { margin: 0 0 6px; color: var(--sl-green); font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1; letter-spacing: -.045em; }
+  .notice-card p { max-width: 52ch; margin: 0; color: var(--sl-ink-soft); }
+  .notice-card__mark { width: 56px; height: 56px; margin-bottom: 10px; }
+  .notice-card__waiting {
+    display: grid;
+    gap: 7px;
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  .notice-card__waiting li { display: flex; gap: 9px; align-items: baseline; }
+  .notice-card__waiting span[aria-hidden] { color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: 10px; letter-spacing: .12em; }
+  .notice-card__retry {
+    min-height: 44px;
+    margin-top: 22px;
+    padding: 11px 20px;
+    border: 0;
+    border-radius: var(--sl-radius-control);
+    background: var(--sl-green);
+    color: var(--sl-green-ink);
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .notice-card__retry:hover { background: var(--sl-green-btn); }
 {% endblock %}
 {% block main %}
   <div class="card notice-card">
+    <img class="notice-card__mark" src="/static/pwa-icon.svg" alt="" aria-hidden="true" width="56" height="56">
     <p class="sl-eyebrow">Connection needed</p>
     <h1>You’re offline</h1>
-    <p>Your completed reports and practice plans are waiting safely on the server. Reconnect to open them, review the drill library, or upload a new video.</p>
+    <p>Nothing is lost. {{ brand.name }} keeps your swings on the server rather than on the phone, so everything reappears the moment you reconnect.</p>
+    <ul class="notice-card__waiting">
+      <li><span aria-hidden="true">01</span> Completed reports and practice plans are waiting on your account.</li>
+      <li><span aria-hidden="true">02</span> An upload needs a connection — the clip stays in your camera roll until then.</li>
+      <li><span aria-hidden="true">03</span> Analyses already running keep going; their result links keep working.</li>
+    </ul>
+    <button class="notice-card__retry" type="button" data-offline-retry>Try again</button>
   </div>
+{% endblock %}
+{% block script %}
+<script>
+  (function () {
+    var retry = document.querySelector("[data-offline-retry]");
+    if (retry) retry.addEventListener("click", function () { window.location.reload(); });
+    // Reloading the moment the radio comes back saves the golfer a tap; the
+    // button stays for the case where connectivity returns without an event.
+    window.addEventListener("online", function () { window.location.reload(); });
+  })();
+</script>
 {% endblock %}

@@ -194,7 +194,11 @@ def test_shared_shell_keeps_navigation_accessibility_contracts():
     assert "data-sl-menu" in LAYOUT
     assert "data-menu-link" in LAYOUT
     assert LAYOUT.count("data-pro-member-nav") == 2
-    assert "if (restoreMenuFocus) openButton.focus()" in LAYOUT
+    # The header hamburger and the tab bar's More button both open the menu,
+    # so closing it returns focus to whichever one was used rather than to a
+    # single hard-coded trigger.
+    assert "if (restoreMenuFocus && lastOpener) lastOpener.focus()" in LAYOUT
+    assert "lastOpener = event.currentTarget" in LAYOUT
     assert "if (summary) summary.focus()" in LAYOUT
 
 
