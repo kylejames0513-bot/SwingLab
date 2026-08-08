@@ -97,11 +97,12 @@ def _rhythm_card(
         summary=summary,
         why=(
             "A repeatable rhythm gives the body and club time to finish going "
-            "back before they change direction."
+            "back before they change direction — that is what keeps the strike "
+            "from becoming a last-second save."
         ),
         limit=(
-            "This describes timing, not how hard you swung or how fast the "
-            "clubhead moved."
+            "This describes timing from phone video, not how hard you swung "
+            "or how fast the clubhead moved."
         ),
     )
 
@@ -232,13 +233,14 @@ def _body_control_card(
         summary=summary,
         why=(
             "Large shifts make returning to the same strike area more dependent "
-            "on last-second timing."
+            "on last-second timing. Smaller, quieter movement is easier to "
+            "repeat under the same camera setup."
         ),
         limit=(
-            "These are sideways and vertical movements in a face-on image. "
-            "They do not measure body rotation, weight transfer, or ground "
-            "force. When target direction is uncertain, the report leaves "
-            "toward/away labels off instead of guessing."
+            "These are sideways and vertical movements in a face-on phone "
+            "image. They do not measure body rotation, weight transfer, or "
+            "ground force. When target direction is uncertain, the report "
+            "leaves toward/away labels off instead of guessing."
         ),
     )
 
@@ -298,8 +300,9 @@ def _impact_card(
         tone="warning" if needs_attention else "good",
         summary=summary,
         why=(
-            "These positions show how your body arrived at the likely strike frame "
-            "and make extension or shoulder-angle cues visible."
+            "These positions show how your body arrived at the likely strike "
+            "frame and make extension or shoulder-angle cues visible on the "
+            "same clip you can re-film."
         ),
         limit=(
             "This does not grade contact. A phone video cannot measure clubface "

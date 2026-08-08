@@ -93,9 +93,10 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
         Explainer(
             "tempo_ratio",
             "Tempo",
-            "Backswing time divided by downswing time. A low ratio usually "
-            "means the club changed direction before the backswing finished, "
-            f"which turns contact into a timing gamble. {tempo_target}:1 is "
+            "Backswing time divided by downswing time — the simplest way to "
+            "tell whether the club finished going back before it started "
+            "down. A low ratio usually means the change of direction came "
+            f"early, so contact becomes a timing gamble. {tempo_target}:1 is "
             "the tour reference — moving toward it matters more than hitting "
             f"it, and staying at or above {tempo_warn}:1 keeps it off the "
             "flag list.",
@@ -106,11 +107,11 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
         Explainer(
             "head_sway_backswing_sw",
             "Head sway (backswing)",
-            "How far your head drifts away from the target on the way back. "
-            "Drift moves the bottom of your swing with it, so hitting the "
-            "ball first then needs a perfectly timed slide home. The head "
-            f"can rotate freely — it just shouldn't travel more than about "
-            f"{sway} SW.",
+            "How far your head drifts away from the target on the way back "
+            "in this face-on phone view. Drift slides the bottom of the "
+            "swing with it, so clean contact then needs a perfectly timed "
+            "recovery. The head can rotate freely — it just shouldn't "
+            f"travel more than about {sway} SW.",
             SW_GLOSS,
             how="Lateral head-center travel, address \N{RIGHTWARDS ARROW} "
                 "top, from the 2D face-on pose track, normalized by shoulder "
@@ -132,9 +133,9 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "hip_slide_backswing_sw",
             "Hip slide (backswing)",
             "Sideways hip movement away from the target going back. A slide "
-            "looks like a turn but loads nothing — the trail hip never "
-            "coils, so the downswing starts with nothing to push from. "
-            f"Turning inside about {sway} SW is the reference.",
+            "can look like a turn on camera, but it never loads the trail "
+            "hip — so the downswing starts with nothing to push from. "
+            f"Turning inside about {sway} SW is the reference for this view.",
             SW_GLOSS,
             how="Lateral mid-hip travel, address \N{RIGHTWARDS ARROW} top, "
                 "from the 2D face-on pose track in shoulder widths; flagged "
@@ -200,9 +201,10 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             "finish_balance_sw",
             "Finish base stability",
             "How far the midpoint between your ankles drifted while you held "
-            "the finish. A steady base is usually easier to repeat than a "
+            "the finish. A quiet base is usually easier to repeat than a "
             "step or slide after impact, but this number is not total foot "
-            f"movement. At or under about {bal} SW is the reference.",
+            "movement and it is not a balance-board score. At or under about "
+            f"{bal} SW is the reference.",
             SW_GLOSS,
             how="Average ankle-midpoint drift while the finish is held, in "
                 f"shoulder widths; flagged beyond {bal} SW. Equal and "
