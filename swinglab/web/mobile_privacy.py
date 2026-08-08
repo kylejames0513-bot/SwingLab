@@ -745,8 +745,10 @@ class MobilePrivacyService:
                 now=float(self._now()),
             )
             if not published:
-                # Lost the lease (crash reclaim/rebuild); drop the orphan file.
-                final_path.unlink(missing_ok=True)
+                # Lost the lease after replace. Never unlink ``final_path``:
+                # another worker may already have published a ready ZIP at the
+                # same path (lease reclaim / overlapping build). An orphan
+                # from this race is safer than deleting a ready artifact.
                 return "failed"
             return "ready"
         except Exception:

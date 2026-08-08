@@ -481,6 +481,31 @@ def test_download_ready_streams_same_origin_zip(tmp_path, messages):
         _close(app)
 
 
+def test_lost_lease_after_publish_does_not_delete_ready_zip(tmp_path, messages):
+    """A lagging worker that loses record_privacy_export_ready must not unlink
+    a ZIP another worker already marked ready at the same path."""
+    app = _make_app(tmp_path)
+    try:
+        with TestClient(app) as client:
+            bearer = _sign_in(client, messages)
+            token = _mint_step_up_token(client, bearer, messages)
+            export_id = _create_export(client, bearer, token).json()["export_id"]
+            assert app.state.privacy_export_worker.drain_once() is True
+            path = app.state.privacy_export_service._artifact_path(export_id)
+            assert path.exists()
+            # Lagging claim cannot steal ready; must not delete the artifact.
+            published = app.state.users.record_privacy_export_ready(
+                export_id, worker_id="lagging-worker", byte_size=path.stat().st_size
+            )
+            assert published is False
+            assert path.exists()
+            status = _get_export(client, bearer, export_id).json()
+            assert status["status"] == "ready"
+            assert _download(client, bearer, export_id).status_code == 200
+    finally:
+        _close(app)
+
+
 def test_download_rejects_range_requests(tmp_path, messages):
     app = _make_app(tmp_path)
     try:
