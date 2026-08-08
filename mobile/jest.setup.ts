@@ -26,6 +26,10 @@ jest.mock('expo-crypto', () => ({
   ),
 }));
 
+jest.mock('@preeternal/react-native-file-hash', () => ({
+  fileHash: jest.fn(async () => 'a'.repeat(64)),
+}));
+
 jest.mock('expo-haptics', () => ({
   ImpactFeedbackStyle: { Medium: 'medium' },
   impactAsync: jest.fn(async () => undefined),
