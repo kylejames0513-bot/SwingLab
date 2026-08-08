@@ -18,6 +18,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import re
+import time
 from types import SimpleNamespace
 
 import pytest
@@ -31,6 +32,7 @@ from swinglab.web.app import create_app
 from swinglab.web.mobile_privacy import PRIVACY_EXPORT_DIRNAME
 from swinglab.web.mobile_schema import VersionedHMAC
 from swinglab.web.recovery_fence_ledger import RecoveryFenceError
+from swinglab.web.users import ACCOUNT_DELETE_REPLAY_TTL_S
 
 
 DELETE_IDEMPOTENCY_KEY = "abcdabcdabcdabcd1234123412341234"
@@ -570,6 +572,40 @@ def test_another_owners_key_replays_without_deleting_the_survivor(
             survivor = app.state.users.get_by_email("second@example.com")
         assert reused.status_code == 204, reused.text
         assert survivor is not None
+    finally:
+        _close(app)
+
+
+def test_a_deletion_receipt_stops_replaying_once_its_ttl_expires(
+    tmp_path, messages
+):
+    app = _make_app(tmp_path)
+    try:
+        with TestClient(app) as client:
+            bearer = _sign_in(client, messages)
+            token = _mint_step_up_token(client, bearer, messages)
+            assert _delete(client, bearer, token).status_code == 204
+            users = app.state.users
+            assert (
+                users.find_privacy_erasure_operation(
+                    "account_delete", DELETE_IDEMPOTENCY_KEY
+                )
+                is not None
+            )
+            # A deletion tombstone is a replay window, not a permanent record.
+            service = app.state.privacy_erasure_service
+            service._now = lambda: time.time() + ACCOUNT_DELETE_REPLAY_TTL_S + 60
+            aged_out = client.request(
+                "DELETE",
+                "/api/v1/account",
+                json={"step_up_token": token},
+                headers={"Idempotency-Key": DELETE_IDEMPOTENCY_KEY},
+            )
+            swept = users.find_privacy_erasure_operation(
+                "account_delete", DELETE_IDEMPOTENCY_KEY
+            )
+        assert aged_out.status_code == 401, aged_out.text
+        assert swept is None
     finally:
         _close(app)
 

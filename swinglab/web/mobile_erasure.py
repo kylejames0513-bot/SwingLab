@@ -211,6 +211,24 @@ class PrivacyErasureService:
                 "Recovery-fenced privacy erasure is not configured."
             )
 
+    def _sweep_expired(self) -> None:
+        """Retire journals and receipts past their replay TTL.
+
+        The replay lookup matches on the idempotency digest alone, so an
+        unswept receipt would keep answering long after its window closed.
+        Housekeeping never blocks an owner's erasure, so a purge failure is
+        logged rather than raised.
+        """
+
+        if not self.journaled:
+            return
+        try:
+            self._users.purge_expired_privacy_erasure_state(
+                now=float(self._now())
+            )
+        except (sqlite3.Error, RuntimeError):
+            logger.warning("Expired privacy-erasure state could not be purged.")
+
     # -- pre-authentication replay ----------------------------------------
 
     def find_replay(
@@ -230,6 +248,7 @@ class PrivacyErasureService:
 
         if not self.journaled:
             return None
+        self._sweep_expired()
         try:
             journal = self._users.find_privacy_erasure_operation(
                 kind,
@@ -280,6 +299,7 @@ class PrivacyErasureService:
                 expected_history_epoch=expected_history_epoch,
             )
         self._require_journal()
+        self._sweep_expired()
         try:
             journal = self._users.begin_history_reset(
                 user_id=user_id,
@@ -365,6 +385,7 @@ class PrivacyErasureService:
         step_up_token: object,
     ) -> ErasureOutcome:
         self._require_journal()
+        self._sweep_expired()
         try:
             journal = self._users.begin_account_delete(
                 user_id=user_id,
@@ -406,6 +427,7 @@ class PrivacyErasureService:
 
         if not self.journaled:
             return
+        self._sweep_expired()
         for kind in ("history_reset", "account_delete"):
             try:
                 pending = self._users.nonterminal_privacy_erasure_operations(
