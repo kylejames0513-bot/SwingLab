@@ -17,28 +17,40 @@ export const PHONE_SUPPORTS_SCREENS = {
   anyDensity: true,
 } as const;
 
+type ManifestRoot = AndroidConfig.Manifest.AndroidManifest['manifest'] & {
+  'supports-screens'?: Array<{
+    $: {
+      'android:smallScreens'?: string;
+      'android:normalScreens'?: string;
+      'android:largeScreens'?: string;
+      'android:xlargeScreens'?: string;
+      'android:anyDensity'?: string;
+    };
+  }>;
+  'uses-feature'?: Array<{
+    $?: { 'android:name'?: string; [key: string]: string | undefined };
+  }>;
+};
+
 const withPhoneFormFactor: ConfigPlugin = (config) => {
   return withAndroidManifest(config, (cfg) => {
     const manifest = cfg.modResults;
-    const application = AndroidConfig.Manifest.getMainApplicationOrThrow(manifest);
+    const application =
+      AndroidConfig.Manifest.getMainApplicationOrThrow(manifest);
 
-    // Ensure manifest has supports-screens on the root <manifest>.
-    const root = manifest.manifest;
-    if (!root['supports-screens']) {
-      root['supports-screens'] = [];
-    }
+    const root = manifest.manifest as ManifestRoot;
 
-    const screens = {
-      $: {
-        'android:smallScreens': String(PHONE_SUPPORTS_SCREENS.smallScreens),
-        'android:normalScreens': String(PHONE_SUPPORTS_SCREENS.normalScreens),
-        'android:largeScreens': String(PHONE_SUPPORTS_SCREENS.largeScreens),
-        'android:xlargeScreens': String(PHONE_SUPPORTS_SCREENS.xlargeScreens),
-        'android:anyDensity': String(PHONE_SUPPORTS_SCREENS.anyDensity),
+    root['supports-screens'] = [
+      {
+        $: {
+          'android:smallScreens': String(PHONE_SUPPORTS_SCREENS.smallScreens),
+          'android:normalScreens': String(PHONE_SUPPORTS_SCREENS.normalScreens),
+          'android:largeScreens': String(PHONE_SUPPORTS_SCREENS.largeScreens),
+          'android:xlargeScreens': String(PHONE_SUPPORTS_SCREENS.xlargeScreens),
+          'android:anyDensity': String(PHONE_SUPPORTS_SCREENS.anyDensity),
+        },
       },
-    };
-
-    root['supports-screens'] = [screens];
+    ];
 
     // Keep application present; no TV/Wear/Automotive/XR feature requirements.
     const usesFeature = root['uses-feature'] ?? [];
@@ -53,7 +65,6 @@ const withPhoneFormFactor: ConfigPlugin = (config) => {
       return !name || !banned.includes(name);
     });
 
-    // Touch application so the mod is considered applied.
     void application;
     return cfg;
   });

@@ -26,18 +26,26 @@ describe('PrivacyInfo.xcprivacy', () => {
   });
 
   it('does not claim collected data types', () => {
+    const selfClosing = contents.match(
+      /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array\s*\/>/,
+    );
     const match = contents.match(
       /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array>([\s\S]*?)<\/array>/,
     );
-    expect(match).toBeTruthy();
-    expect(match?.[1]).not.toContain('<dict>');
+    expect(selfClosing || match).toBeTruthy();
+    expect(match?.[1] ?? '').not.toContain('<dict>');
   });
 
   it('rejects manifests that invent extra collected-data claims', () => {
-    const bad = contents.replace(
-      /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array>[\s\S]*?<\/array>/,
-      `<key>NSPrivacyCollectedDataTypes</key><array><dict></dict></array>`,
-    );
+    const bad = contents
+      .replace(
+        /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array\s*\/>/,
+        `<key>NSPrivacyCollectedDataTypes</key><array><dict></dict></array>`,
+      )
+      .replace(
+        /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array>[\s\S]*?<\/array>/,
+        `<key>NSPrivacyCollectedDataTypes</key><array><dict></dict></array>`,
+      );
     expect(() => validatePrivacyManifestXml(bad)).toThrow(/collected-data/i);
   });
 });

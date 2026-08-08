@@ -61,13 +61,15 @@ describe('brand assets', () => {
     expect(config.name).toBe('CaddieInsight');
     expect(config.slug).toBe('caddieinsight');
     expect(config.icon).toBe('./assets/icon.png');
-    expect(config.splash?.image).toBe('./assets/splash-icon.png');
+    expect(config.web?.splash?.image).toBe('./assets/splash-icon.png');
     expect(config.android?.adaptiveIcon?.foregroundImage).toBe(
       './assets/adaptive-icon.png',
     );
     expect(config.android?.adaptiveIcon?.monochromeImage).toBe(
       './assets/monochrome-icon.png',
     );
-    expect(config.notification?.icon).toBe('./assets/notification-icon.png');
+    const plugins = JSON.stringify(config.plugins ?? []);
+    expect(plugins).toContain('./assets/splash-icon.png');
+    expect(plugins).toContain('./assets/notification-icon.png');
   });
 });

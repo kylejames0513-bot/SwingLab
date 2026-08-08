@@ -27,11 +27,17 @@ export function validatePrivacyManifestXml(contents: string): void {
   if (!contents.includes('<key>NSPrivacyTrackingDomains</key>')) {
     throw new Error('NSPrivacyTrackingDomains must be declared.');
   }
-  // Empty tracking domains array (no string entries between the domains key and next top-level key).
+  // Empty tracking domains: <array/> or <array></array> with no string entries.
+  const domainsSelfClosing = contents.match(
+    /<key>NSPrivacyTrackingDomains<\/key>\s*<array\s*\/>/,
+  );
   const domainsMatch = contents.match(
     /<key>NSPrivacyTrackingDomains<\/key>\s*<array>([\s\S]*?)<\/array>/,
   );
-  if (!domainsMatch || domainsMatch[1]?.includes('<string>')) {
+  if (
+    !domainsSelfClosing &&
+    (!domainsMatch || domainsMatch[1]?.includes('<string>'))
+  ) {
     throw new Error('NSPrivacyTrackingDomains must be empty.');
   }
 
@@ -45,13 +51,16 @@ export function validatePrivacyManifestXml(contents: string): void {
   }
 
   // Reject undeclared collected-data claims: only an empty array is allowed.
+  const collectedSelfClosing = contents.match(
+    /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array\s*\/>/,
+  );
   const collectedMatch = contents.match(
     /<key>NSPrivacyCollectedDataTypes<\/key>\s*<array>([\s\S]*?)<\/array>/,
   );
-  if (!collectedMatch) {
+  if (!collectedSelfClosing && !collectedMatch) {
     throw new Error('NSPrivacyCollectedDataTypes must be declared.');
   }
-  if (collectedMatch[1]?.includes('<dict>')) {
+  if (collectedMatch?.[1]?.includes('<dict>')) {
     throw new Error(
       'NSPrivacyCollectedDataTypes must be empty; no undeclared collected-data claims.',
     );

@@ -36,13 +36,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     orientation: 'default',
     scheme: schemeFor(appEnv),
     userInterfaceStyle: 'automatic',
-    newArchEnabled: true,
     icon: './assets/icon.png',
-    splash: {
-      image: './assets/splash-icon.png',
-      resizeMode: 'contain',
-      backgroundColor: '#1A3D2E',
-    },
     ios: {
       supportsTablet: false,
       bundleIdentifier: bundleId,
@@ -70,10 +64,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     web: {
       output: 'static',
       favicon: './assets/icon.png',
-    },
-    notification: {
-      icon: './assets/notification-icon.png',
-      color: '#1A3D2E',
+      splash: {
+        image: './assets/splash-icon.png',
+        resizeMode: 'contain',
+        backgroundColor: '#1A3D2E',
+      },
     },
     plugins: [
       'expo-router',
@@ -83,6 +78,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           backgroundColor: '#1A3D2E',
           image: './assets/splash-icon.png',
           imageWidth: 200,
+        },
+      ],
+      [
+        'expo-notifications',
+        {
+          icon: './assets/notification-icon.png',
+          color: '#1A3D2E',
         },
       ],
       [
