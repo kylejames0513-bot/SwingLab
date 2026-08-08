@@ -220,7 +220,7 @@ def test_finalizing_after_part_move_resumes_bound_job_without_orphan(env):
         assert row2["job_id"] == job.id
         recovered = manager2.get(job.id)
         assert recovered is not None
-        assert recovered.status in (QUEUED, "done")
+        assert recovered.status in (QUEUED, "processing", "done")
         assert source.exists()
         assert not uploads2._part_path(reservation.upload_id).exists()
         assert uploads2._ledger.kind_of(job.id, "job_source") == "job_source"
@@ -376,3 +376,45 @@ def test_credential_close_after_chunk_fsync_truncates_unacknowledged_bytes(env):
         checksum_b64=_checksum(first),
     )
     assert uploads.status("alice", reservation.upload_id).committed_offset == 100
+
+
+def test_discard_for_user_leaves_queued_source_intact(env):
+    from swinglab.web.jobs import PREPARING, QUEUED
+    from swinglab.web.jobs import HistoryResetConflict
+
+    sessions, manager, uploads = env
+    body = b"swing" * 100
+    reservation = uploads.create("alice", _request(body), "8" * 32)
+    _upload_all(uploads, reservation.upload_id, body, 128)
+    row = uploads._owned_row(reservation.upload_id, "alice")
+    job = uploads._prepare_completion(row)
+    source = uploads._publish_prepared_source(job, row)
+    job = manager.mark_queued(job)
+    assert job.status == QUEUED
+    assert source.exists()
+
+    uploads.discard_for_user("alice")
+
+    # Live queued analysis must not lose its source; history reset then conflicts.
+    assert source.exists()
+    assert manager.get(job.id).status == QUEUED
+    crashed = uploads._row(reservation.upload_id)
+    assert crashed["status"] == FINALIZING
+    with pytest.raises(HistoryResetConflict):
+        manager.reset_user_history("alice")
+
+
+def test_abort_discards_preparing_shell(env):
+    from swinglab.web.jobs import PREPARING
+
+    sessions, manager, uploads = env
+    body = b"swing" * 80
+    reservation = uploads.create("alice", _request(body), "9" * 32)
+    _upload_all(uploads, reservation.upload_id, body, 128)
+    row = uploads._owned_row(reservation.upload_id, "alice")
+    job = uploads._prepare_completion(row)
+    assert job.status == PREPARING
+    uploads.abort("alice", reservation.upload_id, "b" * 32)
+    assert manager.get(job.id) is None
+    assert not job.session_dir.exists()
+    assert uploads._row(reservation.upload_id)["status"] == "aborted"

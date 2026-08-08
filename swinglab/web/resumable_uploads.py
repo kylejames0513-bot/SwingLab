@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..api.contracts import UploadCreateRequest
-from .jobs import JobManager, Job, PREPARING, QUEUED
+from .jobs import ACTIVE, JobManager, Job, PREPARING, QUEUED
 from .mobile_schema import MobileStateDomain, VersionedHMAC
 from .storage_capacity import InsufficientStorageError, StorageCapacityLedger
 
@@ -656,8 +656,11 @@ class ResumableUploadManager:
             if digest_path is None or not self._verify_full_digest(
                 digest_path, row["file_sha256"], row["file_bytes"]
             ):
-                if row["status"] == PENDING:
-                    self._mark_failed(upload_id)
+                if row["job_id"]:
+                    orphan = self._jobs.get(row["job_id"])
+                    if orphan is not None and orphan.status == PREPARING:
+                        self._jobs.discard(orphan)
+                self._mark_failed(upload_id)
                 raise UploadChecksumMismatch("The uploaded file digest did not match.")
 
             # Phase one: bind a stable job identity and mark finalizing before
@@ -668,9 +671,12 @@ class ResumableUploadManager:
 
             # Phase two: mark the job queued and the reservation complete, then
             # transfer capacity and submit. JobManager restart requeues if we
-            # crash after this commit but before submit returns.
+            # crash after this commit but before submit returns — so only submit
+            # when *this* path promotes preparing → queued.
+            promoted = False
             if job.status == PREPARING:
                 job = self._jobs.mark_queued(job)
+                promoted = True
             with self._tx:
                 self._conn.execute(
                     "UPDATE resumable_uploads SET status = ?, job_id = ?, updated_at = ? "
@@ -684,8 +690,7 @@ class ResumableUploadManager:
                 )
             except KeyError:
                 pass
-            if job.status == QUEUED:
-                # Already running/done from an earlier submit — do not double-submit.
+            if promoted:
                 self._jobs.submit(job, source)
             return job, False
         finally:
@@ -830,6 +835,12 @@ class ResumableUploadManager:
                 raise UploadIdempotencyConflict(
                     "This upload was already aborted with a different key."
                 )
+            job_id = row["job_id"]
+            bound_job = self._jobs.get(job_id) if job_id else None
+            if bound_job is not None and bound_job.status in ACTIVE:
+                raise UploadStateConflict(
+                    "A completed upload cannot be aborted."
+                )
 
             # Journal the aborting intent and the seven-day receipt before any
             # filesystem mutation so crash recovery never invents key material.
@@ -856,6 +867,10 @@ class ResumableUploadManager:
                     ),
                 )
                 self._conn.commit()
+            # Drop any bound preparing shell before the part unlink so a failed
+            # complete cannot leave an orphan job.
+            if bound_job is not None and bound_job.status == PREPARING:
+                self._jobs.discard(bound_job)
             part = self._part_path(upload_id)
             with self._maintenance.acquire(timeout=30.0):
                 part.unlink(missing_ok=True)
@@ -905,22 +920,27 @@ class ResumableUploadManager:
         return released
 
     def discard_for_user(self, user_id: str) -> None:
-        """History reset / account deletion discards active reservations."""
+        """History reset / account deletion discards active reservations.
+
+        Reservations whose bound job is already queued/processing are left
+        alone so history reset conflicts on the live analysis without this
+        path destroying the source underneath it.
+        """
         with self._tx:
             rows = self._conn.execute(
                 "SELECT * FROM resumable_uploads "
-                "WHERE user_id = ? AND status IN (?, ?)",
-                (user_id, PENDING, FINALIZING),
+                "WHERE user_id = ? AND status IN (?, ?, ?)",
+                (user_id, PENDING, FINALIZING, ABORTING),
             ).fetchall()
         for row in rows:
             upload_id = row["upload_id"]
             job_id = row["job_id"]
             if job_id:
                 job = self._jobs.get(job_id)
+                if job is not None and job.status in ACTIVE:
+                    continue
                 if job is not None and job.status == PREPARING:
                     self._jobs.discard(job)
-                source = self.sessions_dir / job_id / f"source{row['suffix']}"
-                source.unlink(missing_ok=True)
             self._part_path(upload_id).unlink(missing_ok=True)
             self._ledger.release("upload_part", upload_id)
             with self._tx:
@@ -1024,18 +1044,24 @@ class ResumableUploadManager:
 
     def _recover_finalizing(self, row) -> None:
         upload_id = row["upload_id"]
+        job = None
         try:
             job = self._prepare_completion(row)
             source = self._publish_prepared_source(job, row)
         except UploadError:
-            if row["job_id"]:
-                orphan = self._jobs.get(row["job_id"])
+            target_id = job.id if job is not None else row["job_id"]
+            if target_id:
+                orphan = self._jobs.get(target_id)
                 if orphan is not None and orphan.status == PREPARING:
                     self._jobs.discard(orphan)
             self._fail_and_release(upload_id)
             return
+        # JobManager.recover_interrupted may already have submitted a QUEUED
+        # job on this restart; only submit when we promote preparing → queued.
+        promoted = False
         if job.status == PREPARING:
             job = self._jobs.mark_queued(job)
+            promoted = True
         with self._tx:
             self._conn.execute(
                 "UPDATE resumable_uploads SET status = ?, job_id = ?, updated_at = ? "
@@ -1047,7 +1073,7 @@ class ResumableUploadManager:
             self._ledger.transfer("upload_part", upload_id, "job_source", job.id)
         except KeyError:
             pass
-        if job.status == QUEUED:
+        if promoted:
             self._jobs.submit(job, source)
 
     def _fail_and_release(self, upload_id: str) -> None:
