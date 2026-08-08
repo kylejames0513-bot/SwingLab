@@ -484,7 +484,7 @@ def test_token_rotation_dead_letters_pending_outbox(tmp_path, expo_token):
         _close(app)
 
 
-def test_schema_generation_is_four(tmp_path):
+def test_schema_generation_is_five(tmp_path):
     app = _app(tmp_path, push_enabled=False)
     try:
         from swinglab.web.mobile_schema import (
@@ -492,11 +492,18 @@ def test_schema_generation_is_four(tmp_path):
             detect_mobile_state_generation,
         )
 
-        assert MOBILE_STATE_SCHEMA_GENERATION == 4
-        assert detect_mobile_state_generation(app.state.users._conn) == 4
+        assert MOBILE_STATE_SCHEMA_GENERATION == 5
+        assert detect_mobile_state_generation(app.state.users._conn) == 5
         assert (
             app.state.users._conn.execute(
                 "SELECT name FROM sqlite_master WHERE name = 'mobile_push_outbox'"
+            ).fetchone()
+            is not None
+        )
+        assert (
+            app.state.users._conn.execute(
+                "SELECT name FROM sqlite_master"
+                " WHERE name = 'mobile_push_environment_fences'"
             ).fetchone()
             is not None
         )

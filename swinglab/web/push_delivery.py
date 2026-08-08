@@ -20,6 +20,7 @@ from typing import Callable, Protocol, Sequence
 
 from .jobs import DONE, FAILED, Job, JobManager
 from .push_store import MobilePushSettings
+from .push_cutover import PushFenceClosedError, require_open_fence
 from .users import UserStore
 
 
@@ -250,6 +251,14 @@ class PushOutboxStore:
         observed = time.time() if now is None else float(now)
         terminal_at = observed
         with self._users._lock:
+            try:
+                require_open_fence(
+                    self._users._conn,
+                    environment=environment,
+                    expo_project_id=expo_project_id,
+                )
+            except PushFenceClosedError:
+                return False
             registrations = self._users._conn.execute(
                 "SELECT selector, token, registered_at FROM mobile_push_registrations"
                 " WHERE user_id = ? AND environment = ? AND expo_project_id = ?",
@@ -395,6 +404,21 @@ class PushOutboxWorker:
             if row is None:
                 self._users._conn.commit()
                 return False
+            try:
+                require_open_fence(
+                    self._users._conn,
+                    environment=str(row["environment"]),
+                    expo_project_id=str(row["expo_project_id"]),
+                )
+            except PushFenceClosedError:
+                self._users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " lease_owner = NULL, lease_expires_at = NULL, updated_at = ?"
+                    " WHERE id = ? AND status IN ('pending', 'leased')",
+                    (observed, row["id"]),
+                )
+                self._users._conn.commit()
+                return True
             # Recheck live registration and bind send to the live token.
             live = self._users._conn.execute(
                 "SELECT token FROM mobile_push_registrations"

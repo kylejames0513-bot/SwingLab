@@ -246,6 +246,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     add_privacy_subparser(sub)
 
+    from .web.push_cutover_cli import add_mobile_push_cutover_subparser
+
+    add_mobile_push_cutover_subparser(sub)
+
     # Explicit operator tooling only. Merely installing the package or setting
     # credentials starts no backup process and changes no web runtime behavior.
     from .backups.cli import add_backup_subparser, add_recovery_fence_subparser
@@ -369,6 +373,11 @@ def main(argv: list[str] | None = None) -> int:
         from .integrations.shopify.privacy_cli import run_privacy_command
 
         return run_privacy_command(args)
+
+    if args.command == "mobile-push-cutover":
+        from .web.push_cutover_cli import run_mobile_push_cutover_command
+
+        return run_mobile_push_cutover_command(args)
 
     cfg = Config.load(args.config)
 

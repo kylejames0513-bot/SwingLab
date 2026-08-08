@@ -1538,9 +1538,15 @@ def test_known_mobile_generations_remain_detectable(synthetic_sessions):
         core_module.detect_mobile_state_generation(connection)
         == MOBILE_STATE_SCHEMA_GENERATION
     )
+    connection.execute("DROP TABLE mobile_push_environment_fences")
+    connection.execute("DROP TABLE mobile_push_cutover_operations")
+    connection.commit()
+    assert core_module.detect_mobile_state_generation(connection) == 4
     connection.execute("DROP TABLE mobile_push_outbox")
     connection.execute("DROP INDEX IF EXISTS mobile_push_outbox_pending")
     connection.execute("DROP INDEX IF EXISTS mobile_push_outbox_selector")
+    connection.commit()
+    assert core_module.detect_mobile_state_generation(connection) == 3
     connection.execute("DROP TABLE mobile_push_registrations")
     connection.execute("DROP TABLE mobile_push_activation_watermarks")
     connection.execute("DROP INDEX IF EXISTS mobile_push_registrations_user")

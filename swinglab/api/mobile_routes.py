@@ -146,6 +146,7 @@ from ..web.push_store import (
     MobilePushUnauthorized,
     PushRegistrationService,
 )
+from ..web.push_cutover import PushFenceClosedError
 from ..web.review_auth import (
     ReviewAuthService,
     parse_app_identity_headers,
@@ -2463,6 +2464,13 @@ def install_mobile_routes(
             raise
         except MobilePushUnauthorized as exc:
             raise mobile_bearer_unauthorized() from exc
+        except PushFenceClosedError as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "push_fence_closed",
+                "Push registration is unavailable for this environment.",
+                headers=no_store,
+            ) from exc
         except MobilePushInvalidRequest as exc:
             raise MobileAPIHTTPError(
                 400,
@@ -2517,6 +2525,13 @@ def install_mobile_routes(
             raise
         except MobilePushUnauthorized as exc:
             raise mobile_bearer_unauthorized() from exc
+        except PushFenceClosedError as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "push_fence_closed",
+                "Push preferences are unavailable for this environment.",
+                headers=no_store,
+            ) from exc
         except MobilePushNotRegistered as exc:
             raise MobileAPIHTTPError(
                 404,

@@ -668,6 +668,13 @@ def create_app(
             *composed_sign_out_extensions,
             push_registration_service,
         )
+        from .push_cutover import ensure_open_fence
+
+        ensure_open_fence(
+            users,
+            environment=mobile_deployment_environment,
+            expo_project_id=mobile_push_settings.expo_project_id,
+        )
     sign_out_service = MobileSignOutService(
         users,
         mutation_guard,

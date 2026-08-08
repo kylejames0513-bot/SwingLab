@@ -19,6 +19,7 @@ from .credential_mutations import (
     CredentialMutationRejected,
 )
 from .mobile_schema import MOBILE_STATE_SCHEMA_GENERATION
+from .push_cutover import PushFenceClosedError, require_open_fence
 from .review_auth import AppIdentityHeaders
 from .users import UserStore
 
@@ -278,6 +279,11 @@ class PushRegistrationService:
             with self._users._lock:
                 try:
                     self._users._conn.execute("BEGIN IMMEDIATE")
+                    require_open_fence(
+                        self._users._conn,
+                        environment=self._environment,
+                        expo_project_id=project_id,
+                    )
                     lease.validate_locked(self._users, now=timestamp)
                     current = self._users._conn.execute(
                         "SELECT token, platform, app_version, app_build,"
@@ -426,6 +432,10 @@ class PushRegistrationService:
                     )
                     self._users._conn.commit()
                     return row.response()
+                except PushFenceClosedError:
+                    if self._users._conn.in_transaction:
+                        self._users._conn.rollback()
+                    raise
                 except Exception:
                     if self._users._conn.in_transaction:
                         self._users._conn.rollback()
@@ -457,6 +467,11 @@ class PushRegistrationService:
             with self._users._lock:
                 try:
                     self._users._conn.execute("BEGIN IMMEDIATE")
+                    require_open_fence(
+                        self._users._conn,
+                        environment=self._environment,
+                        expo_project_id=project_id,
+                    )
                     lease.validate_locked(self._users, now=timestamp)
                     current = self._users._conn.execute(
                         "SELECT platform, app_version,"
@@ -495,6 +510,10 @@ class PushRegistrationService:
                     )
                     self._users._conn.commit()
                     return row.response()
+                except PushFenceClosedError:
+                    if self._users._conn.in_transaction:
+                        self._users._conn.rollback()
+                    raise
                 except Exception:
                     if self._users._conn.in_transaction:
                         self._users._conn.rollback()
