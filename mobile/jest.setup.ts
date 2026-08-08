@@ -26,6 +26,37 @@ jest.mock('expo-crypto', () => ({
   ),
 }));
 
+jest.mock('expo-haptics', () => ({
+  ImpactFeedbackStyle: { Medium: 'medium' },
+  impactAsync: jest.fn(async () => undefined),
+}));
+
+jest.mock('expo-camera', () => {
+  const React = require('react');
+  return {
+    CameraView: React.forwardRef(() => null),
+    useCameraPermissions: () => [{ granted: true }, jest.fn(async () => ({ granted: true }))],
+    useMicrophonePermissions: () => [
+      { granted: true },
+      jest.fn(async () => ({ granted: true })),
+    ],
+  };
+});
+
+jest.mock('expo-image-picker', () => ({
+  VideoExportPreset: { Passthrough: 0 },
+  requestMediaLibraryPermissionsAsync: jest.fn(async () => ({ granted: true })),
+  launchImageLibraryAsync: jest.fn(async () => ({ canceled: true, assets: [] })),
+}));
+
+jest.mock('expo-video', () => {
+  const React = require('react');
+  return {
+    useVideoPlayer: () => ({}),
+    VideoView: () => null,
+  };
+});
+
 // PKCE helpers use btoa; provide a minimal polyfill for Jest.
 if (typeof globalThis.btoa !== 'function') {
   globalThis.btoa = (value: string) =>

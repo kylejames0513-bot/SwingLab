@@ -1,5 +1,4 @@
-import { Text } from '@/ui/primitives';
-import { ScrollScreen } from '@/ui/primitives';
+import { Text, ScrollScreen } from '@/ui/primitives';
 
 export default function PracticeRoute() {
   return (
