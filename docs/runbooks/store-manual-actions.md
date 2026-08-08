@@ -46,18 +46,20 @@ top trust/compliance gap. Paste the following.
 
 ```html
 <h2>Shipping, stated plainly</h2>
-<p>Training aids ship directly from partner warehouses rather than from a CaddieInsight facility. That keeps prices down; the trade-off is transit time, and we would rather state it than surprise you.</p>
+<p>Training aids ship directly from partner warehouses via DSers rather than from a CaddieInsight facility. That keeps prices down; the trade-off is transit time, and we would rather state it than surprise you.</p>
 <ul>
   <li><strong>Processing:</strong> 1–2 business days.</li>
-  <li><strong>US delivery:</strong> typically 6–12 business days.</li>
+  <li><strong>United States:</strong> Standard $8 or Express $15 at checkout; typically 6–12 business days.</li>
+  <li><strong>Asia:</strong> Standard $9 or Express $18 at checkout; typically 5–14 business days (Japan, Korea, China, Hong Kong, Taiwan, Singapore, Thailand, Malaysia, Philippines, Vietnam, Indonesia, India, and nearby).</li>
   <li><strong>Tracking:</strong> emailed at dispatch, so you can follow the package the whole way.</li>
-  <li><strong>Shipping region:</strong> we currently ship physical gear within the United States.</li>
+  <li><strong>Shipping regions:</strong> physical gear ships to the United States and the Asia zone configured in Shipping settings.</li>
 </ul>
 <h2>Digital delivery</h2>
 <p>CaddieInsight Pro is delivered digitally — nothing ships. When your paid order is confirmed, Pro access is added to the CaddieInsight account matching your checkout email, usually within minutes. Bought before creating an account? The purchase waits and is claimed automatically the first time that email signs up or logs in at <a href="https://app.caddieinsight.com">app.caddieinsight.com</a>.</p>
 <p>If a package is late, lost, or arrives damaged, reply to your order confirmation email or use the <a href="/pages/contact">contact page</a> and we will chase it down or make it right.</p>
 ```
 
+See also the live runbook [dsers-usa-asia-shipping.md](dsers-usa-asia-shipping.md) for zone rates and DSers checklist.
 ### Terms of service
 
 Review the bracketed governing-law line before publishing.

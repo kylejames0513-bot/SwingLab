@@ -80,7 +80,14 @@
       "@type": "Organization",
       "name": "CaddieInsight",
       "url": {{ shop.url | json }}{% if schema_logo %},
-      "logo": {{ schema_logo | image_url: width: 480 | prepend: 'https:' | json }}{% endif %}
+      "logo": {{ schema_logo | image_url: width: 480 | prepend: 'https:' | json }}{% endif %},
+      "contactPoint": {
+        "@type": "ContactPoint",
+        "contactType": "customer support",
+        "url": {{ shop.url | append: '/pages/contact' | json }},
+        "areaServed": ["US", "JP", "KR", "CN", "HK", "TW", "SG", "TH", "MY", "PH", "VN", "ID", "IN"],
+        "availableLanguage": "English"
+      }
     }
   </script>
   {%- comment -%}

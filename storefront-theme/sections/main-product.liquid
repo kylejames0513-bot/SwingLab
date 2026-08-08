@@ -290,17 +290,18 @@
         {{ form | payment_button }}
       {% endform %}
 
+      {%- assign shipping_returns_url = pages['shipping-returns'].url | default: '/pages/shipping-returns' -%}
       <ul class="sl-main-product__trust" aria-label="Ordering details">
         {%- if section.settings.trust_1 != blank -%}
           <li>
             <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/></svg>
-            <span>{{ section.settings.trust_1 }}</span>
+            <a href="{{ shipping_returns_url }}">{{ section.settings.trust_1 }}</a>
           </li>
         {%- endif -%}
         {%- if section.settings.trust_2 != blank -%}
           <li>
             <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 5v6h6"/><path d="M4.6 15a8.5 8.5 0 1 0 1.6-8.6L2.5 11"/></svg>
-            <span>{{ section.settings.trust_2 }}</span>
+            <a href="{{ shipping_returns_url }}">{{ section.settings.trust_2 }}</a>
           </li>
         {%- endif -%}
         {%- if section.settings.trust_3 != blank -%}
@@ -310,6 +311,7 @@
           </li>
         {%- endif -%}
       </ul>
+      <p class="sl-mono-label sl-main-product__checkout-note">Secure checkout via Shopify</p>
     {%- endif -%}
 
     {%- if product.description != blank -%}
@@ -659,6 +661,18 @@
   height: 15px;
   margin-top: 2px;
   color: var(--sl-green-btn);
+}
+
+.sl-main-product__trust a {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--sl-green-btn) 45%, transparent);
+  text-underline-offset: 0.18em;
+}
+
+.sl-main-product__checkout-note {
+  margin: -12px 0 28px;
+  color: var(--sl-ink-muted);
 }
 
 /* ---- description ---- */
