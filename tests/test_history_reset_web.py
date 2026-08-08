@@ -83,16 +83,14 @@ def upload_finished_swing(client: TestClient) -> str:
     return job_id
 
 
-@pytest.mark.parametrize("flag_value", [False, "false", 1, None])
 def test_reset_surface_is_inert_until_the_compatibility_floor_is_live(
-    tmp_path, monkeypatch, flag_value
+    tmp_path, monkeypatch
 ):
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
     cfg = Config()
     cfg.web["require_account"] = True
     cfg.web["passwordless_login"] = False
     assert cfg.web["history_reset_enabled"] is False
-    cfg.web["history_reset_enabled"] = flag_value
     floor_app = create_app(cfg, sessions_dir=tmp_path / "floor-sessions")
     client = TestClient(floor_app)
     signup(client, "floor@example.com")
@@ -103,6 +101,22 @@ def test_reset_surface_is_inert_until_the_compatibility_floor_is_live(
     assert "/account/history/delete" not in account.text
     assert client.get("/account/history/delete").status_code == 404
     assert client.post("/account/history/delete").status_code == 404
+
+
+@pytest.mark.parametrize("flag_value", ["false", 1, None])
+def test_non_bool_history_reset_flag_fails_closed_at_startup(
+    tmp_path, monkeypatch, flag_value
+):
+    """Recovery-dependent flags must be exact bools; garbage config never boots."""
+    from swinglab.web.recovery_fence_ledger import RecoveryFenceError
+
+    monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
+    cfg = Config()
+    cfg.web["require_account"] = True
+    cfg.web["passwordless_login"] = False
+    cfg.web["history_reset_enabled"] = flag_value
+    with pytest.raises(RecoveryFenceError, match="feature flag is invalid"):
+        create_app(cfg, sessions_dir=tmp_path / "invalid-flag-sessions")
 
 
 def test_shipped_config_activates_account_and_history_reset_links(

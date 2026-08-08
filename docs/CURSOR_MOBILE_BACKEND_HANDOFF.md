@@ -31,20 +31,30 @@ Implement native privacy controls and safe account deletion from the plan Task 6
 - `POST /api/v1/auth/step-up/start` / `POST /api/v1/auth/step-up/exchange` behind `mobile_privacy_enabled`.
 - Tests: `tests/test_mobile_privacy_api.py`.
 
-**Privacy export** — landed at `fe35762` (pending independent review).
+**Privacy export** — independently reviewed **PASS** at `e300a82` (never unlink ready ZIP on lost lease).
 
 - `POST /api/v1/privacy/exports` consumes a `data_export` step-up token + `Idempotency-Key` → 202 pending receipt (exact replay).
 - Leased `PrivacyExportWorker` builds ZIP under `sessions_dir/.privacy_exports` (profile + sessions summary); rechecks `history_epoch` before publish.
 - `GET /api/v1/privacy/exports/{id}` and `.../download` (same-origin stream, exact `Content-Length`, Range rejected).
-- Tests: `tests/test_mobile_privacy_export_api.py` (19 passed).
+- Tests: `tests/test_mobile_privacy_export_api.py`.
 
-**Still next:** history-reset journal wrap, then account deletion; review step-up; full download-admission budgets if not yet complete; gen-3 backup registration for step-up/export tables.
+**History reset + account deletion** — implementation at `67d1fe1`; focused suites green (pending independent review).
 
-**Deferrals:**
+- Recovery-fence `history_reset` / `account_delete` kinds + restore reconcilers.
+- Durable journals/receipts in UserStore; `PrivacyErasureService` drives phases.
+- `POST /api/v1/privacy/history-reset` (`step_up_token` + `expected_history_epoch` + `Idempotency-Key`) → 202/204; pre-auth exact replay.
+- `DELETE /api/v1/account` (`step_up_token` + `Idempotency-Key`) → 202/204; pre-auth replay after credential revoke.
+- Browser `POST /account/history/delete` uses the same journal/fence authority.
+- Tests: `tests/test_mobile_privacy_history_reset_api.py`, `tests/test_mobile_account_delete_api.py`, plus browser/core regressions.
 
-- Store-review step-up variant.
-- Gen-3 mobile backup registration for step-up/export/capacity/upload tables (outside closed inventory for now).
-- Full durable download-admission slot/byte budgets if the export slice shipped a minimal guard — confirm in review.
+**Still next after Task 6 PASS:** review step-up (Entitlements); gen-3 backup registration; full download-admission budgets; full OwnerErasureExtension inventory if not deferred.
+
+**Deferrals (acceptable for Task 6 PASS):**
+
+- Store-review step-up variant / full review-scoped account deletion.
+- Gen-3 mobile backup registration for step-up/export/erasure/capacity/upload tables.
+- Full durable download-admission slot/byte budgets (minimal in-process guard may remain).
+- Full machine-checked writer inventory / every OwnerErasureExtension if oversized — ordinary customer delete + history reset must work.
 
 ## Standing decisions and hazards
 
