@@ -18,9 +18,8 @@ language.
 | `detail-cap.png` | Second gallery image on the cap: flat-lay construction study |
 | `product-pro.png`, `pro-report-strip.png`, `pro-overlay-detail.png`, `pro-plans.png` | The CaddieInsight Pro product gallery |
 | `caddieinsight-pro-card-v2.png`, `caddieinsight-founders-card-v2.png`, `caddieinsight-free-card-v2.png` | Photoreal membership cards bound in `storefront-theme/assets` via `plans-band.liquid` |
-| `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon |
+| `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon — Tour Caddie v3 flagstick lockup |
 | `collection-gear.png` | CaddieInsight Gear collection image |
-| `swinglab-hero.png` | Homepage hero background (Horizon theme) |
 | `caddieinsight-premium-range-hero-0852e38d.png` | Premium desktop homepage hero campaign image |
 | `caddieinsight-premium-range-hero-mobile-2e4ee946.png` | Purpose-built portrait companion for the mobile homepage hero |
 | `swinglab-report-band.png` | Homepage "Numbers you can act on" band |
