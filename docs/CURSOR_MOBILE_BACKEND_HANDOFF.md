@@ -26,7 +26,7 @@ Implement device-bound Expo push registration and a durable outbox from the plan
 
 ### Task 7 progress (in this branch)
 
-**Push registration slice** — tip after OpenAPI/handoff commit (registration impl `a84d269`).
+**Push registration slice** — tip `46d7e13` (registration impl `a84d269`).
 
 - Schema generation **3**: additive `mobile_push_registrations` + `mobile_push_activation_watermarks`; restore allowlists include generation `3`; HMAC domains `push-expo-project` and `push-cutover-operation-id`.
 - Config: `mobile_push_enabled: false`, `mobile_push_expo_project_id: ""`; non-secret `CADDIEINSIGHT_EXPO_PROJECT_ID` override; flag-on requires canonical UUID; flag-off tolerates blank.
