@@ -175,8 +175,7 @@
             "note": "RENEWS MONTHLY · CANCEL ANYTIME",
             "cta_label": "Go Pro monthly",
             "featured": false,
-            "show_save": false,
-            "image_label": "Pro · Monthly"
+            "show_save": false
           }
         },
         "season": {
@@ -191,8 +190,7 @@
             "note": "12 MONTHS OF PRO · ONE PAYMENT",
             "cta_label": "Get the Season Pass",
             "featured": true,
-            "show_save": true,
-            "image_label": "Pro · Season Pass"
+            "show_save": true
           }
         },
         "founders": {
@@ -207,8 +205,7 @@
             "note": "FIRST 100 MEMBERS · NEVER RENEWS",
             "cta_label": "Get the Founders Pass",
             "featured": false,
-            "show_save": false,
-            "image_label": "Founders Pass"
+            "show_save": false
           }
         },
         "free": {

@@ -20,6 +20,15 @@ LOCALE = json.loads(
 )
 
 
+def test_storefront_header_prefers_theme_packaged_logo_asset():
+    assert "section.settings.logo != blank" in HEADER
+    assert "images['swinglab-logo.png']" not in HEADER
+    assert "swinglab-logo.png' | asset_url" in HEADER
+    assert 'class="sl-header__logo-img"' in HEADER
+    theme_logo = THEME_ROOT / "assets" / "swinglab-logo.png"
+    assert theme_logo.is_file()
+
+
 def test_storefront_header_has_one_state_aware_app_action():
     assert "app_login_url = app_url | append: '/login'" in HEADER
     assert "app_signup_url = app_url | append: '/signup'" in HEADER
@@ -69,11 +78,15 @@ def test_storefront_homepage_prominently_welcomes_signed_in_members():
     assert "node.hidden = isPro;" in HEADER
     assert 'body:has(.sl-header[data-app-authenticated="true"]' in HEADER
     assert "announcement.hidden = authenticated;" not in HEADER
-    assert "summary.textContent = authenticated ? welcomeText : accountLabel;" in HEADER
+    assert "var summaryText = accountLabel || signedInLabel;" in HEADER
+    assert "summary.textContent = summaryText;" in HEADER
+    assert "summary.textContent = authenticated ? welcomeText : accountLabel;" not in HEADER
     assert "node.dataset.appPro = isPro ? 'true' : 'false';" in HEADER
     assert "isPro ? proActionLabel : analyzeLabel" in HEADER
     assert ".sl-member-rail__greeting" in HEADER
     assert "min-height: 44px" in HEADER
+    assert ".sl-header__account > summary" in HEADER
+    assert "text-overflow: ellipsis" in HEADER
 
 
 def test_premium_header_is_scoped_to_home_and_the_pro_product():
@@ -134,6 +147,17 @@ def test_mobile_header_uses_one_cart_link_and_an_accessible_dialog():
 def test_home_header_overlays_the_hero_then_gains_a_scroll_surface():
     assert "assign overlay_header = true" in HEADER
     assert ".shopify-section:has(> .sl-header--overlay) { margin-bottom: -76px; }" in HEADER
+    assert (
+        '.shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"])'
+        in HEADER
+    )
+    assert "margin-bottom: calc(-76px - 38px);" in HEADER
+    assert "margin-bottom: calc(-64px - 38px);" in HEADER
+    assert "margin-bottom: calc(-60px - 72px);" in HEADER
+    assert (
+        'body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner'
+        in HEADER
+    )
     overlay_css = HEADER.split(".sl-header--overlay {", 1)[1].split("}", 1)[0]
     assert "background: transparent" in overlay_css
     assert ".sl-header--overlay.is-scrolled" in HEADER

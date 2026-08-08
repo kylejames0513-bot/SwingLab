@@ -3,11 +3,11 @@
 Brand and product artwork for the Shopify storefront. Most catalog and
 technical artwork is generated as code so it can be reproduced or retuned;
 approved campaign photography keeps its generation prompt and content hash
-beside the output. The visual system ("Fairway
-Modernism", see `PHILOSOPHY.md`) uses the same design tokens as the
-storefront theme: warm off-white `#f7f5f0`, deep green `#14472c` /
-`#1a5c38`, orange accent `#e8720c`, Archivo type — and draws golfers as
-pose-estimation skeletons, the product's own visual language.
+beside the output. The visual system ("Turf Instrument", see `PHILOSOPHY.md`)
+uses the same design tokens as the storefront theme: cool mist `#eef2ef`,
+deep forest `#0f3d28` / `#1a5c38`, orange accent `#e8720c`, Archivo type —
+and draws golfers as pose-estimation skeletons, the product's own visual
+language.
 
 ## What's here
 
@@ -17,7 +17,7 @@ pose-estimation skeletons, the product's own visual language.
 | `drill-*.png` (5) | Second gallery image per training aid: the drill it trains, with setup measurements and protocol |
 | `detail-cap.png` | Second gallery image on the cap: flat-lay construction study |
 | `product-pro.png`, `pro-report-strip.png`, `pro-overlay-detail.png`, `pro-plans.png` | The CaddieInsight Pro product gallery |
-| `caddieinsight-pro-card-v2.png`, `caddieinsight-free-card-v2.png` | Versioned photoreal membership-card candidates, awaiting Shopify upload and theme binding |
+| `caddieinsight-pro-card-v2.png`, `caddieinsight-founders-card-v2.png`, `caddieinsight-free-card-v2.png` | Photoreal membership cards bound in `storefront-theme/assets` via `plans-band.liquid` |
 | `swinglab-logo.png`, `swinglab-logo-inverse.png`, `swinglab-favicon.png` | Theme logo (light + dark contexts) and favicon |
 | `collection-gear.png` | CaddieInsight Gear collection image |
 | `swinglab-hero.png` | Homepage hero background (Horizon theme) |

@@ -115,7 +115,9 @@ def test_free_and_pro_navigation_remain_dynamic(tmp_path, monkeypatch):
     pro_shell = client.get("/today").text.split("</dialog>", 1)[0]
     assert 'href="/pricing"' not in pro_shell
     assert pro_shell.count("data-pro-member-nav") == 2
-    assert pro_shell.count("Welcome back, Kyle") == 3
+    assert pro_shell.count("Welcome back, Kyle") == 1
+    assert 'data-pro-member-nav' in pro_shell
+    assert ">Kyle</span>" in pro_shell or ">Game plan</span>" in pro_shell
     assert "Let&rsquo;s work on your swing" in pro_shell
 
 

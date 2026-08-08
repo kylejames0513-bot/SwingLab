@@ -14,24 +14,41 @@
       --brand-primary: {{ brand.primary_color }};
       --brand-accent: {{ brand.accent_color }};
       --ink: #101a14;
-      --muted: #5d685f;
-      --paper: #fffdf8;
-      --canvas: #f3f1eb;
-      --accent-text: #944600;
-      --control-border: #66736b;
+      --muted: #5a655e;
+      --paper: #f8fbf9;
+      --canvas: #eef2ef;
+      --accent-text: #8f4509;
+      --control-border: #6f7b72;
       --focus: #005fcc;
-      --line: #d9ddd7;
-      --soft: #f7f4ed;
+      --line: #d4ddd6;
+      --soft: #e2ebe4;
+      --green: #0f3d28;
+      --green-btn: #1a5c38;
+      --green-ink: #e6f2ea;
+      --amber: #9a4b0a;
+      --amber-soft: #f3ebe0;
+      --night: #06110c;
+      --surface-dark: #0c2e1f;
+      --shadow-sm: 0 1px 2px rgba(6, 17, 12, .04);
+      --shadow-md: 0 14px 32px -18px rgba(6, 17, 12, .16);
+      /* Offline self-contained reports cannot fetch remote faces; prefer the
+         app's Sora/IBM Plex when already cached, then geometric system stacks. */
+      --font-sans: "Sora", "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     }
     * { box-sizing: border-box; }
     html { scroll-behavior: smooth; }
     body {
       margin: 0;
       color: var(--ink);
-      background: var(--canvas);
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background:
+        radial-gradient(1100px 480px at 10% -10%, rgba(26, 92, 56, .09), transparent 58%),
+        radial-gradient(900px 420px at 96% 0%, rgba(154, 75, 10, .06), transparent 52%),
+        linear-gradient(180deg, #f4f7f5 0%, var(--canvas) 42%, #e8efe9 100%);
+      font-family: var(--font-sans);
       line-height: 1.55;
       overflow-wrap: anywhere;
+      -webkit-font-smoothing: antialiased;
     }
     a { color: var(--accent-text); }
     img, video, svg { max-width: 100%; height: auto; }
@@ -55,6 +72,9 @@
       padding: .65rem 1rem;
       color: var(--paper);
       background: var(--ink);
+      font-weight: 700;
+      text-decoration: none;
+      border-radius: .4rem;
     }
     .skip-link:focus { top: 1rem; }
     .sample-banner,
@@ -64,69 +84,197 @@
       display: flex;
       justify-content: space-between;
       gap: 1rem;
+      margin-top: 1rem;
       padding: .75rem 1rem;
-      background: #fff4db;
-      border: 1px solid #ead19a;
+      background: var(--amber-soft);
+      border: 1px solid #dfc39a;
+      border-radius: .75rem;
+      font-size: .95rem;
     }
-    .report-header { padding: 1.25rem 0 .75rem; }
+    .report-header {
+      display: grid;
+      gap: .7rem;
+      padding: 1rem 0 .55rem;
+      animation: report-rise .55s ease both;
+    }
+    .report-brand-row {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: .55rem 1rem;
+    }
     .report-brand {
-      display: inline-block;
-      margin-bottom: .75rem;
+      display: inline-flex;
+      align-items: center;
+      gap: .7rem;
+      margin: 0;
       color: var(--ink);
-      font-size: .8rem;
+      text-decoration: none;
+    }
+    .report-brand__mark {
+      display: grid;
+      place-items: center;
+      width: 2.05rem;
+      height: 2.05rem;
+      border-radius: .6rem;
+      background: linear-gradient(145deg, var(--surface-dark), var(--green));
+      box-shadow: var(--shadow-sm);
+      flex: 0 0 auto;
+    }
+    .report-brand__mark svg { width: 1.2rem; height: 1.2rem; }
+    .report-brand__text {
+      display: grid;
+      gap: .12rem;
+    }
+    .report-brand__name {
+      font-size: .78rem;
       font-weight: 800;
-      letter-spacing: .14em;
+      letter-spacing: .16em;
+      text-transform: uppercase;
+    }
+    .report-brand__tag {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: .68rem;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .trust-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: .4rem;
+      padding: .35rem .7rem;
+      color: var(--green);
+      background: rgba(15, 61, 40, .06);
+      border: 1px solid transparent;
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: .68rem;
+      font-weight: 500;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .trust-chip::before {
+      content: "";
+      width: .45rem;
+      height: .45rem;
+      border-radius: 50%;
+      background: var(--green-btn);
     }
     .context-list {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr));
-      gap: .65rem;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .45rem .85rem;
       margin: 0;
+      padding: 0;
     }
     .context-list div {
+      display: inline-flex;
+      align-items: baseline;
+      gap: .35rem;
       min-width: 0;
-      padding: .65rem .75rem;
-      background: rgba(255, 255, 255, .7);
-      border: 1px solid var(--line);
-      border-radius: .7rem;
+      padding: 0;
+      background: transparent;
+      border: 0;
+      border-radius: 0;
     }
-    .context-list dt { color: var(--muted); font-size: .74rem; font-weight: 700; }
-    .context-list dd { margin: .1rem 0 0; font-weight: 700; }
-    main { padding-bottom: 4rem; }
+    .context-list dt {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: .66rem;
+      font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .context-list dd {
+      margin: 0;
+      font-size: .92rem;
+      font-weight: 650;
+    }
+    .context-list dt::after { content: ""; }
+    main { padding-bottom: 4.5rem; }
     [data-report-block] {
       margin-top: 1rem;
-      padding: clamp(1rem, 3vw, 2rem);
-      background: var(--paper);
+      padding: clamp(1rem, 2.6vw, 1.85rem);
+      background:
+        linear-gradient(180deg, rgba(248, 251, 249, .98), var(--paper));
       border: 1px solid var(--line);
-      border-radius: 1rem;
-      box-shadow: 0 .35rem 1.2rem rgba(23, 32, 26, .06);
+      border-radius: 1.1rem;
+      box-shadow: var(--shadow-md);
     }
-    .next-move { border-top: .35rem solid var(--brand-accent); }
+    .report-block--enter {
+      animation: report-rise .55s ease both;
+    }
+    .next-move {
+      position: relative;
+      overflow: hidden;
+      border-top: .3rem solid var(--brand-accent, var(--amber));
+      background:
+        linear-gradient(135deg, rgba(6, 17, 12, .035), transparent 42%),
+        linear-gradient(180deg, #fbfefc, var(--paper));
+    }
+    .next-move::before {
+      content: "";
+      position: absolute;
+      inset: 0 auto 0 0;
+      width: .18rem;
+      background: linear-gradient(180deg, var(--green-btn), var(--amber));
+      transform-origin: top;
+      animation: cue-bar .7s ease both;
+    }
     .eyebrow,
     .step-label,
     .strength-label {
       margin: 0 0 .35rem;
       color: var(--accent-text);
-      font-size: .78rem;
-      font-weight: 800;
-      letter-spacing: .08em;
+      font-family: var(--font-mono);
+      font-size: .72rem;
+      font-weight: 500;
+      letter-spacing: .12em;
       text-transform: uppercase;
     }
-    h1, h2, h3 { line-height: 1.15; }
-    h1 { max-width: 22ch; margin: .2rem 0 .8rem; font-size: clamp(1.9rem, 6vw, 3.6rem); }
-    h2 { margin: .25rem 0 1rem; font-size: clamp(1.45rem, 4vw, 2.2rem); }
-    .observation { max-width: 62ch; font-size: 1.08rem; }
+    .strength-label { color: var(--green-btn); }
+    h1, h2, h3 {
+      line-height: 1.15;
+      letter-spacing: -.02em;
+    }
+    h1 { max-width: 18ch; margin: .15rem 0 .55rem; font-size: clamp(1.75rem, 5.4vw, 3.1rem); }
+    h2 { margin: .25rem 0 1rem; font-size: clamp(1.4rem, 3.8vw, 2.05rem); }
+    h3 { margin: 1rem 0 .45rem; font-size: 1.05rem; }
+    .observation {
+      max-width: 62ch;
+      margin: 0 0 .7rem;
+      color: var(--ink);
+      font-size: 1.02rem;
+    }
     .coach-cue {
       max-width: 62ch;
-      padding: .8rem 1rem;
-      background: var(--soft);
-      border-left: .28rem solid var(--brand-primary);
+      margin: 0;
+      padding: .75rem .9rem .75rem 1rem;
+      background:
+        linear-gradient(90deg, rgba(154, 75, 10, .08), rgba(226, 235, 228, .65));
+      border: 1px solid rgba(154, 75, 10, .18);
+      border-left: .32rem solid var(--amber);
+      border-radius: .75rem;
+      font-size: 1rem;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55);
+    }
+    .coach-cue strong {
+      display: block;
+      margin-bottom: .25rem;
+      color: var(--accent-text);
+      font-family: var(--font-mono);
+      font-size: .7rem;
+      font-weight: 500;
+      letter-spacing: .12em;
+      text-transform: uppercase;
     }
     .journey-preview {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: .6rem;
-      margin: 1.2rem 0 0;
+      gap: .45rem;
+      margin: .9rem 0 0;
       padding: 0;
       list-style: none;
     }
@@ -134,13 +282,21 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: .65rem;
+      padding: .55rem .55rem;
+      color: var(--green);
       text-align: center;
       text-decoration: none;
-      background: var(--soft);
-      border: 1px solid var(--control-border);
-      border-radius: .55rem;
+      background: rgba(15, 61, 40, .04);
+      border: 1px solid var(--line);
+      border-radius: .7rem;
+      font-size: .92rem;
       font-weight: 700;
+      transition: border-color .2s ease, background .2s ease, transform .2s ease;
+    }
+    .journey-preview a:hover {
+      background: rgba(15, 61, 40, .08);
+      border-color: var(--green-btn);
+      transform: translateY(-1px);
     }
     .focused-evidence {
       display: grid;
@@ -149,9 +305,9 @@
       margin: 0;
       padding: 1rem;
       background: var(--soft);
-      border-radius: .8rem;
+      border-radius: .95rem;
     }
-    .focused-evidence img { width: 100%; border-radius: .55rem; }
+    .focused-evidence img { width: 100%; border-radius: .65rem; }
     .evidence-meta,
     .evidence-counts,
     .refilm-confirmations { margin: .75rem 0; }
@@ -161,18 +317,19 @@
       gap: .45rem;
     }
     .evidence-counts div {
-      padding: .4rem .55rem;
+      padding: .4rem .6rem;
       background: #fff;
       border: 1px solid var(--line);
-      border-radius: .45rem;
+      border-radius: .5rem;
+      font-size: .92rem;
     }
     .evidence-counts dt,
     .evidence-counts dd { display: inline; margin: 0; }
     .visual-unavailable {
-      padding: 1rem;
+      padding: 1rem 1.1rem;
       background: var(--soft);
       border: 1px dashed var(--control-border);
-      border-radius: .8rem;
+      border-radius: .95rem;
     }
     .evidence-boundary { color: var(--muted); font-size: .92rem; }
     .event-timeline { padding-left: 1.25rem; }
@@ -183,14 +340,67 @@
       padding: .45rem 0;
       border-bottom: 1px solid var(--line);
     }
+    .media-theater {
+      margin-top: 1.35rem;
+      padding: 1rem 1.05rem 1.15rem;
+      color: var(--green-ink);
+      background:
+        radial-gradient(700px 220px at 12% 0%, rgba(255, 173, 98, .16), transparent 55%),
+        linear-gradient(145deg, var(--night) 0%, var(--surface-dark) 58%, var(--green) 100%);
+      border-radius: 1rem;
+      box-shadow: var(--shadow-md);
+    }
+    .media-theater__eyebrow {
+      margin: 0 0 .35rem;
+      color: rgba(230, 242, 234, .72);
+      font-family: var(--font-mono);
+      font-size: .68rem;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .media-theater__title {
+      margin: 0 0 .35rem;
+      color: #fff;
+      font-size: clamp(1.25rem, 3vw, 1.55rem);
+      letter-spacing: -.01em;
+    }
+    .media-theater__lead {
+      margin: 0 0 1rem;
+      max-width: 52ch;
+      color: rgba(230, 242, 234, .86);
+      font-size: .95rem;
+    }
+    .media-theater__grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+      gap: .85rem;
+    }
+    .media-theater__card {
+      margin: 0;
+      padding: .7rem;
+      background: rgba(255, 255, 255, .04);
+      border: 1px solid rgba(230, 242, 234, .14);
+      border-radius: .8rem;
+    }
+    .media-theater__card video {
+      width: 100%;
+      border-radius: .55rem;
+      background: #000;
+    }
+    .media-theater__card figcaption,
+    .media-theater__card p {
+      margin: .55rem .1rem 0;
+      color: rgba(230, 242, 234, .84);
+      font-size: .88rem;
+    }
     .phase-list { display: grid; gap: .65rem; margin-top: 1.2rem; }
     .phase-card {
       padding: .1rem 1rem;
       background: #fff;
       border: 1px solid var(--line);
-      border-radius: .65rem;
+      border-radius: .75rem;
     }
-    .phase-card[open] { border-color: var(--brand-primary); }
+    .phase-card[open] { border-color: var(--green-btn); }
     .phase-card summary {
       display: flex;
       flex-wrap: wrap;
@@ -198,7 +408,7 @@
       gap: 1rem;
       padding: .85rem 0;
       cursor: pointer;
-      font-weight: 800;
+      font-weight: 750;
     }
     .status { white-space: nowrap; color: var(--muted); font-weight: 700; }
     details > summary { cursor: pointer; }
@@ -206,14 +416,25 @@
     .video-limitations,
     .practice-detail,
     .alternatives,
-    .optional-card { margin-top: 1rem; padding: .75rem 1rem; background: var(--soft); border-radius: .6rem; }
-    .capture-correction { padding: .8rem 1rem; background: var(--soft); border-left: .28rem solid var(--brand-primary); }
+    .optional-card {
+      margin-top: 1rem;
+      padding: .75rem 1rem;
+      background: var(--soft);
+      border-radius: .7rem;
+    }
+    .capture-correction {
+      padding: .9rem 1.05rem;
+      background: linear-gradient(90deg, rgba(26, 92, 56, .08), var(--soft));
+      border-left: .28rem solid var(--green-btn);
+      border-radius: .75rem;
+    }
     .capture-actions { display: flex; flex-wrap: wrap; gap: .7rem; align-items: center; }
     .capture-playback { margin: 1rem 0 0; }
     .capture-playback video,
-    .optional-card video { width: min(100%, 42rem); }
+    .optional-card video,
+    .media-theater__card video { width: min(100%, 42rem); }
     .optional-depth { margin-top: 1rem; }
-    .optional-card > summary { font-weight: 800; }
+    .optional-card > summary { font-weight: 750; }
     .table-scroll {
       max-width: 100%;
       overflow-x: auto;
@@ -221,39 +442,129 @@
     }
     table { width: 100%; border-collapse: collapse; }
     th, td { padding: .55rem; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+    .practice-lead {
+      max-width: 62ch;
+      margin: 0 0 1rem;
+      font-size: 1.02rem;
+    }
     .practice-summary,
     .refilm-checklist { padding-left: 1.35rem; }
     .practice-summary li,
     .refilm-checklist li { margin: .55rem 0; }
+    .practice-summary {
+      margin: 0 0 1.1rem;
+      padding: 0 0 0 1.15rem;
+      list-style: none;
+      counter-reset: drill-step;
+    }
+    .practice-summary li {
+      position: relative;
+      margin: .7rem 0;
+      padding-left: 2.1rem;
+      counter-increment: drill-step;
+    }
+    .practice-summary li::before {
+      content: counter(drill-step);
+      position: absolute;
+      left: 0;
+      top: .05rem;
+      display: grid;
+      place-items: center;
+      width: 1.55rem;
+      height: 1.55rem;
+      color: var(--green-ink);
+      background: var(--green);
+      border-radius: .45rem;
+      font-family: var(--font-mono);
+      font-size: .72rem;
+      font-weight: 500;
+    }
     .practice-facts,
     .refilm-confirmations {
       display: grid;
       grid-template-columns: minmax(8rem, .4fr) 1fr;
-      gap: .4rem .8rem;
+      gap: .55rem .9rem;
+      margin: 0;
+      padding: 1rem;
+      background: rgba(15, 61, 40, .035);
+      border: 1px solid var(--line);
+      border-radius: .85rem;
     }
     .practice-facts dt,
-    .refilm-confirmations dt { font-weight: 800; }
+    .refilm-confirmations dt {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: .68rem;
+      font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
     .practice-facts dd,
-    .refilm-confirmations dd { margin: 0; }
+    .refilm-confirmations dd { margin: 0; font-weight: 650; }
+    .practice-facts dt:nth-of-type(3),
+    .practice-facts dd:nth-of-type(3) {
+      color: inherit;
+    }
+    .practice-dosage-callout {
+      grid-column: 1 / -1;
+      display: grid;
+      gap: .2rem;
+      margin-top: .15rem;
+      padding: .75rem .85rem;
+      background: #fff;
+      border: 1px solid rgba(154, 75, 10, .22);
+      border-radius: .65rem;
+    }
+    .practice-dosage-callout span {
+      color: var(--accent-text);
+      font-family: var(--font-mono);
+      font-size: .66rem;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
     .drill-illustration { max-width: 36rem; margin: 1rem 0; }
     .drill-illustration figcaption { margin-top: .4rem; color: var(--muted); }
+    .pass-mark {
+      margin: 0;
+      padding: .9rem 1rem;
+      background: linear-gradient(90deg, rgba(154, 75, 10, .08), rgba(226, 235, 228, .55));
+      border-left: .28rem solid var(--amber);
+      border-radius: .75rem;
+      font-size: 1.02rem;
+      font-weight: 650;
+    }
     .primary-action {
+      display: inline-flex;
       margin-top: 1rem;
-      padding: .75rem 1rem;
+      padding: .8rem 1.15rem;
       color: var(--paper);
       background: var(--ink);
-      border-radius: .55rem;
-      font-weight: 800;
+      border-radius: .65rem;
+      font-weight: 750;
       text-decoration: none;
+      transition: transform .2s ease, background .2s ease;
+    }
+    .primary-action:hover {
+      background: var(--green);
+      transform: translateY(-1px);
     }
     .print-only { display: none; }
+    @keyframes report-rise {
+      from { opacity: 0; transform: translateY(.55rem); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes cue-bar {
+      from { transform: scaleY(0); }
+      to { transform: scaleY(1); }
+    }
     @media (max-width: 40rem) {
       .sample-banner,
       .report-header,
       main { width: min(calc(100% - 20px), 68rem); }
       .sample-banner { align-items: flex-start; flex-direction: column; }
-      .report-header { padding-top: .8rem; }
+      .report-header { padding-top: .9rem; }
       .context-list {
+        display: grid;
         grid-template-columns: minmax(0, 1fr);
         gap: .4rem;
       }
@@ -262,9 +573,10 @@
         grid-template-columns: minmax(0, 1fr) auto;
         align-items: center;
         min-height: 44px;
-        padding: .25rem .5rem;
+        padding: .25rem 0;
+        border-bottom: 1px solid rgba(212, 221, 214, .7);
       }
-      .context-list dd { margin-top: 0; }
+      .context-list dd { margin-top: 0; justify-self: end; }
       .focused-evidence { grid-template-columns: 1fr; }
       .journey-preview { grid-template-columns: 1fr; }
       .event-timeline li { grid-template-columns: 1fr; gap: .1rem; }
@@ -298,6 +610,17 @@
         box-shadow: none;
         border-radius: 0;
       }
+      .media-theater {
+        color: var(--ink);
+        background: #fff;
+        border: 1px solid var(--line);
+        box-shadow: none;
+      }
+      .media-theater__title,
+      .media-theater__lead,
+      .media-theater__eyebrow,
+      .media-theater__card figcaption,
+      .media-theater__card p { color: var(--ink); }
       .screen-only,
       .report-actions,
       .report-control,
@@ -311,7 +634,7 @@
       }
       .table-scroll { overflow: visible; }
       table { width: 100%; font-size: 8pt; }
-      tr, img, figure, .phase-card, .practice-card, .refilm-card {
+      tr, img, figure, .phase-card, .practice-card, .refilm-card, .media-theater__card {
         break-inside: avoid;
         page-break-inside: avoid;
       }
@@ -331,7 +654,22 @@
   {% endif %}
   <a class="skip-link report-control" href="#report-main">Skip to report</a>
   <header class="report-header">
-    <span class="report-brand">{{ brand.name | upper }}</span>
+    <div class="report-brand-row">
+      <div class="report-brand">
+        <span class="report-brand__mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M5 17.5c3.2-1.1 5.4-4.2 6.2-7.8.4 2.5 1.7 4.7 3.6 6.2 1.4 1.1 3.1 1.8 4.9 2.1"
+                  stroke="#e6f2ea" stroke-width="1.8" stroke-linecap="round"/>
+            <circle cx="11.2" cy="7.2" r="1.35" fill="#ffad62"/>
+          </svg>
+        </span>
+        <span class="report-brand__text">
+          <span class="report-brand__name">{{ brand.name | upper }}</span>
+          <span class="report-brand__tag">AI tour caddie</span>
+        </span>
+      </div>
+      <span class="trust-chip">{{ view.trust.label }}</span>
+    </div>
     <dl class="context-list" aria-label="Swing context">
       {% if view.context.club_label %}
       <div><dt>Club</dt><dd>{{ view.context.club_label }}</dd></div>
@@ -350,7 +688,7 @@
     {% if view.outcome == "coaching_ready" %}
     {% set evidence = view.visual_evidence %}
     {% set measurement = evidence.supporting_measurement %}
-    <section class="next-move" data-report-block="next-move"
+    <section class="next-move report-block--enter" data-report-block="next-move"
              data-canonical="priority" aria-labelledby="report-title">
       <p class="eyebrow">{{ view.next_move.eyebrow }}</p>
       {% if view.next_move.mode == "protect" %}
@@ -449,6 +787,58 @@
       </ol>
       {% endif %}
 
+      {% if view.capabilities.slow_motion or view.capabilities.coach_replay %}
+      <aside class="media-theater" aria-label="Watch your swing">
+        <p class="media-theater__eyebrow">Playback</p>
+        <h3 class="media-theater__title">Watch your swing</h3>
+        <p class="media-theater__lead">
+          Study the motion in your own clip before you practice. This is phone-video playback, not a 3D model or ball-flight estimate.
+        </p>
+        <div class="media-theater__grid">
+          {% for swing in depth.swings %}
+            {% if not swing.replay_locked %}
+              {% if swing.slow_motion_media_key %}
+              <figure class="media-theater__card screen-only">
+                <video controls preload="metadata"
+                       src="{{ media_path(swing.slow_motion_media_key) }}"
+                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                       aria-label="{{ swing.slow_motion_caption }}"></video>
+                <figcaption>{{ swing.slow_motion_caption }}</figcaption>
+              </figure>
+              {% if swing.video_poster_media_key %}
+              <figure class="media-theater__card print-only">
+                <img src="{{ media_path(swing.video_poster_media_key) }}"
+                     alt="{{ swing.video_poster_alt_text }}">
+                <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
+              </figure>
+              {% else %}
+              <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
+              {% endif %}
+              {% endif %}
+              {% if swing.coach_replay_media_key %}
+              <figure class="media-theater__card screen-only">
+                <video controls preload="metadata"
+                       src="{{ media_path(swing.coach_replay_media_key) }}"
+                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                       aria-label="{{ swing.coach_replay_caption }}"></video>
+                <figcaption>{{ swing.coach_replay_caption }}</figcaption>
+              </figure>
+              {% if swing.video_poster_media_key %}
+              <figure class="media-theater__card print-only">
+                <img src="{{ media_path(swing.video_poster_media_key) }}"
+                     alt="{{ swing.video_poster_alt_text }}">
+                <figcaption>{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</figcaption>
+              </figure>
+              {% else %}
+              <p class="print-only">{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</p>
+              {% endif %}
+              {% endif %}
+            {% endif %}
+          {% endfor %}
+        </div>
+      </aside>
+      {% endif %}
+
       {% if measurement %}
       <details class="measurement-detail" id="{{ measurement.id }}">
         <summary>See measurement</summary>
@@ -496,14 +886,20 @@
              data-canonical="practice" aria-labelledby="practice-heading">
       <p class="step-label">2 · Practice</p>
       <h2 id="practice-heading" data-field="drill-name">{{ view.practice.name }}</h2>
-      <p>{{ view.practice.aim }}</p>
-      <ol class="practice-summary">
+      <p class="practice-lead">{{ view.practice.aim }}</p>
+      <ol class="practice-summary" aria-label="Drill steps">
         {% for step in view.practice.summary_steps %}<li>{{ step }}</li>{% endfor %}
       </ol>
       <dl class="practice-facts">
         <dt>Setup</dt><dd>{{ view.practice.setup }}</dd>
         <dt>Feel cue</dt><dd>{{ view.practice.feel_cue }}</dd>
-        <dt>Dosage</dt><dd>{{ view.practice.dosage }}</dd>
+        <dt>Dosage</dt>
+        <dd>
+          <div class="practice-dosage-callout">
+            <span>Session dosage</span>
+            {{ view.practice.dosage }}
+          </div>
+        </dd>
         {% if view.practice.equipment %}<dt>Equipment</dt><dd>{{ view.practice.equipment }}</dd>{% endif %}
       </dl>
       {% if view.practice.illustration_media_key %}
@@ -546,7 +942,7 @@
         {% for item in view.refilm.checklist %}<li>{{ item }}</li>{% endfor %}
       </ol>
       <h3>Pass mark</h3>
-      <p data-field="pass-mark">{{ view.refilm.target.text }}</p>
+      <p class="pass-mark" data-field="pass-mark">{{ view.refilm.target.text }}</p>
       <dl class="refilm-confirmations" aria-label="Re-film controls">
         <dt>Same club</dt><dd>{{ "Confirmed" if view.refilm.preserves_club else "Use the club named above" }}</dd>
         <dt>Same hand</dt><dd>{{ "Confirmed" if view.refilm.preserves_hand else "Match the original hand" }}</dd>
@@ -724,21 +1120,28 @@
       </section>
       {% for swing in depth.swings %}
         {% if swing.slow_motion_media_key and swing.slow_motion_media_key in view.capture_guidance.safe_media_keys %}
-        <figure class="capture-playback screen-only" data-capture-playback="{{ swing.slow_motion_media_key }}">
-          <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}"
-                 {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
-                 aria-label="{{ swing.video_poster_alt_text or swing.slow_motion_caption }}"></video>
-          <figcaption>{{ swing.slow_motion_caption }}</figcaption>
-        </figure>
-        {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}
-        <figure class="capture-playback print-only">
-          <img src="{{ media_path(swing.video_poster_media_key) }}"
-               alt="{{ swing.video_poster_alt_text }}">
-          <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
-        </figure>
-        {% else %}
-        <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
-        {% endif %}
+        <aside class="media-theater" aria-label="Watch your swing">
+          <p class="media-theater__eyebrow">Playback</p>
+          <h3 class="media-theater__title">Watch your swing</h3>
+          <p class="media-theater__lead">
+            Use this clip to check framing and setup before you re-film. It is your phone video, not a coaching diagnosis.
+          </p>
+          <figure class="capture-playback media-theater__card screen-only" data-capture-playback="{{ swing.slow_motion_media_key }}">
+            <video controls preload="metadata" src="{{ media_path(swing.slow_motion_media_key) }}"
+                   {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                   aria-label="{{ swing.video_poster_alt_text or swing.slow_motion_caption }}"></video>
+            <figcaption>{{ swing.slow_motion_caption }}</figcaption>
+          </figure>
+          {% if swing.video_poster_media_key and swing.video_poster_media_key in view.capture_guidance.safe_media_keys %}
+          <figure class="capture-playback print-only">
+            <img src="{{ media_path(swing.video_poster_media_key) }}"
+                 alt="{{ swing.video_poster_alt_text }}">
+            <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
+          </figure>
+          {% else %}
+          <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
+          {% endif %}
+        </aside>
         {% endif %}
       {% endfor %}
       <div class="capture-actions">

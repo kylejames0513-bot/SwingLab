@@ -94,18 +94,17 @@ def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
         assert png_dimensions(path) == (1536, 1024)
 
 
-def test_membership_card_media_labels_make_each_plan_unmistakable():
+def test_membership_card_media_is_photoreal_without_overlay_stickers():
     plans = INDEX["sections"]["plans"]["blocks"]
     plans_band = source("sections/plans-band.liquid")
 
-    assert plans["monthly"]["settings"]["image_label"] == "Pro · Monthly"
-    assert plans["season"]["settings"]["image_label"] == "Pro · Season Pass"
-    assert plans["founders"]["settings"]["image_label"] == "Founders Pass"
+    assert plans["monthly"]["settings"]["name"]
+    assert plans["season"]["settings"]["name"]
+    assert plans["founders"]["settings"]["name"] == "Founders Pass"
     assert plans["free"]["settings"]["name"] == "CaddieInsight Free"
-    assert "assign media_label = b.image_label | default: b.name" in plans_band
-    assert 'class="sl-plans__media-label" aria-hidden="true"' in plans_band
-    assert ".sl-plans__media-label" in plans_band
-    assert "position: absolute" in plans_band
+    # Plan identity lives in the card body — no detached labels on the photo.
+    assert 'class="sl-plans__media-label"' not in plans_band
+    assert 'class="sl-plans__name"' in plans_band
     for asset_name in (
         "caddieinsight-pro-card-v2.png",
         "caddieinsight-founders-card-v2.png",
@@ -327,11 +326,15 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert hero_locale["signal_status"] == "Example session"
     assert "demonstration data" in hero_locale["signal_disclosure"].lower()
     assert '<aside class="sl-hero__signal' in hero_source
+    assert 'class="sl-hero__signal-band' in hero_source
+    assert "grid-template-columns: minmax(0, 1fr);" in hero_source
+    assert "grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.5fr)" not in hero_source
     mobile_hero = hero_source.split("@media (max-width: 749px)", 1)[1]
     assert "min-height: 720px" not in mobile_hero
     assert "min-height: 980px" not in mobile_hero
     assert "min-height: 1020px" not in mobile_hero
     assert ".sl-hero__signal { display: none; }" in mobile_hero
+    assert ".sl-hero__signal-band { display: none; }" in mobile_hero
     assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
     assert ".sl-hero__fine { display: none; }" not in mobile_hero
     mobile_stats = stats_source.split("@media (max-width: 749px)", 1)[1]

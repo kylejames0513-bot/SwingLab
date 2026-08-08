@@ -1,4 +1,4 @@
-"""CaddieInsight campaign art — Fairway Modernism, phase 3.
+"""CaddieInsight campaign art — Turf Instrument, phase 3.
 
 Instructional drill diagrams (each product's second gallery image), a cap
 detail study, two wide page banners, and the social share card. Reuses the

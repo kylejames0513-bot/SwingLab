@@ -136,9 +136,12 @@ def test_authenticated_header_centers_member_content_across_modern_iphone_widths
     assert any("flex: 1 0 100%" in rule for rule in member_greeting_rules)
     assert "text-overflow: ellipsis" in "\n".join(member_greeting_rules)
     assert "white-space: nowrap" in "\n".join(member_greeting_rules)
+    assert any("max-width:" in rule for rule in member_greeting_rules)
+    assert "@media (min-width: 561px) and (max-width: 1100px)" in HEADER
 
     member_phone_css = "\n".join(body for width, body in media if width == 560)
     assert "padding: 10px var(--sl-pad-x)" in member_phone_css
+    assert "calc(-64px - 72px)" in member_phone_css
     assert "calc(100% + 28px)" not in member_phone_css
     assert "margin-inline: -14px" not in member_phone_css
 

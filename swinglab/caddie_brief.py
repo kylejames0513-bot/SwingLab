@@ -153,7 +153,8 @@ def build_caddie_brief(
                 (
                     "No tempo issue crossed its coaching line in this "
                     "down-the-line session. This angle does not support honest "
-                    "sway or slide maintenance checks yet."
+                    "sway or slide maintenance checks yet — keep the read "
+                    "narrow to what the camera can prove."
                 )
                 if dtl
                 else (
@@ -164,8 +165,9 @@ def build_caddie_brief(
                 if limited_baseline
                 else (
                     "No measured issue crossed its coaching line in this "
-                    "session. Keep the motion familiar and re-film under the "
-                    "same setup so future drift is easy to spot."
+                    "session. Protect the pattern that already works, then "
+                    "re-film under the same setup so future drift is easy to "
+                    "spot."
                 )
             ),
             fix=(
@@ -184,7 +186,10 @@ def build_caddie_brief(
                     "this as a maintenance baseline."
                 )
                 if limited_baseline
-                else "Run the maintenance drill, then keep the baseline current."
+                else (
+                    "Run the maintenance drill once, then keep the baseline "
+                    "current with matched re-films."
+                )
             ),
             drill=maintenance_drill,
             trend=trend,
@@ -382,12 +387,12 @@ def rhythm_maintenance_drill(cfg: Config) -> Drill:
     return Drill(
         id="rhythm-baseline-refilm",
         name="Rhythm baseline re-film",
-        aim="Keep the tempo this camera angle can measure honestly.",
+        aim="Protect the tempo this camera angle can measure honestly.",
         protocol=(
             "Use the same club and camera height; choose face-on when you want "
             "the full body-motion baseline.",
             "Make three swings with the same count and effort.",
-            "Keep the rhythm identical from swing to swing.",
+            "Keep the rhythm identical from swing to swing — no hero swings.",
         ),
         dosage="3 swings, monthly",
         success_metric=(

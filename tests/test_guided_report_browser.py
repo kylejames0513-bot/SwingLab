@@ -286,7 +286,9 @@ def test_print_expands_content_uses_posters_and_hides_screen_controls(
             swing.video_poster_media_key
         ].relative_path
         screen_videos = page.locator("video")
-        assert screen_videos.count() == 2
+        # Early media theater + optional replay both surface the same unlocked
+        # slow-motion and coach-replay clips.
+        assert screen_videos.count() == 4
         assert all(
             screen_videos.nth(index).get_attribute("poster") == poster_path
             for index in range(screen_videos.count())

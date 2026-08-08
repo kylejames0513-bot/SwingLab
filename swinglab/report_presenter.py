@@ -646,17 +646,35 @@ def build_phase_summaries(source: ReportPresentationInput, cfg: Config) -> tuple
             unavailable.append(ReasonCode.TARGET_DIRECTION_UNCERTAIN)
         expanded = selected is not None and _selected_phase(selected, angle=source.context.angle) is phase
         if status is PhaseStatus.PRIORITY:
-            status_label, summary = "Priority", "Work on this movement."
+            status_label, summary = (
+                "Priority",
+                "Work on this movement first — it is the clearest lever in this clip.",
+            )
         elif protect and expanded:
-            status_label, summary = "Steady", "Strength to protect. Keep this movement familiar."
+            status_label, summary = (
+                "Steady",
+                "Strength to protect. Keep this movement familiar under the same setup.",
+            )
         elif status is PhaseStatus.REVIEW_LATER:
-            status_label, summary = "Review later", "A secondary measured issue is available to revisit."
+            status_label, summary = (
+                "Review later",
+                "A secondary measured issue is available after the priority feels solid.",
+            )
         elif status is PhaseStatus.BASELINE:
-            status_label, summary = "Baseline", "Context for comparable re-films."
+            status_label, summary = (
+                "Baseline",
+                "Context for comparable re-films — useful for matching the next session.",
+            )
         elif status is PhaseStatus.NOT_MEASURED:
-            status_label, summary = "Not measured", "This phase was not measured from the readable swings."
+            status_label, summary = (
+                "Not measured",
+                "This phase was not measured from the readable swings.",
+            )
         else:
-            status_label, summary = "Steady", "Measured values are steady."
+            status_label, summary = (
+                "Steady",
+                "Measured values are steady in this phone-video read.",
+            )
         summaries.append(PhaseSummary(phase, _PHASE_LABELS[phase], status, status_label, summary, len(source.swings), details, tuple(unavailable), f"phase-{phase.value}", expanded))
     return tuple(summaries)
 
@@ -718,10 +736,32 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
     )
     mode = JourneyMode.IMPROVE if selected_issue is not None else JourneyMode.PROTECT
     if selected_issue is not None:
-        next_move = NextMove(mode, selected_issue.flag, _selected_phase(selected_issue.metric, angle=source.context.angle), "Work on now", selected_issue.display_name, selected_issue.why, selected_issue.fix, measurement_detail_id, "practice", "refilm")
+        next_move = NextMove(
+            mode,
+            selected_issue.flag,
+            _selected_phase(selected_issue.metric, angle=source.context.angle),
+            "Work on now",
+            selected_issue.display_name,
+            selected_issue.why,
+            selected_issue.fix,
+            measurement_detail_id,
+            "practice",
+            "refilm",
+        )
     else:
         assert selected_strength is not None
-        next_move = NextMove(mode, selected_strength.key, _selected_phase(selected_strength.metric, angle=source.context.angle), "Protect this", selected_strength.display_name, selected_strength.text, "Repeat the same motion under the same setup.", measurement_detail_id, "practice", "refilm")
+        next_move = NextMove(
+            mode,
+            selected_strength.key,
+            _selected_phase(selected_strength.metric, angle=source.context.angle),
+            "Protect this",
+            selected_strength.display_name,
+            selected_strength.text,
+            "Repeat the same motion under the same setup — protect the feel, then re-film.",
+            measurement_detail_id,
+            "practice",
+            "refilm",
+        )
     limited = bool(reasons)
     label = REASON_COPY[reasons[0]].label if limited else "Clear read"
     target = build_refilm_target(source.brief, source.issues, source.strengths, cfg)

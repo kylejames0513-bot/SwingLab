@@ -66,11 +66,22 @@
   {%- endif -%}
   <div class="sl-header__inner">
     <a href="{{ routes.root_url }}" class="sl-header__logo" aria-label="{{ 'layout.navigation.caddieinsight_home' | t }}">
-      {%- assign logo = section.settings.logo | default: images['swinglab-logo.png'] -%}
-      {%- if logo -%}
-        {{ logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
+      {%- comment -%}
+        Prefer the theme-packaged lockup so a revamp ships with the theme zip.
+        Merchants can still override via the section logo picker; Shopify Files
+        remain available as a secondary fallback for older installs.
+      {%- endcomment -%}
+      {%- if section.settings.logo != blank -%}
+        {{ section.settings.logo | image_url: width: 480 | image_tag: class: 'sl-header__logo-img', alt: shop.name }}
       {%- else -%}
-        {{ section.settings.logo_text | default: shop.name }}
+        <img
+          class="sl-header__logo-img"
+          src="{{ 'swinglab-logo.png' | asset_url }}"
+          width="280"
+          height="40"
+          alt="{{ shop.name | escape }}"
+          loading="eager"
+          decoding="async">
       {%- endif -%}
     </a>
 
@@ -315,6 +326,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
 .sl-member-rail[data-app-pro="true"] .sl-member-rail__tier { color: #75d59b; }
 .sl-member-rail__greeting {
   min-width: 0;
+  max-width: min(42vw, 320px);
   overflow: hidden;
   color: rgba(245, 242, 233, .78);
   text-overflow: ellipsis;
@@ -345,6 +357,12 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   z-index: 40;
 }
 .shopify-section:has(> .sl-header--overlay) { margin-bottom: -76px; }
+.shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"]) {
+  margin-bottom: calc(-76px - 38px);
+}
+body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
+  padding-top: clamp(134px, 14vw, 178px);
+}
 .sl-header {
   position: relative;
   z-index: 1;
@@ -465,9 +483,16 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   background: var(--sl-orange-soft);
   color: var(--sl-green);
 }
-.sl-header__account .sl-header__dropdown-trigger { max-width: 210px; }
-[data-app-auth-summary] {
+.sl-header__account > summary,
+.sl-header__account .sl-header__dropdown-trigger {
+  max-width: 148px;
   min-width: 0;
+  overflow: hidden;
+}
+[data-app-auth-summary] {
+  display: block;
+  min-width: 0;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -860,8 +885,16 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   color: #ffad62;
 }
 .sl-premium-chrome .sl-menu .sl-menu__cta { color: #06110c; }
+@media (min-width: 561px) and (max-width: 1100px) {
+  .sl-member-rail__inner { gap: 8px; }
+  .sl-member-rail__greeting { max-width: min(34vw, 220px); }
+  .sl-member-rail__action { padding-inline: 8px; font-size: 12px; }
+}
 @media (max-width: 980px) {
   .shopify-section:has(> .sl-header--overlay) { margin-bottom: -64px; }
+  .shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"]) {
+    margin-bottom: calc(-64px - 38px);
+  }
   .sl-header { min-height: 64px; }
   .sl-header__inner,
   .sl-header--premium .sl-header__inner {
@@ -891,6 +924,9 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   .sl-header__toggle { display: flex; }
 }
 @media (max-width: 560px) {
+  .shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"]) {
+    margin-bottom: calc(-64px - 72px);
+  }
   .sl-member-rail {
     padding: 10px var(--sl-pad-x);
   }
@@ -903,6 +939,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   }
   .sl-member-rail__greeting {
     width: 100%;
+    max-width: none;
     flex: 1 0 100%;
     order: 4;
     padding-left: 0;
@@ -918,8 +955,16 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   .sl-header__cart { min-height: 44px; }
   .sl-header__toggle { width: 44px; height: 44px; }
 }
+@media (max-width: 749px) {
+  body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
+    padding-top: clamp(90px, 14vw, 118px);
+  }
+}
 @media (max-width: 480px) {
   .shopify-section:has(> .sl-header--overlay) { margin-bottom: -60px; }
+  .shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"]) {
+    margin-bottom: calc(-60px - 72px);
+  }
   .sl-header { --sl-pad-x: 20px; min-height: 60px; }
   .sl-header__inner,
   .sl-header--premium .sl-header__inner { min-height: 60px; gap: 8px; }
@@ -1076,6 +1121,16 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
         var memberActionLabel = header.getAttribute('data-app-member-action-label') || proActionLabel;
         var welcomeText = displayName ? welcomeLabel + ', ' + displayName : signedInLabel;
         var memberGreeting = displayName ? welcomeLabel + ', ' + displayName + '.' : readyLabel;
+        var summaryText = accountLabel || signedInLabel;
+        if (authenticated) {
+          if (displayName) {
+            summaryText = displayName.length > 18
+              ? displayName.slice(0, 17) + '\u2026'
+              : displayName;
+          } else {
+            summaryText = accountLabel || 'Account';
+          }
+        }
         if (isPro && proLabel) {
           welcomeText += ' · ' + proLabel;
         }
@@ -1127,7 +1182,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
         });
 
         if (summary) {
-          summary.textContent = authenticated ? welcomeText : accountLabel;
+          summary.textContent = summaryText;
         }
         header.dataset.appAuthenticated = authenticated ? 'true' : 'false';
         header.dataset.appPro = isPro ? 'true' : 'false';
