@@ -108,6 +108,10 @@
     color: rgba(245, 242, 233, .7);
     font-size: 12.5px;
   }
+  .sl-app-banner--pro {
+    background: linear-gradient(90deg, #050d09 0%, #0b2116 50%, #050d09 100%);
+    border-bottom-color: rgba(117, 213, 155, .24);
+  }
   .sl-app-banner__inner {
     width: 100%;
     max-width: var(--sl-content);
@@ -118,6 +122,7 @@
     gap: 10px;
     overflow: hidden;
     text-align: center;
+    flex-wrap: nowrap;
   }
   .sl-app-banner__status {
     flex: 0 0 auto;
@@ -128,12 +133,16 @@
     letter-spacing: .13em;
     text-transform: uppercase;
   }
+  .sl-app-banner--pro .sl-app-banner__status { color: #75d59b; }
+  .sl-app-banner__allowance,
   .sl-app-banner__detail {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+  .sl-app-banner__allowance { flex: 0 1 auto; max-width: min(42vw, 280px); }
+  .sl-app-banner__detail { flex: 0 1 auto; }
   .sl-app-banner__dot {
     width: 6px;
     height: 6px;
@@ -143,6 +152,7 @@
     box-shadow: 0 0 0 5px rgba(117, 213, 155, .1);
   }
   .sl-app-banner a {
+    flex: 0 0 auto;
     color: #f5f2e9;
     font-weight: 700;
     text-underline-offset: 3px;
@@ -244,6 +254,7 @@
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    flex: 0 1 auto;
     border: 1px solid #b9cdbf;
     border-radius: var(--sl-radius-control);
     background: #edf6ef;
@@ -267,11 +278,13 @@
   }
   .sl-header__member > span:last-child {
     min-width: 0;
-    max-width: clamp(64px, 10vw, 112px);
+    max-width: clamp(56px, 9vw, 104px);
     overflow: hidden;
     text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .sl-header__member-badge {
+    flex: 0 0 auto;
     padding: 4px 7px;
     border-radius: var(--sl-radius-control);
     background: var(--sl-green);
@@ -281,6 +294,12 @@
     letter-spacing: .08em;
   }
   .sl-header--premium .sl-header__member-badge { background: #75d59b; color: #06110c; }
+  .sl-header__account > summary,
+  .sl-header__account .sl-header__dropdown-trigger {
+    max-width: 136px;
+    min-width: 0;
+    overflow: hidden;
+  }
   .sl-header__dropdown { position: relative; }
   .sl-header__dropdown summary { list-style: none; }
   .sl-header__dropdown summary::-webkit-details-marker { display: none; }
@@ -697,10 +716,15 @@
   }
   .sl-app-footer__bottom p { margin: 0; }
   @media (min-width: 981px) and (max-width: 1200px) {
-    .sl-header__actions { gap: 8px; }
-    .sl-header__member { max-width: 156px; }
-    .sl-header__member > span:last-child { max-width: 72px; }
-    .sl-header__account .sl-header__dropdown-trigger { max-width: 120px; }
+    .sl-header__desktop-nav { gap: 4px; }
+    .sl-header__link,
+    .sl-header__dropdown-trigger { padding-inline: 9px; }
+    .sl-header__actions { gap: 6px; }
+    .sl-header__member { max-width: 148px; }
+    .sl-header__member > span:last-child { max-width: 64px; }
+    .sl-header__account .sl-header__dropdown-trigger { max-width: 112px; }
+    .sl-app-banner__detail { display: none; }
+    .sl-app-banner__allowance { max-width: min(36vw, 200px); }
   }
   @media (max-width: 980px) {
     .sl-header { min-height: 64px; }
@@ -717,15 +741,18 @@
     main { margin-top: 32px; padding: 0 18px; }
     .sl-app-footer__inner { grid-template-columns: 1fr 1fr; }
     .sl-app-footer__brand { grid-column: 1 / -1; }
+    .sl-app-banner__allowance { max-width: min(48vw, 220px); }
   }
   @media (max-width: 560px) {
     .sl-app-banner { padding-inline: 14px; }
     .sl-app-banner__inner {
       min-width: 0;
       flex-wrap: wrap;
+      justify-content: center;
       gap: 8px;
     }
-    .sl-app-banner__detail { display: none; }
+    .sl-app-banner__detail,
+    .sl-app-banner__allowance { display: none; }
   }
   @media (max-width: 390px) {
     .sl-header { padding-inline: 12px; }
@@ -775,11 +802,11 @@
       <a href="/">Let&rsquo;s work on your swing &rarr;</a>
     {% elif user %}
       <span class="sl-app-banner__status">Free plan</span>
-      <span>{% if free_limit <= 0 %}Unlimited complete reports{% else %}{{ free_limit }} complete report{% if free_limit != 1 %}s{% endif %} each month{% endif %}</span>
+      <span class="sl-app-banner__allowance">{% if free_limit <= 0 %}Unlimited complete reports{% else %}{{ free_limit }} complete report{% if free_limit != 1 %}s{% endif %} each month{% endif %}</span>
       <span class="sl-app-banner__detail">&middot; club context saved</span>
     {% else %}
       <span class="sl-app-banner__status">Start free</span>
-      <span>{% if free_limit <= 0 %}Unlimited full reports{% else %}{{ free_limit }} full report{% if free_limit != 1 %}s{% endif %} / month{% endif %}</span>
+      <span class="sl-app-banner__allowance">{% if free_limit <= 0 %}Unlimited full reports{% else %}{{ free_limit }} full report{% if free_limit != 1 %}s{% endif %} / month{% endif %}</span>
       <span class="sl-app-banner__detail">&middot; no card &middot; club context saved</span>
     {% endif %}
   </div>

@@ -147,7 +147,9 @@
   background: var(--sl-bg-card);
   border: 1px solid var(--sl-border);
   border-radius: var(--sl-radius-lg);
-  box-shadow: 0 44px 90px -40px rgba(0, 0, 0, 0.9);
+  box-shadow:
+    0 1px 2px rgba(6, 17, 12, 0.04),
+    0 44px 90px -40px rgba(0, 0, 0, 0.9);
   padding: var(--sl-card-inset);
 }
 /* faint quarter-arc — the movement's mark, kept subordinate */
@@ -336,7 +338,7 @@
   "name": "Report feature",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "report" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Know what to practice next." },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "See the priority before you practice." },
     { "type": "textarea", "id": "body", "label": "Body", "default": "Explore a sample report to see how CaddieInsight turns phone-video evidence into one priority, a focused drill, and a measurable pass mark." },
     { "type": "image_picker", "id": "image", "label": "Key-position strip image", "info": "Shown inside the report card. Leave blank to use the versioned CaddieInsight report preview." },
     { "type": "image_picker", "id": "detail_image", "label": "Detail image (unused)", "info": "No longer shown — kept so older templates stay valid." },

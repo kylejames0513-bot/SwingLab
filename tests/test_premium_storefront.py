@@ -50,7 +50,7 @@ def webp_dimensions(path: Path) -> tuple[int, int]:
 def test_storefront_leads_with_the_evidence_loop_and_real_sample():
     hero = INDEX["sections"]["hero"]["settings"]
 
-    assert hero["heading"] == "Practice the move that matters."
+    assert hero["heading"] == "Bring one clear move to the range."
     assert hero["primary_label"] == "Analyze a swing free"
     assert hero["primary_url"] == "https://app.caddieinsight.com/signup"
     assert hero["secondary_label"] == "Explore the sample report"

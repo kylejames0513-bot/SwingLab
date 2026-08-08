@@ -286,6 +286,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   min-height: 38px;
   margin-inline: calc(var(--sl-pad-x) * -1);
   padding: 7px var(--sl-pad-x);
+  overflow: hidden;
   background: #050d09;
   border-bottom: 1px solid rgba(245, 242, 233, .1);
   color: rgba(245, 242, 233, .72);
@@ -485,7 +486,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
 }
 .sl-header__account > summary,
 .sl-header__account .sl-header__dropdown-trigger {
-  max-width: 148px;
+  max-width: 136px;
   min-width: 0;
   overflow: hidden;
 }
@@ -889,6 +890,8 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   .sl-member-rail__inner { gap: 8px; }
   .sl-member-rail__greeting { max-width: min(34vw, 220px); }
   .sl-member-rail__action { padding-inline: 8px; font-size: 12px; }
+  .sl-header__account > summary,
+  .sl-header__account .sl-header__dropdown-trigger { max-width: 120px; }
 }
 @media (max-width: 980px) {
   .shopify-section:has(> .sl-header--overlay) { margin-bottom: -64px; }

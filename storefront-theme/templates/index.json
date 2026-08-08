@@ -4,8 +4,8 @@
       "type": "hero",
       "settings": {
         "eyebrow": "CaddieInsight",
-        "heading": "Practice the move that matters.",
-        "body": "Choose the club, film one repeatable view, and get one prioritized coaching plan with a pass mark for your next clip.",
+        "heading": "Bring one clear move to the range.",
+        "body": "Film a repeatable view. Get one prioritized coaching plan with a drill and a pass mark for your next clip.",
         "primary_label": "Analyze a swing free",
         "primary_url": "https://app.caddieinsight.com/signup",
         "secondary_label": "Explore the sample report",
@@ -142,7 +142,7 @@
       ],
       "settings": {
         "anchor": "report",
-        "heading": "Know what to practice next.",
+        "heading": "See the priority before you practice.",
         "body": "Explore a sample report to see how CaddieInsight turns phone-video evidence into one priority, a focused drill, and a measurable pass mark.",
         "caption": "SAMPLE REPORT · DEMONSTRATION DATA",
         "cta_label": "View the sample report",
@@ -229,8 +229,8 @@
       ],
       "settings": {
         "anchor": "plans",
-        "heading": "Start free. Go Pro when repetition matters.",
-        "subheading": "The coaching engine stays the same. Pro removes the monthly limit and adds replay plus progress tracking.",
+        "heading": "Start free. Go Pro when the reps matter.",
+        "subheading": "The coaching engine stays the same. Pro removes the monthly limit and unlocks replay plus progress tracking.",
         "membership_section": true,
         "footnote": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup."
       }
