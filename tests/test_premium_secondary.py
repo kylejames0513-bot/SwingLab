@@ -188,7 +188,17 @@ def test_cached_offline_shell_is_anonymous_while_drills_keep_pro_header(
     assert 'class="sl-premium-chrome sl-reduced-motion"' in personalized.text
 
     worker = client.get("/service-worker.js").text
-    assert 'caddieinsight-public-shell-v3' in worker
-    assert 'const PUBLIC_SHELL = ["/offline"];' in worker
+    assert 'caddieinsight-public-shell-v4' in worker
+    # The precache may hold the offline page and public brand assets, and
+    # nothing else — no account, report, session, or upload route. The
+    # cacheable surface is an allowlist rather than a list of exclusions;
+    # tests/test_pwa_shell.py asserts that structure directly.
+    precache = re.search(r"const PRECACHE = \[(.*?)\];", worker, re.S)
+    assert precache is not None
+    entries = re.findall(r'"([^"]+)"', precache.group(1))
+    assert entries
+    assert all(
+        entry == "/offline" or entry.startswith("/static/") for entry in entries
+    ), entries
     assert "private|no-store" in worker
     assert "key !== CACHE_NAME" in worker

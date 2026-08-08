@@ -1193,6 +1193,11 @@
 {# Persistent bottom navigation for phone and tablet widths. Deliberately the
    four destinations a golfer moves between mid-session; everything else stays
    behind More, which opens the same dialog as the header toggle. #}
+{% set tabbed_paths = ['/', '/upload'] %}
+{% if require_account and user %}{% set tabbed_paths = tabbed_paths + ['/today'] %}{% endif %}
+{% if user or not require_account %}{% set tabbed_paths = tabbed_paths + ['/sessions'] %}{% endif %}
+{% set tabbed_paths = tabbed_paths + ['/drills'] %}
+{% if not (user and user.is_pro) and not (require_account and user) %}{% set tabbed_paths = tabbed_paths + ['/pricing'] %}{% endif %}
 <nav class="sl-tabbar" aria-label="App sections">
   <a class="sl-tabbar__item{% if current_path == '/' or current_path == '/upload' %} is-current{% endif %}"
      href="{% if user or not require_account %}/{% else %}/signup{% endif %}"
@@ -1256,7 +1261,10 @@
   </a>
   {% endif %}
 
-  <button class="sl-tabbar__item" type="button"
+  {# Account, Progress, and the rest live behind More, so More carries the
+     active marker whenever the page has no tab of its own — the bar always
+     answers "where am I" rather than going blank. #}
+  <button class="sl-tabbar__item{% if current_path not in tabbed_paths %} is-current{% endif %}" type="button"
           aria-label="More"
           aria-expanded="false"
           aria-haspopup="dialog"

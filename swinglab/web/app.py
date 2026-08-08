@@ -1245,16 +1245,16 @@ def create_app(
         return JSONResponse(
             {
                 # A stable id keeps an already-installed app pointed at this
-                # entry when start_url changes; without it the browser treats
-                # a new start_url as a different app.
-                "id": "/?installed=1",
+                # entry if start_url ever changes; without it the browser
+                # treats a new start_url as a different app.
+                "id": "/",
                 "name": f"{brand_name} — swing analysis",
                 "short_name": brand_name,
                 "description": (
                     "Film one swing, get one priority, one drill, and a "
                     "re-film target that tests the change."
                 ),
-                "start_url": "/today?source=pwa",
+                "start_url": "/today",
                 "scope": "/",
                 "display": "standalone",
                 # Falls back left to right, so a browser that supports the
@@ -1301,7 +1301,7 @@ def create_app(
                     {
                         "name": "Analyze a swing",
                         "short_name": "Analyze",
-                        "url": "/?source=pwa-shortcut",
+                        "url": "/",
                         "icons": [
                             {
                                 "src": "/static/pwa-icon-192.png",
@@ -1313,12 +1313,12 @@ def create_app(
                     {
                         "name": "Today",
                         "short_name": "Today",
-                        "url": "/today?source=pwa-shortcut",
+                        "url": "/today",
                     },
                     {
                         "name": "Swing history",
                         "short_name": "History",
-                        "url": "/sessions?source=pwa-shortcut",
+                        "url": "/sessions",
                     },
                 ],
             },

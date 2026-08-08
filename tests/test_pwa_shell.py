@@ -46,10 +46,10 @@ def test_manifest_declares_installable_identity_and_icons(client):
 
     # A stable id survives a start_url change; without it the browser treats
     # an updated start_url as a different app and orphans the installed one.
-    assert data["id"] == "/?installed=1"
+    assert data["id"] == "/"
     assert data["scope"] == "/"
     assert data["display"] == "standalone"
-    assert data["start_url"].startswith("/today")
+    assert data["start_url"] == "/today"
 
     by_purpose: dict[str, list[dict]] = {}
     for icon in data["icons"]:
