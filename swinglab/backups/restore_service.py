@@ -644,15 +644,23 @@ def _validate_restored_auth_reset_postconditions(
             f"SELECT COUNT(*) FROM {_quoted_sqlite_identifier(actual)}"
         ).fetchone()[0] != 0:
             raise BackupError("The restored credential reset was not preserved.")
+    expected = dict(expected_user_epochs)
     current = connection.execute(
         "SELECT id, password_hash, auth_epoch FROM users ORDER BY id"
     ).fetchall()
-    current_epochs = tuple((str(row[0]), row[2]) for row in current)
-    if (
-        current_epochs != expected_user_epochs
-        or any(row[1] != "" for row in current)
-    ):
-        raise BackupError("The restored credential reset was not preserved.")
+    # A fenced ``account_delete`` legitimately removes an owner, so the
+    # surviving set may shrink. It must never gain a row, regain a password, or
+    # roll an epoch back to a value a stale credential could still match.
+    for row in current:
+        user_id = str(row[0])
+        if (
+            user_id not in expected
+            or row[1] != ""
+            or row[2] != expected[user_id]
+        ):
+            raise BackupError(
+                "The restored credential reset was not preserved."
+            )
 
 
 def _require_key_coverage(

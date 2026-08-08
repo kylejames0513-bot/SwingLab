@@ -2603,6 +2603,211 @@ def test_service_restore_prepares_only_disposable_copy_and_reconciles_full_chain
     assert ledger.calls == 1
 
 
+def _chain_with_erasure_record(manifest, manifest_sha256, *, kind, payload):
+    """A validated baseline chain whose only later record is one erasure."""
+
+    from swinglab.web.recovery_fence_ledger import (
+        PublishedRecoveryRecord,
+        ValidatedRecoveryChain,
+    )
+
+    base = _baseline_chain_snapshot(
+        manifest, manifest_sha256, include_token_revoke=False
+    )
+    previous = base.records[-1]
+    trimmed = previous.__class__(
+        **{**previous.__dict__, "head_etag": None}
+    )
+    erasure = PublishedRecoveryRecord(
+        sequence=len(base.records) + 1,
+        previous_record_key=previous.record_key,
+        previous_record_hash=previous.record_hash,
+        kind=kind,
+        event_id="dddddddd-eeee-4fff-8000-111111111111",
+        cutoff_at=float(manifest["created_at_epoch"]) + 3,
+        payload=payload,
+        chain_hmac_key_id="chain-key",
+        chain_hmac="9" * 64,
+        record_hash="a" * 64,
+        record_key=f"fence/records/{len(base.records) + 1}-" + "a" * 64 + ".json",
+        body=b"erasure-record",
+        head_etag='"validated-head"',
+    )
+    return ValidatedRecoveryChain(
+        head_etag='"validated-head"',
+        records=(*base.records[:-1], trimmed, erasure),
+    )
+
+
+def _erasure_digests(keyring, *, user_id, email=None):
+    from swinglab.web.mobile_schema import MobileStateDomain
+
+    digests = {
+        "stable_user_hmac_key_id": keyring.current_key_id,
+        "stable_user_hmac": keyring.digest_with_key(
+            keyring.current_key_id,
+            MobileStateDomain.ERASURE_STABLE_USER_ID,
+            user_id,
+        ),
+    }
+    if email is not None:
+        digests["normalized_email_hmac_key_id"] = keyring.current_key_id
+        digests["normalized_email_hmac"] = keyring.digest_with_key(
+            keyring.current_key_id,
+            MobileStateDomain.ERASURE_NORMALIZED_EMAIL,
+            email,
+        )
+    return digests
+
+
+def test_service_restore_reapplies_a_fenced_history_reset(
+    tmp_path, synthetic_sessions
+):
+    """A restored older backup must not resurrect erased swing history."""
+
+    module = _restore_service_module()
+    _sessions, connection = synthetic_sessions
+    connection.execute(
+        "INSERT INTO practice_checkins (user_id, session_id, completed_at)"
+        " VALUES (?, ?, ?)",
+        ("user-synthetic", "jobdone", 11.0),
+    )
+    connection.commit()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    keyring = _service_keyring()
+    chain = _chain_with_erasure_record(
+        manifest,
+        manifest_sha256,
+        kind="history_reset",
+        payload={
+            **_erasure_digests(keyring, user_id="user-synthetic"),
+            "erased_through_history_epoch": 1,
+        },
+    )
+    scratch = tmp_path / "history-reset-reconcile-scratch"
+    scratch.mkdir()
+
+    result = module.prepare_service_restore(
+        bundle,
+        scratch,
+        ledger=_StaticValidatedLedger(chain),
+        keyring=keyring,
+        now=CAPTURED_AT.timestamp() + 100,
+    )
+
+    assert result.ready is True
+    retained = sqlite3.connect(result.retained_restore_dir / DATABASE_BUNDLE_PATH)
+    working = sqlite3.connect(result.working_dir / "swinglab.db")
+    try:
+        # The untouched copy still carries everything the fence erased.
+        assert retained.execute(
+            "SELECT COUNT(*) FROM jobs WHERE user_id='user-synthetic'"
+        ).fetchone()[0] == 3
+        assert working.execute(
+            "SELECT COUNT(*) FROM jobs WHERE user_id='user-synthetic'"
+        ).fetchone()[0] == 0
+        assert working.execute(
+            "SELECT COUNT(*) FROM practice_checkins WHERE user_id='user-synthetic'"
+        ).fetchone()[0] == 0
+        # The account survives a history reset, at the fenced epoch.
+        assert working.execute(
+            "SELECT history_epoch FROM users WHERE id='user-synthetic'"
+        ).fetchone() == (1,)
+        # A committed cleanup journal is what makes the restored service delete
+        # the session directories on its next start.
+        assert working.execute(
+            "SELECT kind, state FROM history_reset_operations"
+        ).fetchall() == [("restore_reconcile", "committed")]
+    finally:
+        retained.close()
+        working.close()
+
+
+def test_service_restore_reapplies_a_fenced_account_delete(
+    tmp_path, synthetic_sessions
+):
+    """A restored older backup must not resurrect a deleted account."""
+
+    module = _restore_service_module()
+    _sessions, connection = synthetic_sessions
+    connection.execute(
+        "UPDATE shopify_orders SET user_id = 'user-synthetic'"
+        " WHERE order_id = 'order-synthetic'"
+    )
+    connection.execute(
+        "UPDATE gear_orders SET user_id = 'user-synthetic'"
+        " WHERE order_id = 'gear-synthetic'"
+    )
+    connection.execute(
+        "INSERT INTO pro_grants (email, days) VALUES (?, ?)",
+        ("synthetic@example.invalid", 14.0),
+    )
+    connection.commit()
+    bundle, manifest, manifest_sha256 = _create_service_baseline_bundle(
+        tmp_path, synthetic_sessions
+    )
+    keyring = _service_keyring()
+    chain = _chain_with_erasure_record(
+        manifest,
+        manifest_sha256,
+        kind="account_delete",
+        payload={
+            **_erasure_digests(
+                keyring,
+                user_id="user-synthetic",
+                email="synthetic@example.invalid",
+            ),
+            "erased_through_history_epoch": 1,
+        },
+    )
+    scratch = tmp_path / "account-delete-reconcile-scratch"
+    scratch.mkdir()
+
+    result = module.prepare_service_restore(
+        bundle,
+        scratch,
+        ledger=_StaticValidatedLedger(chain),
+        keyring=keyring,
+        now=CAPTURED_AT.timestamp() + 100,
+    )
+
+    assert result.ready is True
+    retained = sqlite3.connect(result.retained_restore_dir / DATABASE_BUNDLE_PATH)
+    working = sqlite3.connect(result.working_dir / "swinglab.db")
+    try:
+        assert retained.execute(
+            "SELECT COUNT(*) FROM users WHERE id='user-synthetic'"
+        ).fetchone()[0] == 1
+        assert working.execute(
+            "SELECT COUNT(*) FROM users WHERE id='user-synthetic'"
+        ).fetchone()[0] == 0
+        assert working.execute(
+            "SELECT COUNT(*) FROM jobs WHERE user_id='user-synthetic'"
+        ).fetchone()[0] == 0
+        # No token survives the delete even though this chain carries no
+        # token_revoke record of its own.
+        assert working.execute(
+            "SELECT COUNT(*) FROM mobile_api_tokens"
+        ).fetchone()[0] == 0
+        # Store-side order history is unlinked, never destroyed.
+        assert working.execute(
+            "SELECT user_id FROM shopify_orders WHERE order_id='order-synthetic'"
+        ).fetchone() == (None,)
+        assert working.execute(
+            "SELECT user_id FROM gear_orders WHERE order_id='gear-synthetic'"
+        ).fetchone() == (None,)
+        # Email-keyed credentials match by digest, so only the erased address
+        # loses its grants.
+        assert working.execute(
+            "SELECT email FROM pro_grants ORDER BY email"
+        ).fetchall() == [("future@example.invalid",)]
+    finally:
+        retained.close()
+        working.close()
+
+
 def test_service_restore_requires_the_remote_genesis_journal_before_auth_reset(
     tmp_path, synthetic_sessions
 ):
