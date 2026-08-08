@@ -26,19 +26,16 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
   - Docs in `docs/mobile-api-resources.md`; OpenAPI regenerated
   - Focused profile suite: 17 passed; adjacent aggregate green
 
-## Current gate: 4C — practice evidence
+## Current gate: 4D — device management
 
-Do not start Gate 4D until 4C is implemented, committed, and independently reviewed.
+Do not start Task 5 until Gate 4D is implemented, committed, and independently reviewed.
 
-Implement Gate 4C only:
-
-1. Strict bearer/idempotent `POST /api/v1/practice-evidence` behind `mobile_practice_writes_enabled` (default-off).
-2. Closed request/receipt contracts; `Idempotency-Key`; verify current owned Proof Cycle target.
-3. `UserStore.record_mobile_practice_evidence` writes `proof_cycle_practice_evidence` plus `mobile_practice_evidence_details` atomically under `CredentialMutationGuard`.
-4. Add details table to history reset, account deletion, privacy export, backup counts, orphan/HMAC scans.
-5. Bump cumulative mobile backup extension to generation 2 with generation 0/1 restore compatibility.
-6. Keep legacy `POST /api/v1/practice-checkins` byte-compatible.
-7. Regenerate `docs/api/openapi-v1.json` deterministically.
+Gate 4C is complete:
+- `POST /api/v1/practice-evidence` behind `mobile_practice_writes_enabled`
+- Closed contracts + Idempotency-Key replay/conflict
+- `mobile_practice_evidence_details` + mobile schema generation 2
+- History reset / deletion / privacy export wiring
+- Focused practice suite green; OpenAPI regenerated
 
 ## After Gate 4C
 

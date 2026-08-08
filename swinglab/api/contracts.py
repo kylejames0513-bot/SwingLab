@@ -375,6 +375,65 @@ class PracticeCheckinResponse(ContractModel):
     checkins: list[PracticeCheckin] | None = None
 
 
+class PracticeEvidenceRequest(ContractModel):
+    """Closed native practice-evidence body; legacy check-ins stay `{session_id}`."""
+
+    baseline_session_id: str = Field(min_length=1, max_length=128)
+    target_fingerprint: str = Field(min_length=64, max_length=64)
+    drill_id: str = Field(min_length=1, max_length=128)
+    minutes: Literal[10, 20, 45]
+    outcome: Literal["completed", "still_working"]
+    reps: int = Field(ge=1, le=300, strict=True)
+    feel: Literal["easier", "same", "harder"] | None
+    relative_strike: Literal["better", "same", "worse", "unknown"] | None
+    start_line: Literal["left", "target", "right", "unknown"] | None
+    miss_pattern: (
+        Literal[
+            "left",
+            "right",
+            "thin",
+            "fat",
+            "heel",
+            "toe",
+            "mixed",
+            "none",
+            "unknown",
+        ]
+        | None
+    )
+    expected_history_epoch: int = Field(ge=0, strict=True)
+
+
+class PracticeEvidenceReceipt(ContractModel):
+    resource_version: Literal[1] = 1
+    receipt_id: str
+    baseline_session_id: str
+    target_fingerprint: str
+    drill_id: str
+    minutes: Literal[10, 20, 45]
+    outcome: Literal["completed", "still_working"]
+    reps: int
+    feel: Literal["easier", "same", "harder"] | None
+    relative_strike: Literal["better", "same", "worse", "unknown"] | None
+    start_line: Literal["left", "target", "right", "unknown"] | None
+    miss_pattern: (
+        Literal[
+            "left",
+            "right",
+            "thin",
+            "fat",
+            "heel",
+            "toe",
+            "mixed",
+            "none",
+            "unknown",
+        ]
+        | None
+    )
+    completed_at: float
+    completed_day: int
+
+
 Club = Literal["driver", "fairway-wood", "hybrid", "iron", "wedge"]
 Hand = Literal["left", "right"]
 CameraAngle = Literal["face-on", "dtl"]

@@ -16,6 +16,8 @@ from ..api.contracts import (
     MobileSessionResponse,
     MobileSessionsResponse,
     MobileTodayResponse,
+    PracticeEvidenceReceipt,
+    PracticeEvidenceRequest,
     Profile,
     ProfileResponse,
     ProfileUpdateRequest,
@@ -26,7 +28,7 @@ from .credential_mutations import (
     CredentialMutationGuard,
     CredentialMutationRejected,
 )
-from .users import HistoryEpochError
+from .users import HistoryEpochError, MobilePracticeEvidenceConflict
 from ..clubs import CLUB_LABELS
 from ..config import Config
 from ..drills import gear_shop_url
@@ -91,6 +93,22 @@ class MobileProfileHistoryConflict(RuntimeError):
 
 class MobileProfileUnavailable(LookupError):
     """The account vanished or became unclaimable before the profile write."""
+
+
+class MobilePracticeUnauthorized(PermissionError):
+    """The bearer credential is no longer admissible for a practice write."""
+
+
+class MobilePracticeHistoryConflict(RuntimeError):
+    """The client expected a history epoch that is no longer current."""
+
+
+class MobilePracticeUnavailable(LookupError):
+    """No current owned Proof Cycle target matches the practice request."""
+
+
+class MobilePracticeIdempotencyConflict(RuntimeError):
+    """An Idempotency-Key was reused with a different practice body."""
 
 
 def validate_mobile_resource_settings(
@@ -293,6 +311,113 @@ class MobileResourceService:
         finally:
             lease.release()
         return ProfileResponse(profile=serialize_profile(profile))
+
+    def record_practice_evidence(
+        self,
+        context: MobileAuthContext,
+        request: PracticeEvidenceRequest,
+        *,
+        idempotency_key: object,
+        guard: CredentialMutationGuard,
+        now: float | None = None,
+    ) -> PracticeEvidenceReceipt:
+        """Record one owned practice receipt under a credential-mutation lease."""
+
+        try:
+            lease = guard.admit(context)
+        except CredentialMutationRejected as exc:
+            raise MobilePracticeUnauthorized(
+                "Invalid mobile access token."
+            ) from exc
+
+        timestamp = self._clock() if now is None else float(now)
+        try:
+            with self._users._lock:
+                try:
+                    self._users._conn.execute("BEGIN IMMEDIATE")
+                    lease.validate_locked(self._users, now=timestamp)
+                    owner_row = self._users._conn.execute(
+                        "SELECT 1 FROM users WHERE id = ?",
+                        (context.user.id,),
+                    ).fetchone()
+                    if owner_row is None:
+                        raise CredentialMutationRejected(
+                            "The authenticated mobile credential changed."
+                        )
+                    self._users._assert_history_epoch_locked(
+                        context.user.id,
+                        request.expected_history_epoch,
+                        session_ids=(request.baseline_session_id,),
+                    )
+                    owner = context.user
+                    baseline = self._manager.get(request.baseline_session_id)
+                    boundary = (
+                        _measurement_boundary(baseline)
+                        if baseline is not None
+                        else None
+                    )
+                    if (
+                        baseline is None
+                        or baseline.user_id != owner.id
+                        or baseline.status != DONE
+                        or not self._manager.coaching_eligible(baseline)
+                        or boundary is None
+                    ):
+                        raise MobilePracticeUnavailable(
+                            "No matching Proof Cycle practice target."
+                        )
+                    try:
+                        active_target = self._active_target_provider(
+                            owner, boundary, timestamp
+                        )
+                    except Exception as exc:
+                        raise MobilePracticeUnavailable(
+                            "No matching Proof Cycle practice target."
+                        ) from exc
+                    assignment = practice_assignment_from_target(active_target)
+                    if (
+                        assignment is None
+                        or assignment.baseline_session_id
+                        != request.baseline_session_id
+                        or assignment.target_fingerprint
+                        != request.target_fingerprint
+                        or assignment.drill_id != request.drill_id
+                    ):
+                        raise MobilePracticeUnavailable(
+                            "No matching Proof Cycle practice target."
+                        )
+                    receipt = self._users._record_mobile_practice_evidence_locked(
+                        context.user.id,
+                        baseline_session_id=request.baseline_session_id,
+                        target_fingerprint=request.target_fingerprint,
+                        drill_id=request.drill_id,
+                        minutes=request.minutes,
+                        outcome=request.outcome,
+                        reps=request.reps,
+                        feel=request.feel,
+                        relative_strike=request.relative_strike,
+                        start_line=request.start_line,
+                        miss_pattern=request.miss_pattern,
+                        expected_history_epoch=request.expected_history_epoch,
+                        idempotency_key=idempotency_key,
+                        now=timestamp,
+                    )
+                    self._users._conn.commit()
+                except Exception:
+                    if self._users._conn.in_transaction:
+                        self._users._conn.rollback()
+                    raise
+        except CredentialMutationRejected as exc:
+            raise MobilePracticeUnauthorized(
+                "Invalid mobile access token."
+            ) from exc
+        except HistoryEpochError as exc:
+            raise MobilePracticeHistoryConflict(str(exc)) from exc
+        except MobilePracticeEvidenceConflict as exc:
+            raise MobilePracticeIdempotencyConflict(str(exc)) from exc
+        finally:
+            lease.release()
+        return receipt
 
     def capabilities(self, context: MobileAuthContext) -> CapabilitiesResponse:
         with self._manager.history_delivery_guard():

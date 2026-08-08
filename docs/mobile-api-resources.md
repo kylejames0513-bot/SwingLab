@@ -82,6 +82,31 @@ The legacy browser route `PUT /api/v1/profile` keeps its existing cookie/bearer
 validation order, bodies, and errors. The native route does not call that
 handler.
 
+## Practice evidence
+
+`POST /api/v1/practice-evidence` is the additive native practice mutation. It is
+gated only by `web.mobile_practice_writes_enabled` (default off). While the flag
+is false, the route returns the same no-store 404 before bearer authentication,
+body validation, Idempotency-Key parsing, database work, or filesystem access.
+
+When enabled:
+
+- Authentication is strict Bearer only; cookie-only and invalid Authorization
+  never fall back to a browser cookie.
+- Requests require exactly one 128-bit hex `Idempotency-Key` header and a closed
+  `PracticeEvidenceRequest` body (`extra=forbid`) including the current owned
+  Proof Cycle target triple, `minutes`/`outcome`/`reps`, optional feel fields,
+  and `expected_history_epoch`.
+- Exact replay of the same key and body returns the same
+  `PracticeEvidenceReceipt`. Reusing a key with a different body is typed 409
+  (`idempotency_conflict`). History-epoch mismatch is typed 409
+  (`history_epoch_conflict`). Missing/stale targets fail closed as typed 404.
+- The write enters `CredentialMutationGuard`, uses one `BEGIN IMMEDIATE`
+  transaction, and atomically upserts `proof_cycle_practice_evidence` plus
+  `mobile_practice_evidence_details` (mobile schema generation 2).
+
+Legacy `POST /api/v1/practice-checkins` keeps its `{session_id}` body and errors.
+
 The server-owned resumable-upload policy is also explicit, even while its
 mutation route is disabled:
 

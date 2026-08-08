@@ -24,6 +24,8 @@ from .contracts import (
     MobileSessionResponse,
     MobileSessionsResponse,
     MobileTodayResponse,
+    PracticeEvidenceReceipt,
+    PracticeEvidenceRequest,
     ProfileResponse,
     ProfileUpdateRequest,
     ProgressResponse,
@@ -53,6 +55,10 @@ from ..web.mobile_auth import (
     MobileNativeAuthUnavailable,
 )
 from ..web.mobile_resources import (
+    MobilePracticeHistoryConflict,
+    MobilePracticeIdempotencyConflict,
+    MobilePracticeUnauthorized,
+    MobilePracticeUnavailable,
     MobileProfileHistoryConflict,
     MobileProfileUnauthorized,
     MobileProfileUnavailable,
@@ -79,6 +85,7 @@ MOBILE_SESSION_BRIEF_ROUTE_NAME = "mobile.resources.session_brief"
 MOBILE_TODAY_ROUTE_NAME = "mobile.resources.today"
 MOBILE_PROGRESS_ROUTE_NAME = "mobile.resources.progress"
 MOBILE_PROFILE_WRITE_ROUTE_NAME = "mobile.resources.profile_write"
+MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME = "mobile.resources.practice_evidence"
 _MOBILE_BEARER_SCHEME = HTTPBearer(
     auto_error=False,
     scheme_name="MobileBearer",
@@ -371,6 +378,121 @@ def install_mobile_routes(
                 headers=no_store,
             ) from exc
         return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.post(
+        "/api/v1/practice-evidence",
+        name=MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME,
+        status_code=201,
+        response_model=PracticeEvidenceReceipt,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": PracticeEvidenceRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": [
+                {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "required": True,
+                    "description": "Exactly 32 hexadecimal characters (128 bits).",
+                    "schema": {
+                        "type": "string",
+                        "minLength": 32,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Fa-f]{32}$",
+                    },
+                }
+            ],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    async def mobile_practice_evidence(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        if not resource_service.settings.practice_writes_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile practice writes are not enabled.",
+                headers=no_store,
+            )
+        payload = await _native_auth_payload(request, PracticeEvidenceRequest)
+        idempotency_values = request.headers.getlist("idempotency-key")
+        if len(idempotency_values) != 1:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            )
+        try:
+            UserStore._mobile_auth_idempotency_bytes(idempotency_values[0])
+        except ValueError as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            ) from exc
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            receipt = resource_service.record_practice_evidence(
+                context,
+                payload,
+                idempotency_key=idempotency_values[0],
+                guard=credential_mutation_guard,
+            )
+        except MobileAuthError:
+            raise
+        except MobilePracticeUnauthorized as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except MobilePracticeUnavailable as exc:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Account history not found.",
+                headers=no_store,
+            ) from exc
+        except MobilePracticeHistoryConflict as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "history_epoch_conflict",
+                str(exc),
+                headers=no_store,
+            ) from exc
+        except MobilePracticeIdempotencyConflict as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "idempotency_conflict",
+                str(exc),
+                headers=no_store,
+            ) from exc
+        return JSONResponse(
+            receipt.model_dump(mode="json"),
+            status_code=201,
+            headers=no_store,
+        )
 
     @app.post(
         "/api/v1/auth/email/start",

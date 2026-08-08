@@ -901,6 +901,10 @@ class HistoryEpochError(RuntimeError):
     """A history write started before the account's latest reset."""
 
 
+class MobilePracticeEvidenceConflict(RuntimeError):
+    """An Idempotency-Key was reused with a different practice request."""
+
+
 class HistoryAuthEpochError(HistoryEpochError):
     """Account recovery revoked the session before history deletion."""
 
@@ -1758,6 +1762,7 @@ class UserStore:
             "golfer_profiles": ("user_id",),
             "practice_checkins": ("user_id",),
             "proof_cycle_practice_evidence": ("user_id",),
+            "mobile_practice_evidence_details": ("user_id",),
             "proof_cycle_transfer_checks": ("user_id",),
             "product_events": ("user_id",),
             "mobile_api_tokens": ("user_id",),
@@ -1820,6 +1825,7 @@ class UserStore:
             "golfer_profiles",
             "practice_checkins",
             "proof_cycle_practice_evidence",
+            "mobile_practice_evidence_details",
             "proof_cycle_transfer_checks",
             "product_events",
             "mobile_api_tokens",
@@ -2285,6 +2291,7 @@ class UserStore:
         golfer_profiles: list[sqlite3.Row],
         practice_checkins: list[sqlite3.Row],
         proof_cycle_practice_evidence: list[sqlite3.Row],
+        mobile_practice_evidence_details: list[sqlite3.Row],
         proof_cycle_transfer_checks: list[sqlite3.Row],
         product_events: list[sqlite3.Row],
         mobile_api_tokens: list[sqlite3.Row],
@@ -2335,6 +2342,19 @@ class UserStore:
             "practice_checkins": [dict(row) for row in practice_checkins],
             "proof_cycle_practice_evidence": [
                 dict(row) for row in proof_cycle_practice_evidence
+            ],
+            "mobile_practice_evidence_details": [
+                {
+                    key: row[key]
+                    for key in row.keys()
+                    if key
+                    not in {
+                        "idempotency_hmac",
+                        "idempotency_hmac_key_id",
+                        "request_hash",
+                    }
+                }
+                for row in mobile_practice_evidence_details
             ],
             "proof_cycle_transfer_checks": [
                 dict(row) for row in proof_cycle_transfer_checks
@@ -2660,6 +2680,7 @@ class UserStore:
                 golfer_profiles: list[sqlite3.Row] = []
                 practice_checkins: list[sqlite3.Row] = []
                 proof_cycle_practice_evidence: list[sqlite3.Row] = []
+                mobile_practice_evidence_details: list[sqlite3.Row] = []
                 proof_cycle_transfer_checks: list[sqlite3.Row] = []
                 product_events: list[sqlite3.Row] = []
                 mobile_api_tokens: list[sqlite3.Row] = []
@@ -2691,6 +2712,12 @@ class UserStore:
                         "SELECT * FROM proof_cycle_practice_evidence"
                         f" WHERE user_id IN ({placeholders})"
                         " ORDER BY completed_at, baseline_session_id",
+                        identifiers,
+                    ).fetchall()
+                    mobile_practice_evidence_details = self._conn.execute(
+                        "SELECT * FROM mobile_practice_evidence_details"
+                        f" WHERE user_id IN ({placeholders})"
+                        " ORDER BY completed_at, baseline_session_id, receipt_id",
                         identifiers,
                     ).fetchall()
                     proof_cycle_transfer_checks = self._conn.execute(
@@ -2735,6 +2762,7 @@ class UserStore:
                         golfer_profiles=golfer_profiles,
                         practice_checkins=practice_checkins,
                         proof_cycle_practice_evidence=proof_cycle_practice_evidence,
+                        mobile_practice_evidence_details=mobile_practice_evidence_details,
                         proof_cycle_transfer_checks=proof_cycle_transfer_checks,
                         product_events=product_events,
                         mobile_api_tokens=mobile_api_tokens,
@@ -7945,6 +7973,7 @@ class UserStore:
         for table in (
             "practice_checkins",
             "proof_cycle_practice_evidence",
+            "mobile_practice_evidence_details",
             "proof_cycle_transfer_checks",
         ):
             connection.execute(
@@ -8267,6 +8296,204 @@ class UserStore:
                 tuple(params),
             ).fetchall()
         return [self._proof_cycle_evidence_from_row(row) for row in rows]
+
+    def _practice_evidence_request_hash(
+        self,
+        *,
+        baseline_session_id: str,
+        target_fingerprint: str,
+        drill_id: str,
+        minutes: int,
+        outcome: str,
+        reps: int,
+        feel: str | None,
+        relative_strike: str | None,
+        start_line: str | None,
+        miss_pattern: str | None,
+        expected_history_epoch: int,
+    ) -> str:
+        body = json.dumps(
+            {
+                "baseline_session_id": baseline_session_id,
+                "drill_id": drill_id,
+                "expected_history_epoch": int(expected_history_epoch),
+                "feel": feel,
+                "minutes": int(minutes),
+                "miss_pattern": miss_pattern,
+                "outcome": outcome,
+                "relative_strike": relative_strike,
+                "reps": int(reps),
+                "start_line": start_line,
+                "target_fingerprint": target_fingerprint,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        return hashlib.sha256(body).hexdigest()
+
+    def _practice_evidence_receipt_from_detail_row(
+        self, row: sqlite3.Row
+    ):
+        from ..api.contracts import PracticeEvidenceReceipt
+
+        return PracticeEvidenceReceipt(
+            receipt_id=str(row["receipt_id"]),
+            baseline_session_id=str(row["baseline_session_id"]),
+            target_fingerprint=str(row["target_fingerprint"]),
+            drill_id=str(row["drill_id"]),
+            minutes=int(row["minutes"]),
+            outcome=str(row["outcome"]),
+            reps=int(row["reps"]),
+            feel=row["feel"],
+            relative_strike=row["relative_strike"],
+            start_line=row["start_line"],
+            miss_pattern=row["miss_pattern"],
+            completed_at=float(row["completed_at"]),
+            completed_day=int(row["completed_day"]),
+        )
+
+    def _record_mobile_practice_evidence_locked(
+        self,
+        user_id: str,
+        *,
+        baseline_session_id: str,
+        target_fingerprint: str,
+        drill_id: str,
+        minutes: int,
+        outcome: str,
+        reps: int,
+        feel: str | None,
+        relative_strike: str | None,
+        start_line: str | None,
+        miss_pattern: str | None,
+        expected_history_epoch: int,
+        idempotency_key: object,
+        now: float | None = None,
+    ):
+        """Upsert evidence + details inside the caller's ``BEGIN IMMEDIATE``."""
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        idempotency_key_id, idempotency_hmac = keyring.digest(
+            MobileStateDomain.PRACTICE_IDEMPOTENCY, idempotency
+        )
+        candidates = keyring.candidates(
+            MobileStateDomain.PRACTICE_IDEMPOTENCY, idempotency
+        )
+        request_hash = self._practice_evidence_request_hash(
+            baseline_session_id=baseline_session_id,
+            target_fingerprint=target_fingerprint,
+            drill_id=drill_id,
+            minutes=minutes,
+            outcome=outcome,
+            reps=reps,
+            feel=feel,
+            relative_strike=relative_strike,
+            start_line=start_line,
+            miss_pattern=miss_pattern,
+            expected_history_epoch=expected_history_epoch,
+        )
+        candidate_clause, candidate_values = self._mobile_auth_candidate_clause(
+            "idempotency_hmac_key_id",
+            "idempotency_hmac",
+            candidates,
+        )
+        existing = self._conn.execute(
+            "SELECT * FROM mobile_practice_evidence_details WHERE "
+            + candidate_clause
+            + " LIMIT 1",
+            tuple(candidate_values),
+        ).fetchone()
+        if existing is not None:
+            if str(existing["request_hash"]) != request_hash:
+                raise MobilePracticeEvidenceConflict(
+                    "Idempotency-Key was reused with a different request."
+                )
+            return self._practice_evidence_receipt_from_detail_row(existing)
+
+        normalized_user = self._proof_cycle_token(user_id, "user")
+        baseline = self._proof_cycle_token(
+            baseline_session_id, "baseline session"
+        )
+        fingerprint = self._proof_cycle_target_fingerprint(target_fingerprint)
+        drill = self._proof_cycle_token(drill_id, "drill")
+        duration = normalize_practice_minutes(minutes)
+        normalized_outcome = normalize_practice_outcome(outcome)
+        if type(reps) is not int or not 1 <= reps <= 300:
+            raise ValueError("Practice reps must be an integer from 1 to 300.")
+        completed_at = self._proof_cycle_timestamp(now, "practice time")
+        completed_day = int(completed_at // 86400)
+        receipt_id = secrets.token_hex(16)
+
+        pk_existing = self._conn.execute(
+            "SELECT * FROM mobile_practice_evidence_details"
+            " WHERE user_id = ? AND baseline_session_id = ?"
+            " AND target_fingerprint = ? AND completed_day = ?",
+            (normalized_user, baseline, fingerprint, completed_day),
+        ).fetchone()
+        if pk_existing is not None:
+            if str(pk_existing["request_hash"]) != request_hash:
+                raise MobilePracticeEvidenceConflict(
+                    "A practice receipt already exists for this target today."
+                )
+            return self._practice_evidence_receipt_from_detail_row(pk_existing)
+
+        self._conn.execute(
+            "INSERT INTO proof_cycle_practice_evidence"
+            " (user_id, baseline_session_id, target_fingerprint, drill_id,"
+            "  minutes, outcome, completed_at, completed_day)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(user_id, baseline_session_id, target_fingerprint,"
+            "             completed_day) DO UPDATE SET"
+            " drill_id = excluded.drill_id, minutes = excluded.minutes,"
+            " outcome = excluded.outcome, completed_at = excluded.completed_at",
+            (
+                normalized_user,
+                baseline,
+                fingerprint,
+                drill,
+                duration,
+                normalized_outcome,
+                completed_at,
+                completed_day,
+            ),
+        )
+        self._conn.execute(
+            "INSERT INTO mobile_practice_evidence_details"
+            " (user_id, baseline_session_id, target_fingerprint, completed_day,"
+            "  receipt_id, drill_id, minutes, outcome, reps, feel,"
+            "  relative_strike, start_line, miss_pattern, completed_at,"
+            "  idempotency_hmac_key_id, idempotency_hmac, request_hash)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                normalized_user,
+                baseline,
+                fingerprint,
+                completed_day,
+                receipt_id,
+                drill,
+                duration,
+                normalized_outcome,
+                reps,
+                feel,
+                relative_strike,
+                start_line,
+                miss_pattern,
+                completed_at,
+                idempotency_key_id,
+                idempotency_hmac,
+                request_hash,
+            ),
+        )
+        row = self._conn.execute(
+            "SELECT * FROM mobile_practice_evidence_details"
+            " WHERE receipt_id = ?",
+            (receipt_id,),
+        ).fetchone()
+        assert row is not None
+        return self._practice_evidence_receipt_from_detail_row(row)
 
     def record_proof_cycle_transfer_check(
         self,
