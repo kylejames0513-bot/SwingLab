@@ -31,6 +31,7 @@ from swinglab.cli import main
 from swinglab.web.jobs import _SCHEMA as JOBS_SCHEMA
 from swinglab.web.mobile_schema import (
     MOBILE_STATE_GENERATIONS,
+    MOBILE_STATE_SCHEMA_GENERATION,
     VersionedHMAC,
     ensure_mobile_state_schema,
     mobile_state_summary,
@@ -2584,7 +2585,7 @@ def test_service_restore_prepares_only_disposable_copy_and_reconciles_full_chain
             manifest["backup_id"],
             CAPTURED_AT.timestamp(),
             manifest_sha256,
-            1,
+            int(manifest["mobile_state"]["generation"]),
             manifest["database"]["sha256"],
         )
         assert working.execute(
@@ -3027,12 +3028,13 @@ def _seed_later_service_candidate(
         "INSERT INTO mobile_recovery_accepted_baselines "
         "(lineage_id, baseline_backup_id, minimum_backup_created_at, "
         "manifest_sha256, schema_generation, baseline_db_checkpoint, accepted_at) "
-        "VALUES (?, ?, ?, ?, 1, ?, ?)",
+        "VALUES (?, ?, ?, ?, ?, ?, ?)",
         (
             BASELINE_LINEAGE_ID,
             baseline_backup_id,
             minimum_created_at,
             baseline_manifest_sha256,
+            MOBILE_STATE_SCHEMA_GENERATION,
             baseline_db_checkpoint,
             minimum_created_at + 1,
         ),
@@ -3043,13 +3045,14 @@ def _seed_later_service_candidate(
         "backup_created_at, schema_generation, manifest_sha256, "
         "baseline_db_checkpoint, record_key, record_hash, head_etag, "
         "chain_hmac_key_id, created_at, updated_at) "
-        "VALUES (?, 'accepted', ?, ?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "VALUES (?, 'accepted', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee",
             "c" * 64,
             BASELINE_LINEAGE_ID,
             baseline_backup_id,
             minimum_created_at,
+            MOBILE_STATE_SCHEMA_GENERATION,
             baseline_manifest_sha256,
             baseline_db_checkpoint,
             "fence/records/1-" + "2" * 64 + ".json",
@@ -3064,10 +3067,11 @@ def _seed_later_service_candidate(
         "INSERT INTO mobile_recovery_fence_checkpoints "
         "(checkpoint_id, lineage_id, baseline_backup_id, schema_generation, "
         "head_sequence, head_record_key, head_record_hash, head_etag, "
-        "chain_hmac_key_id, verified_at) VALUES (1, ?, ?, 1, ?, ?, ?, ?, ?, ?)",
+        "chain_hmac_key_id, verified_at) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             BASELINE_LINEAGE_ID,
             baseline_backup_id,
+            MOBILE_STATE_SCHEMA_GENERATION,
             checkpoint_sequence,
             checkpoint_record_key
             or f"fence/records/{checkpoint_sequence}-{checkpoint_hash}.json",

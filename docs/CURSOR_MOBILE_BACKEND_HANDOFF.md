@@ -5,61 +5,22 @@ Use this file as the operating prompt for the next coding agent. Work only in th
 ## Frozen checkpoint
 
 - Branch: `cursor/caddieinsight-mobile-gate-4b-909d` (continues `codex/caddieinsight-mobile-implementation`)
-- Gate 4B tip: see latest commit on this branch
 - Main plan: `docs/superpowers/plans/2026-08-06-caddieinsight-mobile-backend-foundation.md`
 - Progress ledger: `.superpowers/sdd/2026-08-06-caddieinsight-mobile-backend-foundation/progress.md`
-- Reports: `.superpowers/sdd/2026-08-06-caddieinsight-mobile-backend-foundation/task-*-report.md`
 
 Do not deploy, publish, change Shopify/Railway/store settings, or mutate any live provider. Full-repository and container smoke tests are reserved for final integration. Keep CaddieInsight customer-facing and preserve `swinglab` compatibility.
 
 ## Work completed
 
-- Tasks 1 and 2 are complete and independently reviewed.
-- Task 3A through 3F are complete and independently reviewed.
-- Gate 4A is complete at commits `258496a` and `c5c6e39`.
-- Gate 4B is complete:
-  - Additive `PUT /api/v1/mobile/profile` behind default-off `mobile_profile_writes_enabled`
-  - Closed `ProfileUpdateRequest` / `ProfileResponse`; post-normalize `display_name` length
-  - Strict bearer-only; flag-off 404 before auth/body/DB/writes
-  - `CredentialMutationGuard` + `BEGIN IMMEDIATE`; deleted owner at epoch fence → 401 (never 409)
-  - Typed 401/404/409; no-store headers; legacy `PUT /api/v1/profile` byte parity preserved
-  - Docs in `docs/mobile-api-resources.md`; OpenAPI regenerated
-  - Focused profile suite: 17 passed; adjacent aggregate green
+- Tasks 1–3 and Gate 4A complete and independently reviewed.
+- Gate 4B (profile write): complete; independent re-review PASS.
+- Gate 4C (practice evidence + schema gen 2): complete; independent re-review PASS.
+- Gate 4D (devices + fenced legacy revoke): complete; independent re-review PASS.
+- Task 4 finish matrix: run combined focused suites + deterministic OpenAPI; backup gen-2 fixture drift closed.
 
 ## Current gate: Task 5
 
-Gate 4D is complete; do not start Task 5 until it is independently reviewed.
-
-Gate 4C is complete:
-- `POST /api/v1/practice-evidence` behind `mobile_practice_writes_enabled`
-- Closed contracts + Idempotency-Key replay/conflict
-- `mobile_practice_evidence_details` + mobile schema generation 2
-- History reset / deletion / privacy export wiring
-- Focused practice suite green; OpenAPI regenerated
-
-Gate 4D is complete:
-- `GET /api/v1/devices` (strict bearer-only, closed `DeviceListResponse`) and
-  `DELETE /api/v1/devices/{selector}` behind default-off
-  `mobile_device_management_enabled`; flag-off 404 before auth/body/DB/writes.
-- `MobileDeviceRevokeService` runs the recovery-fenced revoke journal
-  (`prepared → recovery_fenced → extensions_closed → token_revoked → complete`)
-  writing `mobile_device_revoke_journals` / `mobile_device_revoke_receipts`.
-  Self-revoke fences the caller via `validate_and_close_caller`; replay is
-  recognized before ordinary bearer auth; other-device revoke keeps the
-  initiator lease valid. Publish outage → durable 202, never local-only 204.
-- Legacy `/api/v1/mobile-tokens` revoke routes through the same fenced service
-  (503 on fence unreadiness/outage) while keeping its cookie/same-origin auth,
-  201 issue, 200 `{resource_version, revoked}`, and 404 cross-owner behavior.
-- Startup fails closed when the flag is on without recovery-fence readiness.
-- Docs in `docs/mobile-api-resources.md`; OpenAPI regenerated. Verification
-  suite (`test_mobile_devices_api`, `test_mobile_sign_out`,
-  `test_mobile_api_tokens`, `test_mobile_practice_api`,
-  `test_mobile_profile_api`, `test_mobile_openapi_contract`): 74 passed.
-
-## After Gate 4D
-
-- Finish Task 4 with the combined focused matrix and deterministic OpenAPI check.
-- Continue Tasks 5–8 sequentially from the plan.
+Implement durable resumable uploads with atomic job completion from the plan Task 5 section. Do not start Task 6 until Task 5 is implemented, committed, and independently reviewed.
 
 ## Standing decisions and hazards
 
