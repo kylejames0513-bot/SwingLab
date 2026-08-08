@@ -763,13 +763,24 @@ class UploadCompleteResponse(ContractModel):
 
 
 class PushRegistrationRequest(ContractModel):
+    provider: Literal["expo"]
     token: str
     platform: Literal["ios", "android"]
+    app_version: str
+    expo_project_id: str
+    practice_reminders_enabled: bool
+
+
+class PushPreferencesRequest(ContractModel):
+    practice_reminders_enabled: bool
 
 
 class PushRegistrationResponse(ContractModel):
     resource_version: Literal[1] = 1
-    registered: Literal[True] = True
+    platform: Literal["ios", "android"]
+    app_version: str
+    practice_reminders_enabled: bool
+    registered_at: float
 
 
 class NativeEventRequest(ContractModel):

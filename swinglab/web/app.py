@@ -95,6 +95,9 @@ from ..api.mobile_routes import (
     MOBILE_CAPABILITIES_ROUTE_NAME,
     MOBILE_DEVICES_LIST_ROUTE_NAME,
     MOBILE_DEVICE_REVOKE_ROUTE_NAME,
+    MOBILE_PUSH_REGISTER_ROUTE_NAME,
+    MOBILE_PUSH_PREFERENCES_ROUTE_NAME,
+    MOBILE_PUSH_UNREGISTER_ROUTE_NAME,
     MOBILE_EMAIL_EXCHANGE_ROUTE_NAME,
     MOBILE_EMAIL_START_ROUTE_NAME,
     MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME,
@@ -207,6 +210,7 @@ from .mobile_resources import (
     VIDEO_SUFFIXES,
     validate_mobile_resource_settings,
 )
+from .push_store import PushRegistrationService, load_mobile_push_settings
 from .resumable_uploads import ResumableUploadManager
 from .review_auth import (
     APPLICATION_ID_POLICY_REVISION,
@@ -584,6 +588,8 @@ def create_app(
     native_auth_settings = validate_mobile_native_auth_settings(cfg.web)
     mobile_resource_settings = validate_mobile_resource_settings(cfg.web)
     mobile_privacy_enabled = bool(cfg.web.get("mobile_privacy_enabled"))
+    mobile_push_settings = load_mobile_push_settings(cfg.web)
+    mobile_push_enabled = mobile_push_settings.enabled
     try:
         mobile_public_origin = canonical_mobile_public_origin(
             os.environ.get("PUBLIC_BASE_URL"), mobile_deployment_environment
@@ -642,13 +648,26 @@ def create_app(
         users.close()
         raise
     mutation_guard = credential_mutation_guard or CredentialMutationGuard()
+    push_registration_service: PushRegistrationService | None = None
+    composed_sign_out_extensions = tuple(sign_out_extensions)
+    if mobile_push_enabled:
+        push_registration_service = PushRegistrationService(
+            users,
+            mobile_push_settings,
+            deployment_environment=mobile_deployment_environment,
+            guard=mutation_guard,
+        )
+        composed_sign_out_extensions = (
+            *composed_sign_out_extensions,
+            push_registration_service,
+        )
     sign_out_service = MobileSignOutService(
         users,
         mutation_guard,
         keyring=users._mobile_state_hmac,
         recovery_fence_ledger=recovery_fence_ledger,
         drain_timeout_seconds=sign_out_drain_timeout_seconds,
-        extensions=sign_out_extensions,
+        extensions=composed_sign_out_extensions,
     )
     device_revoke_service = MobileDeviceRevokeService(
         users,
@@ -656,7 +675,7 @@ def create_app(
         keyring=users._mobile_state_hmac,
         recovery_fence_ledger=recovery_fence_ledger,
         drain_timeout_seconds=sign_out_drain_timeout_seconds,
-        extensions=sign_out_extensions,
+        extensions=composed_sign_out_extensions,
     )
     device_management_enabled = mobile_resource_settings.device_management_enabled
     mobile_keyed_throttle: KeyedThrottle | None = None
@@ -822,6 +841,11 @@ def create_app(
         MOBILE_DEVICES_LIST_ROUTE_NAME,
         MOBILE_DEVICE_REVOKE_ROUTE_NAME,
     }
+    mobile_push_route_names = {
+        MOBILE_PUSH_REGISTER_ROUTE_NAME,
+        MOBILE_PUSH_PREFERENCES_ROUTE_NAME,
+        MOBILE_PUSH_UNREGISTER_ROUTE_NAME,
+    }
     mobile_step_up_route_names = {
         MOBILE_STEP_UP_START_ROUTE_NAME,
         MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME,
@@ -846,6 +870,8 @@ def create_app(
         concealed_mobile_route_names |= mobile_upload_route_names
     if not mobile_resource_service.settings.device_management_enabled:
         concealed_mobile_route_names |= mobile_device_route_names
+    if not mobile_push_enabled:
+        concealed_mobile_route_names |= mobile_push_route_names
     if not mobile_privacy_enabled:
         concealed_mobile_route_names |= mobile_step_up_route_names
         concealed_mobile_route_names |= mobile_privacy_export_route_names
@@ -866,7 +892,8 @@ def create_app(
         | mobile_profile_write_route_names
         | mobile_practice_write_route_names
         | mobile_upload_route_names
-        | mobile_device_route_names,
+        | mobile_device_route_names
+        | mobile_push_route_names,
         concealed_route_names=concealed_mobile_route_names,
     )
     install_mobile_routes(
@@ -874,6 +901,8 @@ def create_app(
         sign_out_service=sign_out_service,
         device_revoke_service=device_revoke_service,
         device_management_enabled=device_management_enabled,
+        push_registration_service=push_registration_service,
+        mobile_push_enabled=mobile_push_enabled,
         email_auth_service=mobile_auth_service,
         review_auth_service=review_auth_service,
         step_up_service=step_up_service,

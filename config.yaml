@@ -218,6 +218,9 @@ web:
   mobile_privacy_enabled: false
   mobile_events_enabled: false
   mobile_push_enabled: false
+  mobile_push_expo_project_id: ""
+                             # public EAS project UUID; blank while push is off.
+                             # CADDIEINSIGHT_EXPO_PROJECT_ID may override when set.
   mobile_native_billing_enabled: false
   # Server-owned resumable-upload policy, published through capabilities even
   # while the mutation route remains disabled.

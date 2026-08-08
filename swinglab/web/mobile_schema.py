@@ -2,9 +2,10 @@
 
 Generation 0 is the pre-mobile token base. Generation 1 adds the closed
 auth/recovery footprint. Generation 2 additively introduces
-``mobile_practice_evidence_details``. Callers cannot ask for an arbitrary
-HMAC domain string and accidentally make unrelated secrets comparable in
-SQLite, logs, backups, or the recovery ledger.
+``mobile_practice_evidence_details``. Generation 3 additively introduces
+device-bound Expo push registration state. Callers cannot ask for an
+arbitrary HMAC domain string and accidentally make unrelated secrets
+comparable in SQLite, logs, backups, or the recovery ledger.
 """
 
 from __future__ import annotations
@@ -23,7 +24,7 @@ from typing import Iterable
 
 
 MOBILE_STATE_KEYRING_ENV = "MOBILE_STATE_HMAC_KEYRING"
-MOBILE_STATE_SCHEMA_GENERATION = 2
+MOBILE_STATE_SCHEMA_GENERATION = 3
 
 
 class MobileStateDomain(str, Enum):
@@ -70,6 +71,8 @@ class MobileStateDomain(str, Enum):
     SHOPIFY_ERASURE_CUSTOMER_ID = "shopify-erasure-customer-id"
     SHOPIFY_ERASURE_NORMALIZED_EMAIL = "shopify-erasure-normalized-email"
     RECOVERY_CHAIN_LINK = "recovery-chain-link"
+    PUSH_EXPO_PROJECT = "push-expo-project"
+    PUSH_CUTOVER_OPERATION_ID = "push-cutover-operation-id"
 
 
 @dataclass(frozen=True)
@@ -816,11 +819,75 @@ _GENERATION_TWO_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
 # through the exact table shape (including sqlite unique autoindexes).
 _GENERATION_TWO_INDEXES: dict[str, tuple[str, tuple[str, ...]]] = {}
 
+_GENERATION_THREE_TABLE_DDL: dict[str, str] = {
+    "mobile_push_registrations": """
+        CREATE TABLE IF NOT EXISTS mobile_push_registrations (
+            environment TEXT NOT NULL,
+            expo_project_id TEXT NOT NULL,
+            provider TEXT NOT NULL CHECK (provider = 'expo'),
+            token TEXT NOT NULL,
+            user_id TEXT NOT NULL,
+            selector TEXT NOT NULL,
+            application_id TEXT NOT NULL,
+            platform TEXT NOT NULL CHECK (platform IN ('ios', 'android')),
+            app_version TEXT NOT NULL,
+            app_build TEXT NOT NULL,
+            activation_generation INTEGER NOT NULL,
+            practice_reminders_enabled INTEGER NOT NULL
+                CHECK (practice_reminders_enabled IN (0, 1)),
+            registered_at REAL NOT NULL,
+            updated_at REAL NOT NULL,
+            UNIQUE (environment, expo_project_id, provider, token),
+            UNIQUE (environment, expo_project_id, selector)
+        )
+    """,
+    "mobile_push_activation_watermarks": """
+        CREATE TABLE IF NOT EXISTS mobile_push_activation_watermarks (
+            environment TEXT NOT NULL,
+            expo_project_id TEXT NOT NULL,
+            push_not_before REAL NOT NULL,
+            PRIMARY KEY (environment, expo_project_id)
+        )
+    """,
+}
+
+_GENERATION_THREE_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "mobile_push_registrations": (
+        "environment",
+        "expo_project_id",
+        "provider",
+        "token",
+        "user_id",
+        "selector",
+        "application_id",
+        "platform",
+        "app_version",
+        "app_build",
+        "activation_generation",
+        "practice_reminders_enabled",
+        "registered_at",
+        "updated_at",
+    ),
+    "mobile_push_activation_watermarks": (
+        "environment",
+        "expo_project_id",
+        "push_not_before",
+    ),
+}
+
+_GENERATION_THREE_INDEXES: dict[str, tuple[str, tuple[str, ...]]] = {
+    "mobile_push_registrations_user": (
+        "mobile_push_registrations",
+        ("user_id", "environment", "expo_project_id"),
+    ),
+}
+
 _INDEX_DDL = {
     name: f"CREATE INDEX IF NOT EXISTS {name} ON {table}({', '.join(columns)})"
     for name, (table, columns) in {
         **_GENERATION_ONE_INDEXES,
         **_GENERATION_TWO_INDEXES,
+        **_GENERATION_THREE_INDEXES,
     }.items()
 }
 
@@ -971,11 +1038,14 @@ def _canonical_generation_table_shapes() -> dict[str, _TableShape]:
             reference.execute(ddl)
         for ddl in _GENERATION_TWO_TABLE_DDL.values():
             reference.execute(ddl)
+        for ddl in _GENERATION_THREE_TABLE_DDL.values():
+            reference.execute(ddl)
         return {
             table: _table_shape(reference, table)
             for table in {
                 **_GENERATION_ONE_REQUIRED_COLUMNS,
                 **_GENERATION_TWO_REQUIRED_COLUMNS,
+                **_GENERATION_THREE_REQUIRED_COLUMNS,
             }
         }
     finally:
@@ -990,6 +1060,10 @@ _GENERATION_ONE_TABLE_SHAPES = {
 _GENERATION_TWO_TABLE_SHAPES = {
     table: _GENERATION_TABLE_SHAPES[table]
     for table in _GENERATION_TWO_REQUIRED_COLUMNS
+}
+_GENERATION_THREE_TABLE_SHAPES = {
+    table: _GENERATION_TABLE_SHAPES[table]
+    for table in _GENERATION_THREE_REQUIRED_COLUMNS
 }
 
 
@@ -1231,6 +1305,23 @@ MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
         required_views=(),
         restored_credential_tables=_GENERATION_ONE_RESTORED_CREDENTIAL_TABLES,
     ),
+    3: MobileStateGeneration(
+        generation=3,
+        required_columns={
+            **_GENERATION_ONE_REQUIRED_COLUMNS,
+            **_GENERATION_TWO_REQUIRED_COLUMNS,
+            **_GENERATION_THREE_REQUIRED_COLUMNS,
+        },
+        required_indexes={
+            **_MOBILE_TOKEN_BASE_INDEXES,
+            **_GENERATION_ONE_INDEXES,
+            **_GENERATION_TWO_INDEXES,
+            **_GENERATION_THREE_INDEXES,
+        },
+        required_triggers={},
+        required_views=(),
+        restored_credential_tables=_GENERATION_ONE_RESTORED_CREDENTIAL_TABLES,
+    ),
 }
 
 
@@ -1247,9 +1338,12 @@ def _validate_required_columns(
         expected = _GENERATION_TABLE_SHAPES[table]
         actual = _table_shape(connection, table)
         if actual != expected:
-            owning_generation = (
-                2 if table in _GENERATION_TWO_REQUIRED_COLUMNS else 1
-            )
+            if table in _GENERATION_THREE_REQUIRED_COLUMNS:
+                owning_generation = 3
+            elif table in _GENERATION_TWO_REQUIRED_COLUMNS:
+                owning_generation = 2
+            else:
+                owning_generation = 1
             raise RuntimeError(
                 f"Incompatible generation-{owning_generation} mobile schema for "
                 f"{table}; the exact table shape is required."
@@ -1417,19 +1511,31 @@ def detect_mobile_state_generation(connection: sqlite3.Connection) -> int:
         validate_mobile_state_schema(connection, 1)
         return 1
 
-    validate_mobile_state_schema(connection, 2)
-    return 2
+    generation_three_tables = set(_GENERATION_THREE_REQUIRED_COLUMNS)
+    generation_three_indexes = set(_GENERATION_THREE_INDEXES)
+    has_generation_three_footprint = bool(
+        (tables & generation_three_tables)
+        or (indexes & generation_three_indexes)
+    )
+    if not has_generation_three_footprint:
+        validate_mobile_state_schema(connection, 2)
+        return 2
+
+    validate_mobile_state_schema(connection, 3)
+    return 3
 
 
 def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:
-    """Apply generation-0 -> 1 -> 2 additive migrations.
+    """Apply generation-0 -> 1 -> 2 -> 3 additive migrations.
 
     A database with none of the token extension columns is an older released
     database.  A database with only some of them is an unknown partial
     migration and fails closed instead of being guessed back into shape.
     Generation-2 adds ``mobile_practice_evidence_details`` only after the
     complete generation-1 footprint is present; a partial generation-2
-    footprint fails closed on exact shape validation.
+    footprint fails closed on exact shape validation. Generation-3 adds push
+    registration tables only after the complete generation-2 footprint is
+    present.
     """
 
     token_columns = set(_table_columns(connection, "mobile_api_tokens"))
@@ -1458,7 +1564,7 @@ def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:
     # "no such column" exception while creating its index.
     _validate_required_columns(connection, 1)
     for name, ddl in _INDEX_DDL.items():
-        if name in _GENERATION_TWO_INDEXES:
+        if name in _GENERATION_TWO_INDEXES or name in _GENERATION_THREE_INDEXES:
             continue
         connection.execute(ddl)
 
@@ -1491,6 +1597,41 @@ def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:
             connection.execute(ddl)
         _validate_required_columns(connection, 2)
     for name, (table, columns) in _GENERATION_TWO_INDEXES.items():
+        connection.execute(
+            f"CREATE INDEX IF NOT EXISTS {name} ON {table}({', '.join(columns)})"
+        )
+
+    tables = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    indexes = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+    }
+    generation_three_tables = set(_GENERATION_THREE_REQUIRED_COLUMNS)
+    generation_three_indexes = set(_GENERATION_THREE_INDEXES)
+    present_generation_three_tables = tables & generation_three_tables
+    present_generation_three_indexes = indexes & generation_three_indexes
+    if present_generation_three_tables or present_generation_three_indexes:
+        if present_generation_three_tables != generation_three_tables:
+            missing = sorted(
+                generation_three_tables - present_generation_three_tables
+            )
+            raise RuntimeError(
+                "Incompatible partial generation-3 mobile schema; missing "
+                "table(s): " + ", ".join(missing)
+            )
+        _validate_required_columns(connection, 3)
+    else:
+        for ddl in _GENERATION_THREE_TABLE_DDL.values():
+            connection.execute(ddl)
+        _validate_required_columns(connection, 3)
+    for name, (table, columns) in _GENERATION_THREE_INDEXES.items():
         connection.execute(
             f"CREATE INDEX IF NOT EXISTS {name} ON {table}({', '.join(columns)})"
         )

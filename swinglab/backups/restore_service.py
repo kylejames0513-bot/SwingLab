@@ -1276,9 +1276,9 @@ def prepare_service_restore(
     recovery_fence = evidence.manifest.get("recovery_fence")
     if (
         not isinstance(mobile_state, dict)
-        or mobile_state.get("generation") not in (1, 2)
-        or not isinstance(recovery_fence, dict)
-    ):
+            or mobile_state.get("generation") not in (1, 2, 3)
+            or not isinstance(recovery_fence, dict)
+        ):
         raise BackupError(
             "A generation-0 or pre-cutover bundle cannot be prepared for service."
         )
@@ -1492,7 +1492,7 @@ class ImmutableBundleBaselineBackupVerifier:
             or extension.get("baseline_backup_id") != manifest.get("backup_id")
             or extension.get("baseline_manifest_sha256") is not None
             or not isinstance(mobile_state, dict)
-            or mobile_state.get("generation") not in (1, 2)
+            or mobile_state.get("generation") not in (1, 2, 3)
         ):
             raise BackupError("The baseline bundle lineage facts are invalid.")
         manifest_sha256 = metadata.manifest_sha256

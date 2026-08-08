@@ -13,6 +13,7 @@ import pytest
 from swinglab.web.mobile_schema import (
     HMACDigest,
     MOBILE_STATE_GENERATIONS,
+    MOBILE_STATE_SCHEMA_GENERATION,
     MobileStateDomain,
     VersionedHMAC,
     mobile_state_summary,
@@ -111,6 +112,8 @@ def test_mobile_state_hmac_domain_set_is_closed_and_every_digest_is_distinct():
         "shopify-erasure-customer-id",
         "shopify-erasure-normalized-email",
         "recovery-chain-link",
+        "push-expo-project",
+        "push-cutover-operation-id",
     }
     assert {domain.value for domain in MobileStateDomain} == expected
     digests = {
@@ -511,9 +514,9 @@ def test_user_store_adds_complete_generation_one_schema_to_legacy_database(tmp_p
     users = UserStore(db_path, mobile_state_hmac=_keyring())
     try:
         summary = mobile_state_summary(users._conn)
-        assert summary["generation"] == 2
+        assert summary["generation"] == MOBILE_STATE_SCHEMA_GENERATION
         assert set(summary["schema_sha256"]) == set(
-            MOBILE_STATE_GENERATIONS[2].required_columns
+            MOBILE_STATE_GENERATIONS[MOBILE_STATE_SCHEMA_GENERATION].required_columns
         )
         assert summary["referenced_hmac_key_ids"] == []
         token_columns = {

@@ -1407,7 +1407,7 @@ def test_generation_one_manifest_attests_the_frozen_snapshot_not_live_writer(
         "domain_counts",
         "referenced_hmac_key_ids",
     }
-    assert manifest["mobile_state"]["generation"] == 2
+    assert manifest["mobile_state"]["generation"] == MOBILE_STATE_SCHEMA_GENERATION
     assert manifest["mobile_state"]["table_row_counts"][
         "mobile_rate_limit_events"
     ] == 1
@@ -1422,7 +1422,7 @@ def test_generation_one_manifest_attests_the_frozen_snapshot_not_live_writer(
     [
         (lambda manifest: manifest.pop("mobile_state"), "mobile state"),
         (
-            lambda manifest: manifest["mobile_state"].__setitem__("generation", 3),
+            lambda manifest: manifest["mobile_state"].__setitem__("generation", 4),
             "generation",
         ),
         (
@@ -1534,6 +1534,14 @@ def test_known_mobile_generations_remain_detectable(synthetic_sessions):
 
     assert core_module.detect_mobile_state_generation(connection) == 0
     ensure_mobile_state_schema(connection)
+    assert (
+        core_module.detect_mobile_state_generation(connection)
+        == MOBILE_STATE_SCHEMA_GENERATION
+    )
+    connection.execute("DROP TABLE mobile_push_registrations")
+    connection.execute("DROP TABLE mobile_push_activation_watermarks")
+    connection.execute("DROP INDEX IF EXISTS mobile_push_registrations_user")
+    connection.commit()
     assert core_module.detect_mobile_state_generation(connection) == 2
     connection.execute("DROP TABLE mobile_practice_evidence_details")
     connection.commit()
@@ -1704,7 +1712,9 @@ def test_generation_zero_cannot_be_declared_as_a_cutover_baseline(
 ):
     sessions, _ = synthetic_sessions
 
-    with pytest.raises(BackupError, match="generation-2"):
+    with pytest.raises(
+        BackupError, match=f"generation-{MOBILE_STATE_SCHEMA_GENERATION}"
+    ):
         create_backup(
             sessions,
             tmp_path / "invalid-baseline",
@@ -1756,7 +1766,10 @@ def test_retained_evidence_is_read_only_and_second_copy_is_uniquely_migrated(
     working_connection = sqlite3.connect(working_one / "swinglab.db")
     try:
         assert core_module.detect_mobile_state_generation(retained_connection) == 0
-        assert core_module.detect_mobile_state_generation(working_connection) == 2
+        assert (
+            core_module.detect_mobile_state_generation(working_connection)
+            == MOBILE_STATE_SCHEMA_GENERATION
+        )
     finally:
         retained_connection.close()
         working_connection.close()
@@ -2993,7 +3006,7 @@ def test_baseline_backup_verifier_uses_exact_immutable_transport_readback_and_re
     manifest = json.loads((local_bundle / MANIFEST_FILE).read_text())
     assert first.backup_id == manifest["backup_id"]
     assert first.backup_created_at == CAPTURED_AT.timestamp()
-    assert first.schema_generation == 2
+    assert first.schema_generation == MOBILE_STATE_SCHEMA_GENERATION
     assert first.manifest_sha256 == hashlib.sha256(
         (local_bundle / MANIFEST_FILE).read_bytes()
     ).hexdigest()

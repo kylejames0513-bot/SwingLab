@@ -38,6 +38,9 @@ from .contracts import (
     ProfileResponse,
     ProfileUpdateRequest,
     ProgressResponse,
+    PushPreferencesRequest,
+    PushRegistrationRequest,
+    PushRegistrationResponse,
     UploadCompleteResponse,
     UploadCreateRequest,
     UploadReservationResponse,
@@ -137,6 +140,12 @@ from ..web.resumable_uploads import (
     UploadStateConflict,
 )
 from ..web.users import MobileAPITokenLimitError, UserStore
+from ..web.push_store import (
+    MobilePushInvalidRequest,
+    MobilePushNotRegistered,
+    MobilePushUnauthorized,
+    PushRegistrationService,
+)
 from ..web.review_auth import (
     ReviewAuthService,
     parse_app_identity_headers,
@@ -166,6 +175,9 @@ MOBILE_PROFILE_WRITE_ROUTE_NAME = "mobile.resources.profile_write"
 MOBILE_PRACTICE_EVIDENCE_ROUTE_NAME = "mobile.resources.practice_evidence"
 MOBILE_DEVICES_LIST_ROUTE_NAME = "mobile.devices.list"
 MOBILE_DEVICE_REVOKE_ROUTE_NAME = "mobile.devices.revoke"
+MOBILE_PUSH_REGISTER_ROUTE_NAME = "mobile.devices.push_register"
+MOBILE_PUSH_PREFERENCES_ROUTE_NAME = "mobile.devices.push_preferences"
+MOBILE_PUSH_UNREGISTER_ROUTE_NAME = "mobile.devices.push_unregister"
 MOBILE_UPLOAD_CREATE_ROUTE_NAME = "mobile.uploads.create"
 MOBILE_UPLOAD_STATUS_ROUTE_NAME = "mobile.uploads.status"
 MOBILE_UPLOAD_CHUNK_ROUTE_NAME = "mobile.uploads.chunk"
@@ -209,6 +221,8 @@ def install_mobile_routes(
     sign_out_service: MobileSignOutService,
     device_revoke_service: MobileDeviceRevokeService,
     device_management_enabled: bool,
+    push_registration_service: PushRegistrationService | None = None,
+    mobile_push_enabled: bool = False,
     email_auth_service: MobileAuthService,
     review_auth_service: ReviewAuthService,
     step_up_service: MobileStepUpService,
@@ -2373,6 +2387,179 @@ def install_mobile_routes(
             ]
         )
         return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    def _push_ready() -> PushRegistrationService:
+        if not mobile_push_enabled or push_registration_service is None:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Mobile push is not enabled.",
+                headers=no_store,
+            )
+        return push_registration_service
+
+    def _push_identity(request: Request):
+        try:
+            return parse_app_identity_headers(
+                request,
+                deployment_environment=mobile_deployment_environment,
+            )
+        except MobileNativeAuthInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_app_identity",
+                "Invalid application identity.",
+                headers=no_store,
+            ) from exc
+
+    push_security = {
+        "security": [{"MobileBearer": []}],
+        "parameters": identity_parameters,
+    }
+
+    @app.put(
+        "/api/v1/devices/push",
+        name=MOBILE_PUSH_REGISTER_ROUTE_NAME,
+        response_model=PushRegistrationResponse,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            422: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": PushRegistrationRequest.model_json_schema()
+                    }
+                },
+            },
+            **push_security,
+        },
+    )
+    async def mobile_push_register(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        # Default deny precedes bearer parsing, identity headers, and writes.
+        service = _push_ready()
+        identity = _push_identity(request)
+        payload = await _native_auth_payload(request, PushRegistrationRequest)
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            response = service.register(context, payload, identity)
+        except MobileAuthError:
+            raise
+        except MobilePushUnauthorized as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except MobilePushInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_push_registration",
+                str(exc),
+                headers=no_store,
+            ) from exc
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.patch(
+        "/api/v1/devices/push/preferences",
+        name=MOBILE_PUSH_PREFERENCES_ROUTE_NAME,
+        response_model=PushRegistrationResponse,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            422: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": PushPreferencesRequest.model_json_schema()
+                    }
+                },
+            },
+            **push_security,
+        },
+    )
+    async def mobile_push_preferences(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        service = _push_ready()
+        _push_identity(request)
+        payload = await _native_auth_payload(request, PushPreferencesRequest)
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            response = service.update_preferences(context, payload)
+        except MobileAuthError:
+            raise
+        except MobilePushUnauthorized as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except MobilePushNotRegistered as exc:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "No push registration exists for this device.",
+                headers=no_store,
+            ) from exc
+        return JSONResponse(response.model_dump(mode="json"), headers=no_store)
+
+    @app.delete(
+        "/api/v1/devices/push",
+        name=MOBILE_PUSH_UNREGISTER_ROUTE_NAME,
+        status_code=204,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+        },
+        openapi_extra=push_security,
+    )
+    def mobile_push_unregister(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        # Registered before /devices/{selector} so "push" is not a selector.
+        service = _push_ready()
+        _push_identity(request)
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            service.unregister(context)
+        except MobileAuthError:
+            raise
+        except MobilePushUnauthorized as exc:
+            raise mobile_bearer_unauthorized() from exc
+        return Response(status_code=204, headers=no_store)
 
     @app.delete(
         "/api/v1/devices/{selector}",

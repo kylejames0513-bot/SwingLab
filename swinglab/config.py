@@ -193,6 +193,10 @@ DEFAULTS: dict[str, Any] = {
         "mobile_privacy_enabled": False,
         "mobile_events_enabled": False,
         "mobile_push_enabled": False,
+        # Public EAS project UUID. Blank is allowed while push is off; flag-on
+        # startup requires one canonical UUID (overridable by
+        # CADDIEINSIGHT_EXPO_PROJECT_ID when set).
+        "mobile_push_expo_project_id": "",
         "mobile_native_billing_enabled": False,
         # Resumable-upload policy is server owned even while its route is off.
         "mobile_upload_chunk_mb": 5,
