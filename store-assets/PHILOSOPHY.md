@@ -10,11 +10,11 @@ the thing that moves. Still green describes what *is*; amber describes what
 *happens*. That chromatic grammar stays intact from the Shopify storefront
 through `app.caddieinsight.com`.
 
-Typography is geometric and purposeful. **Sora** carries the voice — interface,
-headings, and brand wordmarks — with tight negative tracking on large display
-lines. **IBM Plex Mono** marks measured evidence: pass marks, specimen labels,
-chip copy, and calibration notes. Nothing decorative explains the product; the
-artifact does.
+Typography is geometric and purposeful. **Archivo** carries the
+storefront voice via Shopify's font CDN. The app shell may load a sibling
+geometric face (**Sora**) with **IBM Plex Mono** for measured evidence:
+pass marks, specimen labels, chip copy, and calibration notes. Nothing
+decorative explains the product; the artifact does.
 
 Form stays soft-rectilinear. Controls use confident twelve-to-sixteen-pixel
 radii, never pill clusters. Cards appear only when they hold an interaction or

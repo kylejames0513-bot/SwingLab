@@ -31,7 +31,7 @@
       },
       {
         "type": "paragraph",
-        "content": "Sora and IBM Plex Mono load from Google Fonts for Turf Instrument parity with the app. The picker below is retained as a fallback face for environments that block remote fonts."
+        "content": "Archivo is served from Shopify's CDN so the storefront stays self-hosted. Evidence labels use a system monospace stack. The app shell may load a sibling geometric face for its own chrome."
       }
     ]
   }

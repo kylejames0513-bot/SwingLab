@@ -1,9 +1,9 @@
 /* ============================================================
    CaddieInsight storefront — base styles & design tokens
    Turf Instrument: cool mist field, deep forest ink, one kinetic
-   amber accent. Sora carries the voice; IBM Plex Mono marks
-   measured evidence labels. Soft-rectilinear controls — never
-   pill clusters — keep the storefront and app one instrument.
+   amber accent. Archivo (Shopify CDN) carries the storefront voice;
+   a system monospace stack marks measured evidence labels. Soft-
+   rectilinear controls keep the storefront and app one instrument.
 
    Shared-pattern contract (available to every template/section):
    .sl-chip            mono label, letterspaced uppercase
@@ -40,8 +40,8 @@
   --sl-footer: #06110c;      /* night turf footer */
   --sl-footer-ink: #9fb0a4;
 
-  --sl-font-sans: "Sora", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  --sl-font-sans: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   --sl-maxw: 1280px;
   --sl-pad-x: clamp(24px, 5vw, 64px);

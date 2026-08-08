@@ -5,9 +5,10 @@ the source of truth for theme code; Shopify theme state, preview state, and
 publication state must be verified separately during a release.
 
 Version 2.0 ships the Turf Instrument system across the storefront hub:
-cool mist field, Sora + IBM Plex Mono, soft-rectilinear controls, brand-first
-full-bleed hero, and token parity with app.caddieinsight.com. The transparent
-homepage header still gains a dark glass surface on scroll.
+cool mist field, Archivo + mono evidence labels, soft-rectilinear controls,
+brand-first full-bleed hero, and color/radius token parity with
+app.caddieinsight.com. The transparent homepage header still gains a dark
+glass surface on scroll.
 
 ## Layout
 
