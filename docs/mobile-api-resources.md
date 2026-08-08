@@ -49,6 +49,39 @@ Every native mutation family remains independently default-off:
 Capabilities publish only each resolved boolean. A true value does not bypass
 that feature's own route, authentication, recovery, or rollout requirements.
 
+## Profile write
+
+`PUT /api/v1/mobile/profile` is the additive native profile mutation. It is gated
+only by `web.mobile_profile_writes_enabled` (default off) and is independent of
+`mobile_resources_enabled`. While the write flag is false, the route returns the
+same no-store 404 before bearer authentication, body validation, database work,
+or filesystem access.
+
+When enabled:
+
+- Authentication is strict Bearer only. Cookie-only requests are rejected, and an
+  invalid `Authorization` header never falls back to a browser session cookie.
+- The generated `ProfileUpdateRequest` body is closed (`extra=forbid`). Required
+  fields include normalized `display_name` (1–50 characters after NFKC /
+  whitespace / control validation), `primary_goal`, `preferred_club`, closed
+  practice/hand/angle literals, strict booleans `reduced_motion` and
+  `marketing_email_opt_in`, and nonnegative `expected_history_epoch`.
+- `display_name`, `primary_goal`, and `preferred_club` are required so returned
+  `is_complete` matches the browser contract. `marketing_email_opt_in: false` is
+  valid and is never treated as inferred consent or as part of completion.
+- The write enters `CredentialMutationGuard`, uses one `BEGIN IMMEDIATE`
+  transaction, and rechecks selector activity, `auth_epoch`, account deletion,
+  ownership, and exact `expected_history_epoch` immediately before upsert. A
+  revoked, deleted, or history-reset losing race never recreates a profile.
+- Success returns typed `ProfileResponse`. Revoked/deleted identity maps to the
+  generic typed 401/404 contract; history-epoch conflict is typed 409. All
+  native success and error responses set `Cache-Control: no-store` and
+  `Pragma: no-cache`.
+
+The legacy browser route `PUT /api/v1/profile` keeps its existing cookie/bearer
+validation order, bodies, and errors. The native route does not call that
+handler.
+
 The server-owned resumable-upload policy is also explicit, even while its
 mutation route is disabled:
 

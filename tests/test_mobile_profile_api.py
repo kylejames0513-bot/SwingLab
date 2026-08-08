@@ -83,6 +83,16 @@ def test_profile_update_request_contract_is_closed_and_normalized():
     assert valid.display_name == "Kyle Golfer"
     assert valid.marketing_email_opt_in is False
 
+    # Length is measured after NFKC/whitespace collapse, not on the raw wire value.
+    padded = ProfileUpdateRequest.model_validate(
+        {
+            **valid.model_dump(),
+            "display_name": "  " + ("x" * 50) + "  ",
+        }
+    )
+    assert padded.display_name == "x" * 50
+    assert len(padded.display_name) == 50
+
     with pytest.raises(ValidationError):
         ProfileUpdateRequest.model_validate(
             {
@@ -101,6 +111,10 @@ def test_profile_update_request_contract_is_closed_and_normalized():
     with pytest.raises(ValidationError):
         ProfileUpdateRequest.model_validate(
             {**valid.model_dump(), "display_name": "x" * 51}
+        )
+    with pytest.raises(ValidationError):
+        ProfileUpdateRequest.model_validate(
+            {**valid.model_dump(), "display_name": "  " + ("y" * 51) + "  "}
         )
     with pytest.raises(ValidationError):
         ProfileUpdateRequest.model_validate(
@@ -255,6 +269,23 @@ def test_mobile_profile_success_normalizes_and_preserves_completion_parity(tmp_p
         assert second.status_code == 200
         assert second.json()["profile"]["display_name"] == "Riley Golfer"
         assert second.json()["profile"]["is_complete"] is True
+
+        # Independent marketing consent may be true without changing completion.
+        opted_in = client.put(
+            "/api/v1/mobile/profile",
+            headers=bearer(token),
+            json=_mobile_profile_body(
+                user,
+                display_name="Riley Golfer",
+                marketing_email_opt_in=True,
+                preferred_club="iron",
+                primary_goal="tempo",
+            ),
+        )
+        assert opted_in.status_code == 200
+        opted_profile = opted_in.json()["profile"]
+        assert opted_profile["marketing_email_opt_in"] is True
+        assert opted_profile["is_complete"] is True
     finally:
         _close(app)
 
@@ -330,6 +361,44 @@ def test_mobile_profile_final_write_revocation_never_upserts(tmp_path, monkeypat
         )
         assert response.status_code == 401
         assert response.json()["message"] == "Invalid mobile access token."
+        assert app.state.users.get_golfer_profile(user.id) is None
+    finally:
+        _close(app)
+
+
+def test_mobile_profile_final_write_auth_epoch_bump_never_upserts(
+    tmp_path, monkeypatch
+):
+    """Catches a lease writing after auth_epoch advances at the final fence."""
+
+    app, client, user = _app_client(tmp_path)
+    try:
+        token = issue_token(client, "Profile phone")["token"]
+        from swinglab.web.credential_mutations import CredentialMutationLease
+
+        original = CredentialMutationLease.validate_locked
+
+        def bump_auth_epoch_then_validate(self, user_store, *, now=None):
+            user_store._conn.execute(
+                "UPDATE users SET auth_epoch = auth_epoch + 1 WHERE id = ?",
+                (user.id,),
+            )
+            return original(self, user_store, now=now)
+
+        monkeypatch.setattr(
+            CredentialMutationLease,
+            "validate_locked",
+            bump_auth_epoch_then_validate,
+        )
+
+        response = client.put(
+            "/api/v1/mobile/profile",
+            headers=bearer(token),
+            json=_mobile_profile_body(user),
+        )
+        assert response.status_code == 401
+        assert response.json()["message"] == "Invalid mobile access token."
+        assert response.headers["cache-control"] == "no-store"
         assert app.state.users.get_golfer_profile(user.id) is None
     finally:
         _close(app)
@@ -523,3 +592,13 @@ def test_capabilities_expose_independent_profile_writes_flag(tmp_path):
         assert response.json()["capabilities"]["features"]["profile_writes"] is True
     finally:
         _close(app)
+
+    app_off, client_off, _user_off = _app_client(
+        tmp_path / "flag-off", profile_writes_enabled=False
+    )
+    try:
+        response = client_off.get("/api/v1/capabilities")
+        assert response.status_code == 200
+        assert response.json()["capabilities"]["features"]["profile_writes"] is False
+    finally:
+        _close(app_off)

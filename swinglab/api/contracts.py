@@ -63,7 +63,7 @@ class ProfileResponse(ContractModel):
 class ProfileUpdateRequest(ContractModel):
     """Closed native profile write body; legacy PUT /api/v1/profile stays manual."""
 
-    display_name: str = Field(min_length=1, max_length=50)
+    display_name: str
     experience_mode: Literal["start", "improve", "compete"]
     handicap_range: (
         Literal[
