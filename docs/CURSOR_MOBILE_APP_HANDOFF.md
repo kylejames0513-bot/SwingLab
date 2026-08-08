@@ -7,7 +7,7 @@ native Expo app under `mobile/`.
 
 - Branch: `cursor/caddieinsight-mobile-gate-4b-909d`
 - Main plan: `docs/superpowers/plans/2026-08-06-caddieinsight-expo-coaching-client.md`
-- Tip SHA: `88100b1088b7351ee10edad054dc75f9b040aacc` (Task 1 green; update after each push)
+- Tip SHA: update after push (Tasks 2–4 landed)
 
 Do not deploy, publish, change Shopify/Railway/store settings, or mutate any live
 provider. Keep CaddieInsight customer-facing contracts authoritative on the
@@ -15,36 +15,42 @@ backend.
 
 ## Work completed
 
-### Task 1 — Expo SDK 57 scaffold (this tip)
+### Task 1 — Expo SDK 57 scaffold
 
-- Created `mobile/` from Expo SDK 57 template (`src/app` layout retained; plan
-  paths that say `mobile/app/` map to `mobile/src/app/` here).
-- Scripts: `start`, `android`, `ios`, `lint`, `typecheck`, `test`, `test:watch`,
-  `expo:doctor`, `api:generate`, `api:check`. Node engines `>=22.13 <23`,
-  `.nvmrc` `22.13.0`.
-- `app.config.ts`: CaddieInsight / caddieinsight, env schemes + bundle IDs,
-  `ios.supportsTablet=false`, `expo-build-properties` iOS 16.4 / Android min 24,
-  camera/mic purpose strings, typedRoutes, privacy + phone form-factor plugins,
-  repository-owned `assets/*`.
-- `src/config/env.ts`, orientation controller, fail-closed
-  `PrivateNoBackupStorage` + `modules/caddieinsight-storage` stub.
-- Privacy manifest + plugins; Jest/ESLint/strict TS (`noUncheckedIndexedAccess`).
-- Brand PNG placeholders + tests (PNG IHDR dimensions; not full pixel decode).
-- Root `.gitignore` / README mobile note.
+- `mobile/` from Expo SDK 57 (`src/app` layout; plan `mobile/app/` → `mobile/src/app/`).
+- Env, orientation, PrivateNoBackupStorage stub, privacy/form-factor plugins, brand assets.
 
-**Verified locally:** `npm test -- --runInBand` (23 pass), `npm run typecheck`,
-`npm run lint`.
+### Task 2 — Typed API transport
 
-### Intentional stubs / deferred
+- Hoisted OpenAPI `$defs` in `scripts/export_openapi.py` so `openapi-typescript` works.
+- Generated `mobile/src/api/schema.generated.ts` + `api:generate` / `api:check`.
+- App identity headers, `apiRequest` / `apiRequestWithStatus`, AppError translation,
+  QueryClient, CredentialStore/SecureStore inventory, AuthStore (incl. 202 sign-out
+  pending), PrivateCache, EnvironmentBoundary.
 
-- Native storage module: TS bridge + Swift/Kotlin stubs that throw until
-  Application Support / `noBackupFilesDir` + protectAndVerify are implemented.
-- Full asset alpha/opaque decode tests deferred (dimension + hash vs template).
-- Native prebuild/compile and autolinking verify deferred (no macOS/Android SDK
-  in this environment).
-- `api:generate` / `api:check` scripts exist; generated schema is Task 2.
+### Task 3 — Email / review sign-in
+
+- PKCE S256, installation UUID, email start/exchange + review start/exchange API.
+- EmailSignInScreen, ReviewAccessScreen, AuthCallbackScreen, AuthBoundary, signOut helper.
+- Routes: `(auth)/`, `(auth)/review`, `app/auth/callback`.
+
+### Task 4 — Coach-first shell
+
+- Design tokens/theme + UI primitives.
+- Tabs Today / Practice / Analyze / Progress / More; onboarding ProfileForm; Today screen
+  via `GET /api/v1/mobile/today`; capture placeholder route.
+
+**Verified locally:** `npm test -- --runInBand` (59 pass), `npm run typecheck`,
+`npm run lint` (warnings only).
+
+## Intentional stubs / deferred
+
+- Native storage Swift/Kotlin still throw until Application Support / noBackup is real.
+- Capture guided camera / resumable upload / Brief-Practice loop / push / privacy export
+  (Expo Tasks 5–9) not done.
+- Plans 3–4 (entitlements, store release) later; no deploy/submit.
 
 ## Next task
 
-Continue with **Task 2** of the Expo coaching client plan: OpenAPI types +
-authenticated transport, AuthStore, SecureStore, environment boundary.
+Continue with **Task 5** of the Expo coaching client plan: guided recording,
+camera-roll import, and bounded preflight (then Task 6 resumable upload).

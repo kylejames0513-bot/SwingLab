@@ -1,4 +1,8 @@
-import { apiRequest, configureApiClient, resetApiClient } from '@/api/client';
+import {
+  apiRequestWithStatus,
+  configureApiClient,
+  resetApiClient,
+} from '@/api/client';
 import { createQueryClient } from '@/api/queryClient';
 import type { AppIdentityHeaders } from '@/config/appIdentity';
 import type { AppEnvironment } from '@/config/env';
@@ -176,14 +180,28 @@ export const AuthStore = {
       return 'none';
     }
     try {
-      await apiRequest<void>('/api/v1/auth/sign-out', {
+      const result = await apiRequestWithStatus<{
+        status?: string;
+        retry_after_seconds?: number;
+      } | void>('/api/v1/auth/sign-out', {
         method: 'POST',
         idempotencyKey: pending.idempotencyKey,
         bearerOverride: pending.token,
         authenticated: true,
       });
-      await secureDelete(AUTH_PENDING_REVOKE_KEY);
-      return 'cleared';
+      if (
+        result.status === 202 ||
+        (result.data &&
+          typeof result.data === 'object' &&
+          result.data.status === 'pending')
+      ) {
+        return 'pending';
+      }
+      if (result.status === 204) {
+        await secureDelete(AUTH_PENDING_REVOKE_KEY);
+        return 'cleared';
+      }
+      return 'pending';
     } catch {
       return 'pending';
     }

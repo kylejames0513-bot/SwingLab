@@ -75,13 +75,18 @@ function redactForLog(value: string): string {
   return value;
 }
 
+export type ApiSuccess<T> = {
+  status: number;
+  data: T;
+};
+
 /**
  * Central authenticated JSON transport. Does not expose openapi-fetch's raw client.
  */
-export async function apiRequest<T>(
+export async function apiRequestWithStatus<T>(
   path: string,
   options: ApiRequestOptions = {},
-): Promise<T> {
+): Promise<ApiSuccess<T>> {
   const config = getApiClientConfig();
   const method = (options.method ?? 'GET').toUpperCase();
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
@@ -90,7 +95,7 @@ export async function apiRequest<T>(
     options.retryOnNetwork ??
     (isIdempotentMethod(method) || Boolean(options.idempotencyKey));
 
-  const attempt = async (): Promise<T> => {
+  const attempt = async (): Promise<ApiSuccess<T>> => {
     const headers = new Headers();
     headers.set('Accept', 'application/json');
     const identity = appIdentityHeadersRecord(config.identity);
@@ -206,10 +211,10 @@ export async function apiRequest<T>(
     }
 
     if (response.status === 204 || rawText === '') {
-      return undefined as T;
+      return { status: response.status, data: undefined as T };
     }
 
-    return body as T;
+    return { status: response.status, data: body as T };
   };
 
   try {
@@ -224,4 +229,12 @@ export async function apiRequest<T>(
     }
     throw error;
   }
+}
+
+export async function apiRequest<T>(
+  path: string,
+  options: ApiRequestOptions = {},
+): Promise<T> {
+  const result = await apiRequestWithStatus<T>(path, options);
+  return result.data;
 }

@@ -12,6 +12,7 @@ import {
   getAppEnvironment,
   type AppEnvironment,
 } from '@/config/env';
+import { ThemeProvider } from '@/design/theme';
 import {
   EnvironmentBoundary,
   setEnvironmentQueryClient,
@@ -103,8 +104,10 @@ export default function RootLayout() {
 
   return (
     <QueryClientProvider client={AuthStore.getQueryClient()}>
-      <Stack screenOptions={{ headerShown: false }} />
-      <StatusBar style="light" />
+      <ThemeProvider>
+        <Stack screenOptions={{ headerShown: false }} />
+        <StatusBar style="dark" />
+      </ThemeProvider>
     </QueryClientProvider>
   );
 }
