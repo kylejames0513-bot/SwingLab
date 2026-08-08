@@ -107,6 +107,50 @@ When enabled:
 
 Legacy `POST /api/v1/practice-checkins` keeps its `{session_id}` body and errors.
 
+## Device management
+
+`GET /api/v1/devices` and `DELETE /api/v1/devices/{selector}` are the additive
+native device-management surface. They are gated only by
+`web.mobile_device_management_enabled` (default off). While the flag is false,
+both routes return the same no-store 404 before bearer authentication, body
+validation, `Idempotency-Key` parsing, database work, or any write.
+
+When enabled:
+
+- Authentication is strict Bearer only; cookie-only and an invalid
+  `Authorization` header never fall back to a browser cookie.
+- `GET /api/v1/devices` returns the owner's closed `DeviceListResponse`
+  (`resource_version` plus a list of `MobileTokenMetadata`), never a secret.
+- `DELETE /api/v1/devices/{selector}` requires exactly one 128-bit hex
+  `Idempotency-Key` header. It runs a recovery-fenced revocation that journals
+  to `mobile_device_revoke_journals` and, on completion, writes
+  `mobile_device_revoke_receipts`. The phases are
+  `prepared -> recovery_fenced -> extensions_closed -> token_revoked ->
+  complete`, mirroring native sign-out.
+- The revoke enters `CredentialMutationGuard`. A self-revoke fences the caller's
+  own selector through `validate_and_close_caller`, so a revoked bearer can
+  still replay its exact `Idempotency-Key` to a terminal `204`. An
+  other-device revoke fences only the target and keeps the initiator's lease
+  valid.
+- The route returns `202 {status:"pending", retry_after_seconds}` with a
+  `Retry-After` header until the `TokenRevokeEvent` is published and read back
+  and any selector-bound extensions drain, then `204`. A recovery publish
+  outage returns a durable `202` and never a local-only `204`.
+- Self-revocation replay recognition precedes ordinary bearer authentication so
+  a lost `204` is recoverable; unrelated credentials disclose nothing.
+
+The legacy browser routes under `/api/v1/mobile-tokens` keep their cookie /
+same-origin authentication, their `201` issue body, their `200`
+`{resource_version, revoked}` revoke body, and their `404` cross-owner
+behavior. Their revoke no longer performs a local-only delete: it routes
+through the same recovery-fenced service. When the fence is unready or a
+publish outage occurs, the browser revoke returns `503` with the legacy
+`{"detail": ...}` shape and never a success that only the local database saw.
+
+Startup fails closed: when `web.mobile_device_management_enabled` is true,
+`create_app` requires a valid recovery-fence readiness (a configured keyring
+and recovery publisher), mirroring native authentication.
+
 The server-owned resumable-upload policy is also explicit, even while its
 mutation route is disabled:
 

@@ -26,9 +26,9 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
   - Docs in `docs/mobile-api-resources.md`; OpenAPI regenerated
   - Focused profile suite: 17 passed; adjacent aggregate green
 
-## Current gate: 4D — device management
+## Current gate: Task 5
 
-Do not start Task 5 until Gate 4D is implemented, committed, and independently reviewed.
+Gate 4D is complete; do not start Task 5 until it is independently reviewed.
 
 Gate 4C is complete:
 - `POST /api/v1/practice-evidence` behind `mobile_practice_writes_enabled`
@@ -37,9 +37,27 @@ Gate 4C is complete:
 - History reset / deletion / privacy export wiring
 - Focused practice suite green; OpenAPI regenerated
 
-## After Gate 4C
+Gate 4D is complete:
+- `GET /api/v1/devices` (strict bearer-only, closed `DeviceListResponse`) and
+  `DELETE /api/v1/devices/{selector}` behind default-off
+  `mobile_device_management_enabled`; flag-off 404 before auth/body/DB/writes.
+- `MobileDeviceRevokeService` runs the recovery-fenced revoke journal
+  (`prepared → recovery_fenced → extensions_closed → token_revoked → complete`)
+  writing `mobile_device_revoke_journals` / `mobile_device_revoke_receipts`.
+  Self-revoke fences the caller via `validate_and_close_caller`; replay is
+  recognized before ordinary bearer auth; other-device revoke keeps the
+  initiator lease valid. Publish outage → durable 202, never local-only 204.
+- Legacy `/api/v1/mobile-tokens` revoke routes through the same fenced service
+  (503 on fence unreadiness/outage) while keeping its cookie/same-origin auth,
+  201 issue, 200 `{resource_version, revoked}`, and 404 cross-owner behavior.
+- Startup fails closed when the flag is on without recovery-fence readiness.
+- Docs in `docs/mobile-api-resources.md`; OpenAPI regenerated. Verification
+  suite (`test_mobile_devices_api`, `test_mobile_sign_out`,
+  `test_mobile_api_tokens`, `test_mobile_practice_api`,
+  `test_mobile_profile_api`, `test_mobile_openapi_contract`): 74 passed.
 
-- Gate 4D: recovery-fenced device list/revoke and legacy `/api/v1/mobile-tokens` parity.
+## After Gate 4D
+
 - Finish Task 4 with the combined focused matrix and deterministic OpenAPI check.
 - Continue Tasks 5–8 sequentially from the plan.
 
