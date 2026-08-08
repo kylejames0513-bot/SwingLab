@@ -139,6 +139,70 @@ def test_all_codes_have_a_message() -> None:
         assert CUSTOMER_MESSAGES[code]
 
 
+def test_job_run_persists_classified_failure(tmp_path, monkeypatch) -> None:
+    """A failing analysis persists its closed code + retryability on the job."""
+    import time as _time
+
+    from swinglab.config import Config
+    from swinglab.web import jobs as jobs_module
+    from swinglab.web.jobs import FAILED, JobManager
+
+    def raise_runtime(video_path, **kwargs):
+        raise FFmpegRuntimeError("boom", kind="process_timeout")
+
+    monkeypatch.setattr(jobs_module, "analyze_video", raise_runtime)
+    manager = JobManager(tmp_path / "sessions", Config())
+    try:
+        job = manager.create_session(source_name="swing.mov", user_id="alice")
+        (job.session_dir / "source.mov").write_bytes(b"data")
+        manager.submit(job, job.session_dir / "source.mov")
+        deadline = _time.monotonic() + 5
+        while _time.monotonic() < deadline:
+            reloaded = manager.get(job.id)
+            if reloaded.status == FAILED:
+                break
+            _time.sleep(0.02)
+        reloaded = manager.get(job.id)
+        assert reloaded.status == FAILED
+        assert reloaded.failure_code == "analysis_runtime_unavailable"
+        assert reloaded.retryable is True
+        assert reloaded.retry_expires_at is not None
+        # The raw diagnostic stays private; only the classified code is durable.
+        assert reloaded.failure_code in {c.value for c in AnalysisFailureCode}
+    finally:
+        manager.close()
+
+
+def test_job_run_persists_permanent_failure_as_non_retryable(tmp_path, monkeypatch):
+    import time as _time
+
+    from swinglab.config import Config
+    from swinglab.web import jobs as jobs_module
+    from swinglab.web.jobs import FAILED, JobManager
+
+    def raise_zero(video_path, **kwargs):
+        raise ZeroStrikesError("no strike")
+
+    monkeypatch.setattr(jobs_module, "analyze_video", raise_zero)
+    manager = JobManager(tmp_path / "sessions", Config())
+    try:
+        job = manager.create_session(source_name="swing.mov", user_id="alice")
+        (job.session_dir / "source.mov").write_bytes(b"data")
+        manager.submit(job, job.session_dir / "source.mov")
+        deadline = _time.monotonic() + 5
+        while _time.monotonic() < deadline:
+            if manager.get(job.id).status == FAILED:
+                break
+            _time.sleep(0.02)
+        reloaded = manager.get(job.id)
+        assert reloaded.status == FAILED
+        assert reloaded.failure_code == "capture_no_strike"
+        assert reloaded.retryable is False
+        assert reloaded.retry_expires_at is None
+    finally:
+        manager.close()
+
+
 def test_failure_code_openapi_literals_are_closed() -> None:
     assert {code.value for code in AnalysisFailureCode} == {
         "video_too_long",

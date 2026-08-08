@@ -11,6 +11,7 @@ from urllib.parse import urlsplit
 
 from ..api.auth import MobileAuthContext
 from ..api.contracts import (
+    AnalysisFailureCode,
     BriefResponse,
     CapabilitiesResponse,
     MobileSessionResponse,
@@ -542,6 +543,7 @@ class MobileResourceService:
                             if job.status == DONE
                             else None
                         ),
+                        retry_max_attempts=self.settings.analysis_retry_max_attempts,
                     )
                     for job in jobs
                 ]
@@ -564,6 +566,7 @@ class MobileResourceService:
                     if job.status == DONE
                     else None
                 ),
+                retry_max_attempts=self.settings.analysis_retry_max_attempts,
             )
 
     def brief(self, context: MobileAuthContext, session_id: str) -> BriefResponse:
@@ -725,6 +728,9 @@ class MobileResourceService:
                                     if job.status == DONE
                                     else None
                                 ),
+                                retry_max_attempts=(
+                                    self.settings.analysis_retry_max_attempts
+                                ),
                             )
                             for job in jobs
                         ],
@@ -793,6 +799,7 @@ class MobileResourceService:
                             if latest.status == DONE
                             else None
                         ),
+                        retry_max_attempts=self.settings.analysis_retry_max_attempts,
                     )
                     if latest is not None
                     else None
@@ -804,12 +811,17 @@ class MobileResourceService:
             )
 
 
+_REFILM_FAILURE_CODES = frozenset({"capture_no_strike", "capture_pose_unusable"})
+_CLOSED_FAILURE_CODES = frozenset(code.value for code in AnalysisFailureCode)
+
+
 def serialize_mobile_session(
     job: Job,
     owner: User,
     *,
     queue_position: int | None,
     coaching_eligible: bool | None,
+    retry_max_attempts: int = 0,
 ) -> MobileSessionResponse:
     """Serialize only closed, owned job scalars; diagnostics never enter."""
 
@@ -820,9 +832,26 @@ def serialize_mobile_session(
     hand = job.hand if job.hand in {"left", "right"} else None
     angle = job.angle if job.angle in {"face-on", "dtl"} else None
     level = job.level if job.level in LEVEL_LABELS else None
+    # Only surface a durably-persisted, closed failure code; never guess one.
+    failure_code = None
+    retryable = False
+    retry_expires_at = None
+    remaining_retry_count = 0
+    if status == FAILED:
+        raw_code = getattr(job, "failure_code", None)
+        if raw_code in _CLOSED_FAILURE_CODES:
+            failure_code = raw_code
+            retryable = bool(getattr(job, "retryable", False))
+            if retryable:
+                retry_expires_at = getattr(job, "retry_expires_at", None)
+                remaining_retry_count = max(
+                    0, int(retry_max_attempts) - int(getattr(job, "retry_attempt", 0))
+                )
     outcome = None
     if status == DONE:
         outcome = "coaching_ready" if coaching_eligible else "refilm_required"
+    elif status == FAILED and failure_code in _REFILM_FAILURE_CODES:
+        outcome = "refilm_required"
     return MobileSessionResponse(
         id=job.id,
         status=status,
@@ -841,12 +870,10 @@ def serialize_mobile_session(
         report_url=None,
         metrics_url=None,
         outcome=outcome,
-        # Task 4A has no durable typed failure classification. Raw worker
-        # strings are private diagnostics and must not be guessed into one.
-        failure_code=None,
-        retryable=False,
-        retry_expires_at=None,
-        remaining_retry_count=0,
+        failure_code=failure_code,
+        retryable=retryable,
+        retry_expires_at=retry_expires_at,
+        remaining_retry_count=remaining_retry_count,
         comparison=None,
     )
 

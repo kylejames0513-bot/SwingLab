@@ -60,6 +60,7 @@ from ..report import (
     persisted_report_outcome,
 )
 from . import mailer
+from .analysis_failures import classify_analysis_failure, effective_retryable
 from .humanize import friendly_error
 
 logger = logging.getLogger("swinglab.web.jobs")
@@ -103,7 +104,11 @@ CREATE TABLE IF NOT EXISTS jobs (
     swings_total INTEGER NOT NULL DEFAULT 0,
     log          TEXT NOT NULL DEFAULT '[]',
     notify_email INTEGER NOT NULL DEFAULT 0,
-    notified_at  REAL
+    notified_at  REAL,
+    failure_code    TEXT,
+    retryable       INTEGER NOT NULL DEFAULT 0,
+    retry_expires_at REAL,
+    retry_attempt   INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
 
@@ -193,6 +198,12 @@ class Job:
     swings_total: int = 0  # 0 until strike detection has counted the swings
     notify_email: bool = False  # owner asked to be emailed at completion
     notified_at: float | None = None  # claim stamp — at most one email per job
+    # Closed native analysis-failure classification (Task 5). None until a job
+    # terminates in a classified failure; raw diagnostics stay in ``error``.
+    failure_code: str | None = None
+    retryable: bool = False
+    retry_expires_at: float | None = None
+    retry_attempt: int = 0
 
     def as_dict(self) -> dict:
         return {
@@ -273,6 +284,21 @@ class JobManager:
             if "notified_at" not in columns:
                 self._conn.execute(
                     "ALTER TABLE jobs ADD COLUMN notified_at REAL"
+                )
+            if "failure_code" not in columns:
+                self._conn.execute("ALTER TABLE jobs ADD COLUMN failure_code TEXT")
+            if "retryable" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN retryable INTEGER NOT NULL DEFAULT 0"
+                )
+            if "retry_expires_at" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN retry_expires_at REAL"
+                )
+            if "retry_attempt" not in columns:
+                self._conn.execute(
+                    "ALTER TABLE jobs ADD COLUMN retry_attempt INTEGER NOT NULL"
+                    " DEFAULT 0"
                 )
             history_columns = {
                 row[1]
@@ -752,6 +778,27 @@ class JobManager:
     def submit(self, job: Job, video_path: Path) -> None:
         self._pool.submit(self._run, job, video_path)
 
+    def _classify_failure(self, job: Job, exc: BaseException) -> None:
+        """Record the closed native failure code + retryability for a job.
+
+        The raw ``error`` string stays a private diagnostic; only the classified
+        code, retryable flag, and retry expiry reach the native API. Retryable
+        collapses to non-retryable once the configured attempt cap is spent.
+        """
+        try:
+            classified = classify_analysis_failure(exc)
+        except BaseException:
+            # Interrupted restart (KeyboardInterrupt/SystemExit) is re-raised by
+            # the classifier: leave the job unclassified for recovery to requeue.
+            raise
+        max_attempts = int(self.cfg.web.get("mobile_analysis_retry_max_attempts", 2))
+        window = int(self.cfg.web.get("mobile_analysis_retry_window_seconds", 86400))
+        remaining = max(0, max_attempts - int(job.retry_attempt))
+        retryable = effective_retryable(classified, remaining_attempts=remaining)
+        job.failure_code = classified.code.value
+        job.retryable = retryable
+        job.retry_expires_at = (time.time() + window) if retryable else None
+
     def discard(self, job: Job) -> None:
         """Drop a session whose upload never completed."""
         with self._lock:
@@ -821,12 +868,14 @@ class JobManager:
         except (ZeroStrikesError, VideoTooLongError, EventError, FFmpegError) as exc:
             job.status = FAILED
             job.error = str(exc)
+            self._classify_failure(job, exc)
             self._delete_failed_source_if_configured(job)
-        except Exception:
+        except Exception as exc:
             job.status = FAILED
             job.error = "Unexpected error during analysis:\n" + traceback.format_exc(
                 limit=3
             )
+            self._classify_failure(job, exc)
             # logger.exception carries the full traceback to the process log
             # (and to Sentry when the operator configured it — see app.py).
             logger.exception("Unexpected error during analysis of job %s", job.id)
@@ -1022,12 +1071,18 @@ class JobManager:
             self._conn.execute(
                 "INSERT INTO jobs (id, status, created_at, updated_at, source_name,"
                 " hand, angle, club, level, strikes, fast, client_ip, user_id, error,"
-                " report_rel, swings_done, swings_total, log, notify_email)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " report_rel, swings_done, swings_total, log, notify_email,"
+                " failure_code, retryable, retry_expires_at, retry_attempt)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                " ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET status = excluded.status,"
                 " updated_at = excluded.updated_at, error = excluded.error,"
                 " report_rel = excluded.report_rel, swings_done = excluded.swings_done,"
-                " swings_total = excluded.swings_total, log = excluded.log",
+                " swings_total = excluded.swings_total, log = excluded.log,"
+                " failure_code = excluded.failure_code,"
+                " retryable = excluded.retryable,"
+                " retry_expires_at = excluded.retry_expires_at,"
+                " retry_attempt = excluded.retry_attempt",
                 (
                     job.id,
                     job.status,
@@ -1048,6 +1103,10 @@ class JobManager:
                     job.swings_total,
                     json.dumps(job.log),
                     int(job.notify_email),
+                    job.failure_code,
+                    int(job.retryable),
+                    job.retry_expires_at,
+                    int(job.retry_attempt),
                 ),
             )
             self._conn.commit()
@@ -1074,7 +1133,19 @@ class JobManager:
             swings_total=row["swings_total"],
             notify_email=bool(row["notify_email"]),
             notified_at=row["notified_at"],
+            failure_code=self._row_value(row, "failure_code"),
+            retryable=bool(self._row_value(row, "retryable") or 0),
+            retry_expires_at=self._row_value(row, "retry_expires_at"),
+            retry_attempt=int(self._row_value(row, "retry_attempt") or 0),
         )
+
+    @staticmethod
+    def _row_value(row: sqlite3.Row, key: str):
+        # Tolerate rows read before an in-place migration added the column.
+        try:
+            return row[key]
+        except (IndexError, KeyError):
+            return None
 
     # -- history deletion and quota receipts -----------------------------
     @staticmethod
