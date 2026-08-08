@@ -188,16 +188,23 @@ Routes (all strict Bearer, `Cache-Control: no-store`, closed `APIError`):
 - `POST /api/v1/uploads/{upload_id}/complete` verifies the full digest and
   atomically publishes exactly one queued job, returning
   `200 UploadCompleteResponse` (`job` as a `MobileSessionResponse`, `replayed`).
-  Re-completing an already-completed upload replays the same job with
-  `replayed: true`. A digest mismatch fails the reservation with no job.
+  Completion binds a stable job id and an internal `preparing` row before the
+  part→`source` move; crash recovery resumes from the part or destination and
+  never leaves an unbound orphan job. Re-completing an already-completed upload
+  replays the same job with `replayed: true`. A digest mismatch fails the
+  reservation with no job.
 - `DELETE /api/v1/uploads/{upload_id}` aborts, releasing capacity and returning
   `204`. It requires its own 128-bit hex `Idempotency-Key`; an exact replay
   returns `204` and a different key against the abort receipt is 409
-  (`idempotency_conflict`). A completed upload cannot be aborted (409).
+  (`idempotency_conflict`). The abort receipt is journaled with the aborting
+  intent so restart repair still yields a seven-day 204. A completed upload
+  cannot be aborted (409).
 
 Every create/PATCH/complete/abort enters `CredentialMutationGuard`, so a
 concurrent sign-out, revoke, or history reset closes the credential and the
-route returns the generic 401 rather than mutating durable state.
+route returns the generic 401 rather than mutating durable state. A long PATCH
+rechecks the lease after chunk fsync and before the acknowledged offset
+advances; on close, the part is truncated back to the prior offset.
 
 The server-owned resumable-upload policy is explicit even while the route is
 disabled:

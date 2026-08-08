@@ -65,6 +65,7 @@ from .humanize import friendly_error
 
 logger = logging.getLogger("swinglab.web.jobs")
 
+PREPARING = "preparing"
 QUEUED = "queued"
 PROCESSING = "processing"
 DONE = "done"
@@ -343,17 +344,23 @@ class JobManager:
         return self._from_row(row) if row else None
 
     def list_recent(self, limit: int = 50, user_id: str | None = None) -> list[Job]:
-        """Most recent jobs; pass user_id to see only one account's sessions."""
+        """Most recent jobs; pass user_id to see only one account's sessions.
+
+        Internal ``preparing`` rows (resumable-upload completion journals) are
+        omitted so clients never observe a job before its source is published.
+        """
         with self._lock:
             if user_id is None:
                 rows = self._conn.execute(
-                    "SELECT * FROM jobs ORDER BY created_at DESC LIMIT ?", (limit,)
+                    "SELECT * FROM jobs WHERE status != ?"
+                    " ORDER BY created_at DESC LIMIT ?",
+                    (PREPARING, limit),
                 ).fetchall()
             else:
                 rows = self._conn.execute(
-                    "SELECT * FROM jobs WHERE user_id = ?"
+                    "SELECT * FROM jobs WHERE user_id = ? AND status != ?"
                     " ORDER BY created_at DESC LIMIT ?",
-                    (user_id, limit),
+                    (user_id, PREPARING, limit),
                 ).fetchall()
         return [self._from_row(r) for r in rows]
 
@@ -731,6 +738,9 @@ class JobManager:
         level: str | None = None,
         expected_history_epoch: int | None = None,
         notify_email: bool = False,
+        *,
+        job_id: str | None = None,
+        status: str = QUEUED,
     ) -> Job:
         # Enter the manager lock before creating the directory so a concurrent
         # account reset cannot miss a half-created, not-yet-persisted session.
@@ -755,10 +765,22 @@ class JobManager:
                     raise HistoryResetConflict(
                         "Swing history changed before the upload session was created."
                     )
-            job_id = uuid.uuid4().hex[:12]
+            if status not in (PREPARING, QUEUED):
+                raise ValueError("create_session status must be preparing or queued")
+            if job_id is None:
+                job_id = uuid.uuid4().hex[:12]
+            elif not _SAFE_JOB_ID_RE.fullmatch(job_id):
+                raise ValueError("job_id is not a safe session identifier")
+            else:
+                existing = self._conn.execute(
+                    "SELECT 1 FROM jobs WHERE id = ?", (job_id,)
+                ).fetchone()
+                if existing is not None:
+                    raise ValueError(f"job_id {job_id!r} already exists")
             job = Job(
                 id=job_id,
                 session_dir=self.sessions_dir / job_id,
+                status=status,
                 created_at=time.time(),
                 source_name=source_name,
                 hand=hand,
@@ -774,6 +796,25 @@ class JobManager:
             job.session_dir.mkdir(parents=True)
             self._save(job)
         return job
+
+    def mark_queued(self, job: Job) -> Job:
+        """Promote an internal preparing job to queued before ``submit``."""
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM jobs WHERE id = ?", (job.id,)
+            ).fetchone()
+            if row is None:
+                raise KeyError(job.id)
+            current = self._from_row(row)
+            if current.status == QUEUED:
+                return current
+            if current.status != PREPARING:
+                raise ValueError(
+                    f"job {job.id} cannot leave {current.status} for queued"
+                )
+            current.status = QUEUED
+            self._save(current)
+            return current
 
     def submit(self, job: Job, video_path: Path) -> None:
         self._pool.submit(self._run, job, video_path)

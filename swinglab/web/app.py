@@ -2800,6 +2800,10 @@ def create_app(
 
         try:
             with shopify_remote_privacy_lock(sessions_dir / "swinglab.db"):
+                # Discard ephemeral upload reservations before the durable
+                # history reset so parts/capacity cannot outlive the account
+                # history epoch advance.
+                app.state.resumable_upload_manager.discard_for_user(user.id)
                 summary = manager.reset_user_history(
                     user.id,
                     delete_related=lambda connection, user_id: (
@@ -4947,6 +4951,7 @@ def create_app(
                 **manager.counts(),
                 "disk_free_mb": shutil.disk_usage(sessions_dir).free // (1024 * 1024),
                 "sessions_count": manager.sessions_count(),
+                "storage_capacity": resumable_upload_manager._ledger.health(),
                 "mobile_deployment_environment": mobile_deployment_environment,
                 "mobile_public_origin": mobile_public_origin,
                 "mobile_allowed_application_ids": list(

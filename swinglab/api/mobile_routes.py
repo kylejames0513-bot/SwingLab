@@ -853,13 +853,18 @@ def install_mobile_routes(
         chunk = await _read_raw_chunk(request, manager.settings.upload_chunk_bytes)
         try:
             context = _upload_bearer(request)
-            with credential_mutation_guard.admit(context):
+            with credential_mutation_guard.admit(context) as lease:
+                def _recheck_credential() -> None:
+                    with users._lock:
+                        lease.validate_locked(users)
+
                 reservation = manager.patch_chunk(
                     context.user.id,
                     upload_id,
                     offset=offset,
                     chunk=chunk,
                     checksum_b64=checksum_header,
+                    before_offset_commit=_recheck_credential,
                 )
         except MobileAuthError:
             raise

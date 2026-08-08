@@ -98,6 +98,11 @@ def test_healthz_reports_disk_and_sessions(tmp_path, monkeypatch):
     before = client.get("/healthz").json()
     assert before["sessions_count"] == 0
     assert isinstance(before["disk_free_mb"], int) and before["disk_free_mb"] > 0
+    capacity = before["storage_capacity"]
+    assert capacity["reserved_bytes"] == 0
+    assert capacity["active_allocations"] == 0
+    assert isinstance(capacity["cap_bytes"], int)
+    assert isinstance(capacity["free_headroom_bytes"], int)
 
     job_id = upload(client)
     wait_for(client, job_id)

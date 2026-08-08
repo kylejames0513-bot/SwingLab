@@ -10,13 +10,13 @@ bytes (truncated on the next touch), never a phantom-acknowledged short file.
 Serialization under the preserved one-replica topology is an in-process
 per-upload keyed lock; capacity admission is delegated to the durable
 :class:`StorageCapacityLedger` (which holds the cross-process maintenance lock).
-Completion is a recoverable journal: mark ``finalizing`` -> create the job
-directory and atomically move the part to ``source.<suffix>`` -> mark the job
-queued and the reservation ``complete`` -> submit. Abort is a separate journal
-with its own idempotency key and a seven-day 204 receipt.
-
-Only the happy path plus idempotent replay is exposed to callers; the internal
-``finalizing`` row is never observable as a job.
+Completion is a recoverable journal: bind a stable job id and insert an
+internal ``preparing`` job while marking the reservation ``finalizing``,
+atomically move the part to ``source.<suffix>``, then mark the job ``queued``
+and the reservation ``complete`` before ``submit``. Startup resumes
+``finalizing`` rows from either the part or the destination; an unrecoverable
+prepared row is discarded. The internal ``finalizing`` / ``preparing`` states
+are never exposed as a published job.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Callable
 
 from ..api.contracts import UploadCreateRequest
-from .jobs import ACTIVE, JobManager, Job
+from .jobs import JobManager, Job, PREPARING, QUEUED
 from .mobile_schema import MobileStateDomain, VersionedHMAC
 from .storage_capacity import InsufficientStorageError, StorageCapacityLedger
 
@@ -503,6 +503,7 @@ class ResumableUploadManager:
         offset: int,
         chunk: bytes,
         checksum_b64: str,
+        before_offset_commit: Callable[[], None] | None = None,
     ) -> Reservation:
         lock = self._locks.get(upload_id)
         if not lock.acquire(blocking=False):
@@ -560,6 +561,10 @@ class ResumableUploadManager:
                 raise
             new_offset = acknowledged + len(chunk)
             try:
+                # Recheck the credential lease after bytes are durable and before
+                # the acknowledged offset advances. On rejection, truncate back.
+                if before_offset_commit is not None:
+                    before_offset_commit()
                 with self._tx:
                     self._conn.execute(
                         "UPDATE resumable_uploads SET committed_offset = ?, updated_at = ? "
@@ -569,8 +574,9 @@ class ResumableUploadManager:
                     self._conn.commit()
                 self._ledger.update_materialized("upload_part", upload_id, new_offset)
             except Exception:
-                # DB failure after the bytes were fsynced: truncate back to the
-                # acknowledged offset so no unacknowledged bytes survive.
+                # DB failure / credential close after the bytes were fsynced:
+                # truncate back to the acknowledged offset so no unacknowledged
+                # bytes survive.
                 self._truncate_or_mark_repair(fd, part, upload_id, acknowledged)
                 os.close(fd)
                 raise
@@ -633,7 +639,7 @@ class ResumableUploadManager:
             if row["status"] == REPAIR_REQUIRED:
                 self._repair_locked(upload_id)
                 row = self._owned_row(upload_id, user_id)
-            if row["status"] != PENDING:
+            if row["status"] not in (PENDING, FINALIZING):
                 raise UploadStateConflict("This upload cannot be completed.")
             if self._clock() > float(row["expires_at"]):
                 raise UploadExpired("This upload reservation expired.")
@@ -641,22 +647,30 @@ class ResumableUploadManager:
                 raise UploadStateConflict("The upload is not fully received.")
 
             part = self._part_path(upload_id)
-            if not self._verify_full_digest(part, row["file_sha256"], row["file_bytes"]):
-                self._mark_failed(upload_id)
+            source_candidate = None
+            if row["job_id"]:
+                source_candidate = (
+                    self.sessions_dir / row["job_id"] / f"source{row['suffix']}"
+                )
+            digest_path = part if part.exists() else source_candidate
+            if digest_path is None or not self._verify_full_digest(
+                digest_path, row["file_sha256"], row["file_bytes"]
+            ):
+                if row["status"] == PENDING:
+                    self._mark_failed(upload_id)
                 raise UploadChecksumMismatch("The uploaded file digest did not match.")
 
-            # Phase one: mark finalizing (recoverable) before any job exists.
-            with self._tx:
-                self._conn.execute(
-                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
-                    "WHERE upload_id = ? AND status = ?",
-                    (FINALIZING, self._clock(), upload_id, PENDING),
-                )
-                self._conn.commit()
+            # Phase one: bind a stable job identity and mark finalizing before
+            # any filesystem publish. Crash recovery resumes from the part or
+            # the destination using this binding.
+            job = self._prepare_completion(row)
+            source = self._publish_prepared_source(job, row)
 
-            job = self._publish_job(row)
-
-            # Phase two: bind the job and mark the reservation complete.
+            # Phase two: mark the job queued and the reservation complete, then
+            # transfer capacity and submit. JobManager restart requeues if we
+            # crash after this commit but before submit returns.
+            if job.status == PREPARING:
+                job = self._jobs.mark_queued(job)
             with self._tx:
                 self._conn.execute(
                     "UPDATE resumable_uploads SET status = ?, job_id = ?, updated_at = ? "
@@ -664,18 +678,90 @@ class ResumableUploadManager:
                     (COMPLETE, job.id, self._clock(), upload_id),
                 )
                 self._conn.commit()
-            # The bytes now belong to the job source; transfer the allocation
-            # with no release/re-reserve gap.
             try:
                 self._ledger.transfer(
                     "upload_part", upload_id, "job_source", job.id
                 )
             except KeyError:
                 pass
-            self._jobs.submit(job, job.session_dir / f"source{row['suffix']}")
+            if job.status == QUEUED:
+                # Already running/done from an earlier submit — do not double-submit.
+                self._jobs.submit(job, source)
             return job, False
         finally:
             lock.release()
+
+    def _prepare_completion(self, row) -> Job:
+        """Commit ``finalizing`` + bound ``job_id``, then ensure a preparing job.
+
+        The reservation binds the stable job identity first so a crash between
+        binding and session creation never orphans an unbound preparing row.
+        Safe to call again for an already-finalizing row.
+        """
+        upload_id = row["upload_id"]
+        job_id = row["job_id"]
+        if not job_id:
+            job_id = uuid.uuid4().hex[:12]
+            with self._tx:
+                updated = self._conn.execute(
+                    "UPDATE resumable_uploads SET status = ?, job_id = ?, updated_at = ? "
+                    "WHERE upload_id = ? AND job_id IS NULL AND status IN (?, ?)",
+                    (
+                        FINALIZING,
+                        job_id,
+                        self._clock(),
+                        upload_id,
+                        PENDING,
+                        FINALIZING,
+                    ),
+                ).rowcount
+                if updated != 1:
+                    raise UploadStateConflict("This upload cannot be completed.")
+                self._conn.commit()
+        elif row["status"] != FINALIZING:
+            with self._tx:
+                self._conn.execute(
+                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
+                    "WHERE upload_id = ?",
+                    (FINALIZING, self._clock(), upload_id),
+                )
+                self._conn.commit()
+
+        job = self._jobs.get(job_id)
+        if job is not None:
+            return job
+        try:
+            return self._jobs.create_session(
+                source_name=row["source_name"],
+                hand=row["hand"],
+                fast=False,
+                user_id=row["user_id"],
+                angle=row["angle"],
+                club=row["club"],
+                level=row["level"],
+                expected_history_epoch=int(row["history_epoch"]),
+                job_id=job_id,
+                status=PREPARING,
+            )
+        except Exception as exc:  # HistoryResetConflict and friends
+            raise UploadHistoryConflict(str(exc)) from exc
+
+    def _publish_prepared_source(self, job: Job, row) -> Path:
+        """Atomically place ``source.<suffix>`` from the part or reuse it."""
+        source = job.session_dir / f"source{row['suffix']}"
+        part = self._part_path(row["upload_id"])
+        if source.exists() and source.stat().st_size == int(row["file_bytes"]):
+            if part.exists():
+                with self._maintenance.acquire(timeout=30.0):
+                    part.unlink(missing_ok=True)
+                    self._fsync_dir(self.uploads_dir)
+            return source
+        if not part.exists() or part.stat().st_size != int(row["file_bytes"]):
+            raise UploadStateConflict("The upload source is not recoverable.")
+        with self._maintenance.acquire(timeout=30.0):
+            os.replace(part, source)
+            self._fsync_dir(job.session_dir)
+        return source
 
     def _verify_full_digest(self, part: Path, expected: str, file_bytes: int) -> bool:
         if not part.exists() or part.stat().st_size != int(file_bytes):
@@ -695,30 +781,6 @@ class ResumableUploadManager:
             self._conn.commit()
         self._ledger.release("upload_part", upload_id)
         self._part_path(upload_id).unlink(missing_ok=True)
-
-    def _publish_job(self, row) -> Job:
-        # Reuse the JobManager's owned session creation (dir + row + epoch
-        # fence); the atomic part->source move is serialized by the per-upload
-        # lock and durably published with a directory fsync.
-        try:
-            job = self._jobs.create_session(
-                source_name=row["source_name"],
-                hand=row["hand"],
-                fast=False,
-                user_id=row["user_id"],
-                angle=row["angle"],
-                club=row["club"],
-                level=row["level"],
-                expected_history_epoch=int(row["history_epoch"]),
-            )
-        except Exception as exc:  # HistoryResetConflict and friends
-            raise UploadHistoryConflict(str(exc)) from exc
-        source = job.session_dir / f"source{row['suffix']}"
-        part = self._part_path(row["upload_id"])
-        with self._maintenance.acquire(timeout=30.0):
-            os.replace(part, source)
-            self._fsync_dir(job.session_dir)
-        return job
 
     # -- abort ------------------------------------------------------------
     def abort(self, user_id: str, upload_id: str, idempotency_key: str) -> None:
@@ -743,32 +805,40 @@ class ResumableUploadManager:
                     raise UploadIdempotencyConflict(
                         "This upload was already aborted with a different key."
                     )
-                return  # exact replay -> 204
+                # Exact replay: finish a crash-left aborting row, then 204.
+                row = self._row(upload_id)
+                if row is not None and row["status"] == ABORTING:
+                    part = self._part_path(upload_id)
+                    with self._maintenance.acquire(timeout=30.0):
+                        part.unlink(missing_ok=True)
+                        self._fsync_dir(self.uploads_dir)
+                    self._ledger.release("upload_part", upload_id)
+                    with self._tx:
+                        self._conn.execute(
+                            "UPDATE resumable_uploads SET status = ?, updated_at = ? "
+                            "WHERE upload_id = ?",
+                            (ABORTED, self._clock(), upload_id),
+                        )
+                        self._conn.commit()
+                return
             row = self._row(upload_id)
             if row is None or row["user_id"] != user_id:
                 raise UploadNotFound("No such upload.")
             if row["status"] == COMPLETE:
                 raise UploadStateConflict("A completed upload cannot be aborted.")
-
-            # Journal the aborting intent before any filesystem mutation.
-            with self._tx:
-                self._conn.execute(
-                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
-                    "WHERE upload_id = ?",
-                    (ABORTING, self._clock(), upload_id),
+            if row["status"] == ABORTED:
+                raise UploadIdempotencyConflict(
+                    "This upload was already aborted with a different key."
                 )
-                self._conn.commit()
-            part = self._part_path(upload_id)
-            with self._maintenance.acquire(timeout=30.0):
-                part.unlink(missing_ok=True)
-                self._fsync_dir(self.uploads_dir)
-            self._ledger.release("upload_part", upload_id)
+
+            # Journal the aborting intent and the seven-day receipt before any
+            # filesystem mutation so crash recovery never invents key material.
             now = self._clock()
             with self._tx:
                 self._conn.execute(
                     "UPDATE resumable_uploads SET status = ?, updated_at = ? "
                     "WHERE upload_id = ?",
-                    (ABORTED, now, upload_id),
+                    (ABORTING, now, upload_id),
                 )
                 self._conn.execute(
                     "INSERT OR REPLACE INTO resumable_upload_abort_receipts "
@@ -784,6 +854,18 @@ class ResumableUploadManager:
                         now,
                         now + _ABORT_RECEIPT_TTL_SECONDS,
                     ),
+                )
+                self._conn.commit()
+            part = self._part_path(upload_id)
+            with self._maintenance.acquire(timeout=30.0):
+                part.unlink(missing_ok=True)
+                self._fsync_dir(self.uploads_dir)
+            self._ledger.release("upload_part", upload_id)
+            with self._tx:
+                self._conn.execute(
+                    "UPDATE resumable_uploads SET status = ?, updated_at = ? "
+                    "WHERE upload_id = ?",
+                    (ABORTED, self._clock(), upload_id),
                 )
                 self._conn.commit()
         finally:
@@ -826,12 +908,19 @@ class ResumableUploadManager:
         """History reset / account deletion discards active reservations."""
         with self._tx:
             rows = self._conn.execute(
-                "SELECT upload_id FROM resumable_uploads "
+                "SELECT * FROM resumable_uploads "
                 "WHERE user_id = ? AND status IN (?, ?)",
                 (user_id, PENDING, FINALIZING),
             ).fetchall()
         for row in rows:
             upload_id = row["upload_id"]
+            job_id = row["job_id"]
+            if job_id:
+                job = self._jobs.get(job_id)
+                if job is not None and job.status == PREPARING:
+                    self._jobs.discard(job)
+                source = self.sessions_dir / job_id / f"source{row['suffix']}"
+                source.unlink(missing_ok=True)
             self._part_path(upload_id).unlink(missing_ok=True)
             self._ledger.release("upload_part", upload_id)
             with self._tx:
@@ -846,11 +935,13 @@ class ResumableUploadManager:
         """Converge every nonterminal reservation before requests are served.
 
         * ``finalizing`` rows resume from the part (republish) or, if the source
-          already moved to the job dir, from the job; unrecoverable ones fail.
+          already moved to the job dir, from the bound job; unrecoverable ones
+          discard their preparing shell and fail.
         * ``pending`` rows are truncated to their acknowledged offset so no
-          unacknowledged tail bytes survive a crash.
+          unacknowledged tail bytes survive a crash. A short part below the
+          acknowledged offset is unrecoverable and fails cleanly.
         * ``repair_required`` rows are truncated and reopened.
-        * ``aborting`` rows finish their abort.
+        * ``aborting`` rows finish their abort and persist the seven-day receipt.
         * the capacity ledger is reconciled from filesystem truth.
         """
         with self._tx:
@@ -866,9 +957,14 @@ class ResumableUploadManager:
                 acknowledged = int(row["committed_offset"])
                 if part.exists():
                     try:
+                        size = part.stat().st_size
+                        if size < acknowledged:
+                            # Offset committed with a short file: fail cleanly.
+                            self._fail_and_release(upload_id)
+                            continue
                         fd = os.open(part, os.O_WRONLY)
                         try:
-                            if part.stat().st_size > acknowledged:
+                            if size > acknowledged:
                                 os.ftruncate(fd, acknowledged)
                                 os.fsync(fd)
                         finally:
@@ -888,11 +984,39 @@ class ResumableUploadManager:
             elif status == ABORTING:
                 part.unlink(missing_ok=True)
                 self._ledger.release("upload_part", upload_id)
+                now = self._clock()
                 with self._tx:
                     self._conn.execute(
-                        "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
-                        (ABORTED, upload_id),
+                        "UPDATE resumable_uploads SET status = ?, updated_at = ? "
+                        "WHERE upload_id = ?",
+                        (ABORTED, now, upload_id),
                     )
+                    # Receipt is normally journaled with the aborting intent.
+                    # Legacy crash rows without one still get a TTL tombstone so
+                    # retention can distinguish intentional removal; a later
+                    # client abort with a real key then conflicts as already
+                    # aborted rather than reopening the reservation.
+                    existing = self._conn.execute(
+                        "SELECT 1 FROM resumable_upload_abort_receipts "
+                        "WHERE upload_id = ?",
+                        (upload_id,),
+                    ).fetchone()
+                    if existing is None:
+                        self._conn.execute(
+                            "INSERT INTO resumable_upload_abort_receipts "
+                            "(upload_id, user_id, idempotency_key_id, "
+                            " idempotency_hmac, request_hash, created_at, expires_at) "
+                            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                            (
+                                upload_id,
+                                row["user_id"],
+                                "_recovery",
+                                "0" * 64,
+                                upload_id,
+                                now,
+                                now + _ABORT_RECEIPT_TTL_SECONDS,
+                            ),
+                        )
                     self._conn.commit()
             elif status == FINALIZING:
                 self._recover_finalizing(row)
@@ -900,36 +1024,31 @@ class ResumableUploadManager:
 
     def _recover_finalizing(self, row) -> None:
         upload_id = row["upload_id"]
-        part = self._part_path(upload_id)
-        if part.exists() and part.stat().st_size == int(row["file_bytes"]):
-            try:
-                job = self._publish_job(row)
-            except UploadError:
-                self._fail_and_release(upload_id)
-                return
-            with self._tx:
-                self._conn.execute(
-                    "UPDATE resumable_uploads SET status = ?, job_id = ? WHERE upload_id = ?",
-                    (COMPLETE, job.id, upload_id),
-                )
-                self._conn.commit()
-            try:
-                self._ledger.transfer("upload_part", upload_id, "job_source", job.id)
-            except KeyError:
-                pass
-            self._jobs.submit(job, job.session_dir / f"source{row['suffix']}")
-        else:
-            # No recoverable part; a committed job (if any) is left intact,
-            # otherwise the reservation fails cleanly.
+        try:
+            job = self._prepare_completion(row)
+            source = self._publish_prepared_source(job, row)
+        except UploadError:
             if row["job_id"]:
-                with self._tx:
-                    self._conn.execute(
-                        "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
-                        (COMPLETE, upload_id),
-                    )
-                    self._conn.commit()
-            else:
-                self._fail_and_release(upload_id)
+                orphan = self._jobs.get(row["job_id"])
+                if orphan is not None and orphan.status == PREPARING:
+                    self._jobs.discard(orphan)
+            self._fail_and_release(upload_id)
+            return
+        if job.status == PREPARING:
+            job = self._jobs.mark_queued(job)
+        with self._tx:
+            self._conn.execute(
+                "UPDATE resumable_uploads SET status = ?, job_id = ?, updated_at = ? "
+                "WHERE upload_id = ?",
+                (COMPLETE, job.id, self._clock(), upload_id),
+            )
+            self._conn.commit()
+        try:
+            self._ledger.transfer("upload_part", upload_id, "job_source", job.id)
+        except KeyError:
+            pass
+        if job.status == QUEUED:
+            self._jobs.submit(job, source)
 
     def _fail_and_release(self, upload_id: str) -> None:
         self._ledger.release("upload_part", upload_id)
