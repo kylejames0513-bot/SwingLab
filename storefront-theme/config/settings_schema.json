@@ -26,12 +26,13 @@
       {
         "type": "font_picker",
         "id": "type_body_font",
-        "label": "Interface and heading font",
-        "default": "archivo_n4"
+        "label": "Legacy font picker (unused)",
+        "default": "archivo_n4",
+        "info": "Tour Caddie v3 loads Sora + IBM Plex Mono in theme.liquid to match the app. This picker is retained for theme editor compatibility only."
       },
       {
         "type": "paragraph",
-        "content": "Archivo is served from Shopify's CDN so the storefront stays self-hosted. Evidence labels use a system monospace stack. The app shell may load a sibling geometric face for its own chrome."
+        "content": "Sora carries display and interface type. IBM Plex Mono marks measured evidence (chips, dosages, specimen labels). The same pairing ships on app.caddieinsight.com."
       }
     ]
   }

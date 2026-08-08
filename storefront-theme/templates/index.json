@@ -486,13 +486,13 @@
   },
   "order": [
     "hero",
-    "stats",
     "how_it_works",
     "report",
-    "coach_notes",
-    "gear",
     "plans",
+    "stats",
+    "gear",
     "comparison",
+    "coach_notes",
     "faq",
     "email",
     "cta"

@@ -53,6 +53,23 @@ def test_shared_brand_tokens_match_the_storefront_source_of_truth():
     assert _token(LAYOUT, "sl-control-border") == "#6f7b72"
 
 
+def test_app_and_storefront_share_tour_caddie_type_stack():
+    theme = (ROOT / "storefront-theme" / "layout" / "theme.liquid").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'family=Sora:wght@400;500;600;700;800' in theme
+    assert "family=IBM+Plex+Mono" in theme
+    assert '"Sora"' in _token(STOREFRONT, "sl-font-sans")
+    assert '"Sora"' in _token(STOREFRONT, "sl-font-display")
+    assert '"IBM Plex Mono"' in _token(STOREFRONT, "sl-font-mono")
+    assert '"Sora"' in _token(LAYOUT, "sl-font-sans")
+    assert '"Sora"' in _token(LAYOUT, "sl-font-display")
+    assert '"IBM Plex Mono"' in _token(LAYOUT, "sl-font-mono")
+    assert "--sl-font-display" in STOREFRONT
+    assert ".sl-section-head" in STOREFRONT
+
+
 def test_app_shell_uses_homepage_premium_chrome_and_footer():
     assert '<body class="sl-premium-chrome' in LAYOUT
     assert '<header class="sl-header sl-header--premium"' in LAYOUT

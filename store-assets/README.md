@@ -5,9 +5,9 @@ technical artwork is generated as code so it can be reproduced or retuned;
 approved campaign photography keeps its generation prompt and content hash
 beside the output. The visual system ("Turf Instrument", see `PHILOSOPHY.md`)
 uses the same design tokens as the storefront theme: cool mist `#eef2ef`,
-deep forest `#0f3d28` / `#1a5c38`, orange accent `#e8720c`, Archivo type —
-and draws golfers as pose-estimation skeletons, the product's own visual
-language.
+deep forest `#0f3d28` / `#1a5c38`, orange accent `#e8720c`, Sora + IBM Plex
+Mono type — and draws golfers as pose-estimation skeletons, the product's
+own visual language.
 
 ## What's here
 

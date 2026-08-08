@@ -53,23 +53,20 @@
   {%- endif -%}
 
   {{ 'base.css' | asset_url | stylesheet_tag }}
-  {%- liquid
-    assign body_font_medium = settings.type_body_font | font_modify: 'weight', '500'
-    assign body_font_semibold = settings.type_body_font | font_modify: 'weight', '600'
-    assign body_font_bold = settings.type_body_font | font_modify: 'weight', '700'
-    assign body_font_extra_bold = settings.type_body_font | font_modify: 'weight', '800'
-    assign body_font_black = settings.type_body_font | font_modify: 'weight', '900'
-  -%}
+  {% comment %}
+    Tour Caddie v3 type: Sora + IBM Plex Mono — same instrument as the app shell.
+    Loaded after base.css; theme color tokens still come from settings below.
+  {% endcomment %}
+  {% comment %}theme-check-disable RemoteAsset{% endcomment %}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  {% comment %}theme-check-enable RemoteAsset{% endcomment %}
   {% style %}
-    {{ settings.type_body_font | font_face: font_display: 'swap' }}
-    {%- if body_font_medium -%}{{ body_font_medium | font_face: font_display: 'swap' }}{%- endif -%}
-    {%- if body_font_semibold -%}{{ body_font_semibold | font_face: font_display: 'swap' }}{%- endif -%}
-    {%- if body_font_bold -%}{{ body_font_bold | font_face: font_display: 'swap' }}{%- endif -%}
-    {%- if body_font_extra_bold -%}{{ body_font_extra_bold | font_face: font_display: 'swap' }}{%- endif -%}
-    {%- if body_font_black -%}{{ body_font_black | font_face: font_display: 'swap' }}{%- endif -%}
     :root {
-      --sl-font-sans: {{ settings.type_body_font.family }}, {{ settings.type_body_font.fallback_families }};
-      --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      --sl-font-sans: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+      --sl-font-display: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+      --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       --sl-bg: {{ settings.color_page_bg }};
       --sl-green: {{ settings.color_green }};
       --sl-orange: {{ settings.color_accent }};

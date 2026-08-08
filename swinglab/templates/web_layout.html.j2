@@ -48,7 +48,8 @@
     --sl-shadow-lg: 0 34px 80px -42px rgba(6, 17, 12, .45);
     --sl-content: 1280px;
     --sl-pad-x: clamp(24px, 5vw, 64px);
-    --sl-font-sans: "Sora", Helvetica, Arial, sans-serif;
+    --sl-font-sans: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-display: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
     --sl-text-xs: 12px;
     --sl-text-sm: clamp(13.5px, 13px + .15vw, 14.5px);
@@ -69,9 +70,19 @@
     color: var(--sl-ink);
     font-family: var(--sl-font-sans);
     font-size: var(--sl-text-base);
-    line-height: 1.55;
+    font-weight: 400;
+    line-height: 1.6;
+    letter-spacing: -0.011em;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
+  }
+  h1, h2, h3 {
+    font-family: var(--sl-font-display);
+    font-weight: 700;
+    letter-spacing: -0.035em;
+    line-height: 1.08;
+    text-wrap: balance;
+    color: var(--sl-green);
   }
   a { color: var(--sl-green-btn); }
   a:hover { color: var(--sl-orange-text); }

@@ -1,9 +1,9 @@
 /* ============================================================
    CaddieInsight storefront — base styles & design tokens
    Turf Instrument: cool mist field, deep forest ink, one kinetic
-   amber accent. Archivo (Shopify CDN) carries the storefront voice;
-   a system monospace stack marks measured evidence labels. Soft-
-   rectilinear controls keep the storefront and app one instrument.
+   amber accent. Sora carries display + interface; IBM Plex Mono
+   marks measured evidence. Soft-rectilinear controls keep the
+   storefront and app one instrument.
 
    Shared-pattern contract (available to every template/section):
    .sl-chip            mono label, letterspaced uppercase
@@ -40,8 +40,9 @@
   --sl-footer: #06110c;      /* night turf footer */
   --sl-footer-ink: #9fb0a4;
 
-  --sl-font-sans: "Archivo", "Helvetica Neue", Helvetica, Arial, sans-serif;
-  --sl-font-mono: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  --sl-font-sans: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+  --sl-font-display: "Sora", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+  --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   --sl-maxw: 1280px;
   --sl-pad-x: clamp(24px, 5vw, 64px);
@@ -53,12 +54,12 @@
   --sl-radius-xl: 22px;
   --sl-radius-control: 12px;
 
-  --sl-section-space: clamp(72px, 8vw, 104px);
-  --sl-section-space-compact: clamp(52px, 6vw, 76px);
-  --sl-heading-display: clamp(40px, 5vw, 64px);
-  --sl-heading-support: clamp(32px, 4vw, 46px);
+  --sl-section-space: clamp(88px, 10vw, 128px);
+  --sl-section-space-compact: clamp(56px, 7vw, 84px);
+  --sl-heading-display: clamp(42px, 5.4vw, 68px);
+  --sl-heading-support: clamp(34px, 4.2vw, 48px);
   --sl-eyebrow-size: 11px;
-  --sl-eyebrow-track: 0.18em;
+  --sl-eyebrow-track: 0.16em;
 
   --sl-shadow-card: 0 1px 2px rgba(6, 17, 12, 0.04), 0 14px 32px -18px rgba(6, 17, 12, 0.16);
   --sl-shadow-card-hover: 0 2px 4px rgba(6, 17, 12, 0.05), 0 20px 44px -18px rgba(6, 17, 12, 0.2);
@@ -86,7 +87,9 @@ body {
   margin: 0;
   font-family: var(--sl-font-sans);
   font-size: var(--sl-text-base);
-  line-height: 1.55;
+  font-weight: 400;
+  line-height: 1.6;
+  letter-spacing: -0.011em;
   background:
     radial-gradient(1200px 520px at 12% -8%, rgba(26, 92, 56, 0.08), transparent 58%),
     radial-gradient(900px 480px at 92% 4%, rgba(240, 122, 24, 0.05), transparent 52%),
@@ -95,6 +98,16 @@ body {
   color: var(--sl-ink);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "ss01" 0, "kern" 1;
+}
+
+h1, h2, h3, .sl-h2, .sl-page-hero__title {
+  font-family: var(--sl-font-display);
+  font-weight: 700;
+  letter-spacing: -0.035em;
+  line-height: 1.05;
+  text-wrap: balance;
+  color: var(--sl-green);
 }
 
 a { color: var(--sl-green-btn); }
@@ -208,9 +221,41 @@ img { max-width: 100%; display: block; }
 .sl-h2 {
   margin: 0;
   font-size: var(--sl-heading-support);
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  letter-spacing: -0.035em;
   color: var(--sl-green);
+}
+
+/* One job per section: eyebrow → title → one supporting line */
+.sl-section-head {
+  display: grid;
+  gap: 14px;
+  max-width: 42rem;
+  margin: 0 0 clamp(28px, 4vw, 44px);
+}
+.sl-section-head--center {
+  margin-inline: auto;
+  text-align: center;
+  justify-items: center;
+}
+.sl-section-head .sl-eyebrow,
+.sl-section-head .sl-mono-label {
+  margin: 0;
+}
+.sl-section-head h2,
+.sl-section-head .sl-h2 {
+  margin: 0;
+  max-width: 16ch;
+}
+.sl-section-head__lede {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-lg);
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
+  text-wrap: pretty;
 }
 
 /* ============================================================
@@ -386,20 +431,24 @@ img { max-width: 100%; display: block; }
 .sl-page-hero h1,
 .sl-page-hero__title {
   margin: 0;
-  font-size: var(--sl-text-4xl);
-  font-weight: 800;
-  letter-spacing: -0.025em;
+  max-width: 16ch;
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-heading-display);
+  font-weight: 700;
+  letter-spacing: -0.04em;
   line-height: 1.05;
   color: var(--sl-green);
   text-wrap: balance;
 }
 .sl-page-hero__lede,
 .sl-page-hero > p:not(.sl-eyebrow):not(.sl-mono-label) {
-  margin: 18px 0 0;
+  margin: 16px 0 0;
   font-size: var(--sl-text-lg);
-  line-height: 1.6;
+  font-weight: 400;
+  line-height: 1.55;
+  letter-spacing: -0.012em;
   color: var(--sl-ink-soft);
-  max-width: 62ch;
+  max-width: 46ch;
   text-wrap: pretty;
 }
 

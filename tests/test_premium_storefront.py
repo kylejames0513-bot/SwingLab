@@ -70,13 +70,13 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
     ]
     assert INDEX["order"][:8] == [
         "hero",
-        "stats",
         "how_it_works",
         "report",
-        "coach_notes",
-        "gear",
         "plans",
+        "stats",
+        "gear",
         "comparison",
+        "coach_notes",
     ]
     assert INDEX["sections"]["email"]["disabled"] is False
 
@@ -431,9 +431,10 @@ def test_storefront_copy_stays_inside_the_measurement_boundary():
         assert forbidden not in all_theme_text
 
 
-def test_theme_uses_shopify_fonts_and_store_aware_routes():
+def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     layout = source("layout/theme.liquid")
     settings = json.loads(source("config/settings_schema.json"))
+    base_css = source("assets/base.css")
     route_sources = "\n".join(
         source(path)
         for path in (
@@ -448,10 +449,18 @@ def test_theme_uses_shopify_fonts_and_store_aware_routes():
         setting for setting in typography["settings"] if setting.get("id") == "type_body_font"
     )
     assert font_setting["type"] == "font_picker"
-    assert "font_face" in layout and "font_modify" in layout
-    for weight in ("500", "600", "700", "800", "900"):
-        assert f"font_modify: 'weight', '{weight}'" in layout
-    assert layout.count("font_face: font_display: 'swap'") == 6
+    assert "Legacy font picker" in font_setting["label"]
+    assert "Sora carries display" in typography["settings"][-1]["content"]
+    assert "IBM Plex Mono" in typography["settings"][-1]["content"]
+    assert 'family=Sora:wght@400;500;600;700;800' in layout
+    assert "family=IBM+Plex+Mono" in layout
+    assert "fonts.googleapis.com" in layout
+    assert "fonts.gstatic.com" in layout
+    assert '"Sora"' in base_css
+    assert '"IBM Plex Mono"' in base_css
+    assert "--sl-font-display" in base_css
+    assert "font_face" not in layout
+    assert "font_modify" not in layout
 
     loaded_weights = {400, 500, 600, 700, 800, 900}
     used_weights = {
@@ -464,8 +473,6 @@ def test_theme_uses_shopify_fonts_and_store_aware_routes():
         )
     }
     assert used_weights <= loaded_weights
-    assert "fonts.googleapis.com" not in layout
-    assert "fonts.gstatic.com" not in layout
     assert 'href="/collections' not in route_sources
     assert route_sources.count("routes.collections_url") == 4
 

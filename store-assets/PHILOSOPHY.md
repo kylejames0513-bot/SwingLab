@@ -15,11 +15,15 @@ plus measurement in one glyph — with the amber segment as the only kinetic
 stroke. Membership photography stays photoreal and scene-distinct (dawn range
 for Pro, private-club dusk for Founders) without sticker overlays on the media.
 
-Typography is geometric and purposeful. **Archivo** carries the
-storefront voice via Shopify's font CDN. The app shell may load a sibling
-geometric face (**Sora**) with **IBM Plex Mono** for measured evidence:
-pass marks, specimen labels, chip copy, and calibration notes. Nothing
-decorative explains the product; the artifact does.
+Typography is geometric and purposeful. **Sora** carries display and interface
+on both the storefront and the app shell. **IBM Plex Mono** marks measured
+evidence: pass marks, specimen labels, chip copy, and calibration notes.
+Nothing decorative explains the product; the artifact does.
+
+Homepage organization follows one job per section: brand hero → method → report
+proof → membership → practice-loop stats → gear → comparison → notes → FAQ →
+email → final CTA. Each block gets one headline and usually one short supporting
+sentence.
 
 Form stays soft-rectilinear. Controls use confident twelve-to-sixteen-pixel
 radii, never pill clusters. Cards appear only when they hold an interaction or
