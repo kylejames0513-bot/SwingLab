@@ -577,6 +577,37 @@
     cursor: pointer;
   }
   .sl-menu__group form { margin: 0; }
+  /* iOS install hint. Safari never fires beforeinstallprompt, so the install
+     card below can never appear there and an iPhone visitor would otherwise
+     get no install affordance at all. Revealed by the script only on iOS
+     Safari outside standalone — hidden by default so no other platform is
+     told to look for a Share menu it does not have. */
+  .sl-menu__ios-install { display: none; }
+  .sl-menu__ios-install.is-available { display: grid; }
+  .sl-menu__ios-hint {
+    margin: 0;
+    padding: 11px 12px;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+    background: var(--sl-bg-card);
+    color: var(--sl-ink-soft);
+    font-size: 14.5px;
+    line-height: 1.5;
+  }
+  .sl-menu__ios-hint strong { color: var(--sl-green); }
+  .sl-menu__ios-share {
+    display: inline-block;
+    width: 15px;
+    height: 15px;
+    margin-bottom: -2px;
+    vertical-align: baseline;
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__ios-hint {
+    border-color: rgba(245, 242, 233, .18);
+    background: rgba(245, 242, 233, .06);
+    color: rgba(245, 242, 233, .78);
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__ios-hint strong { color: #f5f2e9; }
   .sl-menu__link.is-current {
     padding-inline: 10px;
     background: var(--sl-orange-soft);
@@ -601,7 +632,20 @@
     background: rgba(232, 114, 12, .16);
     color: #ffad62;
   }
-  .sl-premium-chrome .sl-menu .sl-menu__cta { color: #06110c; }
+  /* The premium header CTA is dark ink on amber. This rule previously took
+     only the ink and left the base green background underneath, putting
+     #06110c on #0f3d28 — 1.57:1, effectively unreadable. It now carries the
+     background it was always meant to sit on (6.9:1). */
+  .sl-premium-chrome .sl-menu .sl-menu__cta {
+    border-color: #f07a18;
+    background: #f07a18;
+    color: #06110c;
+  }
+  .sl-premium-chrome .sl-menu .sl-menu__cta:hover {
+    border-color: #ff9a42;
+    background: #ff9a42;
+    color: #06110c;
+  }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {
     background: var(--sl-bg-card);
@@ -1142,6 +1186,26 @@
         {% endif %}
       </div>
       {% endif %}
+
+      {# Safari has no beforeinstallprompt, so the install card never fires on
+         iOS. This is the only install route an iPhone visitor gets, and the
+         script below is what reveals it. #}
+      <div class="sl-menu__group sl-menu__ios-install" data-ios-install hidden>
+        <p class="sl-menu__eyebrow">Install</p>
+        <p class="sl-menu__ios-hint">
+          <strong>Add {{ brand.name }} to your Home Screen.</strong>
+          Tap
+          <svg class="sl-menu__ios-share" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" role="img"
+               aria-label="the Share button">
+            <path d="M12 3.6v11"/>
+            <path d="M8.3 7.1 12 3.4l3.7 3.7"/>
+            <path d="M6.2 12.4v6.6a1.4 1.4 0 0 0 1.4 1.4h8.8a1.4 1.4 0 0 0 1.4-1.4v-6.6"/>
+          </svg>
+          in the Safari toolbar, then <strong>Add to Home Screen</strong>. It opens
+          without browser chrome, the way an installed app does.
+        </p>
+      </div>
     </nav>
   </div>
 </dialog>
@@ -1451,6 +1515,34 @@
       remember(DISMISSED);
       hide();
     });
+  })();
+
+  // iOS install hint. Safari fires no beforeinstallprompt and exposes no
+  // install API, so the Share sheet is the only route and the user has to be
+  // told about it. Shown only where that instruction is actually true: iOS
+  // Safari, not already installed.
+  (function () {
+    var hint = document.querySelector("[data-ios-install]");
+    if (!hint) return;
+
+    // iPadOS 13+ reports itself as a Mac, so the touch-point check is what
+    // separates an iPad from a desktop Safari that has no Share-to-Home-Screen.
+    var ua = window.navigator.userAgent;
+    var isIOS = /iPad|iPhone|iPod/.test(ua) ||
+      (ua.indexOf("Macintosh") > -1 && navigator.maxTouchPoints > 1);
+    if (!isIOS) return;
+
+    // Chrome and Firefox on iOS are Safari underneath but have no
+    // Add to Home Screen, so pointing at the Share button would be wrong.
+    if (/CriOS|FxiOS|EdgiOS|OPiOS/.test(ua)) return;
+
+    // navigator.standalone is the iOS-specific installed-app flag.
+    var installed = window.navigator.standalone === true ||
+      (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+    if (installed) return;
+
+    hint.hidden = false;
+    hint.classList.add("is-available");
   })();
 </script>
 {% block script %}{% endblock %}

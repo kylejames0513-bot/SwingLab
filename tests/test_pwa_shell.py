@@ -185,6 +185,80 @@ def test_tab_bar_more_button_shares_the_header_menu_dialog(client):
 
 # -- service worker ------------------------------------------------------
 
+# -- iOS install hint ----------------------------------------------------
+
+IPHONE_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
+)
+IPHONE_CHROME_UA = (
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 "
+    "(KHTML, like Gecko) CriOS/126.0.6478.54 Mobile/15E148 Safari/604.1"
+)
+DESKTOP_UA = (
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/126.0.0.0 Safari/537.36"
+)
+
+
+def _hint_visible(tmp_path, client, user_agent, standalone=False):
+    """Render the real page, then evaluate the shipped script under a given
+    user agent. Asserting on the rendered outcome rather than on the source
+    string is the only way to know the platform sniff actually works."""
+    playwright = pytest.importorskip("playwright.sync_api")
+    page_html = client.get("/").text
+    target = tmp_path / "shell.html"
+    target.write_text(page_html, encoding="utf-8")
+
+    with playwright.sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        context = browser.new_context(user_agent=user_agent)
+        page = context.new_page()
+        if standalone:
+            page.add_init_script("window.navigator.standalone = true;")
+        # iPhone/iPad Safari report touch points; the sniff uses that to tell
+        # an iPad (which claims to be a Mac) from a desktop.
+        page.add_init_script(
+            "Object.defineProperty(navigator, 'maxTouchPoints', {get: () => 5});"
+        )
+        page.goto(target.resolve().as_uri(), wait_until="load")
+        page.wait_for_timeout(250)
+        visible = page.evaluate(
+            "() => {const el = document.querySelector('[data-ios-install]');"
+            " return !!el && !el.hidden && el.classList.contains('is-available');}"
+        )
+        browser.close()
+    return visible
+
+
+def test_ios_safari_is_offered_the_share_sheet_route(tmp_path, client):
+    # Safari fires no beforeinstallprompt, so without this an iPhone visitor
+    # gets no install affordance at all.
+    assert _hint_visible(tmp_path, client, IPHONE_UA) is True
+
+
+def test_ios_hint_is_hidden_once_the_app_is_installed(tmp_path, client):
+    assert _hint_visible(tmp_path, client, IPHONE_UA, standalone=True) is False
+
+
+def test_ios_hint_is_hidden_in_chrome_on_ios(tmp_path, client):
+    # Chrome on iOS is Safari underneath but has no Add to Home Screen, so
+    # pointing at the Share button would be instructions for a thing that
+    # is not there.
+    assert _hint_visible(tmp_path, client, IPHONE_CHROME_UA) is False
+
+
+def test_ios_hint_is_hidden_on_other_platforms(tmp_path, client):
+    assert _hint_visible(tmp_path, client, DESKTOP_UA) is False
+
+
+def test_ios_hint_ships_hidden_so_it_never_flashes_before_the_sniff():
+    assert 'class="sl-menu__group sl-menu__ios-install" data-ios-install hidden' in LAYOUT
+    assert ".sl-menu__ios-install { display: none; }" in LAYOUT
+
+
+# -- service worker ------------------------------------------------------
+
 def test_worker_cache_is_an_allowlist_not_a_denylist():
     """Personal reports, sessions, and uploads must never reach Cache
     Storage. An allowlist keeps a future route private by default."""
