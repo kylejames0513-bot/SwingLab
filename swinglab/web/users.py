@@ -233,6 +233,10 @@ STEP_UP_REPLAY_TTL_S = 24 * 60 * 60
 STEP_UP_LIVE_CHALLENGES_PER_SELECTOR = 2
 STEP_UP_LIVE_CHALLENGES_PER_USER = 5
 STEP_UP_PURPOSES = ("data_export", "history_reset", "account_delete")
+PRIVACY_EXPORT_MAX_DOWNLOAD_BYTES = 1_100_000_000
+PRIVACY_EXPORT_READY_TTL_S = 60 * 60
+PRIVACY_EXPORT_LEASE_TTL_S = 5 * 60
+PRIVACY_EXPORT_ID_BYTES = 18
 _MOBILE_AUTH_PKCE = re.compile(r"[A-Za-z0-9_-]{43}")
 _MOBILE_AUTH_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}")
 _MOBILE_AUTH_IDEMPOTENCY = re.compile(r"[0-9A-Fa-f]{32}")
@@ -574,6 +578,39 @@ CREATE INDEX IF NOT EXISTS step_up_tokens_owner
     ON step_up_tokens(user_id, purpose, expires_at, claimed_at);
 CREATE INDEX IF NOT EXISTS step_up_tokens_expiry
     ON step_up_tokens(expires_at);
+-- Native privacy export receipts (Task 6, export slice). One receipt binds a
+-- claimed ``data_export`` step-up token to its owner, initiating selector, and
+-- the ``history_epoch`` captured at creation. The leased worker rechecks owner
+-- and epoch before publishing the ready ZIP. Rows carry only the versioned
+-- idempotency HMAC pair plus a canonical request hash for exact replay; no
+-- bearer, step-up token secret, or network address is stored.
+CREATE TABLE IF NOT EXISTS privacy_export_receipts (
+    export_id                TEXT PRIMARY KEY,
+    user_id                  TEXT NOT NULL,
+    selector                 TEXT NOT NULL,
+    history_epoch            INTEGER NOT NULL,
+    status                   TEXT NOT NULL CHECK (
+        status IN ('pending', 'building', 'ready', 'failed', 'expired')
+    ),
+    failure_code             TEXT,
+    byte_size                INTEGER,
+    step_up_token_id         TEXT NOT NULL,
+    idempotency_hmac_key_id  TEXT NOT NULL,
+    idempotency_hmac         TEXT NOT NULL,
+    request_hash             TEXT NOT NULL,
+    created_at               REAL NOT NULL,
+    updated_at               REAL NOT NULL,
+    ready_at                 REAL,
+    expires_at               REAL,
+    lease_owner              TEXT,
+    lease_expires_at         REAL
+);
+CREATE INDEX IF NOT EXISTS privacy_export_receipts_replay
+    ON privacy_export_receipts(idempotency_hmac_key_id, idempotency_hmac);
+CREATE INDEX IF NOT EXISTS privacy_export_receipts_owner
+    ON privacy_export_receipts(user_id, export_id);
+CREATE INDEX IF NOT EXISTS privacy_export_receipts_lease
+    ON privacy_export_receipts(status, lease_expires_at);
 """
 
 
@@ -946,6 +983,31 @@ class StepUpTokenGrant:
     step_up_token: str
     purpose: str
     expires_at: float
+
+
+@dataclass(frozen=True)
+class PrivacyExportReceipt:
+    """One durable native privacy-export receipt owned by a stable user."""
+
+    export_id: str
+    user_id: str
+    selector: str
+    history_epoch: int
+    status: str
+    failure_code: str | None
+    byte_size: int | None
+    created_at: float
+    updated_at: float
+    ready_at: float | None
+    expires_at: float | None
+
+
+class PrivacyExportRejected(RuntimeError):
+    """A step-up token is not a usable, unclaimed ``data_export`` grant."""
+
+
+class PrivacyExportConflict(RuntimeError):
+    """A privacy-export idempotency key conflicts with a different request."""
 
 
 class StepUpChallengeRejected(RuntimeError):
@@ -6494,6 +6556,344 @@ class UserStore:
                     self._conn.rollback()
                 raise
         return deleted
+
+    @staticmethod
+    def _parse_step_up_token(raw: object) -> tuple[str, str] | None:
+        if not isinstance(raw, str) or not raw.startswith(STEP_UP_TOKEN_PREFIX):
+            return None
+        body = raw[len(STEP_UP_TOKEN_PREFIX):]
+        token_id, separator, secret = body.partition(".")
+        if not separator or not token_id or not secret:
+            return None
+        return token_id, secret
+
+    @staticmethod
+    def _privacy_export_request_hash(
+        *, user_id: str, selector: str, step_up_token_id: str
+    ) -> str:
+        canonical = json.dumps(
+            {
+                "operation": "mobile-privacy-export-create-v1",
+                "selector": selector,
+                "step_up_token_id": step_up_token_id,
+                "user_id": user_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def _privacy_export_receipt_from_row(self, row) -> "PrivacyExportReceipt":
+        return PrivacyExportReceipt(
+            export_id=str(row["export_id"]),
+            user_id=str(row["user_id"]),
+            selector=str(row["selector"]),
+            history_epoch=int(row["history_epoch"]),
+            status=str(row["status"]),
+            failure_code=(
+                str(row["failure_code"])
+                if row["failure_code"] is not None
+                else None
+            ),
+            byte_size=(
+                int(row["byte_size"]) if row["byte_size"] is not None else None
+            ),
+            created_at=float(row["created_at"]),
+            updated_at=float(row["updated_at"]),
+            ready_at=(
+                float(row["ready_at"]) if row["ready_at"] is not None else None
+            ),
+            expires_at=(
+                float(row["expires_at"])
+                if row["expires_at"] is not None
+                else None
+            ),
+        )
+
+    def _claim_data_export_token_locked(
+        self,
+        step_up_token: object,
+        *,
+        user_id: str,
+        selector: str,
+        auth_epoch: int,
+        now: float,
+    ) -> tuple[str, int]:
+        """Claim one unclaimed ``data_export`` token bound to this bearer.
+
+        Returns the claimed ``token_id`` and the owner's current
+        ``history_epoch`` captured inside the same transaction. Any mismatch of
+        purpose, owner, selector, auth epoch, claim state, or expiry raises a
+        single non-enumerating :class:`PrivacyExportRejected`.
+        """
+
+        parsed = self._parse_step_up_token(step_up_token)
+        if parsed is None:
+            raise PrivacyExportRejected("Invalid data-export authorization.")
+        token_id, secret = parsed
+        row = self._conn.execute(
+            "SELECT * FROM step_up_tokens WHERE token_id = ?",
+            (token_id,),
+        ).fetchone()
+        if row is None or not self._step_up_token_matches(
+            row, token_id=token_id, secret=secret, raw_token=str(step_up_token)
+        ):
+            raise PrivacyExportRejected("Invalid data-export authorization.")
+        if (
+            str(row["purpose"]) != "data_export"
+            or row["claimed_at"] is not None
+            or float(row["expires_at"]) <= now
+            or str(row["user_id"]) != user_id
+            or str(row["selector"]) != selector
+            or int(row["auth_epoch"]) != int(auth_epoch)
+        ):
+            raise PrivacyExportRejected("Invalid data-export authorization.")
+        current = self._conn.execute(
+            "SELECT history_epoch FROM users WHERE id = ?", (user_id,)
+        ).fetchone()
+        if current is None:
+            raise PrivacyExportRejected("Invalid data-export authorization.")
+        claimed = self._conn.execute(
+            "UPDATE step_up_tokens SET claimed_at = ?"
+            " WHERE token_id = ? AND claimed_at IS NULL",
+            (now, token_id),
+        )
+        if claimed.rowcount != 1:
+            raise PrivacyExportRejected("Invalid data-export authorization.")
+        return token_id, int(current["history_epoch"] or 0)
+
+    def create_privacy_export(
+        self,
+        *,
+        user_id: str,
+        selector: str,
+        auth_epoch: int,
+        step_up_token: object,
+        idempotency_key: object,
+        now: float | None = None,
+    ) -> "PrivacyExportReceipt":
+        """Create one owned pending export, claiming its data-export token.
+
+        Token claim, idempotency replay, ``history_epoch`` capture, and the
+        durable receipt insert share one ``BEGIN IMMEDIATE``. An exact replay
+        of the same key and token returns the same receipt; the same key with a
+        different token raises :class:`PrivacyExportConflict`.
+        """
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        observed_at = time.time() if now is None else float(now)
+        parsed = self._parse_step_up_token(step_up_token)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                candidates = keyring.candidates(
+                    MobileStateDomain.EXPORT_IDEMPOTENCY, idempotency
+                )
+                clause, values = self._mobile_auth_candidate_clause(
+                    "idempotency_hmac_key_id", "idempotency_hmac", candidates
+                )
+                existing = self._conn.execute(
+                    "SELECT * FROM privacy_export_receipts WHERE (" + clause + ")",
+                    values,
+                ).fetchone()
+                if existing is not None:
+                    request_hash = self._privacy_export_request_hash(
+                        user_id=user_id,
+                        selector=selector,
+                        step_up_token_id=parsed[0] if parsed else "",
+                    )
+                    if not hmac.compare_digest(
+                        request_hash, str(existing["request_hash"])
+                    ):
+                        raise PrivacyExportConflict(
+                            "The privacy export request conflicts."
+                        )
+                    receipt = self._privacy_export_receipt_from_row(existing)
+                    self._conn.commit()
+                    return receipt
+                token_id, history_epoch = self._claim_data_export_token_locked(
+                    step_up_token,
+                    user_id=user_id,
+                    selector=selector,
+                    auth_epoch=auth_epoch,
+                    now=observed_at,
+                )
+                idempotency_key_id, idempotency_hmac = keyring.digest(
+                    MobileStateDomain.EXPORT_IDEMPOTENCY, idempotency
+                )
+                request_hash = self._privacy_export_request_hash(
+                    user_id=user_id,
+                    selector=selector,
+                    step_up_token_id=token_id,
+                )
+                export_id = ""
+                for _ in range(5):
+                    candidate = secrets.token_urlsafe(PRIVACY_EXPORT_ID_BYTES)
+                    if self._conn.execute(
+                        "SELECT 1 FROM privacy_export_receipts WHERE export_id = ?",
+                        (candidate,),
+                    ).fetchone() is None:
+                        export_id = candidate
+                        break
+                if not export_id:
+                    raise RuntimeError("Could not allocate a privacy export id.")
+                self._conn.execute(
+                    "INSERT INTO privacy_export_receipts"
+                    " (export_id, user_id, selector, history_epoch, status,"
+                    " failure_code, byte_size, step_up_token_id,"
+                    " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+                    " created_at, updated_at, ready_at, expires_at,"
+                    " lease_owner, lease_expires_at)"
+                    " VALUES (?, ?, ?, ?, 'pending', NULL, NULL, ?, ?, ?, ?, ?,"
+                    " ?, NULL, NULL, NULL, NULL)",
+                    (
+                        export_id,
+                        user_id,
+                        selector,
+                        int(history_epoch),
+                        token_id,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        observed_at,
+                        observed_at,
+                    ),
+                )
+                row = self._conn.execute(
+                    "SELECT * FROM privacy_export_receipts WHERE export_id = ?",
+                    (export_id,),
+                ).fetchone()
+                receipt = self._privacy_export_receipt_from_row(row)
+                self._conn.commit()
+                return receipt
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def get_privacy_export_receipt(
+        self, export_id: object, *, user_id: str
+    ) -> "PrivacyExportReceipt | None":
+        if not isinstance(export_id, str) or len(export_id) > 64 or not export_id:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT * FROM privacy_export_receipts"
+                " WHERE export_id = ? AND user_id = ?",
+                (export_id, user_id),
+            ).fetchone()
+        return self._privacy_export_receipt_from_row(row) if row else None
+
+    def lease_pending_privacy_export(
+        self, *, worker_id: str, now: float | None = None
+    ) -> "PrivacyExportReceipt | None":
+        """Atomically lease the next pending export, reclaiming stale leases."""
+
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                row = self._conn.execute(
+                    "SELECT * FROM privacy_export_receipts"
+                    " WHERE status = 'pending'"
+                    "    OR (status = 'building' AND ("
+                    "        lease_expires_at IS NULL OR lease_expires_at <= ?))"
+                    " ORDER BY created_at, export_id LIMIT 1",
+                    (observed_at,),
+                ).fetchone()
+                if row is None:
+                    self._conn.commit()
+                    return None
+                self._conn.execute(
+                    "UPDATE privacy_export_receipts SET status = 'building',"
+                    " lease_owner = ?, lease_expires_at = ?, updated_at = ?"
+                    " WHERE export_id = ?",
+                    (
+                        worker_id,
+                        observed_at + PRIVACY_EXPORT_LEASE_TTL_S,
+                        observed_at,
+                        str(row["export_id"]),
+                    ),
+                )
+                leased = self._conn.execute(
+                    "SELECT * FROM privacy_export_receipts WHERE export_id = ?",
+                    (str(row["export_id"]),),
+                ).fetchone()
+                receipt = self._privacy_export_receipt_from_row(leased)
+                self._conn.commit()
+                return receipt
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def record_privacy_export_ready(
+        self,
+        export_id: str,
+        *,
+        worker_id: str,
+        byte_size: int,
+        now: float | None = None,
+    ) -> bool:
+        if not 1 <= int(byte_size) <= PRIVACY_EXPORT_MAX_DOWNLOAD_BYTES:
+            raise ValueError("A bounded ready export byte size is required.")
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cursor = self._conn.execute(
+                    "UPDATE privacy_export_receipts SET status = 'ready',"
+                    " byte_size = ?, failure_code = NULL, ready_at = ?,"
+                    " expires_at = ?, updated_at = ?, lease_owner = NULL,"
+                    " lease_expires_at = NULL"
+                    " WHERE export_id = ? AND lease_owner = ?"
+                    " AND status = 'building'",
+                    (
+                        int(byte_size),
+                        observed_at,
+                        observed_at + PRIVACY_EXPORT_READY_TTL_S,
+                        observed_at,
+                        export_id,
+                        worker_id,
+                    ),
+                )
+                self._conn.commit()
+                return cursor.rowcount == 1
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+
+    def record_privacy_export_failed(
+        self,
+        export_id: str,
+        *,
+        worker_id: str,
+        failure_code: str,
+        now: float | None = None,
+    ) -> bool:
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                cursor = self._conn.execute(
+                    "UPDATE privacy_export_receipts SET status = 'failed',"
+                    " failure_code = ?, byte_size = NULL, ready_at = NULL,"
+                    " expires_at = NULL, updated_at = ?, lease_owner = NULL,"
+                    " lease_expires_at = NULL"
+                    " WHERE export_id = ? AND lease_owner = ?"
+                    " AND status = 'building'",
+                    (str(failure_code), observed_at, export_id, worker_id),
+                )
+                self._conn.commit()
+                return cursor.rowcount == 1
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
 
     def expired_mobile_review_token_selectors(
         self, *, now: float | None = None, batch_size: int = 250

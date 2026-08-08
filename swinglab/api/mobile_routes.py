@@ -7,7 +7,12 @@ from collections.abc import Callable
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Request, Security
-from fastapi.responses import HTMLResponse, JSONResponse, Response
+from fastapi.responses import (
+    HTMLResponse,
+    JSONResponse,
+    Response,
+    StreamingResponse,
+)
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from .auth import (
@@ -42,6 +47,8 @@ from .contracts import (
     NativeReviewAuthExchangeRequest,
     NativeReviewAuthStartRequest,
     NativeSignOutPendingResponse,
+    PrivacyExportCreateRequest,
+    PrivacyExportReceiptResponse,
     StepUpExchangeRequest,
     StepUpExchangeResponse,
     StepUpStartRequest,
@@ -67,12 +74,25 @@ from ..web.mobile_auth import (
     MobileNativeAuthUnavailable,
 )
 from ..web.mobile_privacy import (
+    MobilePrivacyService,
     MobileStepUpConflict,
     MobileStepUpInvalidRequest,
     MobileStepUpRateLimited,
     MobileStepUpRejected,
     MobileStepUpService,
     MobileStepUpUnavailable,
+    PrivacyExportBusy,
+    PrivacyExportConflictError,
+    PrivacyExportDownload,
+    PrivacyExportExpired,
+    PrivacyExportFailedState,
+    PrivacyExportInvalidRequest,
+    PrivacyExportNotFound,
+    PrivacyExportNotReady,
+    PrivacyExportOverloaded,
+    PrivacyExportRangeUnsupported,
+    PrivacyExportRejectedError,
+    PrivacyExportUnavailable,
 )
 from ..web.mobile_resources import (
     MobilePracticeDayConflict,
@@ -116,6 +136,9 @@ MOBILE_REVIEW_START_ROUTE_NAME = "mobile.auth.review_start"
 MOBILE_REVIEW_EXCHANGE_ROUTE_NAME = "mobile.auth.review_exchange"
 MOBILE_STEP_UP_START_ROUTE_NAME = "mobile.auth.step_up_start"
 MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME = "mobile.auth.step_up_exchange"
+MOBILE_PRIVACY_EXPORT_CREATE_ROUTE_NAME = "mobile.privacy.export_create"
+MOBILE_PRIVACY_EXPORT_STATUS_ROUTE_NAME = "mobile.privacy.export_status"
+MOBILE_PRIVACY_EXPORT_DOWNLOAD_ROUTE_NAME = "mobile.privacy.export_download"
 MOBILE_SIGN_OUT_ROUTE_NAME = "mobile.auth.sign_out"
 MOBILE_AUTH_CALLBACK_ROUTE_NAME = "mobile.auth.callback"
 MOBILE_CAPABILITIES_ROUTE_NAME = "mobile.resources.capabilities"
@@ -174,6 +197,7 @@ def install_mobile_routes(
     email_auth_service: MobileAuthService,
     review_auth_service: ReviewAuthService,
     step_up_service: MobileStepUpService,
+    privacy_export_service: MobilePrivacyService,
     mobile_privacy_enabled: bool,
     native_email_auth_enabled: bool,
     mobile_deployment_environment: str,
@@ -1400,6 +1424,296 @@ def install_mobile_routes(
         )
         return JSONResponse(
             response.model_dump(mode="json"), status_code=201, headers=no_store
+        )
+
+    def _privacy_not_enabled() -> MobileAPIHTTPError:
+        return MobileAPIHTTPError(
+            404,
+            "not_found",
+            "Native privacy controls are not enabled.",
+            headers=no_store,
+        )
+
+    def _export_receipt_response(receipt) -> PrivacyExportReceiptResponse:
+        status = privacy_export_service.effective_status(receipt)
+        ready = status == "ready"
+        retry_after = 2 if status in {"pending", "building"} else 0
+        return PrivacyExportReceiptResponse(
+            export_id=receipt.export_id,
+            status=status,
+            retry_after_seconds=retry_after,
+            failure_code=receipt.failure_code if status == "failed" else None,
+            byte_size=receipt.byte_size if ready else None,
+            expires_at=receipt.expires_at if ready else None,
+        )
+
+    @app.post(
+        "/api/v1/privacy/exports",
+        name=MOBILE_PRIVACY_EXPORT_CREATE_ROUTE_NAME,
+        status_code=202,
+        response_model=PrivacyExportReceiptResponse,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": PrivacyExportCreateRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": [
+                {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "required": True,
+                    "description": "Exactly 32 hexadecimal characters (128 bits).",
+                    "schema": {
+                        "type": "string",
+                        "minLength": 32,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Fa-f]{32}$",
+                    },
+                }
+            ],
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    async def privacy_export_create(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        if not mobile_privacy_enabled:
+            raise _privacy_not_enabled()
+        payload = await _native_auth_payload(request, PrivacyExportCreateRequest)
+        idempotency_values = request.headers.getlist("idempotency-key")
+        if len(idempotency_values) != 1:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            )
+        try:
+            UserStore._mobile_auth_idempotency_bytes(idempotency_values[0])
+        except ValueError as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            ) from exc
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            # Data export is an ordinary-owner control; a review-scoped bearer
+            # is not part of this slice.
+            if context.review_provider is not None or context.selector is None:
+                raise mobile_bearer_unauthorized()
+            receipt = privacy_export_service.create_export(
+                user_id=context.user.id,
+                selector=context.selector,
+                auth_epoch=context.auth_epoch,
+                step_up_token=payload.step_up_token,
+                idempotency_key=idempotency_values[0],
+            )
+        except MobileAuthError:
+            raise
+        except PrivacyExportRejectedError as exc:
+            raise MobileAPIHTTPError(
+                401,
+                "authentication_rejected",
+                "Invalid data-export authorization.",
+                headers=no_store,
+            ) from exc
+        except PrivacyExportConflictError as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "export_conflict",
+                "The privacy export request conflicts.",
+                headers=no_store,
+            ) from exc
+        except PrivacyExportInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                422,
+                "validation_error",
+                "Invalid request.",
+                headers=no_store,
+            ) from exc
+        except PrivacyExportUnavailable as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "export_unavailable",
+                "Native privacy export is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            ) from exc
+        response = _export_receipt_response(receipt)
+        return JSONResponse(
+            response.model_dump(mode="json"), status_code=202, headers=no_store
+        )
+
+    @app.get(
+        "/api/v1/privacy/exports/{export_id}",
+        name=MOBILE_PRIVACY_EXPORT_STATUS_ROUTE_NAME,
+        response_model=PrivacyExportReceiptResponse,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+        },
+        openapi_extra={"security": [{"MobileBearer": []}]},
+    )
+    async def privacy_export_status(
+        request: Request,
+        export_id: str,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        if not mobile_privacy_enabled:
+            raise _privacy_not_enabled()
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            if context.review_provider is not None or context.selector is None:
+                raise mobile_bearer_unauthorized()
+            receipt = privacy_export_service.get_receipt(
+                export_id, user_id=context.user.id
+            )
+        except MobileAuthError:
+            raise
+        except PrivacyExportNotFound as exc:
+            raise MobileAPIHTTPError(
+                404, "not_found", "No export exists under this ID.",
+                headers=no_store,
+            ) from exc
+        response = _export_receipt_response(receipt)
+        return JSONResponse(
+            response.model_dump(mode="json"), status_code=200, headers=no_store
+        )
+
+    @app.get(
+        "/api/v1/privacy/exports/{export_id}/download",
+        name=MOBILE_PRIVACY_EXPORT_DOWNLOAD_ROUTE_NAME,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            410: {"model": APIError},
+            416: {"model": APIError},
+            429: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={"security": [{"MobileBearer": []}]},
+    )
+    async def privacy_export_download(
+        request: Request,
+        export_id: str,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        if not mobile_privacy_enabled:
+            raise _privacy_not_enabled()
+        # Reject any ranged download before authenticating or opening a file.
+        if request.headers.get("range") is not None:
+            raise MobileAPIHTTPError(
+                416,
+                "range_not_supported",
+                "Ranged export downloads are not supported.",
+                headers=no_store,
+            )
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            if context.review_provider is not None or context.selector is None:
+                raise mobile_bearer_unauthorized()
+            download: PrivacyExportDownload = privacy_export_service.open_download(
+                export_id,
+                user_id=context.user.id,
+                auth_epoch=context.auth_epoch,
+            )
+        except MobileAuthError:
+            raise
+        except PrivacyExportNotFound as exc:
+            raise MobileAPIHTTPError(
+                404, "not_found", "No export exists under this ID.",
+                headers=no_store,
+            ) from exc
+        except PrivacyExportNotReady as exc:
+            raise MobileAPIHTTPError(
+                409, "export_pending", "The export is still building.",
+                retryable=True, headers=no_store,
+            ) from exc
+        except PrivacyExportFailedState as exc:
+            raise MobileAPIHTTPError(
+                409, exc.failure_code, "The export could not be produced.",
+                headers=no_store,
+            ) from exc
+        except PrivacyExportExpired as exc:
+            raise MobileAPIHTTPError(
+                410, "export_expired", "The export download window has closed.",
+                headers=no_store,
+            ) from exc
+        except PrivacyExportRangeUnsupported as exc:
+            raise MobileAPIHTTPError(
+                416, "range_not_supported",
+                "Ranged export downloads are not supported.", headers=no_store,
+            ) from exc
+        except PrivacyExportBusy as exc:
+            raise MobileAPIHTTPError(
+                429, "export_download_busy",
+                "Too many concurrent downloads for this export.",
+                retryable=True,
+                headers={**no_store, "Retry-After": str(exc.retry_after_seconds)},
+            ) from exc
+        except PrivacyExportOverloaded as exc:
+            raise MobileAPIHTTPError(
+                503, "export_download_saturated",
+                "Export downloads are temporarily saturated.",
+                retryable=True,
+                headers={**no_store, "Retry-After": str(exc.retry_after_seconds)},
+            ) from exc
+        headers = {
+            "Cache-Control": "no-store",
+            "Pragma": "no-cache",
+            "Content-Length": str(download.byte_size),
+            "Content-Disposition": (
+                f'attachment; filename="caddieinsight-export-{download.export_id}.zip"'
+            ),
+        }
+        return StreamingResponse(
+            download.stream(),
+            status_code=200,
+            media_type="application/zip",
+            headers=headers,
         )
 
     def _review_identity(request: Request):

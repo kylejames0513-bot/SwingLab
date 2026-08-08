@@ -104,6 +104,9 @@ from ..api.mobile_routes import (
     MOBILE_SIGN_OUT_ROUTE_NAME,
     MOBILE_STEP_UP_START_ROUTE_NAME,
     MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME,
+    MOBILE_PRIVACY_EXPORT_CREATE_ROUTE_NAME,
+    MOBILE_PRIVACY_EXPORT_STATUS_ROUTE_NAME,
+    MOBILE_PRIVACY_EXPORT_DOWNLOAD_ROUTE_NAME,
     MOBILE_SESSION_ROUTE_NAME,
     MOBILE_SESSION_BRIEF_ROUTE_NAME,
     MOBILE_TODAY_ROUTE_NAME,
@@ -184,7 +187,12 @@ from .mobile_auth import (
     MobileAuthService,
     validate_mobile_native_auth_settings,
 )
-from .mobile_privacy import MobileStepUpService
+from .mobile_privacy import (
+    MobilePrivacyService,
+    MobileStepUpService,
+    PrivacyExportDownloadGuard,
+    PrivacyExportWorker,
+)
 from .mobile_resources import (
     MobileResourceService,
     VIDEO_SUFFIXES,
@@ -718,6 +726,26 @@ def create_app(
     app.state.mobile_auth_service = mobile_auth_service
     app.state.review_auth_service = review_auth_service
     app.state.step_up_service = step_up_service
+    privacy_export_download_guard = PrivacyExportDownloadGuard()
+    privacy_export_service = MobilePrivacyService(
+        users,
+        manager,
+        privacy_export_download_guard,
+        enabled=mobile_privacy_enabled,
+        sessions_dir=sessions_dir,
+    )
+    privacy_export_service.verify_enabled_readiness()
+    privacy_export_worker = PrivacyExportWorker(
+        privacy_export_service,
+        users,
+        enabled=mobile_privacy_enabled,
+    )
+    app.state.privacy_export_service = privacy_export_service
+    app.state.privacy_export_download_guard = privacy_export_download_guard
+    app.state.privacy_export_worker = privacy_export_worker
+    if mobile_privacy_enabled and start_background_workers:
+        app.router.add_event_handler("startup", privacy_export_worker.start)
+        app.router.add_event_handler("shutdown", privacy_export_worker.stop)
     app.state.review_auth_admission = review_auth_admission
     app.state.mobile_deployment_environment = mobile_deployment_environment
     app.state.mobile_public_origin = mobile_public_origin
@@ -774,6 +802,11 @@ def create_app(
         MOBILE_STEP_UP_START_ROUTE_NAME,
         MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME,
     }
+    mobile_privacy_export_route_names = {
+        MOBILE_PRIVACY_EXPORT_CREATE_ROUTE_NAME,
+        MOBILE_PRIVACY_EXPORT_STATUS_ROUTE_NAME,
+        MOBILE_PRIVACY_EXPORT_DOWNLOAD_ROUTE_NAME,
+    }
     concealed_mobile_route_names = set()
     if not mobile_resource_service.settings.resources_enabled:
         concealed_mobile_route_names |= mobile_resource_route_names
@@ -787,6 +820,7 @@ def create_app(
         concealed_mobile_route_names |= mobile_device_route_names
     if not mobile_privacy_enabled:
         concealed_mobile_route_names |= mobile_step_up_route_names
+        concealed_mobile_route_names |= mobile_privacy_export_route_names
     install_mobile_error_handlers(
         app,
         {
@@ -797,6 +831,7 @@ def create_app(
             MOBILE_SIGN_OUT_ROUTE_NAME,
         }
         | mobile_step_up_route_names
+        | mobile_privacy_export_route_names
         | mobile_resource_route_names
         | mobile_profile_write_route_names
         | mobile_practice_write_route_names
@@ -812,6 +847,7 @@ def create_app(
         email_auth_service=mobile_auth_service,
         review_auth_service=review_auth_service,
         step_up_service=step_up_service,
+        privacy_export_service=privacy_export_service,
         mobile_privacy_enabled=mobile_privacy_enabled,
         native_email_auth_enabled=native_auth_settings.enabled,
         mobile_deployment_environment=mobile_deployment_environment,

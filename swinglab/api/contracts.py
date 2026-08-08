@@ -565,6 +565,40 @@ class StepUpExchangeResponse(ContractModel):
     expires_at: float
 
 
+PRIVACY_EXPORT_MAX_DOWNLOAD_BYTES = 1_100_000_000
+
+PrivacyExportStatus = Literal[
+    "pending", "building", "ready", "failed", "expired"
+]
+
+PrivacyExportFailureCode = Literal[
+    "owner_changed",
+    "history_epoch_changed",
+    "build_failed",
+    "artifact_too_large",
+    "artifact_missing",
+]
+
+
+class PrivacyExportCreateRequest(ContractModel):
+    """Consume one ``data_export`` step-up token to enqueue an owned export."""
+
+    step_up_token: str = Field(min_length=1, max_length=256)
+
+
+class PrivacyExportReceiptResponse(ContractModel):
+    resource_version: Literal[1] = 1
+    export_id: str = Field(min_length=1, max_length=64)
+    status: PrivacyExportStatus
+    max_download_bytes: Literal[1100000000] = PRIVACY_EXPORT_MAX_DOWNLOAD_BYTES
+    retry_after_seconds: int = Field(ge=0, le=3600)
+    failure_code: PrivacyExportFailureCode | None = None
+    byte_size: int | None = Field(
+        default=None, ge=1, le=PRIVACY_EXPORT_MAX_DOWNLOAD_BYTES
+    )
+    expires_at: float | None = None
+
+
 class NativeReviewAuthStartRequest(ContractModel):
     provider: Literal["apple", "google"]
     account: str = Field(min_length=1, max_length=160)
