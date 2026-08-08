@@ -18,27 +18,15 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
 - Gate 4D (devices + fenced legacy revoke): complete; independent re-review PASS.
 - Task 4 finish matrix: run combined focused suites + deterministic OpenAPI; backup gen-2 fixture drift closed.
 
-## Current gate: Task 5
+## Current gate: Task 6
 
-Implement durable resumable uploads with atomic job completion from the plan Task 5 section. Do not start Task 6 until Task 5 is implemented, committed, and independently reviewed.
+Task 5 resumable-upload crash recovery is implemented, committed, and independently reviewed **PASS** at tip `99bcd36` (documented deferrals: gen-3 backup registration, analysis-retry HTTP/discard journals, comparison resolver remain open and are tracked separately).
 
-### Task 5 progress (in this branch)
+Implement native privacy controls and safe account deletion from the plan Task 6 section. First vertical slice: email step-up start/exchange behind `mobile_privacy_enabled`, then exports, history-reset journal wrap, and account deletion.
 
-Implemented and committed:
+### Task 6 progress (in this branch)
 
-- Typed FFmpeg failure kinds (`FFmpegMediaError`/`FFmpegRuntimeError`/`FFmpegStorageError`) classified by call site/return code/signal/timeout/`errno`, never by text.
-- Server-owned analysis-failure classifier (`swinglab/web/analysis_failures.py`) mapping exceptions to the closed `AnalysisFailureCode` set with retryability and customer-safe messages; wired into `JobManager._run` and surfaced (failure code / retryable / retry-expiry / remaining-retry) in `MobileSessionResponse`.
-- Cross-process `SessionMaintenanceLock` and the durable `StorageCapacityLedger` (logical reserved cap + filesystem free floor, atomic upload_part→job_source transfer, exactly-once release, filesystem reconcile).
-- Closed upload/retry contracts and the durable `ResumableUploadManager` (create/status/patch/complete/abort + crash recovery, per-upload keyed lock, versioned idempotency HMAC pairs, comparison hook, seven-day abort receipts).
-- Completion binds a stable `job_id` and inserts an internal `preparing` job before the part→source move; startup resumes `finalizing` from part or destination without orphaning queued jobs. Short parts below the acknowledged offset fail cleanly; abort journals the 204 receipt with the aborting intent; history reset discards active reservations; PATCH rechecks the credential lease after fsync before offset commit; `/healthz` exposes aggregate `storage_capacity`.
-- HTTP wiring behind `web.mobile_resumable_upload_enabled` (default off): `POST /api/v1/uploads`, `GET/PATCH /api/v1/uploads/{id}`, `POST /api/v1/uploads/{id}/complete`, `DELETE /api/v1/uploads/{id}`, each with `Idempotency-Key` (where applicable) and `CredentialMutationGuard` admission. `create_app` constructs the manager unconditionally so recovery runs even when the feature is off. Frozen OpenAPI regenerated.
-- New config bounds (`mobile_analysis_retry_window_seconds`, `mobile_analysis_retry_max_attempts`, `mobile_upload_global_max_reserved_bytes`, `mobile_upload_min_filesystem_free_bytes`) with strict enable-time validation.
-
-Deferrals still open before Task 5 can be called complete:
-
-- Generation-3 mobile backup registration of the durable upload/capacity/retry objects and their restore/migration tests. The upload/capacity tables currently live outside the closed mobile-state inventory (`resumable_uploads`, `resumable_upload_abort_receipts`, `storage_capacity_allocations`) and are reconciled from filesystem truth on restart rather than restored from backup.
-- The `POST` analysis retry and retry-source-discard endpoints/journals (the classifier and session serialization already expose retryability, but the retry mutation route and its discard journal are not yet wired).
-- Server-side matched/new-context comparison resolution: with no comparison resolver injected in `create_app`, a non-null comparison claim conservatively returns 409 `comparison_conflict`; null-comparison uploads work fully.
+Not started in code yet — handoff advanced after Task 5 PASS.
 
 ## Standing decisions and hazards
 

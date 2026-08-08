@@ -42,6 +42,10 @@ from .contracts import (
     NativeReviewAuthExchangeRequest,
     NativeReviewAuthStartRequest,
     NativeSignOutPendingResponse,
+    StepUpExchangeRequest,
+    StepUpExchangeResponse,
+    StepUpStartRequest,
+    StepUpStartResponse,
 )
 from .errors import MobileAPIHTTPError
 from ..web.credential_mutations import (
@@ -61,6 +65,14 @@ from ..web.mobile_auth import (
     MobileNativeAuthRateLimited,
     MobileNativeAuthRejected,
     MobileNativeAuthUnavailable,
+)
+from ..web.mobile_privacy import (
+    MobileStepUpConflict,
+    MobileStepUpInvalidRequest,
+    MobileStepUpRateLimited,
+    MobileStepUpRejected,
+    MobileStepUpService,
+    MobileStepUpUnavailable,
 )
 from ..web.mobile_resources import (
     MobilePracticeDayConflict,
@@ -102,6 +114,8 @@ MOBILE_EMAIL_START_ROUTE_NAME = "mobile.auth.email_start"
 MOBILE_EMAIL_EXCHANGE_ROUTE_NAME = "mobile.auth.email_exchange"
 MOBILE_REVIEW_START_ROUTE_NAME = "mobile.auth.review_start"
 MOBILE_REVIEW_EXCHANGE_ROUTE_NAME = "mobile.auth.review_exchange"
+MOBILE_STEP_UP_START_ROUTE_NAME = "mobile.auth.step_up_start"
+MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME = "mobile.auth.step_up_exchange"
 MOBILE_SIGN_OUT_ROUTE_NAME = "mobile.auth.sign_out"
 MOBILE_AUTH_CALLBACK_ROUTE_NAME = "mobile.auth.callback"
 MOBILE_CAPABILITIES_ROUTE_NAME = "mobile.resources.capabilities"
@@ -159,6 +173,8 @@ def install_mobile_routes(
     device_management_enabled: bool,
     email_auth_service: MobileAuthService,
     review_auth_service: ReviewAuthService,
+    step_up_service: MobileStepUpService,
+    mobile_privacy_enabled: bool,
     native_email_auth_enabled: bool,
     mobile_deployment_environment: str,
     client_ip_resolver: Callable[[Request], str | None],
@@ -1160,6 +1176,226 @@ def install_mobile_routes(
         response = NativeAuthExchangeSuccessResponse(
             status="authenticated",
             access_token=exchanged.access_token,
+            expires_at=exchanged.expires_at,
+        )
+        return JSONResponse(
+            response.model_dump(mode="json"), status_code=201, headers=no_store
+        )
+
+    @app.post(
+        "/api/v1/auth/step-up/start",
+        name=MOBILE_STEP_UP_START_ROUTE_NAME,
+        status_code=202,
+        response_model=StepUpStartResponse,
+        responses={
+            401: {"model": APIError},
+            404: {"model": APIError},
+            422: {"model": APIError},
+            429: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": StepUpStartRequest.model_json_schema()
+                    }
+                },
+            },
+            "security": [{"MobileBearer": []}],
+        },
+    )
+    async def mobile_step_up_start(
+        request: Request,
+        _documented_bearer: Annotated[
+            HTTPAuthorizationCredentials | None,
+            Security(_MOBILE_BEARER_SCHEME),
+        ],
+    ):
+        # Default deny precedes body parsing, bearer authentication, and every
+        # write, so a disabled flag never reads a body, authenticates, or
+        # touches the database.
+        if not mobile_privacy_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Native privacy controls are not enabled.",
+                headers=no_store,
+            )
+        payload = await _native_auth_payload(request, StepUpStartRequest)
+        try:
+            context = require_mobile_bearer(
+                request,
+                users,
+                require_account,
+                review_auth_admission,
+                credential_mutation_guard,
+            )
+            # The email-code step-up is for ordinary owners only; a review-scoped
+            # bearer uses its dedicated sibling (not part of this slice).
+            if context.review_provider is not None or context.selector is None:
+                raise mobile_bearer_unauthorized()
+            started = step_up_service.start(
+                user_id=context.user.id,
+                selector=context.selector,
+                auth_epoch=context.auth_epoch,
+                purpose=payload.purpose,
+                code_challenge=payload.code_challenge,
+                email=context.user.email,
+                client_ip=client_ip_resolver(request),
+            )
+        except MobileAuthError:
+            raise
+        except MobileStepUpRateLimited as exc:
+            raise MobileAPIHTTPError(
+                429,
+                "rate_limited",
+                "Too many step-up attempts.",
+                retryable=True,
+                headers={**no_store, "Retry-After": str(exc.retry_after_seconds)},
+            ) from exc
+        except MobileStepUpRejected as exc:
+            raise mobile_bearer_unauthorized() from exc
+        except MobileStepUpInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                422,
+                "validation_error",
+                "Invalid request.",
+                headers=no_store,
+            ) from exc
+        except MobileStepUpUnavailable as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "step_up_unavailable",
+                "Native privacy step-up is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            ) from exc
+        response = StepUpStartResponse(
+            challenge_id=started.challenge_id,
+            expires_at=started.expires_at,
+        )
+        return JSONResponse(
+            response.model_dump(mode="json"), status_code=202, headers=no_store
+        )
+
+    @app.post(
+        "/api/v1/auth/step-up/exchange",
+        name=MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME,
+        status_code=201,
+        response_model=StepUpExchangeResponse,
+        responses={
+            400: {"model": APIError},
+            401: {"model": APIError},
+            404: {"model": APIError},
+            409: {"model": APIError},
+            422: {"model": APIError},
+            429: {"model": APIError},
+            503: {"model": APIError},
+        },
+        openapi_extra={
+            "requestBody": {
+                "required": True,
+                "content": {
+                    "application/json": {
+                        "schema": StepUpExchangeRequest.model_json_schema()
+                    }
+                },
+            },
+            "parameters": [
+                {
+                    "name": "Idempotency-Key",
+                    "in": "header",
+                    "required": True,
+                    "description": "Exactly 32 hexadecimal characters (128 bits).",
+                    "schema": {
+                        "type": "string",
+                        "minLength": 32,
+                        "maxLength": 32,
+                        "pattern": "^[0-9A-Fa-f]{32}$",
+                    },
+                }
+            ],
+        },
+    )
+    async def mobile_step_up_exchange(request: Request):
+        # The exchange never falls back to bearer or cookie authentication; it
+        # is proven only by the challenge, emailed code, PKCE verifier, and the
+        # still-active initiating credential recorded on the challenge row.
+        if not mobile_privacy_enabled:
+            raise MobileAPIHTTPError(
+                404,
+                "not_found",
+                "Native privacy controls are not enabled.",
+                headers=no_store,
+            )
+        payload = await _native_auth_payload(request, StepUpExchangeRequest)
+        idempotency_values = request.headers.getlist("idempotency-key")
+        if len(idempotency_values) != 1:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            )
+        try:
+            UserStore._mobile_auth_idempotency_bytes(idempotency_values[0])
+        except ValueError as exc:
+            raise MobileAPIHTTPError(
+                400,
+                "invalid_idempotency_key",
+                "Invalid Idempotency-Key.",
+                headers=no_store,
+            ) from exc
+        try:
+            exchanged = step_up_service.exchange(
+                challenge_id=payload.challenge_id,
+                email_code=payload.email_code,
+                code_verifier=payload.code_verifier,
+                idempotency_key=idempotency_values[0],
+                client_ip=client_ip_resolver(request),
+            )
+        except MobileStepUpRateLimited as exc:
+            raise MobileAPIHTTPError(
+                429,
+                "rate_limited",
+                "Too many step-up attempts.",
+                retryable=True,
+                headers={**no_store, "Retry-After": str(exc.retry_after_seconds)},
+            ) from exc
+        except MobileStepUpRejected as exc:
+            raise MobileAPIHTTPError(
+                401,
+                "authentication_rejected",
+                "Invalid step-up challenge.",
+                headers=no_store,
+            ) from exc
+        except MobileStepUpConflict as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "exchange_conflict",
+                "The step-up exchange conflicts.",
+                headers=no_store,
+            ) from exc
+        except MobileStepUpInvalidRequest as exc:
+            raise MobileAPIHTTPError(
+                422,
+                "validation_error",
+                "Invalid request.",
+                headers=no_store,
+            ) from exc
+        except MobileStepUpUnavailable as exc:
+            raise MobileAPIHTTPError(
+                503,
+                "step_up_unavailable",
+                "Native privacy step-up is temporarily unavailable.",
+                retryable=True,
+                headers=no_store,
+            ) from exc
+        response = StepUpExchangeResponse(
+            step_up_token=exchanged.step_up_token,
+            purpose=exchanged.purpose,
             expires_at=exchanged.expires_at,
         )
         return JSONResponse(

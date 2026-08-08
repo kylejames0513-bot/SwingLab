@@ -223,6 +223,16 @@ MOBILE_AUTH_CHALLENGE_TTL_S = 10 * 60
 MOBILE_AUTH_RESEND_S = 60
 MOBILE_AUTH_MAX_ATTEMPTS = 5
 MOBILE_AUTH_REPLAY_TTL_S = 24 * 60 * 60
+STEP_UP_TOKEN_PREFIX = "custg_"
+STEP_UP_TOKEN_ID_BYTES = 18
+STEP_UP_TOKEN_TTL_S = 5 * 60
+STEP_UP_CHALLENGE_TTL_S = 10 * 60
+STEP_UP_RESEND_S = 60
+STEP_UP_MAX_ATTEMPTS = 5
+STEP_UP_REPLAY_TTL_S = 24 * 60 * 60
+STEP_UP_LIVE_CHALLENGES_PER_SELECTOR = 2
+STEP_UP_LIVE_CHALLENGES_PER_USER = 5
+STEP_UP_PURPOSES = ("data_export", "history_reset", "account_delete")
 _MOBILE_AUTH_PKCE = re.compile(r"[A-Za-z0-9_-]{43}")
 _MOBILE_AUTH_VERIFIER = re.compile(r"[A-Za-z0-9._~-]{43,128}")
 _MOBILE_AUTH_IDEMPOTENCY = re.compile(r"[0-9A-Fa-f]{32}")
@@ -471,6 +481,98 @@ CREATE TABLE IF NOT EXISTS shopify_customer_account_browser_sessions (
 );
 CREATE INDEX IF NOT EXISTS shopify_customer_account_browser_sessions_expiry
     ON shopify_customer_account_browser_sessions(expires_at);
+-- Native privacy step-up (Task 6, first slice). These tables are held
+-- deliberately outside the closed mobile-state generation inventory (they are
+-- not ``mobile_``-prefixed), mirroring the Task 5 resumable-upload precedent.
+-- A ``method`` discriminator is carried on every row so a later store-review
+-- step-up variant can share the shape without overloading the email path.
+-- Registering them in a bumped mobile-state generation for backup attestation
+-- is a documented deferral tracked in the handoff.
+CREATE TABLE IF NOT EXISTS step_up_challenges (
+    challenge_id             TEXT PRIMARY KEY,
+    method                   TEXT NOT NULL CHECK (method = 'email'),
+    purpose                  TEXT NOT NULL CHECK (
+        purpose IN ('data_export', 'history_reset', 'account_delete')
+    ),
+    user_id                  TEXT NOT NULL,
+    selector                 TEXT NOT NULL,
+    auth_epoch               INTEGER NOT NULL,
+    installation_hmac_key_id TEXT NOT NULL,
+    installation_hmac        TEXT NOT NULL,
+    code_hmac_key_id         TEXT NOT NULL,
+    code_hmac                TEXT NOT NULL,
+    code_challenge           TEXT NOT NULL,
+    created_at               REAL NOT NULL,
+    expires_at               REAL NOT NULL,
+    last_sent_at             REAL NOT NULL,
+    consumed_at              REAL,
+    attempts                 INTEGER NOT NULL DEFAULT 0
+        CHECK (attempts BETWEEN 0 AND 5)
+);
+CREATE INDEX IF NOT EXISTS step_up_challenges_live
+    ON step_up_challenges(selector, purpose, expires_at, consumed_at);
+CREATE INDEX IF NOT EXISTS step_up_challenges_user
+    ON step_up_challenges(user_id, expires_at, consumed_at);
+CREATE TABLE IF NOT EXISTS step_up_exchange_journals (
+    exchange_id              TEXT PRIMARY KEY,
+    challenge_id             TEXT NOT NULL UNIQUE,
+    method                   TEXT NOT NULL CHECK (method = 'email'),
+    purpose                  TEXT NOT NULL,
+    user_id                  TEXT NOT NULL,
+    selector                 TEXT NOT NULL,
+    auth_epoch               INTEGER NOT NULL,
+    token_id                 TEXT NOT NULL,
+    installation_hmac_key_id TEXT NOT NULL,
+    installation_hmac        TEXT NOT NULL,
+    code_proof_hmac_key_id   TEXT NOT NULL,
+    code_proof_hmac          TEXT NOT NULL,
+    pkce_proof_hmac_key_id   TEXT NOT NULL,
+    pkce_proof_hmac          TEXT NOT NULL,
+    idempotency_hmac_key_id  TEXT NOT NULL,
+    idempotency_hmac         TEXT NOT NULL,
+    request_hash             TEXT NOT NULL,
+    created_at               REAL NOT NULL,
+    expires_at               REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS step_up_exchange_journals_replay
+    ON step_up_exchange_journals(idempotency_hmac_key_id, idempotency_hmac);
+CREATE INDEX IF NOT EXISTS step_up_exchange_journals_expiry
+    ON step_up_exchange_journals(expires_at);
+CREATE TABLE IF NOT EXISTS step_up_exchange_receipts (
+    exchange_id              TEXT PRIMARY KEY,
+    purpose                  TEXT NOT NULL,
+    challenge_id             TEXT NOT NULL,
+    token_id                 TEXT NOT NULL,
+    idempotency_hmac_key_id  TEXT NOT NULL,
+    idempotency_hmac         TEXT NOT NULL,
+    request_hash             TEXT NOT NULL,
+    completed_at             REAL NOT NULL,
+    expires_at               REAL NOT NULL
+);
+CREATE INDEX IF NOT EXISTS step_up_exchange_receipts_replay
+    ON step_up_exchange_receipts(idempotency_hmac_key_id, idempotency_hmac);
+CREATE INDEX IF NOT EXISTS step_up_exchange_receipts_expiry
+    ON step_up_exchange_receipts(expires_at);
+CREATE TABLE IF NOT EXISTS step_up_tokens (
+    token_id                 TEXT PRIMARY KEY,
+    method                   TEXT NOT NULL CHECK (method = 'email'),
+    purpose                  TEXT NOT NULL CHECK (
+        purpose IN ('data_export', 'history_reset', 'account_delete')
+    ),
+    user_id                  TEXT NOT NULL,
+    selector                 TEXT NOT NULL,
+    auth_epoch               INTEGER NOT NULL,
+    installation_hmac_key_id TEXT NOT NULL,
+    installation_hmac        TEXT NOT NULL,
+    token_hash               TEXT NOT NULL,
+    created_at               REAL NOT NULL,
+    expires_at               REAL NOT NULL,
+    claimed_at               REAL
+);
+CREATE INDEX IF NOT EXISTS step_up_tokens_owner
+    ON step_up_tokens(user_id, purpose, expires_at, claimed_at);
+CREATE INDEX IF NOT EXISTS step_up_tokens_expiry
+    ON step_up_tokens(expires_at);
 """
 
 
@@ -821,6 +923,43 @@ class MobileAuthChallengeLimit(RuntimeError):
 
     def __init__(self, retry_after_seconds: int) -> None:
         super().__init__("Native email sign-in is temporarily rate limited.")
+        self.retry_after_seconds = max(1, int(retry_after_seconds))
+
+
+@dataclass(frozen=True)
+class StepUpChallenge:
+    """One purpose-bound step-up challenge plus an ephemeral mail code."""
+
+    challenge_id: str
+    purpose: str
+    expires_at: float
+    email_code: str
+    send_required: bool
+
+
+@dataclass(frozen=True)
+class StepUpTokenGrant:
+    """One minted, single-use step-up token bound to its initiating owner."""
+
+    token_id: str
+    step_up_token: str
+    purpose: str
+    expires_at: float
+
+
+class StepUpChallengeRejected(RuntimeError):
+    """A step-up challenge or supplied proof is not usable."""
+
+
+class StepUpExchangeConflict(RuntimeError):
+    """A step-up idempotency key or consumed challenge conflicts."""
+
+
+class StepUpChallengeLimit(RuntimeError):
+    """A live step-up challenge cap has been reached."""
+
+    def __init__(self, retry_after_seconds: int) -> None:
+        super().__init__("Step-up verification is temporarily rate limited.")
         self.retry_after_seconds = max(1, int(retry_after_seconds))
 
 
@@ -5656,6 +5795,599 @@ class UserStore:
                         "  SELECT 1 FROM mobile_auth_exchange_journals journal"
                         "  WHERE journal.challenge_id = challenge.challenge_id"
                         "  AND journal.phase != 'complete')"
+                        " ORDER BY challenge.expires_at LIMIT ?)",
+                        (challenge_cutoff, int(batch_size)),
+                    ),
+                ):
+                    cursor = self._conn.execute(statement, parameters)
+                    deleted += int(cursor.rowcount)
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return deleted
+
+    # -- native privacy step-up (Task 6, first slice) ------------------
+    @staticmethod
+    def _validate_step_up_purpose(value: object) -> str:
+        if not isinstance(value, str) or value not in STEP_UP_PURPOSES:
+            raise ValueError("A supported step-up purpose is required.")
+        return value
+
+    @staticmethod
+    def _step_up_token_secret(
+        code_verifier: str, challenge_id: str, purpose: str
+    ) -> str:
+        digest = hashlib.sha256(
+            (
+                code_verifier
+                + "."
+                + challenge_id
+                + "."
+                + purpose
+                + ".caddieinsight-step-up-token-v1"
+            ).encode("ascii")
+        ).digest()
+        return base64.urlsafe_b64encode(digest).rstrip(b"=").decode("ascii")
+
+    @classmethod
+    def _step_up_token_hash(cls, token_id: str, secret: str) -> str:
+        return hashlib.sha256(
+            f"{STEP_UP_TOKEN_PREFIX}{token_id}.{secret}".encode("utf-8")
+        ).hexdigest()
+
+    @staticmethod
+    def _step_up_exchange_request_hash(
+        *,
+        challenge_id: str,
+        purpose: str,
+        token_id: str,
+        installation_hmac_key_id: str,
+        installation_hmac: str,
+        code_proof_hmac_key_id: str,
+        code_proof_hmac: str,
+        pkce_proof_hmac_key_id: str,
+        pkce_proof_hmac: str,
+        idempotency_hmac_key_id: str,
+        idempotency_hmac: str,
+    ) -> str:
+        canonical = json.dumps(
+            {
+                "challenge_id": challenge_id,
+                "code_proof_hmac": code_proof_hmac,
+                "code_proof_hmac_key_id": code_proof_hmac_key_id,
+                "idempotency_hmac": idempotency_hmac,
+                "idempotency_hmac_key_id": idempotency_hmac_key_id,
+                "installation_hmac": installation_hmac,
+                "installation_hmac_key_id": installation_hmac_key_id,
+                "operation": "mobile-step-up-exchange-v1",
+                "pkce_proof_hmac": pkce_proof_hmac,
+                "pkce_proof_hmac_key_id": pkce_proof_hmac_key_id,
+                "purpose": purpose,
+                "token_id": token_id,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("ascii")
+        return hashlib.sha256(canonical).hexdigest()
+
+    def step_up_challenge_user_id(self, challenge_id: object) -> str | None:
+        if not isinstance(challenge_id, str) or len(challenge_id) > 64:
+            return None
+        with self._lock:
+            row = self._conn.execute(
+                "SELECT user_id FROM step_up_challenges WHERE challenge_id = ?",
+                (challenge_id,),
+            ).fetchone()
+        return str(row["user_id"]) if row is not None else None
+
+    def begin_mobile_step_up(
+        self,
+        *,
+        user_id: str,
+        selector: str,
+        auth_epoch: int,
+        purpose: object,
+        code_challenge: object,
+        now: float | None = None,
+    ) -> StepUpChallenge:
+        """Persist one purpose-bound step-up challenge for an active bearer.
+
+        The row binds the initiating stable user, bearer selector, auth epoch,
+        installation HMAC, and purpose. The challenge is rejected when the
+        initiating credential is no longer active so a signed-out or rotated
+        device cannot open a step-up flow.
+        """
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        normalized_purpose = self._validate_step_up_purpose(purpose)
+        normalized_challenge = self._validate_mobile_auth_code_challenge(
+            code_challenge
+        )
+        if not isinstance(selector, str) or not selector:
+            raise ValueError("A bearer selector is required.")
+        if not isinstance(user_id, str) or not user_id:
+            raise ValueError("An owner is required.")
+        observed_at = time.time() if now is None else float(now)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                token = self._conn.execute(
+                    "SELECT installation_key, installation_key_version"
+                    " FROM mobile_api_tokens WHERE selector = ? AND user_id = ?"
+                    " AND auth_epoch = ? AND state = 'active'"
+                    " AND revoked_at IS NULL AND fenced_at IS NULL"
+                    " AND expires_at > ?",
+                    (selector, user_id, int(auth_epoch), observed_at),
+                ).fetchone()
+                if (
+                    token is None
+                    or token["installation_key"] is None
+                    or token["installation_key_version"] is None
+                ):
+                    raise StepUpChallengeRejected(
+                        "The initiating device credential is not active."
+                    )
+                installation_key_id = str(token["installation_key_version"])
+                installation_hmac = str(token["installation_key"])
+                selector_rows = self._conn.execute(
+                    "SELECT expires_at FROM step_up_challenges"
+                    " WHERE selector = ? AND purpose = ? AND consumed_at IS NULL"
+                    " AND expires_at > ? ORDER BY expires_at",
+                    (selector, normalized_purpose, observed_at),
+                ).fetchall()
+                user_rows = self._conn.execute(
+                    "SELECT expires_at FROM step_up_challenges"
+                    " WHERE user_id = ? AND consumed_at IS NULL AND expires_at > ?"
+                    " ORDER BY expires_at",
+                    (user_id, observed_at),
+                ).fetchall()
+                denied: list[float] = []
+                if len(selector_rows) >= STEP_UP_LIVE_CHALLENGES_PER_SELECTOR:
+                    denied.append(float(selector_rows[0]["expires_at"]))
+                if len(user_rows) >= STEP_UP_LIVE_CHALLENGES_PER_USER:
+                    denied.append(float(user_rows[0]["expires_at"]))
+                if denied:
+                    self._conn.commit()
+                    raise StepUpChallengeLimit(
+                        max(1, int(min(denied) - observed_at + 0.999))
+                    )
+                email_code = f"{secrets.randbelow(100_000_000):08d}"
+                code_key_id, code_hmac = keyring.digest(
+                    MobileStateDomain.STEP_UP_EMAIL_CODE_VERIFIER, email_code
+                )
+                challenge_id = str(uuid.uuid4())
+                expires_at = observed_at + STEP_UP_CHALLENGE_TTL_S
+                self._conn.execute(
+                    "INSERT INTO step_up_challenges"
+                    " (challenge_id, method, purpose, user_id, selector,"
+                    " auth_epoch, installation_hmac_key_id, installation_hmac,"
+                    " code_hmac_key_id, code_hmac, code_challenge, created_at,"
+                    " expires_at, last_sent_at, consumed_at, attempts)"
+                    " VALUES (?, 'email', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                    " NULL, 0)",
+                    (
+                        challenge_id,
+                        normalized_purpose,
+                        user_id,
+                        selector,
+                        int(auth_epoch),
+                        installation_key_id,
+                        installation_hmac,
+                        code_key_id,
+                        code_hmac,
+                        normalized_challenge,
+                        observed_at,
+                        expires_at,
+                        observed_at,
+                    ),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return StepUpChallenge(
+            challenge_id=challenge_id,
+            purpose=normalized_purpose,
+            expires_at=expires_at,
+            email_code=email_code,
+            send_required=True,
+        )
+
+    def _commit_step_up_proof_failure_locked(
+        self, challenge: sqlite3.Row, *, now: float
+    ) -> None:
+        attempts = min(STEP_UP_MAX_ATTEMPTS, int(challenge["attempts"]) + 1)
+        burned = (
+            attempts >= STEP_UP_MAX_ATTEMPTS
+            or float(challenge["expires_at"]) <= now
+        )
+        cursor = self._conn.execute(
+            "UPDATE step_up_challenges SET attempts = ?,"
+            " consumed_at = CASE WHEN ? THEN ? ELSE consumed_at END"
+            " WHERE challenge_id = ? AND consumed_at IS NULL",
+            (attempts, int(burned), now, challenge["challenge_id"]),
+        )
+        if cursor.rowcount != 1:
+            raise RuntimeError("A step-up attempt changed unexpectedly.")
+        self._conn.commit()
+        raise StepUpChallengeRejected("Invalid step-up challenge.")
+
+    def _assert_step_up_exchange_replay_locked(
+        self,
+        row: sqlite3.Row,
+        *,
+        email_code: object,
+        code_verifier: object,
+        idempotency: bytes,
+        now: float,
+    ) -> StepUpTokenGrant:
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        code = self._normalize_mobile_auth_code(email_code)
+        verifier = self._validate_mobile_auth_verifier(code_verifier)
+        if code is None or verifier is None or float(row["expires_at"]) <= now:
+            raise StepUpExchangeConflict("The step-up exchange conflicts.")
+        try:
+            code_proof = keyring.digest_with_key(
+                str(row["code_proof_hmac_key_id"]),
+                MobileStateDomain.STEP_UP_EXCHANGE_CODE_PROOF,
+                code,
+            )
+            pkce_proof = keyring.digest_with_key(
+                str(row["pkce_proof_hmac_key_id"]),
+                MobileStateDomain.STEP_UP_EXCHANGE_PKCE_VERIFIER_PROOF,
+                verifier,
+            )
+            idempotency_hmac = keyring.digest_with_key(
+                str(row["idempotency_hmac_key_id"]),
+                MobileStateDomain.STEP_UP_EXCHANGE_IDEMPOTENCY,
+                idempotency,
+            )
+        except KeyError as exc:
+            raise RuntimeError(str(exc)) from exc
+        request_hash = self._step_up_exchange_request_hash(
+            challenge_id=str(row["challenge_id"]),
+            purpose=str(row["purpose"]),
+            token_id=str(row["token_id"]),
+            installation_hmac_key_id=str(row["installation_hmac_key_id"]),
+            installation_hmac=str(row["installation_hmac"]),
+            code_proof_hmac_key_id=str(row["code_proof_hmac_key_id"]),
+            code_proof_hmac=code_proof,
+            pkce_proof_hmac_key_id=str(row["pkce_proof_hmac_key_id"]),
+            pkce_proof_hmac=pkce_proof,
+            idempotency_hmac_key_id=str(row["idempotency_hmac_key_id"]),
+            idempotency_hmac=idempotency_hmac,
+        )
+        exact = (
+            hmac.compare_digest(code_proof, str(row["code_proof_hmac"]))
+            and hmac.compare_digest(pkce_proof, str(row["pkce_proof_hmac"]))
+            and hmac.compare_digest(
+                idempotency_hmac, str(row["idempotency_hmac"])
+            )
+            and hmac.compare_digest(request_hash, str(row["request_hash"]))
+        )
+        if not exact:
+            raise StepUpExchangeConflict("The step-up exchange conflicts.")
+        token_id = str(row["token_id"])
+        secret = self._step_up_token_secret(
+            verifier, str(row["challenge_id"]), str(row["purpose"])
+        )
+        token_row = self._conn.execute(
+            "SELECT token_hash, expires_at FROM step_up_tokens"
+            " WHERE token_id = ?",
+            (token_id,),
+        ).fetchone()
+        if token_row is None or not hmac.compare_digest(
+            self._step_up_token_hash(token_id, secret),
+            str(token_row["token_hash"]),
+        ):
+            raise StepUpExchangeConflict("The step-up exchange conflicts.")
+        return StepUpTokenGrant(
+            token_id=token_id,
+            step_up_token=f"{STEP_UP_TOKEN_PREFIX}{token_id}.{secret}",
+            purpose=str(row["purpose"]),
+            expires_at=float(token_row["expires_at"]),
+        )
+
+    def prepare_mobile_step_up_exchange(
+        self,
+        challenge_id: object,
+        email_code: object,
+        code_verifier: object,
+        idempotency_key: object,
+        *,
+        now: float | None = None,
+    ) -> StepUpTokenGrant:
+        """Mint one single-use step-up token for a proven, still-active owner.
+
+        Challenge consumption, still-active initiating selector/epoch/
+        installation recheck, token minting, and the durable journal/receipt
+        commit share one ``BEGIN IMMEDIATE``. An exact lost-response replay
+        returns the same deterministic token.
+        """
+
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        if not isinstance(challenge_id, str) or len(challenge_id) > 64:
+            raise StepUpChallengeRejected("Invalid step-up challenge.")
+        idempotency = self._mobile_auth_idempotency_bytes(idempotency_key)
+        observed_at = time.time() if now is None else float(now)
+        code = self._normalize_mobile_auth_code(email_code)
+        verifier = self._validate_mobile_auth_verifier(code_verifier)
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                existing = self._conn.execute(
+                    "SELECT * FROM step_up_exchange_journals"
+                    " WHERE challenge_id = ?",
+                    (challenge_id,),
+                ).fetchone()
+                if existing is not None:
+                    grant = self._assert_step_up_exchange_replay_locked(
+                        existing,
+                        email_code=email_code,
+                        code_verifier=code_verifier,
+                        idempotency=idempotency,
+                        now=observed_at,
+                    )
+                    self._conn.commit()
+                    return grant
+                challenge = self._conn.execute(
+                    "SELECT * FROM step_up_challenges WHERE challenge_id = ?",
+                    (challenge_id,),
+                ).fetchone()
+                if (
+                    challenge is None
+                    or challenge["consumed_at"] is not None
+                    or float(challenge["expires_at"]) <= observed_at
+                    or int(challenge["attempts"]) >= STEP_UP_MAX_ATTEMPTS
+                ):
+                    raise StepUpChallengeRejected("Invalid step-up challenge.")
+                # The initiating selector/epoch/installation must still be an
+                # active credential. A revoked, fenced, expired, epoch-changed,
+                # or reinstalled device cannot complete a step-up it started.
+                active = self._conn.execute(
+                    "SELECT 1 FROM mobile_api_tokens WHERE selector = ?"
+                    " AND user_id = ? AND auth_epoch = ? AND state = 'active'"
+                    " AND revoked_at IS NULL AND fenced_at IS NULL"
+                    " AND expires_at > ? AND installation_key_version = ?"
+                    " AND installation_key = ?"
+                    " AND EXISTS (SELECT 1 FROM users current_user"
+                    " WHERE current_user.id = mobile_api_tokens.user_id"
+                    " AND COALESCE(current_user.auth_epoch, 0)"
+                    " = mobile_api_tokens.auth_epoch)",
+                    (
+                        str(challenge["selector"]),
+                        str(challenge["user_id"]),
+                        int(challenge["auth_epoch"]),
+                        observed_at,
+                        str(challenge["installation_hmac_key_id"]),
+                        str(challenge["installation_hmac"]),
+                    ),
+                ).fetchone()
+                if active is None:
+                    raise StepUpChallengeRejected("Invalid step-up challenge.")
+                if code is None or verifier is None:
+                    self._commit_step_up_proof_failure_locked(
+                        challenge, now=observed_at
+                    )
+                try:
+                    expected_code = keyring.digest_with_key(
+                        str(challenge["code_hmac_key_id"]),
+                        MobileStateDomain.STEP_UP_EMAIL_CODE_VERIFIER,
+                        code,
+                    )
+                except KeyError as exc:
+                    raise RuntimeError(str(exc)) from exc
+                code_matches = hmac.compare_digest(
+                    expected_code, str(challenge["code_hmac"])
+                )
+                pkce_matches = hmac.compare_digest(
+                    self._mobile_auth_pkce_challenge(verifier),
+                    str(challenge["code_challenge"]),
+                )
+                if not (code_matches and pkce_matches):
+                    self._commit_step_up_proof_failure_locked(
+                        challenge, now=observed_at
+                    )
+                idempotency_candidates = keyring.candidates(
+                    MobileStateDomain.STEP_UP_EXCHANGE_IDEMPOTENCY, idempotency
+                )
+                idem_clause, idem_values = self._mobile_auth_candidate_clause(
+                    "idempotency_hmac_key_id",
+                    "idempotency_hmac",
+                    idempotency_candidates,
+                )
+                for table in (
+                    "step_up_exchange_journals",
+                    "step_up_exchange_receipts",
+                ):
+                    collision = self._conn.execute(
+                        f"SELECT 1 FROM {table} WHERE (" + idem_clause + ") LIMIT 1",
+                        idem_values,
+                    ).fetchone()
+                    if collision is not None:
+                        raise StepUpExchangeConflict(
+                            "The step-up exchange conflicts."
+                        )
+                purpose = str(challenge["purpose"])
+                token_id = ""
+                for _ in range(5):
+                    candidate = secrets.token_urlsafe(STEP_UP_TOKEN_ID_BYTES)
+                    if self._conn.execute(
+                        "SELECT 1 FROM step_up_tokens WHERE token_id = ?",
+                        (candidate,),
+                    ).fetchone() is None:
+                        token_id = candidate
+                        break
+                if not token_id:
+                    raise RuntimeError("Could not allocate a step-up token id.")
+                secret = self._step_up_token_secret(
+                    verifier, challenge_id, purpose
+                )
+                raw_token = f"{STEP_UP_TOKEN_PREFIX}{token_id}.{secret}"
+                token_hash = self._step_up_token_hash(token_id, secret)
+                token_expires_at = observed_at + STEP_UP_TOKEN_TTL_S
+                code_proof_key_id, code_proof = keyring.digest(
+                    MobileStateDomain.STEP_UP_EXCHANGE_CODE_PROOF, code
+                )
+                pkce_proof_key_id, pkce_proof = keyring.digest(
+                    MobileStateDomain.STEP_UP_EXCHANGE_PKCE_VERIFIER_PROOF,
+                    verifier,
+                )
+                idempotency_key_id, idempotency_hmac = keyring.digest(
+                    MobileStateDomain.STEP_UP_EXCHANGE_IDEMPOTENCY, idempotency
+                )
+                request_hash = self._step_up_exchange_request_hash(
+                    challenge_id=challenge_id,
+                    purpose=purpose,
+                    token_id=token_id,
+                    installation_hmac_key_id=str(
+                        challenge["installation_hmac_key_id"]
+                    ),
+                    installation_hmac=str(challenge["installation_hmac"]),
+                    code_proof_hmac_key_id=code_proof_key_id,
+                    code_proof_hmac=code_proof,
+                    pkce_proof_hmac_key_id=pkce_proof_key_id,
+                    pkce_proof_hmac=pkce_proof,
+                    idempotency_hmac_key_id=idempotency_key_id,
+                    idempotency_hmac=idempotency_hmac,
+                )
+                exchange_id = str(uuid.uuid4())
+                replay_expires_at = (
+                    max(float(challenge["expires_at"]), observed_at)
+                    + STEP_UP_REPLAY_TTL_S
+                )
+                self._conn.execute(
+                    "INSERT INTO step_up_tokens"
+                    " (token_id, method, purpose, user_id, selector, auth_epoch,"
+                    " installation_hmac_key_id, installation_hmac, token_hash,"
+                    " created_at, expires_at, claimed_at)"
+                    " VALUES (?, 'email', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                    (
+                        token_id,
+                        purpose,
+                        str(challenge["user_id"]),
+                        str(challenge["selector"]),
+                        int(challenge["auth_epoch"]),
+                        str(challenge["installation_hmac_key_id"]),
+                        str(challenge["installation_hmac"]),
+                        token_hash,
+                        observed_at,
+                        token_expires_at,
+                    ),
+                )
+                self._conn.execute(
+                    "INSERT INTO step_up_exchange_journals"
+                    " (exchange_id, challenge_id, method, purpose, user_id,"
+                    " selector, auth_epoch, token_id, installation_hmac_key_id,"
+                    " installation_hmac, code_proof_hmac_key_id, code_proof_hmac,"
+                    " pkce_proof_hmac_key_id, pkce_proof_hmac,"
+                    " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+                    " created_at, expires_at)"
+                    " VALUES (?, ?, 'email', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,"
+                    " ?, ?, ?, ?)",
+                    (
+                        exchange_id,
+                        challenge_id,
+                        purpose,
+                        str(challenge["user_id"]),
+                        str(challenge["selector"]),
+                        int(challenge["auth_epoch"]),
+                        token_id,
+                        str(challenge["installation_hmac_key_id"]),
+                        str(challenge["installation_hmac"]),
+                        code_proof_key_id,
+                        code_proof,
+                        pkce_proof_key_id,
+                        pkce_proof,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        observed_at,
+                        replay_expires_at,
+                    ),
+                )
+                self._conn.execute(
+                    "INSERT INTO step_up_exchange_receipts"
+                    " (exchange_id, purpose, challenge_id, token_id,"
+                    " idempotency_hmac_key_id, idempotency_hmac, request_hash,"
+                    " completed_at, expires_at)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        exchange_id,
+                        purpose,
+                        challenge_id,
+                        token_id,
+                        idempotency_key_id,
+                        idempotency_hmac,
+                        request_hash,
+                        observed_at,
+                        replay_expires_at,
+                    ),
+                )
+                self._conn.execute(
+                    "UPDATE step_up_challenges SET consumed_at = ?"
+                    " WHERE challenge_id = ? AND consumed_at IS NULL",
+                    (observed_at, challenge_id),
+                )
+                self._conn.commit()
+            except Exception:
+                if self._conn.in_transaction:
+                    self._conn.rollback()
+                raise
+        return StepUpTokenGrant(
+            token_id=token_id,
+            step_up_token=raw_token,
+            purpose=purpose,
+            expires_at=token_expires_at,
+        )
+
+    def purge_expired_mobile_step_up_state(
+        self, *, now: float | None = None, batch_size: int = 250
+    ) -> int:
+        """Bound expired step-up challenge/journal/receipt/token metadata."""
+
+        if not 1 <= int(batch_size) <= 10_000:
+            raise ValueError("A bounded step-up purge batch is required.")
+        observed_at = time.time() if now is None else float(now)
+        challenge_cutoff = observed_at - STEP_UP_REPLAY_TTL_S
+        deleted = 0
+        with self._lock:
+            try:
+                self._conn.execute("BEGIN IMMEDIATE")
+                for statement, parameters in (
+                    (
+                        "DELETE FROM step_up_exchange_receipts WHERE rowid IN ("
+                        " SELECT rowid FROM step_up_exchange_receipts"
+                        " WHERE expires_at <= ? ORDER BY expires_at LIMIT ?)",
+                        (observed_at, int(batch_size)),
+                    ),
+                    (
+                        "DELETE FROM step_up_exchange_journals WHERE rowid IN ("
+                        " SELECT rowid FROM step_up_exchange_journals"
+                        " WHERE expires_at <= ? ORDER BY expires_at LIMIT ?)",
+                        (observed_at, int(batch_size)),
+                    ),
+                    (
+                        "DELETE FROM step_up_tokens WHERE rowid IN ("
+                        " SELECT rowid FROM step_up_tokens"
+                        " WHERE expires_at <= ? ORDER BY expires_at LIMIT ?)",
+                        (observed_at, int(batch_size)),
+                    ),
+                    (
+                        "DELETE FROM step_up_challenges WHERE rowid IN ("
+                        " SELECT challenge.rowid FROM step_up_challenges challenge"
+                        " WHERE challenge.expires_at <= ? AND NOT EXISTS ("
+                        "  SELECT 1 FROM step_up_exchange_journals journal"
+                        "  WHERE journal.challenge_id = challenge.challenge_id)"
                         " ORDER BY challenge.expires_at LIMIT ?)",
                         (challenge_cutoff, int(batch_size)),
                     ),

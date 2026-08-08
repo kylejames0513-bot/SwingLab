@@ -528,6 +528,43 @@ class NativeAuthExchangeRequest(ContractModel):
     )
 
 
+StepUpPurpose = Literal["data_export", "history_reset", "account_delete"]
+
+
+class StepUpStartRequest(ContractModel):
+    """Bearer-only step-up start body; installation binding is server-derived."""
+
+    purpose: StepUpPurpose
+    code_challenge: str = Field(
+        min_length=43,
+        max_length=43,
+        pattern=r"^[A-Za-z0-9_-]{43}$",
+    )
+
+
+class StepUpStartResponse(ContractModel):
+    resource_version: Literal[1] = 1
+    challenge_id: str
+    expires_at: float
+
+
+class StepUpExchangeRequest(ContractModel):
+    challenge_id: str = Field(min_length=1, max_length=64)
+    email_code: str = Field(min_length=8, max_length=15)
+    code_verifier: str = Field(
+        min_length=43,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9._~-]{43,128}$",
+    )
+
+
+class StepUpExchangeResponse(ContractModel):
+    resource_version: Literal[1] = 1
+    step_up_token: str
+    purpose: StepUpPurpose
+    expires_at: float
+
+
 class NativeReviewAuthStartRequest(ContractModel):
     provider: Literal["apple", "google"]
     account: str = Field(min_length=1, max_length=160)

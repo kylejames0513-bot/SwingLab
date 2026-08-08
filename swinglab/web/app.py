@@ -102,6 +102,8 @@ from ..api.mobile_routes import (
     MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
     MOBILE_REVIEW_START_ROUTE_NAME,
     MOBILE_SIGN_OUT_ROUTE_NAME,
+    MOBILE_STEP_UP_START_ROUTE_NAME,
+    MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME,
     MOBILE_SESSION_ROUTE_NAME,
     MOBILE_SESSION_BRIEF_ROUTE_NAME,
     MOBILE_TODAY_ROUTE_NAME,
@@ -182,6 +184,7 @@ from .mobile_auth import (
     MobileAuthService,
     validate_mobile_native_auth_settings,
 )
+from .mobile_privacy import MobileStepUpService
 from .mobile_resources import (
     MobileResourceService,
     VIDEO_SUFFIXES,
@@ -562,6 +565,7 @@ def create_app(
     mobile_deployment_environment = resolve_mobile_deployment_environment()
     native_auth_settings = validate_mobile_native_auth_settings(cfg.web)
     mobile_resource_settings = validate_mobile_resource_settings(cfg.web)
+    mobile_privacy_enabled = bool(cfg.web.get("mobile_privacy_enabled"))
     try:
         mobile_public_origin = canonical_mobile_public_origin(
             os.environ.get("PUBLIC_BASE_URL"), mobile_deployment_environment
@@ -667,8 +671,16 @@ def create_app(
             settings=review_auth_settings,
             activated_at_startup=review_lane_active,
         )
+        step_up_service = MobileStepUpService(
+            users,
+            mobile_keyed_throttle,
+            enabled=mobile_privacy_enabled,
+            public_base_url=mobile_public_origin,
+            brand_name=str(cfg.brand["name"]),
+        )
         mobile_auth_service.verify_enabled_recovery_readiness()
         review_auth_service.verify_enabled_recovery_readiness()
+        step_up_service.verify_enabled_readiness()
         device_revoke_service.verify_enabled_recovery_readiness(
             device_management_enabled
         )
@@ -705,6 +717,7 @@ def create_app(
     app.state.device_revoke_service = device_revoke_service
     app.state.mobile_auth_service = mobile_auth_service
     app.state.review_auth_service = review_auth_service
+    app.state.step_up_service = step_up_service
     app.state.review_auth_admission = review_auth_admission
     app.state.mobile_deployment_environment = mobile_deployment_environment
     app.state.mobile_public_origin = mobile_public_origin
@@ -757,6 +770,10 @@ def create_app(
         MOBILE_DEVICES_LIST_ROUTE_NAME,
         MOBILE_DEVICE_REVOKE_ROUTE_NAME,
     }
+    mobile_step_up_route_names = {
+        MOBILE_STEP_UP_START_ROUTE_NAME,
+        MOBILE_STEP_UP_EXCHANGE_ROUTE_NAME,
+    }
     concealed_mobile_route_names = set()
     if not mobile_resource_service.settings.resources_enabled:
         concealed_mobile_route_names |= mobile_resource_route_names
@@ -768,6 +785,8 @@ def create_app(
         concealed_mobile_route_names |= mobile_upload_route_names
     if not mobile_resource_service.settings.device_management_enabled:
         concealed_mobile_route_names |= mobile_device_route_names
+    if not mobile_privacy_enabled:
+        concealed_mobile_route_names |= mobile_step_up_route_names
     install_mobile_error_handlers(
         app,
         {
@@ -777,6 +796,7 @@ def create_app(
             MOBILE_REVIEW_EXCHANGE_ROUTE_NAME,
             MOBILE_SIGN_OUT_ROUTE_NAME,
         }
+        | mobile_step_up_route_names
         | mobile_resource_route_names
         | mobile_profile_write_route_names
         | mobile_practice_write_route_names
@@ -791,6 +811,8 @@ def create_app(
         device_management_enabled=device_management_enabled,
         email_auth_service=mobile_auth_service,
         review_auth_service=review_auth_service,
+        step_up_service=step_up_service,
+        mobile_privacy_enabled=mobile_privacy_enabled,
         native_email_auth_enabled=native_auth_settings.enabled,
         mobile_deployment_environment=mobile_deployment_environment,
         client_ip_resolver=client_ip,

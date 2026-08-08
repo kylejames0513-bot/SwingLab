@@ -113,6 +113,11 @@ _KEYED_RATE_DOMAINS: dict[str, MobileStateDomain] = {
     "review-auth-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
     "review-auth-start-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
     "review-auth-exchange-ip": MobileStateDomain.REVIEW_AUTH_CLIENT_IP,
+    "stepup-start-selector": MobileStateDomain.STEP_UP_START_SELECTOR_RATE,
+    "stepup-start-user": MobileStateDomain.STEP_UP_START_USER_RATE,
+    "stepup-start-client-ip": MobileStateDomain.STEP_UP_START_CLIENT_IP,
+    "stepup-exchange-user": MobileStateDomain.STEP_UP_EXCHANGE_USER_RATE,
+    "stepup-exchange-client-ip": MobileStateDomain.STEP_UP_EXCHANGE_CLIENT_IP,
 }
 _PROTECTED_KEY_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}")
 _PROTECTED_DIGEST = re.compile(r"[0-9a-f]{64}")
