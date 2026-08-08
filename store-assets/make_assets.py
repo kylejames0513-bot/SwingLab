@@ -881,103 +881,6 @@ def _wordmark(d, x, y, px, ink=GREEN):
     return w1 + t + w2
 
 
-def mark_flagstick(d, cx, cy, R, ink=GREEN, accent=ORANGE, bold=1.0):
-    """Tour Caddie v3 mark: precision arc + fairway flagstick.
-
-    Segmented circular border (one amber kinetic segment), vertical pin with
-    triangular flag, and a small cup ellipse. Reads as golf + measurement.
-    """
-    stroke = max(2, int(0.055 * bold * R))
-    # three arc segments; upper-right is amber
-    for start, end, fill in (
-        (200, 290, ink),
-        (295, 340, accent),
-        (345, 430, ink),
-    ):
-        box = [cx - R, cy - R, cx + R, cy + R]
-        d.arc(box, start, end, fill=fill, width=stroke)
-    # flagstick
-    stick_w = max(2, int(0.045 * bold * R))
-    top = cy - 0.55 * R
-    bottom = cy + 0.42 * R
-    d.line([(cx, top), (cx, bottom)], fill=ink, width=stick_w)
-    # triangular flag pointing right
-    flag_h = 0.28 * R
-    flag_w = 0.42 * R
-    d.polygon(
-        [
-            (cx + stick_w * 0.5, top),
-            (cx + flag_w, top + flag_h * 0.45),
-            (cx + stick_w * 0.5, top + flag_h),
-        ],
-        fill=ink,
-    )
-    # cup
-    cup_rx, cup_ry = 0.22 * R, 0.09 * R
-    d.ellipse(
-        [cx - cup_rx, bottom - cup_ry, cx + cup_rx, bottom + cup_ry],
-        outline=ink,
-        width=max(2, int(0.04 * bold * R)),
-    )
-
-
-def logo(inverse=False):
-    """Premium lockup: flagstick precision mark + heavy wordmark.
-
-    The inverse is re-inked in mint for deep-green / near-black contexts —
-    the orange arc segment is the one kinetic color both versions share.
-    Output filenames keep the historical swinglab- names so every CDN and
-    theme reference keeps resolving.
-
-    Note: the shipped Tour Caddie v3 lockup in theme/app static may be the
-    campaign-refined raster; regenerating here keeps a reproducible sibling.
-    """
-    sc = 4
-    ink = GREEN_INK if inverse else GREEN
-    img = Image.new("RGBA", (2000 * sc, 360 * sc), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    cx, cy, R = 220 * sc, 180 * sc, 140 * sc
-    mark_flagstick(d, cx, cy, R, ink=ink, accent=ORANGE, bold=1.15)
-    f = archivo(int(148 * sc), 750, 100)
-    x0, y0 = 420 * sc, 90 * sc
-    tracking = int(-1.5 * sc)
-    w1 = tracked(d, (x0, y0), "Caddie", f, ink, tracking=tracking)
-    w2 = tracked(d, (x0 + w1 + 6 * sc, y0), "Insight", f, ink, tracking=tracking)
-    d.line(
-        [x0 + w1 + 6 * sc, y0 + 170 * sc, x0 + w1 + 6 * sc + w2, y0 + 170 * sc],
-        fill=ORANGE,
-        width=int(5 * sc),
-    )
-    img = img.crop(img.getbbox())
-    k = min(1400 / img.width, 276 / img.height)
-    img = img.resize((round(img.width * k), round(img.height * k)),
-                     Image.LANCZOS)
-    name = "swinglab-logo-inverse.png" if inverse else "swinglab-logo.png"
-    img.save(OUT / name)
-    print("wrote", OUT / name)
-
-
-def favicon():
-    """512 tile: deep-green rounded square, flagstick mark in mint + amber."""
-    w, sc = 512, 4
-    img = Image.new("RGBA", (w * sc, w * sc), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    rrect(d, [0, 0, w * sc, w * sc], 110 * sc, fill=GREEN)
-    lay = Image.new("RGBA", (800 * sc, 800 * sc), (0, 0, 0, 0))
-    dl = ImageDraw.Draw(lay)
-    mark_flagstick(dl, 400 * sc, 400 * sc, 280 * sc, ink=GREEN_INK,
-                   accent=ORANGE, bold=1.35)
-    lay = lay.crop(lay.getbbox())
-    box = (w - 2 * 66) * sc
-    k = min(box / lay.width, box / lay.height)
-    lay = lay.resize((round(lay.width * k), round(lay.height * k)),
-                     Image.LANCZOS)
-    img.paste(lay, ((w * sc - lay.width) // 2, (w * sc - lay.height) // 2), lay)
-    img = img.resize((w, w), Image.LANCZOS)
-    img.save(OUT / "swinglab-favicon.png")
-    print("wrote", OUT / "swinglab-favicon.png")
-
-
 def collection_banner():
     wpx, hpx = 1600, 900
     img, d = canvas(wpx, hpx)
@@ -1005,7 +908,4 @@ if __name__ == "__main__":
     swing_mirror()
     performance_cap()
     pro_membership()
-    logo(False)
-    logo(True)
-    favicon()
     collection_banner()
