@@ -55,6 +55,7 @@ from ..web.mobile_auth import (
     MobileNativeAuthUnavailable,
 )
 from ..web.mobile_resources import (
+    MobilePracticeDayConflict,
     MobilePracticeHistoryConflict,
     MobilePracticeIdempotencyConflict,
     MobilePracticeUnauthorized,
@@ -485,6 +486,13 @@ def install_mobile_routes(
             raise MobileAPIHTTPError(
                 409,
                 "idempotency_conflict",
+                str(exc),
+                headers=no_store,
+            ) from exc
+        except MobilePracticeDayConflict as exc:
+            raise MobileAPIHTTPError(
+                409,
+                "practice_conflict",
                 str(exc),
                 headers=no_store,
             ) from exc

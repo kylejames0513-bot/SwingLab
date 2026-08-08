@@ -361,10 +361,7 @@ def test_practice_evidence_success_replay_and_conflict(tmp_path):
             json=_practice_body(user, baseline, target, minutes=45),
         )
         assert conflict.status_code == 409
-        assert conflict.json()["code"] in {
-            "idempotency_conflict",
-            "conflict",
-        }
+        assert conflict.json()["code"] == "idempotency_conflict"
         assert _evidence_count(app) == 1
         assert _details_count(app) == 1
     finally:
@@ -407,8 +404,113 @@ def test_practice_evidence_rejects_stale_or_cross_owner_target(tmp_path):
             headers=_idempotency_headers(token),
             json=_practice_body(user, baseline, target),
         )
-        assert response.status_code in {404, 409}
+        assert response.status_code == 404
+        assert response.json()["code"] == "not_found"
         assert response.headers["cache-control"] == "no-store"
+        assert _evidence_count(app) == 0
+        assert _details_count(app) == 0
+
+        missing = client.post(
+            "/api/v1/practice-evidence",
+            headers=_idempotency_headers(token, "1123456789abcdef0123456789abcdef"),
+            json=_practice_body(
+                user,
+                baseline,
+                target,
+                baseline_session_id="missing-baseline",
+            ),
+        )
+        assert missing.status_code == 404
+        assert missing.json()["code"] == "not_found"
+        assert _evidence_count(app) == 0
+        assert _details_count(app) == 0
+
+        other = app.state.users.create(
+            "other-practice@example.com",
+            "longenough",
+            email_verified=True,
+        )
+        foreign = app.state.jobs.create_session(
+            hand="left",
+            angle="dtl",
+            club="iron",
+            user_id=other.id,
+            expected_history_epoch=other.history_epoch,
+        )
+        foreign.status = DONE
+        foreign.report_rel = "out/report.html"
+        app.state.jobs._save(foreign)
+        cross = client.post(
+            "/api/v1/practice-evidence",
+            headers=_idempotency_headers(token, "2123456789abcdef0123456789abcdef"),
+            json=_practice_body(
+                user,
+                baseline,
+                target,
+                baseline_session_id=foreign.id,
+            ),
+        )
+        assert cross.status_code == 404
+        assert cross.json()["code"] == "not_found"
+        assert _evidence_count(app) == 0
+        assert _details_count(app) == 0
+    finally:
+        _close(app)
+
+
+def test_practice_evidence_revoked_selector_never_writes(tmp_path):
+    app, client, user = _app_client(tmp_path)
+    try:
+        baseline, target = _seed_active_target(app, user)
+        issued = issue_token(client, "Practice phone")
+        token = issued["token"]
+        selector = issued["device"]["selector"]
+        assert app.state.users.revoke_mobile_api_token(user.id, selector)
+        response = client.post(
+            "/api/v1/practice-evidence",
+            headers=_idempotency_headers(token),
+            json=_practice_body(user, baseline, target),
+        )
+        assert response.status_code == 401
+        assert response.json()["message"] == "Invalid mobile access token."
+        assert _evidence_count(app) == 0
+        assert _details_count(app) == 0
+    finally:
+        _close(app)
+
+
+def test_practice_evidence_final_write_revocation_never_upserts(
+    tmp_path, monkeypatch
+):
+    app, client, user = _app_client(tmp_path)
+    try:
+        baseline, target = _seed_active_target(app, user)
+        issued = issue_token(client, "Practice phone")
+        token = issued["token"]
+        selector = issued["device"]["selector"]
+        from swinglab.web.credential_mutations import CredentialMutationLease
+
+        original = CredentialMutationLease.validate_locked
+
+        def revoke_then_validate(self, user_store, *, now=None):
+            observed = 1_700_000_000.0 if now is None else float(now)
+            user_store._conn.execute(
+                "UPDATE mobile_api_tokens SET revoked_at = ?"
+                " WHERE selector = ? AND user_id = ?",
+                (observed, selector, user.id),
+            )
+            return original(self, user_store, now=now)
+
+        monkeypatch.setattr(
+            CredentialMutationLease, "validate_locked", revoke_then_validate
+        )
+        response = client.post(
+            "/api/v1/practice-evidence",
+            headers=_idempotency_headers(token),
+            json=_practice_body(user, baseline, target),
+        )
+        assert response.status_code == 401
+        assert response.json()["message"] == "Invalid mobile access token."
         assert _evidence_count(app) == 0
         assert _details_count(app) == 0
     finally:

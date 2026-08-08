@@ -28,7 +28,11 @@ from .credential_mutations import (
     CredentialMutationGuard,
     CredentialMutationRejected,
 )
-from .users import HistoryEpochError, MobilePracticeEvidenceConflict
+from .users import (
+    HistoryEpochError,
+    MobilePracticeEvidenceConflict,
+    MobilePracticeReceiptConflict,
+)
 from ..clubs import CLUB_LABELS
 from ..config import Config
 from ..drills import gear_shop_url
@@ -109,6 +113,10 @@ class MobilePracticeUnavailable(LookupError):
 
 class MobilePracticeIdempotencyConflict(RuntimeError):
     """An Idempotency-Key was reused with a different practice body."""
+
+
+class MobilePracticeDayConflict(RuntimeError):
+    """A distinct practice receipt already exists for this target day."""
 
 
 def validate_mobile_resource_settings(
@@ -347,7 +355,6 @@ class MobileResourceService:
                     self._users._assert_history_epoch_locked(
                         context.user.id,
                         request.expected_history_epoch,
-                        session_ids=(request.baseline_session_id,),
                     )
                     owner = context.user
                     baseline = self._manager.get(request.baseline_session_id)
@@ -415,6 +422,8 @@ class MobileResourceService:
             raise MobilePracticeHistoryConflict(str(exc)) from exc
         except MobilePracticeEvidenceConflict as exc:
             raise MobilePracticeIdempotencyConflict(str(exc)) from exc
+        except MobilePracticeReceiptConflict as exc:
+            raise MobilePracticeDayConflict(str(exc)) from exc
         finally:
             lease.release()
         return receipt

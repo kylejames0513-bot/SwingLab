@@ -905,6 +905,10 @@ class MobilePracticeEvidenceConflict(RuntimeError):
     """An Idempotency-Key was reused with a different practice request."""
 
 
+class MobilePracticeReceiptConflict(RuntimeError):
+    """A distinct practice receipt already exists for this target day."""
+
+
 class HistoryAuthEpochError(HistoryEpochError):
     """Account recovery revoked the session before history deletion."""
 
@@ -2404,6 +2408,7 @@ class UserStore:
                 golfer_profiles,
                 practice_checkins,
                 proof_cycle_practice_evidence,
+                mobile_practice_evidence_details,
                 proof_cycle_transfer_checks,
                 product_events,
                 mobile_api_tokens,
@@ -8435,7 +8440,7 @@ class UserStore:
         ).fetchone()
         if pk_existing is not None:
             if str(pk_existing["request_hash"]) != request_hash:
-                raise MobilePracticeEvidenceConflict(
+                raise MobilePracticeReceiptConflict(
                     "A practice receipt already exists for this target today."
                 )
             return self._practice_evidence_receipt_from_detail_row(pk_existing)
