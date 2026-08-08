@@ -123,6 +123,61 @@ def lockup(inverse: bool = False) -> Path:
     return path
 
 
+def og_card() -> Path:
+    """The 1200x630 social share card.
+
+    Rendered rather than photographed for now: it must stay legible as a
+    ~300px thumbnail in a Slack unfurl, where a photo of a golfer becomes an
+    unreadable smudge. Everything sits inside the centre 1000x500, because
+    Slack, iMessage and X each crop this differently.
+    """
+    W, H = 1200, 630
+    img = Image.new("RGB", (W * SS, H * SS), GREEN)
+    d = ImageDraw.Draw(img)
+
+    # A quiet forest wash so the flat tile does not read as a placeholder.
+    for step in range(H * SS):
+        ratio = step / (H * SS)
+        d.line(
+            [(0, step), (W * SS, step)],
+            fill=(
+                int(6 + 9 * (1 - ratio)),
+                int(17 + 44 * (1 - ratio)),
+                int(12 + 28 * (1 - ratio)),
+            ),
+        )
+
+    draw_mark(d, 218 * SS, 232 * SS, 104 * SS, ink=MINT, accent=ORANGE,
+              bold=1.05, ticks=24)
+
+    # Sized so the wordmark terminates inside the centre 1000x500 safe box —
+    # X and iMessage both crop tighter than the declared 1.91:1.
+    word = archivo(int(104 * SS), 780, 100)
+    x0, y0 = 356 * SS, 178 * SS
+    w1 = tracked(d, (x0, y0), "Caddie", word, MINT, tracking=int(-1.5 * SS))
+    x1 = x0 + w1 - int(1.5 * SS)
+    w2 = tracked(d, (x1, y0), "Insight", word, MINT, tracking=int(-1.5 * SS))
+    d.rounded_rectangle(
+        [x1, y0 + 132 * SS, x1 + w2, y0 + 138 * SS], radius=3 * SS, fill=ORANGE
+    )
+
+    line = archivo(int(46 * SS), 560, 100)
+    d.text((218 * SS, 372 * SS),
+           "One priority. One practice plan.", font=line, fill="#cfe0d5")
+    d.text((218 * SS, 432 * SS),
+           "Proof when you re-film.", font=line, fill="#cfe0d5")
+
+    eyebrow = ImageFont.truetype(str(HERE / "DMMono-Regular.ttf"), int(26 * SS))
+    tracked(d, (218 * SS, 520 * SS), "SWING ANALYSIS FROM ONE PHONE VIDEO",
+            eyebrow, "#8fa89a", tracking=int(4 * SS))
+
+    out = img.resize((W, H), Image.LANCZOS)
+    path = OUT / "og-caddieinsight.png"
+    out.save(path, "PNG", optimize=True)
+    print("wrote", path)
+    return path
+
+
 def main() -> None:
     OUT.mkdir(exist_ok=True)
 
@@ -146,6 +201,12 @@ def main() -> None:
     # collapses into a solid ring.
     icon_png(OUT / "swinglab-favicon.png", 512, radius_ratio=0.215, ticks=24,
              bold=1.1)
+    # The same tile under the current brand name. Shipped alongside rather
+    # than replacing the swinglab- file, because the live theme references
+    # that filename in Shopify Files and overwriting a live-referenced name
+    # bypasses the unpublished-theme preview (store-assets/README.md).
+    icon_png(OUT / "caddieinsight-favicon.png", 512, radius_ratio=0.215,
+             ticks=24, bold=1.1)
     icon_png(OUT / "pwa-icon-192.png", 192, radius_ratio=0.215, ticks=24,
              bold=1.15)
     icon_png(OUT / "pwa-icon-512.png", 512, radius_ratio=0.215, ticks=36,
@@ -165,6 +226,7 @@ def main() -> None:
 
     lockup(inverse=False)
     lockup(inverse=True)
+    og_card()
 
     ship = {
         "swinglab-logo.png": (STATIC, THEME),
@@ -176,6 +238,8 @@ def main() -> None:
         "pwa-icon-512.png": (STATIC,),
         "pwa-icon-maskable-512.png": (STATIC,),
         "app-icon-1024.png": (MOBILE,),
+        "caddieinsight-favicon.png": (STATIC, THEME),
+        "og-caddieinsight.png": (THEME,),
     }
     for name, targets in ship.items():
         for target in targets:

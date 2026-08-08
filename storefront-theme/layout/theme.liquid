@@ -41,20 +41,39 @@
   <meta property="og:title" content="{{ resolved_page_title | default: shop.name | escape }}">
   <meta property="og:url" content="{{ canonical_url }}">
   {% if resolved_page_description %}<meta property="og:description" content="{{ resolved_page_description | escape }}">{% endif %}
-  {%- assign og_image = page_image | default: images['og-swinglab.png'] -%}
+  {%- comment -%}
+    Both marks resolve against the CURRENT brand filename first, then fall
+    back to the theme-packaged asset. The previous names (og-swinglab.png,
+    swinglab-favicon.png) still exist in Shopify Files and would otherwise
+    win over the theme, silently pinning the store to the retired v3 mark —
+    a Files entry always beats a theme asset. New names rather than
+    overwritten ones, per store-assets/README.md: never replace a filename
+    the live theme references, because that bypasses the unpublished-theme
+    preview and leaves no rollback.
+
+    Until the caddieinsight-* files are uploaded to Files, the theme asset
+    fallback serves the new mark, so uploading the theme is sufficient.
+  {%- endcomment -%}
+  {%- assign og_image = page_image | default: images['og-caddieinsight.png'] -%}
   {%- if og_image -%}
     <meta property="og:image" content="https:{{ og_image | image_url: width: 1200 }}">
-    <meta name="twitter:card" content="summary_large_image">
+  {%- else -%}
+    <meta property="og:image" content="{{ 'og-caddieinsight.png' | asset_url | prepend: 'https:' | split: '?' | first }}">
+  {%- endif -%}
+  <meta name="twitter:card" content="summary_large_image">
+  {%- if og_image -%}
     <meta name="twitter:image" content="https:{{ og_image | image_url: width: 1200 }}">
+  {%- else -%}
+    <meta name="twitter:image" content="{{ 'og-caddieinsight.png' | asset_url | prepend: 'https:' | split: '?' | first }}">
   {%- endif -%}
 
-  {%- assign favicon = images['swinglab-favicon.png'] -%}
+  {%- assign favicon = images['caddieinsight-favicon.png'] -%}
   {%- if favicon -%}
     <link rel="icon" type="image/png" href="{{ favicon | image_url: width: 96 }}">
     <link rel="apple-touch-icon" href="{{ favicon | image_url: width: 180 }}">
   {%- else -%}
-    <link rel="icon" type="image/png" href="{{ 'swinglab-favicon.png' | asset_url }}">
-    <link rel="apple-touch-icon" href="{{ 'swinglab-favicon.png' | asset_url }}">
+    <link rel="icon" type="image/png" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
+    <link rel="apple-touch-icon" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
   {%- endif -%}
 
   {{ 'base.css' | asset_url | stylesheet_tag }}
