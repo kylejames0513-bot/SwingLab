@@ -501,9 +501,9 @@ def test_user_store_adds_complete_generation_one_schema_to_legacy_database(tmp_p
     users = UserStore(db_path, mobile_state_hmac=_keyring())
     try:
         summary = mobile_state_summary(users._conn)
-        assert summary["generation"] == 1
+        assert summary["generation"] == 2
         assert set(summary["schema_sha256"]) == set(
-            MOBILE_STATE_GENERATIONS[1].required_columns
+            MOBILE_STATE_GENERATIONS[2].required_columns
         )
         assert summary["referenced_hmac_key_ids"] == []
         token_columns = {

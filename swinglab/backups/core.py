@@ -19,6 +19,7 @@ from typing import Any, Iterable
 
 from swinglab.web.mobile_schema import (
     MOBILE_STATE_GENERATIONS,
+    MOBILE_STATE_SCHEMA_GENERATION,
     detect_mobile_state_generation,
     mobile_state_summary,
 )
@@ -435,9 +436,13 @@ def _snapshot_recovery_fence(
         lineage_id = _canonical_uuid(
             baseline_lineage_id, label="recovery lineage ID"
         )
-        if mobile_state is None or mobile_state.get("generation") != 1:
+        if (
+            mobile_state is None
+            or mobile_state.get("generation") != MOBILE_STATE_SCHEMA_GENERATION
+        ):
             raise BackupError(
-                "A cutover baseline requires an exact generation-1 mobile snapshot."
+                "A cutover baseline requires an exact generation-"
+                f"{MOBILE_STATE_SCHEMA_GENERATION} mobile snapshot."
             )
     connection = _read_only_connection(db_path)
     try:

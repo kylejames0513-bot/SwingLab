@@ -1,8 +1,10 @@
-"""Generation-1 native credential schema and protected state HMACs.
+"""Native credential schema generations and protected state HMACs.
 
-This module deliberately owns the closed HMAC domain vocabulary.  Callers
-cannot ask for an arbitrary domain string and accidentally make unrelated
-secrets comparable in SQLite, logs, backups, or the recovery ledger.
+Generation 0 is the pre-mobile token base. Generation 1 adds the closed
+auth/recovery footprint. Generation 2 additively introduces
+``mobile_practice_evidence_details``. Callers cannot ask for an arbitrary
+HMAC domain string and accidentally make unrelated secrets comparable in
+SQLite, logs, backups, or the recovery ledger.
 """
 
 from __future__ import annotations
@@ -21,7 +23,7 @@ from typing import Iterable
 
 
 MOBILE_STATE_KEYRING_ENV = "MOBILE_STATE_HMAC_KEYRING"
-MOBILE_STATE_SCHEMA_GENERATION = 1
+MOBILE_STATE_SCHEMA_GENERATION = 2
 
 
 class MobileStateDomain(str, Enum):
@@ -749,9 +751,67 @@ _MOBILE_TOKEN_BASE_INDEXES: dict[str, tuple[str, tuple[str, ...]]] = {
     ),
 }
 
+_GENERATION_TWO_TABLE_DDL: dict[str, str] = {
+    "mobile_practice_evidence_details": """
+        CREATE TABLE IF NOT EXISTS mobile_practice_evidence_details (
+            user_id TEXT NOT NULL,
+            baseline_session_id TEXT NOT NULL,
+            target_fingerprint TEXT NOT NULL,
+            completed_day INTEGER NOT NULL,
+            receipt_id TEXT NOT NULL UNIQUE,
+            drill_id TEXT NOT NULL,
+            minutes INTEGER NOT NULL,
+            outcome TEXT NOT NULL,
+            reps INTEGER NOT NULL CHECK (reps BETWEEN 1 AND 300),
+            feel TEXT NULL,
+            relative_strike TEXT NULL,
+            start_line TEXT NULL,
+            miss_pattern TEXT NULL,
+            completed_at REAL NOT NULL,
+            idempotency_hmac_key_id TEXT NOT NULL,
+            idempotency_hmac TEXT NOT NULL,
+            request_hash TEXT NOT NULL,
+            PRIMARY KEY (
+                user_id, baseline_session_id, target_fingerprint, completed_day
+            ),
+            UNIQUE (idempotency_hmac_key_id, idempotency_hmac)
+        )
+    """,
+}
+
+_GENERATION_TWO_REQUIRED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "mobile_practice_evidence_details": (
+        "user_id",
+        "baseline_session_id",
+        "target_fingerprint",
+        "completed_day",
+        "receipt_id",
+        "drill_id",
+        "minutes",
+        "outcome",
+        "reps",
+        "feel",
+        "relative_strike",
+        "start_line",
+        "miss_pattern",
+        "completed_at",
+        "idempotency_hmac_key_id",
+        "idempotency_hmac",
+        "request_hash",
+    ),
+}
+
+# Named non-unique indexes only. Uniqueness for receipt_id and the
+# idempotency HMAC pair is enforced by table UNIQUE constraints and attested
+# through the exact table shape (including sqlite unique autoindexes).
+_GENERATION_TWO_INDEXES: dict[str, tuple[str, tuple[str, ...]]] = {}
+
 _INDEX_DDL = {
     name: f"CREATE INDEX IF NOT EXISTS {name} ON {table}({', '.join(columns)})"
-    for name, (table, columns) in _GENERATION_ONE_INDEXES.items()
+    for name, (table, columns) in {
+        **_GENERATION_ONE_INDEXES,
+        **_GENERATION_TWO_INDEXES,
+    }.items()
 }
 
 
@@ -891,7 +951,7 @@ def _table_shape(connection: sqlite3.Connection, table: str) -> _TableShape:
     )
 
 
-def _canonical_generation_one_table_shapes() -> dict[str, _TableShape]:
+def _canonical_generation_table_shapes() -> dict[str, _TableShape]:
     reference = sqlite3.connect(":memory:")
     try:
         reference.execute(_MOBILE_TOKEN_BASE_DDL)
@@ -899,15 +959,28 @@ def _canonical_generation_one_table_shapes() -> dict[str, _TableShape]:
             reference.execute(f"ALTER TABLE mobile_api_tokens ADD COLUMN {ddl}")
         for ddl in _GENERATION_ONE_TABLE_DDL.values():
             reference.execute(ddl)
+        for ddl in _GENERATION_TWO_TABLE_DDL.values():
+            reference.execute(ddl)
         return {
             table: _table_shape(reference, table)
-            for table in _GENERATION_ONE_REQUIRED_COLUMNS
+            for table in {
+                **_GENERATION_ONE_REQUIRED_COLUMNS,
+                **_GENERATION_TWO_REQUIRED_COLUMNS,
+            }
         }
     finally:
         reference.close()
 
 
-_GENERATION_ONE_TABLE_SHAPES = _canonical_generation_one_table_shapes()
+_GENERATION_TABLE_SHAPES = _canonical_generation_table_shapes()
+_GENERATION_ONE_TABLE_SHAPES = {
+    table: _GENERATION_TABLE_SHAPES[table]
+    for table in _GENERATION_ONE_REQUIRED_COLUMNS
+}
+_GENERATION_TWO_TABLE_SHAPES = {
+    table: _GENERATION_TABLE_SHAPES[table]
+    for table in _GENERATION_TWO_REQUIRED_COLUMNS
+}
 
 
 _HMAC_COLUMN_PAIRS: tuple[tuple[str, str, str], ...] = (
@@ -1048,6 +1121,11 @@ _HMAC_COLUMN_PAIRS: tuple[tuple[str, str, str], ...] = (
         "record_hash",
     ),
     ("mobile_rate_limit_events", "key_id", "key_digest"),
+    (
+        "mobile_practice_evidence_details",
+        "idempotency_hmac_key_id",
+        "idempotency_hmac",
+    ),
 )
 
 
@@ -1127,7 +1205,22 @@ MOBILE_STATE_GENERATIONS: dict[int, MobileStateGeneration] = {
         required_triggers={},
         required_views=(),
         restored_credential_tables=_GENERATION_ONE_RESTORED_CREDENTIAL_TABLES,
-    )
+    ),
+    2: MobileStateGeneration(
+        generation=2,
+        required_columns={
+            **_GENERATION_ONE_REQUIRED_COLUMNS,
+            **_GENERATION_TWO_REQUIRED_COLUMNS,
+        },
+        required_indexes={
+            **_MOBILE_TOKEN_BASE_INDEXES,
+            **_GENERATION_ONE_INDEXES,
+            **_GENERATION_TWO_INDEXES,
+        },
+        required_triggers={},
+        required_views=(),
+        restored_credential_tables=_GENERATION_ONE_RESTORED_CREDENTIAL_TABLES,
+    ),
 }
 
 
@@ -1135,13 +1228,21 @@ def _table_columns(connection: sqlite3.Connection, table: str) -> tuple[str, ...
     return tuple(str(row[1]) for row in connection.execute(f"PRAGMA table_info({table})"))
 
 
-def _validate_required_columns(connection: sqlite3.Connection) -> None:
-    for table, expected in _GENERATION_ONE_TABLE_SHAPES.items():
+def _validate_required_columns(
+    connection: sqlite3.Connection,
+    generation: int,
+) -> None:
+    contract = MOBILE_STATE_GENERATIONS[generation]
+    for table in contract.required_columns:
+        expected = _GENERATION_TABLE_SHAPES[table]
         actual = _table_shape(connection, table)
         if actual != expected:
+            owning_generation = (
+                2 if table in _GENERATION_TWO_REQUIRED_COLUMNS else 1
+            )
             raise RuntimeError(
-                f"Incompatible generation-1 mobile schema for {table}; "
-                "the exact table shape is required."
+                f"Incompatible generation-{owning_generation} mobile schema for "
+                f"{table}; the exact table shape is required."
             )
 
 
@@ -1236,14 +1337,25 @@ def _validate_mobile_schema_object_inventory(
         )
 
 
-def validate_mobile_state_schema(connection: sqlite3.Connection) -> None:
-    _validate_required_columns(connection)
-    for index, (table, expected_columns) in _GENERATION_ONE_INDEXES.items():
-        _validate_index_shape(connection, index, table, expected_columns)
-    _validate_mobile_schema_object_inventory(
-        connection,
-        MOBILE_STATE_SCHEMA_GENERATION,
+def validate_mobile_state_schema(
+    connection: sqlite3.Connection,
+    generation: int | None = None,
+) -> None:
+    target = (
+        MOBILE_STATE_SCHEMA_GENERATION if generation is None else generation
     )
+    if target not in MOBILE_STATE_GENERATIONS or target == 0:
+        raise RuntimeError(
+            "Mobile-state schema validation requires generation 1 or newer."
+        )
+    _validate_required_columns(connection, target)
+    for index, (table, expected_columns) in (
+        MOBILE_STATE_GENERATIONS[target].required_indexes.items()
+    ):
+        if index in _MOBILE_TOKEN_BASE_INDEXES:
+            continue
+        _validate_index_shape(connection, index, table, expected_columns)
+    _validate_mobile_schema_object_inventory(connection, target)
 
 
 def detect_mobile_state_generation(connection: sqlite3.Connection) -> int:
@@ -1285,16 +1397,29 @@ def detect_mobile_state_generation(connection: sqlite3.Connection) -> int:
         _validate_mobile_schema_object_inventory(connection, 0)
         return 0
 
-    validate_mobile_state_schema(connection)
-    return MOBILE_STATE_SCHEMA_GENERATION
+    generation_two_tables = set(_GENERATION_TWO_REQUIRED_COLUMNS)
+    generation_two_indexes = set(_GENERATION_TWO_INDEXES)
+    has_generation_two_footprint = bool(
+        (tables & generation_two_tables)
+        or (indexes & generation_two_indexes)
+    )
+    if not has_generation_two_footprint:
+        validate_mobile_state_schema(connection, 1)
+        return 1
+
+    validate_mobile_state_schema(connection, 2)
+    return 2
 
 
 def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:
-    """Apply the one valid generation-0 -> generation-1 additive migration.
+    """Apply generation-0 -> 1 -> 2 additive migrations.
 
     A database with none of the token extension columns is an older released
     database.  A database with only some of them is an unknown partial
     migration and fails closed instead of being guessed back into shape.
+    Generation-2 adds ``mobile_practice_evidence_details`` only after the
+    complete generation-1 footprint is present; a partial generation-2
+    footprint fails closed on exact shape validation.
     """
 
     token_columns = set(_table_columns(connection, "mobile_api_tokens"))
@@ -1321,15 +1446,61 @@ def ensure_mobile_state_schema(connection: sqlite3.Connection) -> None:
     # Validate table shape before index DDL.  This turns a hostile/partial table
     # into one explicit fail-closed error rather than an incidental SQLite
     # "no such column" exception while creating its index.
-    _validate_required_columns(connection)
-    for ddl in _INDEX_DDL.values():
+    _validate_required_columns(connection, 1)
+    for name, ddl in _INDEX_DDL.items():
+        if name in _GENERATION_TWO_INDEXES:
+            continue
         connection.execute(ddl)
+    validate_mobile_state_schema(connection, 1)
+
+    tables = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table'"
+        )
+    }
+    indexes = {
+        str(row[0])
+        for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'index'"
+        )
+    }
+    generation_two_tables = set(_GENERATION_TWO_REQUIRED_COLUMNS)
+    generation_two_indexes = set(_GENERATION_TWO_INDEXES)
+    present_generation_two_tables = tables & generation_two_tables
+    present_generation_two_indexes = indexes & generation_two_indexes
+    if present_generation_two_tables or present_generation_two_indexes:
+        if present_generation_two_tables != generation_two_tables:
+            missing = sorted(generation_two_tables - present_generation_two_tables)
+            raise RuntimeError(
+                "Incompatible partial generation-2 mobile schema; missing "
+                "table(s): " + ", ".join(missing)
+            )
+        _validate_required_columns(connection, 2)
+    else:
+        for ddl in _GENERATION_TWO_TABLE_DDL.values():
+            connection.execute(ddl)
+        _validate_required_columns(connection, 2)
+    for name, (table, columns) in _GENERATION_TWO_INDEXES.items():
+        connection.execute(
+            f"CREATE INDEX IF NOT EXISTS {name} ON {table}({', '.join(columns)})"
+        )
     validate_mobile_state_schema(connection)
 
 
-def referenced_mobile_state_key_ids(connection: sqlite3.Connection) -> set[str]:
+def referenced_mobile_state_key_ids(
+    connection: sqlite3.Connection,
+    *,
+    generation: int | None = None,
+) -> set[str]:
+    target = (
+        MOBILE_STATE_SCHEMA_GENERATION if generation is None else generation
+    )
+    allowed_tables = set(MOBILE_STATE_GENERATIONS[target].required_columns)
     referenced: set[str] = set()
     for table, key_column, digest_column in _HMAC_COLUMN_PAIRS:
+        if table not in allowed_tables:
+            continue
         mismatched = connection.execute(
             f"SELECT 1 FROM {table} WHERE "
             f"({key_column} IS NULL) != ({digest_column} IS NULL) LIMIT 1"
@@ -1432,10 +1603,15 @@ def _group_counts(
 
 
 def mobile_state_summary(connection: sqlite3.Connection) -> dict[str, object]:
-    """Return the canonical generation-1 state attestation for backup writers."""
+    """Return the canonical mobile-state attestation for backup writers."""
 
-    validate_mobile_state_schema(connection)
-    tables = _GENERATION_ONE_REQUIRED_COLUMNS
+    generation = detect_mobile_state_generation(connection)
+    if generation not in MOBILE_STATE_GENERATIONS or generation == 0:
+        raise RuntimeError(
+            "Mobile-state attestation requires generation 1 or newer."
+        )
+    validate_mobile_state_schema(connection, generation)
+    tables = MOBILE_STATE_GENERATIONS[generation].required_columns
     phase_tables = (
         "mobile_auth_exchange_journals",
         "mobile_signout_journals",
@@ -1443,7 +1619,7 @@ def mobile_state_summary(connection: sqlite3.Connection) -> dict[str, object]:
         "mobile_recovery_baseline_journals",
     )
     return {
-        "generation": MOBILE_STATE_SCHEMA_GENERATION,
+        "generation": generation,
         "schema_sha256": {
             table: _schema_digest(connection, table) for table in sorted(tables)
         },
@@ -1461,6 +1637,6 @@ def mobile_state_summary(connection: sqlite3.Connection) -> dict[str, object]:
             )
         },
         "referenced_hmac_key_ids": sorted(
-            referenced_mobile_state_key_ids(connection)
+            referenced_mobile_state_key_ids(connection, generation=generation)
         ),
     }

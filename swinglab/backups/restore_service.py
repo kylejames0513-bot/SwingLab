@@ -23,6 +23,7 @@ from typing import Callable, Iterable, Mapping
 
 from swinglab.web.mobile_schema import (
     MOBILE_STATE_GENERATIONS,
+    MOBILE_STATE_SCHEMA_GENERATION,
     MobileStateDomain,
     VersionedHMAC,
     detect_mobile_state_generation,
@@ -482,8 +483,11 @@ def create_service_working_copy(
             ensure_mobile_state_schema(connection)
             connection.commit()
             validate_mobile_state_schema(connection)
-            if detect_mobile_state_generation(connection) != 1:
-                raise BackupError("The service working copy did not reach generation 1.")
+            if detect_mobile_state_generation(connection) != MOBILE_STATE_SCHEMA_GENERATION:
+                raise BackupError(
+                    "The service working copy did not reach generation "
+                    f"{MOBILE_STATE_SCHEMA_GENERATION}."
+                )
             if connection.execute("PRAGMA integrity_check").fetchall() != [("ok",)]:
                 raise BackupError("The service working copy failed SQLite integrity.")
         except Exception:
@@ -1077,7 +1081,7 @@ def prepare_service_restore(
     recovery_fence = evidence.manifest.get("recovery_fence")
     if (
         not isinstance(mobile_state, dict)
-        or mobile_state.get("generation") != 1
+        or mobile_state.get("generation") not in (1, 2)
         or not isinstance(recovery_fence, dict)
     ):
         raise BackupError(
@@ -1293,7 +1297,7 @@ class ImmutableBundleBaselineBackupVerifier:
             or extension.get("baseline_backup_id") != manifest.get("backup_id")
             or extension.get("baseline_manifest_sha256") is not None
             or not isinstance(mobile_state, dict)
-            or mobile_state.get("generation") != 1
+            or mobile_state.get("generation") not in (1, 2)
         ):
             raise BackupError("The baseline bundle lineage facts are invalid.")
         manifest_sha256 = metadata.manifest_sha256
