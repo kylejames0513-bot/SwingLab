@@ -7,7 +7,7 @@ native Expo app under `mobile/`.
 
 - Branch: `cursor/caddieinsight-mobile-gate-4b-909d`
 - Main plan: `docs/superpowers/plans/2026-08-06-caddieinsight-expo-coaching-client.md`
-- Tip SHA: `TIP_SHA_PLACEHOLDER` (update after each push)
+- Tip SHA: `2623b284f0167ecd632c63818922880f3969ba18` (update after each push)
 
 Do not deploy, publish, change Shopify/Railway/store settings, or mutate any live
 provider. Keep CaddieInsight customer-facing contracts authoritative on the
