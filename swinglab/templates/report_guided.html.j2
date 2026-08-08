@@ -91,8 +91,8 @@
     }
     .report-header {
       display: grid;
-      gap: 1rem;
-      padding: 1.4rem 0 1rem;
+      gap: .7rem;
+      padding: 1rem 0 .55rem;
       animation: report-rise .55s ease both;
     }
     .report-brand-row {
@@ -100,7 +100,7 @@
       flex-wrap: wrap;
       align-items: center;
       justify-content: space-between;
-      gap: .75rem 1.25rem;
+      gap: .55rem 1rem;
     }
     .report-brand {
       display: inline-flex;
@@ -113,9 +113,9 @@
     .report-brand__mark {
       display: grid;
       place-items: center;
-      width: 2.35rem;
-      height: 2.35rem;
-      border-radius: .7rem;
+      width: 2.05rem;
+      height: 2.05rem;
+      border-radius: .6rem;
       background: linear-gradient(145deg, var(--surface-dark), var(--green));
       box-shadow: var(--shadow-sm);
       flex: 0 0 auto;
@@ -194,21 +194,20 @@
     main { padding-bottom: 4.5rem; }
     [data-report-block] {
       margin-top: 1rem;
-      padding: clamp(1.15rem, 3vw, 2.1rem);
+      padding: clamp(1rem, 2.6vw, 1.85rem);
       background:
         linear-gradient(180deg, rgba(248, 251, 249, .98), var(--paper));
       border: 1px solid var(--line);
       border-radius: 1.1rem;
       box-shadow: var(--shadow-md);
-      animation: report-rise .65s ease both;
     }
-    [data-report-block="understand"] { animation-delay: .04s; }
-    [data-report-block="practice"] { animation-delay: .08s; }
-    [data-report-block="refilm"] { animation-delay: .12s; }
+    .report-block--enter {
+      animation: report-rise .55s ease both;
+    }
     .next-move {
       position: relative;
       overflow: hidden;
-      border-top: .35rem solid var(--brand-accent, var(--amber));
+      border-top: .3rem solid var(--brand-accent, var(--amber));
       background:
         linear-gradient(135deg, rgba(6, 17, 12, .035), transparent 42%),
         linear-gradient(180deg, #fbfefc, var(--paper));
@@ -217,10 +216,10 @@
       content: "";
       position: absolute;
       inset: 0 auto 0 0;
-      width: .2rem;
+      width: .18rem;
       background: linear-gradient(180deg, var(--green-btn), var(--amber));
       transform-origin: top;
-      animation: cue-bar .8s ease both;
+      animation: cue-bar .7s ease both;
     }
     .eyebrow,
     .step-label,
@@ -238,25 +237,25 @@
       line-height: 1.15;
       letter-spacing: -.02em;
     }
-    h1 { max-width: 18ch; margin: .2rem 0 .85rem; font-size: clamp(1.95rem, 6vw, 3.45rem); }
+    h1 { max-width: 18ch; margin: .15rem 0 .55rem; font-size: clamp(1.75rem, 5.4vw, 3.1rem); }
     h2 { margin: .25rem 0 1rem; font-size: clamp(1.4rem, 3.8vw, 2.05rem); }
     h3 { margin: 1rem 0 .45rem; font-size: 1.05rem; }
     .observation {
       max-width: 62ch;
-      margin: 0 0 1rem;
+      margin: 0 0 .7rem;
       color: var(--ink);
-      font-size: 1.08rem;
+      font-size: 1.02rem;
     }
     .coach-cue {
       max-width: 62ch;
       margin: 0;
-      padding: 1rem 1.1rem 1rem 1.15rem;
+      padding: .75rem .9rem .75rem 1rem;
       background:
         linear-gradient(90deg, rgba(154, 75, 10, .08), rgba(226, 235, 228, .65));
       border: 1px solid rgba(154, 75, 10, .18);
       border-left: .32rem solid var(--amber);
-      border-radius: .85rem;
-      font-size: 1.05rem;
+      border-radius: .75rem;
+      font-size: 1rem;
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, .55);
     }
     .coach-cue strong {
@@ -272,8 +271,8 @@
     .journey-preview {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: .55rem;
-      margin: 1.35rem 0 0;
+      gap: .45rem;
+      margin: .9rem 0 0;
       padding: 0;
       list-style: none;
     }
@@ -281,7 +280,7 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      padding: .7rem .65rem;
+      padding: .55rem .55rem;
       color: var(--green);
       text-align: center;
       text-decoration: none;
@@ -687,7 +686,7 @@
     {% if view.outcome == "coaching_ready" %}
     {% set evidence = view.visual_evidence %}
     {% set measurement = evidence.supporting_measurement %}
-    <section class="next-move" data-report-block="next-move"
+    <section class="next-move report-block--enter" data-report-block="next-move"
              data-canonical="priority" aria-labelledby="report-title">
       <p class="eyebrow">{{ view.next_move.eyebrow }}</p>
       {% if view.next_move.mode == "protect" %}
@@ -805,7 +804,7 @@
                 <figcaption>{{ swing.slow_motion_caption }}</figcaption>
               </figure>
               {% if swing.video_poster_media_key %}
-              <figure class="media-theater__card print-only playback-print">
+              <figure class="media-theater__card print-only">
                 <img src="{{ media_path(swing.video_poster_media_key) }}"
                      alt="{{ swing.video_poster_alt_text }}">
                 <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
@@ -823,7 +822,7 @@
                 <figcaption>{{ swing.coach_replay_caption }}</figcaption>
               </figure>
               {% if swing.video_poster_media_key %}
-              <figure class="media-theater__card print-only playback-print">
+              <figure class="media-theater__card print-only">
                 <img src="{{ media_path(swing.video_poster_media_key) }}"
                      alt="{{ swing.video_poster_alt_text }}">
                 <figcaption>{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</figcaption>
