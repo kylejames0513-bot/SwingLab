@@ -1596,7 +1596,7 @@ def test_baseline_manifest_uses_explicit_null_self_hash_and_exact_snapshot_facts
         "lineage_id": BASELINE_LINEAGE_ID,
         "baseline_backup_id": manifest["backup_id"],
         "baseline_manifest_sha256": None,
-        "baseline_schema_generation": 2,
+        "baseline_schema_generation": MOBILE_STATE_SCHEMA_GENERATION,
         "baseline_db_checkpoint": manifest["database"]["sha256"],
     }
     manifest_sha256 = hashlib.sha256((bundle / MANIFEST_FILE).read_bytes()).hexdigest()

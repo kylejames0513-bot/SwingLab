@@ -17,51 +17,42 @@ Do not deploy, publish, change Shopify/Railway/store settings, or mutate any liv
 - Gate 4C (practice evidence + schema gen 2): complete; independent re-review PASS.
 - Gate 4D (devices + fenced legacy revoke): complete; independent re-review PASS.
 - Task 4 finish matrix: run combined focused suites + deterministic OpenAPI; backup gen-2 fixture drift closed.
+- Task 5 resumable-upload crash recovery: independently reviewed PASS.
+- Task 6 privacy (step-up → export → history-reset → account-delete): complete for ordinary-customer privacy.
 
-## Current gate: Task 6
+## Current gate: Task 7
 
-Task 5 resumable-upload crash recovery is implemented, committed, and independently reviewed **PASS** at tip `99bcd36` (documented deferrals: gen-3 backup registration, analysis-retry HTTP/discard journals, comparison resolver remain open and are tracked separately).
+Implement device-bound Expo push registration and a durable outbox from the plan Task 7 section. **First vertical slice (registration only) is landed** on this branch; delivery/outbox/cutover remain deferred.
 
-Implement native privacy controls and safe account deletion from the plan Task 6 section. First vertical slice: email step-up start/exchange behind `mobile_privacy_enabled`, then exports, history-reset journal wrap, and account deletion.
+### Task 7 progress (in this branch)
 
-### Task 6 progress (in this branch)
+**Push registration slice** — tip after OpenAPI/handoff commit (registration impl `a84d269`).
 
-**Email step-up** — independently reviewed **PASS** at `c7cf7bd` (60s same-PKCE resend; versioned `STEP_UP_TOKEN_VERIFIER` HMAC).
+- Schema generation **3**: additive `mobile_push_registrations` + `mobile_push_activation_watermarks`; restore allowlists include generation `3`; HMAC domains `push-expo-project` and `push-cutover-operation-id`.
+- Config: `mobile_push_enabled: false`, `mobile_push_expo_project_id: ""`; non-secret `CADDIEINSIGHT_EXPO_PROJECT_ID` override; flag-on requires canonical UUID; flag-off tolerates blank.
+- `PushRegistrationService` in `swinglab/web/push_store.py`: PUT upsert (token takeover + selector replacement), PATCH preferences, DELETE (absent → 204); credential lease + selector/epoch recheck; sign-out extension clears selector registration.
+- Routes (flag check before auth; concealed when off; static `/devices/push` before `{selector}`):
+  - `PUT /api/v1/devices/push`
+  - `PATCH /api/v1/devices/push/preferences`
+  - `DELETE /api/v1/devices/push`
+- Capabilities already expose `features.push` from `mobile_push_enabled`.
+- Tests: `tests/test_mobile_push.py` (12); backup/rate-limit gen bump covered.
 
-- `POST /api/v1/auth/step-up/start` / `POST /api/v1/auth/step-up/exchange` behind `mobile_privacy_enabled`.
-- Tests: `tests/test_mobile_privacy_api.py`.
+**Still deferred (next Task 7 slices — do not implement in the registration-only gate):**
 
-**Privacy export** — independently reviewed **PASS** at `e300a82` (never unlink ready ZIP on lost lease).
+- `PushOutboxWorker` / Expo HTTP delivery / `EXPO_ACCESS_TOKEN`
+- Environment fence cutover CLI / `PushEnvironmentCutoff` publishing
+- JobManager completion observer / reminder enqueue
+- Full plan “generation 5” numbering for outbox/fences (this slice used code gen **3**)
+- Envelope/skew send settings beyond project-id config
+- Deploy or mutate live providers
 
-- `POST /api/v1/privacy/exports` consumes a `data_export` step-up token + `Idempotency-Key` → 202 pending receipt (exact replay).
-- Leased `PrivacyExportWorker` builds ZIP under `sessions_dir/.privacy_exports` (profile + sessions summary); rechecks `history_epoch` before publish.
-- `GET /api/v1/privacy/exports/{id}` and `.../download` (same-origin stream, exact `Content-Length`, Range rejected).
-- Tests: `tests/test_mobile_privacy_export_api.py`.
-
-**History reset + account deletion** — independently reviewed **PASS** at `d862943` (fence before local erase for both paths).
-
-- Recovery-fence `history_reset` / `account_delete` kinds + restore reconcilers.
-- Durable journals/receipts in UserStore; `PrivacyErasureService` drives phases.
-- `POST /api/v1/privacy/history-reset` (`step_up_token` + `expected_history_epoch` + `Idempotency-Key`) → 202/204; pre-auth exact replay.
-- `DELETE /api/v1/account` (`step_up_token` + `Idempotency-Key`) → 202/204; pre-auth replay after credential revoke; fence published before history erase.
-- Browser `POST /account/history/delete` uses the same journal/fence authority.
-- Tests: `tests/test_mobile_privacy_history_reset_api.py`, `tests/test_mobile_account_delete_api.py`, plus browser/core regressions.
-
-**Erasure follow-ups landed after `d862943`:**
-
-- Replay TTL is now enforced: `purge_expired_privacy_erasure_state` existed but nothing called it, and the replay lookup matches on the idempotency digest alone, so a completed receipt answered 204 forever. Every erasure entry point now sweeps first (`25b81ce`).
-- A fenced `account_delete` no longer fails the restore: the post-reconciler credential audit compared surviving users against an exact pre-chain snapshot, so removing an owner aborted the whole restore. The user set may now shrink while a new row, a regained password, and a rolled-back epoch stay rejected. Both restore reconcilers are covered end-to-end in `tests/test_backups.py` (`32d7ca1`).
-
-**Task 6 gate:** complete for ordinary-customer privacy (step-up → export → history-reset → account-delete).
-
-**Still next after Task 6:** Task 7+ per plan; deferred items below remain open but non-blocking for this gate.
-
-**Deferrals (acceptable for Task 6 PASS):**
+**Earlier deferrals still open (non-blocking):**
 
 - Store-review step-up variant / full review-scoped account deletion.
-- Gen-3 mobile backup registration for step-up/export/erasure/capacity/upload tables.
-- Full durable download-admission slot/byte budgets (minimal in-process guard may remain).
-- Full machine-checked writer inventory / every OwnerErasureExtension if oversized — ordinary customer delete + history reset must work.
+- Broader mobile backup registration for step-up/export/erasure/capacity/upload tables (partially advanced by gen-3 push tables).
+- Full durable download-admission slot/byte budgets.
+- Full machine-checked writer inventory / every OwnerErasureExtension if oversized.
 
 ## Standing decisions and hazards
 
@@ -72,3 +63,4 @@ Implement native privacy controls and safe account deletion from the plan Task 6
 - Preserve Railway's one-replica SQLite contract until durable state/job coordination is externalized.
 - Never use `api_payload()` or wholesale `Job.as_dict()` in native resources.
 - Do not kill or interact with unrelated Python processes.
+- Register `/api/v1/devices/push` before `/api/v1/devices/{selector}` so `push` is never treated as a selector.
