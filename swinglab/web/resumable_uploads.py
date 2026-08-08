@@ -813,6 +813,11 @@ class ResumableUploadManager:
                 # Exact replay: finish a crash-left aborting row, then 204.
                 row = self._row(upload_id)
                 if row is not None and row["status"] == ABORTING:
+                    job_id = row["job_id"]
+                    if job_id:
+                        bound = self._jobs.get(job_id)
+                        if bound is not None and bound.status == PREPARING:
+                            self._jobs.discard(bound)
                     part = self._part_path(upload_id)
                     with self._maintenance.acquire(timeout=30.0):
                         part.unlink(missing_ok=True)
@@ -1002,6 +1007,11 @@ class ResumableUploadManager:
                     # A pending reservation whose part vanished cannot resume.
                     self._fail_and_release(upload_id)
             elif status == ABORTING:
+                job_id = row["job_id"]
+                if job_id:
+                    bound = self._jobs.get(job_id)
+                    if bound is not None and bound.status == PREPARING:
+                        self._jobs.discard(bound)
                 part.unlink(missing_ok=True)
                 self._ledger.release("upload_part", upload_id)
                 now = self._clock()

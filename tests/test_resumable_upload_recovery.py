@@ -379,7 +379,7 @@ def test_credential_close_after_chunk_fsync_truncates_unacknowledged_bytes(env):
 
 
 def test_discard_for_user_leaves_queued_source_intact(env):
-    from swinglab.web.jobs import PREPARING, QUEUED
+    from swinglab.web.jobs import QUEUED
     from swinglab.web.jobs import HistoryResetConflict
 
     sessions, manager, uploads = env
@@ -418,3 +418,48 @@ def test_abort_discards_preparing_shell(env):
     assert manager.get(job.id) is None
     assert not job.session_dir.exists()
     assert uploads._row(reservation.upload_id)["status"] == "aborted"
+
+
+def test_aborting_recovery_discards_preparing_shell(env):
+    from swinglab.web.jobs import PREPARING
+    from swinglab.web.resumable_uploads import ABORTING, ABORTED
+
+    sessions, manager, uploads = env
+    body = b"swing" * 80
+    reservation = uploads.create("alice", _request(body), "c" * 32)
+    _upload_all(uploads, reservation.upload_id, body, 128)
+    row = uploads._owned_row(reservation.upload_id, "alice")
+    job = uploads._prepare_completion(row)
+    assert job.status == PREPARING
+    # Crash after aborting+receipt journal, before preparing discard.
+    now = uploads._clock()
+    with uploads._tx:
+        uploads._conn.execute(
+            "UPDATE resumable_uploads SET status = ? WHERE upload_id = ?",
+            (ABORTING, reservation.upload_id),
+        )
+        uploads._conn.execute(
+            "INSERT INTO resumable_upload_abort_receipts "
+            "(upload_id, user_id, idempotency_key_id, idempotency_hmac, "
+            " request_hash, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                reservation.upload_id,
+                "alice",
+                "k2",
+                "b" * 64,
+                reservation.upload_id,
+                now,
+                now + 7 * 24 * 60 * 60,
+            ),
+        )
+        uploads._conn.commit()
+
+    manager2, uploads2 = _restart(sessions, manager, uploads)
+    try:
+        assert uploads2._row(reservation.upload_id)["status"] == ABORTED
+        assert manager2.get(job.id) is None
+        assert not (sessions / job.id).exists()
+    finally:
+        uploads2.close()
+        manager2.close()
