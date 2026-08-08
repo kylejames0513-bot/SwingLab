@@ -501,6 +501,41 @@ def test_live_challenge_cap_per_selector_purpose(tmp_path, messages):
         _close(app)
 
 
+def test_same_pkce_start_within_resend_window_suppresses_email(tmp_path, messages):
+    app = _make_app(tmp_path)
+    try:
+        with TestClient(app) as client:
+            bearer = _sign_in(client, messages)
+            messages.clear()
+            first = _step_up_start(client, bearer, verifier=STEP_UP_VERIFIER)
+            second = _step_up_start(client, bearer, verifier=STEP_UP_VERIFIER)
+            assert first.status_code == 202
+            assert second.status_code == 202
+            assert first.json()["challenge_id"] == second.json()["challenge_id"]
+            # Exactly one email for the same PKCE session inside the 60s window.
+            assert len(messages) == 1
+            with app.state.users._lock:
+                count = app.state.users._conn.execute(
+                    "SELECT COUNT(*) FROM step_up_challenges"
+                    " WHERE consumed_at IS NULL"
+                ).fetchone()[0]
+            assert count == 1
+            code = _code_from_messages(messages)
+            exchanged = _step_up_exchange(
+                client, first.json()["challenge_id"], code, verifier=STEP_UP_VERIFIER
+            )
+            assert exchanged.status_code == 201
+            with app.state.users._lock:
+                row = app.state.users._conn.execute(
+                    "SELECT token_hmac_key_id, token_hash FROM step_up_tokens"
+                ).fetchone()
+            assert row is not None
+            assert row["token_hmac_key_id"]
+            assert len(row["token_hash"]) == 64
+    finally:
+        _close(app)
+
+
 def test_start_rate_limited_per_selector(tmp_path, messages):
     app = _make_app(tmp_path)
     try:

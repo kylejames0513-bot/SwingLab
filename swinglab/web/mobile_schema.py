@@ -60,6 +60,7 @@ class MobileStateDomain(str, Enum):
     STEP_UP_EXCHANGE_CODE_PROOF = "step-up-exchange-code-proof"
     STEP_UP_EXCHANGE_PKCE_VERIFIER_PROOF = "step-up-exchange-pkce-verifier-proof"
     STEP_UP_EXCHANGE_IDEMPOTENCY = "step-up-exchange-idempotency"
+    STEP_UP_TOKEN_VERIFIER = "step-up-token-verifier"
     EVENT_IDEMPOTENCY = "event-idempotency"
     RECOVERY_SELECTOR = "recovery-selector"
     RECOVERY_TOKEN_VERIFIER = "recovery-token-verifier"

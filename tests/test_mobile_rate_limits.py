@@ -90,6 +90,7 @@ def test_mobile_state_hmac_domain_set_is_closed_and_every_digest_is_distinct():
         "step-up-exchange-code-proof",
         "step-up-exchange-pkce-verifier-proof",
         "step-up-exchange-idempotency",
+        "step-up-token-verifier",
         "exchange-idempotency",
         "sign-out-idempotency",
         "device-revoke-idempotency",

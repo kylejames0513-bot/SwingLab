@@ -564,6 +564,7 @@ CREATE TABLE IF NOT EXISTS step_up_tokens (
     auth_epoch               INTEGER NOT NULL,
     installation_hmac_key_id TEXT NOT NULL,
     installation_hmac        TEXT NOT NULL,
+    token_hmac_key_id        TEXT NOT NULL,
     token_hash               TEXT NOT NULL,
     created_at               REAL NOT NULL,
     expires_at               REAL NOT NULL,
@@ -1105,6 +1106,20 @@ class UserStore:
                             f"ALTER TABLE {table}"
                             " ADD COLUMN session_nonce_hash TEXT"
                         )
+                step_up_token_columns = {
+                    row["name"]
+                    for row in self._conn.execute(
+                        "PRAGMA table_info(step_up_tokens)"
+                    )
+                }
+                if (
+                    step_up_token_columns
+                    and "token_hmac_key_id" not in step_up_token_columns
+                ):
+                    self._conn.execute(
+                        "ALTER TABLE step_up_tokens"
+                        " ADD COLUMN token_hmac_key_id TEXT NOT NULL DEFAULT ''"
+                    )
                 privacy_columns = {
                     row["name"]
                     for row in self._conn.execute(
@@ -5833,9 +5848,37 @@ class UserStore:
 
     @classmethod
     def _step_up_token_hash(cls, token_id: str, secret: str) -> str:
+        # Legacy plain SHA-256 retained only for comparing pre-HMAC rows during
+        # migration; new rows use VersionedHMAC under STEP_UP_TOKEN_VERIFIER.
         return hashlib.sha256(
             f"{STEP_UP_TOKEN_PREFIX}{token_id}.{secret}".encode("utf-8")
         ).hexdigest()
+
+    def _step_up_token_hmac(self, raw_token: str) -> tuple[str, str]:
+        keyring = self._mobile_state_hmac
+        if keyring is None:
+            raise RuntimeError("MOBILE_STATE_HMAC_KEYRING is required.")
+        return keyring.digest(MobileStateDomain.STEP_UP_TOKEN_VERIFIER, raw_token)
+
+    def _step_up_token_matches(
+        self, row, *, token_id: str, secret: str, raw_token: str
+    ) -> bool:
+        key_id = row["token_hmac_key_id"] if "token_hmac_key_id" in row.keys() else None
+        if isinstance(key_id, str) and key_id:
+            keyring = self._mobile_state_hmac
+            if keyring is None:
+                return False
+            try:
+                expected = keyring.digest_with_key(
+                    key_id, MobileStateDomain.STEP_UP_TOKEN_VERIFIER, raw_token
+                )
+            except Exception:
+                return False
+            return hmac.compare_digest(expected, str(row["token_hash"]))
+        return hmac.compare_digest(
+            self._step_up_token_hash(token_id, secret),
+            str(row["token_hash"]),
+        )
 
     @staticmethod
     def _step_up_exchange_request_hash(
@@ -5933,6 +5976,56 @@ class UserStore:
                     )
                 installation_key_id = str(token["installation_key_version"])
                 installation_hmac = str(token["installation_key"])
+                # Same PKCE session: suppress or refresh in place (60s resend).
+                existing = self._conn.execute(
+                    "SELECT * FROM step_up_challenges"
+                    " WHERE selector = ? AND purpose = ? AND code_challenge = ?"
+                    " AND consumed_at IS NULL AND expires_at > ?"
+                    " ORDER BY created_at DESC, challenge_id LIMIT 1",
+                    (
+                        selector,
+                        normalized_purpose,
+                        normalized_challenge,
+                        observed_at,
+                    ),
+                ).fetchone()
+                if existing is not None:
+                    if (
+                        observed_at - float(existing["last_sent_at"])
+                        < STEP_UP_RESEND_S
+                    ):
+                        self._conn.commit()
+                        return StepUpChallenge(
+                            challenge_id=str(existing["challenge_id"]),
+                            purpose=normalized_purpose,
+                            expires_at=float(existing["expires_at"]),
+                            email_code="",
+                            send_required=False,
+                        )
+                    email_code = f"{secrets.randbelow(100_000_000):08d}"
+                    code_key_id, code_hmac = keyring.digest(
+                        MobileStateDomain.STEP_UP_EMAIL_CODE_VERIFIER, email_code
+                    )
+                    self._conn.execute(
+                        "UPDATE step_up_challenges SET code_hmac_key_id = ?,"
+                        " code_hmac = ?, last_sent_at = ?, attempts = 0"
+                        " WHERE challenge_id = ?",
+                        (
+                            code_key_id,
+                            code_hmac,
+                            observed_at,
+                            str(existing["challenge_id"]),
+                        ),
+                    )
+                    self._conn.commit()
+                    return StepUpChallenge(
+                        challenge_id=str(existing["challenge_id"]),
+                        purpose=normalized_purpose,
+                        expires_at=float(existing["expires_at"]),
+                        email_code=email_code,
+                        send_required=True,
+                    )
+
                 selector_rows = self._conn.execute(
                     "SELECT expires_at FROM step_up_challenges"
                     " WHERE selector = ? AND purpose = ? AND consumed_at IS NULL"
@@ -6078,19 +6171,18 @@ class UserStore:
         secret = self._step_up_token_secret(
             verifier, str(row["challenge_id"]), str(row["purpose"])
         )
+        raw_token = f"{STEP_UP_TOKEN_PREFIX}{token_id}.{secret}"
         token_row = self._conn.execute(
-            "SELECT token_hash, expires_at FROM step_up_tokens"
-            " WHERE token_id = ?",
+            "SELECT * FROM step_up_tokens WHERE token_id = ?",
             (token_id,),
         ).fetchone()
-        if token_row is None or not hmac.compare_digest(
-            self._step_up_token_hash(token_id, secret),
-            str(token_row["token_hash"]),
+        if token_row is None or not self._step_up_token_matches(
+            token_row, token_id=token_id, secret=secret, raw_token=raw_token
         ):
             raise StepUpExchangeConflict("The step-up exchange conflicts.")
         return StepUpTokenGrant(
             token_id=token_id,
-            step_up_token=f"{STEP_UP_TOKEN_PREFIX}{token_id}.{secret}",
+            step_up_token=raw_token,
             purpose=str(row["purpose"]),
             expires_at=float(token_row["expires_at"]),
         )
@@ -6233,7 +6325,7 @@ class UserStore:
                     verifier, challenge_id, purpose
                 )
                 raw_token = f"{STEP_UP_TOKEN_PREFIX}{token_id}.{secret}"
-                token_hash = self._step_up_token_hash(token_id, secret)
+                token_hmac_key_id, token_hash = self._step_up_token_hmac(raw_token)
                 token_expires_at = observed_at + STEP_UP_TOKEN_TTL_S
                 code_proof_key_id, code_proof = keyring.digest(
                     MobileStateDomain.STEP_UP_EXCHANGE_CODE_PROOF, code
@@ -6268,9 +6360,10 @@ class UserStore:
                 self._conn.execute(
                     "INSERT INTO step_up_tokens"
                     " (token_id, method, purpose, user_id, selector, auth_epoch,"
-                    " installation_hmac_key_id, installation_hmac, token_hash,"
+                    " installation_hmac_key_id, installation_hmac,"
+                    " token_hmac_key_id, token_hash,"
                     " created_at, expires_at, claimed_at)"
-                    " VALUES (?, 'email', ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
+                    " VALUES (?, 'email', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)",
                     (
                         token_id,
                         purpose,
@@ -6279,6 +6372,7 @@ class UserStore:
                         int(challenge["auth_epoch"]),
                         str(challenge["installation_hmac_key_id"]),
                         str(challenge["installation_hmac"]),
+                        token_hmac_key_id,
                         token_hash,
                         observed_at,
                         token_expires_at,
