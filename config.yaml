@@ -219,6 +219,10 @@ web:
   mobile_events_enabled: false
   mobile_push_enabled: false
   mobile_push_expo_project_id: ""
+  mobile_push_send_envelope_seconds: 30
+  mobile_push_cutover_clock_skew_seconds: 60
+  mobile_push_outbox_global_cap: 10000
+  mobile_push_outbox_per_selector_cap: 50
                              # public EAS project UUID; blank while push is off.
                              # CADDIEINSIGHT_EXPO_PROJECT_ID may override when set.
   mobile_native_billing_enabled: false

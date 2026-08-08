@@ -317,11 +317,28 @@ class JobManager:
         self._pool = ThreadPoolExecutor(
             max_workers=workers, thread_name_prefix="swinglab-worker"
         )
+        # Exception-isolated completion observers (push outbox, etc.). They run
+        # after terminal state is persisted and must never change job status.
+        self._completion_observers: list = []
         self._recover_history_operations()
         self._import_legacy_sessions()
         self._cleanup_expired()
         if recover_interrupted:
             self.recover_interrupted()
+
+    def add_completion_observer(self, observer) -> None:
+        """Register a post-terminal callback invoked after ``_save``."""
+
+        self._completion_observers.append(observer)
+
+    def _notify_completion_observers(self, job: Job) -> None:
+        for observer in list(self._completion_observers):
+            try:
+                observer(job)
+            except Exception:
+                logger.exception(
+                    "Completion observer failed for job %s", job.id
+                )
 
     def close(self) -> None:
         """Release every thread-pool and SQLite resource exactly once."""
@@ -923,6 +940,7 @@ class JobManager:
             self._delete_failed_source_if_configured(job)
         self._save(job)
         self._notify_owner(job)
+        self._notify_completion_observers(job)
         self._cleanup_expired()
 
     # -- completion email (opt-in per upload) -----------------------------

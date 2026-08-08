@@ -28,6 +28,7 @@ web = [
     # Recovery-fence HEAD validation becomes a production dependency when
     # later composition activates Gate 3B's pure startup policy.
     "boto3>=1.37.32,<2",
+    "httpx>=0.27,<1",      # Expo push provider (Task 7)
 ]
 ops = [
     # Optional error monitoring: the app initializes Sentry only when the

@@ -211,6 +211,13 @@ from .mobile_resources import (
     validate_mobile_resource_settings,
 )
 from .push_store import PushRegistrationService, load_mobile_push_settings
+from .push_delivery import (
+    PushOutboxStore,
+    PushOutboxWorker,
+    attach_job_push_observer,
+    build_push_provider,
+    expo_delivery_configured,
+)
 from .resumable_uploads import ResumableUploadManager
 from .review_auth import (
     APPLICATION_ID_POLICY_REVISION,
@@ -775,6 +782,28 @@ def create_app(
     if mobile_privacy_enabled and start_background_workers:
         app.router.add_event_handler("startup", privacy_export_worker.start)
         app.router.add_event_handler("shutdown", privacy_export_worker.stop)
+    if mobile_push_enabled:
+        push_outbox_store = PushOutboxStore(users)
+        push_provider = build_push_provider(
+            envelope_seconds=mobile_push_settings.send_envelope_seconds
+        )
+        push_outbox_worker = PushOutboxWorker(
+            users,
+            push_provider,
+            enabled=expo_delivery_configured(),
+            lease_seconds=mobile_push_settings.send_envelope_seconds,
+        )
+        app.state.push_outbox_store = push_outbox_store
+        app.state.push_outbox_worker = push_outbox_worker
+        attach_job_push_observer(
+            manager,
+            outbox=push_outbox_store,
+            settings=mobile_push_settings,
+            deployment_environment=mobile_deployment_environment,
+        )
+        if start_background_workers and expo_delivery_configured():
+            app.router.add_event_handler("startup", push_outbox_worker.start)
+            app.router.add_event_handler("shutdown", push_outbox_worker.stop)
     app.state.review_auth_admission = review_auth_admission
     app.state.mobile_deployment_environment = mobile_deployment_environment
     app.state.mobile_public_origin = mobile_public_origin

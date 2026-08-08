@@ -197,6 +197,10 @@ DEFAULTS: dict[str, Any] = {
         # startup requires one canonical UUID (overridable by
         # CADDIEINSIGHT_EXPO_PROJECT_ID when set).
         "mobile_push_expo_project_id": "",
+        "mobile_push_send_envelope_seconds": 30,
+        "mobile_push_cutover_clock_skew_seconds": 60,
+        "mobile_push_outbox_global_cap": 10000,
+        "mobile_push_outbox_per_selector_cap": 50,
         "mobile_native_billing_enabled": False,
         # Resumable-upload policy is server owned even while its route is off.
         "mobile_upload_chunk_mb": 5,

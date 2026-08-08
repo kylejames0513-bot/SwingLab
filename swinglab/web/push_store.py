@@ -46,6 +46,8 @@ class MobilePushNotRegistered(LookupError):
 class MobilePushSettings:
     enabled: bool
     expo_project_id: str
+    send_envelope_seconds: int = 30
+    cutover_clock_skew_seconds: int = 60
 
 
 def _canonical_uuid(value: str, *, label: str) -> str:
@@ -89,12 +91,35 @@ def load_mobile_push_settings(
         web.get("mobile_push_expo_project_id", ""),
         environment=environment,
     )
-    if enabled and not project_id:
+    envelope = web.get("mobile_push_send_envelope_seconds", 30)
+    skew = web.get("mobile_push_cutover_clock_skew_seconds", 60)
+    if type(envelope) is not int or isinstance(envelope, bool):
+        raise ValueError("web.mobile_push_send_envelope_seconds must be an int.")
+    if type(skew) is not int or isinstance(skew, bool):
         raise ValueError(
-            "web.mobile_push_expo_project_id must be a canonical UUID when "
-            "mobile_push_enabled is true."
+            "web.mobile_push_cutover_clock_skew_seconds must be an int."
         )
-    return MobilePushSettings(enabled=enabled, expo_project_id=project_id)
+    if enabled:
+        if not project_id:
+            raise ValueError(
+                "web.mobile_push_expo_project_id must be a canonical UUID when "
+                "mobile_push_enabled is true."
+            )
+        if not 5 <= envelope <= 60:
+            raise ValueError(
+                "web.mobile_push_send_envelope_seconds must be between 5 and 60."
+            )
+        if not 30 <= skew <= 300:
+            raise ValueError(
+                "web.mobile_push_cutover_clock_skew_seconds must be between "
+                "30 and 300."
+            )
+    return MobilePushSettings(
+        enabled=enabled,
+        expo_project_id=project_id,
+        send_envelope_seconds=int(envelope),
+        cutover_clock_skew_seconds=int(skew),
+    )
 
 
 def validate_expo_push_token(token: str) -> str:
@@ -155,6 +180,12 @@ class PushRegistrationService:
                     "DELETE FROM mobile_push_registrations"
                     " WHERE user_id = ? AND selector = ?",
                     (user_id, selector),
+                )
+                users._conn.execute(
+                    "UPDATE mobile_push_outbox SET status = 'dead',"
+                    " updated_at = ? WHERE user_id = ? AND selector = ?"
+                    " AND status IN ('pending', 'leased')",
+                    (__import__("time").time(), user_id, selector),
                 )
                 users._conn.commit()
             except Exception:
