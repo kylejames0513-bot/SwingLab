@@ -733,6 +733,19 @@ This repository does not manage DNS or Railway secrets; see
 [deploy/README.md](deploy/README.md) and [docs/deployment.md](docs/deployment.md)
 for the preserved production contract.
 
+## iOS app (App Store)
+
+A native SwiftUI iPhone app lives in [`ios/`](ios/README.md): film, upload,
+and get the Caddie Brief, practice plan, check-ins, and the full report on
+the phone, over the server's stable bearer-token mobile API (`/api/v1/*`).
+Devices pair with a token minted on the account page (Account → Mobile
+app) — token issue/revoke deliberately stays a cookie-only web surface so
+a leaked device token can never mint more tokens. Build and pairing notes
+are in [ios/README.md](ios/README.md); ready-to-paste App Store Connect
+metadata and the submission path are in
+[docs/appstore/listing.md](docs/appstore/listing.md) and
+[docs/appstore/submission-checklist.md](docs/appstore/submission-checklist.md).
+
 ## Measuring what matters
 
 Five KPIs, computed from the app's own SQLite state (`swinglab/kpis.py`) —
