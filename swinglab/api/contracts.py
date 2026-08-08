@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import unicodedata
 from enum import Enum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -583,30 +583,87 @@ class NativeSignOutPendingResponse(ContractModel):
 
 
 class AnalysisRetryRequest(ContractModel):
-    session_id: str
+    """Requeue one owned retryable failure at the exact next server attempt."""
+
+    expected_retry_attempt: int = Field(ge=1, le=10, strict=True)
 
 
 class AnalysisRetryResponse(ContractModel):
     resource_version: Literal[1] = 1
     session: MobileSessionResponse
+    retry_attempt: int = Field(ge=1)
+    retry_receipt_id: str = Field(min_length=1, max_length=64)
+
+
+class UploadComparisonMatched(ContractModel):
+    """The re-film matches the current owned Proof Cycle assignment exactly."""
+
+    mode: Literal["matched"]
+    baseline_session_id: str = Field(min_length=1, max_length=64)
+    target_fingerprint: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    drill_id: str = Field(min_length=1, max_length=128)
+
+
+class UploadComparisonNewContext(ContractModel):
+    """A deliberate break: still names the assignment but changes context."""
+
+    mode: Literal["new_context"]
+    baseline_session_id: str = Field(min_length=1, max_length=64)
+    target_fingerprint: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    drill_id: str = Field(min_length=1, max_length=128)
+
+
+UploadComparison = Annotated[
+    UploadComparisonMatched | UploadComparisonNewContext,
+    Field(discriminator="mode"),
+]
 
 
 class UploadCreateRequest(ContractModel):
-    source_name: str
-    hand: Literal["left", "right"] = "right"
-    angle: Literal["face-on", "dtl"] = "face-on"
-    club: str
-    level: str | None = None
+    """Closed native resumable-upload reservation body."""
+
+    source_name: str = Field(min_length=1, max_length=255)
+    file_sha256: str = Field(
+        min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"
+    )
+    file_bytes: int = Field(ge=1, strict=True)
+    club: Club
+    hand: Hand = "right"
+    angle: CameraAngle = "face-on"
+    level: Literal["new", "improving", "experienced"] | None = None
+    comparison: UploadComparison | None = None
+    expected_history_epoch: int = Field(ge=0, strict=True)
 
 
-class UploadCreateResponse(ContractModel):
+class UploadReservationResponse(ContractModel):
+    """Durable acknowledged offset/status for one owned reservation."""
+
     resource_version: Literal[1] = 1
-    session: MobileSessionResponse
+    upload_id: str = Field(min_length=1, max_length=64)
+    status: Literal[
+        "pending",
+        "finalizing",
+        "complete",
+        "aborting",
+        "aborted",
+        "failed",
+        "repair_required",
+        "source_unavailable_after_restore",
+    ]
+    offset: int = Field(ge=0)
+    file_bytes: int = Field(ge=1)
+    chunk_bytes: int = Field(ge=1)
+    expires_at: float
 
 
-class UploadStatusResponse(ContractModel):
+class UploadCompleteResponse(ContractModel):
     resource_version: Literal[1] = 1
-    session: MobileSessionResponse
+    job: MobileSessionResponse
+    replayed: bool
 
 
 class PushRegistrationRequest(ContractModel):
