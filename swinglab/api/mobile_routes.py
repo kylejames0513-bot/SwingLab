@@ -1078,13 +1078,7 @@ def install_mobile_routes(
         responses={401: {"model": APIError}, 404: {"model": APIError}},
         openapi_extra=read_security,
     )
-    def mobile_devices_list(
-        request: Request,
-        _documented_bearer: Annotated[
-            HTTPAuthorizationCredentials | None,
-            Security(_MOBILE_BEARER_SCHEME),
-        ],
-    ):
+    def mobile_devices_list(request: Request):
         # Default deny precedes even bearer parsing so a disabled flag never
         # authenticates, reads, or writes device state.
         if not device_management_enabled:
@@ -1143,7 +1137,6 @@ def install_mobile_routes(
                     },
                 }
             ],
-            "security": [{"MobileBearer": []}],
         },
     )
     def mobile_device_revoke(
