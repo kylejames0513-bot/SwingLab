@@ -100,35 +100,65 @@ def _pts(pose: Pose, *names: str) -> str:
     return " ".join(f"{_n(pose[j][0])},{_n(pose[j][1])}" for j in names)
 
 
+# Limb weights, as multiples of the base width. A body is not a wire: the
+# torso carries mass, thighs more than shins, upper arm more than forearm.
+# Stroking each segment at its own weight with round caps and joins produces
+# a filled silhouette from the same joint data a stick figure used, which is
+# why every existing scene keeps working unchanged.
+_TORSO_W = 3.4
+_NECK_W = 1.5
+_THIGH_W = 2.2
+_SHIN_W = 1.5
+_UPPER_ARM_W = 1.7
+_FOREARM_W = 1.2
+_HEAD_R = 8.0
+_CLUB_W = 0.5
+
+
+def _limb(pose: Pose, a: str, b: str, width: float, base: float) -> str:
+    ax, ay = pose[a]
+    bx, by = pose[b]
+    return (
+        f'<line x1="{_n(ax)}" y1="{_n(ay)}" x2="{_n(bx)}" y2="{_n(by)}" '
+        f'stroke-width="{_n(width * base)}"/>'
+    )
+
+
 def _figure(pose: Pose, color: str, width: float = 3.0) -> str:
-    """Stick figure: head circle r=8 at 'head'; polylines neck-hip,
-    hip-knee_lead-ankle_lead, hip-knee_trail-ankle_trail, neck-elbow-grip;
-    line neck-head; thin line (width*0.6) grip-club when 'club' present.
-    round linecaps/joins; fill none; stroke = color."""
+    """A weighted body silhouette built from the pose's joints.
+
+    Replaces the earlier uniform-stroke stick figure. Same joints, same
+    scenes; the difference is that each segment is stroked at its own weight
+    so the form reads as a body rather than as a wiring diagram. The head is
+    filled for the same reason — an open circle reads as a component, not a
+    person.
+
+    Drawn heaviest-first so lighter limbs sit on top of the torso mass
+    instead of being swallowed by it, and grouped under one colour so a
+    caller can fade the whole figure by setting opacity on the group.
+    """
     hx, hy = pose["head"]
-    nx, ny = pose["neck"]
-    # The neck-head line stops at the head circle's rim (the head is
-    # unfilled; a line to its centre would read as a spoke).
-    dist = ((nx - hx) ** 2 + (ny - hy) ** 2) ** 0.5 or 1.0
-    ex = hx + 8.0 * (nx - hx) / dist
-    ey = hy + 8.0 * (ny - hy) / dist
     parts = [
-        f'<g stroke="{color}" stroke-width="{_n(width)}" fill="none" '
+        f'<g stroke="{color}" fill="none" '
         'stroke-linecap="round" stroke-linejoin="round">',
-        f'<line x1="{_n(nx)}" y1="{_n(ny)}" x2="{_n(ex)}" y2="{_n(ey)}"/>',
-        f'<circle cx="{_n(hx)}" cy="{_n(hy)}" r="8"/>',
-        f'<polyline points="{_pts(pose, "neck", "hip")}"/>',
-        f'<polyline points="{_pts(pose, "hip", "knee_lead", "ankle_lead")}"/>',
-        f'<polyline points="{_pts(pose, "hip", "knee_trail", "ankle_trail")}"/>',
-        f'<polyline points="{_pts(pose, "neck", "elbow", "grip")}"/>',
+        # Neck into the head mass; the head is filled, so this can run to the
+        # centre without reading as a spoke. Kept well under the head radius —
+        # at torso weight the two merge and the figure loses its neck.
+        _limb(pose, "neck", "head", _NECK_W, width),
+        _limb(pose, "neck", "hip", _TORSO_W, width),
+        _limb(pose, "hip", "knee_lead", _THIGH_W, width),
+        _limb(pose, "hip", "knee_trail", _THIGH_W, width),
+        _limb(pose, "knee_lead", "ankle_lead", _SHIN_W, width),
+        _limb(pose, "knee_trail", "ankle_trail", _SHIN_W, width),
+        _limb(pose, "neck", "elbow", _UPPER_ARM_W, width),
+        _limb(pose, "elbow", "grip", _FOREARM_W, width),
+        f'<circle cx="{_n(hx)}" cy="{_n(hy)}" r="{_n(_HEAD_R)}" '
+        f'fill="{color}" stroke="none"/>',
     ]
     if "club" in pose:
-        gx, gy = pose["grip"]
-        cx, cy = pose["club"]
-        parts.append(
-            f'<line x1="{_n(gx)}" y1="{_n(gy)}" x2="{_n(cx)}" y2="{_n(cy)}" '
-            f'stroke-width="{_n(width * 0.6)}"/>'
-        )
+        # The club stays a hairline. It is equipment, not anatomy, and at
+        # limb weight it would read as a third arm.
+        parts.append(_limb(pose, "grip", "club", _CLUB_W, width))
     parts.append("</g>")
     return "".join(parts)
 
@@ -432,6 +462,20 @@ def drill_diagram(drill_id: str, brand: dict) -> str:
     )
 
 
+# Trail ghosts fade from oldest to newest so the movement reads directionally
+# — where the body came from is fainter than where it is going. Capped well
+# below the animated figure's opacity so the trail never competes with it.
+_TRAIL_MIN = 0.10
+_TRAIL_MAX = 0.26
+
+
+def _trail_opacity(index: int, count: int) -> float:
+    if count <= 1:
+        return _TRAIL_MAX
+    span = (_TRAIL_MAX - _TRAIL_MIN) * index / (count - 1)
+    return round(_TRAIL_MIN + span, 3)
+
+
 def _anim_key(drill_id: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", drill_id.lower()).strip("-")
 
@@ -483,6 +527,16 @@ def drill_animation(drill_id: str, brand: dict) -> str:
         " }"
         "</style>"
     )
+    # The motion trail: every pose drawn at once, faintly, under the animated
+    # figure. A crossfade alone shows one position at a time, so the shape of
+    # the movement is never visible — the eye has to remember it. Drawn once,
+    # unanimated, it also means prefers-reduced-motion still gets the whole
+    # gesture instead of a single frozen pose.
+    trail = "".join(
+        f'<g opacity="{_n(_trail_opacity(k, n))}">'
+        f"{_figure(scene.poses[k], primary)}</g>"
+        for k in range(n)
+    )
     groups = "".join(
         f'<g class="sl-{key}-pose sl-{key}-p{k}">'
         f"{_figure(scene.poses[k], primary)}</g>"
@@ -492,7 +546,7 @@ def drill_animation(drill_id: str, brand: dict) -> str:
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" '
         f'role="img" aria-label="{_esc(scene.label)} — animated" '
         'class="drill-svg">'
-        f"{style}{_props_svg(scene, primary, accent)}{groups}"
+        f"{style}{_props_svg(scene, primary, accent)}{trail}{groups}"
         "</svg>"
     )
 
