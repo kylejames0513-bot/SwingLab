@@ -7,7 +7,16 @@ embedded = false
 
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "read_customers,write_customers"
+#
+# read_orders is what makes the money path possible at all. The orders/paid
+# webhook is the ONLY mechanism that grants Pro (swinglab/web/shopify_billing.py),
+# and a subscription to it cannot be created without this scope — so without it
+# every purchase takes money and grants nothing, silently, with no request ever
+# arriving to log.
+#
+# Changing this line requires the merchant to RE-AUTHORIZE the app in Shopify
+# admin. `shopify app deploy` alone does not grant a new scope.
+scopes = "read_customers,write_customers,read_orders"
 optional_scopes = [ ]
 use_legacy_install_flow = false
 
@@ -26,3 +35,42 @@ compliance_topics = [
   "shop/redact",
 ]
 uri = "https://app.caddieinsight.com/webhooks/shopify"
+
+# The money path. orders/paid is the only thing that grants Pro; the other two
+# are how it is taken back, and the app refuses to grant on a replayed delivery
+# for an order it has already seen cancelled (users.py builds a zero-day
+# tombstone precisely because Shopify can deliver out of order).
+#
+# The URI carries NO trailing slash. Shopify's sender does not follow 3xx, and
+# the app registers both spellings only so a mistake here fails loudly rather
+# than silently (swinglab/web/app.py).
+#
+# Topic names must match shopify_billing.PAID_TOPICS / CANCELLED_TOPICS /
+# REFUND_TOPICS exactly — an unrecognized topic is logged and dropped, which
+# looks identical to no delivery at all.
+[[webhooks.subscriptions]]
+topics = [
+  "orders/paid",
+  "orders/cancelled",
+  "refunds/create",
+]
+uri = "https://app.caddieinsight.com/webhooks/shopify"
+
+# The store-account bridge: a customer created on the store exists in the app
+# without signing up twice, which is what lets a buyer claim the Pro they just
+# paid for using the email they checked out with.
+# Handled by shopify_billing.CUSTOMER_UPSERT_TOPICS / CUSTOMER_DELETE_TOPICS.
+[[webhooks.subscriptions]]
+topics = [
+  "customers/create",
+  "customers/update",
+  "customers/delete",
+]
+uri = "https://app.caddieinsight.com/webhooks/shopify"
+
+# NOT subscribed yet: fulfillments/create and fulfillments/update, which
+# shopify_billing.FULFILLMENT_TOPICS already handles for the gear ledger. They
+# are held back because the gear catalogue is not live (config.yaml's
+# first_sale_catalog_only allowlist names three archived products, so /shop
+# ships nothing) and because they may require a fulfillment scope beyond
+# read_orders — worth confirming before spending a second re-consent on it.
