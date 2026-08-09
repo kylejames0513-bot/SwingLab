@@ -18,6 +18,112 @@ Fill in every `[BRACKET]`. An unfilled bracket is worse than a missing policy.
 
 ---
 
+## Verified against the live store — 2026-08-09
+
+Everything below was read from the running store rather than assumed, via the
+public `/policies/*` pages, the public Storefront API, and the Admin API. Four
+things in the earlier write-up turned out to be wrong or incomplete.
+
+**Corrections**
+
+1. **"Two shipping methods both named Standard" is not a bug.** It is one
+   method definition (`832731349164`) with a rate-range condition: $8.00, and
+   $0.00 once the order total reaches $70.00. The Admin API lists the tiers
+   separately, which is what made it look like a duplicate. A customer sees
+   one rate at a time. Nothing to fix — though nothing on the storefront
+   advertises free shipping over $70 either, which is a conversion lever
+   sitting unused.
+
+2. **The contact-link problem is worse than a personal address.** The live
+   refund policy's mailto reads
+   `<a href="mailto:kylejames0513@icloud.com">inquiry@caddieinsight.com</a>` —
+   the visible text and the target disagree, so a customer who clicks "email
+   us" writes to a private inbox while believing they wrote to the business.
+   A text-only audit cannot see this, which is why
+   `tests/test_store_ad_readiness.py` now compares link text against link
+   target.
+
+3. **The privacy policy leaks the same address independently.** Shopify's
+   stock template renders the shop contact email, which is still the personal
+   iCloud address. Rewriting the policy will not fix it — the store's contact
+   email in Settings has to change.
+
+4. **The store ships to 21 Asian countries, not just the US.** Live zones:
+   Domestic (US) Standard $8 / free over $70 / Express $15; Asia Standard $9 /
+   Express $18. The shipping draft in `docs/runbooks/store-manual-actions.md`
+   says "we currently ship physical gear within the United States" — pasting
+   that would contradict what checkout actually sells.
+
+**Confirmed**
+
+- Pro really does auto-renew: two recurring selling plans, `MONTH/1` and
+  `YEAR/1`. The Founders Pass is a single payment. Terms of Service is
+  therefore a legal exposure, not housekeeping.
+- `/policies/shipping-policy` and `/policies/terms-of-service` both 404.
+- Swing Path Mat "Outdoor Use" is out of stock with policy `DENY` while the
+  product is live. The product still reports `availableForSale: true` because
+  the Indoor variant has stock — which is why nothing surfaced it.
+
+**Still blocked on values only the operator has**
+
+| Needed for | Value |
+| --- | --- |
+| Terms of Service | Legal entity name; the business address to publish (the address on file, 918 Carter Ridge Dr, Knoxville TN, is residential — publishing a home address is a decision, not a detail); governing state; minimum age |
+| Shipping Policy | Measured transit times per zone. `docs/first-sale-launch.md` forbids promising delivery dates a supplier has not demonstrated, and no supplier SLA has been measured |
+| Both | Effective date |
+
+---
+
+## Refund Policy — paste-ready, no brackets
+
+This one needs no operator values, and it is the highest-risk page live today.
+It removes the prepaid-return-label promise, fixes the misdirected mailto,
+drops the apparel and perishables boilerplate that never applied to golf
+training aids, drops the EU cooling-off clause the store has no EU zone for,
+and states the auto-renewal that Pro actually performs.
+
+One judgement call is embedded and worth vetoing if you disagree: it says the
+customer covers return postage on a change-of-mind return, and that
+CaddieInsight covers it when the item is damaged, defective or wrong. The
+current policy promises a prepaid label unconditionally, which the margin on a
+$11.99 item cannot carry; silence would be safer than that but worse than
+being explicit.
+
+Paste into **Settings → Policies → Refund policy**:
+
+```html
+<h2>Returns and refunds, stated plainly</h2>
+<p>Short policies, honestly framed. If anything here leaves a question, reply to your order confirmation email or use the <a href="/pages/contact">contact page</a> and a person will sort it out.</p>
+
+<h2>Training gear</h2>
+<p>Unused gear can be returned within <strong>30 days of delivery, no questions asked</strong>. Unused means what it says — a training aid you decided against is returnable; one that has done three weeks of range work is not.</p>
+<ul>
+  <li>Start a return by replying to your order confirmation email or through the <a href="/pages/contact">contact page</a>. We will send return instructions within 1–2 business days.</li>
+  <li>For a change-of-mind return, you cover the return postage. If an item arrives damaged, defective, or different from what you ordered, that one is on us — tell us within 30 days and we will replace it or refund it in full, return postage included.</li>
+  <li>Refunds go back to the original payment method once the return is confirmed.</li>
+  <li>Items sent back without requesting a return first cannot be processed, because we will have no way to match the parcel to your order.</li>
+</ul>
+
+<h2>CaddieInsight Pro</h2>
+<p>Pro is refundable within <strong>14 days of purchase if unused</strong>. A refunded order removes the access it granted.</p>
+<ul>
+  <li><strong>Monthly and yearly Pro renew automatically.</strong> Cancel anytime from your account and Pro keeps running to the end of the period you have already paid for. Cancelling stops the next charge; it does not refund the current one.</li>
+  <li>The Founders Pass is a single payment. It never renews and never expires.</li>
+  <li>Pro is delivered digitally, so nothing ships and there is nothing to return — a refund simply removes the access.</li>
+</ul>
+<p>The app's free plan — one full analysis per calendar month — never expires and requires no purchase at all.</p>
+
+<h2>Getting hold of us</h2>
+<p>Email <a href="mailto:inquiry@caddieinsight.com">inquiry@caddieinsight.com</a> or use the <a href="/pages/contact">contact page</a>. We answer within 1–2 business days.</p>
+```
+
+After pasting, run `python scripts/refresh_store_readiness.py` and delete the
+matching entries from `POLICY_TEXT_GAPS` and `MISLEADING_MAILTO` in
+`tests/test_store_ad_readiness.py`. The tests fail until those waivers go, so
+a fix cannot be applied and forgotten.
+
+---
+
 ## 1. Shipping Policy — MISSING, and it blocks ads
 
 Meta and Google both look for a shipping policy on a physical-goods store, and
