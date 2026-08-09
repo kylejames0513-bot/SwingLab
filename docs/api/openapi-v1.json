@@ -1522,7 +1522,7 @@
     },
     "/admin/kpis": {
       "get": {
-        "description": "The five business KPIs as JSON, for the operator only. Gated by\nthe SWINGLAB_ADMIN_TOKEN environment variable via a constant-time\nbearer comparison — and it answers 404 (never 401/403) when the\nvariable is unset OR the token is wrong, so the endpoint's very\nexistence is invisible to anyone without the credential.",
+        "description": "The five business KPIs as JSON, for the operator only.\n\nDeliberately not documented further here: this docstring is published\nverbatim in the OpenAPI document, and how the route is guarded is\nexactly what an attacker would want from it. The mechanics live in\nrequire_admin() and in docs/environment.md.",
         "operationId": "admin_kpis_admin_kpis_get",
         "responses": {
           "200": {

@@ -148,6 +148,7 @@ password flow.
 | --- | --- | --- |
 | `SENTRY_DSN` | Secret-bearing | Enables Sentry only when the `ops` package extra is also installed; default PII, request bodies, and frame locals are disabled in code. |
 | `SWINGLAB_ADMIN_TOKEN` | Secret | Enables bearer-token access to `GET /admin/kpis`, exact Shopify sync health, and opaque-reference retry; protected routes return 404 without a valid token. Privacy export delivery uses the host-level operator CLI and filesystem permissions instead. |
+| `SWINGLAB_ENABLE_DOCS` | Non-secret | Publishes `/docs`, `/redoc` and `/openapi.json` when truthy (`1`/`true`/`yes`/`on`). Any other non-empty value turns them off, so a typo fails closed instead of exposing the schema. Unset, they are published only by a process with no public identity — neither `PUBLIC_BASE_URL` nor `PORT` set — which leaves `swinglab serve`, `docker compose up` and the test suite exactly as before while turning them off on Railway and any other PaaS. Set `SWINGLAB_ENABLE_DOCS=0` explicitly on a self-hosted container behind its own reverse proxy, which sets neither variable. The interactive schema maps every route, including the operator-only `/admin` routes whose entire guard is that they answer 404 and are therefore meant to be invisible. |
 
 ## Optional Litestream backup recipe
 

@@ -48,13 +48,23 @@ def build_document() -> dict:
     A throwaway sessions directory keeps generation free of whatever the
     caller has on disk, and the placeholder secret is never used to sign
     anything — the app is built and discarded without serving a request.
+
+    ``ignore_cleanup_errors`` is what makes this runnable on Windows. The app
+    is discarded without being shut down, so its SQLite connections are still
+    open when the context manager unlinks the scratch tree, and Windows
+    refuses to delete an open file (POSIX does not, which is why this only
+    ever failed on one platform). Without it the script raises
+    ``PermissionError: [WinError 32]`` *after* the document is built but
+    before it is written, so the export appears to fail while the stale file
+    stays on disk — the worst version of this failure, because the leak it is
+    meant to close survives it. The scratch tree is throwaway either way.
     """
     os.environ.setdefault("SWINGLAB_SECRET", "openapi-export-placeholder")
 
     from swinglab.config import Config
     from swinglab.web.app import create_app
 
-    with tempfile.TemporaryDirectory() as scratch:
+    with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as scratch:
         app = create_app(
             Config(),
             sessions_dir=Path(scratch) / "sessions",

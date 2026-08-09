@@ -16,7 +16,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 COPY pyproject.toml README.md config.yaml ./
 COPY swinglab ./swinglab
-RUN pip install --no-cache-dir ".[web]"
+# [ops] installs sentry-sdk. It stays inert without SENTRY_DSN (see
+# swinglab.web.app.init_sentry), but without it installed the DSN alone does
+# nothing — error monitoring cannot be turned on from the dashboard.
+RUN pip install --no-cache-dir ".[web,ops]"
 
 # Bake the pose model in at build time so containers start warm instead of
 # downloading ~6 MB on the first analysis.
@@ -32,4 +35,9 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s \
     CMD python -c "import os, urllib.request; urllib.request.urlopen('http://127.0.0.1:' + os.environ.get('PORT', '8000') + '/healthz', timeout=4)"
 
-CMD swinglab serve --host 0.0.0.0 --port ${PORT:-8000} --sessions-dir /data/sessions
+# exec form + `exec` so the app is PID 1 and receives SIGTERM directly. Shell
+# form leaves /bin/sh as PID 1, which does not forward signals: every redeploy
+# then SIGKILLs the container after the grace period, killing any analysis in
+# flight and leaving the SQLite WAL uncheckpointed. `sh -c` is still needed to
+# expand ${PORT}, but `exec` replaces the shell rather than parenting the app.
+CMD ["sh", "-c", "exec swinglab serve --host 0.0.0.0 --port ${PORT:-8000} --sessions-dir /data/sessions"]

@@ -424,6 +424,55 @@
       color: rgba(230, 242, 234, .86);
       font-size: .88rem;
     }
+    .media-theater__card--locked {
+      border-style: dashed;
+      border-color: rgba(255, 173, 98, .5);
+      background: rgba(255, 173, 98, .07);
+    }
+    .media-theater__poster { position: relative; }
+    .media-theater__poster img {
+      width: 100%;
+      border-radius: .55rem;
+      /* Dimmed, not blurred: it is the golfer's own frame and stays
+         recognisable as one — the lock, not the image, says it is withheld. */
+      filter: brightness(.5) saturate(.65);
+    }
+    .media-theater__lock {
+      position: absolute;
+      inset: 0;
+      display: grid;
+      place-items: center;
+      font-size: 1.7rem;
+    }
+    .media-theater__card--locked a {
+      color: #ffc48f;
+      font-weight: 700;
+    }
+    .replay-locked-note {
+      display: grid;
+      justify-items: start;
+      gap: .65rem;
+      margin-top: .35rem;
+      padding: .95rem 1.05rem;
+      background:
+        linear-gradient(90deg, rgba(232, 114, 12, .1), rgba(255, 255, 255, .6));
+      border: 1px solid rgba(154, 75, 10, .22);
+      border-left: .34rem solid var(--accent-bright);
+      border-radius: .8rem;
+    }
+    .replay-locked-note p { max-width: 62ch; margin: 0; }
+    .replay-locked-note .lock-badge {
+      padding: .3rem .75rem;
+      color: var(--green-ink);
+      background: var(--green);
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: .66rem;
+      font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .replay-locked-note a { font-weight: 700; }
     .phase-list { display: grid; gap: .65rem; margin-top: 1.2rem; }
     .phase-card {
       padding: .1rem 1rem;
@@ -908,7 +957,21 @@
       </ol>
       {% endif %}
 
-      {% if view.capabilities.slow_motion or view.capabilities.coach_replay %}
+      {# The panel's heading and its cards must be decided by the same data.
+         Opening on `view.capabilities` (derived from the media manifest) while
+         the cards loop over `depth.swings` let a free report render the premium
+         dark panel, its eyebrow, title and lead, and then nothing at all: every
+         card was skipped as `replay_locked` even though the slow motion the
+         golfer is entitled to was sitting right there. Decide from the swings. #}
+      {% set theater = namespace(playable=false, locked=false, locked_poster=none) %}
+      {% for swing in depth.swings %}
+        {% if swing.slow_motion_media_key or swing.coach_replay_media_key %}{% set theater.playable = true %}{% endif %}
+        {% if swing.replay_locked %}
+          {% set theater.locked = true %}
+          {% if theater.locked_poster is none %}{% set theater.locked_poster = swing.video_poster_media_key %}{% endif %}
+        {% endif %}
+      {% endfor %}
+      {% if theater.playable %}
       <aside class="media-theater" aria-label="Evidence theater playback">
         <p class="media-theater__eyebrow">Evidence theater</p>
         <h3 class="media-theater__title">Slow-mo and replay</h3>
@@ -917,49 +980,73 @@
         </p>
         <div class="media-theater__grid">
           {% for swing in depth.swings %}
-            {% if not swing.replay_locked %}
-              {% if swing.slow_motion_media_key %}
-              <figure class="media-theater__card screen-only">
-                <span class="media-theater__badge">Slow motion</span>
-                <video controls preload="metadata"
-                       src="{{ media_path(swing.slow_motion_media_key) }}"
-                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
-                       aria-label="{{ swing.slow_motion_caption }}"></video>
-                <figcaption>{{ swing.slow_motion_caption }}</figcaption>
-              </figure>
-              {% if swing.video_poster_media_key %}
-              <figure class="media-theater__card print-only">
-                <span class="media-theater__badge">Slow motion</span>
-                <img src="{{ media_path(swing.video_poster_media_key) }}"
-                     alt="{{ swing.video_poster_alt_text }}">
-                <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
-              </figure>
-              {% else %}
-              <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
-              {% endif %}
-              {% endif %}
-              {% if swing.coach_replay_media_key %}
-              <figure class="media-theater__card screen-only">
-                <span class="media-theater__badge">Coach replay</span>
-                <video controls preload="metadata"
-                       src="{{ media_path(swing.coach_replay_media_key) }}"
-                       {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
-                       aria-label="{{ swing.coach_replay_caption }}"></video>
-                <figcaption>{{ swing.coach_replay_caption }}</figcaption>
-              </figure>
-              {% if swing.video_poster_media_key %}
-              <figure class="media-theater__card print-only">
-                <span class="media-theater__badge">Coach replay</span>
-                <img src="{{ media_path(swing.video_poster_media_key) }}"
-                     alt="{{ swing.video_poster_alt_text }}">
-                <figcaption>{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</figcaption>
-              </figure>
-              {% else %}
-              <p class="print-only">{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</p>
-              {% endif %}
-              {% endif %}
+            {# Slow motion is a Free feature — only the annotated replay is
+               gated, so the lock is checked per figure, never per swing. #}
+            {% if swing.slow_motion_media_key %}
+            <figure class="media-theater__card screen-only">
+              <span class="media-theater__badge">Slow motion</span>
+              <video controls preload="metadata"
+                     src="{{ media_path(swing.slow_motion_media_key) }}"
+                     {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                     aria-label="{{ swing.slow_motion_caption }}"></video>
+              <figcaption>{{ swing.slow_motion_caption }}</figcaption>
+            </figure>
+            {% if swing.video_poster_media_key %}
+            <figure class="media-theater__card print-only">
+              <span class="media-theater__badge">Slow motion</span>
+              <img src="{{ media_path(swing.video_poster_media_key) }}"
+                   alt="{{ swing.video_poster_alt_text }}">
+              <figcaption>{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</figcaption>
+            </figure>
+            {% else %}
+            <p class="print-only">{{ swing.slow_motion_caption }} · {{ swing.print_playback_reference }}</p>
+            {% endif %}
+            {% endif %}
+            {% if swing.coach_replay_media_key %}
+            <figure class="media-theater__card screen-only">
+              <span class="media-theater__badge">Coach replay</span>
+              <video controls preload="metadata"
+                     src="{{ media_path(swing.coach_replay_media_key) }}"
+                     {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
+                     aria-label="{{ swing.coach_replay_caption }}"></video>
+              <figcaption>{{ swing.coach_replay_caption }}</figcaption>
+            </figure>
+            {% if swing.video_poster_media_key %}
+            <figure class="media-theater__card print-only">
+              <span class="media-theater__badge">Coach replay</span>
+              <img src="{{ media_path(swing.video_poster_media_key) }}"
+                   alt="{{ swing.video_poster_alt_text }}">
+              <figcaption>{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</figcaption>
+            </figure>
+            {% else %}
+            <p class="print-only">{{ swing.coach_replay_caption }} · {{ swing.print_playback_reference }}</p>
+            {% endif %}
             {% endif %}
           {% endfor %}
+          {% if theater.locked %}
+          {# One card for the whole session, not one per swing: this is an
+             offer, and repeating it beside every clip turns the panel into a
+             wall of locks. Screen-only, because a printed page cannot be
+             clicked — the same call the legacy report makes. #}
+          <figure class="media-theater__card media-theater__card--locked screen-only">
+            <span class="media-theater__badge">Coach replay · locked</span>
+            {% if theater.locked_poster %}
+            <div class="media-theater__poster">
+              {# The golfer's own unannotated frame, dimmed under a lock. It is
+                 never dressed up to look like the annotated replay — implying
+                 a render that was not produced would be fabricated proof. The
+                 alt is empty because this exact frame already carries its alt
+                 text on the slow-motion card above; the caption is the content. #}
+              <img src="{{ media_path(theater.locked_poster) }}" alt="">
+              <span class="media-theater__lock" aria-hidden="true">&#128274;</span>
+            </div>
+            {% endif %}
+            <figcaption>
+              Your own footage played back with the tracked body, the hand path, and the measured numbers appearing at each swing event.
+              <a class="report-control" href="/pricing">See the plans that include it</a>
+            </figcaption>
+          </figure>
+          {% endif %}
         </div>
       </aside>
       {% endif %}
@@ -1056,8 +1143,12 @@
       {% endif %}
       {% set alternative_section = optional_by_id.get("alternative_drills") %}
       {% if alternative_section and (alternative_section.available or alternative_section.locked) %}
+      {# A locked section's item count is structurally 0 — the gate removes the
+         items before the template sees them — so the suffix only ever reads as
+         "· 0" and makes a paywall look like a failure. Show it when there is
+         something to count. #}
       <details class="alternatives" data-optional-section="alternative_drills">
-        <summary>{{ alternative_section.label }} · {{ alternative_section.item_count }}</summary>
+        <summary>{{ alternative_section.label }}{% if not alternative_section.locked %} · {{ alternative_section.item_count }}{% endif %}</summary>
         {% if alternative_section.locked %}
         <p>This section is locked.</p>
         {% else %}
@@ -1101,7 +1192,7 @@
       {% set section = optional_by_id.get("every_swing") %}
       {% if section and (section.available or section.locked) %}
       <details class="optional-card" data-optional-section="every_swing">
-        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
         {% if section.locked %}
         <p>This section is locked.</p>
         {% else %}
@@ -1124,11 +1215,30 @@
       {% set section = optional_by_id.get("replay") %}
       {% if section and (section.available or section.locked) %}
       <details class="optional-card" data-optional-section="replay">
-        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
         {% if section.locked %}
-          {% for swing in depth.swings %}
-            {% if swing.locked_replay_explanation %}<p>{{ swing.locked_replay_explanation }}</p>{% endif %}
-          {% endfor %}
+          {# billing.replay_pro_only strips every COACH_REPLAY entry from the
+             media manifest upstream, so the count is structurally 0 and used
+             to render as "Coach replay · 0" over one sentence repeated per
+             detected swing — which reads as a broken section, not an offer.
+             Say what the replay is once, name no price and no tier (the
+             annotated replay is moving between tiers), and send the golfer to
+             /pricing, the one page allowed to quote a number. #}
+          {% set locked_notes = depth.swings | map(attribute="locked_replay_explanation") | select | list %}
+          <div class="replay-locked-note">
+            <span class="lock-badge">&#128274; Coach replay is locked</span>
+            {# Promise exactly what annotate.py draws, in the same words the
+               unlocked caption uses: the tracked body, the hand path (wrist
+               centroid — an image-plane measurement, never a club path), and
+               the metric chips that appear at each swing event. #}
+            <p>The coach replay is this same footage played back with your
+            tracked body, your hand path, and the measured numbers appearing at
+            each swing event — your own swing, annotated like a lesson.</p>
+            <p>It is rendered at analysis time rather than on demand, so a plan
+            that includes it has to be active before you re-film.</p>
+            {% if locked_notes %}<p>{{ locked_notes[0] }}</p>{% endif %}
+            <a class="report-control" href="/pricing">See the plans that include coach replay →</a>
+          </div>
         {% else %}
           {% for swing in depth.swings %}
           <article>
@@ -1182,7 +1292,7 @@
       {% set section = optional_by_id.get("secondary_findings") %}
       {% if section and (section.available or section.locked) %}
       <details class="optional-card" data-optional-section="secondary_findings">
-        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
         {% if section.locked %}<p>This section is locked.</p>{% else %}
         {% for finding in depth.secondary_findings %}
         <article><h3>{{ finding.title }}</h3><p>{{ finding.summary }}</p><p>{{ finding.why }}</p><p><strong>Cue:</strong> {{ finding.cue }}</p></article>
@@ -1194,7 +1304,7 @@
       {% set section = optional_by_id.get("more_strengths") %}
       {% if section and (section.available or section.locked) %}
       <details class="optional-card" data-optional-section="more_strengths">
-        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
         {% if section.locked %}<p>This section is locked.</p>{% else %}
         {% for strength in depth.strengths %}<article><h3>{{ strength.title }}</h3><p>{{ strength.summary }}</p></article>{% endfor %}
         {% endif %}
@@ -1204,7 +1314,7 @@
       {% set section = optional_by_id.get("measurements") %}
       {% if section and (section.available or section.locked) %}
       <details class="optional-card" data-optional-section="measurements">
-        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
         {% if section.locked %}<p>This section is locked.</p>{% else %}
         <div class="table-scroll" role="region" aria-label="Session measurements" tabindex="0">
           <table>
@@ -1227,7 +1337,7 @@
       {% set section = optional_by_id.get("glossary") %}
       {% if section and (section.available or section.locked) %}
       <details class="optional-card" data-optional-section="glossary">
-        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
         {% if section.locked %}<p>This section is locked.</p>{% else %}
         <dl>{% for entry in depth.glossary %}<dt>{{ entry.term }}</dt><dd>{{ entry.definition }}</dd>{% endfor %}</dl>
         {% endif %}
@@ -1237,7 +1347,7 @@
       {% set section = optional_by_id.get("gear") %}
       {% if section and section.available and not section.locked %}
       <details class="optional-card" data-optional-section="gear">
-        <summary>{{ section.label }} · {{ section.item_count }}</summary>
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
         {% if section.locked %}<p>This section is locked.</p>{% else %}
         {% for item in depth.gear %}<article><h3>{{ item.label }}</h3><p>{{ item.description }}</p><a class="report-control" href="{{ item.url }}">View gear</a></article>{% endfor %}
         {% endif %}

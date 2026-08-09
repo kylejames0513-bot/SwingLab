@@ -6,18 +6,15 @@ from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
+from jinja2 import Environment, FileSystemLoader, select_autoescape
 from PIL import Image
 
 from swinglab.config import Config
 from swinglab.web.app import create_app
 
 
-LAYOUT = (
-    Path(__file__).resolve().parents[1]
-    / "swinglab"
-    / "templates"
-    / "web_layout.html.j2"
-).read_text(encoding="utf-8")
+TEMPLATES = Path(__file__).resolve().parents[1] / "swinglab" / "templates"
+LAYOUT = (TEMPLATES / "web_layout.html.j2").read_text(encoding="utf-8")
 
 
 def landing(tmp_path):
@@ -183,6 +180,126 @@ def test_apple_touch_icon_is_a_local_opaque_180px_png(tmp_path):
         # iOS composites transparent touch icons over black — the mark
         # ships on its own opaque field instead.
         assert image.mode == "RGB"
+
+
+def test_header_ships_the_brand_lockup_instead_of_plain_type(tmp_path):
+    """A visitor crossing from the store must not watch the logo become text.
+
+    Bare defaults are what matter here: the shell fell back to
+    ``{{ brand.name | upper }}`` for every install that had not set
+    brand.logo_url, which was every install running on code defaults.
+    """
+    client, response = landing(tmp_path)
+    html = response.text
+
+    assert (
+        '<img class="sl-header__logo-img" src="/static/caddieinsight-logo.png"'
+    ) in html
+    assert ">CADDIEINSIGHT<" not in html
+    # The v3 mark is still on disk (and still named in config.yaml); nothing
+    # rendered may point at it.
+    assert "swinglab-logo" not in html
+
+    lockup = client.get("/static/caddieinsight-logo.png")
+    assert lockup.status_code == 200
+    assert lockup.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_every_page_carries_a_complete_share_card_on_defaults_alone(tmp_path):
+    """Sharing a link is the product's most viral action, so the tags may not
+    depend on a caller remembering to pass anything."""
+    client, response = landing(tmp_path)
+    html = " ".join(response.text.split())
+
+    assert (
+        '<meta name="description" content="Film one swing on your phone.'
+    ) in html
+    assert '<meta property="og:site_name" content="CaddieInsight">' in html
+    assert '<meta property="og:type" content="website">' in html
+    # og:title reuses the page's own <title>, so a shared /pricing link does
+    # not preview under the same words as the landing page.
+    assert (
+        '<meta property="og:title" content="CaddieInsight — Swing '
+        'analysis from your phone">'
+    ) in html
+    assert '<meta property="og:description" content="Film one swing' in html
+    assert (
+        '<meta property="og:url" content="https://app.caddieinsight.com/">'
+    ) in html
+    assert (
+        '<meta property="og:image" '
+        'content="https://app.caddieinsight.com/static/og-caddieinsight.png">'
+    ) in html
+    assert '<meta name="twitter:card" content="summary_large_image">' in html
+    assert (
+        '<link rel="canonical" href="https://app.caddieinsight.com/">'
+    ) in html
+
+    # An og:image that 404s previews as a grey box just like no tag at all.
+    card = client.get("/static/og-caddieinsight.png")
+    assert card.status_code == 200
+    assert card.content[:8] == b"\x89PNG\r\n\x1a\n"
+
+
+def test_share_tags_take_per_page_values_without_a_template_change():
+    """The defaults are a floor, not a ceiling: a report page can pass its own
+    canonical, description and card once app.py has them to pass."""
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATES),
+        autoescape=select_autoescape(["html", "j2"]),
+    )
+    html = " ".join(
+        env.get_template("web_offline.html.j2")
+        .render(
+            brand=Config().brand,
+            current_path="/session/abc/report",
+            meta_description="One priority, one drill, one pass mark.",
+            og_title="Swing report",
+            og_type="article",
+            canonical_url="https://app.example.test/session/abc/report",
+            og_image_url="https://app.example.test/card.png",
+        )
+        .split()
+    )
+
+    assert (
+        '<meta name="description" '
+        'content="One priority, one drill, one pass mark.">'
+    ) in html
+    assert '<meta property="og:title" content="Swing report">' in html
+    assert '<meta property="og:type" content="article">' in html
+    assert (
+        '<meta property="og:url" '
+        'content="https://app.example.test/session/abc/report">'
+    ) in html
+    assert (
+        '<meta property="og:image" content="https://app.example.test/card.png">'
+    ) in html
+    assert (
+        '<link rel="canonical" '
+        'href="https://app.example.test/session/abc/report">'
+    ) in html
+    assert "app.caddieinsight.com" not in html
+
+
+def test_absolute_url_tags_are_omitted_when_no_origin_is_configured():
+    """A white-label install that has not declared its own origin must get no
+    canonical rather than one pointing at CaddieInsight's app."""
+    env = Environment(
+        loader=FileSystemLoader(TEMPLATES),
+        autoescape=select_autoescape(["html", "j2"]),
+    )
+    brand = dict(Config().brand, name="AceCoach", site_url="")
+    html = env.get_template("web_offline.html.j2").render(
+        brand=brand, current_path="/offline"
+    )
+
+    assert "rel=\"canonical\"" not in html
+    assert "og:url" not in html
+    assert "og:image" not in html
+    # The tags that need no origin still ship.
+    assert '<meta property="og:site_name" content="AceCoach">' in html
+    assert '<meta name="twitter:card" content="summary_large_image">' in html
 
 
 def test_shared_shell_keeps_navigation_accessibility_contracts():

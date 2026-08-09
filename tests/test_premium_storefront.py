@@ -105,15 +105,26 @@ def test_membership_card_media_is_photoreal_without_overlay_stickers():
     # Plan identity lives in the card body — no detached labels on the photo.
     assert 'class="sl-plans__media-label"' not in plans_band
     assert 'class="sl-plans__name"' in plans_band
-    for asset_name in (
-        "caddieinsight-pro-card-v2.png",
-        "caddieinsight-founders-card-v2.png",
-        "caddieinsight-free-card-v2.png",
+    # The band binds WebP rungs, not the source PNGs. Asserting the .png name
+    # appears in the section would pass on the explanatory comments alone —
+    # a tautology of exactly the kind claude-build-brief.md warns about, green
+    # with the binding it exists to protect deleted.
+    for stem in (
+        "caddieinsight-pro-card-v2",
+        "caddieinsight-founders-card-v2",
+        "caddieinsight-free-card-v2",
     ):
-        assert asset_name in plans_band, f"Card art not bound: {asset_name}"
-        theme_asset = THEME / "assets" / asset_name
-        assert theme_asset.is_file()
-        assert png_dimensions(theme_asset) == (1536, 1024)
+        for width in (480, 960, 1536):
+            rung = f"{stem}-{width}.webp"
+            assert f"'{rung}' | asset_url" in plans_band, (
+                f"Card art rung not bound: {rung}"
+            )
+            assert (THEME / "assets" / rung).is_file(), f"Rung not packaged: {rung}"
+
+        # The source photograph stays in assets/ as the regeneration record.
+        source_png = THEME / "assets" / f"{stem}.png"
+        assert source_png.is_file()
+        assert png_dimensions(source_png) == (1536, 1024)
 
 
 def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
@@ -619,25 +630,43 @@ def test_theme_check_is_pinned_and_release_docs_have_no_stale_theme_ids():
 
 
 def test_brand_marks_do_not_resolve_against_retired_filenames():
-    """A Shopify Files entry always beats a theme asset of the same name.
+    """The layout resolves brand marks through asset_url, never through Files.
 
-    The store still holds og-swinglab.png and swinglab-favicon.png in Files
-    from the v3 brand. If theme.liquid looked those names up, uploading a new
-    theme would silently keep serving the retired mark — the theme asset would
-    never be reached. Both lookups therefore use the current brand filenames,
-    which do not exist in Files yet, so the packaged asset wins until they are
-    uploaded deliberately.
+    This test previously asserted the opposite — that theme.liquid *did* look
+    these names up in Files — on the theory that a name absent from Files
+    falls through to the packaged asset. It does not. ``images['missing.png']``
+    returns a truthy drop rather than nil, so the ``{% if %}`` guard passes,
+    ``image_url`` then throws, and the fallback branch is unreachable. The
+    live consequence was every page of caddieinsight.com rendering
+    ``href="Liquid error (layout/theme line 72): invalid url input"`` into the
+    favicon link, the og:image, and — unquoted — into the Organization
+    JSON-LD, which made the whole block invalid JSON.
+
+    The Files-beats-theme hazard the old docstring described is real, and it
+    is why nothing here may name a retired v3 filename. The fix is not to look
+    up a *different* name in Files; it is not to use Files at all.
     """
     layout = (THEME / "layout" / "theme.liquid").read_text(encoding="utf-8")
 
-    assert "images['og-caddieinsight.png']" in layout
-    assert "images['caddieinsight-favicon.png']" in layout
-    assert "images['og-swinglab.png']" not in layout
-    assert "images['swinglab-favicon.png']" not in layout
+    # No brand mark, current or retired, may resolve through Files.
+    for name in (
+        "og-caddieinsight.png",
+        "caddieinsight-favicon.png",
+        "caddieinsight-logo.png",
+        "og-swinglab.png",
+        "swinglab-favicon.png",
+        "swinglab-logo.png",
+    ):
+        assert f"images['{name}']" not in layout, (
+            f"{name} resolves through Shopify Files — a truthy drop for a "
+            "missing file makes image_url throw and renders the error text "
+            "into the page."
+        )
 
-    # Every branch must still resolve to something when Files is empty.
+    # ...and each one the layout needs still resolves to a packaged asset.
     assert "'og-caddieinsight.png' | asset_url" in layout
     assert "'caddieinsight-favicon.png' | asset_url" in layout
+    assert "'caddieinsight-logo.png' | asset_url" in layout
 
 
 def test_current_brand_marks_ship_inside_the_theme():
@@ -648,3 +677,74 @@ def test_current_brand_marks_ship_inside_the_theme():
         asset = THEME / "assets" / name
         assert asset.exists(), name
         assert png_dimensions(asset) == size, name
+
+
+def plans_band_requested_assets() -> list[str]:
+    """Theme asset images the plans band actually asks a browser to fetch.
+
+    Matches both filters deliberately: asset_url (how a webp must be served,
+    whole) and asset_img_url (the legacy sizing filter the section used to
+    use). Anything the section requests through either one is on the wire.
+    """
+    return sorted(
+        set(
+            re.findall(
+                r"'([^']+\.(?:png|webp|jpe?g|gif))'\s*\|\s*asset(?:_img)?_url",
+                source("sections/plans-band.liquid"),
+            )
+        )
+    )
+
+
+def test_plans_band_serves_its_card_photography_as_pre_encoded_webp_rungs():
+    """The three plan photographs ship as a webp ladder, not as PNG.
+
+    Theme webps have to be served whole — asset_img_url does not process
+    webp and renders the no-image placeholder — so the responsive candidates
+    cannot be cut on the CDN the way a Files image can. They are pre-encoded
+    by store-assets/plan_card_webp.py, and every plan gets the same three
+    widths so the free card cannot silently be the low-resolution one.
+    """
+    plans_band = source("sections/plans-band.liquid")
+
+    for plan in ("pro", "founders", "free"):
+        for width in (480, 960, 1536):
+            name = f"caddieinsight-{plan}-card-v2-{width}.webp"
+            assert f"'{name}' | asset_url" in plans_band, f"not bound: {name}"
+            asset = THEME / "assets" / name
+            assert asset.is_file(), f"missing theme asset: {name}"
+            assert webp_dimensions(asset) == (width, round(width * 2 / 3)), name
+
+    # The full-size PNGs stay in assets/ as the source of record behind the
+    # rungs, but nothing in the section may request one.
+    # Matched as a filter application, not as a bare word: the section's own
+    # comment names asset_img_url to explain why it cannot be used here.
+    assert not re.search(r"\|\s*asset_img_url", plans_band)
+    for name in plans_band_requested_assets():
+        assert name.endswith(".webp"), f"plans band still requests {name}"
+
+
+def test_plan_card_art_the_shopper_downloads_stays_inside_a_byte_budget():
+    """No plan-card image on the buy page may grow back into a megabyte.
+
+    The plans band is where money changes hands, so its art is on the
+    critical path — and it is exactly the surface that quietly regresses,
+    because a fresh photograph dropped in as PNG looks right in the theme
+    editor and costs 2 MB on the wire. 400 KB is generous for a photograph
+    at 1536px of webp; the current ladder's largest rung is 163 KB.
+    """
+    budget = 400 * 1024
+    requested = plans_band_requested_assets()
+    assert requested, "the plans band requests no packaged art at all"
+
+    for plan in ("pro", "founders", "free"):
+        stem = f"caddieinsight-{plan}-card-v2"
+        assert any(name.startswith(stem) for name in requested), plan
+
+    for name in requested:
+        asset = THEME / "assets" / name
+        assert asset.is_file(), f"plans band binds a missing asset: {name}"
+        weight = asset.stat().st_size
+        assert weight <= budget, (
+            f"{name} is {weight:,} B, over the {budget:,} B plan-card budget"
+        )

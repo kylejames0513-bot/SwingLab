@@ -12,13 +12,15 @@ notes/flags/issue-cards/practice-plan code a real session does — nothing is
 mocked downstream of the metrics.
 
 The web app calls :func:`ensure_sample_report` once at startup; the report
-is only generated when absent, and GET /sample-report serves it with no
-auth (see web/app.py).
+is regenerated when it is absent or when its embedded render signature no
+longer matches the current template and brand (see "freshness" below), and
+GET /sample-report serves it with no auth (see web/app.py).
 """
 
 from __future__ import annotations
 
 import hashlib
+import json
 from dataclasses import replace
 from pathlib import Path
 import tempfile
@@ -38,7 +40,7 @@ from .report import (
     REPORT_PRESENTATION_VERSION,
     write_report_html,
 )
-from .report_html import write_report_document_html
+from .report_html import GUIDED_TEMPLATE, write_report_document_html
 from .report_presenter import (
     ReportNavigation,
     build_report_document,
@@ -379,7 +381,116 @@ def build_sample_swings(sample_dir: Path, cfg: Config) -> list[dict]:
     return swings
 
 
-def _report_is_current(report_path: Path, presentation_version: str) -> bool:
+# -- freshness ----------------------------------------------------------------
+# The cached report.html lives on the deployed volume and outlives every code
+# deploy, so THIS gate — not the deploy — decides whether a visitor sees the
+# current design or a fossil.
+#
+# Version markers alone were not enough. The 2026-08-08 rebrand replaced the
+# guided template's entire palette and type stack, but nothing schema-level
+# changed, so there was no version to bump: the gate kept saying "current" and
+# production went on serving a cream / system-ui page against a green-grey app
+# shell. The public demo that is supposed to sell the membership read as a
+# different company's product.
+#
+# So the gate is content-addressed rather than version-addressed. Hash whatever
+# actually determines the rendered bytes, stamp the digest into the output, and
+# regenerate whenever the two disagree. The point is that nobody has to
+# remember anything on the next template edit — a changed template IS a changed
+# signature.
+
+SAMPLE_RENDER_MARKER = "caddieinsight-sample-render"
+
+_TEMPLATE_DIR = Path(__file__).parent / "templates"
+# report.py names its template inline at the get_template call rather than
+# exporting a constant, so the legacy name is duplicated here. If the two ever
+# drift we would hash a file the legacy branch does not render — which is why
+# _template_bytes lets a missing file raise instead of degrading to some
+# constant digest that would silently freeze the cache forever.
+_LEGACY_TEMPLATE = "report.html.j2"
+
+
+def _template_bytes(template_name: str) -> bytes:
+    """Read a report template exactly as Jinja will.
+
+    Both report templates carry their CSS inline in one ``<style>`` block and
+    pull in no partials, no includes and no external stylesheet, so the file's
+    bytes are the complete presentation surface — there is no second asset to
+    hash alongside it. If that ever stops being true, this is the function
+    that has to learn about the other files.
+    """
+    return (_TEMPLATE_DIR / template_name).read_bytes()
+
+
+def _render_signature(
+    template_name: str, presentation_version: str, cfg: Config
+) -> str:
+    """Digest every input that decides how the sample ends up looking.
+
+    Each part is length-prefixed so the concatenation is unambiguous — without
+    it, moving a byte across a boundary between two parts could produce the
+    same digest as the original. Truncated to 32 hex characters: this is a
+    change detector, not a security boundary, and 128 bits is far beyond any
+    accidental collision.
+    """
+    digest = hashlib.sha256()
+    parts = (
+        # The template name itself, so the legacy and guided branches can
+        # never agree on a signature even if their bytes somehow matched.
+        template_name.encode("utf-8"),
+        _template_bytes(template_name),
+        REPORT_FORMAT_VERSION.encode("utf-8"),
+        presentation_version.encode("utf-8"),
+        # Brand and overlay are rendered straight into the report's CSS custom
+        # properties and into the drawn stand-in imagery, so a palette change
+        # in config.yaml drifts the sample exactly the way a template edit
+        # does. sort_keys makes the digest independent of YAML key order.
+        json.dumps(cfg.brand, sort_keys=True, default=str).encode("utf-8"),
+        json.dumps(cfg.overlay, sort_keys=True, default=str).encode("utf-8"),
+    )
+    for part in parts:
+        digest.update(len(part).to_bytes(8, "big"))
+        digest.update(part)
+    return digest.hexdigest()[:32]
+
+
+def _stamp_render_signature(report_path: Path, signature: str) -> None:
+    """Embed the signature in the rendered head, beside its sibling markers.
+
+    Stamped here rather than emitted by the template because the marker
+    describes the *cached sample*, not the report contract: a customer's
+    report is rendered per session and has no cache to invalidate. Keeping it
+    out of the templates also keeps this fix from touching the frozen
+    ``guided-report-v1`` surface.
+    """
+    html = report_path.read_text(encoding="utf-8")
+    anchor = '<meta name="caddieinsight-report-format"'
+    index = html.find(anchor)
+    if index < 0:
+        # Fail loudly at generation time. A silently unstamped report would
+        # fail the freshness check on every boot and rebuild the sample
+        # forever — the opposite failure to the one this gate exists to fix,
+        # and just as invisible.
+        raise ValueError(
+            "sample render is missing the caddieinsight-report-format meta "
+            "to stamp the render signature beside"
+        )
+    line_start = html.rfind("\n", 0, index) + 1
+    indent = html[line_start:index]
+    line_end = html.find("\n", index)
+    insert_at = len(html) if line_end < 0 else line_end + 1
+    marker = (
+        f'{indent}<meta name="{SAMPLE_RENDER_MARKER}" '
+        f'content="{signature}">\n'
+    )
+    report_path.write_text(
+        html[:insert_at] + marker + html[insert_at:], encoding="utf-8"
+    )
+
+
+def _report_is_current(
+    report_path: Path, presentation_version: str, render_signature: str
+) -> bool:
     if not report_path.is_file():
         return False
     try:
@@ -394,7 +505,18 @@ def _report_is_current(report_path: Path, presentation_version: str) -> bool:
         'name="caddieinsight-report-presentation" '
         f'content="{presentation_version}"'
     )
-    return format_marker in existing and presentation_marker in existing
+    render_marker = (
+        f'name="{SAMPLE_RENDER_MARKER}" content="{render_signature}"'
+    )
+    # The signature is fed by both version constants, so it already fires on a
+    # version change. The two version checks stay anyway: they are the markers
+    # the rest of the codebase keys on, and a file carrying a matching digest
+    # beside a mismatched schema version is corrupt, not current.
+    return (
+        format_marker in existing
+        and presentation_marker in existing
+        and render_marker in existing
+    )
 
 
 def build_legacy_sample_report(sample_dir: Path, cfg: Config) -> Path:
@@ -402,7 +524,10 @@ def build_legacy_sample_report(sample_dir: Path, cfg: Config) -> Path:
     sample_dir = Path(sample_dir)
     report_path = sample_dir / "report.html"
     focused_path = sample_dir / "media" / "focused-priority.png"
-    if _report_is_current(report_path, REPORT_PRESENTATION_VERSION):
+    signature = _render_signature(
+        _LEGACY_TEMPLATE, REPORT_PRESENTATION_VERSION, cfg
+    )
+    if _report_is_current(report_path, REPORT_PRESENTATION_VERSION, signature):
         focused_path.unlink(missing_ok=True)
         return report_path
     sample_dir.mkdir(parents=True, exist_ok=True)
@@ -426,6 +551,7 @@ def build_legacy_sample_report(sample_dir: Path, cfg: Config) -> Path:
             "cta_url": "/",
         },
     )
+    _stamp_render_signature(temporary_report, signature)
     backup_dir = Path(
         tempfile.mkdtemp(
             prefix=f".{sample_dir.name}-guided-media-",
@@ -566,7 +692,12 @@ def build_guided_sample_report(sample_dir: Path, cfg: Config) -> Path:
     """Build or refresh the explicit guided public-sample preview."""
     sample_dir = Path(sample_dir)
     report_path = sample_dir / "report.html"
-    if _report_is_current(report_path, GUIDED_REPORT_PRESENTATION_VERSION):
+    signature = _render_signature(
+        GUIDED_TEMPLATE, GUIDED_REPORT_PRESENTATION_VERSION, cfg
+    )
+    if _report_is_current(
+        report_path, GUIDED_REPORT_PRESENTATION_VERSION, signature
+    ):
         return report_path
 
     sample_dir.mkdir(parents=True, exist_ok=True)
@@ -630,6 +761,7 @@ def build_guided_sample_report(sample_dir: Path, cfg: Config) -> Path:
             "cta_url": "/",
         },
     )
+    _stamp_render_signature(temporary_report, signature)
     overlay_paths = tuple(
         media_dir / f"overlay_s{swing_no}.png" for swing_no in (1, 2, 3)
     )

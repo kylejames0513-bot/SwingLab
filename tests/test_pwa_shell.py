@@ -252,6 +252,34 @@ def test_ios_hint_is_hidden_on_other_platforms(tmp_path, client):
     assert _hint_visible(tmp_path, client, DESKTOP_UA) is False
 
 
+def test_shell_icons_name_the_current_brand_not_the_retired_one(client):
+    """The tab icon is the one brand mark a user sees on every page, and both
+    marks are byte-identical on disk — so the only thing that can be wrong is
+    the *name*, and a v3 name is exactly what CLAUDE.md says never to bind."""
+    assert (
+        '<link rel="icon" href="/static/caddieinsight-favicon.png" '
+        'sizes="512x512" type="image/png">'
+    ) in LAYOUT
+    assert "swinglab-favicon" not in LAYOUT
+    assert "swinglab-logo" not in LAYOUT
+
+    icon = client.get("/static/caddieinsight-favicon.png")
+    assert icon.status_code == 200
+    with Image.open(BytesIO(icon.content)) as image:
+        assert image.format == "PNG"
+        assert image.size == (512, 512)
+
+
+def test_share_card_is_a_packaged_1200x630_png(client):
+    """1200x630 is the size every crawler crops to; anything else previews
+    letterboxed or cropped through the mark."""
+    card = client.get("/static/og-caddieinsight.png")
+    assert card.status_code == 200
+    with Image.open(BytesIO(card.content)) as image:
+        assert image.format == "PNG"
+        assert image.size == (1200, 630)
+
+
 def test_ios_hint_ships_hidden_so_it_never_flashes_before_the_sniff():
     assert 'class="sl-menu__group sl-menu__ios-install" data-ios-install hidden' in LAYOUT
     assert ".sl-menu__ios-install { display: none; }" in LAYOUT
