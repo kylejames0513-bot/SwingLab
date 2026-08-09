@@ -88,6 +88,7 @@ from ..clubs import CLUB_LABELS
 from ..coaching import flag_keys, priority_rule_version
 from ..levels import LEVEL_LABELS
 from ..config import Config
+from . import api_models
 from ..diagrams import drill_animation, drill_diagram, trend_chart
 from ..drills import PLAN_TITLES, build_drills, gear_shop_url
 from ..explainers import build_explainers
@@ -4167,7 +4168,7 @@ def create_app(
         payload["resource_version"] = 1
         return payload
 
-    @app.get("/api/v1/me")
+    @app.get("/api/v1/me", response_model=api_models.MeResponse)
     def api_v1_me(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4185,7 +4186,7 @@ def create_app(
             }
         )
 
-    @app.get("/api/v1/mobile-tokens")
+    @app.get("/api/v1/mobile-tokens", response_model=api_models.MobileTokenListResponse)
     def api_v1_mobile_tokens(request: Request):
         """List a browser owner's non-secret device token metadata."""
 
@@ -4200,7 +4201,7 @@ def create_app(
             }
         )
 
-    @app.post("/api/v1/mobile-tokens")
+    @app.post("/api/v1/mobile-tokens", response_model=api_models.MobileTokenIssueResponse)
     async def api_v1_issue_mobile_token(request: Request):
         """Issue a device token once to an authenticated same-origin browser."""
 
@@ -4232,7 +4233,7 @@ def create_app(
             status_code=201,
         )
 
-    @app.delete("/api/v1/mobile-tokens/{selector}")
+    @app.delete("/api/v1/mobile-tokens/{selector}", response_model=api_models.MobileTokenRevokeResponse)
     def api_v1_revoke_mobile_token(selector: str, request: Request):
         user = mobile_token_management_user(request)
         if not users.revoke_mobile_api_token(user.id, selector):
@@ -4241,7 +4242,7 @@ def create_app(
             raise HTTPException(404, "Mobile device not found.")
         return no_store_json({"resource_version": 1, "revoked": True})
 
-    @app.get("/api/v1/profile")
+    @app.get("/api/v1/profile", response_model=api_models.ProfileResponse)
     def api_v1_profile(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4251,7 +4252,7 @@ def create_app(
             }
         )
 
-    @app.put("/api/v1/profile")
+    @app.put("/api/v1/profile", response_model=api_models.ProfileResponse)
     async def api_v1_update_profile(request: Request):
         user, via_bearer = api_v1_auth(request)
         if not via_bearer and not _same_origin_form_post(request):
@@ -4301,7 +4302,7 @@ def create_app(
             {"resource_version": 1, "profile": profile_payload(profile)}
         )
 
-    @app.get("/api/v1/today")
+    @app.get("/api/v1/today", response_model=api_models.TodayResponse)
     def api_v1_today(request: Request):
         user, _ = api_v1_auth(request)
         profile = users.get_golfer_profile(user.id)
@@ -4325,7 +4326,7 @@ def create_app(
             }
         )
 
-    @app.get("/api/v1/sessions")
+    @app.get("/api/v1/sessions", response_model=api_models.SessionListResponse)
     def api_v1_sessions(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4338,7 +4339,7 @@ def create_app(
             }
         )
 
-    @app.get("/api/v1/sessions/{job_id}")
+    @app.get("/api/v1/sessions/{job_id}", response_model=api_models.Session)
     def api_v1_session(job_id: str, request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4347,7 +4348,7 @@ def create_app(
             )
         )
 
-    @app.get("/api/v1/sessions/{job_id}/brief")
+    @app.get("/api/v1/sessions/{job_id}/brief", response_model=api_models.SessionBriefResponse)
     def api_v1_session_brief(job_id: str, request: Request):
         user, _ = api_v1_auth(request)
         job = get_job_or_404(job_id, request, authenticated_user=user)
@@ -4360,7 +4361,7 @@ def create_app(
             {"resource_version": 1, "caddie_brief": caddie_brief_payload(brief)}
         )
 
-    @app.get("/api/v1/practice-checkins")
+    @app.get("/api/v1/practice-checkins", response_model=api_models.PracticeCheckinListResponse)
     def api_v1_practice_checkins(request: Request):
         user, _ = api_v1_auth(request)
         return no_store_json(
@@ -4376,7 +4377,7 @@ def create_app(
             }
         )
 
-    @app.post("/api/v1/practice-checkins")
+    @app.post("/api/v1/practice-checkins", response_model=api_models.PracticeCheckinResponse)
     async def api_v1_practice_checkin(request: Request):
         user, via_bearer = api_v1_auth(request)
         if not via_bearer and not _same_origin_form_post(request):
@@ -4416,7 +4417,7 @@ def create_app(
             }
         )
 
-    @app.post("/api/v1/events")
+    @app.post("/api/v1/events", response_model=api_models.EventAccepted)
     async def api_v1_product_event(request: Request):
         # Event capture is intentionally not a bearer-token capability: it is
         # a browser telemetry surface with its existing same-origin guard.
