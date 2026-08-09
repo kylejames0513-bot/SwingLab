@@ -28,6 +28,7 @@ from .coaching import (
     FLAG_CONSISTENCY,
     FLAG_HEAD_DIP,
     FLAG_HIP_SLIDE,
+    FLAG_SEQUENCE,
     FLAG_SHOULDER_TILT,
     FLAG_SWAY,
     FLAG_TEMPO,
@@ -50,6 +51,7 @@ PLAN_TITLES = {
     FLAG_SHOULDER_TILT: "Shoulder-tilt change",
     FLAG_BALANCE: "Finish balance",
     FLAG_CONSISTENCY: "Swing-to-swing consistency",
+    FLAG_SEQUENCE: "Downswing sequence",
     CLEAN: "Maintenance — nothing flagged, keep it that way",
 }
 
@@ -457,6 +459,59 @@ def build_drills(coach: dict) -> dict[str, list[Drill]]:
                 gear_tag="swinglab:consistency",
             ),
         ],
+        FLAG_SEQUENCE: [
+            Drill(
+                id="sequence-pump-drill",
+                name="Pump drill",
+                aim=(
+                    "Start the downswing from the ground up so the hands stop "
+                    "leading it."
+                ),
+                protocol=(
+                    "Swing to the top and stop.",
+                    "Pump down to about hip height twice, moving the lower "
+                    "body first and letting the hands trail.",
+                    "On the third pump, swing through without changing that "
+                    "start.",
+                    "Begin at half speed; only add speed while the lower body "
+                    "still goes first.",
+                ),
+                dosage="3 x 8 swings, 3x/week",
+                success_metric=(
+                    "Re-film 5 swings face-on: the downswing sequence reads "
+                    "positive — the hips peaking before the hands — on at "
+                    "least 4 of them."
+                ),
+                gear_tag="swinglab:sequence",
+                gear_note=(
+                    "Built around an impact bag or a weighted club — anything "
+                    "that rewards the body arriving before the hands."
+                ),
+            ),
+            Drill(
+                id="sequence-step-through",
+                name="Step-through start",
+                aim=(
+                    "Make the lower body's head start something you feel "
+                    "rather than something you time."
+                ),
+                protocol=(
+                    "Set up with the feet together.",
+                    "Swing to the top, then step the lead foot toward the "
+                    "target as the club starts down.",
+                    "Let the step, not the hands, begin the downswing.",
+                    "Hit half-speed shots until the step and the strike stop "
+                    "fighting each other.",
+                ),
+                dosage="3 x 10 swings, 2x/week",
+                success_metric=(
+                    "Re-film 5 swings face-on: the downswing sequence reads "
+                    "positive — the pelvis peaking before the lead arm — on "
+                    "at least 3 of them."
+                ),
+                gear_tag="swinglab:sequence",
+            ),
+        ],
         CLEAN: [
             Drill(
                 id="clean-baseline-refilm",
@@ -552,6 +607,13 @@ def build_drill_presentations(
             "Widen the stance gradually while preserving the same quiet finish.",
         ), "Level ground, teed ball, and reduced swing speed.",
            "Finish stacked and still enough to hold the pose.", "Tee"),
+        "sequence-pump-drill": DrillPresentation((
+            "Swing to the top and stop, with no ball in front of you at first.",
+            "Pump down to hip height twice, starting each one with the lower body while the hands trail.",
+            "Swing through on the third pump, keeping that same order at half speed.",
+        ), "Clear space overhead and behind — the club moves before you do.",
+           "The ground goes first; the hands are the last thing to arrive.",
+           "Impact bag or weighted club (optional)"),
         "consistency-one-count": DrillPresentation((
             "Choose one count from the most repeatable swing.",
             "Hit ten wedges and ten mid-irons without changing that count.",

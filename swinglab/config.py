@@ -52,6 +52,10 @@ DEFAULTS: dict[str, Any] = {
         # malformed values keep the legacy rule-1 order.  Thresholds and
         # measured values are identical under both rules.
         "club_aware_enabled": False,
+        # Compatibility floor for the sequence-first priority rule (rule 3),
+        # which is rule 2 plus a fired sequence flag taking the priority slot
+        # inside its severity band. Only the literal True selects it.
+        "sequence_priority_enabled": False,
         "sway_warn_sw": 0.35,
         "tempo_target": 3.0,
         "tempo_warn_below": 2.4,
@@ -69,6 +73,12 @@ DEFAULTS: dict[str, Any] = {
         # Mean ankle-midpoint drift over the finish hold beyond this flags
         # "balance" (in shoulder widths; a step, well above pose jitter).
         "finish_balance_warn_sw": 0.15,
+        # Milliseconds the pelvis's speed peak must lead the lead arm's by.
+        # Zero, not a tuned number: swinglab.sequence already returns NaN for
+        # any gap the frame rate cannot resolve, so the only values that ever
+        # reach this comparison are separations the footage actually proved.
+        # A negative one means the arms peaked first, which is the fault.
+        "sequence_lead_warn_ms": 0.0,
     },
     "report": {
         # New jobs opt into the structured guided presentation only when the

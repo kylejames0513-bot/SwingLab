@@ -220,6 +220,39 @@ def analyze_sequence(
     )
 
 
+def pelvis_to_arm_lead_ms(sequence: KinematicSequence, fps: float) -> float | None:
+    """Milliseconds by which the pelvis's speed peak leads the lead arm's.
+
+    Positive means the pelvis peaked first — the efficient, proximal-to-distal
+    direction. Negative means the arms peaked first, which is casting.
+
+    This is the one number from the ordering worth carrying into coaching. The
+    full three-segment order is richer, but a golfer cannot re-film against a
+    tuple; they can re-film against "get the hips peaking before the hands".
+    Naming the outer pair also picks the most defensible gap in the series: it
+    spans both intervals, so it is the pair the frame rate is most likely to
+    resolve, and it is the one whose sign has an unambiguous fault attached.
+
+    Returns None — never a number — when the sequence was not measured, or
+    when the two peaks fall inside the same separation floor that
+    :func:`analyze_sequence` applies to adjacent pairs. A lead the frame rate
+    cannot resolve is a coin flip, and a coin flip must not reach a report.
+    """
+    if not sequence.measured:
+        return None
+    if not math.isfinite(fps) or fps <= 0:
+        return None
+    at = {peak.segment: peak.before_impact_s for peak in sequence.peaks}
+    if PELVIS not in at or LEAD_ARM not in at:
+        return None
+    # before_impact_s counts backwards from impact, so the earlier peak has
+    # the larger value: pelvis-minus-arm is positive when the pelvis led.
+    lead_s = at[PELVIS] - at[LEAD_ARM]
+    if abs(lead_s) < MIN_SEPARATION_FRAMES / fps:
+        return None
+    return round(lead_s * 1000.0, 1)
+
+
 def _lead_trail(hand: str) -> tuple[tuple[int, int, int], tuple[int, int, int]]:
     """Local copy of the lead/trail split to keep this module free of a
     circular import with metrics."""

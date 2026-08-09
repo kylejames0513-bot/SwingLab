@@ -11,6 +11,7 @@ from pathlib import Path
 from swinglab.coaching import (
     FLAG_CONSISTENCY,
     FLAG_HIP_SLIDE,
+    FLAG_SEQUENCE,
     FLAG_SHOULDER_TILT,
     FLAG_SWAY,
     FLAG_TEMPO,
@@ -37,6 +38,7 @@ ALL_KEYS = (
     FLAG_SHOULDER_TILT,
     "balance",
     FLAG_CONSISTENCY,
+    FLAG_SEQUENCE,
     CLEAN,
 )
 

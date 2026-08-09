@@ -59,12 +59,35 @@ FLAG_ARM_EXTENSION = "arm-extension"
 FLAG_SHOULDER_TILT = "shoulder-tilt"
 FLAG_BALANCE = "balance"
 FLAG_CONSISTENCY = "consistency"
+# Temporal, not positional: the order segments peak, not where they were.
+FLAG_SEQUENCE = "sequence"
 
 
 PRIORITY_RULE_LEGACY = 1
 PRIORITY_RULE_CLUB_AWARE = 2
+# Rule 3 is rule 2 plus one change: a fired sequence flag takes the priority
+# slot ahead of positional faults WITHIN its severity band. It is defined as a
+# superset rather than an orthogonal switch so the integer alone still fixes
+# the ordering — a replayed report cannot need a second stored flag to
+# reconstruct what it showed.
+#
+# The severity band is deliberately kept above it. A sequencing fault is the
+# most fundamental thing this package measures, but "most fundamental" is not
+# "most severe", and a swing whose sequence inverted on one swing out of five
+# should not outrank a head dip that breached on every one.
+#
+# What rule 3 does NOT do is claim causation. A sequencing fault frequently
+# underlies a positional one, but a single 2D camera cannot establish that
+# link for a particular golfer, so the report ranks the sequence first without
+# ever telling the golfer it caused the fault ranked below it.
+PRIORITY_RULE_SEQUENCE_FIRST = 3
 SUPPORTED_PRIORITY_RULE_VERSIONS = frozenset(
-    {PRIORITY_RULE_LEGACY, PRIORITY_RULE_CLUB_AWARE}
+    {PRIORITY_RULE_LEGACY, PRIORITY_RULE_CLUB_AWARE, PRIORITY_RULE_SEQUENCE_FIRST}
+)
+
+# Rules that apply the club-aware tie-break. Rule 3 subsumes rule 2.
+_CLUB_AWARE_RULES = frozenset(
+    {PRIORITY_RULE_CLUB_AWARE, PRIORITY_RULE_SEQUENCE_FIRST}
 )
 
 # Rule 2 changes only the stable order inside a severity band.  It does not
@@ -81,6 +104,8 @@ _CLUB_TIE_PRIORITIES: dict[str, tuple[str, ...]] = {
 def priority_rule_version(cfg: Config) -> int:
     """Select the immutable coaching priority rule with an exact bool gate."""
 
+    if cfg.coaching.get("sequence_priority_enabled") is True:
+        return PRIORITY_RULE_SEQUENCE_FIRST
     return (
         PRIORITY_RULE_CLUB_AWARE
         if cfg.coaching.get("club_aware_enabled") is True
@@ -358,6 +383,10 @@ def flag_keys(
         flags.append(FLAG_SHOULDER_TILT)
     if any_over("finish_balance_sw", coach["finish_balance_warn_sw"]):
         flags.append(FLAG_BALANCE)
+    if any_under(
+        "sequence_pelvis_to_arm_ms", coach["sequence_lead_warn_ms"]
+    ):
+        flags.append(FLAG_SEQUENCE)
     tempo_values = [
         value
         for swing in swings
@@ -432,6 +461,10 @@ def session_flags(
         flags.append(FLAG_SHOULDER_TILT)
     if any_over("finish_balance_sw", coach["finish_balance_warn_sw"]):
         flags.append(FLAG_BALANCE)
+    if any_under(
+        "sequence_pelvis_to_arm_ms", coach["sequence_lead_warn_ms"]
+    ):
+        flags.append(FLAG_SEQUENCE)
     tempo_stats = stats.get("tempo_ratio")
     if (
         len(all_metrics) >= 2
@@ -489,6 +522,13 @@ WHY_TEXT = {
         "makes every other number harder to repeat. The variance itself is the "
         "finding: same body, different clock."
     ),
+    FLAG_SEQUENCE: (
+        "The pelvis, chest and lead arm each reach a peak rotation speed on "
+        "the way down, and an efficient swing peaks them in that order so "
+        "every segment hands its momentum to the next. In this session the "
+        "arms peaked first, so the speed is being spent before it reaches the "
+        "ball instead of gathered into it."
+    ),
 }
 
 FIX_TEXT = {
@@ -521,6 +561,10 @@ FIX_TEXT = {
     ),
     FLAG_CONSISTENCY: (
         "Pick one count and make it the only one — rehearsal-and-ball pairs."
+    ),
+    FLAG_SEQUENCE: (
+        "Rehearse starting down with the lower body while the hands stay "
+        "passive, and re-film for the hips peaking before the hands."
     ),
 }
 
@@ -597,6 +641,7 @@ def issue_cards(
     arm_thr = float(coach["lead_arm_warn_deg"])
     tilt_thr = float(coach["shoulder_tilt_impact_min_deg"])
     bal_thr = float(coach["finish_balance_warn_sw"])
+    seq_thr = float(coach["sequence_lead_warn_ms"])
     specs = {
         FLAG_SWAY: (
             "head_sway_backswing_sw", "Head sway (backswing)", "SW",
@@ -646,6 +691,17 @@ def issue_cards(
             lambda v: f"\N{PLUS-MINUS SIGN}{v:.2f}", None,
             f"std dev flagged at or above {float(coach['tempo_std_praise']):.2f}",
             "higher", None,
+        ),
+        # Appended deliberately: legacy_rank below is built from this dict's
+        # order, so inserting anywhere else would renumber every flag after it
+        # and silently change what rules 1 and 2 replay.
+        FLAG_SEQUENCE: (
+            "sequence_pelvis_to_arm_ms", "Downswing sequence", "ms",
+            lambda v: f"{v:+.0f} ms", seq_thr,
+            "the pelvis should peak before the lead arm · "
+            f"flagged below {seq_thr:+.0f} ms",
+            "lower",
+            under("sequence_pelvis_to_arm_ms", seq_thr),
         ),
     }
 
@@ -747,15 +803,20 @@ def issue_cards(
 
     preferred = (
         _CLUB_TIE_PRIORITIES.get(club, ())
-        if selected_rule == PRIORITY_RULE_CLUB_AWARE
+        if selected_rule in _CLUB_AWARE_RULES
         else ()
     )
     preferred_rank = {flag: rank for rank, flag in enumerate(preferred)}
     neutral_rank = len(preferred)
     legacy_rank = {flag: rank for rank, flag in enumerate(specs)}
+    sequence_first = selected_rule == PRIORITY_RULE_SEQUENCE_FIRST
     cards.sort(
         key=lambda card: (
+            # Severity stays the outermost key under every rule: rule 3 moves
+            # the sequence card to the front of its band, not to the front of
+            # the report.
             0 if card.severity == "major" else 1,
+            0 if (sequence_first and card.flag == FLAG_SEQUENCE) else 1,
             preferred_rank.get(card.flag, neutral_rank),
             legacy_rank[card.flag],
         )

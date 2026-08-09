@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 
 import numpy as np
 
-from . import pose
+from . import pose, sequence
 from .config import Config
 from .events import ADDRESS_FRAMES, SwingEvents
 
@@ -43,6 +43,7 @@ FACE_ON_ONLY_FIELDS = (
     "finish_balance_sw",
     "stance_width_sw",
     "downswing_hand_speed_sw_s",
+    "sequence_pelvis_to_arm_ms",
 )
 
 # Report-only context measurements. These belong in the single-session
@@ -97,6 +98,13 @@ class SwingMetrics:
     # older callers while adding named, additive fields to metrics.json.
     stance_width_sw: float = float("nan")  # ankle span at address / shoulder width
     downswing_hand_speed_sw_s: float = float("nan")  # projected wrist-centroid path / s
+    # The only temporal grade in this dataclass: milliseconds by which the
+    # pelvis's peak rotation speed leads the lead arm's through the downswing
+    # (see swinglab.sequence). Positive is the efficient proximal-to-distal
+    # direction; negative means the arms peaked first. NaN whenever the
+    # sequence could not be measured — wrong camera angle, too few downswing
+    # samples, a tracking gap, or two peaks the frame rate cannot separate.
+    sequence_pelvis_to_arm_ms: float = float("nan")
 
     def as_dict(self) -> dict:
         return asdict(self)
@@ -368,6 +376,26 @@ def _downswing_hand_speed_sw_s(
     return round(path_px / sw / elapsed_s, 3)
 
 
+def _sequence_pelvis_to_arm_ms(
+    tracked: list[pose.Landmarks | None],
+    events: SwingEvents,
+    hand: str,
+    angle: str,
+    fps: float,
+) -> float:
+    """The downswing kinematic sequence, reduced to one signed number.
+
+    Every refusal :mod:`swinglab.sequence` can raise — wrong camera angle, too
+    few downswing samples, a tracking gap, peaks the frame rate cannot
+    separate — arrives here as NaN, which is the value that never fires a
+    coaching flag. The reasons are deliberately not collapsed into a number:
+    they are a measurement's way of saying it has nothing to say.
+    """
+    measured = sequence.analyze_sequence(tracked, events, fps, hand, angle)
+    lead_ms = sequence.pelvis_to_arm_lead_ms(measured, fps)
+    return float("nan") if lead_ms is None else lead_ms
+
+
 def compute_metrics(
     swing_no: int,
     tracked: list[pose.Landmarks | None],
@@ -444,6 +472,13 @@ def compute_metrics(
             sw,
             float(fps) if fps is not None else base_fps,
         ),
+        sequence_pelvis_to_arm_ms=_sequence_pelvis_to_arm_ms(
+            tracked,
+            events,
+            hand,
+            angle,
+            float(fps) if fps is not None else base_fps,
+        ),
     )
     if angle == ANGLE_DTL:
         # Every one of these is defined face-on. Down the line they would be
@@ -469,6 +504,7 @@ NUMERIC_FIELDS = (
     "shoulder_tilt_impact_deg",
     "shoulder_tilt_delta_deg",
     "finish_balance_sw",
+    "sequence_pelvis_to_arm_ms",
 )
 
 SESSION_STATS_FIELDS = NUMERIC_FIELDS + CONTEXT_NUMERIC_FIELDS
