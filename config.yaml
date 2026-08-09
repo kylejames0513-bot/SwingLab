@@ -64,6 +64,21 @@ coaching:
                              # this (mean over the finish hold, in shoulder
                              # widths) - a step or stumble, well above pose
                              # jitter (~0.02 SW)
+  sequence_priority_enabled: true
+                             # rule 3: a fired downswing-sequence flag takes
+                             # the priority slot ahead of positional faults
+                             # INSIDE its severity band. Rule 3 is rule 2 plus
+                             # that change, so club-aware tie-breaking still
+                             # applies. The report never claims the sequence
+                             # caused the fault ranked below it - a single 2D
+                             # camera cannot show that.
+  sequence_lead_warn_ms: 0.0
+                             # flag when the pelvis does NOT peak before the
+                             # lead arm (see swinglab.sequence). Zero rather
+                             # than a tuned threshold: any gap the frame rate
+                             # cannot resolve is already NaN upstream, so a
+                             # negative value here is a separation the footage
+                             # actually proved - the casting pattern.
 
 report:
   guided_presentation_enabled: true

@@ -66,6 +66,9 @@ _METRIC_INFO: dict[str, tuple[str, str, str | None]] = {
         "Shoulder-tilt change (address \N{RIGHTWARDS ARROW} impact)", _DEG, "lower",
     ),
     "finish_balance_sw": ("Finish balance", "SW", "higher"),
+    # Temporal, and the only entry here whose SIGN is the finding:
+    # negative means the arms peaked before the hips.
+    "sequence_pelvis_to_arm_ms": ("Downswing sequence", "ms", "lower"),
 }
 
 # Progress-page chip labels for the fired coaching flags.

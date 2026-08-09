@@ -419,6 +419,25 @@ _SCENES = [
                    knee_trail=(102.0, 152.0))],
     ),
     _scene(
+        "sequence-pump-drill",
+        "Pump drill: two pumps from the top, then swing through",
+        [_ground(), _ball(), _label(140, 44, "pump x2"),
+         _arrow(126, 96, 116, 132)],
+        # Top, down to hip height, back to the top, then through: the club
+        # returns to the same place twice, which is what a pump looks like.
+        [P_TOP, P_HALF_BACK, P_TOP, P_IMPACT],
+    ),
+    _scene(
+        "sequence-step-through",
+        "Step-through start: feet together, step as the club starts down",
+        [_ground(), _ball(), _label(52, 40, "step"),
+         _arrow(96, 176, 66, 176)],
+        [pose_with(P_ADDRESS, **_FEET_TOGETHER),
+         pose_with(P_TOP, **_FEET_TOGETHER),
+         P_IMPACT,
+         P_FINISH],
+    ),
+    _scene(
         "balance-hold-the-finish",
         "Hold the finish for a three count",
         [_ground(), _ball(), _label(56, 40, "1-2-3")],

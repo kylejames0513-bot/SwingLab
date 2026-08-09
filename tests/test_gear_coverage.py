@@ -78,6 +78,14 @@ UNSTOCKED = {
         "Never stocked. Feet-together and hold-the-finish need no equipment, "
         "so this has always been a category with drills and no product."
     ),
+    "swinglab:sequence": (
+        "New category — the downswing-sequence drills arrived with the "
+        "kinematic-sequence wiring and the store has never carried gear for "
+        "them. An impact bag or a weighted club is the aid the pump drill is "
+        "built around; neither is stocked. Both drills work with no equipment "
+        "at all, so this is a sourcing opportunity rather than a broken "
+        "prescription."
+    ),
 }
 
 UNRECOMMENDABLE = {
@@ -101,6 +109,7 @@ UNRECOMMENDABLE = {
         "swinglab:hip-slide",
         "swinglab:head-dip",
         "swinglab:balance",
+        "swinglab:sequence",
     )
 }
 

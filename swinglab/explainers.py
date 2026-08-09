@@ -30,6 +30,10 @@ SW_GLOSS = (
 SECONDS_GLOSS = "Measured in seconds, straight from your video's frames."
 RATIO_GLOSS = "A ratio: backswing time \N{DIVISION SIGN} downswing time."
 DEG_GLOSS = "Degrees as the camera sees them, filmed face-on."
+MS_GLOSS = (
+    "Milliseconds between two peaks in the same clip. Positive means "
+    "the hips led; negative means the arms did."
+)
 SW_PER_SECOND_GLOSS = (
     "Shoulder-widths per second in the camera view — a personal comparison "
     "unit, not mph."
@@ -196,6 +200,23 @@ def build_explainers(coach: dict) -> dict[str, Explainer]:
             DEG_GLOSS + " Zero or positive change is the reference.",
             how="Impact tilt minus address tilt; flagged when negative "
                 "(tilt shrinking through the ball).",
+        ),
+        Explainer(
+            "sequence_pelvis_to_arm_ms",
+            "Downswing sequence",
+            "How many milliseconds before your lead arm your hips reach their "
+            "fastest rotation on the way down. An efficient swing unwinds from "
+            "the ground up, so this number should be positive — the hips peak, "
+            "then hand their speed on. A negative number is the casting "
+            "pattern: the arms peaked first, spending the speed before it "
+            "reached the ball.",
+            MS_GLOSS,
+            how="Peak image-plane rotation speed of the hip line minus the "
+                "same for the lead arm, between top and impact, face-on only; "
+                "flagged below 0 ms. Blank whenever the camera angle, the "
+                "tracking, or the frame rate could not separate the two "
+                "peaks — a gap this measurement cannot resolve is reported as "
+                "nothing rather than as a winner.",
         ),
         Explainer(
             "finish_balance_sw",
