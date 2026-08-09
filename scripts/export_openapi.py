@@ -7,16 +7,23 @@ environment-dependent values — so it can be committed and diffed, and so a
 stale copy shows up as a diff rather than as churn.
 
 What this document is, and is not: FastAPI derives it from the route
-signatures, and the `/api/` handlers currently return bare `JSONResponse`
-rather than declared response models. The paths, methods, and parameters are
-therefore accurate, but **no operation declares a 200 response schema**. Run
-`openapi-typescript` against this and you get route names with `unknown`
-bodies.
+signatures. Every `/api/v1` operation now declares a 200 response schema from
+`swinglab/web/api_models.py`, so `openapi-typescript` produces real bodies
+rather than `unknown`.
 
-Closing that gap means giving the `/api/` handlers Pydantic response models.
-Until then `mobile/src/api/types.ts` hand-mirrors the contract documented in
-`docs/mobile-api-tokens.md`, and `tests/test_openapi_export.py` asserts the
-two agree on which routes exist.
+One caveat worth knowing before trusting it. The handlers still return
+`JSONResponse`, because that is where `Cache-Control: no-store` is applied,
+and FastAPI does not validate a response it did not serialize itself. So the
+declared schema is not enforced by the framework — it is enforced by
+`tests/test_api_response_contract.py`, which validates real responses from a
+real account with a real completed analysis. That distinction matters: the
+schema is true because a test proves it each build, not because the route
+declares it.
+
+`mobile/src/api/types.ts` is still hand-written. It no longer has to be —
+generating it from this document is now possible, and
+`tests/test_openapi_export.py` continues to assert the two agree on which
+routes exist.
 """
 
 from __future__ import annotations

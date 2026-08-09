@@ -313,6 +313,357 @@
         "title": "Body_upload_upload_post",
         "type": "object"
       },
+      "BriefDrill": {
+        "additionalProperties": false,
+        "properties": {
+          "aim": {
+            "title": "Aim",
+            "type": "string"
+          },
+          "dosage": {
+            "title": "Dosage",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "pass_mark": {
+            "title": "Pass Mark",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "aim",
+          "dosage",
+          "pass_mark"
+        ],
+        "title": "BriefDrill",
+        "type": "object"
+      },
+      "BriefFocus": {
+        "additionalProperties": false,
+        "properties": {
+          "benchmark": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark"
+          },
+          "cue": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cue"
+          },
+          "key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value"
+          },
+          "why": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Why"
+          }
+        },
+        "title": "BriefFocus",
+        "type": "object"
+      },
+      "CaddieBrief": {
+        "additionalProperties": false,
+        "properties": {
+          "drill": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BriefDrill"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "focus": {
+            "$ref": "#/components/schemas/BriefFocus"
+          },
+          "recurring_sessions": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Sessions"
+          },
+          "refilm_required": {
+            "title": "Refilm Required",
+            "type": "boolean"
+          },
+          "remaining_issues": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Remaining Issues"
+          },
+          "trend": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Trend"
+          },
+          "version": {
+            "title": "Version",
+            "type": "integer"
+          },
+          "warning": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warning"
+          }
+        },
+        "required": [
+          "version",
+          "focus",
+          "refilm_required"
+        ],
+        "title": "CaddieBrief",
+        "type": "object"
+      },
+      "EventAccepted": {
+        "additionalProperties": false,
+        "properties": {
+          "accepted": {
+            "title": "Accepted",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "accepted"
+        ],
+        "title": "EventAccepted",
+        "type": "object"
+      },
+      "GolferProfile": {
+        "additionalProperties": false,
+        "properties": {
+          "camera_angle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Camera Angle"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "experience_mode": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Experience Mode"
+          },
+          "handedness": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handedness"
+          },
+          "handicap_range": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Handicap Range"
+          },
+          "is_complete": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Complete"
+          },
+          "marketing_email_opt_in": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marketing Email Opt In"
+          },
+          "practice_minutes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Practice Minutes"
+          },
+          "preferred_club": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preferred Club"
+          },
+          "primary_goal": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary Goal"
+          },
+          "reduced_motion": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reduced Motion"
+          },
+          "sessions_per_week": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sessions Per Week"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "title": "GolferProfile",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -324,6 +675,641 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "Identity": {
+        "additionalProperties": false,
+        "properties": {
+          "email": {
+            "title": "Email",
+            "type": "string"
+          },
+          "email_verified": {
+            "title": "Email Verified",
+            "type": "boolean"
+          },
+          "history_epoch": {
+            "title": "History Epoch",
+            "type": "integer"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "shopify_account_state": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shopify Account State"
+          },
+          "shopify_customer_linked": {
+            "title": "Shopify Customer Linked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "id",
+          "email",
+          "email_verified",
+          "history_epoch",
+          "shopify_customer_linked"
+        ],
+        "title": "Identity",
+        "type": "object"
+      },
+      "MeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "identity": {
+            "$ref": "#/components/schemas/Identity"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GolferProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_version",
+          "identity"
+        ],
+        "title": "MeResponse",
+        "type": "object"
+      },
+      "MobileToken": {
+        "additionalProperties": false,
+        "description": "Management metadata only. The raw credential is never in this shape —\nit appears once, in MobileTokenIssueResponse, and never again.",
+        "properties": {
+          "active": {
+            "title": "Active",
+            "type": "boolean"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "expires_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expires At"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "last_used_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Used At"
+          },
+          "revoked_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revoked At"
+          },
+          "selector": {
+            "title": "Selector",
+            "type": "string"
+          }
+        },
+        "required": [
+          "selector",
+          "label",
+          "active"
+        ],
+        "title": "MobileToken",
+        "type": "object"
+      },
+      "MobileTokenIssueResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "device": {
+            "$ref": "#/components/schemas/MobileToken"
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          },
+          "token": {
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "resource_version",
+          "token",
+          "device"
+        ],
+        "title": "MobileTokenIssueResponse",
+        "type": "object"
+      },
+      "MobileTokenListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          },
+          "tokens": {
+            "items": {
+              "$ref": "#/components/schemas/MobileToken"
+            },
+            "title": "Tokens",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resource_version",
+          "tokens"
+        ],
+        "title": "MobileTokenListResponse",
+        "type": "object"
+      },
+      "MobileTokenRevokeResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          },
+          "revoked": {
+            "title": "Revoked",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "resource_version",
+          "revoked"
+        ],
+        "title": "MobileTokenRevokeResponse",
+        "type": "object"
+      },
+      "PracticeCheckin": {
+        "additionalProperties": false,
+        "properties": {
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "session_id"
+        ],
+        "title": "PracticeCheckin",
+        "type": "object"
+      },
+      "PracticeCheckinListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "checkins": {
+            "items": {
+              "$ref": "#/components/schemas/PracticeCheckin"
+            },
+            "title": "Checkins",
+            "type": "array"
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_version",
+          "checkins"
+        ],
+        "title": "PracticeCheckinListResponse",
+        "type": "object"
+      },
+      "PracticeCheckinResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "checkin": {
+            "$ref": "#/components/schemas/PracticeCheckin"
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_version",
+          "checkin"
+        ],
+        "title": "PracticeCheckinResponse",
+        "type": "object"
+      },
+      "PracticeChoice": {
+        "additionalProperties": false,
+        "properties": {
+          "aim": {
+            "title": "Aim",
+            "type": "string"
+          },
+          "detail": {
+            "title": "Detail",
+            "type": "string"
+          },
+          "dosage": {
+            "title": "Dosage",
+            "type": "string"
+          },
+          "drill_name": {
+            "title": "Drill Name",
+            "type": "string"
+          },
+          "minutes": {
+            "title": "Minutes",
+            "type": "integer"
+          },
+          "pass_mark": {
+            "title": "Pass Mark",
+            "type": "string"
+          },
+          "selected": {
+            "title": "Selected",
+            "type": "boolean"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "minutes",
+          "title",
+          "detail",
+          "selected",
+          "drill_name",
+          "aim",
+          "dosage",
+          "pass_mark"
+        ],
+        "title": "PracticeChoice",
+        "type": "object"
+      },
+      "ProfileResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GolferProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_version"
+        ],
+        "title": "ProfileResponse",
+        "type": "object"
+      },
+      "Session": {
+        "additionalProperties": false,
+        "description": "Job.as_dict() plus the four keys api_payload adds once an analysis is\nfinished. Those four are optional because they are genuinely absent from\na queued or failed session, not because their type is unclear.",
+        "properties": {
+          "angle": {
+            "title": "Angle",
+            "type": "string"
+          },
+          "club": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Club"
+          },
+          "coaching_eligible": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coaching Eligible"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "fast": {
+            "title": "Fast",
+            "type": "boolean"
+          },
+          "hand": {
+            "title": "Hand",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "level": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Level"
+          },
+          "log": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Log",
+            "type": "array"
+          },
+          "metrics_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metrics Url"
+          },
+          "outcome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Outcome"
+          },
+          "queue_position": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Queue Position"
+          },
+          "report": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report"
+          },
+          "report_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Report Url"
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          },
+          "source_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source Name"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          },
+          "swings_done": {
+            "title": "Swings Done",
+            "type": "integer"
+          },
+          "swings_total": {
+            "title": "Swings Total",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_version",
+          "id",
+          "status",
+          "created_at",
+          "hand",
+          "angle",
+          "fast",
+          "log",
+          "swings_done",
+          "swings_total"
+        ],
+        "title": "Session",
+        "type": "object"
+      },
+      "SessionBriefResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "caddie_brief": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaddieBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_version"
+        ],
+        "title": "SessionBriefResponse",
+        "type": "object"
+      },
+      "SessionListResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          },
+          "sessions": {
+            "items": {
+              "$ref": "#/components/schemas/Session"
+            },
+            "title": "Sessions",
+            "type": "array"
+          }
+        },
+        "required": [
+          "resource_version",
+          "sessions"
+        ],
+        "title": "SessionListResponse",
+        "type": "object"
+      },
+      "TodayResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "caddie_brief": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CaddieBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "latest_session": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Session"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "practice_checked_in": {
+            "title": "Practice Checked In",
+            "type": "boolean"
+          },
+          "practice_plan": {
+            "items": {
+              "$ref": "#/components/schemas/PracticeChoice"
+            },
+            "title": "Practice Plan",
+            "type": "array"
+          },
+          "profile": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GolferProfile"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "resource_version": {
+            "title": "Resource Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "resource_version",
+          "practice_plan",
+          "practice_checked_in"
+        ],
+        "title": "TodayResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -720,7 +1706,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/EventAccepted"
+                }
               }
             },
             "description": "Successful Response"
@@ -736,7 +1724,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MeResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -753,7 +1743,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTokenListResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -768,7 +1760,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTokenIssueResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -795,7 +1789,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/MobileTokenRevokeResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -821,7 +1817,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PracticeCheckinListResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -835,7 +1833,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/PracticeCheckinResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -851,7 +1851,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -865,7 +1867,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ProfileResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -881,7 +1885,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionListResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -908,7 +1914,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/Session"
+                }
               }
             },
             "description": "Successful Response"
@@ -945,7 +1953,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/SessionBriefResponse"
+                }
               }
             },
             "description": "Successful Response"
@@ -971,7 +1981,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/TodayResponse"
+                }
               }
             },
             "description": "Successful Response"
