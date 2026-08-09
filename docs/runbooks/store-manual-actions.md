@@ -14,72 +14,39 @@ untracked (memberships are subscription-based — no quantity, per owner),
 Contact page filled + `contact` template assigned, About and FAQ pages
 updated to the new pricing.
 
-## 1. Create the three missing legal policies
+## 1. Legal policies — the text now lives in one place
 
-Settings → Policies. The storefront currently promises "30-day returns" and
-"14-day Pro refunds" while /policies/refund-policy returns 404 — this is the
-top trust/compliance gap. Paste the following.
+**`docs/runbooks/store-policies.md` holds the final, paste-ready text.** The
+drafts that used to sit here have been deleted rather than updated, because two
+copies of a policy in one repo is how a store ends up publishing the older one.
+That is not hypothetical: the copy that was here said *"we currently ship
+physical gear within the United States"* while checkout was already selling to
+21 Asian markets, and it described a "Lifetime" variant that had been renamed
+Founders Pass months earlier.
 
-### Refund policy
+Go there for: **Terms of Service** (new — the live URL 404s and no record
+exists, while two recurring selling plans charge cards), **Refund policy**
+(replaces Shopify's stock physical-goods template), **Contact information**
+(adds the business address Meta's commerce review looks for), a **privacy
+addendum** covering swing video, and the **Shipping policy** — which is the one
+draft still carrying brackets, because `docs/first-sale-launch.md` forbids
+publishing transit times no supplier has demonstrated.
 
-```html
-<h2>Returns and refunds, stated plainly</h2>
-<p>Short policies, honestly framed. If anything here leaves a question, reply to your order confirmation email or use the <a href="/pages/contact">contact page</a> and a person will sort it out.</p>
-<h2>Training gear</h2>
-<p>Unused gear can be returned within <strong>30 days of delivery, no questions asked</strong>. Unused means what it says — a training aid you decided against is returnable; one that has done three weeks of range work is not.</p>
-<ul>
-  <li>Start a return by replying to your order confirmation email or through the <a href="/pages/contact">contact page</a>. We will send return instructions within 1–2 business days.</li>
-  <li>Refunds go back to the original payment method once the return is confirmed.</li>
-  <li>If an item arrives damaged, defective, or different from what you ordered, tell us within 30 days and we will replace it or refund it in full — that one is on us, not you.</li>
-</ul>
-<h2>CaddieInsight Pro and digital services</h2>
-<p>Pro is refundable within <strong>14 days of purchase if unused</strong>. A refunded order removes the access it granted.</p>
-<ul>
-  <li>Bought as a subscription, monthly and yearly Pro renew automatically — cancel anytime from your store account, and Pro keeps running to the end of the period you have paid for. Cancelling stops the next charge; it does not refund the current one.</li>
-  <li>Bought as a one-time pass, a term is fixed-length — 31 days for the 1-month option, 365 for the 12-month — and simply expires. Nothing renews on its own.</li>
-  <li>Lifetime is a single payment that never renews and never expires.</li>
-</ul>
-<p>The app's free plan — one full analysis per calendar month — never expires and requires no purchase at all.</p>
-```
+Two things there need you rather than a paste:
 
-### Shipping policy
+- **The owner block** — legal entity name and the business mailing address to
+  publish. The address on file is residential, so this is a decision. The same
+  token appears in three policies; one find-and-replace does all three.
+- **Settings → General → Store contact email** is still the personal iCloud
+  address, and Shopify's stock privacy template renders it into the live
+  privacy policy. No policy edit reaches it. Changing it to
+  `inquiry@caddieinsight.com` is the highest-value single click on this page,
+  because it fixes a policy you never have to open.
 
-```html
-<h2>Shipping, stated plainly</h2>
-<p>Training aids ship directly from partner warehouses rather than from a CaddieInsight facility. That keeps prices down; the trade-off is transit time, and we would rather state it than surprise you.</p>
-<ul>
-  <li><strong>Processing:</strong> 1–2 business days.</li>
-  <li><strong>US delivery:</strong> typically 6–12 business days.</li>
-  <li><strong>Tracking:</strong> emailed at dispatch, so you can follow the package the whole way.</li>
-  <li><strong>Shipping region:</strong> we currently ship physical gear within the United States.</li>
-</ul>
-<h2>Digital delivery</h2>
-<p>CaddieInsight Pro is delivered digitally — nothing ships. When your paid order is confirmed, Pro access is added to the CaddieInsight account matching your checkout email, usually within minutes. Bought before creating an account? The purchase waits and is claimed automatically the first time that email signs up or logs in at <a href="https://app.caddieinsight.com">app.caddieinsight.com</a>.</p>
-<p>If a package is late, lost, or arrives damaged, reply to your order confirmation email or use the <a href="/pages/contact">contact page</a> and we will chase it down or make it right.</p>
-```
-
-### Terms of service
-
-Review the bracketed governing-law line before publishing.
-
-```html
-<h2>Terms of service</h2>
-<p>These terms cover the CaddieInsight store (caddieinsight.com) and the CaddieInsight app (app.caddieinsight.com). Using either means you accept them. They are written to be read, not skimmed past.</p>
-<h2>What CaddieInsight is</h2>
-<p>CaddieInsight produces automated golf-swing analysis from phone video: timing estimates and supported 2D movement measurements, one prioritized coaching focus, and a practice plan with measurable re-film targets. It produces estimates from a single camera. It is not a substitute for instruction from a teaching professional, and it does not measure club path, face angle, launch, spin, carry, strike, or ball flight. We state what it can and cannot see, and we stand behind exactly that.</p>
-<h2>Your account</h2>
-<p>Accounts are identified by email. Keep access to your email secure; sign-in codes sent to it act as your key. You must be old enough to form a contract where you live. One account per person. We may suspend accounts used to abuse the service, other users, or these terms.</p>
-<h2>Your videos and data</h2>
-<p>Your swing videos and reports are yours. You grant us the limited license needed to process, store, and display them back to you — that is the whole purpose of the license. We do not sell your footage. You can delete your swing history from your account at any time, and account deletion removes it permanently, as described in our <a href="/policies/privacy-policy">Privacy Policy</a>. Upload only footage you have the right to use.</p>
-<h2>Purchases, subscriptions, and refunds</h2>
-<p>Prices are in USD. Pro access activates on the CaddieInsight account matching your checkout email. Subscriptions renew automatically until cancelled; cancellation stops the next charge and access runs to the end of the paid period. One-time passes expire on their own. Refunds are governed by our <a href="/policies/refund-policy">Refund Policy</a> (30-day unused gear returns; 14-day unused-Pro refunds).</p>
-<h2>Acceptable use</h2>
-<p>Do not attempt to break, overload, scrape, or reverse-engineer the service; do not upload content that is unlawful or infringes others' rights; do not resell access. We may refuse service to protect the platform or other customers.</p>
-<h2>Honest limitations of liability</h2>
-<p>The service is provided as-is. To the maximum extent the law allows, CaddieInsight is not liable for indirect or consequential damages, and our total liability for any claim is capped at the amount you paid us in the twelve months before the claim. Nothing here limits liability that cannot lawfully be limited. Golf swings involve physical activity: warm up, use common sense, and stop if something hurts — the app prescribes drills, not medical advice.</p>
-<h2>Changes and contact</h2>
-<p>We may update these terms as the product evolves; material changes will be posted here with an updated date. These terms are governed by the laws of [your state], United States. Questions: use the <a href="/pages/contact">contact page</a> or reply to any CaddieInsight email.</p>
-```
+The Terms also publish two promises that need a switch thrown, not a paragraph
+written: a renewal reminder at least 7 days before an annual charge (confirm
+Shopify's upcoming-subscription-billing notification is enabled), and the
+100-member Founders cap in §3 below.
 
 ## 2. Fill the Contact page (currently empty) and assign the form template
 
@@ -105,12 +72,26 @@ Online Store → Pages → Contact.
 <p>Unused gear returns within 30 days; unused Pro refunds within 14. The full details live on the <a href="/pages/shipping-returns">Shipping &amp; Returns page</a> and in our <a href="/policies/refund-policy">Refund Policy</a>.</p>
 ```
 
-## 3. Founders Pass cap (manual, by owner decision)
+## 3. Founders Pass cap — one checkbox, and one adjacent click that breaks the store
 
-Memberships carry no inventory quantity (owner decision: subscription-based,
-no quantity). The "capped at the first 100 members" promise is therefore
-enforced by hand: watch Founders Pass sales (SKU `SL-PRO-LIFE`) and retire
-the variant once 100 have sold. The copy promises the cap — honor it.
+The storefront promises "the first 100 members" three times, and §8 of the
+Terms of Service now publishes that cap as a term of the contract. **It is not
+enforced today.** Variant `46839745282220` (`SL-PRO-LIFE`) carries
+`inventoryQuantity: 100` and `inventoryPolicy: DENY`, but
+`inventoryItem.tracked: false` makes both inert — nothing stops sale 101, or
+sale 5,000, each one a perpetual membership against perpetual compute. A cap
+published in the Terms and not enforced is not a marketing exaggeration; it is
+a false statement in a contract, from the moment sale 101 clears.
+
+Enforcement is one checkbox: the Founders Pass variant → Inventory → **Track
+quantity**. No theme deploy is needed — the theme already renders the disabled
+option, the "Sold out" label and schema.org `OutOfStock` off `variant.available`.
+
+**Do not enable tracking on `SL-PRO-1MO` (qty 0) or `SL-PRO-12MO` (qty -1).**
+Both are `CONTINUE`, and tracking them would make the two subscription plans
+immediately unbuyable. This is the single most dangerous adjacent click in the
+whole launch — the checkbox that fixes one variant silently kills the two next
+to it. See `docs/superpowers/specs/2026-08-09-two-tier-membership-and-free-proof-cycle-design.md`.
 
 ## 4. Gear → report tag coverage
 
@@ -145,8 +126,13 @@ usually same day), and every training aid in the shop is one I've tested with
 the drill it's matched to.</p>
 ```
 
-Also note: the About page hardcodes Pro prices ($4.99/$39.99/$79.99) — update
-that paragraph whenever pricing changes (see strategy doc pricing proposal).
+Also note: the About page hardcodes Pro prices ($4.99/$39.99/$79.99), which are
+already two price changes stale. Prices are about to move again — a second paid
+tier and a Founders Pass repricing are approved in
+`docs/superpowers/specs/2026-08-09-two-tier-membership-and-free-proof-cycle-design.md`.
+Rewrite that paragraph to name the plans and link the membership page instead of
+quoting figures; the policies in `store-policies.md` were written price-free for
+the same reason, and every hardcoded number is a page that goes wrong silently.
 
 ## 7. Create an "Accuracy & Limits" page (differentiator-compounding)
 
