@@ -84,6 +84,10 @@ from ..report_view import (
 )
 from . import mailer
 from .humanize import friendly_error
+# users does not import jobs, so this direction is cycle-free. The store
+# itself stays duck-typed (white-label embedders pass their own); only the
+# entitlement predicate is shared, so every gate agrees on one rule.
+from .users import entitled_to_coach_features
 
 logger = logging.getLogger("swinglab.web.jobs")
 
@@ -934,7 +938,14 @@ class JobManager:
         ):
             return ReportEntitlementSnapshot("available")
         owner = self._users.get(user_id)
-        if owner is None or not getattr(owner, "is_pro", False):
+        # One predicate for every Coach-tier gate. With the ladder rolled out
+        # it means has_coach; before that it means is_pro — so the replay is
+        # never locked against a tier the store does not yet sell. Falls
+        # closed for a vanished owner or a stand-in store without the
+        # attribute: the locked note, not a free replay.
+        if not entitled_to_coach_features(
+            owner, bool(self.cfg.billing.get("coach_tier_enabled"))
+        ):
             return ReportEntitlementSnapshot("locked")
         return ReportEntitlementSnapshot("available")
 

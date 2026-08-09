@@ -20,6 +20,7 @@ this test proving the models are true.
 
 from __future__ import annotations
 
+import json
 import time
 
 import pytest
@@ -27,7 +28,9 @@ import pytest
 fastapi = pytest.importorskip("fastapi")
 from fastapi.testclient import TestClient
 
+from swinglab.config import Config
 from swinglab.web import api_models
+from swinglab.web.app import create_app, docs_enabled
 
 # Reuse the account-enabled app and signup flow the device-token tests already
 # stand up, rather than a second, subtly different one — the contract has to
@@ -242,3 +245,143 @@ def test_an_undeclared_key_is_a_contract_breach():
         api_models.MobileTokenRevokeResponse.model_validate(
             {**valid, "undocumented_field": "shipped by accident"}
         )
+
+
+# -- what the API surface must NOT hand out ----------------------------------
+#
+# The schema is the other half of the contract above: it says what every route
+# takes and returns. That is the right thing to publish to a developer and the
+# wrong thing to publish to the internet, because it also enumerates the
+# operator-only /admin routes whose entire guard is that they look absent.
+
+
+@pytest.fixture
+def clean_docs_env(monkeypatch):
+    """No deployment signals and no explicit override — a developer's laptop."""
+    for name in ("SWINGLAB_ENABLE_DOCS", "PUBLIC_BASE_URL", "PORT"):
+        monkeypatch.delenv(name, raising=False)
+    return monkeypatch
+
+
+def test_docs_are_published_for_local_development(clean_docs_env, tmp_path):
+    """The default must not regress the developer experience."""
+    assert docs_enabled() is True
+    client = TestClient(create_app(Config(), sessions_dir=tmp_path / "sessions"))
+    assert client.get("/openapi.json").status_code == 200
+    assert client.get("/docs").status_code == 200
+    assert client.get("/redoc").status_code == 200
+
+
+@pytest.mark.parametrize(
+    "variable, value",
+    [("PUBLIC_BASE_URL", "https://app.example.test"), ("PORT", "8080")],
+)
+def test_a_deployed_process_publishes_no_schema(
+    clean_docs_env, tmp_path, variable, value
+):
+    """Either signal that this process has a public identity turns docs off.
+
+    PORT matters on its own: Railway injects it whether or not the operator
+    remembered to set a canonical base URL, so the schema stays private even
+    on a half-configured deploy.
+    """
+    clean_docs_env.setenv(variable, value)
+    assert docs_enabled() is False
+    client = TestClient(create_app(Config(), sessions_dir=tmp_path / "sessions"))
+    for path in ("/openapi.json", "/docs", "/redoc"):
+        assert client.get(path).status_code == 404, path
+
+
+def test_the_opt_in_decides_it_in_both_directions(clean_docs_env):
+    clean_docs_env.setenv("PUBLIC_BASE_URL", "https://app.example.test")
+    clean_docs_env.setenv("SWINGLAB_ENABLE_DOCS", "true")
+    assert docs_enabled() is True
+    clean_docs_env.delenv("PUBLIC_BASE_URL")
+    clean_docs_env.setenv("SWINGLAB_ENABLE_DOCS", "off")
+    assert docs_enabled() is False
+
+
+def test_an_unrecognized_opt_in_value_fails_closed(clean_docs_env):
+    """A typo must not publish the schema — that is the failure that matters."""
+    clean_docs_env.setenv("SWINGLAB_ENABLE_DOCS", "ture")
+    assert docs_enabled() is False
+
+
+def test_the_exported_document_survives_docs_being_off(clean_docs_env, tmp_path):
+    """scripts/export_openapi.py calls app.openapi() directly, not over HTTP.
+
+    If disabling the URL also disabled the document, the committed
+    docs/api/openapi-v1.json — and the generated mobile types that depend on
+    it — would silently stop being producible on a deployed box.
+    """
+    clean_docs_env.setenv("PUBLIC_BASE_URL", "https://app.example.test")
+    app = create_app(Config(), sessions_dir=tmp_path / "sessions")
+    assert "/api/v1/me" in app.openapi()["paths"]
+
+
+def test_the_schema_never_publishes_how_admin_routes_are_guarded(app):
+    """The /admin guard works by being indistinguishable from a missing route.
+
+    Its docstring is published verbatim as the operation description, so
+    explaining the credential and the 404 cloaking there hands an attacker
+    the two things the guard depends on staying quiet about.
+    """
+    rendered = json.dumps(app.openapi())
+    assert "/admin/kpis" in rendered, "asserting against the wrong document"
+    for leak in ("SWINGLAB_ADMIN_TOKEN", "401/403", "constant-time"):
+        assert leak not in rendered, leak
+
+
+# -- the headers every response carries --------------------------------------
+
+
+def security_headers_of(response) -> dict[str, str]:
+    return {
+        name: response.headers.get(name)
+        for name in (
+            "x-content-type-options",
+            "referrer-policy",
+            "x-frame-options",
+            "content-security-policy",
+        )
+    }
+
+
+EXPECTED_SECURITY_HEADERS = {
+    "x-content-type-options": "nosniff",
+    "referrer-policy": "strict-origin-when-cross-origin",
+    "x-frame-options": "DENY",
+    "content-security-policy": "frame-ancestors 'none'",
+}
+
+
+@pytest.mark.parametrize(
+    "path", ["/", "/api/v1/me", "/static/pwa-icon.svg", "/no-such-page"]
+)
+def test_every_response_carries_the_security_headers(app, path):
+    """Including the ones no route function produced: a static file, a 404,
+    and an unauthenticated API rejection all leave through the same layer."""
+    response = TestClient(app).get(path)
+    assert security_headers_of(response) == EXPECTED_SECURITY_HEADERS
+
+
+def test_hsts_is_asserted_only_over_https(app):
+    """Sent on a plain connection it is ignored anyway; asserted locally it
+    would pin a developer's localhost to https for a year."""
+    plain = TestClient(app, base_url="http://testserver").get("/")
+    assert "strict-transport-security" not in plain.headers
+
+    secure = TestClient(app, base_url="https://testserver").get("/")
+    assert secure.headers["strict-transport-security"] == (
+        "max-age=31536000; includeSubDomains"
+    )
+
+
+def test_the_csp_constrains_framing_only(app):
+    """A script-src or style-src here would break the app: every page ships
+    inline <script> and inline style attributes. frame-ancestors cannot break
+    rendering, so it is the one directive worth sending as enforcing."""
+    policy = TestClient(app).get("/").headers["content-security-policy"]
+    assert policy == "frame-ancestors 'none'"
+    for directive in ("script-src", "style-src", "default-src", "img-src"):
+        assert directive not in policy

@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 from swinglab.config import Config
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
-from swinglab.web.users import UserStore
+from swinglab.web.users import COACH, UserStore
 
 from tests.test_trends import (
     make_fake_analyze,
@@ -39,8 +39,14 @@ def make_app(tmp_path, monkeypatch, gate=True):
 
 
 def grant_pro(client, email="kyle@example.com"):
+    """Grant the tier that actually unlocks /progress.
+
+    COACH, not Pro. The proof-cycle dashboard is the top tier of the
+    two-tier ladder — a Pro grant here would correctly leave the teaser up,
+    which would make every assertion below test the wrong thing.
+    """
     users: UserStore = client.app.state.users
-    users.grant_pro_days(users.get_by_email(email).id, 31)
+    users.grant_pro_days(users.get_by_email(email).id, 31, tier=COACH)
 
 
 def test_free_account_sees_teaser_and_no_trend_data(tmp_path, monkeypatch):
@@ -108,7 +114,7 @@ def test_digest_links_free_users_to_sessions_not_the_lock(
     tmp_path, monkeypatch
 ):
     from swinglab.web.digest import compose_digest
-    from swinglab.web.users import UserStore
+    from swinglab.web.users import COACH, UserStore
 
     app = make_app(tmp_path, monkeypatch)
     client = TestClient(app)
@@ -131,7 +137,7 @@ def test_digest_links_free_users_to_sessions_not_the_lock(
     assert "Your sessions" in html and "/sessions" in html
     assert "Your progress" not in html
 
-    users.grant_pro_days(user.id, 31)
+    users.grant_pro_days(user.id, 31, tier=COACH)
     pro_user = users.get_by_email("kyle@example.com")
     subject, html = compose_digest(
         pro_user, gated_cfg, jobs, base_url="https://app.example", secret="s"

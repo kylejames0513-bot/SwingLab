@@ -42,19 +42,30 @@
   <meta property="og:url" content="{{ canonical_url }}">
   {% if resolved_page_description %}<meta property="og:description" content="{{ resolved_page_description | escape }}">{% endif %}
   {%- comment -%}
-    Both marks resolve against the CURRENT brand filename first, then fall
-    back to the theme-packaged asset. The previous names (og-swinglab.png,
-    swinglab-favicon.png) still exist in Shopify Files and would otherwise
-    win over the theme, silently pinning the store to the retired v3 mark —
-    a Files entry always beats a theme asset. New names rather than
-    overwritten ones, per store-assets/README.md: never replace a filename
-    the live theme references, because that bypasses the unpublished-theme
-    preview and leaves no rollback.
+    Brand marks come from the theme, never from a Files lookup.
 
-    Until the caddieinsight-* files are uploaded to Files, the theme asset
-    fallback serves the new mark, so uploading the theme is sufficient.
+    The earlier version of this block resolved the og mark and the favicon
+    through an images[…] Files lookup, treating a missing entry as falsey so
+    the asset_url branch could take over. It cannot: a Files lookup for a name
+    that is not there returns a *truthy* drop, not nil. So the guard always
+    passed, `image_url` then threw on a drop with no source, and every page
+    shipped a literal "Liquid error (…): invalid url input" into href/content
+    — an unquoted one in the JSON-LD below, which invalidated the whole block.
+    The fallback branches were unreachable the entire time they looked like a
+    safety net.
+
+    An unconditional asset_url has none of that failure mode: the file is
+    packaged with the theme, so it resolves or the theme upload was wrong,
+    and a theme upload alone is enough to ship the mark. It also sidesteps
+    the Files-beats-theme trap that pushed these onto caddieinsight-* names
+    in the first place — Shopify Files still holds og-swinglab.png and
+    swinglab-favicon.png from v3, and no lookup here can be pinned to them.
+
+    page_image stays: it is a genuine Shopify drop that really is nil off a
+    product or article, so a product still shares its own photo, and this
+    is the one branch where the else was ever reachable.
   {%- endcomment -%}
-  {%- assign og_image = page_image | default: images['og-caddieinsight.png'] -%}
+  {%- assign og_image = page_image -%}
   {%- if og_image -%}
     <meta property="og:image" content="https:{{ og_image | image_url: width: 1200 }}">
   {%- else -%}
@@ -67,14 +78,8 @@
     <meta name="twitter:image" content="{{ 'og-caddieinsight.png' | asset_url | prepend: 'https:' | split: '?' | first }}">
   {%- endif -%}
 
-  {%- assign favicon = images['caddieinsight-favicon.png'] -%}
-  {%- if favicon -%}
-    <link rel="icon" type="image/png" href="{{ favicon | image_url: width: 96 }}">
-    <link rel="apple-touch-icon" href="{{ favicon | image_url: width: 180 }}">
-  {%- else -%}
-    <link rel="icon" type="image/png" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
-    <link rel="apple-touch-icon" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
-  {%- endif -%}
+  <link rel="icon" type="image/png" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
+  <link rel="apple-touch-icon" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
 
   {{ 'base.css' | asset_url | stylesheet_tag }}
   {% comment %}
@@ -99,22 +104,24 @@
   <noscript><style>.sl-reveal { opacity: 1; transform: none; }</style></noscript>
 
   {%- comment -%}
-    Same Files-beats-theme trap the og and favicon marks above were moved off,
-    missed here because this one is structured data rather than a visible
-    image. Shopify Files still holds swinglab-logo.png (1400x214, alt "SwingLab
-    logo") from the v3 brand, while the theme ships the v4 lockup at 1400x279 —
-    so this lookup was serving Google the retired mark while the header beside
-    it rendered the current one. Resolve the current filename first, then fall
-    back to the theme asset, so uploading the theme is sufficient on its own.
+    Structured data is the worst place to take the images[] gamble, which is
+    why this one hurt most: the Liquid error the missing lookup produced was
+    interpolated *unquoted* into the logo value, so the JSON did not parse and
+    Google discarded the entire Organization block — a silent total loss
+    rather than a wrong picture.
+
+    asset_url resolves against the theme, matching the header lockup exactly
+    (v4, 1400x279) instead of the 1400x214 swinglab-logo.png v3 mark Files
+    still holds. json does the quoting and escaping, so the value cannot break
+    the document even if the filter chain ever yields something unexpected.
   {%- endcomment -%}
-  {%- assign schema_logo = images['caddieinsight-logo.png'] -%}
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "CaddieInsight",
       "url": {{ shop.url | json }},
-      "logo": {% if schema_logo %}{{ schema_logo | image_url: width: 480 | prepend: 'https:' | json }}{% else %}{{ 'caddieinsight-logo.png' | asset_url | json }}{% endif %}
+      "logo": {{ 'caddieinsight-logo.png' | asset_url | prepend: 'https:' | json }}
     }
   </script>
   {%- comment -%}

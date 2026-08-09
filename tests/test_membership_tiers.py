@@ -75,11 +75,27 @@ def test_shipped_config_pins_the_live_membership_ladder():
     billing = shipped.billing
 
     assert billing["free_per_month"] == 1
+    # The Coach SKUs joined the ledger on 2026-08-09 with the two-tier
+    # design. They are configured ahead of the Shopify variants existing,
+    # which is safe because billing.coach_tier_enabled is still false —
+    # an unsold SKU grants nothing. See
+    # docs/superpowers/specs/2026-08-09-two-tier-membership-and-free-proof-cycle-design.md
     assert billing["shopify_skus"] == {
         "SL-PRO-1MO": 31,
         "SL-PRO-12MO": 365,
         "SL-PRO-LIFE": 36500,
+        "SL-COACH-1MO": 31,
+        "SL-COACH-12MO": 365,
     }
+    # The ladder is configured but NOT rolled out: with this false, any paid
+    # plan still unlocks the replay and the dashboard, exactly as before.
+    # Flipping it without creating the Coach variants would take features
+    # from Pro buyers with nothing in the store to buy them back.
+    assert billing["coach_tier_enabled"] is False
+    assert billing["shopify_sku_tiers"]["SL-PRO-1MO"] == "pro"
+    assert billing["shopify_sku_tiers"]["SL-COACH-1MO"] == "coach"
+    # The Founders Pass is Coach for life, on its original SKU.
+    assert billing["shopify_sku_tiers"]["SL-PRO-LIFE"] == "coach"
     assert billing["pro_price_monthly_text"] == "$9.99/month"
     assert billing["pro_price_annual_text"] == "$69.99/year — $5.83/month"
     assert billing["pro_price_lifetime_text"] == "$149 once — the Founders Pass"

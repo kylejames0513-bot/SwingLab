@@ -13,6 +13,20 @@ names for exactly this reason, and the schema.org Organization logo was missed
 rendered the current one.
 
 This is the check that would have caught it.
+
+There is a second, worse failure mode in the same lookup, and the tests below
+now cover both. `images['<name>']` does not return nil when the entry is
+absent — it returns a **truthy** drop. So `{% if %}`-guarding a lookup does
+not protect anything: the guard passes, the `image_url` behind it throws
+"invalid url input", and Liquid renders that error as literal text into
+whichever attribute it sat in. The asset_url fallback written beside it is
+dead code. In `layout/theme.liquid` that shipped a broken favicon, image-less
+social cards, and — because the error landed unquoted inside JSON-LD —
+structured data Google discarded outright, on every page of the store.
+
+Hence the stricter rule for the layout: its brand marks ship *with the theme*,
+so they resolve through `asset_url` unconditionally and never through a Files
+lookup at all, whatever the filename.
 """
 
 from __future__ import annotations
@@ -34,12 +48,39 @@ RETIRED_IN_FILES = (
     "swinglab-hero.png",
 )
 
+# The marks layout/theme.liquid is responsible for, under both brands. These
+# ship inside the theme, so none of them has any business in a Files lookup —
+# see test_the_layout_never_resolves_a_brand_mark_through_images.
+BRAND_MARKS = frozenset(RETIRED_IN_FILES) | {
+    "og-caddieinsight.png",
+    "caddieinsight-favicon.png",
+    "caddieinsight-logo.png",
+    "caddieinsight-logo-inverse.png",
+}
+
 LIQUID = sorted(THEME.rglob("*.liquid"))
+LAYOUT = THEME / "layout" / "theme.liquid"
 
 
 def lookups(text: str) -> list[str]:
     """Every filename the theme resolves through the Files-first `images[]`."""
     return re.findall(r"images\[\s*['\"]([^'\"]+)['\"]\s*\]", text)
+
+
+def without_comments(text: str) -> str:
+    """Liquid with `{% comment %}` blocks removed.
+
+    The layout explains the images[] trap in prose, and that explanation is
+    worth more than a regex's convenience — quoting the exact broken lookup is
+    how the next person recognises it. Strip comments so the check measures
+    what the theme *executes* rather than what it documents.
+    """
+    return re.sub(
+        r"\{%-?\s*comment\s*-?%\}.*?\{%-?\s*endcomment\s*-?%\}",
+        "",
+        text,
+        flags=re.DOTALL,
+    )
 
 
 @pytest.mark.parametrize("path", LIQUID, ids=lambda p: p.name)
@@ -87,13 +128,71 @@ def test_the_replacement_assets_are_actually_packaged():
     assert not missing, f"{missing} are referenced but not packaged in assets/."
 
 
-def test_the_organization_logo_has_a_theme_fallback():
-    """Without the fallback, a store that has not uploaded to Files emits no
-    logo at all — which is how repointing the lookup could quietly make the
-    structured data worse rather than better."""
-    text = (THEME / "layout" / "theme.liquid").read_text(encoding="utf-8")
-    assert "images['caddieinsight-logo.png']" in text
-    assert "'caddieinsight-logo.png' | asset_url" in text, (
-        "The Organization logo must fall back to the packaged asset when the "
-        "Files entry is absent."
+def test_the_organization_logo_resolves_through_the_packaged_asset():
+    """The logo must come from the theme, and must be quoted as JSON.
+
+    This test previously required an `images['caddieinsight-logo.png']` lookup
+    with an asset_url fallback behind it. That fallback could never run — see
+    the module docstring — and worse, the error the lookup produced landed
+    *unquoted* in the logo value and invalidated the whole block. Requiring
+    the lookup is therefore requiring the outage, so the assertion is inverted
+    here rather than merely relaxed.
+    """
+    text = LAYOUT.read_text(encoding="utf-8")
+    assert "images['caddieinsight-logo.png']" not in text, (
+        "The Organization logo must not go through images[]: a missing Files "
+        "entry yields a truthy drop, image_url throws, and the error text is "
+        "interpolated unquoted into the JSON — Google drops the whole block."
+    )
+    assert (
+        "\"logo\": {{ 'caddieinsight-logo.png' | asset_url | prepend: 'https:' | json }}"
+        in text
+    ), (
+        "The Organization logo must be an absolute theme-asset URL passed "
+        "through `json`, which supplies the quoting the structured data needs."
+    )
+
+
+def test_the_layout_never_resolves_a_brand_mark_through_images():
+    """A brand mark in `images[]` is an outage, not a stale picture.
+
+    `images['<missing>']` returns a truthy drop rather than nil, so an
+    `{% if %}` guard around it always passes and the `image_url` behind it
+    throws "invalid url input" — which Liquid renders as literal text into
+    whatever attribute it sat in. That shipped a broken favicon, image-less
+    social cards and invalid JSON-LD to every page of the store at once.
+
+    So the layout's rule is stricter than the Files-beats-theme rule above:
+    these marks are packaged with the theme and must resolve through
+    asset_url unconditionally, never through a Files lookup — current
+    filename or retired one.
+
+    Scoped to the layout deliberately. sections/report-feature.liquid still
+    carries the same truthy-drop pattern for its report preview and needs the
+    same treatment; widening this test is the right move once it is fixed.
+    """
+    live = without_comments(LAYOUT.read_text(encoding="utf-8"))
+    found = sorted(set(lookups(live)) & BRAND_MARKS)
+    assert not found, (
+        f"layout/theme.liquid resolves {found} through images[]. A missing "
+        "Files entry is truthy, so the guard passes and image_url throws — "
+        "the fallback branch beside it is dead code. Use "
+        "`| asset_url` unconditionally; the file ships with the theme."
+    )
+
+
+def test_every_asset_the_layout_references_is_packaged():
+    """asset_url has no fallback behind it any more, so a typo is a 404.
+
+    Removing the (dead) images[] branches removed the illusion of a second
+    chance: whatever the layout names now has to exist in assets/ or the mark
+    simply does not render.
+    """
+    text = LAYOUT.read_text(encoding="utf-8")
+    referenced = sorted(set(re.findall(r"['\"]([^'\"]+)['\"]\s*\|\s*asset_url", text)))
+    assert referenced, "Expected the layout to reference packaged assets."
+    missing = [name for name in referenced if not (THEME / "assets" / name).is_file()]
+    assert not missing, (
+        f"layout/theme.liquid references {missing} via asset_url, but they are "
+        "not in storefront-theme/assets/ — they will 404 on the live store."
     )

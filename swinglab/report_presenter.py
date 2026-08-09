@@ -923,7 +923,14 @@ def prepare_report_input(
             coach_replay_media_key=None if replay_locked else _explicit_media_key(swing.get("replay"), media),
             coach_replay_caption=f"Coach replay for swing {getattr(metric, 'swing', index)}",
             locked_replay_explanation=(
-                "Coach replay is available with Pro; the measured coaching remains available here."
+                # The guided template names what the replay is and links
+                # /pricing; this sentence exists only to stop the lock reading
+                # as a hole in the coaching. It names no tier and no price on
+                # purpose: the rendered HTML is written once and kept, so a
+                # report produced today would still be claiming "Pro" after the
+                # annotated replay moves to the Coach tier.
+                "Nothing in the coaching is withheld — the priority, the drill, "
+                "the pass mark and every measurement here are complete."
                 if replay_locked else None
             ),
             video_poster_media_key=_explicit_media_key(swing.get("poster"), media),

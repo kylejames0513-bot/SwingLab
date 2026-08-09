@@ -6,7 +6,7 @@ brand:
   # App shell loads the packaged static lockup so signed-in chrome matches the
   # revamp without waiting on a Shopify Files overwrite. Re-point at a new
   # immutable CDN filename only after that File is uploaded and reviewed.
-  logo_url: "/static/swinglab-logo.png"
+  logo_url: "/static/caddieinsight-logo.png"
                              # optional hosted wordmark for the web-app header
   primary_color: "#1a5c38"   # headers, table accents, skeleton "corrected" tint in legends
   accent_color: "#e8720c"    # highlights, warnings, "captured" tint in legends
@@ -298,11 +298,25 @@ billing:
                              # replay_pro_only.
   shopify_pro_handle: swinglab-pro   # the Pro product's handle on the Shopify store
                                      # (the /products/<handle> part of its URL)
-  shopify_skus:              # Shopify variant SKU -> days of Pro one unit grants;
-    SL-PRO-1MO: 31           # quantities multiply, so 2x the 1-month SKU = 62 days.
-    SL-PRO-12MO: 365         # Add a SKU here and in Shopify to add a plan length.
-    SL-PRO-LIFE: 36500       # lifetime = 100 years; the account page shows
-                             # anything >50 years out as "Lifetime", not a date.
+  shopify_skus:              # Shopify variant SKU -> days of membership one unit
+    SL-PRO-1MO: 31           # grants; quantities multiply, so 2x the 1-month SKU
+    SL-PRO-12MO: 365         # = 62 days. Add a SKU here and in Shopify to add a
+    SL-PRO-LIFE: 36500       # plan length. Lifetime = 100 years; the account page
+                             # shows anything >50 years out as "Lifetime", not a
+    SL-COACH-1MO: 31         # date.
+    SL-COACH-12MO: 365
+  shopify_sku_tiers:         # ...and which TIER each SKU grants. Absent = "pro",
+    SL-PRO-1MO: pro          # so this map only ever needs to name the exceptions.
+    SL-PRO-12MO: pro         # Listed in full anyway: this is the money path, and
+    SL-COACH-1MO: coach      # a reader should not have to know the default to
+    SL-COACH-12MO: coach     # know what a customer bought.
+    SL-PRO-LIFE: coach       # The Founders Pass is Coach for life. It keeps the
+                             # SL-PRO-LIFE SKU deliberately — the SKU is the
+                             # durable key the order webhook matches on, and
+                             # renaming it would strand any order already placed
+                             # against it. Grants take the maximum tier, so a
+                             # Founders member who also holds a Pro month is
+                             # never downgraded by it.
   shopify_variant_ids:       # Shopify variant id per /pricing card. Each Pro
     monthly: "46811170177196"  # card's store CTA deep-links ?variant=<id> so
     yearly: "46811170209964"   # checkout opens with the clicked plan already
@@ -371,12 +385,29 @@ shop:
                              # own drill but shares the arm-extension gear tag).
                              # swinglab:general is never auto-recommended.
   max_recommendations: 3     # gear items shown on a finished analysis page
-  first_sale_catalog_only: true
-                             # Until a product is sample-tested and has real
-                             # supplier/return/tracking evidence, CaddieInsight
-                             # will not promote it in-app. The three candidate
-                             # tags below are additive to the measured
-                             # swinglab:<flag> recommendation tag.
+  first_sale_catalog_only: false
+                             # OFF as of 2026-08-09 (owner decision). When true,
+                             # the app promotes a product only once it carries
+                             # first_sale_verified_tag AND one of the candidate
+                             # tags below — the "we don't recommend what we
+                             # haven't handled" brake. It had been silently
+                             # closed since the 2026-08-03 restock: the three
+                             # candidate tags name products archived that day,
+                             # and no live product ever carried the verified
+                             # tag, so the gate filtered all six in-stock
+                             # products to nothing. /shop was empty and every
+                             # analysis recommended no gear, for any flag.
+                             #
+                             # Off, the whole live swinglab-gear collection is
+                             # recommendable on the measured swinglab:<flag>
+                             # tag alone. The honest cost: nothing in-app now
+                             # asserts fulfillment evidence, so no surface may
+                             # CLAIM a product was sample-tested (see the
+                             # anti-fake checklist in
+                             # docs/strategy/positioning-and-growth.md §4 —
+                             # supplier stock photography is still the open
+                             # item there). Turning it back on is one line plus
+                             # tagging the SKUs actually handled.
   first_sale_verified_tag: "caddieinsight:fulfillment-verified"
   first_sale_candidate_tags:
     - "caddieinsight:clip-on-swing-metronome"

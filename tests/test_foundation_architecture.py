@@ -106,9 +106,16 @@ def test_railway_docker_contract_is_stable():
     assert "COPY pyproject.toml README.md config.yaml ./" in dockerfile
     assert "/healthz" in dockerfile
     assert "os.environ.get('PORT', '8000')" in dockerfile
+    # Exec form, not shell form. With `CMD swinglab serve ...` the container's
+    # PID 1 is /bin/sh, which does not forward SIGTERM — so every Railway
+    # redeploy SIGKILLed the app mid-analysis and left the SQLite WAL
+    # uncheckpointed. `exec` inside the exec form keeps ${PORT} expansion while
+    # handing PID 1 to the app itself.
+    assert 'CMD ["sh", "-c", "exec swinglab serve' in dockerfile, (
+        "Dockerfile CMD must stay in exec form so SIGTERM reaches the app."
+    )
     assert (
-        "CMD swinglab serve --host 0.0.0.0 --port ${PORT:-8000} "
-        "--sessions-dir /data/sessions"
+        "--host 0.0.0.0 --port ${PORT:-8000} --sessions-dir /data/sessions"
     ) in dockerfile
 
 

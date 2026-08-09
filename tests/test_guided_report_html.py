@@ -18,6 +18,7 @@ from swinglab.report_presenter import (
 )
 from swinglab.report_view import (
     GUIDED_REPORT_PRESENTATION_VERSION,
+    MediaRole,
     report_view_from_dict,
     report_view_to_dict,
 )
@@ -99,6 +100,68 @@ def optional_section(html: str, section_id: str) -> str:
     )
     assert match is not None, f"missing optional section {section_id}"
     return match.group(0)
+
+
+def media_theater(html: str) -> str:
+    match = re.search(
+        r'<aside class="media-theater"[^>]*>.*?</aside>', html, flags=re.DOTALL
+    )
+    assert match is not None, "missing evidence theater"
+    return match.group(0)
+
+
+def free_locked_with_slow_motion(swings: int = 1) -> ReportDocument:
+    """A free user's real report: slow motion rendered, coach replay stripped.
+
+    The shipped ``free-locked`` fixture carries no slow motion at all, so it
+    cannot see this shape. Production populates ``slow_motion_media_key`` on
+    every plan — slow motion is a Free feature on ``/pricing`` — and only the
+    annotated replay is withheld, which is exactly the combination that used to
+    open the evidence theater and then render nothing inside it.
+    """
+    document = report_document_fixture("pro-unlocked")
+    locked_swing = replace(
+        document.depth.swings[0],
+        coach_replay_media_key=None,
+        replay_locked=True,
+        locked_replay_explanation="Coach replay is available with Pro.",
+    )
+    return replace(
+        document,
+        view=replace(
+            document.view,
+            capabilities=replace(document.view.capabilities, coach_replay=False),
+            media=tuple(
+                entry
+                for entry in document.view.media
+                if entry.role is not MediaRole.COACH_REPLAY
+            ),
+            optional_sections=tuple(
+                replace(
+                    section,
+                    label="Coach replay",
+                    available=False,
+                    locked=True,
+                    item_count=0,
+                )
+                if section.id == "replay"
+                else section
+                for section in document.view.optional_sections
+            ),
+        ),
+        depth=replace(
+            document.depth,
+            swings=tuple(
+                replace(locked_swing, swing=index, summary=f"Swing {index}")
+                for index in range(1, swings + 1)
+            ),
+        ),
+        media_by_key={
+            key: entry
+            for key, entry in document.media_by_key.items()
+            if entry.role is not MediaRole.COACH_REPLAY
+        },
+    )
 
 
 def test_report_document_exposes_all_server_owned_html_depth():
@@ -715,6 +778,63 @@ def test_locked_replay_never_resolves_hidden_media_but_pro_replay_does(tmp_path:
     assert unlocked_replay_contract.item_count == 1
     assert 'src="media/coach-replay-1.mp4"' in unlocked_replay
     assert unlocked.depth.swings[0].coach_replay_caption in unlocked_replay
+
+
+def test_free_theater_keeps_slow_motion_and_fills_the_locked_replay_slot(
+    tmp_path: Path,
+):
+    document = free_locked_with_slow_motion()
+
+    html = render_guided(tmp_path, document)
+    theater = media_theater(html)
+
+    # Slow motion is included on Free per /pricing, so the free report has to
+    # actually play it rather than skip the whole swing as "replay locked".
+    assert 'src="media/slow-motion-1.mp4"' in theater
+    assert document.depth.swings[0].slow_motion_caption in theater
+    # And the replay slot carries an offer, so the panel is never a heading
+    # above an empty grid.
+    assert "media-theater__card--locked" in theater
+    assert 'href="/pricing"' in theater
+    assert 'src="media/poster-1.jpg"' in theater
+    # The withheld render must still never leak.
+    assert "coach-replay-1" not in html
+    assert LOCKED_REPLAY_SENTINEL not in html
+
+
+def test_theater_stays_shut_when_no_swing_has_playable_media(tmp_path: Path):
+    # `free-locked` has neither slow motion nor replay. Opening the theater on
+    # a capability flag while the cards are decided per swing is what produced
+    # the empty black box, so the panel must be decided by the swings.
+    html = render_guided(tmp_path, report_document_fixture("free-locked"))
+
+    assert 'class="media-theater"' not in html
+    assert "Slow-mo and replay" not in html
+
+
+def test_locked_replay_section_makes_one_offer_instead_of_reading_as_a_bug(
+    tmp_path: Path,
+):
+    document = free_locked_with_slow_motion(swings=2)
+    explanation = document.depth.swings[0].locked_replay_explanation
+
+    html = render_guided(tmp_path, document)
+    replay = optional_section(html, "replay")
+    summary = replay[replay.index("<summary>") : replay.index("</summary>")]
+
+    # The gate strips the replay media upstream, so a count here is always 0.
+    assert "Coach replay" in summary
+    assert "0" not in summary
+    assert "·" not in summary
+    # The highest-intent surface in the report has to name the way out.
+    assert 'href="/pricing"' in replay
+    assert "lock-badge" in replay
+    assert "This section is locked." not in replay
+    # Said once, not once per detected swing.
+    assert len(document.depth.swings) == 2
+    assert replay.count(explanation) == 1
+    # No price lives in the report; /pricing is the only page that quotes one.
+    assert "$" not in replay
 
 
 def test_capture_only_suppresses_malicious_depth_gear(tmp_path: Path):

@@ -32,7 +32,7 @@ from swinglab.report import write_report_html
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.jobs import JobManager
-from swinglab.web.users import PRO, UserStore
+from swinglab.web.users import COACH, PRO, UserStore
 
 from tests.test_report import fake_swing, fake_video
 from tests.test_web import fake_analyze_ok, wait_for
@@ -143,7 +143,10 @@ def test_replay_entitlement_is_captured_once_and_survives_restart(
     locked_job = manager.create_session(user_id=user.id)
     assert manager.replay_locked(locked_job) is True
 
-    users.grant_pro_days(user.id, 31)
+    # COACH, not Pro: the annotated replay is the top tier of the two-tier
+    # ladder. Granting Pro here would leave the gate shut, which is the
+    # product decision, not a bug.
+    users.grant_pro_days(user.id, 31, tier=COACH)
     assert manager.replay_locked(locked_job) is True
     available_job = manager.create_session(user_id=user.id)
     assert manager.replay_locked(available_job) is False

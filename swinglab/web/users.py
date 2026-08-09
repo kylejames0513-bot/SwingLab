@@ -69,6 +69,57 @@ from ..proof_cycle_practice import (
 FREE = "free"
 PRO = "pro"
 
+# Membership tiers. `PRO_TIER` is deliberately the same string as the `PRO`
+# plan value — the tier column and the Stripe plan column have always agreed
+# on what "pro" means, and giving them two spellings would create a class of
+# bug where an account is Pro by one measure and not the other. The alias
+# exists so call sites can say which of the two concepts they mean.
+PRO_TIER = PRO
+COACH = "coach"
+
+# Ordered weakest to strongest. A grant takes the MAXIMUM of the incoming and
+# current tier rather than overwriting, so webhook delivery order cannot cost
+# a customer something they paid for: a Pro renewal landing after a Coach
+# purchase must not revoke Coach.
+TIER_ORDER = (FREE, PRO_TIER, COACH)
+
+
+def tier_rank(tier: str | None) -> int:
+    """Position in TIER_ORDER; anything unrecognized ranks as free.
+
+    Unknown values fail DOWN on purpose. A typo in config or a tier written
+    by a newer build must not hand out the top tier on an older one.
+    """
+    try:
+        return TIER_ORDER.index((tier or FREE).strip().lower())
+    except ValueError:
+        return 0
+
+
+def stronger_tier(left: str | None, right: str | None) -> str:
+    return TIER_ORDER[max(tier_rank(left), tier_rank(right))]
+
+
+def entitled_to_coach_features(user, coach_tier_enabled: bool) -> bool:
+    """Does this account get the coach replay and the progress dashboard?
+
+    The two-tier ladder is a rollout, not a switch thrown in code. Until the
+    Coach products actually exist in the store, there is nothing a customer
+    could buy to reach the top tier — so gating on it would take features
+    away from Pro buyers and leave them no way to get them back, while the
+    pricing page still advertised them. With the flag off, "Coach features"
+    means exactly what it meant before two tiers existed: any paid plan.
+
+    One predicate, used by every gate and by the copy that describes them,
+    so the page can never advertise a lock that differs from the real one.
+    """
+    if user is None:
+        return False
+    if coach_tier_enabled:
+        return bool(getattr(user, "has_coach", False))
+    return bool(getattr(user, "is_pro", False))
+
+
 SHOPIFY_SYNC_NOT_STARTED = "not_started"
 SHOPIFY_SYNC_PENDING = "pending"
 SHOPIFY_SYNC_SYNCED = "synced"
@@ -245,11 +296,13 @@ CREATE TABLE IF NOT EXISTS users (
     shopify_sync_next_attempt_at REAL,
     shopify_sync_attempt_token TEXT,
     shopify_sync_generation INTEGER NOT NULL DEFAULT 0,
-    shopify_sync_blocked INTEGER NOT NULL DEFAULT 0
+    shopify_sync_blocked INTEGER NOT NULL DEFAULT 0,
+    tier                TEXT NOT NULL DEFAULT 'free'
 );
 CREATE TABLE IF NOT EXISTS pro_grants (
     email TEXT PRIMARY KEY,
-    days  REAL NOT NULL
+    days  REAL NOT NULL,
+    tier  TEXT NOT NULL DEFAULT 'pro'
 );
 CREATE TABLE IF NOT EXISTS shopify_orders (
     order_id            TEXT PRIMARY KEY,
@@ -263,7 +316,8 @@ CREATE TABLE IF NOT EXISTS shopify_orders (
     grant_end           REAL,
     pending_days        REAL NOT NULL DEFAULT 0,
     grant_ambiguous     INTEGER NOT NULL DEFAULT 0,
-    cancelled_at        REAL
+    cancelled_at        REAL,
+    tier                TEXT NOT NULL DEFAULT 'pro'
 );
 CREATE TABLE IF NOT EXISTS shopify_customer_tombstones (
     customer_id   TEXT PRIMARY KEY,
@@ -659,12 +713,34 @@ class User:
     shopify_account_last_login_at: float | None = None
     # Appended to preserve the positional order of the pre-reset User API.
     history_epoch: int = 0  # rejects writes started before a history reset
+    # Membership level. `pro_until` remains the single expiry for whatever
+    # level is recorded here — one expiry, one tier, never a per-feature
+    # clock. Appended last for the same positional-order reason as above.
+    tier: str = FREE
 
     @property
     def is_pro(self) -> bool:
+        """Any paid entitlement — Pro or Coach.
+
+        Kept as the broad predicate so every quota, upload and account-page
+        call site means what it always meant. Coach is a superset: gating a
+        Coach-only feature on this would give it away with the cheaper tier.
+        Use `has_coach` for those.
+        """
         if self.plan == PRO and self.subscription_status in _PRO_OK_STATUSES:
             return True
         return self.pro_until > time.time()
+
+    @property
+    def has_coach(self) -> bool:
+        """The top tier: the annotated coach replay and the proof cycle.
+
+        Deliberately mirrors `is_pro`'s time handling rather than trusting
+        the stored tier alone, so a lapsed Coach account reports nothing.
+        """
+        if tier_rank(self.tier) < tier_rank(COACH):
+            return False
+        return self.is_pro
 
     @property
     def email_verified(self) -> bool:
@@ -1001,6 +1077,12 @@ class UserStore:
                         "shopify_sync_blocked",
                         "shopify_sync_blocked INTEGER NOT NULL DEFAULT 0",
                     ),
+                    # pre-two-tier files have no membership level. Existing
+                    # rows default to 'free'; the backfill immediately below
+                    # promotes anyone currently holding time to 'pro', which
+                    # is what they actually bought — every SKU that existed
+                    # before this column was a Pro SKU.
+                    ("tier", "tier TEXT NOT NULL DEFAULT 'free'"),
                     (
                         "shopify_account_subject",
                         "shopify_account_subject TEXT",
@@ -1021,6 +1103,36 @@ class UserStore:
                 ):
                     if name not in columns:
                         self._conn.execute(f"ALTER TABLE users ADD COLUMN {ddl}")
+                if "tier" not in columns:
+                    # Backfill on the upgrade only. Everyone who held time
+                    # before two tiers existed bought a Pro SKU, and the new
+                    # column defaults to 'free' — so without this an existing
+                    # paying customer would keep pro_until while reading as
+                    # free-tier, and would lose nothing visible until the
+                    # first has_coach check quietly told them the truth.
+                    # Guarded by the column check so it can never re-run and
+                    # promote a deliberately-free row on a later boot.
+                    self._conn.execute(
+                        "UPDATE users SET tier = ? WHERE pro_until > ?",
+                        (PRO_TIER, time.time()),
+                    )
+                for table, ddl in (
+                    ("pro_grants", "tier TEXT NOT NULL DEFAULT 'pro'"),
+                    ("shopify_orders", "tier TEXT NOT NULL DEFAULT 'pro'"),
+                ):
+                    existing = {
+                        row["name"]
+                        for row in self._conn.execute(
+                            f"PRAGMA table_info({table})"
+                        )
+                    }
+                    if "tier" not in existing:
+                        # 'pro' rather than 'free': a parked grant or a
+                        # recorded order is a purchase by construction, and
+                        # every SKU that predates this column granted Pro.
+                        self._conn.execute(
+                            f"ALTER TABLE {table} ADD COLUMN {ddl}"
+                        )
                 self._prepare_shopify_sync_schema(
                     initialize_statuses=sync_status_added
                 )
@@ -6777,29 +6889,74 @@ class UserStore:
             )
             self._conn.commit()
 
-    def set_plan(self, user_id: str, plan: str, status: str) -> None:
+    def set_plan(
+        self, user_id: str, plan: str, status: str, tier: str | None = None
+    ) -> None:
+        """Set the Stripe subscription plan, and the tier it entitles.
+
+        The Stripe path sells ONE price (``STRIPE_PRICE_ID``), and before
+        two tiers existed that one subscription unlocked everything — the
+        coach replay and the progress dashboard included. So an unspecified
+        PRO plan resolves to COACH: anything less would silently take
+        features away from an existing Stripe subscriber on upgrade, which
+        is the one thing a billing change must never do.
+
+        An operator selling two Stripe prices passes ``tier`` explicitly.
+
+        Dropping off PRO deliberately LEAVES the stored tier alone. A
+        cancelled Stripe subscription must not strip a Coach level the same
+        person is separately paying Shopify for, and a stale tier is inert
+        on its own: ``has_coach`` also requires ``is_pro``, which a lapsed
+        account fails on both the plan and the expiry.
+        """
+        resolved = (
+            (tier or COACH) if plan == PRO else FREE
+        )
         with self._lock:
             self._conn.execute(
-                "UPDATE users SET plan = ?, subscription_status = ? WHERE id = ?",
-                (plan, status, user_id),
+                "UPDATE users SET plan = ?, subscription_status = ?,"
+                " tier = CASE WHEN ? = 'free' THEN tier ELSE ? END"
+                " WHERE id = ?",
+                (plan, status, resolved, resolved, user_id),
             )
             self._conn.commit()
 
     # -- time-boxed Pro (called by the Shopify webhook) --------------------
-    def grant_pro_days(self, user_id: str, days: float) -> None:
-        """Extend Pro: from now for lapsed/free accounts, stacked on top of
-        the remaining time for active ones (buying early never loses days)."""
+    def grant_pro_days(
+        self, user_id: str, days: float, tier: str = PRO_TIER
+    ) -> None:
+        """Extend membership: from now for lapsed/free accounts, stacked on
+        top of the remaining time for active ones (buying early never loses
+        days).
+
+        `tier` defaults to Pro so every pre-two-tier caller — the CLI, the
+        Stripe path, white-label installs — keeps granting exactly what it
+        granted before, and nothing can reach Coach by omission.
+
+        The stored tier is raised to the maximum of the current and incoming
+        level, never overwritten. A lapsed account is an exception: its old
+        tier is spent, so a fresh purchase sets the level it actually bought
+        rather than resurrecting a Coach tier the customer stopped paying
+        for.
+        """
         now = time.time()
         with self._lock:
             row = self._conn.execute(
-                "SELECT pro_until FROM users WHERE id = ?", (user_id,)
+                "SELECT pro_until, tier FROM users WHERE id = ?", (user_id,)
             ).fetchone()
             if row is None:
                 return
-            base = max(now, row["pro_until"] or 0.0)
+            current_until = row["pro_until"] or 0.0
+            lapsed = current_until <= now
+            resolved = (
+                TIER_ORDER[max(tier_rank(tier), 1)]
+                if lapsed
+                else stronger_tier(row["tier"], tier)
+            )
+            base = max(now, current_until)
             self._conn.execute(
-                "UPDATE users SET pro_until = ? WHERE id = ?",
-                (base + days * 86400, user_id),
+                "UPDATE users SET pro_until = ?, tier = ? WHERE id = ?",
+                (base + days * 86400, resolved, user_id),
             )
             self._conn.commit()
 
@@ -6811,13 +6968,26 @@ class UserStore:
             )
             self._conn.commit()
 
-    def add_pending_grant(self, email: str, days: float) -> None:
-        """Park purchased days for an email with no account yet."""
+    def add_pending_grant(
+        self, email: str, days: float, tier: str = PRO_TIER
+    ) -> None:
+        """Park purchased days for an email with no account yet.
+
+        Days add up; the tier is raised to the strongest parked so far, so a
+        Coach purchase followed by a cheap Pro month still claims as Coach.
+        The CASE is done in SQL rather than read-modify-write to keep the
+        upsert a single atomic statement.
+        """
+        resolved = TIER_ORDER[max(tier_rank(tier), 1)]
         with self._lock:
             self._conn.execute(
-                "INSERT INTO pro_grants (email, days) VALUES (?, ?)"
-                " ON CONFLICT(email) DO UPDATE SET days = days + excluded.days",
-                (email.strip().lower(), days),
+                "INSERT INTO pro_grants (email, days, tier) VALUES (?, ?, ?)"
+                " ON CONFLICT(email) DO UPDATE SET"
+                "   days = days + excluded.days,"
+                "   tier = CASE WHEN excluded.tier = 'coach'"
+                "               OR pro_grants.tier = 'coach'"
+                "          THEN 'coach' ELSE excluded.tier END",
+                (email.strip().lower(), days, resolved),
             )
             self._conn.commit()
 
@@ -6856,12 +7026,13 @@ class UserStore:
             try:
                 self._conn.execute("BEGIN IMMEDIATE")
                 grant = self._conn.execute(
-                    "SELECT days FROM pro_grants WHERE email = ?", (email,)
+                    "SELECT days, tier FROM pro_grants WHERE email = ?",
+                    (email,),
                 ).fetchone()
                 user = self._conn.execute(
                     "SELECT pro_until, shopify_customer_id,"
-                    " shopify_identity_locked, email_verified_at FROM users"
-                    " WHERE id = ?",
+                    " shopify_identity_locked, email_verified_at, tier"
+                    " FROM users WHERE id = ?",
                     (user_id,),
                 ).fetchone()
                 if grant is None or user is None:
@@ -6869,7 +7040,7 @@ class UserStore:
                     return 0.0
                 total_days = float(grant["days"])
                 pending_orders = self._conn.execute(
-                    "SELECT order_id, pending_days, shopify_customer_id"
+                    "SELECT order_id, pending_days, shopify_customer_id, tier"
                     " FROM shopify_orders"
                     " WHERE email = ? AND days > 0 AND user_id IS NULL"
                     "   AND cancelled_at IS NULL"
@@ -7036,9 +7207,30 @@ class UserStore:
                     if latest is not None
                     else f"claim:{user_id}:{int(now * 1000)}"
                 )
+                # What tier did this claim actually buy? Only the orders that
+                # cleared the eligibility rules above may raise it — using
+                # the email aggregate's tier for everything would let a Coach
+                # order belonging to a DIFFERENT Shopify customer upgrade
+                # whoever claims this inbox. Unattributed days are the one
+                # exception: they have no order to read a tier from, so they
+                # carry the parked aggregate's tier, and they are only
+                # claimable when the email is verified and unconflicted.
+                claimed_tier = FREE
+                for order in eligible_orders:
+                    claimed_tier = stronger_tier(claimed_tier, order["tier"])
+                if claim_days > eligible_days + 0.000001:
+                    claimed_tier = stronger_tier(claimed_tier, grant["tier"])
+                claimed_tier = TIER_ORDER[max(tier_rank(claimed_tier), 1)]
+                # Same lapsed rule as grant_pro_days: spent time does not
+                # resurrect a tier the customer stopped paying for.
+                resolved_tier = (
+                    claimed_tier
+                    if (user["pro_until"] or 0.0) <= now
+                    else stronger_tier(user["tier"], claimed_tier)
+                )
                 self._conn.execute(
-                    "UPDATE users SET pro_until = ? WHERE id = ?",
-                    (base + claim_days * 86400, user_id),
+                    "UPDATE users SET pro_until = ?, tier = ? WHERE id = ?",
+                    (base + claim_days * 86400, resolved_tier, user_id),
                 )
                 self._conn.execute(
                     "UPDATE pro_grants SET days = MAX(0, days - ?)"
@@ -7093,6 +7285,7 @@ class UserStore:
         days: float,
         shopify_customer_id: str | None,
         gear: list[tuple[str, str, int]] | None = None,
+        tier: str = PRO_TIER,
     ) -> tuple[bool, str, str | None]:
         """Record a paid Shopify order and its effects in one transaction.
 
@@ -7100,7 +7293,16 @@ class UserStore:
         value is ``(applied, effective_email, user_id)``; ``applied`` is
         false for a replay, an earlier cancellation tombstone, or an order
         that cannot be associated with either a linked user or an email.
+
+        ``tier`` is the membership level this order buys, and defaults to Pro
+        so every pre-two-tier caller keeps its exact behaviour. It is stored
+        on the order row as well as applied, because a parked order has to
+        remember what it bought: the claim later reads it back rather than
+        assuming, so a Coach purchase claimed after signup does not arrive
+        as Pro, and a Coach order belonging to someone else cannot upgrade
+        whoever eventually claims the inbox.
         """
+        tier = TIER_ORDER[max(tier_rank(tier), 1)]
         email = email.strip().lower()
         customer_id = _compatible_customer_id(shopify_customer_id)
         gear = gear or []
@@ -7337,8 +7539,8 @@ class UserStore:
                         "INSERT INTO shopify_orders"
                         " (order_id, email, days, applied_at, user_id,"
                         "  shopify_customer_id, grant_chain, grant_start,"
-                        "  grant_end, pending_days)"
-                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        "  grant_end, pending_days, tier)"
+                        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                         (
                             order_id,
                             effective_email,
@@ -7350,19 +7552,37 @@ class UserStore:
                             grant_start,
                             grant_end,
                             0 if user is not None else days,
+                            tier,
                         ),
                     )
                     if user is not None:
+                        # The tier arithmetic is done in SQL so it stays
+                        # inside this transaction and needs no extra read.
+                        # Lapsed accounts take the purchased tier outright —
+                        # spent time must not resurrect a Coach level the
+                        # customer stopped paying for. Live accounts take the
+                        # maximum, so a Pro renewal landing after a Coach
+                        # purchase cannot revoke Coach.
                         self._conn.execute(
-                            "UPDATE users SET pro_until = ? WHERE id = ?",
-                            (grant_end, user_id),
+                            "UPDATE users SET pro_until = ?,"
+                            " tier = CASE"
+                            "   WHEN pro_until <= ? THEN ?"
+                            "   WHEN tier = 'coach' OR ? = 'coach' THEN 'coach'"
+                            "   ELSE ? END"
+                            " WHERE id = ?",
+                            (grant_end, now, tier, tier, tier, user_id),
                         )
                     else:
                         self._conn.execute(
-                            "INSERT INTO pro_grants (email, days) VALUES (?, ?)"
+                            "INSERT INTO pro_grants (email, days, tier)"
+                            " VALUES (?, ?, ?)"
                             " ON CONFLICT(email) DO UPDATE"
-                            " SET days = days + excluded.days",
-                            (effective_email, days),
+                            " SET days = days + excluded.days,"
+                            "     tier = CASE"
+                            "       WHEN excluded.tier = 'coach'"
+                            "            OR pro_grants.tier = 'coach'"
+                            "       THEN 'coach' ELSE excluded.tier END",
+                            (effective_email, days, tier),
                         )
                 elif repair_entitlement:
                     # Heal the origin/main crash window where record_order
@@ -7917,6 +8137,7 @@ class UserStore:
             email_verified_at=row["email_verified_at"],
             auth_epoch=int(row["auth_epoch"] or 0),
             history_epoch=int(row["history_epoch"] or 0),
+            tier=row["tier"] or FREE,
             shopify_sync_status=row["shopify_sync_status"],
             shopify_last_synced_at=row["shopify_last_synced_at"],
             shopify_sync_error=row["shopify_sync_error"],

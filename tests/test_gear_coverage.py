@@ -88,23 +88,22 @@ UNSTOCKED = {
     ),
 }
 
+# The first_sale gate was turned OFF on 2026-08-09 (owner decision), so the
+# blanket waiver that used to live here is gone: tempo, consistency and
+# arm-extension now recommend real products again, and this ledger going
+# stale is exactly what dragged them back. What remains is not a gate
+# problem at all — every tag below is UNSTOCKED, and a tag no product
+# carries cannot be recommended no matter how the gate is set. That
+# correspondence is enforced by test_unstocked_tags_are_also_unrecommendable,
+# so these two ledgers cannot drift apart.
 UNRECOMMENDABLE = {
     tag: (
-        "Blocked by the shop.first_sale_catalog_only gate, not by tagging. "
-        "The shipped allowlist (shop.first_sale_candidate_tags) names three "
-        "products — the clip-on swing metronome, the anti-sway hip resistance "
-        "band and the alignment-stick set — that were all archived in the "
-        "2026-08-03 restock, and no live product carries "
-        "shop.first_sale_verified_tag. So the gate filters the entire "
-        "catalogue to nothing and the app recommends no gear for any measured "
-        "flag. Closing this needs an operator decision about which current "
-        "SKUs hold real fulfillment evidence — see "
-        "docs/runbooks/gear-coverage.md."
+        f"Nothing to recommend: {tag} has no live product at all. "
+        "See the UNSTOCKED entry above for the sourcing story — this is the "
+        "same gap seen one layer down, not an additional configuration "
+        "problem. Delete both entries together when a product is stocked."
     )
     for tag in (
-        "swinglab:tempo",
-        "swinglab:consistency",
-        "swinglab:arm-extension",
         "swinglab:sway",
         "swinglab:hip-slide",
         "swinglab:head-dip",

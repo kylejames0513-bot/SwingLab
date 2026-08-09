@@ -115,17 +115,41 @@
                   assign plan_price = '$9.99'
               endcase
             endif
-            assign default_art = 'caddieinsight-pro-card-v2.png'
+            # Packaged card art ships as pre-encoded webp rungs (480/960/1536),
+            # cut by store-assets/plan_card_webp.py. Theme webps must be served
+            # whole via asset_url: asset_img_url is the legacy sizing filter,
+            # it does not process webp, and it emits the no-image placeholder —
+            # the same trap hero.liquid documents. So the responsive candidates
+            # cannot be cut on the CDN and are baked instead. The source
+            # photographs (caddieinsight-pro-card-v2.png and
+            # caddieinsight-founders-card-v2.png) stay in assets/ as the record
+            # behind them, but nothing here requests them: that was 3.7 MB of
+            # uncompressed PNG on the section where someone decides to pay.
+            # Every name is written out whole so theme-check's MissingAsset can
+            # still verify the binding.
+            #
+            # These hold the FILENAME; asset_url is applied at each use site
+            # below. Piping here instead reads better but trips theme-check's
+            # RemoteAsset warning: it inspects the src attribute literally, and
+            # a bare `{{ art_md }}` gives it no way to know the value already
+            # went through asset_url, so it assumes a remote host. Newer
+            # theme-check follows the assignment; the pinned 3.58.2 in CI does
+            # not, and the workflow runs --fail-level warning.
+            assign art_sm = 'caddieinsight-pro-card-v2-480.webp'
+            assign art_md = 'caddieinsight-pro-card-v2-960.webp'
+            assign art_lg = 'caddieinsight-pro-card-v2-1536.webp'
             if b.plan == 'founders'
-              assign default_art = 'caddieinsight-founders-card-v2.png'
+              assign art_sm = 'caddieinsight-founders-card-v2-480.webp'
+              assign art_md = 'caddieinsight-founders-card-v2-960.webp'
+              assign art_lg = 'caddieinsight-founders-card-v2-1536.webp'
             endif
           -%}
           <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
             <div class="sl-plans__media">
               {%- if b.image -%}
                 <img
-                  src="{{ b.image | image_url: width: 720 }}"
-                  srcset="{{ b.image | image_url: width: 480 }} 480w, {{ b.image | image_url: width: 720 }} 720w, {{ b.image | image_url: width: 1080 }} 1080w"
+                  src="{{ b.image | image_url: width: 960 }}"
+                  srcset="{{ b.image | image_url: width: 480 }} 480w, {{ b.image | image_url: width: 960 }} 960w, {{ b.image | image_url: width: 1536 }} 1536w"
                   sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
                   width="{{ b.image.width }}"
                   height="{{ b.image.height }}"
@@ -134,8 +158,8 @@
                   decoding="async">
               {%- else -%}
                 <img
-                  src="{{ default_art | asset_img_url: '720x' }}"
-                  srcset="{{ default_art | asset_img_url: '480x' }} 480w, {{ default_art | asset_img_url: '720x' }} 720w, {{ default_art | asset_img_url: '1080x' }} 1080w"
+                  src="{{ art_md | asset_url }}"
+                  srcset="{{ art_sm | asset_url }} 480w, {{ art_md | asset_url }} 960w, {{ art_lg | asset_url }} 1536w"
                   sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
                   width="1536"
                   height="1024"
@@ -176,12 +200,21 @@
         <aside class="sl-plans__free sl-reveal sl-reveal--d2"
                aria-labelledby="PlansFree-{{ section.id }}"
                {% if fb.member_visibility == 'signed_out' %}data-app-auth-signed-out{% endif %}{{ block.shopify_attributes }}>
+          {%- comment -%}
+            Same webp ladder and the same candidate widths as the paid cards.
+            The free band used to top out at 480w against a hard-coded
+            sizes="148px", so the free tier's photograph could never resolve
+            past a third of what the paid slots delivered, and the media box
+            stayed pinned at 148px even once the band stacked and had the room.
+            Its source photograph, caddieinsight-free-card-v2.png, stays in
+            assets/ as the record behind the rungs but is no longer requested.
+          {%- endcomment -%}
           <div class="sl-plans__free-media" aria-hidden="true">
             {%- if fb.image -%}
               <img
-                src="{{ fb.image | image_url: width: 320 }}"
-                srcset="{{ fb.image | image_url: width: 320 }} 320w, {{ fb.image | image_url: width: 480 }} 480w"
-                sizes="148px"
+                src="{{ fb.image | image_url: width: 480 }}"
+                srcset="{{ fb.image | image_url: width: 480 }} 480w, {{ fb.image | image_url: width: 960 }} 960w, {{ fb.image | image_url: width: 1536 }} 1536w"
+                sizes="(max-width: 749px) min(100vw - 96px, 300px), 200px"
                 width="{{ fb.image.width }}"
                 height="{{ fb.image.height }}"
                 alt=""
@@ -189,9 +222,9 @@
                 decoding="async">
             {%- else -%}
               <img
-                src="{{ 'caddieinsight-free-card-v2.png' | asset_img_url: '320x' }}"
-                srcset="{{ 'caddieinsight-free-card-v2.png' | asset_img_url: '320x' }} 320w, {{ 'caddieinsight-free-card-v2.png' | asset_img_url: '480x' }} 480w"
-                sizes="148px"
+                src="{{ 'caddieinsight-free-card-v2-480.webp' | asset_url }}"
+                srcset="{{ 'caddieinsight-free-card-v2-480.webp' | asset_url }} 480w, {{ 'caddieinsight-free-card-v2-960.webp' | asset_url }} 960w, {{ 'caddieinsight-free-card-v2-1536.webp' | asset_url }} 1536w"
+                sizes="(max-width: 749px) min(100vw - 96px, 300px), 200px"
                 width="1536"
                 height="1024"
                 alt=""
@@ -437,8 +470,11 @@
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
 }
+/* 200px, not the old 148px: the paid cards render their photograph at 396px,
+   and at 148 the free tier's read as a contact sheet next to them rather than
+   as the same campaign. It is still the compact band, just legible. */
 .sl-plans__free-media {
-  flex: 0 0 148px;
+  flex: 0 0 200px;
   overflow: hidden;
   border: 1px solid rgba(245, 242, 233, 0.18);
   border-radius: var(--sl-radius-sm);
@@ -552,9 +588,11 @@
     padding: var(--sl-card-inset);
     text-align: center;
   }
+  /* stacked: flex-basis would size the height here, so the width is set
+     directly — and the band has the full column, so the art gets to use it */
   .sl-plans__free-media {
     flex-basis: auto;
-    width: 148px;
+    width: min(100%, 300px);
   }
   .sl-plans__free-desc { margin-inline: auto; }
   .sl-plans__free-side {

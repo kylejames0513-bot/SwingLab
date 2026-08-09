@@ -123,7 +123,7 @@ from ..integrations.shopify.identity import (
     normalize_shop_domain,
 )
 from . import mailer
-from .users import UserStore
+from .users import PRO_TIER, UserStore, stronger_tier
 
 logger = logging.getLogger("swinglab.web.shopify")
 
@@ -365,6 +365,36 @@ def apply_customer(
             )
         else:
             logger.info("Shopify %s synchronized a store account.", topic)
+            # This is the moment a parked order was waiting for. A
+            # customer-bearing orders/paid is deliberately NOT granted on a
+            # matching email alone (users.py) — otherwise registering an
+            # address first would inherit a stranger's purchase — so it parks
+            # until the Shopify customer id is bound to an account. Binding it
+            # is what just happened, and Shopify does not guarantee that
+            # customers/create arrives first. Without claiming here the days
+            # sit in pro_grants until the buyer's next sign-in, so anyone who
+            # paid and closed the tab stays on Free with no way to know why.
+            #
+            # claim_pending_grant re-checks the link itself and refuses on an
+            # identity conflict, so this widens *when* a legitimate grant
+            # lands, never *what* qualifies for one.
+            #
+            # Only for a CLAIMED account. An unclaimed stub is a row this
+            # webhook just provisioned, which nobody has yet proven they own,
+            # and an unclaimed stub is still allowed to follow a changed
+            # Shopify email in place — so granting onto one would let a later
+            # store-side email change carry Pro to an address the buyer never
+            # controlled. Signup and code sign-in already claim on the way in,
+            # which is the point at which ownership is proven.
+            if user.claimed:
+                claimed_days = users.claim_pending_grant(user.id, user.email)
+                if claimed_days:
+                    logger.info(
+                        "Shopify %s released %s parked Pro day(s) to the "
+                        "now-linked account.",
+                        topic,
+                        claimed_days,
+                    )
     elif topic in CUSTOMER_DELETE_TOPICS:
         _detach_customer(data, users, redact=False)
     elif topic in CUSTOMER_REDACT_TOPICS:
@@ -514,6 +544,32 @@ def _order_days(order: dict, cfg: Config) -> float:
     return total
 
 
+def _order_tier(order: dict, cfg: Config) -> str:
+    """The membership tier an order buys: the STRONGEST tier it contains.
+
+    A mixed cart (a Coach year plus a Pro month) grants the days of both and
+    the level of the better one, which is the only reading that cannot take
+    money for something it then withholds. Anything the tier map does not
+    name is Pro — the same default as config, so an unconfigured install
+    behaves exactly as it did before two tiers existed.
+    """
+    day_skus = {
+        str(sku)
+        for sku, days in (cfg.billing.get("shopify_skus") or {}).items()
+        if float(days) > 0
+    }
+    tiers = {
+        str(sku): str(tier or "").strip().lower()
+        for sku, tier in (cfg.billing.get("shopify_sku_tiers") or {}).items()
+    }
+    best = PRO_TIER
+    for item in order.get("line_items") or []:
+        sku = str(item.get("sku") or "")
+        if sku in day_skus:
+            best = stronger_tier(best, tiers.get(sku, PRO_TIER))
+    return best
+
+
 def _gear_items(order: dict, cfg: Config) -> list[tuple[str, str, int]]:
     """The order's non-Pro line items as (sku, title, quantity) — everything
     the billing.shopify_skus map doesn't claim (the exact complement of
@@ -553,7 +609,8 @@ def _apply_paid(order: dict, users: UserStore, cfg: Config) -> None:
     if not order_id or (days <= 0 and not gear):
         return
     applied, effective_email, user_id = users.apply_shopify_order(
-        order_id, email, days, customer_id, gear=gear
+        order_id, email, days, customer_id, gear=gear,
+        tier=_order_tier(order, cfg),
     )
     if not applied:
         logger.info("Shopify order webhook replay skipped.")

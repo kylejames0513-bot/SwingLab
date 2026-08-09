@@ -80,11 +80,18 @@ def signup(
             users.verify_email_signin(email)
 
 
-def order_webhook(client, order, topic="orders/paid", secret=SECRET):
+def order_webhook(
+    client, order, topic="orders/paid", secret=SECRET, webhook_id=None
+):
     payload = json.dumps(order).encode()
     signature = base64.b64encode(
         hmac.new(secret.encode(), payload, hashlib.sha256).digest()
     ).decode()
+    # The delivery id is the replay key. It defaults to a constant so the
+    # replay test can reuse it deliberately; anything sending two DIFFERENT
+    # webhooks in one test must vary it, or the second is correctly dropped
+    # as a duplicate delivery and the test silently proves nothing.
+    delivery_id = webhook_id or "shopify-billing-test-delivery"
     return client.post(
         "/webhooks/shopify",
         content=payload,
@@ -92,18 +99,41 @@ def order_webhook(client, order, topic="orders/paid", secret=SECRET):
             "X-Shopify-Hmac-Sha256": signature,
             "X-Shopify-Topic": topic,
             "X-Shopify-Shop-Domain": "teststore.myshopify.com",
-            "X-Shopify-Webhook-Id": "shopify-billing-test-delivery",
+            "X-Shopify-Webhook-Id": delivery_id,
             "Content-Type": "application/json",
         },
     )
 
 
-def pro_order(order_id=1001, email="kyle@example.com", sku="SL-PRO-1MO", qty=1):
-    return {
+def pro_order(
+    order_id=1001,
+    email="kyle@example.com",
+    sku="SL-PRO-1MO",
+    qty=1,
+    customer_id=None,
+):
+    """A paid-order payload.
+
+    ``customer_id`` matters more than it looks. Shopify attaches a customer
+    object to essentially every real checkout, and a customer-bearing order
+    takes a different path through users.py than a guest one — it is parked
+    until the Shopify customer id is bound to an account, rather than granted
+    on a matching email. Every fixture in this module omitted it for a long
+    time, so the suite was green while the production payload shape went
+    unexercised.
+    """
+    order = {
         "id": order_id,
         "email": email,
         "line_items": [{"sku": sku, "quantity": qty}],
     }
+    if customer_id is not None:
+        order["customer"] = {"id": customer_id, "email": email}
+    return order
+
+
+def customer_payload(customer_id=7001, email="kyle@example.com"):
+    return {"id": customer_id, "email": email, "first_name": "Kyle"}
 
 
 def pro_refund(
@@ -168,6 +198,57 @@ def test_paid_order_unlocks_pro(app):
     user = get_user(client)
     assert user.is_pro
     assert abs(user.pro_until - (time.time() + 31 * DAY)) < 60
+
+
+def test_real_checkout_shape_grants_pro_for_every_sku(app):
+    """The production payload, for each SKU, without a second sign-in.
+
+    A real Shopify checkout attaches a customer object, which routes the
+    order down the parked path in users.py: it is held until the Shopify
+    customer id is bound to an account, because granting on a matching email
+    alone would let whoever registers an address first inherit a stranger's
+    purchase. customers/create is what binds it, and shopify_billing claims
+    the parked days at that moment.
+
+    Every other paid-order test in this module uses a guest payload, so this
+    is the only one that walks what an actual buyer triggers.
+    """
+    for index, (sku, days) in enumerate(
+        (("SL-PRO-1MO", 31), ("SL-PRO-12MO", 365), ("SL-PRO-LIFE", 36500))
+    ):
+        email = f"buyer{index}@example.com"
+        customer_id = 7100 + index
+        order_id = 2100 + index
+        client = TestClient(app)
+        signup(client, email=email)
+        assert not get_user(client, email).is_pro
+
+        resp = order_webhook(
+            client,
+            pro_order(
+                order_id=order_id,
+                email=email,
+                sku=sku,
+                customer_id=customer_id,
+            ),
+            webhook_id=f"paid-{order_id}",
+        )
+        assert resp.status_code == 200
+        assert not get_user(client, email).is_pro, (
+            f"{sku} granted before the identity link existed"
+        )
+
+        resp = order_webhook(
+            client,
+            customer_payload(customer_id=customer_id, email=email),
+            topic="customers/create",
+            webhook_id=f"cust-{customer_id}",
+        )
+        assert resp.status_code == 200
+
+        user = get_user(client, email)
+        assert user.is_pro, f"{sku} never landed after the identity link"
+        assert abs(user.pro_until - (time.time() + days * DAY)) < 60
 
 
 def test_quantity_and_sku_days_multiply(app):

@@ -72,8 +72,10 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Redirect
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import MutableHeaders
 from starlette.middleware.sessions import SessionMiddleware
 from starlette.requests import ClientDisconnect
+from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 from .. import sample
 from ..caddie_brief import (
@@ -145,6 +147,7 @@ from .users import (
     PasswordAddConflict,
     User,
     UserStore,
+    entitled_to_coach_features,
     shopify_remote_privacy_lock,
 )
 
@@ -319,6 +322,119 @@ def init_sentry() -> bool:
     )
     logger.info("Sentry error monitoring enabled.")
     return True
+
+
+def docs_enabled() -> bool:
+    """Whether this instance publishes /docs, /redoc and /openapi.json.
+
+    The interactive schema is a development tool. On a public deployment it
+    is a map of every route, parameter and error shape handed to anyone who
+    asks — including the operator-only /admin routes, whose whole guard is
+    that they answer 404 and are therefore supposed to be invisible.
+
+    So it is opt-in where it matters and unchanged where it does not:
+
+    * ``SWINGLAB_ENABLE_DOCS`` decides it outright when set, in either
+      direction. Anything that is not a recognized boolean fails closed —
+      a typo must not publish the schema.
+    * Unset, the schema is published only by a process with no public
+      identity: no ``PUBLIC_BASE_URL`` (the canonical origin, which also
+      drives secure cookies and the CSRF origin check) and no ``PORT``
+      (injected by Railway and every other PaaS — see the Dockerfile).
+      ``swinglab serve``, ``docker compose up`` and the test suite set
+      neither, so local development keeps /docs exactly as before.
+
+    A self-hosted container behind its own reverse proxy sets neither
+    variable either, and would keep the schema public. Set
+    ``SWINGLAB_ENABLE_DOCS=0`` there — the value of not regressing local
+    development is worth that one explicit line in a deploy that already
+    has several.
+    """
+
+    raw = str(os.environ.get("SWINGLAB_ENABLE_DOCS") or "").strip().lower()
+    if raw in ("1", "true", "yes", "on"):
+        return True
+    if raw:
+        if raw not in ("0", "false", "no", "off"):
+            logger.warning(
+                "SWINGLAB_ENABLE_DOCS=%r is not a boolean — interactive API "
+                "docs stay off. Use 1/true/on to publish them.",
+                raw,
+            )
+        return False
+    return not (
+        (os.environ.get("PUBLIC_BASE_URL") or "").strip()
+        or (os.environ.get("PORT") or "").strip()
+    )
+
+
+# Response headers every route needs and none should have to remember. Set as
+# defaults, never overrides, so a route that deliberately chooses its own
+# value keeps it.
+SECURITY_HEADERS: tuple[tuple[str, str], ...] = (
+    # Uploads and generated media are served from the same origin as the
+    # session cookie, so a browser guessing a type it was not given is the
+    # whole exposure. nosniff is the entire fix.
+    ("x-content-type-options", "nosniff"),
+    # Report and session URLs carry the job id. Full-URL referrers would hand
+    # it to every off-site link (the storefront, the gear products); this
+    # keeps the origin — enough for referral analytics, not the path.
+    ("referrer-policy", "strict-origin-when-cross-origin"),
+    # Nothing frames this app: not the storefront theme, not the PWA shell.
+    # Framing is therefore only ever clickjacking. X-Frame-Options for older
+    # browsers, the CSP directive that supersedes it for current ones.
+    ("x-frame-options", "DENY"),
+    # frame-ancestors ONLY. A real content policy is not shippable here as a
+    # blocking header: every page carries inline <script> and <style>, and the
+    # templates use inline style attributes, so anything with a script-src or
+    # style-src would need 'unsafe-inline' to avoid breaking the upload page,
+    # the status poller and the service worker — which buys nothing. A broken
+    # page is worse than a missing header; frame-ancestors constrains only
+    # embedding and cannot break rendering.
+    ("content-security-policy", "frame-ancestors 'none'"),
+)
+# One year, and app.caddieinsight.com has no subdomains of its own. No
+# `preload`: that is a one-way door submitted to a browser list, and it is not
+# this app's decision to make for the apex domain.
+HSTS_HEADER = "strict-transport-security"
+HSTS_VALUE = "max-age=31536000; includeSubDomains"
+
+
+class SecurityHeadersMiddleware:
+    """Attach SECURITY_HEADERS (plus HSTS over HTTPS) to every response.
+
+    Pure ASGI rather than BaseHTTPMiddleware deliberately: reports, videos and
+    the coach replay go out as FileResponse, and BaseHTTPMiddleware re-wraps
+    every response as a stream it drives itself. Editing the
+    ``http.response.start`` message adds the headers and leaves file serving —
+    Range requests included — byte-for-byte what it was.
+    """
+
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        # HSTS only over HTTPS. Browsers ignore it on a plain connection
+        # anyway, and asserting it locally would pin every developer's
+        # localhost to https for a year. ProxyHeadersMiddleware is added
+        # *after* this one, so it runs outside it and has already rewritten
+        # the scheme from X-Forwarded-Proto by the time we read it.
+        secure = scope.get("scheme") == "https"
+
+        async def send_with_security_headers(message: Message) -> None:
+            if message["type"] == "http.response.start":
+                headers = MutableHeaders(scope=message)
+                for name, value in SECURITY_HEADERS:
+                    headers.setdefault(name, value)
+                if secure:
+                    headers.setdefault(HSTS_HEADER, HSTS_VALUE)
+            await send(message)
+
+        await self.app(scope, receive, send_with_security_headers)
 
 
 def client_ip(request: Request) -> str | None:
@@ -517,7 +633,22 @@ def create_app(
         tuple[str, str], tuple[threading.Lock, int]
     ] = {}
     code_send_locks_guard = threading.Lock()
-    app = FastAPI(title=f"{cfg.brand['name']} — swing analysis")
+    # The interactive schema is a development tool, not a public surface —
+    # see docs_enabled(). With openapi_url off, FastAPI declines to mount
+    # /docs and /redoc too; app.openapi() still builds the document, so
+    # scripts/export_openapi.py is unaffected either way.
+    publish_docs = docs_enabled()
+    app = FastAPI(
+        title=f"{cfg.brand['name']} — swing analysis",
+        docs_url="/docs" if publish_docs else None,
+        redoc_url="/redoc" if publish_docs else None,
+        openapi_url="/openapi.json" if publish_docs else None,
+    )
+    if publish_docs:
+        logger.info(
+            "Interactive API docs are published at /docs, /redoc and "
+            "/openapi.json. Set SWINGLAB_ENABLE_DOCS=0 to turn them off."
+        )
     app.state.jobs = manager
     app.state.users = users
     app.state.cfg = cfg
@@ -609,6 +740,12 @@ def create_app(
             and public_origin[0] == "https"
         ),
     )
+
+    # Added before ProxyHeadersMiddleware on purpose. add_middleware puts the
+    # most recently added layer outermost, so registering this first leaves it
+    # *inside* the proxy layer — which is what HSTS needs, because only the
+    # proxy layer knows the request arrived over TLS.
+    app.add_middleware(SecurityHeadersMiddleware)
 
     # Real client IPs behind a proxy: trust X-Forwarded-For from
     # web.trusted_proxies ("*" = any hop, right for a PaaS whose proxy is
@@ -1068,6 +1205,17 @@ def create_app(
                 progress_pro_only=bool(
                     cfg.billing.get("progress_pro_only")
                     and cfg.web.get("require_account")
+                ),
+                # Whether the two-tier ladder is live, and whether THIS
+                # viewer clears it. Templates must not re-derive either:
+                # a lock badge computed from user.is_pro while the route
+                # gates on has_coach is how a page ends up advertising one
+                # rule and enforcing another.
+                coach_tier_enabled=bool(
+                    cfg.billing.get("coach_tier_enabled")
+                ),
+                user_has_coach_features=entitled_to_coach_features(
+                    render_user, bool(cfg.billing.get("coach_tier_enabled"))
                 ),
                 # Effective, like the gates above: the free matched re-film
                 # only exists where the paywall does (accounts on, a finite
@@ -3215,7 +3363,11 @@ def create_app(
         # the coach-replay gate: free accounts see an honest locked teaser
         # instead of their charts, and no trend data is computed for it.
         # Open instances never reach here (the require_account check above).
-        if cfg.billing.get("progress_pro_only") and not user.is_pro:
+        # The same predicate the replay gate and the pricing copy use, so a
+        # lock is never advertised on one surface and absent on another.
+        if cfg.billing.get("progress_pro_only") and not entitled_to_coach_features(
+            user, bool(cfg.billing.get("coach_tier_enabled"))
+        ):
             return render("web_progress.html.j2", request, locked=True)
         listed = manager.list_recent(user_id=user.id)
         selected_context = None
@@ -3361,12 +3513,20 @@ def create_app(
             pro_store_url_monthly=plan_store_url("monthly"),
             pro_store_url_yearly=plan_store_url("yearly"),
             pro_store_url_lifetime=plan_store_url("lifetime"),
+            coach_store_url_monthly=plan_store_url("coach_monthly"),
+            coach_store_url_yearly=plan_store_url("coach_yearly"),
             # Display strings only — the store/Stripe stays the source of
             # truth for what is actually charged.
             pro_price_annual_text=cfg.billing.get("pro_price_annual_text"),
             pro_price_monthly_text=cfg.billing.get("pro_price_monthly_text"),
             pro_price_lifetime_text=cfg.billing.get("pro_price_lifetime_text"),
             pro_annual_badge_text=cfg.billing.get("pro_annual_badge_text"),
+            coach_price_monthly_text=cfg.billing.get(
+                "coach_price_monthly_text"
+            ),
+            coach_price_annual_text=cfg.billing.get(
+                "coach_price_annual_text"
+            ),
             # Renewal copy tracks what the store actually sells — false on
             # a passes-only store, where nothing auto-renews.
             store_subscriptions=bool(cfg.billing.get("store_subscriptions")),
@@ -4482,11 +4642,12 @@ def create_app(
 
     @app.get("/admin/kpis")
     def admin_kpis(request: Request):
-        """The five business KPIs as JSON, for the operator only. Gated by
-        the SWINGLAB_ADMIN_TOKEN environment variable via a constant-time
-        bearer comparison — and it answers 404 (never 401/403) when the
-        variable is unset OR the token is wrong, so the endpoint's very
-        existence is invisible to anyone without the credential."""
+        """The five business KPIs as JSON, for the operator only.
+
+        Deliberately not documented further here: this docstring is published
+        verbatim in the OpenAPI document, and how the route is guarded is
+        exactly what an attacker would want from it. The mechanics live in
+        require_admin() and in docs/environment.md."""
         require_admin(request)
         raw_since = request.query_params.get("since")
         if raw_since is None or raw_since == "":
