@@ -98,14 +98,23 @@
   {% endstyle %}
   <noscript><style>.sl-reveal { opacity: 1; transform: none; }</style></noscript>
 
-  {%- assign schema_logo = images['swinglab-logo.png'] -%}
+  {%- comment -%}
+    Same Files-beats-theme trap the og and favicon marks above were moved off,
+    missed here because this one is structured data rather than a visible
+    image. Shopify Files still holds swinglab-logo.png (1400x214, alt "SwingLab
+    logo") from the v3 brand, while the theme ships the v4 lockup at 1400x279 —
+    so this lookup was serving Google the retired mark while the header beside
+    it rendered the current one. Resolve the current filename first, then fall
+    back to the theme asset, so uploading the theme is sufficient on its own.
+  {%- endcomment -%}
+  {%- assign schema_logo = images['caddieinsight-logo.png'] -%}
   <script type="application/ld+json">
     {
       "@context": "https://schema.org",
       "@type": "Organization",
       "name": "CaddieInsight",
-      "url": {{ shop.url | json }}{% if schema_logo %},
-      "logo": {{ schema_logo | image_url: width: 480 | prepend: 'https:' | json }}{% endif %}
+      "url": {{ shop.url | json }},
+      "logo": {% if schema_logo %}{{ schema_logo | image_url: width: 480 | prepend: 'https:' | json }}{% else %}{{ 'caddieinsight-logo.png' | asset_url | json }}{% endif %}
     }
   </script>
   {%- comment -%}
