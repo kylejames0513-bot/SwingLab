@@ -2605,6 +2605,22 @@
         "summary": "Reset Request"
       }
     },
+    "/robots.txt": {
+      "get": {
+        "operationId": "robots_robots_txt_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Robots"
+      }
+    },
     "/sample-report": {
       "get": {
         "operationId": "sample_report_redirect_sample_report_get",
@@ -2881,6 +2897,22 @@
           }
         },
         "summary": "Signup"
+      }
+    },
+    "/sitemap.xml": {
+      "get": {
+        "operationId": "sitemap_sitemap_xml_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Sitemap"
       }
     },
     "/today": {

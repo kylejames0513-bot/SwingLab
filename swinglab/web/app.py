@@ -64,11 +64,19 @@ import shutil
 import threading
 import time
 from datetime import datetime, timezone
+from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
 
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    PlainTextResponse,
+    RedirectResponse,
+    Response,
+)
 from fastapi.staticfiles import StaticFiles
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from starlette.concurrency import run_in_threadpool
@@ -1486,6 +1494,61 @@ def create_app(
     @app.get("/offline", response_class=HTMLResponse)
     def offline_page(request: Request):
         return render("web_offline.html.j2", request, public_shell=True)
+
+    # -- crawlers ---------------------------------------------------------
+    # Everything a signed-in visitor reaches is behind a cookie, so a crawler
+    # was never going to index a report. What it CAN do without this file is
+    # follow a shared /session/<job_id> link into a page that then 303s to
+    # /login, and spend the crawl budget for this origin discovering that
+    # several hundred times. And the four public pages — the landing page,
+    # the money page, the drill library and the sample report — had nothing
+    # pointing at them at all.
+    #
+    # Deny-listed prefixes are the ones that are either private or infinite.
+    # /admin is absent on purpose: require_admin answers 404 when the token
+    # is unset and the routes are meant to be invisible, so naming them in a
+    # world-readable file would be the one place they are advertised.
+    PUBLIC_PATHS: tuple[str, ...] = ("/", "/pricing", "/drills", "/sample-report/")
+    CRAWLER_DENY: tuple[str, ...] = (
+        "/session/",
+        "/sessions",
+        "/account",
+        "/today",
+        "/progress",
+        "/upload",
+        "/login",
+        "/signup",
+        "/reset",
+        "/onboarding",
+        "/api/",
+        "/auth/",
+        "/email/",
+        "/billing/",
+        "/shop",
+    )
+
+    @app.get("/robots.txt")
+    def robots(request: Request):
+        origin = _base_url(request)
+        lines = ["User-agent: *"]
+        lines += [f"Allow: {path}" for path in PUBLIC_PATHS]
+        lines += [f"Disallow: {path}" for path in CRAWLER_DENY]
+        lines += ["", f"Sitemap: {origin}/sitemap.xml", ""]
+        return PlainTextResponse("\n".join(lines))
+
+    @app.get("/sitemap.xml")
+    def sitemap(request: Request):
+        origin = _base_url(request)
+        urls = "".join(
+            f"<url><loc>{escape(origin + path)}</loc></url>"
+            for path in PUBLIC_PATHS
+        )
+        return Response(
+            '<?xml version="1.0" encoding="UTF-8"?>'
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
+            f"{urls}</urlset>",
+            media_type="application/xml",
+        )
 
     @app.get("/", response_class=HTMLResponse)
     def home(request: Request):
