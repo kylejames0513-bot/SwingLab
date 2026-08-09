@@ -92,11 +92,16 @@
     --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    {# Spelled exactly as storefront-theme/assets/base.css spells them —
+       leading zeros included. The values were already numerically identical,
+       but `.15vw` versus `0.15vw` is a textual difference, and a parity test
+       that has to normalise before it can compare is a test that will one day
+       normalise away a real divergence. #}
     --sl-text-xs: 12px;
-    --sl-text-sm: clamp(13.5px, 13px + .15vw, 14.5px);
-    --sl-text-base: clamp(15.5px, 15px + .2vw, 17px);
-    --sl-text-lg: clamp(17px, 16.2px + .35vw, 19px);
-    --sl-text-xl: clamp(20px, 18.8px + .55vw, 23px);
+    --sl-text-sm: clamp(13.5px, 13px + 0.15vw, 14.5px);
+    --sl-text-base: clamp(15.5px, 15px + 0.2vw, 17px);
+    --sl-text-lg: clamp(17px, 16.2px + 0.35vw, 19px);
+    --sl-text-xl: clamp(20px, 18.8px + 0.55vw, 23px);
     /* Hardware insets, resolved once so every edge can reference them.
        They are 0 in a browser tab and non-zero on a notched installed app. */
     --sl-safe-top: env(safe-area-inset-top, 0px);
@@ -252,7 +257,7 @@
     flex-shrink: 0;
     color: var(--sl-green);
     font-size: 22px;
-    font-weight: 900;
+    font-weight: 800;
     letter-spacing: -0.02em;
     text-decoration: none;
   }
@@ -789,7 +794,7 @@
     display: inline-flex;
     color: #f5f2e9;
     font-size: 22px;
-    font-weight: 900;
+    font-weight: 800;
     letter-spacing: -.02em;
     text-decoration: none;
   }
