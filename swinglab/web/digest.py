@@ -61,6 +61,7 @@ from ..trends import (
     trend_sentence,
 )
 from . import mailer, shopify_billing
+from .users import entitled_to_coach_features
 
 logger = logging.getLogger("swinglab.web.digest")
 
@@ -297,7 +298,9 @@ def compose_digest(
     progress_gated = bool(
         cfg.billing.get("progress_pro_only")
         and cfg.web.get("require_account")
-        and not user.is_pro
+        and not entitled_to_coach_features(
+            user, bool(cfg.billing.get("coach_tier_enabled"))
+        )
     )
     if progress_gated:
         progress_url = esc(f"{base_url}/sessions")

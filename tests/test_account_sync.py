@@ -1082,8 +1082,99 @@ def test_customer_order_waits_for_identity_link_then_reconciles(app):
     account = get_user(client)
     assert account.shopify_customer_id == "7001"
     assert account.shopify_identity_locked
-    assert users.claim_pending_grant(account.id, account.email) == 31
     assert get_user(client).is_pro
+    # The link is what the parked order was waiting for, so the customer
+    # webhook claims it. Nothing is left for a later login to pick up.
+    assert users.claim_pending_grant(account.id, account.email) == 0
+
+
+def test_paid_before_customer_webhook_grants_without_a_second_visit(app):
+    """A buyer is Pro when the webhooks land, not when they next sign in.
+
+    Shopify does not guarantee delivery order, so a customer-bearing
+    orders/paid routinely arrives before customers/create. users.py parks it
+    on purpose: granting on a matching email alone would let anyone who
+    registers an address first inherit a stranger's purchase. The link the
+    parking waits for is established by exactly one event — and until now
+    nothing claimed the grant when it arrived, so the days sat in pro_grants
+    until the buyer happened to log in again. Somebody who paid and then
+    closed the tab stayed on Free.
+    """
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    signup(client)
+
+    webhook(client, pro_order(order_id=1001, customer_id=7001), "orders/paid")
+    assert not get_user(client).is_pro  # parked, correctly
+
+    webhook(client, customer(customer_id=7001), "customers/create")
+
+    user = get_user(client)
+    assert user.is_pro, "the identity link did not release the parked grant"
+    assert abs(user.pro_until - (time.time() + 31 * DAY)) < 60
+    assert users.claim_pending_grant(user.id, user.email) == 0
+
+    parked = users._conn.execute(
+        "SELECT user_id, pending_days FROM shopify_orders"
+        " WHERE order_id = '1001'"
+    ).fetchone()
+    assert tuple(parked) == (user.id, 0)
+
+
+def test_customer_webhook_does_not_grant_onto_an_unclaimed_stub(app):
+    """The claim-on-link must not fire for a row nobody has proven they own.
+
+    customers/create provisions a stub for an email that has never signed in.
+    An unclaimed stub is still allowed to follow a store-side email change in
+    place, so granting Pro onto one would let a later customers/update carry
+    that Pro to an address the buyer never controlled. The days stay parked
+    until signup or an emailed code proves ownership — both of which already
+    claim on the way in.
+    """
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+
+    # A CUSTOMER-BEARING order is what makes this case discriminating. A guest
+    # order is already refused for an unverified row by claim_pending_grant
+    # itself (it requires email_verified when the order carries no customer
+    # id), so it would pass this test with the gate deleted. An order whose
+    # customer id matches the stub's link satisfies eligibility on the link
+    # alone — the gate here is the only thing standing between it and Pro.
+    webhook(client, pro_order(order_id=1001, customer_id=7001), "orders/paid")
+    webhook(client, customer(customer_id=7001), "customers/create")
+
+    stub = get_user(client)
+    assert stub is not None and not stub.claimed
+    assert not stub.is_pro, "Pro landed on a row nobody has claimed"
+    assert users.pending_grant_days("buyer@example.com") == 31
+
+    # ...and the moment the owner proves it, they get what they paid for.
+    signup(client)
+    assert get_user(client).is_pro
+
+
+def test_customer_webhook_claim_does_not_cross_identities(app):
+    """The claim must not become a back door around the parking rule.
+
+    A customer webhook for a DIFFERENT Shopify customer that happens to share
+    nothing with the parked order must leave that order parked. This is the
+    assertion that keeps the fix from re-opening the takeover hole the
+    parking exists to close.
+    """
+    client = TestClient(app)
+    users: UserStore = client.app.state.users
+    signup(client)
+
+    webhook(client, pro_order(order_id=1001, customer_id=7001), "orders/paid")
+    # A different customer id for the same inbox: not the link we waited for.
+    webhook(client, customer(customer_id=8002), "customers/create")
+
+    assert not get_user(client).is_pro
+    parked = users._conn.execute(
+        "SELECT user_id, pending_days FROM shopify_orders"
+        " WHERE order_id = '1001'"
+    ).fetchone()
+    assert tuple(parked) == (None, 31)
 
 
 def test_stub_with_analyses_is_never_deleted(app):

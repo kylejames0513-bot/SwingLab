@@ -95,14 +95,77 @@ def first_sale_products(products: list[dict], cfg: Config) -> list[dict]:
         if str(tag).strip()
     }
     if not candidate_tags:
+        if products:
+            _warn_gate_emptied(products, verified_tag, candidate_tags)
         return []
-    return [
+    kept = [
         product
         for product in products
         if product.get("available") is True
         and verified_tag in set(product.get("tags") or ())
         and candidate_tags.intersection(set(product.get("tags") or ()))
     ]
+    if products and not kept:
+        _warn_gate_emptied(products, verified_tag, candidate_tags)
+    return kept
+
+
+_gate_warning_state: dict[str, Any] = {"signature": None}
+
+
+def _warn_gate_emptied(
+    products: list[dict], verified_tag: str, candidate_tags: set[str]
+) -> None:
+    """Say out loud that the gate, not the catalogue, emptied the shop.
+
+    Without this the operator sees the same thing for four different causes:
+    a store with nothing in it, an expired Storefront token, products not
+    published to the channel, and a stale allowlist. The first three already
+    log; this is the fourth, and it is the one that looks most like "we just
+    haven't stocked anything yet" — /shop says "check back soon" while a
+    dozen live products sit behind a tag nobody applied.
+
+    Logged once per distinct cause rather than per request: this runs on
+    every /shop view and every finished analysis, and a per-request warning
+    would bury the thing it is trying to surface.
+    """
+    available = [p for p in products if p.get("available") is True]
+    present = set()
+    for product in products:
+        present.update(product.get("tags") or ())
+    missing_verified = verified_tag not in present
+    unmatched = sorted(candidate_tags - present)
+
+    signature = f"{len(products)}|{missing_verified}|{','.join(unmatched)}"
+    if _gate_warning_state["signature"] == signature:
+        return
+    _gate_warning_state["signature"] = signature
+
+    reasons = []
+    if missing_verified:
+        reasons.append(
+            f"no product carries the verification tag {verified_tag!r}"
+        )
+    if unmatched:
+        reasons.append(
+            "these shop.first_sale_candidate_tags match no product in the "
+            f"catalogue: {', '.join(unmatched)}"
+        )
+    if not reasons:
+        reasons.append(
+            "no product carries BOTH the verification tag and an allowlisted "
+            "candidate tag"
+        )
+    logger.warning(
+        "shop.first_sale_catalog_only filtered %d live product(s) (%d "
+        "in stock) down to none, so /shop is empty and no analysis will "
+        "recommend gear. Cause: %s. Tag the products you have actually "
+        "sample-tested in Shopify, or set shop.first_sale_catalog_only "
+        "false to promote the whole catalogue.",
+        len(products),
+        len(available),
+        "; and ".join(reasons),
+    )
 
 
 def enabled() -> bool:

@@ -18,7 +18,32 @@ DEFAULTS: dict[str, Any] = {
     "brand": {
         "name": "CaddieInsight",
         "logo_path": None,
-        "logo_url": None,
+        # The web shell renders the wordmark as plain type whenever this is
+        # empty, so a customer arriving from the store watched the lockup
+        # turn into text at the door. The packaged asset is the default
+        # instead of None: bare-code and white-label installs get a real
+        # lockup, and an operator swaps it by pointing this elsewhere.
+        # caddieinsight-* names, never swinglab-*, per CLAUDE.md — the v3
+        # filenames still exist and must not be what new code binds.
+        "logo_url": "/static/caddieinsight-logo.png",
+        # Public origin of THIS app (no trailing slash). Only used to build
+        # absolute URLs for the tags that require one — canonical, og:url,
+        # og:image. Empty means "I don't know where I'm served from", and
+        # the shell then omits those tags rather than claiming a canonical
+        # that points at somebody else's origin. Railway sets the same value
+        # in PUBLIC_BASE_URL for links inside email; this is the config-side
+        # copy because templates cannot read the environment.
+        "site_url": "https://app.caddieinsight.com",
+        # One honest sentence for search results and link previews. It
+        # describes the loop the product actually runs (one priority, one
+        # drill, one pass mark, one re-film) and claims no measurement the
+        # analysis does not make. Deliberately carries NO brand name: this
+        # default survives a re-brand, and og:site_name already says who is
+        # speaking. A page may override it per-render.
+        "meta_description": (
+            "Film one swing on your phone. Get one thing to fix, one drill "
+            "that fixes it, and the pass mark your next re-film has to clear."
+        ),
         "primary_color": "#1a5c38",
         "accent_color": "#e8720c",
         "footer_text": "CaddieInsight — swing analysis from a single phone video.",
@@ -237,6 +262,30 @@ DEFAULTS: dict[str, Any] = {
         # lifetime tier: 36500 days (100 years); the account page displays
         # anything more than 50 years out as "Lifetime" rather than a date.
         "shopify_skus": {"SL-PRO-1MO": 31, "SL-PRO-12MO": 365, "SL-PRO-LIFE": 36500},
+        # Variant SKU -> membership tier ("pro" or "coach"). Anything absent
+        # here grants "pro", which is exactly what every SKU granted before
+        # two tiers existed — so a bare-code or white-label install is
+        # unchanged and nothing can reach the top tier by omission. The
+        # SHIPPED config.yaml is where CaddieInsight declares its Coach SKUs.
+        #
+        # Explicit rather than inferred from the SKU string: a prefix rule
+        # would silently promote any future SKU that happened to be spelled
+        # "SL-COACH-…", and this is the money path.
+        "shopify_sku_tiers": {},
+        # The two-tier ladder's compatibility floor. FALSE means one paid
+        # tier, exactly as before: any paid plan unlocks the coach replay and
+        # the progress dashboard, and the pricing page sells Pro alone. TRUE
+        # splits them — Pro is unlimited analysis, Coach adds the replay and
+        # the proof cycle — and the pricing page grows Coach cards.
+        #
+        # Do not turn this on until the Coach variants exist in Shopify and
+        # their ids are in shopify_variant_ids below. With it on and nothing
+        # to buy, a Pro customer loses the replay with no way to get it back
+        # while the store still offers only Pro. Same rollout shape as
+        # club_aware_enabled and the proof_cycle stages.
+        "coach_tier_enabled": False,
+        "coach_price_monthly_text": "",
+        "coach_price_annual_text": "",
         # DISPLAY strings for the pricing page only — what is actually
         # charged always lives in Shopify/Stripe. Keep these matching the
         # store or don't set them. The badge is a display string for the

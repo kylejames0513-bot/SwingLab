@@ -12,9 +12,40 @@
 <meta name="apple-mobile-web-app-title" content="{{ brand.name }}">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <title>{% block title %}{{ brand.name }}{% endblock %}</title>
+{# Share and search metadata.
+
+   Every tag below resolves with no extra render context, because the most
+   shared thing in this product is a link somebody pasted into a group chat
+   and there is no page where a bare grey preview is acceptable. A caller
+   that knows better overrides any of it by passing meta_description,
+   og_title, og_type, canonical_url or og_image_url — no template change.
+
+   The absolute-URL tags (canonical, og:url, og:image) are emitted only when
+   an origin is known. A wrong canonical is worse than none: it hands the
+   page to another site. #}
+{% block meta %}
+{% set site_origin = brand.site_url | default('', true) | trim('/') %}
+{% set page_description = meta_description | default(brand.meta_description, true) %}
+{% set page_url = canonical_url | default(site_origin ~ current_path if site_origin and current_path else site_origin, true) %}
+{% set share_image = og_image_url | default(site_origin ~ '/static/og-caddieinsight.png' if site_origin else '', true) %}
+{% if page_description %}<meta name="description" content="{{ page_description }}">{% endif %}
+<meta property="og:site_name" content="{{ brand.name }}">
+<meta property="og:type" content="{{ og_type | default('website', true) }}">
+{# self.title() reuses the page's own <title> block, so every page gets its
+   real name in a preview instead of one shared brand string. #}
+<meta property="og:title" content="{{ og_title | default(self.title(), true) }}">
+{% if page_description %}<meta property="og:description" content="{{ page_description }}">{% endif %}
+{% if page_url %}<meta property="og:url" content="{{ page_url }}">{% endif %}
+{% if share_image %}<meta property="og:image" content="{{ share_image }}">{% endif %}
+<meta name="twitter:card" content="summary_large_image">
+{% if share_image %}<meta name="twitter:image" content="{{ share_image }}">{% endif %}
+{% if page_url %}<link rel="canonical" href="{{ page_url }}">{% endif %}
+{% endblock %}
 <link rel="manifest" href="/app.webmanifest">
 <link rel="icon" href="/static/pwa-icon.svg" type="image/svg+xml">
-<link rel="icon" href="/static/swinglab-favicon.png" sizes="512x512" type="image/png">
+{# caddieinsight-*, not the retired swinglab-* mark of the same geometry —
+   new code never binds a v3 filename (CLAUDE.md). #}
+<link rel="icon" href="/static/caddieinsight-favicon.png" sizes="512x512" type="image/png">
 {# iOS ignores SVG touch icons — this PNG is generated from the same mark
    by store-assets/make_brand.py (opaque, 180x180). #}
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
@@ -1042,7 +1073,7 @@
           {% if require_account %}<a href="/today" {% if current_path == '/today' %}aria-current="page"{% endif %}>Today</a>{% endif %}
           <a href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
           {% if require_account %}
-            <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>
+            <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>
           {% endif %}
           <a href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
         </div>
@@ -1130,7 +1161,7 @@
         {% endif %}
         {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" data-menu-link {% if current_path == '/progress' %}aria-current="page"{% endif %}>
-          <span>Progress{% if user and progress_pro_only and not user.is_pro %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
+          <span>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
         </a>
         {% endif %}
         <a class="sl-menu__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" data-menu-link {% if current_path == '/drills' %}aria-current="page"{% endif %}>

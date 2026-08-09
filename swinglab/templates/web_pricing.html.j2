@@ -223,12 +223,17 @@
       {% if free_per_month <= 0 %}unlimited full reports{% else %}{{ free_per_month }} full report{% if free_per_month != 1 %}s{% endif %}{% if free_matched_refilm %}
       plus a matched re-film{% endif %}
       a month{% endif %}. Pro is {% if pro_per_month <= 0 %}unlimited filming{% else %}up to
-      {{ pro_per_month }} analyses a month{% endif %}{% if replay_pro_only %}, plus the
+      {{ pro_per_month }} analyses a month{% endif %}{% if not coach_tier_enabled %}{% if replay_pro_only %}, plus the
       annotated coach replay — your own footage played back with your
       tracked body, your hand path, and the key numbers appearing at each
       swing event{% endif %}{% if progress_pro_only %},
       plus the progress dashboard that charts every metric session over
-      session so you can watch a fix stick{% endif %}.</p>
+      session so you can watch a fix stick{% endif %}{% endif %}.
+      {% if coach_tier_enabled %}Coach adds the part nobody else
+      does{% if replay_pro_only %}: the annotated replay of every
+      swing{% endif %}{% if progress_pro_only %}, the progress dashboard that
+      charts every metric session over session{% endif %}, and the proof cycle
+      that refuses to call a fix real until a matched re-film says so.{% endif %}</p>
   </div>
 
   {% if trend_line %}
@@ -236,23 +241,41 @@
   <p class="personal">{{ trend_line }}.</p>
   {% endif %}
 
-  {% macro pro_cta(store_href=None) -%}
+  {% macro pro_cta(store_href=None, label=None, owned=None) -%}
       {# store_href deep-links the card's own variant so checkout opens on
-         the plan that was clicked; without one, the plain product page. #}
-      {% if user and user.is_pro %}
-      <p class="hint">You're on Pro — thanks for the support!</p>
+         the plan that was clicked; without one, the plain product page.
+         `owned` says whether this viewer already holds THIS card's plan —
+         passed in rather than read off the user, because with two tiers a
+         Pro subscriber must still see a live Coach CTA. #}
+      {% set already = user.is_pro if owned is none else owned %}
+      {% if user and already %}
+      <p class="hint">You're on {{ label or "Pro" }} — thanks for the support!</p>
       {% elif user and pro_store_url %}
-      <a class="button" href="{{ store_href or pro_store_url }}" data-pro-click>Get Pro on the {{ brand.name }} store</a>
+      <a class="button" href="{{ store_href or pro_store_url }}" data-pro-click>Get {{ label or "Pro" }} on the {{ brand.name }} store</a>
       <p class="hint">Check out with <strong>{{ user.email }}</strong> —
-        Pro unlocks on this account automatically.</p>
+        it unlocks on this account automatically.</p>
       {% elif user and billing_enabled %}
       <form action="/billing/checkout" method="post" data-pro-click>
-        <button type="submit">Upgrade to Pro</button>
+        <button type="submit">Upgrade to {{ label or "Pro" }}</button>
       </form>
-      {% elif not billing_enabled and not pro_store_url %}
-      <p class="hint">Coming soon.</p>
+      {% elif pro_store_url %}
+      {# Anonymous visitor, store configured: send them to checkout.
+         Every branch above is gated on `user`, so cold traffic from an ad
+         or a shared link fell through to "Log in to upgrade" and converted
+         at zero — and that link carried no `next`, so the plan they clicked
+         was lost even if they did sign in. Buying first is safe:
+         claim_pending_pro attaches a purchase made before the account
+         existed, matched on the checkout email. #}
+      <a class="button" href="{{ store_href or pro_store_url }}" data-pro-click>Get {{ label or "Pro" }} on the {{ brand.name }} store</a>
+      <p class="hint">No account needed to buy — check out, then sign in
+        with the same email and it unlocks automatically.</p>
+      {% elif billing_enabled %}
+      {# Stripe genuinely needs an account first (checkout bills a customer
+         record), so login is the honest next step here — but carry the
+         destination so the choice survives it. #}
+      <a class="button" href="/login?next=/pricing" data-pro-click>Log in to upgrade</a>
       {% else %}
-      <a class="button" href="/login" data-pro-click>Log in to upgrade</a>
+      <p class="hint">Coming soon.</p>
       {% endif %}
   {%- endmacro %}
   <div class="plans">
@@ -264,7 +287,7 @@
           <li>{% if pro_per_month <= 0 %}Unlimited swing analyses for a year{% else %}
             Up to {{ pro_per_month }} analyses a month for a year{% endif %}</li>
           <li>Everything Pro includes, all season — and the off-season too</li>
-          {% if replay_pro_only %}<li>Upgrade and re-film with your annotated coach replay</li>{% endif %}
+          {% if replay_pro_only and not coach_tier_enabled %}<li>Upgrade and re-film with your annotated coach replay</li>{% endif %}
           <li>One checkout covers the whole year — no monthly decision to remake</li>
         </ul>
       </div>
@@ -317,6 +340,36 @@
         exist.</p>
     </div>
     {% endif %}
+    {% if coach_tier_enabled %}
+    {# Coach: the upper rung. Rendered only once the ladder is rolled out,
+       so the page never offers a plan the store cannot sell. #}
+    <div class="card coach">
+      <h2>Coach — monthly</h2>
+      <p class="price">{{ coach_price_monthly_text or "Everything, proven" }}</p>
+      <ul>
+        <li>Everything in Pro</li>
+        {% if replay_pro_only %}<li>The annotated coach replay of every swing —
+          your own footage with your tracked body, hand path, and the numbers
+          at each swing event</li>{% endif %}
+        {% if progress_pro_only %}<li>The progress dashboard: every metric
+          charted session over session, so you can watch a fix hold</li>{% endif %}
+        <li>The proof cycle — a pass mark, a matched re-film, and a verdict
+          that only counts a change once it survives two checks</li>
+      </ul>
+      {{ pro_cta(coach_store_url_monthly, "Coach", user.has_coach if user else false) }}
+    </div>
+    {% if coach_store_url_yearly or coach_price_annual_text %}
+    <div class="card coach">
+      <h2>Coach — yearly</h2>
+      <p class="price">{{ coach_price_annual_text or "Everything, proven" }}</p>
+      <ul>
+        <li>Everything in Coach, all season — and the off-season too</li>
+        <li>One checkout covers the whole year</li>
+      </ul>
+      {{ pro_cta(coach_store_url_yearly, "Coach", user.has_coach if user else false) }}
+    </div>
+    {% endif %}
+    {% endif %}
     <div class="card quiet">
       <h2>Free</h2>
       <p class="price">$0</p>
@@ -340,39 +393,54 @@
     </div>
     <div class="compare-scroll" role="region" aria-label="Free and Pro feature comparison" tabindex="0">
     <table class="compare">
-      <thead><tr><th scope="col">Feature</th><th scope="col">Free</th><th scope="col">Pro</th></tr></thead>
+      <thead><tr><th scope="col">Feature</th><th scope="col">Free</th><th scope="col">Pro</th>{% if coach_tier_enabled %}<th scope="col">Coach</th>{% endif %}</tr></thead>
       <tbody>
       <tr>
         <th scope="row">Swing analyses per month</th>
         <td>{% if free_per_month <= 0 %}Unlimited{% elif free_matched_refilm %}{{ free_per_month }} + 1 matched re-film{% else %}{{ free_per_month }}{% endif %}</td>
         <td class="yes">{{ "Unlimited" if pro_per_month <= 0 else pro_per_month }}</td>
+        {% if coach_tier_enabled %}<td class="yes">{{ "Unlimited" if pro_per_month <= 0 else pro_per_month }}</td>{% endif %}
       </tr>
       <tr>
         <th scope="row">Coaching-ready clip: benchmarked motion metrics</th>
-        <td class="yes">Included</td><td class="yes">Included</td>
+        <td class="yes">Included</td><td class="yes">Included</td>{% if coach_tier_enabled %}<td class="yes">Included</td>{% endif %}
       </tr>
       <tr>
         <th scope="row">Coaching-ready clip: key frames, slow motion, overlays</th>
-        <td class="yes">Included</td><td class="yes">Included</td>
+        <td class="yes">Included</td><td class="yes">Included</td>{% if coach_tier_enabled %}<td class="yes">Included</td>{% endif %}
       </tr>
       <tr>
         <th scope="row">Coaching notes and a practice plan per coaching-ready session</th>
-        <td class="yes">Included</td><td class="yes">Included</td>
+        <td class="yes">Included</td><td class="yes">Included</td>{% if coach_tier_enabled %}<td class="yes">Included</td>{% endif %}
       </tr>
       <tr>
         <th scope="row">Private session history</th>
-        <td class="yes">Included</td><td class="yes">Included</td>
+        <td class="yes">Included</td><td class="yes">Included</td>{% if coach_tier_enabled %}<td class="yes">Included</td>{% endif %}
       </tr>
       {% if replay_pro_only %}
         <tr>
           <th scope="row">&#128274; Annotated coach replay video</th>
+          {% if coach_tier_enabled %}
+          <td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Included</td>
+          {% else %}
           <td>Upgrade and re-film</td><td class="yes">Included</td>
+          {% endif %}
         </tr>
       {% endif %}
       {% if progress_pro_only %}
       <tr>
         <th scope="row">&#128274; Progress dashboard &amp; trends</th>
+        {% if coach_tier_enabled %}
+        <td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Included</td>
+        {% else %}
         <td class="no">&mdash;</td><td class="yes">Included</td>
+        {% endif %}
+      </tr>
+      {% endif %}
+      {% if coach_tier_enabled %}
+      <tr>
+        <th scope="row">&#128274; Proof cycle: pass marks and verified changes</th>
+        <td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Included</td>
       </tr>
       {% endif %}
       </tbody>

@@ -107,14 +107,22 @@ def test_shipped_config_activates_guided_customer_and_sample_reports():
 
 
 def test_shipped_brand_logo_uses_packaged_static_lockup():
+    """The signed-in header must carry the v4 CaddieInsight lockup.
+
+    config.yaml deep-merges over the code default, so pointing the code at
+    caddieinsight-logo.png is not enough on its own — this assertion is what
+    catches config.yaml still naming the retired v3 file. A customer who
+    clicks from the store into the app would otherwise watch the mark change
+    brand mid-journey.
+    """
     shipped = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
-    assert shipped.brand["logo_url"] == "/static/swinglab-logo.png"
+    assert shipped.brand["logo_url"] == "/static/caddieinsight-logo.png"
     static_logo = (
         Path(__file__).resolve().parents[1]
         / "swinglab"
         / "web"
         / "static"
-        / "swinglab-logo.png"
+        / "caddieinsight-logo.png"
     )
     assert static_logo.is_file()
 
