@@ -127,13 +127,21 @@
             # uncompressed PNG on the section where someone decides to pay.
             # Every name is written out whole so theme-check's MissingAsset can
             # still verify the binding.
-            assign art_sm = 'caddieinsight-pro-card-v2-480.webp' | asset_url
-            assign art_md = 'caddieinsight-pro-card-v2-960.webp' | asset_url
-            assign art_lg = 'caddieinsight-pro-card-v2-1536.webp' | asset_url
+            #
+            # These hold the FILENAME; asset_url is applied at each use site
+            # below. Piping here instead reads better but trips theme-check's
+            # RemoteAsset warning: it inspects the src attribute literally, and
+            # a bare `{{ art_md }}` gives it no way to know the value already
+            # went through asset_url, so it assumes a remote host. Newer
+            # theme-check follows the assignment; the pinned 3.58.2 in CI does
+            # not, and the workflow runs --fail-level warning.
+            assign art_sm = 'caddieinsight-pro-card-v2-480.webp'
+            assign art_md = 'caddieinsight-pro-card-v2-960.webp'
+            assign art_lg = 'caddieinsight-pro-card-v2-1536.webp'
             if b.plan == 'founders'
-              assign art_sm = 'caddieinsight-founders-card-v2-480.webp' | asset_url
-              assign art_md = 'caddieinsight-founders-card-v2-960.webp' | asset_url
-              assign art_lg = 'caddieinsight-founders-card-v2-1536.webp' | asset_url
+              assign art_sm = 'caddieinsight-founders-card-v2-480.webp'
+              assign art_md = 'caddieinsight-founders-card-v2-960.webp'
+              assign art_lg = 'caddieinsight-founders-card-v2-1536.webp'
             endif
           -%}
           <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
@@ -150,8 +158,8 @@
                   decoding="async">
               {%- else -%}
                 <img
-                  src="{{ art_md }}"
-                  srcset="{{ art_sm }} 480w, {{ art_md }} 960w, {{ art_lg }} 1536w"
+                  src="{{ art_md | asset_url }}"
+                  srcset="{{ art_sm | asset_url }} 480w, {{ art_md | asset_url }} 960w, {{ art_lg | asset_url }} 1536w"
                   sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
                   width="1536"
                   height="1024"

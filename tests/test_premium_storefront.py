@@ -109,6 +109,7 @@ def test_membership_card_media_is_photoreal_without_overlay_stickers():
     # appears in the section would pass on the explanatory comments alone —
     # a tautology of exactly the kind claude-build-brief.md warns about, green
     # with the binding it exists to protect deleted.
+    requested = plans_band_requested_assets()
     for stem in (
         "caddieinsight-pro-card-v2",
         "caddieinsight-founders-card-v2",
@@ -116,9 +117,7 @@ def test_membership_card_media_is_photoreal_without_overlay_stickers():
     ):
         for width in (480, 960, 1536):
             rung = f"{stem}-{width}.webp"
-            assert f"'{rung}' | asset_url" in plans_band, (
-                f"Card art rung not bound: {rung}"
-            )
+            assert rung in requested, f"Card art rung not bound: {rung}"
             assert (THEME / "assets" / rung).is_file(), f"Rung not packaged: {rung}"
 
         # The source photograph stays in assets/ as the regeneration record.
@@ -685,15 +684,39 @@ def plans_band_requested_assets() -> list[str]:
     Matches both filters deliberately: asset_url (how a webp must be served,
     whole) and asset_img_url (the legacy sizing filter the section used to
     use). Anything the section requests through either one is on the wire.
+
+    A filename does not have to be piped in place. The paid cards assign the
+    NAME to a variable and apply asset_url at the img tag, because
+    theme-check 3.58.2 — pinned in CI at --fail-level warning — reads the src
+    attribute literally and flags a bare `{{ art_md }}` as a RemoteAsset,
+    having no way to know the value already went through asset_url. So a name
+    counts as requested when it is either piped directly or assigned to a
+    variable the section later pipes.
     """
-    return sorted(
-        set(
-            re.findall(
-                r"'([^']+\.(?:png|webp|jpe?g|gif))'\s*\|\s*asset(?:_img)?_url",
-                source("sections/plans-band.liquid"),
-            )
+    text = source("sections/plans-band.liquid")
+    piped = set(
+        re.findall(
+            r"'([^']+\.(?:png|webp|jpe?g|gif))'\s*\|\s*asset(?:_img)?_url",
+            text,
         )
     )
+    # `assign art_md = 'name.webp'` paired with `{{ art_md | asset_url }}`.
+    # A LIST, not a dict keyed by variable: the same variable is assigned
+    # once per plan branch (art_sm is the pro rung and then the founders
+    # rung), so keying by name silently keeps only the last branch and drops
+    # the other plan's art from the result entirely.
+    assigned = re.findall(
+        r"assign\s+(\w+)\s*=\s*'([^']+\.(?:png|webp|jpe?g|gif))'\s*$",
+        text,
+        re.MULTILINE,
+    )
+    piped_variables = set(
+        re.findall(r"\{\{\s*(\w+)\s*\|\s*asset(?:_img)?_url", text)
+    )
+    for variable, name in assigned:
+        if variable in piped_variables:
+            piped.add(name)
+    return sorted(piped)
 
 
 def test_plans_band_serves_its_card_photography_as_pre_encoded_webp_rungs():
@@ -707,10 +730,11 @@ def test_plans_band_serves_its_card_photography_as_pre_encoded_webp_rungs():
     """
     plans_band = source("sections/plans-band.liquid")
 
+    requested = plans_band_requested_assets()
     for plan in ("pro", "founders", "free"):
         for width in (480, 960, 1536):
             name = f"caddieinsight-{plan}-card-v2-{width}.webp"
-            assert f"'{name}' | asset_url" in plans_band, f"not bound: {name}"
+            assert name in requested, f"not bound: {name}"
             asset = THEME / "assets" / name
             assert asset.is_file(), f"missing theme asset: {name}"
             assert webp_dimensions(asset) == (width, round(width * 2 / 3)), name
