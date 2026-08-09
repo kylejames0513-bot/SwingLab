@@ -22,10 +22,13 @@ LOCALE = json.loads(
 
 def test_storefront_header_prefers_theme_packaged_logo_asset():
     assert "section.settings.logo != blank" in HEADER
+    # The name moved to caddieinsight-logo.png: Files still holds a v3
+    # swinglab-logo.png, so the old name could never be trusted through an
+    # images[] lookup (see tests/test_theme_brand_filenames.py).
     assert "images['swinglab-logo.png']" not in HEADER
-    assert "swinglab-logo.png' | asset_url" in HEADER
+    assert "caddieinsight-logo.png' | asset_url" in HEADER
     assert 'class="sl-header__logo-img"' in HEADER
-    theme_logo = THEME_ROOT / "assets" / "swinglab-logo.png"
+    theme_logo = THEME_ROOT / "assets" / "caddieinsight-logo.png"
     assert theme_logo.is_file()
 
 
