@@ -74,8 +74,8 @@
   overflow: hidden;
   background:
     radial-gradient(circle at 80% 50%, rgba(37, 111, 70, 0.22), transparent 34%),
-    #06110c;
-  color: #f5f2e9;
+    var(--sl-night);
+  color: var(--sl-cream);
 }
 .sl-report__inner {
   padding-top: var(--sl-section-space);
@@ -90,7 +90,7 @@
 }
 .sl-report__eyebrow {
   margin: 0 auto 14px;
-  color: #ff9a42;
+  color: var(--sl-accent-hover);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-eyebrow-size);
   font-weight: 500;
@@ -100,7 +100,7 @@
 .sl-report .sl-h2 {
   max-width: 12ch;
   margin-inline: auto;
-  color: #f5f2e9;
+  color: var(--sl-cream);
   font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
   font-weight: 700;
@@ -116,7 +116,7 @@
   font-weight: 400;
   line-height: 1.55;
   letter-spacing: -0.012em;
-  color: rgba(245, 242, 233, 0.72);
+  color: rgba(var(--sl-cream-rgb), 0.72);
   text-align: left;
   text-wrap: pretty;
 }
@@ -124,7 +124,7 @@
   margin-top: 20px;
 }
 .sl-report .sl-check-list li {
-  color: rgba(245, 242, 233, 0.72);
+  color: rgba(var(--sl-cream-rgb), 0.72);
   text-align: left;
 }
 .sl-report__media-wrap {
@@ -139,7 +139,7 @@
   z-index: -1;
   inset: 12% -8% -10% 18%;
   border-radius: 50%;
-  background: rgba(240, 122, 24, 0.18);
+  background: rgba(var(--sl-accent-rgb), 0.18);
   filter: blur(70px);
 }
 
@@ -184,7 +184,7 @@
   flex: 1 1 150px;
   min-width: 0;
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   color: var(--sl-green);
@@ -193,7 +193,7 @@
 }
 .sl-report__sample {
   font-family: var(--sl-font-mono);
-  font-size: 10px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
   color: var(--sl-ink-muted);
@@ -225,7 +225,7 @@
 }
 .sl-report__proof dt {
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -233,7 +233,7 @@
 }
 .sl-report__proof dd {
   margin: 7px 0 0;
-  font-size: 13.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.4;
   font-weight: 700;
   color: var(--sl-green);
@@ -259,7 +259,7 @@
 .sl-report__note {
   margin: 0;
   font-style: italic;
-  font-size: 13.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.5;
   color: var(--sl-ink-soft);
   flex: 1 1 260px;
@@ -272,28 +272,28 @@
 .sl-report__caption {
   display: block;
   margin: 14px 0 0;
-  color: rgba(245, 242, 233, 0.56);
+  color: rgba(var(--sl-cream-rgb), 0.56);
   text-align: left;
 }
 .sl-report__disclosure {
   max-width: 62ch;
   margin: 9px 0 0;
-  font-size: 13px;
+  font-size: var(--sl-text-sm);
   line-height: 1.55;
-  color: rgba(245, 242, 233, 0.66);
+  color: rgba(var(--sl-cream-rgb), 0.66);
   text-align: left;
 }
 .sl-report__cta {
   display: flex;
   width: fit-content;
   margin: 20px 0 0;
-  border-color: rgba(245, 242, 233, 0.46);
-  color: #f5f2e9;
+  border-color: rgba(var(--sl-cream-rgb), 0.46);
+  color: var(--sl-cream);
 }
 .sl-report__cta:hover {
-  border-color: #f07a18;
-  background: #f07a18;
-  color: #06110c;
+  border-color: var(--sl-accent);
+  background: var(--sl-accent);
+  color: var(--sl-night);
 }
 
 @media (max-width: 749px) {

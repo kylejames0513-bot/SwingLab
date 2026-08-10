@@ -525,13 +525,13 @@
   max-width: calc(100% - 28px);
   padding: 0 10px;
   overflow: hidden;
-  border: 1px solid rgba(245, 242, 233, 0.34);
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.34);
   border-radius: var(--sl-radius-control);
   background: rgba(7, 19, 13, 0.78);
   box-shadow: 0 10px 24px -12px rgba(7, 19, 13, 0.9);
-  color: #f5f2e9;
+  color: var(--sl-cream);
   font-family: var(--sl-font-mono);
-  font-size: 10px;
+  font-size: var(--sl-text-xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1;
@@ -563,7 +563,7 @@
 
 .sl-main-product__thumbs .sl-thumb:hover {
   opacity: 1;
-  border-color: rgba(20, 71, 44, 0.45);
+  border-color: rgba(var(--sl-green-rgb), 0.45);
 }
 
 .sl-main-product__thumbs .sl-thumb.is-active {
@@ -645,7 +645,7 @@
   align-items: flex-start;
   gap: 10px;
   font-family: var(--sl-font-mono);
-  font-size: 11.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -674,13 +674,13 @@
 .sl-product-kicker {
   max-width: 560px;
   margin: 0 0 16px;
-  font-size: 18px;
+  font-size: var(--sl-text-lg);
   line-height: 1.55;
   color: var(--sl-ink-soft);
 }
 
 .sl-main-product__price-pro {
-  font-size: clamp(28px, 2.6vw, 36px);
+  font-size: var(--sl-text-3xl);
   font-weight: 800;
   letter-spacing: -0.02em;
   font-variant-numeric: tabular-nums;
@@ -767,7 +767,7 @@
 }
 
 .sl-plan-option:hover {
-  border-color: rgba(20, 71, 44, 0.45);
+  border-color: rgba(var(--sl-green-rgb), 0.45);
 }
 
 .sl-plan-option:has(input:checked) {
@@ -787,7 +787,7 @@
 
 .sl-plan-option strong {
   color: var(--sl-green);
-  font-size: 15px;
+  font-size: var(--sl-text-base);
 }
 
 .sl-plan-option small {
@@ -800,7 +800,7 @@
 .sl-main-product__founders {
   margin: 4px 0 2px;
   padding: 14px 16px;
-  border: 1px solid rgba(232, 114, 12, 0.38);
+  border: 1px solid rgba(var(--sl-accent-rgb), 0.38);
   border-radius: var(--sl-radius-sm);
   background: var(--sl-orange-soft);
 }
@@ -812,7 +812,7 @@
 .sl-main-product__founders-label {
   margin: 0;
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -821,7 +821,7 @@
 
 .sl-main-product__founders-body {
   margin: 6px 0 0;
-  font-size: 14px;
+  font-size: var(--sl-text-sm);
   line-height: 1.55;
   color: var(--sl-ink-soft);
 }

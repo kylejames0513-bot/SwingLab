@@ -133,7 +133,7 @@
 .sl-main-cart__empty-body {
   max-width: 38ch;
   margin: 8px auto 0;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   line-height: 1.6;
   color: var(--sl-ink-soft);
 }
@@ -166,7 +166,7 @@
 .sl-main-cart .sl-cart-variant {
   margin: 5px 0 0;
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -183,7 +183,7 @@
 
 .sl-main-cart .sl-cart-remove {
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -202,20 +202,20 @@
 .sl-main-cart__promo {
   max-width: 520px;
   margin: 24px 0 0;
-  font-size: 14px;
+  font-size: var(--sl-text-sm);
 }
 
 /* membership unlock: a designed notice, not a paragraph */
 .sl-main-cart__unlock {
   max-width: 520px;
   margin: 24px 0 0;
-  font-size: 14px;
+  font-size: var(--sl-text-sm);
 }
 
 .sl-main-cart__unlock-label {
   margin: 0 0 6px;
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -225,7 +225,7 @@
 .sl-main-cart__unlock strong {
   display: block;
   color: var(--sl-green);
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   letter-spacing: -0.01em;
 }
 
@@ -262,7 +262,7 @@
   align-items: flex-start;
   gap: 9px;
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -287,7 +287,7 @@
   color: var(--sl-green-btn);
 }
 
-@media (max-width: 600px) {
+@media (max-width: 749px) {
   .sl-main-cart__trust {
     flex-direction: column;
     justify-content: flex-start;

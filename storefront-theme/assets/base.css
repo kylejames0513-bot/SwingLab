@@ -25,31 +25,64 @@
    ============================================================ */
 
 :root {
-  --sl-bg: #eef2ef;          /* cool mist field */
-  --sl-bg-card: #f8fbf9;     /* quiet surface */
-  --sl-ink: #101a14;         /* primary text */
-  --sl-ink-soft: #445049;    /* secondary text */
-  --sl-ink-muted: #626a63;   /* fine print */
-  --sl-green: #0f3d28;       /* deep forest (headings, dark bg) */
-  --sl-green-btn: #1a5c38;   /* action green (brand primary) */
-  --sl-green-ink: #e6f2ea;   /* text on green */
-  --sl-orange: #9a4b0a;      /* accessible amber on light surfaces */
-  --sl-orange-bright: #f07a18; /* kinetic accent on dark surfaces */
-  --sl-orange-soft: #e8f0ea; /* cool wash for callouts */
-  --sl-border: #d4ddd6;      /* hairline on light */
-  --sl-footer: #06110c;      /* night turf footer */
+  /* ==== color — the COMPLETE palette. Every colour the theme paints is
+     named here; sections use tokens or alpha-derivations of these RGB
+     triplets, never new literals. (The old sheet named 14 colours while the
+     theme used 4 greens, 4 oranges and 3 creams — the cream on every dark
+     surface had 66 hardcoded uses and no name at all.) ==== */
+  --sl-bg: #eef2ef;             /* cool mist field */
+  --sl-bg-card: #f8fbf9;        /* quiet surface */
+  --sl-ink: #101a14;            /* primary text */
+  --sl-ink-soft: #445049;       /* secondary text */
+  --sl-ink-muted: #626a63;      /* fine print (AA on --sl-bg: 4.94) */
+  --sl-green: #0f3d28;          /* deep forest (headings, dark bg) */
+  --sl-green-btn: #1a5c38;      /* action green (brand primary) */
+  --sl-green-ink: #e6f2ea;      /* text on green */
+  --sl-orange: #9a4b0a;         /* accessible amber TEXT on light surfaces */
+  --sl-orange-soft: #e8f0ea;    /* cool wash for callouts */
+  --sl-accent: #f07a18;         /* kinetic accent on dark surfaces */
+  --sl-accent-hover: #ff9a42;   /* accent hover state */
+  --sl-focus-dark: #ffad62;     /* focus ring on dark surfaces (10.7:1) */
+  --sl-cream: #f5f2e9;          /* text on every dark surface */
+  --sl-night: #06110c;          /* night turf (footer, premium chrome) */
+  --sl-border: #d4ddd6;         /* hairline on light */
+  --sl-arc: rgba(20, 71, 44, 0.3);  /* the quiet-arc decoration, one place */
+  /* RGB triplets for alpha-derivations: rgba(var(--sl-cream-rgb), .72) etc.
+     Deriving from these keeps every wash traceable to a named colour. */
+  --sl-cream-rgb: 245, 242, 233;
+  --sl-night-rgb: 6, 17, 12;
+  --sl-accent-rgb: 240, 122, 24;
+  --sl-green-rgb: 15, 61, 40;
+  /* aliases kept for existing call sites */
+  --sl-orange-bright: var(--sl-accent);
+  --sl-footer: var(--sl-night);
   --sl-footer-ink: #9fb0a4;
 
   --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
   --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
   --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
+  /* ==== space — the scale that did not exist. Gaps, margins and paddings
+     compose from these; arbitrary px was how 21 different gap values
+     accumulated. ==== */
+  --sl-space-1: 4px;
+  --sl-space-2: 8px;
+  --sl-space-3: 12px;
+  --sl-space-4: 16px;
+  --sl-space-5: 24px;
+  --sl-space-6: 32px;
+  --sl-space-7: 48px;
+  --sl-space-8: 64px;
+  --sl-space-9: 96px;
+
   --sl-maxw: 1280px;
+  --sl-content: var(--sl-maxw);          /* app-vocabulary alias */
   --sl-pad-x: clamp(24px, 5vw, 64px);
   --sl-card-inset: clamp(24px, 3vw, 36px);
   --sl-dense-inset: clamp(14px, 1.5vw, 20px);
   --sl-radius-sm: 6px;
   --sl-radius: 12px;
+  --sl-radius-md: var(--sl-radius);      /* app-vocabulary alias */
   --sl-radius-lg: 16px;
   --sl-radius-xl: 22px;
   --sl-radius-control: 12px;
@@ -58,13 +91,19 @@
   --sl-section-space-compact: clamp(56px, 7vw, 84px);
   --sl-heading-display: clamp(42px, 5.4vw, 68px);
   --sl-heading-support: clamp(34px, 4.2vw, 48px);
-  --sl-eyebrow-size: 11px;
+  /* 12px, up from 11: the eyebrow is uppercase mono at 0.16em tracking —
+     the combination read as decoration, not type, below the floor. 12px is
+     the type floor everywhere; nothing renders smaller. */
+  --sl-eyebrow-size: 12px;
   --sl-eyebrow-track: 0.16em;
 
   --sl-shadow-card: 0 1px 2px rgba(6, 17, 12, 0.04), 0 14px 32px -18px rgba(6, 17, 12, 0.16);
   --sl-shadow-card-hover: 0 2px 4px rgba(6, 17, 12, 0.05), 0 20px 44px -18px rgba(6, 17, 12, 0.2);
+  --sl-shadow-deep: 0 44px 90px -40px rgba(6, 17, 12, 0.9);
 
-  /* fluid type scale */
+  /* fluid type scale — MANDATORY. font-size appears only in this file;
+     sections pick a rung. The old sheet had 142 raw px sizes against 37
+     token uses, including 34 half-pixel values. */
   --sl-text-xs: 12px;
   --sl-text-sm: clamp(13.5px, 13px + 0.15vw, 14.5px);
   --sl-text-base: clamp(15.5px, 15px + 0.2vw, 17px);
@@ -92,7 +131,7 @@ body {
   letter-spacing: -0.011em;
   background:
     radial-gradient(1200px 520px at 12% -8%, rgba(26, 92, 56, 0.08), transparent 58%),
-    radial-gradient(900px 480px at 92% 4%, rgba(240, 122, 24, 0.05), transparent 52%),
+    radial-gradient(900px 480px at 92% 4%, rgba(var(--sl-accent-rgb), 0.05), transparent 52%),
     var(--sl-bg);
   background-attachment: fixed;
   color: var(--sl-ink);
@@ -115,7 +154,7 @@ a:hover { color: var(--sl-orange); }
 
 img { max-width: 100%; display: block; }
 
-::selection { background: rgba(232, 114, 12, 0.22); }
+::selection { background: rgba(var(--sl-accent-rgb), 0.22); }
 
 /* refined focus rings: visible for keyboards, quiet for pointers */
 :focus-visible {
@@ -129,7 +168,7 @@ img { max-width: 100%; display: block; }
 .sl-plans :focus-visible,
 .sl-cta :focus-visible,
 .sl-footer :focus-visible {
-  outline-color: #ffad62;
+  outline-color: var(--sl-focus-dark);
 }
 
 .sl-wrap {
@@ -194,7 +233,7 @@ img { max-width: 100%; display: block; }
   text-decoration: none;
   text-align: center;
   font-weight: 700;
-  font-size: 16px;
+  font-size: var(--sl-text-base);
   line-height: 1.2;
   padding: 12px clamp(22px, 3vw, 28px);
   border-radius: var(--sl-radius-control);
@@ -202,8 +241,8 @@ img { max-width: 100%; display: block; }
   cursor: pointer;
   transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-.sl-btn--primary { background: var(--sl-green-btn); color: #f8fbf9; }
-.sl-btn--primary:hover { background: var(--sl-green); color: #f8fbf9; }
+.sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-bg-card); }
+.sl-btn--primary:hover { background: var(--sl-green); color: var(--sl-bg-card); }
 .sl-btn--outline { background: transparent; color: var(--sl-green); border-color: var(--sl-green); }
 .sl-btn--outline:hover { background: var(--sl-green); color: var(--sl-bg); }
 .sl-btn--light { background: var(--sl-bg-card); color: var(--sl-green); }
@@ -211,7 +250,7 @@ img { max-width: 100%; display: block; }
 .sl-btn--sm {
   min-height: 38px;
   padding: 9px 18px;
-  font-size: 14px;
+  font-size: var(--sl-text-sm);
   font-weight: 600;
   border-radius: var(--sl-radius-control);
 }
@@ -270,7 +309,7 @@ img { max-width: 100%; display: block; }
 .sl-chip {
   display: inline-block;
   font-family: var(--sl-font-mono);
-  font-size: 11.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -283,7 +322,7 @@ img { max-width: 100%; display: block; }
 }
 .sl-chip--accent {
   color: var(--sl-orange);
-  border-color: rgba(232, 114, 12, 0.38);
+  border-color: rgba(var(--sl-accent-rgb), 0.38);
   background: var(--sl-orange-soft);
 }
 .sl-chip--solid {
@@ -295,7 +334,7 @@ img { max-width: 100%; display: block; }
 /* small mono specimen label, like the notations on a pin card */
 .sl-mono-label {
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -311,8 +350,8 @@ img { max-width: 100%; display: block; }
   padding: 0;
   list-style: none;
 }
-@media (min-width: 660px) { .sl-drill-grid { grid-template-columns: repeat(2, 1fr); } }
-@media (min-width: 1020px) { .sl-drill-grid { grid-template-columns: repeat(3, 1fr); } }
+@media (min-width: 750px) { .sl-drill-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (min-width: 1000px) { .sl-drill-grid { grid-template-columns: repeat(3, 1fr); } }
 
 /* numbered protocol card:
    <article class="sl-drill-card">
@@ -346,26 +385,26 @@ img { max-width: 100%; display: block; }
 .sl-drill-card__num {
   display: inline-block;
   font-family: var(--sl-font-mono);
-  font-size: 11.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--sl-orange);
-  border: 1px solid rgba(232, 114, 12, 0.35);
+  border: 1px solid rgba(var(--sl-accent-rgb), 0.35);
   border-radius: var(--sl-radius-sm);
   padding: 4px 10px;
   white-space: nowrap;
 }
 .sl-drill-card__title {
   margin: 0;
-  font-size: 19px;
+  font-size: var(--sl-text-lg);
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--sl-green);
 }
 .sl-drill-card__aim {
   margin: 0;
-  font-size: 14.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.55;
   color: var(--sl-ink-soft);
 }
@@ -377,7 +416,7 @@ img { max-width: 100%; display: block; }
   counter-reset: sl-step;
   display: grid;
   gap: 10px;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   line-height: 1.55;
   color: var(--sl-ink-soft);
 }
@@ -394,7 +433,7 @@ img { max-width: 100%; display: block; }
   left: 0;
   top: 3px;
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.04em;
   color: var(--sl-orange);
@@ -404,7 +443,7 @@ img { max-width: 100%; display: block; }
   margin: 0;
   padding-top: 12px;
   border-top: 1px solid var(--sl-border);
-  font-size: 13.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.5;
   color: var(--sl-ink-soft);
 }
@@ -413,7 +452,7 @@ img { max-width: 100%; display: block; }
 .sl-drill-card__metric::before {
   display: block;
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.18em;
   text-transform: uppercase;
@@ -460,7 +499,7 @@ img { max-width: 100%; display: block; }
 .sl-spec-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   text-align: left;
 }
 .sl-spec-table th,
@@ -471,7 +510,7 @@ img { max-width: 100%; display: block; }
 }
 .sl-spec-table thead th {
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -484,18 +523,18 @@ img { max-width: 100%; display: block; }
 }
 .sl-spec-table tbody td {
   font-family: var(--sl-font-mono);
-  font-size: 13.5px;
+  font-size: var(--sl-text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--sl-ink-soft);
 }
 /* rows written as td + td: first cell is the label, keep it sans */
 .sl-spec-table tbody td:first-child {
   font-family: var(--sl-font-sans);
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   font-weight: 600;
   color: var(--sl-ink);
 }
-@media (max-width: 700px) {
+@media (max-width: 749px) {
   .sl-spec-table { display: block; overflow-x: auto; }
 }
 
@@ -505,7 +544,7 @@ img { max-width: 100%; display: block; }
   border-left: 3px solid var(--sl-orange);
   border-radius: 4px 12px 12px 4px;
   padding: 16px 20px 16px 18px;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   line-height: 1.6;
   color: var(--sl-ink);
 }
@@ -519,7 +558,7 @@ img { max-width: 100%; display: block; }
   grid-template-columns: 1fr;
   gap: 28px;
 }
-@media (min-width: 900px) {
+@media (min-width: 1000px) {
   .sl-two-col { grid-template-columns: 1fr 1fr; gap: clamp(32px, 5vw, 64px); }
 }
 
@@ -534,7 +573,7 @@ img { max-width: 100%; display: block; }
 .sl-check-list li {
   position: relative;
   padding-left: 22px;
-  font-size: 15.5px;
+  font-size: var(--sl-text-base);
   line-height: 1.55;
   color: var(--sl-ink);
 }
@@ -572,14 +611,14 @@ img { max-width: 100%; display: block; }
 
 .sl-eyebrow {
   margin: 0 0 6px;
-  font-size: 13px;
+  font-size: var(--sl-text-sm);
   font-weight: 700;
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--sl-ink-muted);
 }
 
-.sl-empty { color: var(--sl-ink-soft); font-size: 17px; }
+.sl-empty { color: var(--sl-ink-soft); font-size: var(--sl-text-base); }
 
 .sl-rte { color: var(--sl-ink-soft); line-height: 1.65; }
 .sl-rte p { margin: 0 0 14px; }
@@ -602,14 +641,14 @@ img { max-width: 100%; display: block; }
   border-radius: 4px 14px 14px 4px;
   background: var(--sl-orange-soft);
   color: var(--sl-ink);
-  font-size: 16px;
+  font-size: var(--sl-text-base);
 }
 .sl-rte blockquote p:last-child { margin-bottom: 0; }
 .sl-rte table {
   width: 100%;
   border-collapse: collapse;
   margin: 18px 0 24px;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   text-align: left;
 }
 .sl-rte table th,
@@ -620,14 +659,14 @@ img { max-width: 100%; display: block; }
 }
 .sl-rte table thead th {
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
   color: var(--sl-ink-muted);
 }
 .sl-rte table tbody th { color: var(--sl-ink); font-weight: 600; }
-@media (max-width: 700px) {
+@media (max-width: 749px) {
   .sl-rte table { display: block; overflow-x: auto; }
 }
 
@@ -647,7 +686,7 @@ img { max-width: 100%; display: block; }
 
 .sl-label {
   display: block;
-  font-size: 13px;
+  font-size: var(--sl-text-sm);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -676,7 +715,7 @@ img { max-width: 100%; display: block; }
   padding-top: 48px;
   padding-bottom: 72px;
 }
-@media (min-width: 960px) {
+@media (min-width: 1000px) {
   .sl-product { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 56px; }
 }
 .sl-product-img {
@@ -697,12 +736,12 @@ img { max-width: 100%; display: block; }
 .sl-thumb.is-active { border-color: var(--sl-green-btn); }
 .sl-product-title {
   margin: 0 0 10px;
-  font-size: clamp(28px, 3.4vw, 40px);
+  font-size: var(--sl-text-3xl);
   font-weight: 800;
   letter-spacing: -0.02em;
   color: var(--sl-green);
 }
-.sl-price { font-size: 24px; font-weight: 700; color: var(--sl-ink); margin: 0 0 22px; }
+.sl-price { font-size: var(--sl-text-2xl); font-weight: 700; color: var(--sl-ink); margin: 0 0 22px; }
 .sl-product-info form { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; margin-bottom: 26px; }
 .sl-product-info .sl-select { min-width: min(100%, 340px); }
 .sl-add { min-width: min(100%, 340px); text-align: center; }
@@ -721,7 +760,7 @@ img { max-width: 100%; display: block; }
 .sl-badge-save {
   display: inline-block;
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -746,9 +785,9 @@ img { max-width: 100%; display: block; }
   gap: 22px 18px;
   margin-top: 30px;
 }
-@media (min-width: 480px) { .sl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
-@media (min-width: 900px) { .sl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 22px; } }
-@media (min-width: 1200px) { .sl-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+@media (min-width: 560px) { .sl-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (min-width: 1000px) { .sl-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 22px; } }
+@media (min-width: 1280px) { .sl-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 .sl-grid > * { min-width: 0; }
 .sl-pcard {
   min-width: 0;
@@ -766,27 +805,27 @@ img { max-width: 100%; display: block; }
 .sl-pcard-badge {
   position: absolute; top: 10px; right: 10px;
   background: var(--sl-bg-card); color: var(--sl-ink-soft);
-  font-size: 12px; font-weight: 700; padding: 4px 12px; border-radius: var(--sl-radius-control);
+  font-size: var(--sl-text-xs); font-weight: 700; padding: 4px 12px; border-radius: var(--sl-radius-control);
   border: 1px solid var(--sl-border);
 }
 .sl-pcard-title {
   min-block-size: 2.8em;
   margin: 12px 0 2px;
-  font-size: 16px;
+  font-size: var(--sl-text-base);
   font-weight: 600;
   line-height: 1.4;
   text-wrap: balance;
   color: var(--sl-ink);
 }
 .sl-pcard-flags { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
-.sl-pcard-flags .sl-chip { font-size: 10px; padding: 3px 10px; }
+.sl-pcard-flags .sl-chip { font-size: var(--sl-text-xs); padding: 3px 10px; }
 .sl-pcard:hover .sl-pcard-title { color: var(--sl-green-btn); }
-.sl-pcard-price { margin: auto 0 0; padding-top: 6px; font-size: 15px; font-weight: 700; color: var(--sl-ink-soft); }
+.sl-pcard-price { margin: auto 0 0; padding-top: 6px; font-size: var(--sl-text-base); font-weight: 700; color: var(--sl-ink-soft); }
 .sl-result-card {
   display: block; text-decoration: none; padding: 18px;
   border: 1px solid var(--sl-border); border-radius: 14px; background: var(--sl-bg-card);
 }
-.sl-result-card:hover { border-color: rgba(20, 71, 44, 0.35); }
+.sl-result-card:hover { border-color: rgba(var(--sl-green-rgb), 0.35); }
 
 /* subtle card hover lift */
 @media (prefers-reduced-motion: no-preference) {
@@ -823,7 +862,7 @@ img { max-width: 100%; display: block; }
   text-decoration: none;
 }
 .sl-pagination a { transition: background .15s ease, color .15s ease; }
-.sl-pagination a:hover { background: rgba(20, 71, 44, 0.08); color: var(--sl-green); }
+.sl-pagination a:hover { background: rgba(var(--sl-green-rgb), 0.08); color: var(--sl-green); }
 .sl-pagination span.current { background: var(--sl-green); color: var(--sl-bg); }
 
 /* ---- cart ---- */
@@ -843,21 +882,21 @@ img { max-width: 100%; display: block; }
   border: 1px solid var(--sl-border);
 }
 .sl-cart-title { font-weight: 700; color: var(--sl-ink); text-decoration: none; }
-.sl-cart-variant { margin: 4px 0 0; color: var(--sl-ink-soft); font-size: 14px; }
+.sl-cart-variant { margin: 4px 0 0; color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
 .sl-cart-remove {
   min-height: 44px;
   display: inline-flex;
   align-items: center;
-  font-size: 13px;
+  font-size: var(--sl-text-sm);
   color: var(--sl-ink-muted);
 }
 .sl-qty { width: 76px; text-align: center; padding: 10px 8px; }
 .sl-cart-line-price { font-weight: 700; min-width: 80px; text-align: right; }
 .sl-cart-foot { margin-top: 26px; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
-.sl-cart-subtotal { font-size: 20px; margin: 0; }
-.sl-cart-hint { margin: 0 0 12px; color: var(--sl-ink-muted); font-size: 13px; }
+.sl-cart-subtotal { font-size: var(--sl-text-xl); margin: 0; }
+.sl-cart-hint { margin: 0 0 12px; color: var(--sl-ink-muted); font-size: var(--sl-text-sm); }
 .sl-cart-actions { display: flex; gap: 12px; flex-wrap: wrap; }
-@media (max-width: 600px) {
+@media (max-width: 749px) {
   .sl-cart-line { grid-template-columns: 64px 1fr auto; }
   .sl-cart-line-price { grid-column: 2 / -1; text-align: left; }
   .sl-cart-foot { align-items: stretch; }
@@ -870,7 +909,7 @@ img { max-width: 100%; display: block; }
 .sl-search-form { display: flex; gap: 12px; margin: 22px 0 8px; max-width: 560px; }
 .sl-search-form .sl-input { flex: 1; min-width: 0; }
 .sl-search-count { color: var(--sl-ink-soft); margin: 14px 0 0; }
-@media (max-width: 560px) {
+@media (max-width: 749px) {
   .sl-search-form { flex-direction: column; }
   .sl-search-form .sl-btn { width: 100%; }
 }

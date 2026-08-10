@@ -48,7 +48,7 @@
 }
 .sl-coach__sub {
   margin: 12px auto 0;
-  font-size: 16px;
+  font-size: var(--sl-text-base);
   line-height: 1.55;
   color: var(--sl-ink-soft);
   max-width: 60ch;
@@ -80,7 +80,7 @@
 .sl-coach__label { align-self: center; margin: 0; line-height: 1; }
 .sl-coach__quote {
   margin: 0;
-  font-size: 15.5px;
+  font-size: var(--sl-text-base);
   line-height: 1.62;
   color: var(--sl-ink);
   text-wrap: pretty;
@@ -91,10 +91,10 @@
   text-align: left;
 }
 
-@media (min-width: 640px) {
+@media (min-width: 560px) {
   .sl-coach__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (min-width: 640px) and (max-width: 999px) {
+@media (min-width: 560px) and (max-width: 999px) {
   .sl-coach__card:last-child:nth-child(odd) {
     grid-column: 1 / -1;
     width: calc((100% - 20px) / 2);

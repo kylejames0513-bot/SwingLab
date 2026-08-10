@@ -125,7 +125,7 @@
 }
 .sl-compare__sub {
   margin: 0 auto;
-  font-size: 16px;
+  font-size: var(--sl-text-base);
   line-height: 1.55;
   color: var(--sl-ink-soft);
   text-align: center;
@@ -139,7 +139,7 @@
   border: 1px solid #ded8cc;
   border-radius: var(--sl-radius-lg);
   background: rgba(255, 253, 249, 0.88);
-  box-shadow: 0 24px 60px -46px rgba(15, 42, 27, 0.5);
+  box-shadow: 0 24px 60px -46px rgba(var(--sl-night-rgb), 0.5);
 }
 .sl-compare__table {
   width: 100%;
@@ -156,7 +156,7 @@
 }
 .sl-compare__table thead th {
   font-family: var(--sl-font-mono);
-  font-size: 11.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -172,19 +172,19 @@
 }
 .sl-compare__table tbody th {
   font-weight: 600;
-  font-size: 15.5px;
+  font-size: var(--sl-text-base);
   color: var(--sl-ink);
   text-align: left;
 }
 .sl-compare__table tbody td {
   font-family: var(--sl-font-mono);
-  font-size: 13.5px;
+  font-size: var(--sl-text-sm);
   font-variant-numeric: tabular-nums;
   color: var(--sl-ink-soft);
   text-align: center;
 }
 .sl-compare__table tbody td.sl-compare__pro {
-  background: rgba(232, 114, 12, 0.045);
+  background: rgba(var(--sl-accent-rgb), 0.045);
   color: var(--sl-ink);
 }
 .sl-compare__table tbody tr:last-child td.sl-compare__pro {
@@ -193,10 +193,10 @@
 /* evidence-table reading: the row under the pointer lifts quietly */
 .sl-compare__table tbody tr:hover th,
 .sl-compare__table tbody tr:hover td {
-  background: rgba(20, 71, 44, 0.05);
+  background: rgba(var(--sl-green-rgb), 0.05);
 }
 .sl-compare__table tbody tr:hover td.sl-compare__pro {
-  background: rgba(232, 114, 12, 0.1);
+  background: rgba(var(--sl-accent-rgb), 0.1);
 }
 @media (prefers-reduced-motion: no-preference) {
   .sl-compare__table tbody th,
@@ -213,7 +213,7 @@
 }
 .sl-compare__footnote {
   margin: 16px auto 0;
-  font-size: 13.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.55;
   color: var(--sl-ink-muted);
   max-width: 62ch;
@@ -246,7 +246,7 @@
     overflow-wrap: anywhere;
   }
 }
-@media (max-width: 479px) {
+@media (max-width: 559px) {
   .sl-compare__actions { grid-template-columns: 1fr; }
 }
 @media (max-width: 749px) {
