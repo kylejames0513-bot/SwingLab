@@ -184,7 +184,9 @@ def test_fonts_are_self_hosted_and_preloaded():
     ):
         assert (THEME / "assets" / asset).is_file(), asset
         assert asset in layout, asset
-    assert layout.count('rel="preload"') >= 2
+    # preload_tag is Shopify's own emitter for <link rel="preload"> —
+    # theme-check's AssetPreload rule requires it over a hand-written link.
+    assert layout.count("| preload_tag: as: 'font'") >= 2
     assert 'font-weight: 400 800' in layout  # the variable-font range
 
 

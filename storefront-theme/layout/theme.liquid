@@ -90,8 +90,8 @@
     Archivo is one variable file covering every weight the theme uses
     (400-800); the app shell will move to the same files in the follow-up.
   {%- endcomment -%}
-  <link rel="preload" href="{{ 'archivo-latin-var.woff2' | asset_url }}" as="font" type="font/woff2" crossorigin>
-  <link rel="preload" href="{{ 'plex-mono-latin-400.woff2' | asset_url }}" as="font" type="font/woff2" crossorigin>
+  {{ 'archivo-latin-var.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
+  {{ 'plex-mono-latin-400.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
   {% style %}
     @font-face {
       font-family: "Archivo";
