@@ -190,10 +190,29 @@ class ReportArtifactValidationError(ValueError):
 @dataclass(frozen=True)
 class ReportEntitlementSnapshot:
     coach_replay: Literal["available", "locked", "disabled"]
+    # The Swing Pattern's own creation-time entitlement. It cannot be a
+    # projection of coach_replay: "disabled" there means the annotated
+    # renderer is off — a statement about a renderer, decided before any
+    # tier check — and the pattern needs no renderer. Deriving the pattern
+    # from replay_locked would unlock a Coach-only section for Free users
+    # the moment ops turned the replay renderer off.
+    swing_pattern: Literal["available", "locked"] | None = None
 
     def __post_init__(self) -> None:
         if self.coach_replay not in ("available", "locked", "disabled"):
             raise ReportArtifactValidationError("invalid coach replay entitlement")
+        if self.swing_pattern is None:
+            # Snapshots persisted before the pattern existed derive the
+            # closest honest value: an owner recorded as locked stays
+            # locked; "available" and "disabled" (bare installs, renderer
+            # off before the pattern shipped) stay ungated.
+            object.__setattr__(
+                self,
+                "swing_pattern",
+                "locked" if self.coach_replay == "locked" else "available",
+            )
+        elif self.swing_pattern not in ("available", "locked"):
+            raise ReportArtifactValidationError("invalid swing pattern entitlement")
 
     def to_json(self) -> str:
         return report_entitlements_to_json(self)
@@ -1259,7 +1278,12 @@ def _parse_sha256(value: object, *, label: str) -> str:
 def report_entitlements_to_json(snapshot: ReportEntitlementSnapshot) -> str:
     if not isinstance(snapshot, ReportEntitlementSnapshot):
         _err("expected ReportEntitlementSnapshot")
-    return _canonical_json({"coach_replay": snapshot.coach_replay}).decode("utf-8")
+    return _canonical_json(
+        {
+            "coach_replay": snapshot.coach_replay,
+            "swing_pattern": snapshot.swing_pattern,
+        }
+    ).decode("utf-8")
 
 
 def report_entitlements_from_json(value: str) -> ReportEntitlementSnapshot:
@@ -1269,9 +1293,26 @@ def report_entitlements_from_json(value: str) -> ReportEntitlementSnapshot:
     if len(raw) > MAX_REPORT_ENTITLEMENTS_BYTES:
         _err("report entitlements JSON exceeds maximum size")
     payload = _expect_object(_decode_json(raw, label="report entitlements"), label="report entitlements")
-    _expect_keys(payload, {"coach_replay"}, label="report entitlements")
-    snapshot = ReportEntitlementSnapshot(cast(Any, payload["coach_replay"]))
-    if raw != _canonical_json({"coach_replay": snapshot.coach_replay}):
+    # Snapshots persisted before the Swing Pattern carry only coach_replay;
+    # they parse forever (jobs are immutable) and derive the pattern value
+    # in __post_init__. New snapshots always persist both keys.
+    if set(payload) == {"coach_replay"}:
+        snapshot = ReportEntitlementSnapshot(cast(Any, payload["coach_replay"]))
+        canonical = _canonical_json({"coach_replay": snapshot.coach_replay})
+    else:
+        _expect_keys(
+            payload, {"coach_replay", "swing_pattern"}, label="report entitlements"
+        )
+        snapshot = ReportEntitlementSnapshot(
+            cast(Any, payload["coach_replay"]), cast(Any, payload["swing_pattern"])
+        )
+        canonical = _canonical_json(
+            {
+                "coach_replay": snapshot.coach_replay,
+                "swing_pattern": snapshot.swing_pattern,
+            }
+        )
+    if raw != canonical:
         _err("report entitlements JSON is not canonical")
     return snapshot
 

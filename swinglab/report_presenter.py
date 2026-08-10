@@ -408,8 +408,9 @@ class ReportDepthContent:
     limitations: tuple[str, ...]
     gear: tuple[GearDetail, ...]
     navigation: ReportNavigation
+    # Lock state deliberately has no copy here: the view's optional section
+    # is the single authority the template and validators read.
     swing_pattern: SwingPattern | None = None
-    swing_pattern_locked: bool = False
 
 
 @dataclass(frozen=True)
@@ -854,6 +855,7 @@ def prepare_report_input(
     level: str | None = None,
     analysis_fps: float | None = None,
     replay_locked: bool = False,
+    swing_pattern_locked: bool = False,
     visual_evidence: EvidenceView | None = None,
     media: Sequence[MediaEntry] = (),
     reason_codes: Sequence[ReasonCode] = (),
@@ -922,10 +924,12 @@ def prepare_report_input(
     # The pattern is a restatement of the scoped measurements, so it exists
     # exactly when they do. Locked means never computed, not computed and
     # hidden — a report written for a non-Coach owner must not carry the
-    # pattern anywhere in its bytes.
+    # pattern anywhere in its bytes. Its lock is its own flag, not
+    # replay_locked: the snapshot distinguishes a renderer that is off from
+    # an owner who is not entitled, and only the second locks the pattern.
     swing_pattern = (
         None
-        if replay_locked or fatal_capture or not scoped
+        if swing_pattern_locked or fatal_capture or not scoped
         else build_swing_pattern(scoped, cfg, angle=angle)
     )
     swing_sources = tuple(
@@ -979,7 +983,7 @@ def prepare_report_input(
             *((LabelValue("level", "Experience level", level),) if level else ()),
         ),
         swing_pattern=swing_pattern,
-        swing_pattern_locked=replay_locked,
+        swing_pattern_locked=swing_pattern_locked,
     )
 
 
@@ -1073,7 +1077,6 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
          *source.session_details),
         glossary, limitations, gear, navigation,
         swing_pattern=None if capture_only else source.swing_pattern,
-        swing_pattern_locked=source.swing_pattern_locked and not capture_only,
     )
     if capture_only:
         return ReportDocument(

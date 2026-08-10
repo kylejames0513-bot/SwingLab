@@ -23,7 +23,9 @@ from tests.report_view_fixtures import report_document_fixture, report_view_payl
 from tests.test_report import branded_cfg, fake_swing, fake_video
 
 
-def _document(*, replay_locked: bool, angle: str = "face-on"):
+def _document(
+    *, replay_locked: bool, angle: str = "face-on", pattern_locked: bool | None = None
+):
     cfg = branded_cfg()
     swing = fake_swing(1)
     swing["overlay"] = None
@@ -52,6 +54,9 @@ def _document(*, replay_locked: bool, angle: str = "face-on"):
         cfg,
         angle=angle,
         replay_locked=replay_locked,
+        swing_pattern_locked=(
+            replay_locked if pattern_locked is None else pattern_locked
+        ),
         visual_evidence=evidence,
         media=media,
     )
@@ -78,7 +83,6 @@ def test_an_entitled_report_carries_the_pattern_and_its_section():
     assert section.available and not section.locked
     assert section.item_count == len(source.swing_pattern.axes)
     assert document.depth.swing_pattern is source.swing_pattern
-    assert not document.depth.swing_pattern_locked
 
 
 def test_a_locked_report_never_computes_the_pattern():
@@ -91,7 +95,20 @@ def test_a_locked_report_never_computes_the_pattern():
     assert section.locked and not section.available
     assert section.item_count == 0
     assert document.depth.swing_pattern is None
-    assert document.depth.swing_pattern_locked
+
+
+def test_a_disabled_replay_renderer_does_not_unlock_the_pattern():
+    """The leak this pin prevents: snapshot state "disabled" means the
+    annotated renderer is off — decided before any tier check — so
+    replay_locked is False for a Free owner. The pattern has no renderer
+    to disable and must stay locked on its own flag."""
+    source, document, _ = _document(replay_locked=False, pattern_locked=True)
+
+    assert source.swing_pattern is None
+    section = _pattern_section(document)
+    assert section is not None
+    assert section.locked and not section.available
+    assert document.depth.swing_pattern is None
 
 
 def test_the_rendered_html_shows_axes_when_entitled(tmp_path):

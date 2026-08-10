@@ -147,7 +147,7 @@ def test_job_round_trips_all_structured_publication_fields_and_canonical_entitle
     raw = manager._conn.execute(
         "SELECT report_entitlements_json FROM jobs WHERE id = ?", (job.id,)
     ).fetchone()[0]
-    assert raw == '{"coach_replay":"locked"}\n'
+    assert raw == '{"coach_replay":"locked","swing_pattern":"locked"}\n'
 
 
 def test_unknown_report_presentation_is_rejected_before_directory_or_row(tmp_path: Path):

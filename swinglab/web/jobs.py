@@ -928,26 +928,47 @@ class JobManager:
     def _capture_report_entitlements(
         self, user_id: str | None
     ) -> ReportEntitlementSnapshot:
-        if not self.cfg.slowmo.get("annotated"):
-            return ReportEntitlementSnapshot("disabled")
+        # The Swing Pattern needs no renderer, so its entitlement skips the
+        # slowmo.annotated short-circuit below: turning the replay renderer
+        # off must not unlock a Coach-only report section for Free users.
+        # Both features share the replay_pro_only flag and the same tier
+        # predicate; they differ only in that renderer dependency.
         if (
             not self.cfg.billing.get("replay_pro_only")
             or not self.cfg.web.get("require_account")
             or self._users is None
             or user_id is None
         ):
-            return ReportEntitlementSnapshot("available")
+            swing_pattern: str = "available"
+        else:
+            # One predicate for every Coach-tier gate. With the ladder rolled
+            # out it means has_coach; before that it means is_pro — so no
+            # coach feature is locked against a tier the store does not yet
+            # sell. Falls closed for a vanished owner or a stand-in store
+            # without the attribute.
+            swing_pattern = (
+                "available"
+                if entitled_to_coach_features(
+                    self._users.get(user_id),
+                    bool(self.cfg.billing.get("coach_tier_enabled")),
+                )
+                else "locked"
+            )
+        if not self.cfg.slowmo.get("annotated"):
+            return ReportEntitlementSnapshot("disabled", swing_pattern)
+        if (
+            not self.cfg.billing.get("replay_pro_only")
+            or not self.cfg.web.get("require_account")
+            or self._users is None
+            or user_id is None
+        ):
+            return ReportEntitlementSnapshot("available", swing_pattern)
         owner = self._users.get(user_id)
-        # One predicate for every Coach-tier gate. With the ladder rolled out
-        # it means has_coach; before that it means is_pro — so the replay is
-        # never locked against a tier the store does not yet sell. Falls
-        # closed for a vanished owner or a stand-in store without the
-        # attribute: the locked note, not a free replay.
         if not entitled_to_coach_features(
             owner, bool(self.cfg.billing.get("coach_tier_enabled"))
         ):
-            return ReportEntitlementSnapshot("locked")
-        return ReportEntitlementSnapshot("available")
+            return ReportEntitlementSnapshot("locked", swing_pattern)
+        return ReportEntitlementSnapshot("available", swing_pattern)
 
     def replay_locked(self, job: Job) -> bool:
         """Project the immutable creation-time entitlement for old callers."""

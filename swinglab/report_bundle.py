@@ -1281,6 +1281,7 @@ def build_report_bundle(
     replay_locked: bool,
     evidence_snapshots: Sequence[EvidenceSnapshot],
     reason_codes: Sequence[ReasonCode],
+    swing_pattern_locked: bool = False,
 ) -> StagedReportBundle:
     """Build and strictly validate one complete unpublished directory."""
     _validate_attempt_descriptor(attempt)
@@ -1307,6 +1308,7 @@ def build_report_bundle(
             level=level,
             analysis_fps=analysis_fps,
             replay_locked=replay_locked,
+            swing_pattern_locked=swing_pattern_locked,
             media=initial_media,
             reason_codes=tuple(reason_codes),
         )

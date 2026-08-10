@@ -399,12 +399,25 @@ def test_entitlement_snapshot_has_canonical_json_round_trip_and_strict_enum():
 
     encoded = report_entitlements_to_json(snapshot)
 
-    assert encoded == '{"coach_replay":"locked"}\n'
+    assert encoded == '{"coach_replay":"locked","swing_pattern":"locked"}\n'
     assert report_entitlements_from_json(encoded) == snapshot
+    # Rows persisted before the Swing Pattern parse forever and derive the
+    # pattern value: locked stays locked, disabled stays ungated (that state
+    # is about a renderer, not a tier).
+    assert report_entitlements_from_json('{"coach_replay":"locked"}\n') == snapshot
+    legacy_disabled = report_entitlements_from_json('{"coach_replay":"disabled"}\n')
+    assert legacy_disabled.swing_pattern == "available"
+    # A disabled renderer never unlocks the pattern for a locked owner.
+    mixed = ReportEntitlementSnapshot("disabled", "locked")
+    assert report_entitlements_from_json(report_entitlements_to_json(mixed)) == mixed
     with pytest.raises(ReportArtifactValidationError):
         report_entitlements_from_json('{"coach_replay":"future"}\n')
     with pytest.raises(ReportArtifactValidationError):
         report_entitlements_from_json('{"coach_replay":"locked","extra":true}\n')
+    with pytest.raises(ReportArtifactValidationError):
+        report_entitlements_from_json(
+            '{"coach_replay":"locked","swing_pattern":"future"}\n'
+        )
 
 
 @pytest.mark.parametrize(
