@@ -12,6 +12,16 @@
 {%- if current.sku == 'SL-PRO-LIFE' -%}
   {%- assign current_is_lifetime = true -%}
 {%- endif -%}
+{%- comment -%}
+  Coach-tier variants (and the Founders Pass, which is Coach for good)
+  show the Coach benefits list; Pro variants show the Pro list. The JS
+  swaps lists on variant change by SKU prefix.
+{%- endcomment -%}
+{%- assign current_sku_prefix = current.sku | slice: 0, 8 -%}
+{%- assign current_is_coach = false -%}
+{%- if current_sku_prefix == 'SL-COACH' or current.sku == 'SL-PRO-LIFE' -%}
+  {%- assign current_is_coach = true -%}
+{%- endif -%}
 
 <div class="sl-wrap sl-product sl-product--pro">
   <div class="sl-product-media">
@@ -47,10 +57,17 @@
     <p class="sl-product-kicker">{{ 'products.product.pro_kicker' | t }}</p>
     <p class="sl-price sl-main-product__price-pro" id="sl-price" role="status" aria-live="polite" aria-atomic="true">{{ current.price | money }}</p>
 
-    <ul class="sl-product-benefits" aria-label="{{ 'products.product.includes' | t }}">
+    <ul class="sl-product-benefits" data-sl-benefits="pro" aria-label="{{ 'products.product.includes' | t }}"{% if current_is_coach %} hidden{% endif %}>
       <li>{{ 'products.product.benefit_unlimited' | t }}</li>
       <li>{{ 'products.product.benefit_report' | t }}</li>
       <li>{{ 'products.product.benefit_video' | t }}</li>
+      <li>{{ 'products.product.benefit_unlock' | t }}</li>
+    </ul>
+    <ul class="sl-product-benefits" data-sl-benefits="coach" aria-label="{{ 'products.product.includes' | t }}"{% unless current_is_coach %} hidden{% endunless %}>
+      <li>{{ 'products.product.benefit_coach_everything' | t }}</li>
+      <li>{{ 'products.product.benefit_replay' | t }}</li>
+      <li>{{ 'products.product.benefit_dashboard' | t }}</li>
+      <li>{{ 'products.product.benefit_verdict' | t }}</li>
       <li>{{ 'products.product.benefit_unlock' | t }}</li>
     </ul>
 
@@ -329,7 +346,12 @@
         if (!opt) return;
         renderSellingPlans(opt.value);
         updateAddButton(opt);
-        if (foundersNote) foundersNote.hidden = (opt.dataset.sku || '') !== 'SL-PRO-LIFE';
+        var sku = opt.dataset.sku || '';
+        if (foundersNote) foundersNote.hidden = sku !== 'SL-PRO-LIFE';
+        var coachTier = sku.indexOf('SL-COACH') === 0 || sku === 'SL-PRO-LIFE';
+        document.querySelectorAll('[data-sl-benefits]').forEach(function (list) {
+          list.hidden = (list.dataset.slBenefits === 'coach') !== coachTier;
+        });
         if (price && opt.dataset.price) price.textContent = opt.dataset.price;
       });
     }
@@ -378,6 +400,7 @@
   margin: 0 0 20px;
 }
 
+.sl-product-benefits[hidden] { display: none !important; }
 .sl-product-benefits {
   display: grid;
   grid-template-columns: 1fr;

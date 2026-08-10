@@ -178,7 +178,16 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     action_rules = declarations(mobile_css, ".sl-hero__actions")
     proof_rules = declarations(mobile_css, ".sl-hero__proof")
     assert any("margin: 20px 0 0" in rule for rule in action_rules)
-    assert any("margin: 18px 0 0" in rule for rule in proof_rules)
+    # The proof chips are one quiet mono line on phones: flex with middot
+    # separators, no bullet dots — the old 2-column grid orphaned the third
+    # chip and its green dots fought the orange brand dot.
+    assert any("margin: 16px 0 0" in rule for rule in proof_rules)
+    assert any("display: flex" in rule for rule in proof_rules)
+    assert ".sl-hero__proof li::before { display: none; }" in mobile_css
+    assert 'content: "\\00B7"' in mobile_css
+    # The signal card is a compact fact strip on phones: no stretched arc
+    # chart, facts stacked as label/value rows.
+    assert ".sl-hero__trace { display: none; }" in mobile_css
 
 
 def test_mobile_method_section_is_compact_centered_and_semantic():
