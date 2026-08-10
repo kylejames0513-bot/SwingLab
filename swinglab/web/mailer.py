@@ -1,6 +1,6 @@
 """Outgoing email — standard library only, inert until configured.
 
-Entirely environment-driven, the same rule as Stripe and Shopify:
+Entirely environment-driven, the same rule as the Shopify bridge:
 
     RESEND_API_KEY      preferred HTTPS transport (works on hosts that block
                         outbound SMTP, including Railway Hobby)

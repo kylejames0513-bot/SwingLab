@@ -7,7 +7,7 @@ Entirely environment-driven and safely inert until configured:
 With that unset, ``enabled()`` is False: no Shop link in the navigation, no
 /shop page, no gear recommendations on finished analyses. Products, prices,
 and images live in Shopify — manage them in the Shopify admin, never in code
-(the same rule as Stripe prices in billing.py).
+(the same rule as membership prices in shopify_billing.py).
 
 The catalog reads Shopify's public ``swinglab-gear`` collection without an
 access token. This keeps an unrelated, stale Admin API token from poisoning a

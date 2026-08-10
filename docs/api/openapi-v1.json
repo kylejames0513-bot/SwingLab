@@ -2130,38 +2130,6 @@
         "summary": "Storefront Session Logout"
       }
     },
-    "/billing/checkout": {
-      "post": {
-        "operationId": "checkout_billing_checkout_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Checkout"
-      }
-    },
-    "/billing/portal": {
-      "post": {
-        "operationId": "portal_billing_portal_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Portal"
-      }
-    },
     "/drills": {
       "get": {
         "description": "Every drill the practice plans prescribe, with setup diagrams,\nanimations, dosages, and re-film pass marks — plus a curated\nfour-week Beginner Path through them. Public on purpose: the\nlibrary is the product's proof, not a secret.",
@@ -2999,38 +2967,6 @@
           }
         },
         "summary": "Shopify Webhook"
-      }
-    },
-    "/webhooks/stripe": {
-      "post": {
-        "operationId": "stripe_webhook_webhooks_stripe_post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Stripe Webhook"
-      }
-    },
-    "/webhooks/stripe/": {
-      "post": {
-        "operationId": "stripe_webhook_webhooks_stripe__post",
-        "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
-            "description": "Successful Response"
-          }
-        },
-        "summary": "Stripe Webhook"
       }
     }
   }

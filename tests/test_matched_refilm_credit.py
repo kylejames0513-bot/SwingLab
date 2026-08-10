@@ -76,8 +76,6 @@ def make_app(
         "SWINGLAB_MAIL_FROM",
         "SHOPIFY_STORE_DOMAIN",
         "SHOPIFY_WEBHOOK_SECRET",
-        "STRIPE_SECRET_KEY",
-        "STRIPE_PRICE_ID",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr(jobs_module, "analyze_video", analyze)
@@ -348,11 +346,18 @@ def test_spent_credit_prompt_names_the_golfers_own_pass_mark(
     tmp_path, monkeypatch
 ):
     app = make_app(tmp_path, monkeypatch, analyze=flagged_tempo_analyze)
-    # make_app clears the Stripe env, so set it after for a real Pro path.
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setenv("STRIPE_PRICE_ID", "price_x")
+    # make_app clears the commerce env, so set it after for a real Pro path.
+    # The Shopify pair also switches /signup to inbox-proof semantics, which
+    # 503s without a mailer — create the account directly and log in.
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
+    app.state.users.create("kyle@example.com", "longenough")
     client = TestClient(app)
-    signup(client)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
     upload_done(client)  # baseline
     upload_done(client)  # the free matched re-film — credit spent
 
@@ -408,8 +413,8 @@ def test_today_spent_credit_points_at_pro_when_it_is_sellable(
     tmp_path, monkeypatch
 ):
     app = make_app(tmp_path, monkeypatch, analyze=flagged_tempo_analyze)
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setenv("STRIPE_PRICE_ID", "price_x")
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
     users: UserStore = app.state.users
     user = users.create("pro-cta@example.com", "longenough")
     users.upsert_golfer_profile(

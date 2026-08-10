@@ -60,12 +60,80 @@ def test_pose_failure_translates_to_framing_guidance():
 
 
 def test_unknown_errors_pass_through_untranslated():
+    """Still true for errors written for a human — the rule is unchanged."""
     raw = "The server restarted while this analysis was waiting and the " \
           "uploaded video is gone. Please upload it again."
     help_ = friendly_error(raw)
     assert help_.message == raw
     assert help_.tips == ()
     assert help_.checklist is False
+
+
+# -- errors written for an operator, not a golfer ---------------------------
+# jobs.py deliberately stores traceback.format_exc() on the job so the ops
+# JSON and Sentry keep it. Passing that through to the status page disclosed
+# absolute server paths, module and function names to whoever's clip tripped
+# the bug — and rendered as one collapsed run-on line, because the panel is a
+# <p>. Pass-through is right for pipeline text and wrong for these.
+
+TRACEBACK_ERROR = (
+    "Unexpected error during analysis:\n"
+    "Traceback (most recent call last):\n"
+    '  File "/srv/app/swinglab/web/jobs.py", line 1330, in _run\n'
+    "    result = analyze(job.source)\n"
+    "RuntimeError: boom"
+)
+
+
+def test_a_traceback_never_reaches_the_golfer():
+    help_ = friendly_error(TRACEBACK_ERROR)
+
+    assert "Traceback" not in help_.message
+    assert "/srv/app" not in help_.message
+    assert "jobs.py" not in help_.message
+    assert "RuntimeError" not in help_.message
+    assert "our side" in help_.message
+    # It says the filming was fine, because it was.
+    assert "not with your filming" in help_.message
+    assert help_.tips
+
+
+def test_the_traceback_marker_alone_is_enough():
+    """No prefix, no known wording — just Python's own text.
+
+    This is the branch that makes the guard hold for code paths written
+    later, which will not know this module exists.
+    """
+    help_ = friendly_error(
+        'Traceback (most recent call last):\n  File "x.py", line 1\nOSError'
+    )
+    assert "Traceback" not in help_.message
+    assert "our side" in help_.message
+
+
+def test_a_traceback_mentioning_a_pipeline_phrase_still_stays_internal():
+    """Order matters: internal is checked before the pipeline branches.
+
+    A traceback that happens to contain 'no audio track' must not be dressed
+    up as filming advice — the golfer's filming was not the problem.
+    """
+    help_ = friendly_error(
+        "Unexpected error during analysis:\n"
+        "Traceback (most recent call last):\n"
+        "ValueError: no audio track in probe result"
+    )
+    assert "Traceback" not in help_.message
+    assert "our side" in help_.message
+    assert help_.checklist is False
+
+
+def test_internal_recovery_language_is_translated_too():
+    help_ = friendly_error(
+        "Report publication could not be validated; this analysis remains "
+        "active for safe recovery and no report was exposed."
+    )
+    assert "publication" not in help_.message.lower()
+    assert "our side" in help_.message
 
 
 def test_empty_error_still_says_something():

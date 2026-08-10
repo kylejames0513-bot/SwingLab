@@ -24,7 +24,6 @@ web = [
     "uvicorn>=0.29",
     "python-multipart>=0.0.9",
     "itsdangerous>=2.1",   # signed login cookies (starlette SessionMiddleware)
-    "stripe>=9.0",         # Pro subscriptions
 ]
 ops = [
     # Optional error monitoring: the app initializes Sentry only when the

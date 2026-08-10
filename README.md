@@ -423,15 +423,15 @@ monthly), then monthly, then lifetime (the anchor), then free — using the
 `pro_price_annual_text` / `pro_price_lifetime_text` from `config.yaml`
 (shipped: `$4.99/month`, `$39.99/year — $3.33/month`, `$79.99 once — Pro
 for good`). These are labels, not billing: what is actually charged always
-lives in Shopify/Stripe. The pricing page's renewal copy is driven by
+lives in Shopify. The pricing page's renewal copy is driven by
 `billing.store_subscriptions` (shipped `true` for CaddieInsight; the
 bare-code default remains `false`): enable it only once the store actually
 sells auto-renewing subscriptions via Shopify's Subscriptions app. When on,
 the page says monthly/yearly renew automatically (cancel anytime, Pro runs
 to period end); when off, it says honestly that passes simply expire.
 Lifetime is always a single payment, and its card
-only renders when the primary Shopify commerce bridge is configured (the
-lifetime SKU has no Stripe equivalent).
+only renders when the Shopify commerce bridge is configured (a one-payment
+pass only exists as a store product).
 
 **Selling Pro on the Shopify store** (one checkout for gear and
 memberships): create a product whose variant SKUs map to days of access in
@@ -469,18 +469,12 @@ Shopify calendar-period ends. Exact calendar-month/year alignment needs
 subscription billing-cycle data and must not be inferred from the order
 timestamp or selling-plan name.
 
-**Selling Pro as a Stripe subscription:**
-
-| Variable | What it is |
-| --- | --- |
-| `STRIPE_SECRET_KEY` | from Stripe → Developers → API keys |
-| `STRIPE_PRICE_ID` | the `price_...` id of your recurring Pro price |
-| `STRIPE_WEBHOOK_SECRET` | from the webhook endpoint you point at `/webhooks/stripe` |
-| `PUBLIC_BASE_URL` | e.g. `https://yourapp.up.railway.app` (checkout redirects) |
-
-Either way, prices live in Shopify/Stripe — change them in their dashboards,
-never in code. Checkout happens on their hosted pages, and plan state only
-ever changes via the signed webhooks.
+Pro is sold on the Shopify store, and only there (owner decision,
+2026-08-10 — the dormant Stripe path was removed rather than kept, because a
+second payment path is a second place for money to go wrong). Prices live in
+Shopify — change them in the store admin, never in code. Checkout happens on
+the store's hosted pages, and plan state only ever changes via the signed
+`orders/paid` webhook.
 
 ### Progress and weekly practice plans
 
@@ -771,7 +765,7 @@ from the strategy analysis:
 | --- | --- | --- |
 | `activation_rate` | of accounts created in the window, the share whose **first coaching-ready report** landed within 7 days of signup | **> 50%** |
 | `w1_refilm_rate` | of those accounts with ≥ 1 coaching-ready analysis, the share whose **second coaching-ready analysis** landed within 7 days of their first — the re-film habit is the core loop | **> 25%** |
-| `free_to_pro_rate` | of the window's *activated* accounts, the share that gained Pro within 30 days of signup (Shopify grants timed by the order ledger's `applied_at`; a live Stripe subscription counts — Stripe state carries no grant timestamp) | **2%+** |
+| `free_to_pro_rate` | of the window's *activated* accounts, the share that gained Pro within 30 days of signup (Shopify grants timed by the order ledger's `applied_at`; legacy subscription plan state counts too — it carries no grant timestamp) | **2%+** |
 | `weekly_retained_filmers` | a count, not a rate: accounts with ≥ 1 coaching-ready analysis in the trailing 7 days | grow it |
 | `gear_attach_per_100_reports` | non-cancelled **gear orders** in the window per 100 coaching-ready reports in the window | — |
 
@@ -873,7 +867,7 @@ See `config.yaml` — everything is documented inline. Highlights:
 | `slowmo` | slow-motion factor, clip bounds, output height, crf; annotated replay on/off (`annotated`) and hand-trail fade (`trail_fade_s`) |
 | `overlay` | captured/corrected skeleton colors, arrow threshold |
 | `web` | worker pool size, upload size cap, per-IP job limit, proxy trust for real client IPs (`trusted_proxies`), login/signup throttles, session retention (shipped 180 days; raw upload deleted after analysis via `delete_source_after_done` — both off in bare-code defaults, see the GDPR note in config.yaml), `require_account`, staged history-reset activation (`history_reset_enabled`), email-code sign-in (`passwordless_login`, shipped on — self-disables without email delivery), weekly digest on/off (`digest_enabled`) |
-| `billing` | free/Pro analyses per month, the coach-replay and progress-dashboard Pro gates (`replay_pro_only` / `progress_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify/Stripe, not here) |
+| `billing` | free/Pro analyses per month, the coach-replay and progress-dashboard Pro gates (`replay_pro_only` / `progress_pro_only`, shipped on — off in bare-code defaults), plus `pro_price_*_text` display strings for the pricing page (what's charged lives in Shopify, not here) |
 | `shop` | Shopify gear shop on/off, product cache, recommendation tag prefix and count, `store_url` for the report's gear link |
 
 ## Tests
@@ -900,8 +894,9 @@ ffmpeg auto-skip when it is not installed.
   progress, live status with queue position, session history, fast mode,
   abuse guardrails, health endpoint, Docker deployment.
 - **Milestone 4 (done)** — accounts (email + password), monthly free tier,
-  Stripe Pro subscriptions with hosted checkout/portal and webhook-driven
-  plan state, per-user private history, landing/pricing/account pages.
+  webhook-driven Pro plan state with hosted checkout, per-user private
+  history, landing/pricing/account pages. (Originally shipped on Stripe;
+  commerce later consolidated onto the Shopify store alone.)
 - **Shopify gear shop (done)** — `/shop` page backed by a Shopify store's
   Storefront API plus flag-matched training-aid recommendations on finished
   analyses; inert until the `SHOPIFY_*` environment variables are set.

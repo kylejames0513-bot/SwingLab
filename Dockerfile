@@ -19,7 +19,15 @@ COPY swinglab ./swinglab
 # [ops] installs sentry-sdk. It stays inert without SENTRY_DSN (see
 # swinglab.web.app.init_sentry), but without it installed the DSN alone does
 # nothing — error monitoring cannot be turned on from the dashboard.
-RUN pip install --no-cache-dir ".[web,ops]"
+#
+# [backup] installs boto3 for the caddieinsight-backup console script the
+# image already ships (pyproject [project.scripts]). Without it the tool
+# raises on first use, and the documented workaround was a runtime
+# `pip install` into an ephemeral container on every cron invocation —
+# which meant backing up the one SQLite file holding every entitlement was
+# structurally blocked by the image itself. Like [ops], it stays inert
+# until its variables (CADDIE_BACKUP_*) are set.
+RUN pip install --no-cache-dir ".[web,ops,backup]"
 
 # Bake the pose model in at build time so containers start warm instead of
 # downloading ~6 MB on the first analysis.

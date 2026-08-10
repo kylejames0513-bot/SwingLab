@@ -235,9 +235,7 @@
         </dl>
         <div class="account-subsection">
           {% if user.is_pro %}
-            {% if billing_enabled and user.stripe_customer_id %}
-              <form action="/billing/portal" method="post"><button type="submit">Manage subscription</button></form>
-            {% elif pro_store_url and pro_until_date %}
+            {% if pro_store_url and pro_until_date %}
               <a class="button" href="{{ pro_store_url }}">Extend Pro on the store</a>
             {% else %}
               <p>Your Pro access is active.</p>
@@ -245,8 +243,6 @@
           {% elif pro_store_url %}
             <a class="button" href="{{ pro_store_url }}">Upgrade to Pro</a>
             <p class="hint">Pro is unlimited analyses{% if replay_pro_only and progress_pro_only %}, the annotated coach replay of every swing, and the progress dashboard{% elif replay_pro_only %} and the annotated coach replay of every swing{% elif progress_pro_only %} and the progress dashboard{% endif %}. Check out with <strong>{{ user.email }}</strong> — it unlocks on this account automatically.</p>
-          {% elif billing_enabled %}
-            <form action="/billing/checkout" method="post"><button type="submit">Upgrade to Pro — {% if pro_per_month <= 0 %}unlimited swings{% else %}up to {{ pro_per_month }} analyses a month{% endif %}</button></form>
           {% else %}
             <p class="hint">Pro memberships are coming soon.</p>
           {% endif %}

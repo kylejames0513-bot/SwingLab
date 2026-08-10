@@ -9,7 +9,12 @@
  * accidentally become cacheable by omission.  Every response is additionally
  * checked for a private/no-store Cache-Control before it is kept.
  */
-const CACHE_NAME = "caddieinsight-public-shell-v4";
+/* v5: the precache carries the caddieinsight-* lockups. v4 precached the
+ * retired swinglab-* filenames, so the offline shell — the one surface
+ * that paints entirely from this cache — showed the v3 mark long after
+ * every online page had moved on. Bumping the name is what evicts the old
+ * cache on activate. */
+const CACHE_NAME = "caddieinsight-public-shell-v5";
 
 /* The offline page plus the chrome an installed app paints before it has a
  * network answer.  Kept short on purpose — a long precache list makes an
@@ -17,8 +22,8 @@ const CACHE_NAME = "caddieinsight-public-shell-v4";
 const PRECACHE = [
   "/offline",
   "/static/pwa-icon.svg",
-  "/static/swinglab-logo.png",
-  "/static/swinglab-logo-inverse.png",
+  "/static/caddieinsight-logo.png",
+  "/static/caddieinsight-logo-inverse.png",
 ];
 
 function isCacheable(pathname) {

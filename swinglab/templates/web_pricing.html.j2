@@ -254,10 +254,6 @@
       <a class="button" href="{{ store_href or pro_store_url }}" data-pro-click>Get {{ label or "Pro" }} on the {{ brand.name }} store</a>
       <p class="hint">Check out with <strong>{{ user.email }}</strong> —
         it unlocks on this account automatically.</p>
-      {% elif user and billing_enabled %}
-      <form action="/billing/checkout" method="post" data-pro-click>
-        <button type="submit">Upgrade to {{ label or "Pro" }}</button>
-      </form>
       {% elif pro_store_url %}
       {# Anonymous visitor, store configured: send them to checkout.
          Every branch above is gated on `user`, so cold traffic from an ad
@@ -269,12 +265,9 @@
       <a class="button" href="{{ store_href or pro_store_url }}" data-pro-click>Get {{ label or "Pro" }} on the {{ brand.name }} store</a>
       <p class="hint">No account needed to buy — check out, then sign in
         with the same email and it unlocks automatically.</p>
-      {% elif billing_enabled %}
-      {# Stripe genuinely needs an account first (checkout bills a customer
-         record), so login is the honest next step here — but carry the
-         destination so the choice survives it. #}
-      <a class="button" href="/login?next=/pricing" data-pro-click>Log in to upgrade</a>
       {% else %}
+      {# Purchases go through the Shopify store, and only the store — with
+         no store configured there is deliberately nothing to sell here. #}
       <p class="hint">Coming soon.</p>
       {% endif %}
   {%- endmacro %}
@@ -314,16 +307,13 @@
       {% if pro_store_url %}
       <p class="hint">The store shows the available terms, renewal details,
         and total price before payment.</p>
-      {% elif billing_enabled %}
-      <p class="hint">Stripe shows the exact price, billing interval, and
-        renewal details before payment.</p>
       {% endif %}
     </div>
     {% if pro_store_url %}
     {# The Founders Pass exists only as a store purchase (it matches on
-       SKU SL-PRO-LIFE, never the variant title) — a Stripe-only install
-       has no one-payment product to sell, so the card would promise
-       something its checkout can't deliver. #}
+       SKU SL-PRO-LIFE, never the variant title) — an install without the
+       store configured has no one-payment product to sell, so the card
+       would promise something its checkout can't deliver. #}
     <div class="card founders">
       <p class="founders-cap">Capped at the first 100 members</p>
       <h2>Pro — Founders Pass</h2>

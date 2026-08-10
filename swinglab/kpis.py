@@ -28,9 +28,10 @@ are excluded rather than silently deflating every rate):
   core loop).
 - **free_to_pro_rate** — of the window's activated accounts, the share that
   gained Pro within 30 days of signup. Shopify grants are timed by the
-  order ledger's ``applied_at``; a Stripe-subscribed account (``plan
-  'pro'`` with a live status) counts as converted — Stripe state carries no
-  grant timestamp, and a subscription necessarily starts after signup.
+  order ledger's ``applied_at``; a legacy subscription-state account
+  (``plan 'pro'`` with a live status — nothing sets it since the Stripe
+  path was removed) still counts as converted, since that state carries
+  no grant timestamp and necessarily started after signup.
 - **weekly_retained_filmers** — a count, not a rate: accounts with at least
   one coaching-ready analysis in the trailing 7 days (regardless of the
   window).
@@ -336,8 +337,9 @@ def compute_kpis(
                 at = grant_at.get(u["email"])
                 if at is not None and at - u["created_at"] <= CONVERSION_WINDOW_S:
                     return True
-                # Stripe: plan state without a grant timestamp — counted,
-                # honestly documented (subscriptions start after signup).
+                # Legacy subscription plan state without a grant timestamp
+                # — counted; nothing sets it since the Stripe path was
+                # removed, so this is historical data only.
                 return (
                     u["plan"] == "pro"
                     and u["subscription_status"] in _PRO_OK_STATUSES

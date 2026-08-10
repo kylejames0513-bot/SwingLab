@@ -188,9 +188,16 @@ def test_order_tier_takes_the_strongest_line_item(shipped_config):
     assert _order_tier(
         order("SL-PRO-1MO", "SL-COACH-12MO"), shipped_config
     ) == COACH
-    # Gear-only and unknown SKUs never reach Coach.
-    assert _order_tier(order("CI-TEMPO-01"), shipped_config) == PRO_TIER
-    assert _order_tier(order(), shipped_config) == PRO_TIER
+    # An order with no membership SKU buys no tier at all. It used to read
+    # as Pro — the accumulator started at PRO_TIER and only climbed — so a
+    # gear-only order's ledger row stored a tier the order didn't buy, and
+    # claim_pending_grant reads that stored tier back for attribution. The
+    # grant itself was always gated on days > 0 elsewhere; now the row tells
+    # the truth on its own.
+    from swinglab.web.users import FREE
+
+    assert _order_tier(order("CI-TEMPO-01"), shipped_config) == FREE
+    assert _order_tier(order(), shipped_config) == FREE
 
 
 def test_bare_code_config_grants_only_pro():

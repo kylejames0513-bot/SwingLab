@@ -8,10 +8,10 @@ moves files, tracks job state, and renders pages. The JSON endpoints under
 Product model (config.yaml): with ``web.require_account`` on, visitors sign
 up (email + password, hashed locally), get ``billing.free_per_month``
 analyses a month, and upgrade to Pro for ``billing.pro_per_month``
-(0 = unlimited). Pro is sold two ways, both inert until configured and both
-webhook-driven: through the Shopify store (shopify_billing.py — preferred
-when configured, one checkout for gear and memberships) or through a Stripe
-subscription (billing.py). Set SWINGLAB_SECRET so logins survive restarts.
+(0 = unlimited). Pro is sold one way: through the Shopify store
+(shopify_billing.py — one checkout for gear and memberships), inert until
+configured and entirely webhook-driven. Set SWINGLAB_SECRET so logins
+survive restarts.
 
 Accounts can also start on the store: Shopify customer webhooks provision
 passwordless "store accounts" that a verified signup with the same email
@@ -133,7 +133,7 @@ from ..trends import (
 from ..integrations.shopify import admin as shopify_admin
 from ..integrations.shopify import customer_accounts as shopify_customer_accounts
 from ..integrations.shopify import customer_sync as shopify_customer_sync
-from . import billing, digest, humanize, mailer, shop, shopify_billing
+from . import digest, humanize, mailer, shop, shopify_billing
 from .jobs import (
     DONE,
     FAILED,
@@ -660,6 +660,60 @@ def create_app(
     app.state.jobs = manager
     app.state.users = users
     app.state.cfg = cfg
+
+    # -- the 500 page ------------------------------------------------------
+    # Every other error state in this app is deliberately humanized — the
+    # status page translates pipeline failures, the paywall explains itself,
+    # even 404s on cloaked admin routes are designed. The one that wasn't
+    # was the unhandled exception: FastAPI's bare plain-text
+    # "Internal Server Error", no brand, no navigation, no way forward.
+    #
+    # The handler is self-contained on purpose. It must not call render(),
+    # touch the database, or read the session, because it runs precisely
+    # when some of that machinery has just failed — a 500 page that itself
+    # raises is a hang, not a page. Styles are inline, the palette is the
+    # shared token values written as literals, and the brand name is baked
+    # in at startup (config is operator-controlled, escaped anyway).
+    brand_name = escape(str(cfg.brand.get("name") or "CaddieInsight"))
+    error_page = (
+        "<!DOCTYPE html><html lang=\"en\"><head><meta charset=\"utf-8\">"
+        "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">"
+        f"<title>Something went wrong — {brand_name}</title></head>"
+        "<body style=\"margin:0;min-height:100vh;display:grid;"
+        "place-items:center;background:#eef2ef;color:#101a14;"
+        "font-family:'Archivo','Avenir Next','Helvetica Neue',Helvetica,"
+        "sans-serif;\">"
+        "<main style=\"max-width:34rem;padding:48px 24px;text-align:center;\">"
+        f"<p style=\"margin:0 0 14px;font-size:11px;font-weight:600;"
+        f"letter-spacing:.16em;text-transform:uppercase;color:#9a4b0a;\">"
+        f"{brand_name}</p>"
+        "<h1 style=\"margin:0 0 12px;font-size:clamp(26px,5vw,34px);"
+        "font-weight:700;letter-spacing:-.02em;color:#0f3d28;\">"
+        "Something went wrong on our side.</h1>"
+        "<p style=\"margin:0 0 24px;line-height:1.6;color:#445049;\">"
+        "Not with anything you did — the failure has been recorded and "
+        "nothing about your account or your swings was affected. "
+        "Give it a moment and try again.</p>"
+        "<a href=\"/\" style=\"display:inline-block;padding:12px 22px;"
+        "border-radius:12px;background:#1a5c38;color:#e6f2ea;"
+        "text-decoration:none;font-weight:600;\">Back to the app</a>"
+        "</main></body></html>"
+    )
+
+    @app.exception_handler(Exception)
+    async def unhandled_exception(request: Request, exc: Exception):
+        # logger.exception carries the traceback to the process log and to
+        # Sentry when configured — same contract as the analysis worker.
+        logger.exception(
+            "Unhandled error on %s %s", request.method, request.url.path
+        )
+        if request.url.path.startswith("/api/") or _wants_json(request):
+            return JSONResponse(
+                {"error": "Something went wrong on our side. Try again."},
+                status_code=500,
+            )
+        return HTMLResponse(error_page, status_code=500)
+
     static_dir = Path(__file__).parent / "static"
     # Static assets contain only versioned public brand imagery and the
     # install shell (icon + service worker), never a report, user data, or
@@ -1159,7 +1213,6 @@ def create_app(
         public_shell: bool = False,
         **context,
     ) -> HTMLResponse:
-        stripe_enabled = billing.enabled()
         # Service-worker cached pages must never carry a member's name,
         # entitlement, profile, or account navigation.  Render the explicitly
         # public shell anonymously even when the request includes a session.
@@ -1187,9 +1240,11 @@ def create_app(
                     cfg.web.get("history_reset_enabled") is True
                 ),
                 club_aware_enabled=club_aware_enabled(),
-                billing_enabled=stripe_enabled,
                 pro_store_url=pro_store_url,
-                pro_available=stripe_enabled or bool(pro_store_url),
+                # Purchases go through the Shopify store, and only the store —
+                # so "Pro can be bought" and "the store is configured" are the
+                # same fact.
+                pro_available=bool(pro_store_url),
                 coach_replay_enabled=bool(cfg.slowmo.get("annotated")),
                 coach_replay_pro_only=bool(
                     cfg.slowmo.get("annotated")
@@ -3578,7 +3633,7 @@ def create_app(
             pro_store_url_lifetime=plan_store_url("lifetime"),
             coach_store_url_monthly=plan_store_url("coach_monthly"),
             coach_store_url_yearly=plan_store_url("coach_yearly"),
-            # Display strings only — the store/Stripe stays the source of
+            # Display strings only — the store stays the source of
             # truth for what is actually charged.
             pro_price_annual_text=cfg.billing.get("pro_price_annual_text"),
             pro_price_monthly_text=cfg.billing.get("pro_price_monthly_text"),
@@ -3610,50 +3665,14 @@ def create_app(
         )
 
     # -- billing ----------------------------------------------------------
-    @app.post("/billing/checkout")
-    def checkout(request: Request):
-        if not _same_origin_form_post(request):
-            raise HTTPException(403, "Invalid request origin.")
-        user = current_user(request)
-        if user is None:
-            return RedirectResponse("/login", status_code=303)
-        if not billing.enabled():
-            raise HTTPException(503, "Payments aren't set up yet.")
-        return RedirectResponse(
-            billing.create_checkout_url(user, _base_url(request)), status_code=303
-        )
-
-    @app.post("/billing/portal")
-    def portal(request: Request):
-        if not _same_origin_form_post(request):
-            raise HTTPException(403, "Invalid request origin.")
-        user = current_user(request)
-        if user is None:
-            return RedirectResponse("/login", status_code=303)
-        if not billing.enabled() or not user.stripe_customer_id:
-            raise HTTPException(503, "No subscription to manage yet.")
-        return RedirectResponse(
-            billing.create_portal_url(user, _base_url(request)), status_code=303
-        )
-
-    # Both the exact path and the trailing-slash variant are registered:
-    # webhook senders (Shopify, Stripe) do NOT follow 3xx, so the default
-    # trailing-slash redirect would turn a stray "/" in the configured URL
-    # into a silently-failed delivery. Accepting both makes it robust.
-    @app.post("/webhooks/stripe")
-    @app.post("/webhooks/stripe/")
-    async def stripe_webhook(request: Request):
-        if not billing.enabled():
-            raise HTTPException(503, "Payments aren't set up.")
-        payload = await request.body()
-        try:
-            billing.handle_webhook(
-                payload, request.headers.get("stripe-signature", ""), users
-            )
-        except ValueError as exc:
-            raise HTTPException(400, str(exc))
-        return JSONResponse({"received": True})
-
+    # Purchases happen on the Shopify store, and only there (owner
+    # decision, 2026-08-10). The Stripe checkout/portal/webhook routes
+    # that used to sit here were removed with swinglab/web/billing.py —
+    # a second, dormant payment path is a second place for money to go
+    # wrong, and the one time it half-activated it would have charged
+    # cards and granted nothing. The webhook sender note still applies
+    # to Shopify below: senders do NOT follow 3xx, so both the exact
+    # path and the trailing-slash variant are registered.
     @app.post("/webhooks/shopify")
     @app.post("/webhooks/shopify/")
     async def shopify_webhook(request: Request):

@@ -512,8 +512,9 @@ def run_pro_expiry_reminders_once(users, cfg: Config, now: float | None = None) 
     the lifecycle ledger, keyed on (user, exact expiry timestamp), so each
     expiry period reminds exactly once; extending Pro moves pro_until and
     naturally arms the next period. Lifetime grants sit ~100 years out and
-    never enter the window; Stripe-subscription Pro is excluded by the
-    store query (it renews on its own)."""
+    never enter the window; legacy subscription-managed plan state
+    (plan='pro' with a live status — nothing sets it since the Stripe
+    path was removed) is excluded by the store query."""
     if not mailer.enabled():
         return 0
     now = time.time() if now is None else now

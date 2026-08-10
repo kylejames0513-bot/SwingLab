@@ -188,7 +188,11 @@ def test_cached_offline_shell_is_anonymous_while_drills_keep_pro_header(
     assert 'class="sl-premium-chrome sl-reduced-motion"' in personalized.text
 
     worker = client.get("/service-worker.js").text
-    assert 'caddieinsight-public-shell-v4' in worker
+    # v5 moved the precache off the retired swinglab-* lockups — the offline
+    # shell paints entirely from this cache, so it was the last surface
+    # still showing the v3 mark.
+    assert 'caddieinsight-public-shell-v5' in worker
+    assert "swinglab-logo" not in worker
     # The precache may hold the offline page and public brand assets, and
     # nothing else — no account, report, session, or upload route. The
     # cacheable surface is an allowlist rather than a list of exclusions;

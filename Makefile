@@ -23,9 +23,14 @@ parity:  ## The contracts that keep the storefront and the app one instrument
 		tests/test_theme_package.py tests/test_crawler_surface.py -q
 
 test-fast:  ## The suite without the ffmpeg/browser integration tests
+	# test_pwa_shell is ignored too: its importorskip catches a missing
+	# playwright PACKAGE but not a missing browser BINARY, so on a machine
+	# without Chromium it fails rather than skips. CI installs the browser
+	# and runs it; this target must be green out of the box.
 	python3 -m pytest tests -q \
 		--ignore=tests/test_integration_ffmpeg.py \
-		--ignore=tests/test_guided_report_browser.py
+		--ignore=tests/test_guided_report_browser.py \
+		--ignore=tests/test_pwa_shell.py
 
 test:  ## The whole suite
 	python3 -m pytest tests -q
