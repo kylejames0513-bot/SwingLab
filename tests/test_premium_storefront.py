@@ -257,14 +257,16 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
     assert "aspect-ratio: 3 / 2" in plans_source
     assert "height: 100%" in plans_source
 
+    # Both sections sit on the four-stop system now (560/750/1000/1280) —
+    # tests/test_storefront_design_system.py polices the full census; these
+    # pins hold the two grids' specific stops.
     how_source = source("sections/how-it-works.liquid")
-    assert "@media (min-width: 768px)" in how_source
-    assert "@media (min-width: 640px)" not in how_source
-    assert "@media (min-width: 1100px)" in how_source
+    assert "@media (min-width: 750px)" in how_source
+    assert "@media (min-width: 1280px)" in how_source
     assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in how_source
 
     coach_source = source("sections/coach-notes.liquid")
-    assert "@media (min-width: 640px)" in coach_source
+    assert "@media (min-width: 560px)" in coach_source
     assert "@media (min-width: 1000px)" in coach_source
 
 
@@ -276,9 +278,9 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     assert "--sl-radius-control: 12px" in base
     assert ".sl-btn {\n  min-height: 46px" in base
     assert "border-radius: var(--sl-radius-control)" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
-    assert "@media (min-width: 480px)" in base
-    assert "@media (min-width: 900px)" in base
-    assert "@media (min-width: 1200px)" in base
+    assert "@media (min-width: 560px)" in base
+    assert "@media (min-width: 1000px)" in base
+    assert "@media (min-width: 1280px)" in base
     assert "min-block-size: 2.8em" in base
     assert ".sl-pcard-price { margin: auto 0 0" in base
 
@@ -462,17 +464,21 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     assert "Legacy font picker" in font_setting["label"]
     assert "Archivo carries display" in typography["settings"][-1]["content"]
     assert "IBM Plex Mono" in typography["settings"][-1]["content"]
-    assert 'family=Archivo:wght@400;500;600;700;800' in layout
-    assert "family=IBM+Plex+Mono" in layout
-    assert "fonts.googleapis.com" in layout
-    assert "fonts.gstatic.com" in layout
+    # The faces are self-hosted theme assets now — no third-party sheet.
+    # tests/test_storefront_design_system.py holds the files + preloads;
+    # these pins hold the declarations.
+    assert 'font-family: "Archivo";' in layout
+    assert 'font-family: "IBM Plex Mono";' in layout
+    assert "fonts.googleapis.com" not in layout
+    assert "fonts.gstatic.com" not in layout
     assert '"Archivo"' in base_css
     assert '"IBM Plex Mono"' in base_css
     assert "--sl-font-display" in base_css
     assert "font_face" not in layout
     assert "font_modify" not in layout
 
-    loaded_weights = {400, 500, 600, 700, 800, 900}
+    # The variable Archivo file carries 400-800; Plex Mono ships 400 + 500.
+    loaded_weights = {400, 500, 600, 700, 800}
     used_weights = {
         int(weight)
         for path in THEME.rglob("*")

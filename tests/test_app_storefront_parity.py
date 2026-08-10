@@ -104,12 +104,16 @@ def test_no_surface_asks_for_a_weight_the_brand_face_does_not_load():
     faux-bolded by the browser, and faux-bold on a wordmark is the difference
     between a designed mark and a smeared one.
     """
-    loaded = "family=Archivo:wght@400;500;600;700;800"
+    # The storefront self-hosts the variable face (one file, 400-800); the
+    # app shell still loads the static Google Fonts set until the PR-E
+    # restyle brings it onto the same self-hosted files. Divergence is
+    # deliberate and pinned per-surface.
     theme_layout = (ROOT / "storefront-theme" / "layout" / "theme.liquid").read_text(
         encoding="utf-8"
     )
-    assert loaded in theme_layout
-    assert loaded in LAYOUT
+    assert "font-weight: 400 800" in theme_layout
+    assert "archivo-latin-var.woff2" in theme_layout
+    assert "family=Archivo:wght@400;500;600;700;800" in LAYOUT
 
     styled = list((ROOT / "storefront-theme" / "sections").glob("*.liquid"))
     styled += [ROOT / "storefront-theme" / "assets" / "base.css"]
@@ -151,8 +155,8 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
     # Archivo is the wordmark's own typeface, so headings and the shipped
     # lockup are cut from one shape. The guided report already lists it
     # first and depends on the shell having loaded it.
-    assert 'family=Archivo:wght@400;500;600;700;800' in theme
-    assert "family=IBM+Plex+Mono" in theme
+    assert 'font-family: "Archivo";' in theme  # self-hosted @font-face
+    assert 'font-family: "IBM Plex Mono";' in theme
     assert '"Archivo"' in _token(STOREFRONT, "sl-font-sans")
     assert '"Archivo"' in _token(STOREFRONT, "sl-font-display")
     assert '"IBM Plex Mono"' in _token(STOREFRONT, "sl-font-mono")
