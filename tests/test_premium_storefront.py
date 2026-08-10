@@ -284,7 +284,7 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     assert "min-block-size: 2.8em" in base
     assert ".sl-pcard-price { margin: auto 0 0" in base
 
-    product = source("sections/main-product.liquid")
+    product = source("sections/main-product-membership.liquid")
     assert ".sl-product--pro .sl-product-form" in product
     assert "max-width: 520px" in product
 
@@ -505,7 +505,7 @@ def test_storefront_account_and_pro_actions_follow_the_app_session():
     comparison = source("sections/comparison.liquid")
     plans = source("sections/plans-band.liquid")
     banner = source("sections/cta-banner.liquid")
-    product = source("sections/main-product.liquid")
+    product = source("sections/main-product-membership.liquid")
     product_card = source("snippets/product-card.liquid")
     footer = source("sections/footer.liquid")
     faq = INDEX["sections"]["faq"]["blocks"]["q_pro_unlock"]["settings"]["answer"]

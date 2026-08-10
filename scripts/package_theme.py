@@ -244,10 +244,24 @@ Rebuild it rather than editing it.
          keyed off the product handle in `layout/theme.liquid` and
          `sections/header.liquid`; if the Pro page looks like an ordinary
          product page, stop and say so.
+   - [ ] `/products/swinglab-pro?view=membership` (the `?view=` parameter
+         forces the new membership template without assigning it) shows the
+         membership buy box: plan radios, benefits list, the Founders note
+         on the Founders variant, and a three-line terms rail — no quantity
+         field, no shipping copy.
    - [ ] The gear collection populates.
    - [ ] Homepage plans band: all three cards render at the same size.
 
 3. **Publish.** Leave the previous theme in the list — that is the rollback.
+
+4. **Assign the membership template** (once, right after publishing this
+   build): Shopify admin -> **Products -> CaddieInsight Pro -> Theme
+   template** (right-hand column) -> pick **membership** -> Save. The
+   membership buy box now lives in `templates/product.membership.json`
+   rather than a product-type branch inside the gear template. Until this
+   dropdown is set, the Pro page renders the gear buy box — quantity field,
+   shipping rail, no plan radios — which sells the wrong story. Gear
+   products stay on **Default product**.
 
 ## Do not
 

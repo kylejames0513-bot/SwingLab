@@ -804,6 +804,66 @@ img { max-width: 100%; display: block; }
 .sl-add { min-width: min(100%, 340px); text-align: center; }
 .sl-product-desc { border-top: 1px solid var(--sl-border); padding-top: 22px; }
 
+/* gallery: one framed window, image zooms quietly inside the crop.
+   Shared by main-product (gear) and main-product-membership. */
+.sl-product-media { min-width: 0; }
+.sl-main-product__frame {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  background: var(--sl-bg-card);
+  line-height: 0;
+  box-shadow: var(--sl-shadow-card);
+}
+.sl-main-product__frame .sl-product-img {
+  border: 0;
+  border-radius: 0;
+}
+/* thumbnail rail: quiet at rest, unmistakable when active */
+.sl-main-product__thumbs {
+  margin-top: 14px;
+  gap: 10px;
+}
+.sl-main-product__thumbs .sl-thumb {
+  border: 1.5px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-bg-card);
+  padding: 2px;
+  opacity: 0.8;
+}
+.sl-main-product__thumbs .sl-thumb img {
+  border-radius: calc(var(--sl-radius-sm) - 3px);
+}
+.sl-main-product__thumbs .sl-thumb:hover {
+  opacity: 1;
+  border-color: rgba(var(--sl-green-rgb), 0.45);
+}
+.sl-main-product__thumbs .sl-thumb.is-active {
+  opacity: 1;
+  border-color: var(--sl-green-btn);
+  box-shadow: 0 0 0 1px var(--sl-green-btn);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sl-main-product__frame .sl-product-img {
+    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .sl-main-product__frame:hover .sl-product-img {
+    transform: scale(1.035);
+  }
+  .sl-main-product__thumbs .sl-thumb {
+    transition: border-color 0.18s ease, opacity 0.18s ease;
+  }
+}
+
+.sl-product-form { width: 100%; }
+.sl-product-form .shopify-payment-button {
+  width: 100%;
+  max-width: min(100%, 440px);
+}
+.sl-main-product__desc-label { margin: 0 0 14px; }
+.sl-main-product__desc .sl-rte { max-width: 60ch; }
+
 /* compare-at pricing + sale badge */
 .sl-price-compare {
   font-size: 0.72em;

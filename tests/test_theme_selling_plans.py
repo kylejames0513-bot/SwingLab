@@ -1,11 +1,13 @@
 from pathlib import Path
 
 
+# The membership buy box moved to its own section in the 2026-08 rebuild;
+# gear's main-product.liquid no longer renders selling plans at all.
 THEME_SECTION = (
     Path(__file__).parents[1]
     / "storefront-theme"
     / "sections"
-    / "main-product.liquid"
+    / "main-product-membership.liquid"
 )
 
 

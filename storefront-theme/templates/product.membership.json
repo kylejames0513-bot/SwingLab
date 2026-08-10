@@ -1,0 +1,28 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-product-membership",
+      "settings": {
+        "founders_label": "First 100 members · Never renews",
+        "founders_body": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
+        "trust_1": "14-day refund on unused Pro",
+        "trust_2": "Cancel anytime — access runs to term",
+        "trust_3": "Unlocks on your checkout email"
+      }
+    },
+    "related": {
+      "type": "related-products",
+      "settings": {
+        "eyebrow": "Related gear",
+        "heading": "Pairs with your practice plan",
+        "collection": "swinglab-gear",
+        "max_products": 4,
+        "hide_for_membership": true
+      }
+    }
+  },
+  "order": [
+    "main",
+    "related"
+  ]
+}
