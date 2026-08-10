@@ -29,7 +29,7 @@
 <a href="{{ product.url }}" class="sl-pcard"{% if product.handle == 'swinglab-pro' %} data-app-pro-sales-link{% endif %}>
   <div class="sl-pcard-media">
     {%- if product.featured_media -%}
-      {{ product.featured_media | image_url: width: 720 | image_tag: loading: 'lazy', alt: card_alt, class: 'sl-pcard-img', widths: '360, 540, 720', sizes: '(min-width: 1200px) 25vw, (min-width: 900px) 33vw, (min-width: 480px) 50vw, calc(100vw - 48px)' }}
+      {{ product.featured_media | image_url: width: 720 | image_tag: loading: 'lazy', alt: card_alt, class: 'sl-pcard-img', widths: '360, 540, 720', sizes: '(min-width: 1280px) 25vw, (min-width: 1000px) 33vw, (min-width: 560px) 50vw, calc(100vw - 48px)' }}
     {%- else -%}
       <div class="sl-placeholder sl-pcard-img" aria-hidden="true"></div>
     {%- endif -%}
@@ -42,8 +42,7 @@
   </div>
   <h3 class="sl-pcard-title">{{ product.title }}</h3>
   <p class="sl-pcard-price">
-    {%- if product.price_varies %}From {% endif -%}{{ product.price | money }}
-    {%- if on_sale %} <s class="sl-price-compare">{{ product.compare_at_price | money }}</s>{% endif -%}
+    {%- render 'price', product: product -%}
   </p>
   {%- capture card_flag_chips -%}
     {%- for tag in card_flag_tags limit: 2 -%}

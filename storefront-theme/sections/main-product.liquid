@@ -62,7 +62,7 @@
   </div>
 
   <div class="sl-product-info">
-    {%- if product.type != blank -%}<p class="sl-eyebrow sl-main-product__eyebrow">{{ product.type }}</p>{%- endif -%}
+    {%- if product.type != blank -%}<p class="sl-eyebrow">{{ product.type }}</p>{%- endif -%}
     <h1 class="sl-product-title">{{ product.title }}</h1>
 
     {%- if is_membership -%}
@@ -290,26 +290,16 @@
         {{ form | payment_button }}
       {% endform %}
 
-      <ul class="sl-main-product__trust" aria-label="Ordering details">
-        {%- if section.settings.trust_1 != blank -%}
-          <li>
-            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/></svg>
-            <span>{{ section.settings.trust_1 }}</span>
-          </li>
-        {%- endif -%}
-        {%- if section.settings.trust_2 != blank -%}
-          <li>
-            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 5v6h6"/><path d="M4.6 15a8.5 8.5 0 1 0 1.6-8.6L2.5 11"/></svg>
-            <span>{{ section.settings.trust_2 }}</span>
-          </li>
-        {%- endif -%}
-        {%- if section.settings.trust_3 != blank -%}
-          <li>
-            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V7m0 10v3.5M3.5 12H7m10 0h3.5"/></svg>
-            <span>{{ section.settings.trust_3 }}</span>
-          </li>
-        {%- endif -%}
-      </ul>
+      {% render 'trust-rail',
+        label: 'Ordering details',
+        class: 'sl-trust--stack',
+        icon_1: 'box',
+        text_1: section.settings.trust_1,
+        icon_2: 'refresh',
+        text_2: section.settings.trust_2,
+        icon_3: 'target',
+        text_3: section.settings.trust_3
+      %}
     {%- endif -%}
 
     {%- if product.description != blank -%}
@@ -489,14 +479,6 @@
 
 .sl-product-media { min-width: 0; }
 
-.sl-main-product__eyebrow {
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  color: var(--sl-orange);
-  margin-bottom: 10px;
-}
 
 /* gallery: one framed window, image zooms quietly inside the crop */
 .sl-main-product__frame {
@@ -627,38 +609,6 @@
 .sl-product-form .shopify-payment-button {
   width: 100%;
   max-width: min(100%, 440px);
-}
-
-.sl-main-product__trust {
-  list-style: none;
-  width: 100%;
-  max-width: 440px;
-  margin: 6px 0 28px;
-  padding: 16px 0 0;
-  border-top: 1px solid var(--sl-border);
-  display: grid;
-  gap: 10px;
-}
-
-.sl-main-product__trust li {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-text-xs);
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--sl-ink-soft);
-  line-height: 1.6;
-}
-
-.sl-main-product__trust-icon {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  margin-top: 2px;
-  color: var(--sl-green-btn);
 }
 
 /* ---- description ---- */

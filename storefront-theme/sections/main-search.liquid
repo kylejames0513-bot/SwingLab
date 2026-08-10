@@ -1,7 +1,7 @@
 {% paginate search.results by 12 %}
 <div class="sl-wrap sl-searchpage sl-main-search">
   <header class="sl-main-search__head">
-    <p class="sl-eyebrow sl-main-search__eyebrow">Search</p>
+    <p class="sl-eyebrow">Search</p>
     <h1 class="sl-main-search__title">{% if search.performed %}Search results{% else %}Search the store{% endif %}</h1>
   </header>
 
@@ -71,14 +71,6 @@
 {% stylesheet %}
 .sl-main-search__head { margin: 0; }
 
-.sl-main-search__eyebrow {
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  color: var(--sl-orange);
-  margin-bottom: 10px;
-}
 
 .sl-main-search__title {
   margin: 0;

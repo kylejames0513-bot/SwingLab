@@ -32,7 +32,7 @@
       <div class="sl-related-products__inner">
         <header class="sl-related-products__head">
           <div class="sl-related-products__head-copy">
-            <p class="sl-related-products__eyebrow">{{ section.settings.eyebrow | default: 'Related gear' }}</p>
+            <p class="sl-eyebrow">{{ section.settings.eyebrow | default: 'Related gear' }}</p>
             <h2 class="sl-h2">{{ section.settings.heading | default: 'Pairs with your practice plan' }}</h2>
           </div>
           <a class="sl-related-products__all" href="{{ rel_collection.url }}">View all training gear<span class="sl-related-products__all-arrow" aria-hidden="true">→</span></a>
@@ -63,15 +63,6 @@
 
 .sl-related-products__head-copy { min-width: 0; }
 
-.sl-related-products__eyebrow {
-  margin: 0 0 10px;
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-transform: uppercase;
-  color: var(--sl-orange);
-}
 
 .sl-related-products__all {
   min-height: 44px;

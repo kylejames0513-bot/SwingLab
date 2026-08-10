@@ -120,9 +120,11 @@ def test_the_replacement_assets_are_actually_packaged():
     The fallback in theme.liquid is what lets a theme upload fix the logo
     without also uploading to Files, and it only works if the file ships.
     """
+    # The inverse lockup ships only to the app (service-worker precache);
+    # the theme inverts the standard mark with a CSS filter instead.
     missing = [
         name
-        for name in ("caddieinsight-logo.png", "caddieinsight-logo-inverse.png")
+        for name in ("caddieinsight-logo.png",)
         if not (THEME / "assets" / name).is_file()
     ]
     assert not missing, f"{missing} are referenced but not packaged in assets/."

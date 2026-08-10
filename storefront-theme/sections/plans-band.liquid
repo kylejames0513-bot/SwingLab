@@ -48,7 +48,7 @@
   <span class="sl-plans__arc" aria-hidden="true"></span>
   <div class="sl-wrap">
     <header class="sl-plans__head sl-reveal">
-      <p class="sl-plans__eyebrow">{{ 'homepage.plans.eyebrow' | t }}</p>
+      <p class="sl-eyebrow">{{ 'homepage.plans.eyebrow' | t }}</p>
       <h2 class="sl-plans__title">
         {%- if section.settings.membership_section -%}
           <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}</span>
@@ -281,15 +281,7 @@
   margin-inline: auto;
   text-align: center;
 }
-.sl-plans__eyebrow {
-  margin: 0 0 14px;
-  color: var(--sl-accent-hover);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-transform: uppercase;
-}
+.sl-plans .sl-eyebrow { color: var(--sl-accent-hover); }
 .sl-plans__title {
   max-width: 14ch;
   margin: 0 auto;

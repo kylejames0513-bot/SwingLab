@@ -1,7 +1,7 @@
 <section id="{{ section.settings.anchor | default: 'how' }}" class="sl-how">
   <div class="sl-wrap sl-reveal">
     <div class="sl-how__head">
-      <p class="sl-how__eyebrow">{{ 'homepage.method.eyebrow' | t }}</p>
+      <p class="sl-eyebrow">{{ 'homepage.method.eyebrow' | t }}</p>
       <div class="sl-how__intro">
         <h2 class="sl-how__title">{{ section.settings.heading | default: 'A practice loop you can repeat.' }}</h2>
         <p>{{ 'homepage.method.intro' | t }}</p>
@@ -40,15 +40,6 @@
   padding-bottom: clamp(28px, 4vw, 48px);
   border-bottom: 1px solid var(--sl-border);
   text-align: center;
-}
-.sl-how__eyebrow {
-  margin: 0 0 16px;
-  color: var(--sl-orange);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-transform: uppercase;
 }
 .sl-how__intro {
   display: grid;
@@ -191,7 +182,6 @@
 @media (max-width: 749px) {
   .sl-how { padding: clamp(62px, 17vw, 76px) 0; }
   .sl-how__head { padding-bottom: 26px; }
-  .sl-how__eyebrow { margin-bottom: 14px; }
   .sl-how__intro { gap: 16px; }
   .sl-how__intro > p { max-width: 34ch; }
   .sl-how__grid {

@@ -1,7 +1,8 @@
 <section id="{{ section.settings.anchor | default: 'faq' }}" class="sl-faq">
   <div class="sl-wrap sl-reveal">
-    <p class="sl-faq__eyebrow">{{ 'homepage.faq.eyebrow' | t }}</p>
-    <h2 class="sl-h2">{{ section.settings.heading | default: 'Questions, answered' }}</h2>
+    {%- assign head_eyebrow = 'homepage.faq.eyebrow' | t -%}
+    {%- assign head_title = section.settings.heading | default: 'Questions, answered' -%}
+    {% render 'section-head', eyebrow: head_eyebrow, title: head_title, center: true %}
     <div class="sl-faq__list">
       {%- for block in section.blocks -%}
         <details class="sl-faq__item"{{ block.shopify_attributes }}>
@@ -45,18 +46,8 @@
   padding-top: var(--sl-section-space-compact);
   padding-bottom: var(--sl-section-space-compact);
 }
-.sl-faq__eyebrow {
-  margin: 0 0 18px;
-  color: var(--sl-orange);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-align: center;
-}
-.sl-faq .sl-h2 { text-align: center; }
 .sl-faq__list {
-  margin: 28px auto 0;
+  margin: 0 auto;
   border-top: 1px solid var(--sl-border);
   max-width: 860px;
 }

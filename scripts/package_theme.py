@@ -68,9 +68,8 @@ EXCLUDED_ASSETS = {
     "caddieinsight-free-card-v2.png": "plan-card source; the webp ladder is what ships",
     "caddieinsight-pro-card-v2.png": "plan-card source; the webp ladder is what ships",
     "caddieinsight-founders-card-v2.png": "plan-card source; the webp ladder is what ships",
-    "swinglab-logo.png": "retired v3 mark; 1400x214 breaks the v4 header",
-    "swinglab-logo-inverse.png": "retired v3 mark",
-    "swinglab-favicon.png": "retired v3 mark",
+    # The retired v3 swinglab-* marks used to be excluded here; they were
+    # deleted from the theme directory outright in the 2026-08 rebuild.
 }
 
 # Naming a file is not referencing it. `sections/header.liquid` carries the

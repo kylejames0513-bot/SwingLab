@@ -142,7 +142,7 @@ def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
     assert '<div class="sl-report__inner sl-wrap">' in source(
         "sections/report-feature.liquid"
     )
-    assert '<p class="sl-how__eyebrow">' in source("sections/how-it-works.liquid")
+    assert '<p class="sl-eyebrow">' in source("sections/how-it-works.liquid")
     assert "sl-plans__card--featured" in source("sections/plans-band.liquid")
 
 

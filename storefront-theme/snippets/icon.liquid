@@ -1,0 +1,22 @@
+{%- comment -%}
+  Inline icon by name — one home for the stroke-icon path data that used
+  to be pasted verbatim wherever it appeared. All icons share the same
+  24px grid and stroke recipe; size with CSS on .sl-icon (defaults to
+  1em so it rides the surrounding type).
+
+  Accepts:
+  - name: 'box' | 'refresh' | 'shield-check' | 'target'
+  - class: extra classes appended after sl-icon (optional)
+{%- endcomment -%}
+<svg class="sl-icon{% if class != blank %} {{ class }}{% endif %}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+  {%- case name -%}
+    {%- when 'box' -%}
+      <path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/>
+    {%- when 'refresh' -%}
+      <path d="M2.5 5v6h6"/><path d="M4.6 15a8.5 8.5 0 1 0 1.6-8.6L2.5 11"/>
+    {%- when 'shield-check' -%}
+      <path d="M12 22s7.5-3.8 7.5-9.5V5.2L12 2.5 4.5 5.2v7.3C4.5 18.2 12 22 12 22z"/><path d="m9 12 2 2 4-4.5"/>
+    {%- when 'target' -%}
+      <circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V7m0 10v3.5M3.5 12H7m10 0h3.5"/>
+  {%- endcase -%}
+</svg>

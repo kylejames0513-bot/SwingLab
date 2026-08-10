@@ -1,7 +1,7 @@
 <section id="{{ section.settings.anchor | default: 'report' }}" class="sl-report">
   <div class="sl-report__inner sl-wrap">
   <div class="sl-report__copy sl-reveal">
-    <p class="sl-report__eyebrow">{{ 'homepage.report.eyebrow' | t }}</p>
+    <p class="sl-eyebrow">{{ 'homepage.report.eyebrow' | t }}</p>
     <h2 class="sl-h2">{{ section.settings.heading | default: 'Numbers you can act on' }}</h2>
     {%- if section.settings.body != blank -%}
       <p class="sl-report__body">{{ section.settings.body }}</p>
@@ -88,15 +88,7 @@
 .sl-report__copy {
   min-width: 0;
 }
-.sl-report__eyebrow {
-  margin: 0 auto 14px;
-  color: var(--sl-accent-hover);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-transform: uppercase;
-}
+.sl-report .sl-eyebrow { color: var(--sl-accent-hover); }
 .sl-report .sl-h2 {
   max-width: 12ch;
   margin-inline: auto;

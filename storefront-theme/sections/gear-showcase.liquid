@@ -66,10 +66,7 @@
               {%- endif -%}
               <h3 class="sl-gear__title">{{ product.title }}</h3>
               <p class="sl-gear__price">
-                {{ product.price | money }}
-                {%- if product.price_varies == false and product.compare_at_price_varies == false and product.compare_at_price > product.price %}
-                  <s class="sl-price-compare">{{ product.compare_at_price | money }}</s>
-                {%- endif -%}
+                {%- render 'price', product: product -%}
               </p>
             </div>
           </a>

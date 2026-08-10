@@ -1,12 +1,15 @@
 <section class="sl-coach" aria-labelledby="CoachNotes-{{ section.id }}">
   <div class="sl-wrap sl-reveal">
-    <div class="sl-coach__head">
-      <p class="sl-coach__eyebrow">{{ 'homepage.coach.eyebrow' | t }}</p>
-      <h2 id="CoachNotes-{{ section.id }}" class="sl-h2">{{ section.settings.heading | default: 'Coaching that shows its work' }}</h2>
-      {%- if section.settings.sub != blank -%}
-        <p class="sl-coach__sub">{{ section.settings.sub }}</p>
-      {%- endif -%}
-    </div>
+    {%- assign head_eyebrow = 'homepage.coach.eyebrow' | t -%}
+    {%- assign head_title = section.settings.heading | default: 'Coaching that shows its work' -%}
+    {%- assign head_id = 'CoachNotes-' | append: section.id -%}
+    {% render 'section-head',
+      eyebrow: head_eyebrow,
+      title: head_title,
+      lede: section.settings.sub,
+      center: true,
+      heading_id: head_id
+    %}
 
     <div class="sl-coach__grid">
       {%- for block in section.blocks -%}
@@ -32,28 +35,6 @@
   padding-top: var(--sl-section-space-compact);
   padding-bottom: var(--sl-section-space-compact);
   border-top: 1px solid var(--sl-border);
-}
-.sl-coach__head {
-  max-width: 72ch;
-  margin-inline: auto;
-  text-align: center;
-}
-.sl-coach__eyebrow {
-  margin: 0 0 18px;
-  color: var(--sl-orange);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-}
-.sl-coach__sub {
-  margin: 12px auto 0;
-  font-size: var(--sl-text-base);
-  line-height: 1.55;
-  color: var(--sl-ink-soft);
-  max-width: 60ch;
-  text-align: center;
-  text-wrap: pretty;
 }
 .sl-coach__grid {
   display: grid;
@@ -105,10 +86,6 @@
   .sl-coach__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 @media (max-width: 749px) {
-  .sl-coach__sub {
-    max-width: 52ch;
-    text-align: center;
-  }
   .sl-coach__card {
     align-items: center;
     text-align: center;

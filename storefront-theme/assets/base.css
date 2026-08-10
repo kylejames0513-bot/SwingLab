@@ -470,7 +470,6 @@ img { max-width: 100%; display: block; }
   padding-top: clamp(56px, 9vw, 104px);
   padding-bottom: clamp(24px, 5vw, 48px);
 }
-.sl-page-hero .sl-eyebrow { color: var(--sl-orange); margin-bottom: 14px; }
 .sl-page-hero h1,
 .sl-page-hero__title {
   margin: 0;
@@ -609,13 +608,71 @@ img { max-width: 100%; display: block; }
    Store pages: product, collection, cart, search, 404, page
    ============================================================ */
 
+/* THE eyebrow. Twelve sections used to hand-roll their own copy of this
+   rule; the only differences were margin nudges and the dark-surface
+   colour, which dark sections override contextually. */
 .sl-eyebrow {
-  margin: 0 0 6px;
-  font-size: var(--sl-text-sm);
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  margin: 0 0 14px;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
   text-transform: uppercase;
-  color: var(--sl-ink-muted);
+  color: var(--sl-orange);
+}
+
+/* assurance strip: a quiet instrument panel under buy/checkout actions.
+   One geometry for the product page and the cart (the two places money
+   changes hands) — previously duplicated verbatim, SVG paths included. */
+.sl-trust {
+  list-style: none;
+  width: 100%;
+  margin: 18px 0 0;
+  padding: 14px var(--sl-dense-inset);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-bg-card);
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sl-space-2) var(--sl-space-4);
+}
+.sl-trust li {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: var(--sl-space-2);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.6;
+  color: var(--sl-ink-soft);
+}
+.sl-trust a { color: inherit; text-underline-offset: 3px; }
+.sl-trust a:hover { color: var(--sl-green-btn); }
+@media (max-width: 749px) {
+  .sl-trust { flex-direction: column; justify-content: flex-start; }
+}
+.sl-trust .sl-icon {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 2px;
+  color: var(--sl-green-btn);
+}
+/* The product page stacks its rail under a hairline instead of boxing it. */
+.sl-trust--stack {
+  max-width: 440px;
+  margin: 6px 0 28px;
+  padding: 16px 0 0;
+  border: 0;
+  border-top: 1px solid var(--sl-border);
+  border-radius: 0;
+  background: none;
+  display: grid;
+  justify-content: start;
+  gap: var(--sl-space-2);
 }
 
 .sl-empty { color: var(--sl-ink-soft); font-size: var(--sl-text-base); }
@@ -916,7 +973,6 @@ img { max-width: 100%; display: block; }
 
 /* ---- 404 ---- */
 .sl-404 { padding-top: 96px; padding-bottom: 120px; text-align: center; }
-.sl-404 .sl-eyebrow { color: var(--sl-orange); }
 .sl-404-body { color: var(--sl-ink-soft); margin: 12px 0 28px; }
 .sl-404-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
 
