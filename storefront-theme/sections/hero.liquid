@@ -8,8 +8,15 @@
 -%}
 
 <section id="home-hero" class="sl-hero" aria-labelledby="HeroTitle-{{ section.id }}">
-  <figure class="sl-hero__backdrop">
-    {%- if hero_image -%}
+  <figure class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}">
+    {%- if section.settings.video != blank -%}
+      {%- comment -%}
+        A muted autoplaying loop. The photo below remains the fallback for
+        installs without a clip — and the LCP either way, since video_tag
+        ships its own poster frame.
+      {%- endcomment -%}
+      {{ section.settings.video | video_tag: autoplay: true, loop: true, muted: true, controls: false, playsinline: true, class: 'sl-hero__video', image_size: '1672x' }}
+    {%- elsif hero_image -%}
       <picture>
         {%- if hero_mobile_image -%}
           <source
@@ -152,6 +159,27 @@
   height: 100%;
   object-fit: cover;
   object-position: center;
+}
+.sl-hero__video,
+.sl-hero__video video,
+video.sl-hero__video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+/* With no video set, the photograph carries the motion: a slow drift,
+   far side of the reduced-motion gate. Alternate keeps the loop seamless. */
+@media (prefers-reduced-motion: no-preference) {
+  .sl-hero__backdrop--motion .sl-hero__image {
+    animation: sl-hero-drift 28s ease-in-out infinite alternate;
+    will-change: transform;
+  }
+}
+@keyframes sl-hero-drift {
+  from { transform: scale(1) translateX(0); }
+  to { transform: scale(1.08) translateX(-1.5%); }
 }
 .sl-hero__inner {
   position: relative;
@@ -416,9 +444,9 @@
 }
 @media (max-width: 749px) {
   .sl-hero {
-    /* Short enough that the copy plus the compact signal card below read
-       as one screen; the card carries the rest of the story. */
-    --sl-mobile-hero-height: clamp(480px, calc(88svh - 220px), 560px);
+    /* Roomy but not sprawling: the copy breathes and the compact signal
+       card still lands within the first easy scroll. */
+    --sl-mobile-hero-height: clamp(560px, calc(96svh - 180px), 660px);
     min-height: var(--sl-mobile-hero-height);
   }
   /* Bottom-anchored copy means the shade belongs at the BOTTOM. A modest
@@ -463,7 +491,7 @@
   .sl-hero__body {
     max-width: 36ch;
     margin-inline: 0;
-    margin-top: 14px;
+    margin-top: 16px;
     font-size: var(--sl-text-base);
     line-height: 1.48;
     text-align: left;
@@ -472,7 +500,7 @@
     width: min(100%, 320px);
     grid-template-columns: 1fr;
     gap: 10px;
-    margin: 20px 0 0;
+    margin: 24px 0 0;
   }
   .sl-hero__primary { width: 100%; min-height: 48px; padding: 12px 18px; }
   .sl-hero__secondary {
@@ -490,7 +518,7 @@
      its green dots fought the orange brand dot. Middots, one color. */
   .sl-hero__proof {
     width: 100%;
-    margin: 16px 0 0;
+    margin: 18px 0 0;
     display: flex;
     flex-wrap: wrap;
     justify-content: flex-start;
@@ -545,8 +573,8 @@
   .sl-hero__signal-grid dd { margin: 0; text-align: right; }
   .sl-hero__signal-note { margin-top: var(--sl-space-2); }
   .sl-hero__signal-band {
-    padding-top: var(--sl-space-2);
-    padding-bottom: var(--sl-space-5);
+    padding-top: var(--sl-space-3);
+    padding-bottom: var(--sl-space-6);
   }
 }
 @media (max-width: 559px) {
@@ -574,7 +602,8 @@
     { "type": "text", "id": "chip2", "label": "Proof point 2", "default": "NO CARD" },
     { "type": "text", "id": "chip3", "label": "Proof point 3", "default": "CLUB SAVED" },
     { "type": "text", "id": "fine_print", "label": "Fine print", "default": "Supported 2D movement and timing estimates from phone video." },
-    { "type": "image_picker", "id": "image", "label": "Desktop hero image", "info": "Leave blank to use the packaged dusk-range artwork (caddieinsight-range-hero-desktop.webp)." },
+    { "type": "video", "id": "video", "label": "Hero video (loops, muted)", "info": "A short 8–20s loop — filmed range or swing footage works best. No audio needed; it plays muted. Leave blank and the hero uses the photograph with a slow drift instead." },
+    { "type": "image_picker", "id": "image", "label": "Desktop hero image", "info": "Fallback and poster when no video is set. Leave blank to use the packaged dusk-range artwork (caddieinsight-range-hero-desktop.webp)." },
     { "type": "image_picker", "id": "mobile_image", "label": "Mobile hero image", "info": "Leave blank to use the packaged portrait companion (caddieinsight-range-hero-mobile.webp)." },
     { "type": "text", "id": "signal_club", "label": "Sample club", "default": "Iron" },
     { "type": "text", "id": "signal_priority", "label": "Sample priority", "default": "Lead-hip control" },
