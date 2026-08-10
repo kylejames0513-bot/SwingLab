@@ -162,25 +162,23 @@ Then **refund it** and confirm `refunds/create` fires and access is revoked.
 
 ---
 
-## 3. Two-tier rollout (after §2 passes)
+## 3. Two-tier rollout — DONE 2026-08-10 (one step remains)
 
-Per the approved design. Create in Shopify:
+Executed via the Admin API with owner authorization:
 
-| SKU | Price | Selling plan |
-|---|---|---|
-| `SL-COACH-1MO` | $19.99 | MONTH/1 |
-| `SL-COACH-12MO` | $139.99 | YEAR/1 |
-
-And change `SL-PRO-LIFE` (Founders Pass) from **$149 → $249**, now sold as
-Coach-for-life. At $149 against a $19.99/mo tier it is 7.5 months of revenue
-against perpetual compute; $249 is 12.5 months. Nothing has sold, so no
-commitment is broken — but this is the one number you displayed publicly, so
-it is the most worth vetoing.
-
-- [ ] Coach variants created with SKUs matching `config.yaml billing.shopify_skus`
-- [ ] Selling plans attached to both Coach variants (the existing Pro plans are `SellingPlan/3547398316` MONTH/1 and `SellingPlan/3547431084` YEAR/1 — mirror that shape)
-- [ ] New variant IDs recorded in `config.yaml billing.shopify_variant_ids`
-- [ ] Founders Pass repriced
+- [x] Coach variants created: `SL-COACH-1MO` $19.99 (variant
+      `46906759741612`, "Coach — 1 Month") and `SL-COACH-12MO` $139.99
+      (variant `46906759774380`, "Coach — 12 Months"), both taxable,
+      inventory untracked like their siblings
+- [x] Founders Pass repriced **$149 → $249**, sold as Coach-for-life
+- [x] Variant IDs recorded in `config.yaml billing.shopify_variant_ids`;
+      `coach_tier_enabled: true`
+- [ ] **Yours: attach selling plans to both Coach variants.** The existing
+      Pro plans (`SellingPlan/3547398316` MONTH/1, `SellingPlan/3547431084`
+      YEAR/1) are owned by the Bridge app, so no other API client can attach
+      them — one admin step. Until then Coach sells as one-time terms, which
+      the buy box renders honestly (no plan radios on variants without
+      plans).
 
 ---
 

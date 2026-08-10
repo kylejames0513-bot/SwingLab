@@ -300,7 +300,11 @@ DEFAULTS: dict[str, Any] = {
         # buyers are grandfathered unchanged.
         "pro_price_monthly_text": "$9.99/month",
         "pro_price_annual_text": "$69.99/year — $5.83/month",
-        "pro_price_lifetime_text": "$149 once — the Founders Pass",
+        # $249 as of 2026-08-10 (approved two-tier design: the Founders Pass
+        # is Coach-for-life; at $149 against a $19.99/mo Coach tier it was
+        # 7.5 months of revenue against perpetual compute). Nothing had sold,
+        # so no public commitment was broken by the change.
+        "pro_price_lifetime_text": "$249 once — the Founders Pass",
         "pro_annual_badge_text": "Best value — save 42%",
         # True only once the store actually sells auto-renewing
         # subscriptions (Shopify's Subscriptions app installed, selling

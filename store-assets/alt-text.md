@@ -7,7 +7,7 @@ through unchanged.
 
 | File in `storefront-theme/assets/` | Alt text |
 | --- | --- |
-| `caddieinsight-founders-card-v2.png` | Illustrated Founders Pass membership card in deep green with an orange swing arc, marked $149 one payment, first 100 members, never renews. |
+| `caddieinsight-founders-card-v2.png` | Illustrated Founders Pass membership card in deep green with an orange swing arc — one payment, first 100 members, never renews. (Price deliberately not in the alt text: the artwork carries no legible price, and the pass was repriced $149 → $249 on 2026-08-10.) |
 | `caddieinsight-pro-card-v2.png` | Golfer in a green polo finishing a swing at a driving range at sunrise, with a phone on a small tripod filming from behind. |
 | `caddieinsight-free-card-v2.png` | Golfer on a quiet practice tee setting a phone on a hip-height tripod beside a ball and one iron before filming a swing. |
 | `caddieinsight-range-hero-desktop.webp` | Golfer holding a follow-through on a driving range at dusk, a warm light trail tracing the club path, with a phone on a tripod filming beside him. |

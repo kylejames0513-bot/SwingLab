@@ -319,15 +319,25 @@ billing:
                              # against it. Grants take the maximum tier, so a
                              # Founders member who also holds a Pro month is
                              # never downgraded by it.
-  shopify_variant_ids:       # Shopify variant id per /pricing card. Each Pro
+  coach_tier_enabled: true   # ON as of 2026-08-10: the Coach variants exist
+                             # on the store (created via the Admin API, owner
+                             # authorized) so the /pricing Coach cards can
+                             # finally point at something buyable. The
+                             # bare-code default stays false — a white-label
+                             # install must never advertise a tier its store
+                             # cannot sell.
+  shopify_variant_ids:       # Shopify variant id per /pricing card. Each
     monthly: "46811170177196"  # card's store CTA deep-links ?variant=<id> so
     yearly: "46811170209964"   # checkout opens with the clicked plan already
     lifetime: "46839745282220" # selected. An unset/empty id falls back to the
-                             # plain product page — never a guessed variant.
+    coach_monthly: "46906759741612"  # plain product page — never a guessed
+    coach_yearly: "46906759774380"   # variant.
   pro_price_monthly_text: "$9.99/month"
   pro_price_annual_text: "$69.99/year — $5.83/month"
-  pro_price_lifetime_text: "$149 once — the Founders Pass"
+  pro_price_lifetime_text: "$249 once — the Founders Pass"
   pro_annual_badge_text: "Best value — save 42%"
+  coach_price_monthly_text: "$19.99/month"
+  coach_price_annual_text: "$139.99/year — $11.67/month"
                              # DISPLAY strings for /pricing only — the store
                              # stays the source of truth for what is
                              # actually charged. Keep these matching the store;

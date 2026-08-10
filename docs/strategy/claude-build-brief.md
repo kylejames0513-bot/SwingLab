@@ -187,7 +187,7 @@ is "Turf Instrument": cool mist `#eef2ef`, deep forest `#0f3d28`, one amber
 accent `#e8720c` used once per composition.
 
 **Store today.** 7 active products. Pro membership at $9.99/mo, $69.99/yr,
-$149 Founders Pass (capped at 100). Markets: US primary plus International
+$249 Founders Pass (capped at 100; repriced from $149 on 2026-08-10, sold as Coach-for-life; Coach $19.99/mo · $139.99/yr). Markets: US primary plus International
 covering 21 Asian countries, with shipping zones and rates already configured.
 Payments live — Shop Pay, Apple Pay, Google Pay. Policies exist for Privacy,
 Refund, Contact and Cancellations.

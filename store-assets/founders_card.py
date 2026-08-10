@@ -96,7 +96,7 @@ def founders_card():
     # price line: display price, mono qualifier on the same optical baseline
     py = cy0 + 366 * s
     f_price = archivo(int(52 * s), 700, 104)
-    d.text((lx, py), "$149", font=f_price, fill=CARD)
+    d.text((lx, py), "$249", font=f_price, fill=CARD)
     pw = d.textlength("$149", font=f_price)
     tracked(d, (lx + pw + 26 * s, py + 22 * s), "· ONE PAYMENT",
             mono(int(23 * s)), GREEN_INK, tracking=int(3 * s))

@@ -216,7 +216,7 @@
 {% block main %}
   <div class="lead">
     <p class="sl-eyebrow">Choose your coaching pace</p>
-    <h1>One analysis engine. Two ways to use it.</h1>
+    <h1>One analysis engine. {{ "Three" if coach_tier_enabled else "Two" }} ways to use it.</h1>
     <p>Free and Pro run the same analysis and get the same report — the
       metrics table, key-position frames, slow motion, centerline overlays,
       coaching notes, and a practice plan with re-film targets. Free is
@@ -233,7 +233,15 @@
       does{% if replay_pro_only %}: the annotated replay of every
       swing{% endif %}{% if progress_pro_only %}, the progress dashboard that
       charts every metric session over session{% endif %}, and the proof cycle
-      that refuses to call a fix real until a matched re-film says so.{% endif %}</p>
+      that refuses to call a fix real until a matched re-film says so.
+      {# The approved positioning line — the ladder's one-sentence honest
+         summary (two-tier design spec, 2026-08-09). Rendered only with the
+         ladder itself, and only when both display prices exist, so the
+         sentence can never quote a number the cards don't. #}
+      {% if coach_price_monthly_text and pro_price_monthly_text %}
+      <strong>{{ pro_price_monthly_text.split("/")[0] }} gets you what other
+      swing apps sell. {{ coach_price_monthly_text.split("/")[0] }} gets you
+      proof that the fix held.</strong>{% endif %}{% endif %}</p>
   </div>
 
   {% if trend_line %}
