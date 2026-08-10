@@ -9,7 +9,8 @@ Completed via API already (2026-08-03): branded SKUs on all six gear products
 Trainer Red price corrected $38.99 → $28.99, Pro repriced to the approved
 structure ($9.99 / Season Pass $69.99 / Founders Pass $149) with rewritten
 product description, Lifetime variant renamed Founders Pass, all Pro variants
-untracked (memberships are subscription-based — no quantity, per owner),
+untracked (memberships are subscription-based — no quantity, per owner;
+Founders repriced $149 → $249 on 2026-08-10 with the Coach rollout),
 `swinglab:tempo` tag added to Tempo Rope, Pro vendor set to CaddieInsight,
 Contact page filled + `contact` template assigned, About and FAQ pages
 updated to the new pricing.

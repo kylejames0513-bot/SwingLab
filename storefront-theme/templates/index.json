@@ -199,7 +199,7 @@
             "plan": "founders",
             "badge": "MEMBERSHIP · FOUNDERS",
             "name": "Founders Pass",
-            "price_text": "$149",
+            "price_text": "$249",
             "term": "one payment",
             "description": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
             "note": "FIRST 100 MEMBERS · NEVER RENEWS",
@@ -299,7 +299,7 @@
           "settings": {
             "feature": "Price",
             "free_value": "$0",
-            "pro_value": "$9.99/mo · Season Pass $69.99/yr · Founders Pass $149"
+            "pro_value": "$9.99/mo · Season Pass $69.99/yr · Founders Pass $249"
           }
         }
       },
@@ -404,7 +404,7 @@
           "type": "qa",
           "settings": {
             "question": "What are the Season Pass and Founders Pass?",
-            "answer": "The Season Pass is a full year of Pro for $69.99 — the same year month-to-month costs $119.88, so it saves an honest 42%. The Founders Pass is $149 once, includes everything in Pro for good, and never renews. Only the first 100 members can buy one: a lifetime product is only honest if the business can afford to keep running it, so we cap how many exist. Earlier lifetime purchases are grandfathered and keep everything."
+            "answer": "The Season Pass is a full year of Pro in one payment — the plans band above shows the live price and exactly what it saves against paying month to month. The Founders Pass is one payment of $249, includes everything for good, and never renews. Only the first 100 members can buy one: a lifetime product is only honest if the business can afford to keep running it, so we cap how many exist. Earlier lifetime purchases are grandfathered and keep everything."
           }
         },
         "q_pro_unlock": {

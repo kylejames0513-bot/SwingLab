@@ -56,7 +56,7 @@ def test_defaults_pin_the_tier_ladder():
     )
     assert (
         DEFAULTS["billing"]["pro_price_lifetime_text"]
-        == "$149 once — the Founders Pass"
+        == "$249 once — the Founders Pass"
     )
     assert DEFAULTS["billing"]["pro_annual_badge_text"] == "Best value — save 42%"
     # Both gates ship OFF in bare-code defaults (white-label installs stay
@@ -76,9 +76,8 @@ def test_shipped_config_pins_the_live_membership_ladder():
 
     assert billing["free_per_month"] == 1
     # The Coach SKUs joined the ledger on 2026-08-09 with the two-tier
-    # design. They are configured ahead of the Shopify variants existing,
-    # which is safe because billing.coach_tier_enabled is still false —
-    # an unsold SKU grants nothing. See
+    # design. The Coach variants exist on the live store as of
+    # 2026-08-10, and coach_tier_enabled is on. See
     # docs/superpowers/specs/2026-08-09-two-tier-membership-and-free-proof-cycle-design.md
     assert billing["shopify_skus"] == {
         "SL-PRO-1MO": 31,
@@ -87,29 +86,37 @@ def test_shipped_config_pins_the_live_membership_ladder():
         "SL-COACH-1MO": 31,
         "SL-COACH-12MO": 365,
     }
-    # The ladder is configured but NOT rolled out: with this false, any paid
-    # plan still unlocks the replay and the dashboard, exactly as before.
-    # Flipping it without creating the Coach variants would take features
-    # from Pro buyers with nothing in the store to buy them back.
-    assert billing["coach_tier_enabled"] is False
+    # The ladder is rolled out (2026-08-10): the Coach variants exist on
+    # the store, so the flag is on and the /pricing Coach cards point at
+    # something buyable. The bare-code default stays False — asserted in
+    # test_defaults below via has_coach semantics — because a white-label
+    # install must never advertise a tier its store cannot sell.
+    assert billing["coach_tier_enabled"] is True
+    assert billing["shopify_variant_ids"]["coach_monthly"] == "46906759741612"
+    assert billing["shopify_variant_ids"]["coach_yearly"] == "46906759774380"
+    assert billing["coach_price_monthly_text"] == "$19.99/month"
+    assert billing["coach_price_annual_text"] == "$139.99/year — $11.67/month"
     assert billing["shopify_sku_tiers"]["SL-PRO-1MO"] == "pro"
     assert billing["shopify_sku_tiers"]["SL-COACH-1MO"] == "coach"
     # The Founders Pass is Coach for life, on its original SKU.
     assert billing["shopify_sku_tiers"]["SL-PRO-LIFE"] == "coach"
     assert billing["pro_price_monthly_text"] == "$9.99/month"
     assert billing["pro_price_annual_text"] == "$69.99/year — $5.83/month"
-    assert billing["pro_price_lifetime_text"] == "$149 once — the Founders Pass"
+    assert billing["pro_price_lifetime_text"] == "$249 once — the Founders Pass"
     assert billing["pro_annual_badge_text"] == "Best value — save 42%"
     # The badge claim is arithmetic, not marketing: $69.99/year against
     # the $119.88 twelve months at $9.99 would cost really is 42% off.
     assert round((1 - 69.99 / (9.99 * 12)) * 100) == 42
     assert billing["store_subscriptions"] is True
     # The /pricing cards deep-link these variants so checkout preselects
-    # the plan that was clicked — they must match the live store.
+    # the plan that was clicked — they must match the live store. The two
+    # coach entries were created on the live product 2026-08-10.
     assert billing["shopify_variant_ids"] == {
         "monthly": "46811170177196",
         "yearly": "46811170209964",
         "lifetime": "46839745282220",
+        "coach_monthly": "46906759741612",
+        "coach_yearly": "46906759774380",
     }
 
 
@@ -240,7 +247,7 @@ def test_pricing_page_shows_all_three_tiers(tmp_path, monkeypatch):
     html = client.get("/pricing").text
     assert "$9.99/month" in html
     assert "$69.99/year" in html
-    assert "$149 once" in html
+    assert "$249 once" in html
     assert "Best value" in html                     # the Season Pass hero badge
     assert "save 42%" in html                       # the honest savings math
     assert "Pro — Season Pass" in html
@@ -379,3 +386,39 @@ def test_pricing_renewal_fineprint_is_honest(tmp_path, monkeypatch):
     assert "renew automatically" in html
     assert "cancel anytime" in html
     assert "refundable within 14 days" in html
+
+
+def test_shipped_config_renders_the_three_tier_ladder(tmp_path, monkeypatch):
+    """/pricing under the SHIPPED config: three tiers, store links only.
+
+    make_pricing_app runs on bare-code DEFAULTS (coach off) — right for
+    white-label behavior, blind to the live rollout. This is the test that
+    would have caught the inert-Coach state the 2026-08-10 scan found:
+    SKUs configured, tier granted, and nothing on the page to buy it from.
+    """
+    from tests.test_web import fake_analyze_ok as ok
+
+    monkeypatch.setattr(jobs_module, "analyze_video", ok)
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "shpss_test_secret")
+    cfg = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
+
+    html = client.get("/pricing").text
+
+    assert "Three ways to use it." in html
+    # All three rungs, at the live prices.
+    assert "$9.99/month" in html
+    assert "$19.99/month" in html
+    assert "$139.99/year" in html
+    assert "$249 once" in html
+    # The approved positioning line, built from the same display strings as
+    # the cards so it can never quote a number they don't.
+    assert "$9.99 gets you what other" in html
+    assert "$19.99 gets you\n      proof that the fix held." in html or (
+        "$19.99 gets you" in html and "proof that the fix held." in html
+    )
+    # Every buy control deep-links the store — including both Coach cards.
+    assert "?variant=46906759741612" in html
+    assert "?variant=46906759774380" in html
+    assert 'action="/billing' not in html  # the app sells nothing itself
