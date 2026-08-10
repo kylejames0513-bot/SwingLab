@@ -104,6 +104,25 @@ DEFAULTS: dict[str, Any] = {
         # reach this comparison are separations the footage actually proved.
         # A negative one means the arms peaked first, which is the fault.
         "sequence_lead_warn_ms": 0.0,
+        # ---- Swing Pattern bands (swinglab.swing_pattern) ----
+        # The pattern reuses every warn line above as its upper band edge, so
+        # it can never call a swing quiet on a number the coaching flags.
+        # These three are the only genuinely new constants it needs.
+        #
+        # How far inside a warn line a measurement must sit before the pattern
+        # calls that dimension settled. 0.6 rather than 1.0 because "just
+        # under the flag" is not the same swing as "nowhere near it", and the
+        # middle band exists to say so.
+        "pattern_settled_fraction": 0.6,
+        # Above this ratio the backswing reads as deliberate rather than
+        # merely on-reference. Set clear of tempo_target (3.0) so the band
+        # around the reference stays comfortably wide.
+        "pattern_tempo_deliberate_above": 3.4,
+        # The dead band around sequence_lead_warn_ms. Inside it, neither the
+        # hips nor the arms are called the leader: swinglab.sequence resolves
+        # peaks down to 1.5 frame periods (~50 ms at 30 fps, ~25 at 60), and
+        # a gap this small is a coin-flip dressed as a swing style.
+        "pattern_sequence_separation_ms": 10.0,
     },
     "report": {
         # New jobs opt into the structured guided presentation only when the

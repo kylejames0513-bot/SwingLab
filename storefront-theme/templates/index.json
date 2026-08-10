@@ -196,6 +196,15 @@
     "comparison": {
       "type": "comparison",
       "blocks": {
+        "r_report": {
+          "type": "row",
+          "settings": {
+            "feature": "The complete report, every single analysis",
+            "free_value": "Included",
+            "pro_value": "Included",
+            "coach_value": "Included"
+          }
+        },
         "r_analyses": {
           "type": "row",
           "settings": {
@@ -205,46 +214,19 @@
             "coach_value": "Unlimited"
           }
         },
-        "r_report": {
+        "r_refilms": {
           "type": "row",
           "settings": {
-            "feature": "Full report — strip, overlay, slow motion",
-            "free_value": "Included",
-            "pro_value": "Included",
-            "coach_value": "Included"
-          }
-        },
-        "r_notes": {
-          "type": "row",
-          "settings": {
-            "feature": "Club-aware priority + measured practice plan",
-            "free_value": "Included",
-            "pro_value": "Included",
-            "coach_value": "Included"
-          }
-        },
-        "r_history": {
-          "type": "row",
-          "settings": {
-            "feature": "Private history with delete-and-restart controls",
-            "free_value": "Included",
-            "pro_value": "Included",
-            "coach_value": "Included"
-          }
-        },
-        "r_gear": {
-          "type": "row",
-          "settings": {
-            "feature": "Matched training-aid recommendations",
-            "free_value": "Included",
-            "pro_value": "Included",
-            "coach_value": "Included"
+            "feature": "Matched re-films — the film, practice, prove loop",
+            "free_value": "1 per month",
+            "pro_value": "Unlimited",
+            "coach_value": "Unlimited"
           }
         },
         "r_replay": {
           "type": "row",
           "settings": {
-            "feature": "Annotated coach replay video",
+            "feature": "Annotated coach replay of every swing",
             "free_value": "—",
             "pro_value": "—",
             "coach_value": "Included"
@@ -253,7 +235,16 @@
         "r_progress": {
           "type": "row",
           "settings": {
-            "feature": "Progress dashboard and trends",
+            "feature": "Progress dashboard — every metric, session over session",
+            "free_value": "—",
+            "pro_value": "—",
+            "coach_value": "Included"
+          }
+        },
+        "r_proof": {
+          "type": "row",
+          "settings": {
+            "feature": "Matched re-film verdict — did the fix actually hold",
             "free_value": "—",
             "pro_value": "—",
             "coach_value": "Included"
@@ -264,26 +255,15 @@
           "settings": {
             "feature": "Price",
             "free_value": "$0",
-            "pro_value": "$9.99/mo · Season Pass $69.99/yr",
-            "coach_value": "$19.99/mo · $139.99/yr · Founders Pass $249"
-          }
-        },
-        "r_proof": {
-          "type": "row",
-          "settings": {
-            "feature": "Matched re-film verdict — held or not",
-            "free_value": "—",
-            "pro_value": "—",
-            "coach_value": "Included"
+            "pro_value": "$9.99/mo · $69.99/yr",
+            "coach_value": "$19.99/mo · $139.99/yr · Founders $249"
           }
         }
       },
       "block_order": [
-        "r_analyses",
         "r_report",
-        "r_notes",
-        "r_history",
-        "r_gear",
+        "r_analyses",
+        "r_refilms",
         "r_replay",
         "r_progress",
         "r_proof",
@@ -292,7 +272,7 @@
       "settings": {
         "anchor": "compare",
         "heading": "Compare Free, Pro, and Coach.",
-        "sub": "Every plan runs the same coaching engine. Pro removes the monthly limit; Coach adds the replay, the dashboard, and the proof cycle.",
+        "sub": "Every plan runs the same analysis engine and returns the same complete report. Pro is how often you can run it. Coach is the proof that what you practiced actually held.",
         "free_label": "Free",
         "pro_label": "Pro",
         "primary_label": "Get Pro",

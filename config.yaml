@@ -80,6 +80,28 @@ coaching:
                              # negative value here is a separation the footage
                              # actually proved - the casting pattern.
 
+  # ---- Swing Pattern bands (the Coach-tier "how this swing is built"
+  # section, swinglab/swing_pattern.py). The pattern reuses every warn line
+  # above as its upper band edge — it can never call a swing quiet on a
+  # number the coaching is flagging. These three are the only new constants.
+  pattern_settled_fraction: 0.6
+                             # how far inside a warn line a measurement must
+                             # sit before the pattern calls that dimension
+                             # settled. "Just under the flag" and "nowhere
+                             # near it" are different swings; the middle band
+                             # exists to say so.
+  pattern_tempo_deliberate_above: 3.4
+                             # above this ratio the backswing reads as
+                             # deliberate rather than merely on-reference.
+                             # Clear of tempo_target (3.0) so the band around
+                             # the reference stays comfortably wide.
+  pattern_sequence_separation_ms: 10.0
+                             # dead band around sequence_lead_warn_ms. Inside
+                             # it neither hips nor arms are called the leader:
+                             # sequence.py resolves peaks to 1.5 frame periods
+                             # (~50 ms at 30 fps), and a gap this small is a
+                             # coin-flip dressed as a swing style.
+
 report:
   guided_presentation_enabled: true
                              # New jobs use the guided structured report.
