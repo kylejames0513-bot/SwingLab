@@ -49,13 +49,39 @@
 {# iOS ignores SVG touch icons — this PNG is generated from the same mark
    by store-assets/make_brand.py (opaque, 180x180). #}
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-{# Archivo is the wordmark's own typeface, so the shipped lockup and the
-   headings it sits beside are finally cut from the same shape. The guided
-   report already asks for Archivo first and relies on the app shell having
-   loaded it — until now it silently fell back. #}
-<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+{# The same self-hosted faces the storefront ships (one variable Archivo
+   file covering 400-800 plus two Plex Mono weights, ~64 KB total, latin
+   subset) — replacing the render-blocking Google Fonts round-trips. The
+   guided report asks for Archivo first and relies on the shell having
+   loaded it. Same files, byte for byte, as storefront-theme/assets/. #}
+<link rel="preload" href="/static/archivo-latin-var.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/plex-mono-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<style>
+  @font-face {
+    font-family: "Archivo";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url("/static/archivo-latin-var.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: "IBM Plex Mono";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/static/plex-mono-latin-400.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: "IBM Plex Mono";
+    font-style: normal;
+    font-weight: 500;
+    font-display: swap;
+    src: url("/static/plex-mono-latin-500.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+</style>
 <style>
   :root {
     --primary: {{ brand.primary_color }};
@@ -74,7 +100,18 @@
     --sl-orange: #9a4b0a;
     --sl-orange-text: #8f4509;
     --sl-orange-soft: #e8f0ea;
-    --sl-premium-accent: #ffad62;
+    {# The dark-surface set, spelled exactly as storefront-theme/assets/
+       base.css spells it — the parity contract compares text, not numbers. #}
+    --sl-cream: #f5f2e9;
+    --sl-accent: #f07a18;
+    --sl-accent-hover: #ff9a42;
+    --sl-focus-dark: #ffad62;
+    --sl-arc: rgba(20, 71, 44, 0.3);
+    --sl-cream-rgb: 245, 242, 233;
+    --sl-night-rgb: 6, 17, 12;
+    --sl-accent-rgb: 240, 122, 24;
+    --sl-green-rgb: 15, 61, 40;
+    --sl-premium-accent: var(--sl-focus-dark);
     --sl-premium-gradient: linear-gradient(135deg, #06110c 0%, #0c2e1f 62%, #0f3d28 100%);
     --sl-border: #d4ddd6;
     --sl-border-strong: #b7c3bb;
@@ -88,7 +125,20 @@
     --sl-shadow-md: 0 14px 32px -18px rgba(6, 17, 12, .16);
     --sl-shadow-lg: 0 34px 80px -42px rgba(6, 17, 12, .45);
     --sl-content: 1280px;
+    --sl-maxw: var(--sl-content);
     --sl-pad-x: clamp(24px, 5vw, 64px);
+    {# The spacing scale, same nine rungs as the storefront. #}
+    --sl-space-1: 4px;
+    --sl-space-2: 8px;
+    --sl-space-3: 12px;
+    --sl-space-4: 16px;
+    --sl-space-5: 24px;
+    --sl-space-6: 32px;
+    --sl-space-7: 48px;
+    --sl-space-8: 64px;
+    --sl-space-9: 96px;
+    --sl-eyebrow-size: 12px;
+    --sl-eyebrow-track: 0.16em;
     --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
@@ -102,6 +152,9 @@
     --sl-text-base: clamp(15.5px, 15px + 0.2vw, 17px);
     --sl-text-lg: clamp(17px, 16.2px + 0.35vw, 19px);
     --sl-text-xl: clamp(20px, 18.8px + 0.55vw, 23px);
+    --sl-text-2xl: clamp(24px, 21.8px + 1vw, 30px);
+    --sl-text-3xl: clamp(28px, 24.5px + 1.7vw, 38px);
+    --sl-text-4xl: clamp(34px, 28px + 2.8vw, 52px);
     /* Hardware insets, resolved once so every edge can reference them.
        They are 0 in a browser tab and non-zero on a notched installed app. */
     --sl-safe-top: env(safe-area-inset-top, 0px);
@@ -510,7 +563,7 @@
   }
   .sl-menu::backdrop { background: rgba(10, 28, 18, 0.46); }
   .sl-menu__panel {
-    width: min(88vw, 360px);
+    width: min(420px, 100vw);
     height: 100dvh;
     margin-left: auto;
     padding: 20px;
@@ -928,7 +981,7 @@
   }
   .sl-install__dismiss:hover { border-color: var(--sl-control-border); color: var(--sl-ink); }
 
-  @media (min-width: 981px) and (max-width: 1200px) {
+  @media (min-width: 1000px) and (max-width: 1279px) {
     .sl-header__desktop-nav { gap: 4px; }
     .sl-header__link,
     .sl-header__dropdown-trigger { padding-inline: 9px; }
@@ -939,7 +992,7 @@
     .sl-app-banner__detail { display: none; }
     .sl-app-banner__allowance { max-width: min(36vw, 200px); }
   }
-  @media (max-width: 980px) {
+  @media (max-width: 999px) {
     .sl-header { min-height: 64px; }
     .sl-header__inner,
     .sl-header--premium .sl-header__inner { min-height: 64px; gap: 10px; }
@@ -956,7 +1009,7 @@
     .sl-app-footer__brand { grid-column: 1 / -1; }
     .sl-app-banner__allowance { max-width: min(48vw, 220px); }
 
-    /* The tab bar owns the bottom edge below 980px. */
+    /* The tab bar owns the bottom edge below the 1000px stop. */
     :root { --sl-tabbar-h: 56px; }
     .sl-tabbar {
       position: fixed;
@@ -1452,7 +1505,7 @@
       for (var i = 0; i < menuLinks.length; i++) {
         menuLinks[i].addEventListener('click', function () { closeMenu(false); });
       }
-      var desktopQuery = window.matchMedia('(min-width: 981px)');
+      var desktopQuery = window.matchMedia('(min-width: 1000px)');
       var closeOnBreakpointChange = function (event) {
         for (var i = 0; i < desktopMenus.length; i++) {
           desktopMenus[i].removeAttribute('open');

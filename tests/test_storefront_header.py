@@ -187,11 +187,10 @@ def test_home_header_overlays_the_hero_then_gains_a_scroll_surface():
 
 
 def test_storefront_and_app_share_the_responsive_header_contract():
-    # The mechanics are shared: both surfaces run the same drawer/dropdown
-    # script contract. The breakpoint values diverge on purpose until the
-    # app shell restyle lands: the storefront sits on the four-stop system
-    # (560/750/1000/1280) while the app still carries 980/1280 — pinned
-    # per-surface below so the divergence stays visible, never silent.
+    # Both surfaces run the same drawer/dropdown script contract AND the
+    # same breakpoint system: the desktop nav arrives, the burger retires,
+    # and the drawer-close JS all switch at the 1000px stop, with the same
+    # drawer geometry, on the storefront and the app shell alike.
     for source in (HEADER, APP_LAYOUT):
         assert "data-header-dropdown" in source
         assert "data-sl-menu" in source
@@ -199,11 +198,13 @@ def test_storefront_and_app_share_the_responsive_header_contract():
         assert '<nav class="sl-menu__nav"' in source
         assert "closeOnBreakpointChange" in source
         assert "addEventListener('focusout'" in source
+        assert "window.matchMedia('(min-width: 1000px)')" in source
+        assert "width: min(420px, 100vw)" in source
+        assert "@media (max-width: 980px)" not in source
+        assert "(min-width: 981px)" not in source
     assert "max-width: var(--sl-maxw)" in HEADER  # 1280px, by token
     assert "@media (min-width: 1000px)" in HEADER
-    assert "max-width: 1280px" in APP_LAYOUT
-    assert "@media (max-width: 980px)" in APP_LAYOUT
-    assert "width: min(88vw, 360px)" in APP_LAYOUT
+    assert "@media (max-width: 999px)" in APP_LAYOUT
 
 
 def test_storefront_header_reinitializes_cleanly_in_the_theme_editor():

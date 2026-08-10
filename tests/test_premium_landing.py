@@ -305,7 +305,7 @@ def test_absolute_url_tags_are_omitted_when_no_origin_is_configured():
 def test_shared_shell_keeps_navigation_accessibility_contracts():
     assert '<a class="sl-skip" href="#MainContent">' in LAYOUT
     assert '<main id="MainContent">' in LAYOUT
-    assert "@media (max-width: 980px)" in LAYOUT
+    assert "@media (max-width: 999px)" in LAYOUT  # the 1000px system stop
     assert "@media (prefers-reduced-motion: reduce)" in LAYOUT
     assert "data-header-dropdown" in LAYOUT
     assert "data-sl-menu" in LAYOUT
