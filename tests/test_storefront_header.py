@@ -247,6 +247,9 @@ def test_storefront_keeps_mobile_actions_readable():
     assert "min-height: 44px" in HEADER.split(".sl-header__cart {", 1)[1].split("}", 1)[0]
     toggle_rule = HEADER.split(".sl-header__toggle {", 1)[1].split("}", 1)[0]
     assert "width: 44px" in toggle_rule and "height: 44px" in toggle_rule
+    # Buttons don't inherit color: without this, iOS Safari paints its
+    # default blue ButtonText into the currentColor hamburger bars.
+    assert "color: inherit" in toggle_rule
     # The burger retires exactly at the desktop stop — a 1024px desktop gets
     # real navigation, not a hamburger.
     desktop = HEADER.split("@media (min-width: 1000px)", 1)[1].split("@media", 1)[0]

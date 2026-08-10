@@ -567,6 +567,9 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   border: 0;
   border-radius: var(--sl-radius-sm);
   background: none;
+  /* Buttons do not inherit color: without this, iOS Safari paints its
+     default blue ButtonText into the currentColor bars. */
+  color: inherit;
   cursor: pointer;
 }
 .sl-header__toggle span {
