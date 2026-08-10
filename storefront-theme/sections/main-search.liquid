@@ -36,6 +36,8 @@
     {%- endif -%}
 
     {%- if product_count > 0 -%}
+      {%- comment -%} The cards are h3s; this keeps the outline h1 → h2 → h3. {%- endcomment -%}
+      <h2 class="visually-hidden">{{ 'general.search.products_heading' | t }}</h2>
       <div class="sl-grid sl-main-search__grid">
         {%- for item in search.results -%}
           {%- if item.object_type == 'product' -%}

@@ -86,7 +86,7 @@
 
       {% form 'product', product, class: 'sl-product-form sl-main-product__gear-form' %}
         {%- if product.variants.size > 1 -%}
-          <label class="sl-label" for="sl-variant">Options</label>
+          <label class="sl-label" for="sl-variant">{{ 'products.product.options_label' | t }}</label>
           <select name="id" id="sl-variant" class="sl-select">
             {%- for variant in product.variants -%}
               {%- assign v_save = 0 -%}
@@ -109,7 +109,7 @@
 
         <div class="sl-main-product__buy">
           <div class="sl-main-product__qty">
-            <label class="sl-label" for="sl-qty">Quantity</label>
+            <label class="sl-label" for="sl-qty">{{ 'products.product.quantity_label' | t }}</label>
             <input id="sl-qty" class="sl-qty" type="number" name="quantity" value="1" min="1" inputmode="numeric">
           </div>
 
@@ -123,8 +123,9 @@
         {{ form | payment_button }}
       {% endform %}
 
+      {%- assign product_trust_label = 'products.product.ordering_details' | t -%}
       {% render 'trust-rail',
-        label: 'Ordering details',
+        label: product_trust_label,
         class: 'sl-trust--stack',
         icon_1: 'box',
         text_1: section.settings.trust_1,
@@ -136,7 +137,7 @@
 
     {%- if product.description != blank -%}
       <div class="sl-product-desc sl-main-product__desc">
-        <p class="sl-mono-label sl-main-product__desc-label">Product notes</p>
+        <p class="sl-mono-label sl-main-product__desc-label">{{ 'products.product.product_notes' | t }}</p>
         <div class="sl-rte">{{ product.description }}</div>
       </div>
     {%- endif -%}

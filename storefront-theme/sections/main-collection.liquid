@@ -32,6 +32,8 @@
   </p>
 
   {%- if collection.products.size > 0 -%}
+    {%- comment -%} The cards are h3s; this keeps the outline h1 → h2 → h3. {%- endcomment -%}
+    <h2 class="visually-hidden">{{ 'collections.general.products_heading' | t }}</h2>
     <div class="sl-grid sl-main-collection__grid">
       {%- for product in collection.products -%}
         {% render 'product-card', product: product %}

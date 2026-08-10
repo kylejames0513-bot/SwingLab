@@ -86,15 +86,19 @@
           <button class="sl-btn sl-btn--outline" type="submit" name="update">Update cart</button>
           <button class="sl-btn sl-btn--primary" type="submit" name="checkout">Check out</button>
         </div>
+        {%- assign cart_assurance_label = 'cart.general.assurance_label' | t -%}
+        {%- assign cart_trust_returns = 'cart.general.returns' | t -%}
+        {%- assign cart_trust_shipping = 'cart.general.shipping' | t -%}
+        {%- assign cart_trust_refunds = 'cart.general.refunds' | t -%}
         {% render 'trust-rail',
-          label: 'Ordering assurance',
+          label: cart_assurance_label,
           icon_1: 'refresh',
-          text_1: '30-day returns on unused gear',
+          text_1: cart_trust_returns,
           url_1: returns_url,
           icon_2: 'box',
-          text_2: 'Tracked shipping on every gear order',
+          text_2: cart_trust_shipping,
           icon_3: 'shield-check',
-          text_3: '14-day refunds on unused Pro'
+          text_3: cart_trust_refunds
         %}
       </div>
     </form>

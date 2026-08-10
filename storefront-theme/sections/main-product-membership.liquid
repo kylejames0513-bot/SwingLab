@@ -193,8 +193,9 @@
       The membership's own trust rail: refund terms, cancellation, and the
       unlock mechanic. Gear's shipping/returns rail never belonged here.
     {%- endcomment -%}
+    {%- assign membership_terms_label = 'products.product.membership_terms' | t -%}
     {% render 'trust-rail',
-      label: 'Membership terms',
+      label: membership_terms_label,
       class: 'sl-trust--stack',
       icon_1: 'shield-check',
       text_1: section.settings.trust_1,
@@ -219,7 +220,7 @@
 
     {%- if product.description != blank -%}
       <div class="sl-product-desc sl-main-product__desc">
-        <p class="sl-mono-label sl-main-product__desc-label">Membership details</p>
+        <p class="sl-mono-label sl-main-product__desc-label">{{ 'products.product.membership_details' | t }}</p>
         <div class="sl-rte">{{ product.description }}</div>
       </div>
     {%- endif -%}

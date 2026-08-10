@@ -8,7 +8,7 @@
         <details class="sl-faq__item"{{ block.shopify_attributes }}>
           <summary class="sl-faq__q">
             <span class="sl-faq__num" aria-hidden="true">{%- if forloop.index < 10 -%}0{%- endif -%}{{ forloop.index }}</span>
-            <span class="sl-faq__q-text">{{ block.settings.question }}</span>
+            <h3 class="sl-faq__q-text">{{ block.settings.question }}</h3>
             <span class="sl-faq__icon" aria-hidden="true"></span>
           </summary>
           <div class="sl-faq__a">
@@ -76,7 +76,16 @@
   color: var(--sl-orange);
   transform: translateY(-2px);
 }
-.sl-faq__q-text { flex: 1; min-width: 0; }
+/* a real heading (11 questions were invisible to heading navigation),
+   restyled to sit inside the summary row like the span it replaced */
+.sl-faq__q-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
 .sl-faq__icon {
   position: relative;
   flex: none;
