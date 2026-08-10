@@ -1,7 +1,7 @@
 {% paginate search.results by 12 %}
 <div class="sl-wrap sl-searchpage sl-main-search">
   <header class="sl-main-search__head">
-    <p class="sl-eyebrow sl-main-search__eyebrow">Search</p>
+    <p class="sl-eyebrow">Search</p>
     <h1 class="sl-main-search__title">{% if search.performed %}Search results{% else %}Search the store{% endif %}</h1>
   </header>
 
@@ -36,6 +36,8 @@
     {%- endif -%}
 
     {%- if product_count > 0 -%}
+      {%- comment -%} The cards are h3s; this keeps the outline h1 → h2 → h3. {%- endcomment -%}
+      <h2 class="visually-hidden">{{ 'general.search.products_heading' | t }}</h2>
       <div class="sl-grid sl-main-search__grid">
         {%- for item in search.results -%}
           {%- if item.object_type == 'product' -%}
@@ -71,14 +73,6 @@
 {% stylesheet %}
 .sl-main-search__head { margin: 0; }
 
-.sl-main-search__eyebrow {
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  color: var(--sl-orange);
-  margin-bottom: 10px;
-}
 
 .sl-main-search__title {
   margin: 0;
@@ -96,7 +90,7 @@
   align-items: center;
   gap: 10px;
   font-family: var(--sl-font-mono);
-  font-size: 12px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -123,7 +117,7 @@
   bottom: 0;
   width: 34px;
   height: 7px;
-  border-top: 2px solid rgba(20, 71, 44, 0.3);
+  border-top: 2px solid var(--sl-arc);
   border-radius: 50% 50% 0 0 / 100% 100% 0 0;
 }
 
@@ -149,7 +143,7 @@
 
 .sl-main-search__result-title {
   margin: 6px 0 0;
-  font-size: 17px;
+  font-size: var(--sl-text-base);
   font-weight: 700;
   color: var(--sl-green);
 }
@@ -160,7 +154,7 @@
 
 .sl-main-search__result-excerpt {
   margin: 6px 0 0;
-  font-size: 14.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.55;
   color: var(--sl-ink-soft);
 }

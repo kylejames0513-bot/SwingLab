@@ -1,0 +1,17 @@
+{%- comment -%}
+  The product price line: optional "From" prefix, then the price, then a
+  struck compare-at. Renders inline — wrap it in the card or PDP price
+  element. One rule lives here: the struck compare renders only when
+  neither price varies across variants, because a struck range is a lie.
+
+  Accepts:
+  - product (required)
+{%- endcomment -%}
+{%- liquid
+  assign price_on_sale = false
+  if product.price_varies == false and product.compare_at_price_varies == false and product.compare_at_price > product.price
+    assign price_on_sale = true
+  endif
+-%}
+{%- if product.price_varies %}From {% endif -%}{{ product.price | money }}
+{%- if price_on_sale %} <s class="sl-price-compare">{{ product.compare_at_price | money }}</s>{% endif -%}

@@ -1,13 +1,14 @@
 <section id="{{ section.settings.anchor | default: 'faq' }}" class="sl-faq">
   <div class="sl-wrap sl-reveal">
-    <p class="sl-faq__eyebrow">{{ 'homepage.faq.eyebrow' | t }}</p>
-    <h2 class="sl-h2">{{ section.settings.heading | default: 'Questions, answered' }}</h2>
+    {%- assign head_eyebrow = 'homepage.faq.eyebrow' | t -%}
+    {%- assign head_title = section.settings.heading | default: 'Questions, answered' -%}
+    {% render 'section-head', eyebrow: head_eyebrow, title: head_title, center: true %}
     <div class="sl-faq__list">
       {%- for block in section.blocks -%}
         <details class="sl-faq__item"{{ block.shopify_attributes }}>
           <summary class="sl-faq__q">
             <span class="sl-faq__num" aria-hidden="true">{%- if forloop.index < 10 -%}0{%- endif -%}{{ forloop.index }}</span>
-            <span class="sl-faq__q-text">{{ block.settings.question }}</span>
+            <h3 class="sl-faq__q-text">{{ block.settings.question }}</h3>
             <span class="sl-faq__icon" aria-hidden="true"></span>
           </summary>
           <div class="sl-faq__a">
@@ -45,18 +46,8 @@
   padding-top: var(--sl-section-space-compact);
   padding-bottom: var(--sl-section-space-compact);
 }
-.sl-faq__eyebrow {
-  margin: 0 0 18px;
-  color: var(--sl-orange);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-align: center;
-}
-.sl-faq .sl-h2 { text-align: center; }
 .sl-faq__list {
-  margin: 28px auto 0;
+  margin: 0 auto;
   border-top: 1px solid var(--sl-border);
   max-width: 860px;
 }
@@ -67,7 +58,7 @@
   gap: 16px;
   min-height: 72px;
   padding: var(--sl-dense-inset) var(--sl-card-inset);
-  font-size: 17px;
+  font-size: var(--sl-text-base);
   font-weight: 600;
   color: var(--sl-green);
   cursor: pointer;
@@ -79,13 +70,22 @@
 .sl-faq__num {
   flex: none;
   font-family: var(--sl-font-mono);
-  font-size: 11.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.08em;
   color: var(--sl-orange);
   transform: translateY(-2px);
 }
-.sl-faq__q-text { flex: 1; min-width: 0; }
+/* a real heading (11 questions were invisible to heading navigation),
+   restyled to sit inside the summary row like the span it replaced */
+.sl-faq__q-text {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  font: inherit;
+  letter-spacing: inherit;
+  color: inherit;
+}
 .sl-faq__icon {
   position: relative;
   flex: none;
@@ -119,7 +119,7 @@
   max-width: 70ch;
   margin: 0;
   padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px);
-  font-size: 15.5px;
+  font-size: var(--sl-text-base);
   line-height: 1.62;
   color: var(--sl-ink-soft);
   text-align: left;

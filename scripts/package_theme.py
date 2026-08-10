@@ -68,9 +68,8 @@ EXCLUDED_ASSETS = {
     "caddieinsight-free-card-v2.png": "plan-card source; the webp ladder is what ships",
     "caddieinsight-pro-card-v2.png": "plan-card source; the webp ladder is what ships",
     "caddieinsight-founders-card-v2.png": "plan-card source; the webp ladder is what ships",
-    "swinglab-logo.png": "retired v3 mark; 1400x214 breaks the v4 header",
-    "swinglab-logo-inverse.png": "retired v3 mark",
-    "swinglab-favicon.png": "retired v3 mark",
+    # The retired v3 swinglab-* marks used to be excluded here; they were
+    # deleted from the theme directory outright in the 2026-08 rebuild.
 }
 
 # Naming a file is not referencing it. `sections/header.liquid` carries the
@@ -245,10 +244,24 @@ Rebuild it rather than editing it.
          keyed off the product handle in `layout/theme.liquid` and
          `sections/header.liquid`; if the Pro page looks like an ordinary
          product page, stop and say so.
+   - [ ] `/products/swinglab-pro?view=membership` (the `?view=` parameter
+         forces the new membership template without assigning it) shows the
+         membership buy box: plan radios, benefits list, the Founders note
+         on the Founders variant, and a three-line terms rail — no quantity
+         field, no shipping copy.
    - [ ] The gear collection populates.
    - [ ] Homepage plans band: all three cards render at the same size.
 
 3. **Publish.** Leave the previous theme in the list — that is the rollback.
+
+4. **Assign the membership template** (once, right after publishing this
+   build): Shopify admin -> **Products -> CaddieInsight Pro -> Theme
+   template** (right-hand column) -> pick **membership** -> Save. The
+   membership buy box now lives in `templates/product.membership.json`
+   rather than a product-type branch inside the gear template. Until this
+   dropdown is set, the Pro page renders the gear buy box — quantity field,
+   shipping rail, no plan radios — which sells the wrong story. Gear
+   products stay on **Default product**.
 
 ## Do not
 

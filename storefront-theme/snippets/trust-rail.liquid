@@ -1,0 +1,33 @@
+{%- comment -%}
+  The assurance strip under buy/checkout actions — icon + short claim,
+  up to three items. The product page and the cart carried byte-identical
+  copies of this markup (SVG paths included) with private class names;
+  the geometry lives once in base.css (.sl-trust).
+
+  Accepts:
+  - label            (string, required) the aria-label for the list
+  - icon_1..icon_3   (string) icon names for snippets/icon.liquid
+  - text_1..text_3   (string) the claims; a blank text skips its row
+  - url_1..url_3     (string, optional) wraps that claim in a link
+  - class            (string, optional) modifier, e.g. 'sl-trust--stack'
+{%- endcomment -%}
+<ul class="sl-trust{% if class != blank %} {{ class }}{% endif %}" aria-label="{{ label }}">
+  {%- if text_1 != blank -%}
+    <li>
+      {%- render 'icon', name: icon_1 -%}
+      {%- if url_1 != blank -%}<a href="{{ url_1 }}">{{ text_1 }}</a>{%- else -%}<span>{{ text_1 }}</span>{%- endif -%}
+    </li>
+  {%- endif -%}
+  {%- if text_2 != blank -%}
+    <li>
+      {%- render 'icon', name: icon_2 -%}
+      {%- if url_2 != blank -%}<a href="{{ url_2 }}">{{ text_2 }}</a>{%- else -%}<span>{{ text_2 }}</span>{%- endif -%}
+    </li>
+  {%- endif -%}
+  {%- if text_3 != blank -%}
+    <li>
+      {%- render 'icon', name: icon_3 -%}
+      {%- if url_3 != blank -%}<a href="{{ url_3 }}">{{ text_3 }}</a>{%- else -%}<span>{{ text_3 }}</span>{%- endif -%}
+    </li>
+  {%- endif -%}
+</ul>

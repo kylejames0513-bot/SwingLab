@@ -86,20 +86,20 @@
           <button class="sl-btn sl-btn--outline" type="submit" name="update">Update cart</button>
           <button class="sl-btn sl-btn--primary" type="submit" name="checkout">Check out</button>
         </div>
-        <ul class="sl-main-cart__trust" aria-label="Ordering assurance">
-          <li>
-            <svg class="sl-main-cart__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 5v6h6"/><path d="M4.6 15a8.5 8.5 0 1 0 1.6-8.6L2.5 11"/></svg>
-            <a href="{{ returns_url }}">30-day returns on unused gear</a>
-          </li>
-          <li>
-            <svg class="sl-main-cart__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/></svg>
-            <span>Tracked shipping on every gear order</span>
-          </li>
-          <li>
-            <svg class="sl-main-cart__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 22s7.5-3.8 7.5-9.5V5.2L12 2.5 4.5 5.2v7.3C4.5 18.2 12 22 12 22z"/><path d="m9 12 2 2 4-4.5"/></svg>
-            <span>14-day refunds on unused Pro</span>
-          </li>
-        </ul>
+        {%- assign cart_assurance_label = 'cart.general.assurance_label' | t -%}
+        {%- assign cart_trust_returns = 'cart.general.returns' | t -%}
+        {%- assign cart_trust_shipping = 'cart.general.shipping' | t -%}
+        {%- assign cart_trust_refunds = 'cart.general.refunds' | t -%}
+        {% render 'trust-rail',
+          label: cart_assurance_label,
+          icon_1: 'refresh',
+          text_1: cart_trust_returns,
+          url_1: returns_url,
+          icon_2: 'box',
+          text_2: cart_trust_shipping,
+          icon_3: 'shield-check',
+          text_3: cart_trust_refunds
+        %}
       </div>
     </form>
   {%- endif -%}
@@ -133,7 +133,7 @@
 .sl-main-cart__empty-body {
   max-width: 38ch;
   margin: 8px auto 0;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   line-height: 1.6;
   color: var(--sl-ink-soft);
 }
@@ -166,7 +166,7 @@
 .sl-main-cart .sl-cart-variant {
   margin: 5px 0 0;
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -183,7 +183,7 @@
 
 .sl-main-cart .sl-cart-remove {
   font-family: var(--sl-font-mono);
-  font-size: 11px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -202,20 +202,20 @@
 .sl-main-cart__promo {
   max-width: 520px;
   margin: 24px 0 0;
-  font-size: 14px;
+  font-size: var(--sl-text-sm);
 }
 
 /* membership unlock: a designed notice, not a paragraph */
 .sl-main-cart__unlock {
   max-width: 520px;
   margin: 24px 0 0;
-  font-size: 14px;
+  font-size: var(--sl-text-sm);
 }
 
 .sl-main-cart__unlock-label {
   margin: 0 0 6px;
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -225,7 +225,7 @@
 .sl-main-cart__unlock strong {
   display: block;
   color: var(--sl-green);
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   letter-spacing: -0.01em;
 }
 
@@ -240,58 +240,6 @@
 
 .sl-cart-subtotal strong {
   font-variant-numeric: tabular-nums;
-}
-
-/* assurance strip: a quiet instrument panel under the checkout actions */
-.sl-main-cart__trust {
-  list-style: none;
-  width: 100%;
-  margin: 18px 0 0;
-  padding: 14px var(--sl-dense-inset);
-  border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-sm);
-  background: var(--sl-bg-card);
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 10px 20px;
-}
-
-.sl-main-cart__trust li {
-  display: flex;
-  align-items: flex-start;
-  gap: 9px;
-  font-family: var(--sl-font-mono);
-  font-size: 11px;
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: var(--sl-ink-soft);
-  line-height: 1.6;
-}
-
-.sl-main-cart__trust-icon {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  margin-top: 1px;
-  color: var(--sl-green-btn);
-}
-
-.sl-main-cart__trust a {
-  color: inherit;
-  text-underline-offset: 3px;
-}
-
-.sl-main-cart__trust a:hover {
-  color: var(--sl-green-btn);
-}
-
-@media (max-width: 600px) {
-  .sl-main-cart__trust {
-    flex-direction: column;
-    justify-content: flex-start;
-  }
 }
 
 @media (max-width: 749px) {

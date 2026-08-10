@@ -2,6 +2,9 @@
   "general": {
     "accessibility": {
       "skip_to_content": "Skip to content"
+    },
+    "search": {
+      "products_heading": "Products"
     }
   },
   "seo": {
@@ -77,15 +80,16 @@
     },
     "plans": {
       "eyebrow": "CHOOSE YOUR PACE",
-      "member_heading": "Your Free plan is active. Go Pro when repetition matters.",
-      "member_subheading": "Keep your complete monthly report, or move to unlimited sessions, coach replay, and progress tracking.",
+      "member_heading": "Your Free plan is active. Move up when repetition matters.",
+      "member_subheading": "Keep your complete monthly report, go Pro for unlimited sessions, or go Coach for the replay, the dashboard, and proof the fix held.",
       "save_chip": "Save {{ percent }}%",
-      "permo": "{{ amount }}/mo equivalent"
+      "permo": "{{ amount }}/mo equivalent",
+      "yearly_line": "or {{ amount }}/yr — one payment"
     },
     "comparison": {
       "eyebrow": "EVERY PLAN, LINE BY LINE",
-      "member_heading": "Your Free plan compared with Pro.",
-      "member_subheading": "Your account is already active. Upgrade only when unlimited sessions, coach replay, and progress tracking are worth it to you."
+      "member_heading": "Your Free plan compared with Pro and Coach.",
+      "member_subheading": "Your account is already active. Upgrade only when unlimited sessions — or proof that a fix held — are worth it to you."
     },
     "coach": {
       "eyebrow": "INSIDE THE COACHING"
@@ -129,7 +133,26 @@
       "show_image": "Show image {{ number }}",
       "sold_out": "Sold out",
       "unlock_body": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup. Access activates when the paid order is confirmed.",
-      "unlock_heading": "How Pro unlocks"
+      "unlock_heading": "How Pro unlocks",
+      "options_label": "Options",
+      "quantity_label": "Quantity",
+      "product_notes": "Product notes",
+      "membership_details": "Membership details",
+      "ordering_details": "Ordering details",
+      "membership_terms": "Membership terms"
+    }
+  },
+  "collections": {
+    "general": {
+      "products_heading": "Products"
+    }
+  },
+  "cart": {
+    "general": {
+      "assurance_label": "Ordering assurance",
+      "returns": "30-day returns on unused gear",
+      "shipping": "Tracked shipping on every gear order",
+      "refunds": "14-day refunds on unused Pro"
     }
   }
 }

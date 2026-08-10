@@ -1,0 +1,70 @@
+{%- comment -%}
+  Store-account sign in (orders, addresses, subscriptions). This is NOT
+  the app sign-in: swing analysis accounts live at app.caddieinsight.com
+  and the card below says so, because the two directories are separate
+  and a golfer with one of each should never wonder which door this is.
+{%- endcomment -%}
+<div class="sl-wrap sl-auth">
+  <header class="sl-page-hero">
+    <p class="sl-eyebrow">Store account</p>
+    <h1 class="sl-page-hero__title">Sign in</h1>
+  </header>
+
+  <div class="sl-auth__card">
+    {% form 'customer_login', class: 'sl-auth__form' %}
+      {%- if form.errors -%}
+        <div class="sl-auth__errors" role="alert">
+          {{ form.errors | default_errors }}
+        </div>
+      {%- endif -%}
+      <div class="sl-auth__field">
+        <label class="sl-label" for="sl-login-email">Email</label>
+        <input id="sl-login-email" class="sl-input" type="email" name="customer[email]" autocomplete="email" required>
+      </div>
+      <div class="sl-auth__field">
+        <label class="sl-label" for="sl-login-password">Password</label>
+        <input id="sl-login-password" class="sl-input" type="password" name="customer[password]" autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="sl-btn sl-btn--primary">Sign in</button>
+    {% endform %}
+
+    <details class="sl-auth__recover">
+      <summary>Forgot your password?</summary>
+      {% form 'recover_customer_password', class: 'sl-auth__form' %}
+        {%- if form.posted_successfully? -%}
+          <p role="status">If that email has a store account, a reset link is on its way.</p>
+        {%- else -%}
+          {%- if form.errors -%}
+            <div class="sl-auth__errors" role="alert">{{ form.errors | default_errors }}</div>
+          {%- endif -%}
+          <div class="sl-auth__field">
+            <label class="sl-label" for="sl-recover-email">Email</label>
+            <input id="sl-recover-email" class="sl-input" type="email" name="email" autocomplete="email" required>
+          </div>
+          <button type="submit" class="sl-btn sl-btn--outline">Send reset link</button>
+        {%- endif -%}
+      {% endform %}
+    </details>
+  </div>
+
+  <p class="sl-auth__alt">New here? <a href="{{ routes.account_register_url }}">Create a store account</a></p>
+  <div class="sl-note sl-auth__app-note">
+    <strong>Looking for your swing reports?</strong>
+    Your analysis account is separate — sign in at
+    <a href="https://app.caddieinsight.com/login">app.caddieinsight.com</a>.
+  </div>
+</div>
+
+{% stylesheet %}
+.sl-auth__recover { margin-top: var(--sl-space-4); }
+.sl-auth__recover summary { cursor: pointer; color: var(--sl-green-btn); }
+.sl-auth__recover[open] summary { margin-bottom: var(--sl-space-3); }
+.sl-auth__app-note { margin-top: var(--sl-space-5); }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Login",
+  "settings": []
+}
+{% endschema %}

@@ -120,36 +120,28 @@ def test_pro_member_rail_and_primary_cta_use_distinct_actions():
     )
 
 
-def test_authenticated_header_centers_member_content_across_modern_iphone_widths():
-    media = max_width_media_blocks(HEADER)
-    modern_phone_css = "\n".join(
-        body for width, body in media if width == 480
-    )
-    assert modern_phone_css
-    assert ".sl-header__logo-img" in modern_phone_css
-    assert ".sl-header__cart" in modern_phone_css
-    assert "--sl-pad-x: 20px" in modern_phone_css
-    assert "--sl-pad-x: 16px" not in modern_phone_css
-
+def test_authenticated_member_rail_stays_one_line_at_every_width():
+    """The rail used to wrap to 72px on phones and chase its own height with
+    patch media blocks (480/560/1100). Now the greeting is the only flexible
+    item and it truncates, so the rail is exactly 52px everywhere and the
+    overlay pull-up needs no per-width member variant."""
     member_inner_rules = declarations(HEADER, ".sl-member-rail__inner")
     member_greeting_rules = declarations(HEADER, ".sl-member-rail__greeting")
     assert member_inner_rules
     assert member_greeting_rules
-    assert any("flex-wrap: wrap" in rule for rule in member_inner_rules)
-    assert any("justify-content: center" in rule for rule in member_inner_rules)
-    assert any("text-align: center" in rule for rule in member_inner_rules)
-    assert any("order: 4" in rule for rule in member_greeting_rules)
-    assert any("flex: 1 0 100%" in rule for rule in member_greeting_rules)
-    assert "text-overflow: ellipsis" in "\n".join(member_greeting_rules)
-    assert "white-space: nowrap" in "\n".join(member_greeting_rules)
-    assert any("max-width:" in rule for rule in member_greeting_rules)
-    assert "@media (min-width: 561px) and (max-width: 1100px)" in HEADER
+    assert any("flex-wrap: nowrap" in rule for rule in member_inner_rules)
+    greeting = "\n".join(member_greeting_rules)
+    assert "flex: 1 1 auto" in greeting
+    assert "min-width: 0" in greeting
+    assert "text-overflow: ellipsis" in greeting
+    assert "white-space: nowrap" in greeting
 
-    member_phone_css = "\n".join(body for width, body in media if width == 560)
-    assert "padding: 10px var(--sl-pad-x)" in member_phone_css
-    assert "calc(-64px - 72px)" in member_phone_css
-    assert "calc(100% + 28px)" not in member_phone_css
-    assert "margin-inline: -14px" not in member_phone_css
+    rail_rules = declarations(HEADER, ".sl-member-rail")
+    assert any("min-height: 52px" in rule for rule in rail_rules)
+    # One pull-up pair, matching the 52px rail — no third phone-only value.
+    assert "calc(-76px - 52px)" in HEADER
+    assert "calc(-64px - 52px)" in HEADER
+    assert "calc(-64px - 72px)" not in HEADER
 
 
 def test_mobile_hero_is_fluid_through_modern_iphone_widths():
@@ -192,8 +184,7 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
 def test_mobile_method_section_is_compact_centered_and_semantic():
     assert '<ol class="sl-how__grid">' in HOW
     assert '<li class="sl-step"' in HOW
-    assert "@media (min-width: 768px)" in HOW
-    assert "@media (min-width: 640px)" not in HOW
+    assert "@media (min-width: 750px)" in HOW
 
     intro_rules = declarations(HOW, ".sl-how__intro")
     intro_copy_rules = declarations(HOW, ".sl-how__intro > p")
@@ -206,7 +197,7 @@ def test_mobile_method_section_is_compact_centered_and_semantic():
     assert any("text-align: left" in rule for rule in step_rules)
     assert any("margin: auto 0 0" in rule for rule in caption_rules)
 
-    mobile_css = phone_css(HOW, {749, 767})
+    mobile_css = phone_css(HOW, {749})
     mobile_step_rules = declarations(mobile_css, ".sl-step")
     mobile_body_rules = declarations(mobile_css, ".sl-step__body")
     mobile_title_rules = declarations(mobile_css, ".sl-step__title")
@@ -298,17 +289,17 @@ def test_mobile_chrome_and_compact_buttons_have_44px_touch_targets():
     small_button_rules = declarations(base_mobile, ".sl-btn--sm")
     assert any("min-height: 44px" in rule for rule in small_button_rules)
 
-    announcement_mobile = phone_css(ANNOUNCEMENT, {649})
+    announcement_mobile = phone_css(ANNOUNCEMENT, {749})
     announcement_rules = declarations(announcement_mobile, ".sl-announcement")
     assert any("min-height: 44px" in rule for rule in announcement_rules)
 
-    member_mobile = phone_css(HEADER, {560})
-    member_action_rules = declarations(member_mobile, ".sl-member-rail__action")
+    # The rebuilt header makes 44px targets the base rule, not a phone
+    # patch — the member action, cart link, and toggle hold it everywhere.
+    member_action_rules = declarations(HEADER, ".sl-member-rail__action")
     assert any("min-height: 44px" in rule for rule in member_action_rules)
 
-    header_mobile = phone_css(HEADER, {480})
-    cart_rules = declarations(header_mobile, ".sl-header__cart")
-    toggle_rules = declarations(header_mobile, ".sl-header__toggle")
+    cart_rules = declarations(HEADER, ".sl-header__cart")
+    toggle_rules = declarations(HEADER, ".sl-header__toggle")
     assert any("min-height: 44px" in rule for rule in cart_rules)
     assert any(
         "width: 44px" in rule and "height: 44px" in rule

@@ -61,24 +61,25 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "CLUB SAVED",
     ]
 
-    stats = INDEX["sections"]["stats"]
-    assert [stats["blocks"][key]["settings"]["value"] for key in stats["block_order"]] == [
-        "Club saved",
-        "View locked",
-        "One priority",
-        "Proof loop",
-    ]
-    assert INDEX["order"][:8] == [
+    # The 2026-08 restructure: gear moved up (it is what the store ships),
+    # the stats band died (it restated the hero chips), the standalone
+    # email-capture died (the footer newsletter is the one form), and a
+    # proof slot waits empty for real social proof.
+    assert INDEX["order"] == [
         "hero",
         "how_it_works",
         "report",
-        "plans",
-        "stats",
         "gear",
+        "proof",
+        "plans",
         "comparison",
         "coach_notes",
+        "faq",
+        "cta",
     ]
-    assert INDEX["sections"]["email"]["disabled"] is False
+    assert "stats" not in INDEX["sections"]
+    assert "email" not in INDEX["sections"]
+    assert INDEX["sections"]["proof"]["block_order"] == []
 
 
 def test_membership_card_art_candidates_are_crop_safe_campaign_assets():
@@ -99,7 +100,7 @@ def test_membership_card_media_is_photoreal_without_overlay_stickers():
     plans_band = source("sections/plans-band.liquid")
 
     assert plans["monthly"]["settings"]["name"]
-    assert plans["season"]["settings"]["name"]
+    assert plans["coach"]["settings"]["name"]
     assert plans["founders"]["settings"]["name"] == "Founders Pass"
     assert plans["free"]["settings"]["name"] == "CaddieInsight Free"
     # Plan identity lives in the card body — no detached labels on the photo.
@@ -134,15 +135,19 @@ def test_premium_section_hierarchy_prioritizes_method_report_and_pro():
     assert how["settings"]["anchor"] == "how"
     assert report["settings"]["anchor"] == "report"
     assert plans["settings"]["anchor"] == "plans"
-    assert plans["block_order"] == ["monthly", "season", "founders", "free"]
-    assert plans["blocks"]["season"]["settings"]["featured"] is True
+    # Free leads (the on-ramp is not buried under its own upsells), then the
+    # ladder: Pro, Coach (featured — the tier that proves the fix held),
+    # Founders. The Season Pass sells on as Pro-yearly via the card's
+    # yearly line and the PDP; it no longer needs its own card.
+    assert plans["block_order"] == ["free", "monthly", "coach", "founders"]
+    assert plans["blocks"]["coach"]["settings"]["featured"] is True
     assert plans["blocks"]["monthly"]["settings"]["featured"] is False
     assert plans["blocks"]["founders"]["settings"]["featured"] is False
     assert plans["blocks"]["free"]["type"] == "free_band"
     assert '<div class="sl-report__inner sl-wrap">' in source(
         "sections/report-feature.liquid"
     )
-    assert '<p class="sl-how__eyebrow">' in source("sections/how-it-works.liquid")
+    assert '<p class="sl-eyebrow">' in source("sections/how-it-works.liquid")
     assert "sl-plans__card--featured" in source("sections/plans-band.liquid")
 
 
@@ -257,14 +262,16 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
     assert "aspect-ratio: 3 / 2" in plans_source
     assert "height: 100%" in plans_source
 
+    # Both sections sit on the four-stop system now (560/750/1000/1280) —
+    # tests/test_storefront_design_system.py polices the full census; these
+    # pins hold the two grids' specific stops.
     how_source = source("sections/how-it-works.liquid")
-    assert "@media (min-width: 768px)" in how_source
-    assert "@media (min-width: 640px)" not in how_source
-    assert "@media (min-width: 1100px)" in how_source
+    assert "@media (min-width: 750px)" in how_source
+    assert "@media (min-width: 1280px)" in how_source
     assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in how_source
 
     coach_source = source("sections/coach-notes.liquid")
-    assert "@media (min-width: 640px)" in coach_source
+    assert "@media (min-width: 560px)" in coach_source
     assert "@media (min-width: 1000px)" in coach_source
 
 
@@ -276,13 +283,13 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     assert "--sl-radius-control: 12px" in base
     assert ".sl-btn {\n  min-height: 46px" in base
     assert "border-radius: var(--sl-radius-control)" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
-    assert "@media (min-width: 480px)" in base
-    assert "@media (min-width: 900px)" in base
-    assert "@media (min-width: 1200px)" in base
+    assert "@media (min-width: 560px)" in base
+    assert "@media (min-width: 1000px)" in base
+    assert "@media (min-width: 1280px)" in base
     assert "min-block-size: 2.8em" in base
     assert ".sl-pcard-price { margin: auto 0 0" in base
 
-    product = source("sections/main-product.liquid")
+    product = source("sections/main-product-membership.liquid")
     assert ".sl-product--pro .sl-product-form" in product
     assert "max-width: 520px" in product
 
@@ -301,7 +308,6 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
 def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     hero_source = source("sections/hero.liquid")
     hero_locale = LOCALE["homepage"]["hero"]
-    stats_source = source("sections/stats-band.liquid")
 
     assert '<section id="home-hero" class="sl-hero" aria-labelledby=' in hero_source
     assert hero_source.count("<h1") == 1
@@ -343,19 +349,13 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "min-height: 720px" not in mobile_hero
     assert "min-height: 980px" not in mobile_hero
     assert "min-height: 1020px" not in mobile_hero
-    assert ".sl-hero__signal { display: none; }" in mobile_hero
-    assert ".sl-hero__signal-band { display: none; }" in mobile_hero
+    # The signal card — the only visual showing what the product produces —
+    # stays on phones (compact, full-width). The old sheet display:none'd it.
+    assert ".sl-hero__signal { display: none; }" not in mobile_hero
+    assert ".sl-hero__signal-band { display: none; }" not in mobile_hero
+    assert "width: 100%;" in mobile_hero.split(".sl-hero__signal {", 1)[1].split("}", 1)[0]
     assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
     assert ".sl-hero__fine { display: none; }" not in mobile_hero
-    mobile_stats = stats_source.split("@media (max-width: 749px)", 1)[1]
-    assert 'class="sl-stats__grid sl-reveal"' in stats_source
-    assert 'tabindex="0"' not in stats_source
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in mobile_stats
-    assert "overflow: visible" in mobile_stats
-    assert "min-height: 136px" in mobile_stats
-    assert "padding: var(--sl-card-inset)" in mobile_stats
-    assert "grid-auto-flow: column" not in mobile_stats
-    assert "grid-auto-columns:" not in mobile_stats
 
 
 def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
@@ -390,13 +390,6 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     assert "justify-content: flex-start" in hero_proof
     assert "background: transparent" in hero_proof
     assert 'class="sl-hero__brand"' in hero
-
-    stats = source("sections/stats-band.liquid")
-    stats_cell = stats.split(".sl-stats__cell {", 1)[1].split("}", 1)[0]
-    assert "align-items: center" in stats_cell
-    assert "text-align: center" in stats_cell
-    assert "margin-top: -54px" not in stats
-    assert "padding-top: clamp(36px, 5vw, 64px)" in stats
 
     report = source("sections/report-feature.liquid")
     assert ".sl-report__card {" in report
@@ -462,17 +455,21 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     assert "Legacy font picker" in font_setting["label"]
     assert "Archivo carries display" in typography["settings"][-1]["content"]
     assert "IBM Plex Mono" in typography["settings"][-1]["content"]
-    assert 'family=Archivo:wght@400;500;600;700;800' in layout
-    assert "family=IBM+Plex+Mono" in layout
-    assert "fonts.googleapis.com" in layout
-    assert "fonts.gstatic.com" in layout
+    # The faces are self-hosted theme assets now — no third-party sheet.
+    # tests/test_storefront_design_system.py holds the files + preloads;
+    # these pins hold the declarations.
+    assert 'font-family: "Archivo";' in layout
+    assert 'font-family: "IBM Plex Mono";' in layout
+    assert "fonts.googleapis.com" not in layout
+    assert "fonts.gstatic.com" not in layout
     assert '"Archivo"' in base_css
     assert '"IBM Plex Mono"' in base_css
     assert "--sl-font-display" in base_css
     assert "font_face" not in layout
     assert "font_modify" not in layout
 
-    loaded_weights = {400, 500, 600, 700, 800, 900}
+    # The variable Archivo file carries 400-800; Plex Mono ships 400 + 500.
+    loaded_weights = {400, 500, 600, 700, 800}
     used_weights = {
         int(weight)
         for path in THEME.rglob("*")
@@ -499,7 +496,7 @@ def test_storefront_account_and_pro_actions_follow_the_app_session():
     comparison = source("sections/comparison.liquid")
     plans = source("sections/plans-band.liquid")
     banner = source("sections/cta-banner.liquid")
-    product = source("sections/main-product.liquid")
+    product = source("sections/main-product-membership.liquid")
     product_card = source("snippets/product-card.liquid")
     footer = source("sections/footer.liquid")
     faq = INDEX["sections"]["faq"]["blocks"]["q_pro_unlock"]["settings"]["answer"]

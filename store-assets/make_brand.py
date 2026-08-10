@@ -235,7 +235,10 @@ def main() -> None:
     # excludes them from the upload anyway.
     ship = {
         "caddieinsight-logo.png": (STATIC, THEME),
-        "caddieinsight-logo-inverse.png": (STATIC, THEME),
+        # The inverse lockup is an app asset (service-worker precache); the
+        # theme's night surfaces invert the standard mark with a CSS filter,
+        # so nothing in the theme references this file.
+        "caddieinsight-logo-inverse.png": (STATIC,),
         "apple-touch-icon.png": (STATIC,),
         "pwa-icon.svg": (STATIC,),
         "pwa-icon-192.png": (STATIC,),

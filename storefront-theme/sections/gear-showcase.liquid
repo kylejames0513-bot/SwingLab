@@ -66,10 +66,7 @@
               {%- endif -%}
               <h3 class="sl-gear__title">{{ product.title }}</h3>
               <p class="sl-gear__price">
-                {{ product.price | money }}
-                {%- if product.price_varies == false and product.compare_at_price_varies == false and product.compare_at_price > product.price %}
-                  <s class="sl-price-compare">{{ product.compare_at_price | money }}</s>
-                {%- endif -%}
+                {%- render 'price', product: product -%}
               </p>
             </div>
           </a>
@@ -103,7 +100,7 @@
 }
 .sl-gear__sub {
   margin: 10px auto 0;
-  font-size: 16px;
+  font-size: var(--sl-text-base);
   line-height: 1.55;
   color: var(--sl-ink-soft);
   max-width: 56ch;
@@ -166,14 +163,14 @@
   gap: 6px;
 }
 .sl-gear__chips .sl-chip {
-  font-size: 10px;
+  font-size: var(--sl-text-xs);
   padding: 3px 10px;
 }
 .sl-gear__title {
   position: relative;
   margin: 2px 0 0;
   padding-bottom: 13px;
-  font-size: 18px;
+  font-size: var(--sl-text-lg);
   font-weight: 700;
   letter-spacing: -0.01em;
   color: var(--sl-green);
@@ -186,7 +183,7 @@
   bottom: 0;
   width: 34px;
   height: 7px;
-  border-top: 2px solid rgba(20, 71, 44, 0.3);
+  border-top: 2px solid var(--sl-arc);
   border-radius: 50% 50% 0 0 / 100% 100% 0 0;
 }
 .sl-gear__card:hover .sl-gear__title {
@@ -199,7 +196,7 @@
 .sl-gear__price {
   margin: auto 0 0;
   padding-top: 8px;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: var(--sl-ink-soft);
@@ -213,10 +210,10 @@
   padding: 1px 6px;
 }
 
-@media (min-width: 700px) {
+@media (min-width: 750px) {
   .sl-gear__grid { grid-template-columns: repeat(2, 1fr); }
 }
-@media (min-width: 1020px) {
+@media (min-width: 1000px) {
   .sl-gear__grid { grid-template-columns: repeat(3, 1fr); gap: 24px; }
 }
 @media (max-width: 749px) {
@@ -246,7 +243,7 @@
   .sl-gear__card:hover {
     transform: translateY(-4px);
     box-shadow: var(--sl-shadow-card-hover);
-    border-color: rgba(20, 71, 44, 0.35);
+    border-color: rgba(var(--sl-green-rgb), 0.35);
   }
 }
 {% endstylesheet %}

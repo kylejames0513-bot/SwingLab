@@ -1,17 +1,11 @@
+{%- comment -%}
+  Gear and apparel only. Membership products render through
+  templates/product.membership.json -> main-product-membership.liquid.
+{%- endcomment -%}
 {%- assign current = product.selected_or_first_available_variant -%}
 {%- assign main_alt = product.featured_media.alt | default: product.title -%}
-{%- assign selected_selling_plan = product.selected_selling_plan -%}
-{%- assign current_is_lifetime = false -%}
-{%- if current.sku == 'SL-PRO-LIFE' -%}
-  {%- assign current_is_lifetime = true -%}
-{%- endif -%}
 
 {%- liquid
-  assign is_membership = false
-  if product.type == 'Membership'
-    assign is_membership = true
-  endif
-
   # swing-report flag chips, parsed from tags of the form "swinglab:<flag>"
   assign flag_tag_str = ''
   for tag in product.tags
@@ -32,15 +26,15 @@
   endif
 -%}
 
-<div class="sl-wrap sl-product{% if is_membership %} sl-product--pro{% endif %}">
+<div class="sl-wrap sl-product">
   <div class="sl-product-media">
     <div class="sl-main-product__frame">
       {%- if product.featured_media -%}
-        {{ product.featured_media | image_url: width: 1400 | image_tag: class: 'sl-product-img', alt: main_alt, id: 'sl-main-image', widths: '480, 720, 960, 1400', sizes: '(min-width: 960px) min(50vw, 560px), calc(100vw - 48px)' }}
+        {{ product.featured_media | image_url: width: 1400 | image_tag: class: 'sl-product-img', alt: main_alt, id: 'sl-main-image', fetchpriority: 'high', widths: '480, 720, 960, 1400', sizes: '(min-width: 960px) min(50vw, 560px), calc(100vw - 48px)' }}
       {%- else -%}
         <div class="sl-placeholder sl-product-img" aria-hidden="true"></div>
       {%- endif -%}
-      {%- if is_membership == false and product.type != blank -%}
+      {%- if product.type != blank -%}
         <span class="sl-main-product__media-label" aria-hidden="true">{{ product.type | escape }}</span>
       {%- endif -%}
     </div>
@@ -51,6 +45,7 @@
           {%- assign thumb_alt = media.alt | default: product.title -%}
           <button type="button" class="sl-thumb{% if media.id == product.featured_media.id %} is-active{% endif %}"
                   data-full="{{ media | image_url: width: 1400 }}"
+                  data-srcset="{{ media | image_url: width: 480 }} 480w, {{ media | image_url: width: 720 }} 720w, {{ media | image_url: width: 960 }} 960w, {{ media | image_url: width: 1400 }} 1400w"
                   data-alt="{{ thumb_alt | escape }}"
                   aria-label="{{ 'products.product.show_image' | t: number: forloop.index }}"
                   aria-pressed="{% if media.id == product.featured_media.id %}true{% else %}false{% endif %}">
@@ -62,171 +57,9 @@
   </div>
 
   <div class="sl-product-info">
-    {%- if product.type != blank -%}<p class="sl-eyebrow sl-main-product__eyebrow">{{ product.type }}</p>{%- endif -%}
+    {%- if product.type != blank -%}<p class="sl-eyebrow">{{ product.type }}</p>{%- endif -%}
     <h1 class="sl-product-title">{{ product.title }}</h1>
 
-    {%- if is_membership -%}
-      {%- comment -%} ------- CaddieInsight Pro membership experience ------- {%- endcomment -%}
-      <p class="sl-product-kicker">{{ 'products.product.pro_kicker' | t }}</p>
-      <p class="sl-price sl-main-product__price-pro" id="sl-price" role="status" aria-live="polite" aria-atomic="true">{{ current.price | money }}</p>
-
-      <ul class="sl-product-benefits" aria-label="{{ 'products.product.includes' | t }}">
-        <li>{{ 'products.product.benefit_unlimited' | t }}</li>
-        <li>{{ 'products.product.benefit_report' | t }}</li>
-        <li>{{ 'products.product.benefit_video' | t }}</li>
-        <li>{{ 'products.product.benefit_unlock' | t }}</li>
-      </ul>
-
-      <div data-app-pro-sales-link>
-      {% form 'product', product, class: 'sl-product-form' %}
-        {%- if product.variants.size > 1 -%}
-          <label class="sl-label" for="sl-variant">{{ 'products.product.plan' | t }}</label>
-          <select name="id" id="sl-variant" class="sl-select">
-            {%- for variant in product.variants -%}
-              <option value="{{ variant.id }}"
-                      {% if variant.id == current.id %}selected{% endif %}
-                      {% unless variant.available %}disabled{% endunless %}
-                      data-price="{{ variant.price | money }}"
-                      data-sku="{{ variant.sku | escape }}"
-                      data-available="{{ variant.available }}">
-                {{ variant.title }} – {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
-              </option>
-            {%- endfor -%}
-          </select>
-        {%- else -%}
-          <input type="hidden" name="id" value="{{ current.id }}">
-        {%- endif -%}
-
-        <div id="sl-selling-plan-options" data-variant-id="{{ current.id }}">
-        {%- if current.selling_plan_allocations.size > 0 and current_is_lifetime == false -%}
-          {%- assign selected_plan_available = false -%}
-          {%- for allocation in current.selling_plan_allocations -%}
-            {%- if selected_selling_plan and selected_selling_plan.id == allocation.selling_plan.id -%}
-              {%- assign selected_plan_available = true -%}
-            {%- endif -%}
-          {%- endfor -%}
-
-          <fieldset class="sl-plan-set">
-            <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
-
-            {%- unless current.requires_selling_plan -%}
-              <label class="sl-plan-option">
-                <input type="radio" name="selling_plan" value="" {% unless selected_plan_available %}checked{% endunless %}>
-                <span>
-                  <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
-                  <small>{{ 'products.product.one_time_help' | t }}</small>
-                </span>
-              </label>
-            {%- endunless -%}
-
-            {%- assign plan_checked = false -%}
-            {%- for allocation in current.selling_plan_allocations -%}
-              {%- assign selling_plan = allocation.selling_plan -%}
-              {%- assign selling_plan_display_name = selling_plan.name -%}
-              {%- assign selling_plan_name_lower = selling_plan.name | downcase -%}
-              {%- if selling_plan_name_lower contains 'deliver every month' -%}
-                {%- assign selling_plan_display_name = 'Auto-renew monthly' -%}
-              {%- elsif selling_plan_name_lower contains 'deliver every year' -%}
-                {%- assign selling_plan_display_name = 'Auto-renew yearly' -%}
-              {%- endif -%}
-              {%- assign is_checked = false -%}
-              {%- if selected_plan_available and selected_selling_plan.id == selling_plan.id -%}
-                {%- assign is_checked = true -%}
-              {%- elsif current.requires_selling_plan and selected_plan_available == false and plan_checked == false -%}
-                {%- assign is_checked = true -%}
-              {%- endif -%}
-
-              <label class="sl-plan-option">
-                <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if is_checked %}checked{% endif %}>
-                <span>
-                  <strong>{{ selling_plan_display_name }}</strong>
-                  {%- if selling_plan.description != blank -%}
-                    <small>{{ selling_plan.description }}</small>
-                  {%- endif -%}
-                </span>
-              </label>
-
-              {%- if is_checked -%}
-                {%- assign plan_checked = true -%}
-              {%- endif -%}
-            {%- endfor -%}
-          </fieldset>
-        {%- endif -%}
-        </div>
-
-        <aside class="sl-main-product__founders" id="sl-founders-note"{% unless current_is_lifetime %} hidden{% endunless %}>
-          <p class="sl-main-product__founders-label">{{ section.settings.founders_label | default: 'First 100 members · Never renews' }}</p>
-          <p class="sl-main-product__founders-body">{{ section.settings.founders_body | default: 'One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.' }}</p>
-        </aside>
-
-        {%- for variant in product.variants -%}
-          {%- assign variant_is_lifetime = false -%}
-          {%- if variant.sku == 'SL-PRO-LIFE' -%}
-            {%- assign variant_is_lifetime = true -%}
-          {%- endif -%}
-          <template data-sl-selling-plan-template="{{ variant.id }}">
-            {%- if variant.selling_plan_allocations.size > 0 and variant_is_lifetime == false -%}
-              <fieldset class="sl-plan-set">
-                <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
-
-                {%- unless variant.requires_selling_plan -%}
-                  <label class="sl-plan-option">
-                    <input type="radio" name="selling_plan" value="" checked>
-                    <span>
-                      <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
-                      <small>{{ 'products.product.one_time_help' | t }}</small>
-                    </span>
-                  </label>
-                {%- endunless -%}
-
-                {%- for allocation in variant.selling_plan_allocations -%}
-                  {%- assign selling_plan = allocation.selling_plan -%}
-                  {%- assign selling_plan_display_name = selling_plan.name -%}
-                  {%- assign selling_plan_name_lower = selling_plan.name | downcase -%}
-                  {%- if selling_plan_name_lower contains 'deliver every month' -%}
-                    {%- assign selling_plan_display_name = 'Auto-renew monthly' -%}
-                  {%- elsif selling_plan_name_lower contains 'deliver every year' -%}
-                    {%- assign selling_plan_display_name = 'Auto-renew yearly' -%}
-                  {%- endif -%}
-                  <label class="sl-plan-option">
-                    <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if variant.requires_selling_plan and forloop.first %}checked{% endif %}>
-                    <span>
-                      <strong>{{ selling_plan_display_name }}</strong>
-                      {%- if selling_plan.description != blank -%}
-                        <small>{{ selling_plan.description }}</small>
-                      {%- endif -%}
-                    </span>
-                  </label>
-                {%- endfor -%}
-              </fieldset>
-            {%- endif -%}
-          </template>
-        {%- endfor -%}
-
-        <button type="submit" class="sl-btn sl-btn--primary sl-add"
-                data-add-label="{{ 'products.product.add_to_cart' | t | escape }}"
-                data-sold-out-label="{{ 'products.product.sold_out' | t | escape }}"
-                {% unless current.available %}disabled{% endunless %}>
-          {% if current.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
-        </button>
-        {{ form | payment_button }}
-      {% endform %}
-
-      <div class="sl-product-note">
-        <strong>{{ 'products.product.unlock_heading' | t }}</strong>
-        <p>{{ 'products.product.unlock_body' | t }}</p>
-        <a href="https://app.caddieinsight.com">{{ 'products.product.open_app' | t }}</a>
-      </div>
-      </div>
-
-      <div class="sl-product-note" data-app-pro-member-only hidden>
-        <strong>{{ 'products.product.active_heading' | t }}</strong>
-        <p>{{ 'products.product.active_body' | t }}</p>
-        <a href="https://app.caddieinsight.com">{{ 'products.product.open_game_plan' | t }}</a>
-      </div>
-
-    {%- else -%}
-      {%- comment -%} ------- Gear and apparel experience ------- {%- endcomment -%}
       {%- capture flag_chips -%}
         {%- for tag in flag_tags -%}
           {%- capture flag_label -%}
@@ -253,7 +86,7 @@
 
       {% form 'product', product, class: 'sl-product-form sl-main-product__gear-form' %}
         {%- if product.variants.size > 1 -%}
-          <label class="sl-label" for="sl-variant">Options</label>
+          <label class="sl-label" for="sl-variant">{{ 'products.product.options_label' | t }}</label>
           <select name="id" id="sl-variant" class="sl-select">
             {%- for variant in product.variants -%}
               {%- assign v_save = 0 -%}
@@ -276,7 +109,7 @@
 
         <div class="sl-main-product__buy">
           <div class="sl-main-product__qty">
-            <label class="sl-label" for="sl-qty">Quantity</label>
+            <label class="sl-label" for="sl-qty">{{ 'products.product.quantity_label' | t }}</label>
             <input id="sl-qty" class="sl-qty" type="number" name="quantity" value="1" min="1" inputmode="numeric">
           </div>
 
@@ -290,31 +123,21 @@
         {{ form | payment_button }}
       {% endform %}
 
-      <ul class="sl-main-product__trust" aria-label="Ordering details">
-        {%- if section.settings.trust_1 != blank -%}
-          <li>
-            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M3 7.5 12 3l9 4.5v9L12 21l-9-4.5z"/><path d="m3 7.5 9 4.5 9-4.5"/><path d="M12 12v9"/></svg>
-            <span>{{ section.settings.trust_1 }}</span>
-          </li>
-        {%- endif -%}
-        {%- if section.settings.trust_2 != blank -%}
-          <li>
-            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2.5 5v6h6"/><path d="M4.6 15a8.5 8.5 0 1 0 1.6-8.6L2.5 11"/></svg>
-            <span>{{ section.settings.trust_2 }}</span>
-          </li>
-        {%- endif -%}
-        {%- if section.settings.trust_3 != blank -%}
-          <li>
-            <svg class="sl-main-product__trust-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="3.5"/><path d="M12 3.5V7m0 10v3.5M3.5 12H7m10 0h3.5"/></svg>
-            <span>{{ section.settings.trust_3 }}</span>
-          </li>
-        {%- endif -%}
-      </ul>
-    {%- endif -%}
+      {%- assign product_trust_label = 'products.product.ordering_details' | t -%}
+      {% render 'trust-rail',
+        label: product_trust_label,
+        class: 'sl-trust--stack',
+        icon_1: 'box',
+        text_1: section.settings.trust_1,
+        icon_2: 'refresh',
+        text_2: section.settings.trust_2,
+        icon_3: 'target',
+        text_3: section.settings.trust_3
+      %}
 
     {%- if product.description != blank -%}
       <div class="sl-product-desc sl-main-product__desc">
-        <p class="sl-mono-label sl-main-product__desc-label">{% if is_membership %}Membership details{% else %}Product notes{% endif %}</p>
+        <p class="sl-mono-label sl-main-product__desc-label">{{ 'products.product.product_notes' | t }}</p>
         <div class="sl-rte">{{ product.description }}</div>
       </div>
     {%- endif -%}
@@ -390,14 +213,10 @@
 <script>
   (function () {
     var select = document.getElementById('sl-variant');
-    var price = document.getElementById('sl-price');
     var priceCurrent = document.getElementById('sl-price-current');
     var priceCompare = document.getElementById('sl-price-compare');
     var saveBadge = document.getElementById('sl-badge-save');
-    var planContainer = document.getElementById('sl-selling-plan-options');
-    var foundersNote = document.getElementById('sl-founders-note');
     var addButton = document.querySelector('.sl-product-form .sl-add');
-    var planSelections = {};
 
     function updateAddButton(option) {
       if (!addButton || !option) return;
@@ -408,42 +227,11 @@
         : addButton.getAttribute('data-sold-out-label');
     }
 
-    function rememberPlanSelection() {
-      if (!planContainer || !planContainer.dataset.variantId) return;
-      var checked = planContainer.querySelector('input[name="selling_plan"]:checked');
-      planSelections[planContainer.dataset.variantId] = checked ? checked.value : '';
-    }
-
-    function renderSellingPlans(variantId) {
-      if (!planContainer) return;
-      rememberPlanSelection();
-      var template = document.querySelector(
-        'template[data-sl-selling-plan-template="' + variantId + '"]'
-      );
-      planContainer.replaceChildren();
-      planContainer.dataset.variantId = variantId;
-      if (!template) return;
-      planContainer.appendChild(template.content.cloneNode(true));
-
-      var remembered = planSelections[variantId];
-      if (remembered === undefined) return;
-      var radios = planContainer.querySelectorAll('input[name="selling_plan"]');
-      radios.forEach(function (radio) {
-        radio.checked = radio.value === remembered;
-      });
-      if (!planContainer.querySelector('input[name="selling_plan"]:checked') && radios.length) {
-        radios[0].checked = true;
-      }
-    }
-
     if (select) {
       select.addEventListener('change', function () {
         var opt = select.options[select.selectedIndex];
         if (!opt) return;
-        renderSellingPlans(opt.value);
         updateAddButton(opt);
-        if (foundersNote) foundersNote.hidden = (opt.dataset.sku || '') !== 'SL-PRO-LIFE';
-        if (price && opt.dataset.price) price.textContent = opt.dataset.price;
         if (priceCurrent && opt.dataset.price) priceCurrent.textContent = opt.dataset.price;
         if (priceCompare && saveBadge) {
           if (opt.dataset.compare) {
@@ -465,8 +253,10 @@
         if (!main) return;
         main.src = btn.dataset.full;
         main.alt = btn.dataset.alt || '';
-        main.removeAttribute('srcset');
-        main.removeAttribute('sizes');
+        /* Swap the whole responsive candidate set. The old handler removed
+           srcset/sizes, permanently downgrading the gallery to one fixed
+           1400px download after the first thumbnail click. */
+        if (btn.dataset.srcset) main.setAttribute('srcset', btn.dataset.srcset);
         thumbs.forEach(function (thumb) {
           var selected = thumb === btn;
           thumb.classList.toggle('is-active', selected);
@@ -478,41 +268,8 @@
 </script>
 
 {% stylesheet %}
-/* ---- shared by both experiences ---- */
-.sl-product--pro {
-  align-items: start;
-}
-
-.sl-product--pro .sl-product-info {
-  width: 100%;
-}
-
-.sl-product-media { min-width: 0; }
-
-.sl-main-product__eyebrow {
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  color: var(--sl-orange);
-  margin-bottom: 10px;
-}
-
-/* gallery: one framed window, image zooms quietly inside the crop */
-.sl-main-product__frame {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-lg);
-  background: var(--sl-bg-card);
-  line-height: 0;
-  box-shadow: var(--sl-shadow-card);
-}
-
-.sl-main-product__frame .sl-product-img {
-  border: 0;
-  border-radius: 0;
-}
+/* Gallery frame/thumbs and the description block are shared components in
+   assets/base.css. This sheet holds only the gear buy box. */
 
 .sl-main-product__media-label {
   position: absolute;
@@ -525,13 +282,13 @@
   max-width: calc(100% - 28px);
   padding: 0 10px;
   overflow: hidden;
-  border: 1px solid rgba(245, 242, 233, 0.34);
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.34);
   border-radius: var(--sl-radius-control);
-  background: rgba(7, 19, 13, 0.78);
-  box-shadow: 0 10px 24px -12px rgba(7, 19, 13, 0.9);
-  color: #f5f2e9;
+  background: rgba(var(--sl-night-rgb), 0.78);
+  box-shadow: 0 10px 24px -12px rgba(var(--sl-night-rgb), 0.9);
+  color: var(--sl-cream);
   font-family: var(--sl-font-mono);
-  font-size: 10px;
+  font-size: var(--sl-text-xs);
   font-weight: 700;
   letter-spacing: 0.14em;
   line-height: 1;
@@ -541,35 +298,6 @@
   pointer-events: none;
   -webkit-backdrop-filter: blur(8px);
   backdrop-filter: blur(8px);
-}
-
-/* thumbnail rail: quiet at rest, unmistakable when active */
-.sl-main-product__thumbs {
-  margin-top: 14px;
-  gap: 10px;
-}
-
-.sl-main-product__thumbs .sl-thumb {
-  border: 1.5px solid var(--sl-border);
-  border-radius: var(--sl-radius-sm);
-  background: var(--sl-bg-card);
-  padding: 2px;
-  opacity: 0.8;
-}
-
-.sl-main-product__thumbs .sl-thumb img {
-  border-radius: calc(var(--sl-radius-sm) - 3px);
-}
-
-.sl-main-product__thumbs .sl-thumb:hover {
-  opacity: 1;
-  border-color: rgba(20, 71, 44, 0.45);
-}
-
-.sl-main-product__thumbs .sl-thumb.is-active {
-  opacity: 1;
-  border-color: var(--sl-green-btn);
-  box-shadow: 0 0 0 1px var(--sl-green-btn);
 }
 
 /* ---- gear / apparel ---- */
@@ -588,19 +316,10 @@
   gap: 4px 10px;
   font-variant-numeric: tabular-nums;
 }
-
-.sl-main-product__price .sl-price-compare {
-  margin-left: 0;
-}
-
-.sl-main-product__price .sl-badge-save {
-  align-self: center;
-}
-
+.sl-main-product__price .sl-price-compare { margin-left: 0; }
+.sl-main-product__price .sl-badge-save { align-self: center; }
 /* the author display on .sl-badge-save would defeat [hidden]; restore it */
-.sl-main-product__price [hidden] {
-  display: none !important;
-}
+.sl-main-product__price [hidden] { display: none !important; }
 
 /* buy zone: quantity, add-to-cart, and the payment button share one column */
 .sl-main-product__buy {
@@ -609,12 +328,10 @@
   gap: 12px;
   width: min(100%, 440px);
 }
-
 .sl-main-product__buy .sl-add {
   flex: 1 1 auto;
   min-width: 0;
 }
-
 .sl-main-product__qty .sl-qty {
   display: block;
   width: 84px;
@@ -624,264 +341,13 @@
   .sl-main-product__gear-form .sl-select { width: min(100%, 440px); }
 }
 
-.sl-product-form .shopify-payment-button {
-  width: 100%;
-  max-width: min(100%, 440px);
-}
-
-.sl-main-product__trust {
-  list-style: none;
-  width: 100%;
-  max-width: 440px;
-  margin: 6px 0 28px;
-  padding: 16px 0 0;
-  border-top: 1px solid var(--sl-border);
-  display: grid;
-  gap: 10px;
-}
-
-.sl-main-product__trust li {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  font-family: var(--sl-font-mono);
-  font-size: 11.5px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--sl-ink-soft);
-  line-height: 1.6;
-}
-
-.sl-main-product__trust-icon {
-  flex: none;
-  width: 15px;
-  height: 15px;
-  margin-top: 2px;
-  color: var(--sl-green-btn);
-}
-
-/* ---- description ---- */
-.sl-main-product__desc-label {
-  margin: 0 0 14px;
-}
-
-.sl-main-product__desc .sl-rte {
-  max-width: 60ch;
-}
-
-/* ---- Pro membership ---- */
-.sl-product-kicker {
-  max-width: 560px;
-  margin: 0 0 16px;
-  font-size: 18px;
-  line-height: 1.55;
-  color: var(--sl-ink-soft);
-}
-
-.sl-main-product__price-pro {
-  font-size: clamp(28px, 2.6vw, 36px);
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  font-variant-numeric: tabular-nums;
-  margin: 0 0 20px;
-}
-
-.sl-product-benefits {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-auto-rows: 1fr;
-  gap: 10px;
-  margin: 0 0 24px;
-  padding: 0;
-  list-style: none;
-}
-
-.sl-product-benefits li {
-  position: relative;
-  padding: 12px 14px 12px 38px;
-  border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-sm);
-  background: rgba(255, 253, 249, 0.72);
-  color: var(--sl-ink-soft);
-  line-height: 1.4;
-}
-
-.sl-product-benefits li::before {
-  content: "";
-  position: absolute;
-  left: 15px;
-  top: 17px;
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--sl-orange);
-}
-
-.sl-product-form {
-  width: 100%;
-}
-
-.sl-product--pro .sl-product-form .shopify-payment-button {
-  max-width: 520px;
-}
-
-.sl-product--pro .sl-product-form {
-  align-items: stretch;
-}
-
-.sl-product--pro .sl-product-info .sl-select,
-.sl-product--pro .sl-add,
-.sl-product--pro .sl-plan-set,
-.sl-product--pro .sl-main-product__founders,
-.sl-product--pro .sl-product-note {
-  width: 100%;
-  max-width: 520px;
-}
-
-.sl-product--pro .sl-product-benefits,
-.sl-product--pro .sl-product-form {
-  width: 100%;
-  max-width: 520px;
-}
-
-.sl-plan-set {
-  width: 100%;
-  max-width: 440px;
-  padding: 0;
-  margin: 4px 0 2px;
-  border: 0;
-}
-
-.sl-plan-option {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  padding: 13px 14px;
-  margin-top: 10px;
-  border: 1.5px solid var(--sl-border);
-  border-radius: var(--sl-radius-sm);
-  background: var(--sl-bg-card);
-  cursor: pointer;
-  transition: border-color 0.18s ease, background 0.18s ease;
-}
-
-.sl-plan-option:hover {
-  border-color: rgba(20, 71, 44, 0.45);
-}
-
-.sl-plan-option:has(input:checked) {
-  border-color: var(--sl-green-btn);
-  box-shadow: 0 0 0 1px var(--sl-green-btn);
-}
-
-.sl-plan-option input {
-  margin-top: 4px;
-  accent-color: var(--sl-green-btn);
-}
-
-.sl-plan-option strong,
-.sl-plan-option small {
-  display: block;
-}
-
-.sl-plan-option strong {
-  color: var(--sl-green);
-  font-size: 15px;
-}
-
-.sl-plan-option small {
-  margin-top: 3px;
-  color: var(--sl-ink-muted);
-  line-height: 1.35;
-}
-
-/* Founders Pass framing: the terms of the cap, stated like a spec */
-.sl-main-product__founders {
-  margin: 4px 0 2px;
-  padding: 14px 16px;
-  border: 1px solid rgba(232, 114, 12, 0.38);
-  border-radius: var(--sl-radius-sm);
-  background: var(--sl-orange-soft);
-}
-
-.sl-main-product__founders[hidden] {
-  display: none !important;
-}
-
-.sl-main-product__founders-label {
-  margin: 0;
-  font-family: var(--sl-font-mono);
-  font-size: 10.5px;
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-  color: var(--sl-orange);
-}
-
-.sl-main-product__founders-body {
-  margin: 6px 0 0;
-  font-size: 14px;
-  line-height: 1.55;
-  color: var(--sl-ink-soft);
-}
-
-.sl-product-note {
-  max-width: 520px;
-  margin: 18px 0 24px;
-  padding: 18px;
-  border-left: 4px solid var(--sl-orange);
-  background: #fff8ed;
-  border-radius: var(--sl-radius-sm);
-}
-
-.sl-product-note strong {
-  color: var(--sl-green);
-}
-
-.sl-product-note p {
-  margin: 6px 0 8px;
-  color: var(--sl-ink-soft);
-  line-height: 1.55;
-}
-
-.sl-product-note a {
-  font-weight: 700;
-}
-
-@media (prefers-reduced-motion: no-preference) {
-  .sl-main-product__frame .sl-product-img {
-    transition: transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-  .sl-main-product__frame:hover .sl-product-img {
-    transform: scale(1.035);
-  }
-  .sl-main-product__thumbs .sl-thumb {
-    transition: border-color 0.18s ease, opacity 0.18s ease;
-  }
-}
-
 @media (max-width: 749px) {
   .sl-product-info > .sl-eyebrow,
-  .sl-product-title,
-  .sl-product-kicker {
+  .sl-product-title {
     text-align: center;
   }
-  .sl-product--pro .sl-product-form,
-  .sl-product-form {
-    align-items: center;
-  }
-  .sl-product--pro .sl-product-info .sl-select,
-  .sl-product--pro .sl-add,
-  .sl-product--pro .sl-plan-set,
-  .sl-product--pro .sl-product-note,
-  .sl-product--pro .sl-product-benefits,
-  .sl-product--pro .sl-product-form,
-  .sl-product--pro .sl-main-product__founders,
-  .sl-product-note,
-  .sl-main-product__trust {
-    margin-inline: auto;
-  }
+  .sl-product-form { align-items: center; }
+  .sl-trust--stack { margin-inline: auto; text-align: left; }
   .sl-main-product__flags,
   .sl-main-product__price {
     justify-content: center;
@@ -897,11 +363,6 @@
     flex-direction: column;
     align-items: center;
   }
-  .sl-product-note { text-align: center; }
-  .sl-product-benefits,
-  .sl-plan-set,
-  .sl-main-product__founders,
-  .sl-main-product__trust { text-align: left; }
   .sl-main-product__media-label {
     top: 12px;
     left: 50%;
@@ -948,23 +409,6 @@
       "label": "Trust line 3",
       "default": "Matched to your report’s practice focus",
       "info": "Paired with the target icon."
-    },
-    {
-      "type": "header",
-      "content": "Membership products"
-    },
-    {
-      "type": "text",
-      "id": "founders_label",
-      "label": "Founders Pass mono label",
-      "default": "First 100 members · Never renews"
-    },
-    {
-      "type": "textarea",
-      "id": "founders_body",
-      "label": "Founders Pass note",
-      "default": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
-      "info": "Shown only while the Founders Pass variant (SKU SL-PRO-LIFE) is selected."
     }
   ]
 }

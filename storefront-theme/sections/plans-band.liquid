@@ -8,10 +8,13 @@
   assign monthly_live = ''
   assign season_live = ''
   assign founders_live = ''
+  assign coach_live = ''
+  assign coach_yearly_live = ''
   assign season_permo_live = ''
   assign monthly_live_url = ''
   assign season_live_url = ''
   assign founders_live_url = ''
+  assign coach_live_url = ''
   if pro_product != blank
     for variant in pro_product.variants
       if variant.sku == 'SL-PRO-LIFE'
@@ -26,6 +29,11 @@
         assign monthly_cents = variant.price
         assign monthly_live = variant.price | money
         assign monthly_live_url = variant.url
+      elsif variant.sku == 'SL-COACH-1MO'
+        assign coach_live = variant.price | money
+        assign coach_live_url = variant.url
+      elsif variant.sku == 'SL-COACH-12MO'
+        assign coach_yearly_live = variant.price | money
       endif
     endfor
     if monthly_live == ''
@@ -48,7 +56,7 @@
   <span class="sl-plans__arc" aria-hidden="true"></span>
   <div class="sl-wrap">
     <header class="sl-plans__head sl-reveal">
-      <p class="sl-plans__eyebrow">{{ 'homepage.plans.eyebrow' | t }}</p>
+      <p class="sl-eyebrow">{{ 'homepage.plans.eyebrow' | t }}</p>
       <h2 class="sl-plans__title">
         {%- if section.settings.membership_section -%}
           <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}</span>
@@ -65,129 +73,11 @@
       {%- endif -%}
     </header>
 
-    <ul class="sl-plans__grid sl-reveal sl-reveal--d1">
-      {%- for block in section.blocks -%}
-        {%- if block.type == 'plan' -%}
-          {%- liquid
-            assign b = block.settings
-            assign plan_price = ''
-            assign plan_permo = ''
-            assign plan_url = b.url
-            if b.plan == 'season'
-              assign plan_price = season_live
-              assign plan_permo = season_permo_live
-              if plan_url == blank
-                assign plan_url = season_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46811170209964'
-              endif
-              if plan_permo == ''
-                assign plan_permo = '$5.83'
-              endif
-            elsif b.plan == 'founders'
-              assign plan_price = founders_live
-              if plan_url == blank
-                assign plan_url = founders_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46839745282220'
-              endif
-            else
-              assign plan_price = monthly_live
-              if plan_url == blank
-                assign plan_url = monthly_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46811170177196'
-              endif
-            endif
-            if plan_price == ''
-              assign plan_price = b.price_text
-            endif
-            if plan_price == blank
-              case b.plan
-                when 'season'
-                  assign plan_price = '$69.99'
-                when 'founders'
-                  assign plan_price = '$249'
-                else
-                  assign plan_price = '$9.99'
-              endcase
-            endif
-            # Packaged card art ships as pre-encoded webp rungs (480/960/1536),
-            # cut by store-assets/plan_card_webp.py. Theme webps must be served
-            # whole via asset_url: asset_img_url is the legacy sizing filter,
-            # it does not process webp, and it emits the no-image placeholder —
-            # the same trap hero.liquid documents. So the responsive candidates
-            # cannot be cut on the CDN and are baked instead. The source
-            # photographs (caddieinsight-pro-card-v2.png and
-            # caddieinsight-founders-card-v2.png) stay in assets/ as the record
-            # behind them, but nothing here requests them: that was 3.7 MB of
-            # uncompressed PNG on the section where someone decides to pay.
-            # Every name is written out whole so theme-check's MissingAsset can
-            # still verify the binding.
-            #
-            # These hold the FILENAME; asset_url is applied at each use site
-            # below. Piping here instead reads better but trips theme-check's
-            # RemoteAsset warning: it inspects the src attribute literally, and
-            # a bare `{{ art_md }}` gives it no way to know the value already
-            # went through asset_url, so it assumes a remote host. Newer
-            # theme-check follows the assignment; the pinned 3.58.2 in CI does
-            # not, and the workflow runs --fail-level warning.
-            assign art_sm = 'caddieinsight-pro-card-v2-480.webp'
-            assign art_md = 'caddieinsight-pro-card-v2-960.webp'
-            assign art_lg = 'caddieinsight-pro-card-v2-1536.webp'
-            if b.plan == 'founders'
-              assign art_sm = 'caddieinsight-founders-card-v2-480.webp'
-              assign art_md = 'caddieinsight-founders-card-v2-960.webp'
-              assign art_lg = 'caddieinsight-founders-card-v2-1536.webp'
-            endif
-          -%}
-          <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
-            <div class="sl-plans__media">
-              {%- if b.image -%}
-                <img
-                  src="{{ b.image | image_url: width: 960 }}"
-                  srcset="{{ b.image | image_url: width: 480 }} 480w, {{ b.image | image_url: width: 960 }} 960w, {{ b.image | image_url: width: 1536 }} 1536w"
-                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
-                  width="{{ b.image.width }}"
-                  height="{{ b.image.height }}"
-                  alt=""
-                  loading="lazy"
-                  decoding="async">
-              {%- else -%}
-                <img
-                  src="{{ art_md | asset_url }}"
-                  srcset="{{ art_sm | asset_url }} 480w, {{ art_md | asset_url }} 960w, {{ art_lg | asset_url }} 1536w"
-                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
-                  width="1536"
-                  height="1024"
-                  alt=""
-                  loading="lazy"
-                  decoding="async">
-              {%- endif -%}
-            </div>
-            <div class="sl-plans__card-body">
-              {%- if b.badge != blank -%}<p class="sl-plans__badge">{{ b.badge }}</p>{%- endif -%}
-              <h3 class="sl-plans__name">{{ b.name | default: 'CaddieInsight Pro' }}</h3>
-              <p class="sl-plans__price">
-                <span class="sl-plans__amount">{{ plan_price }}</span>
-                {%- if b.term != blank -%}<span class="sl-plans__term">{{ b.term }}</span>{%- endif -%}
-                {%- if b.show_save -%}<span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{%- endif -%}
-              </p>
-              {%- if b.plan == 'season' -%}
-                <p class="sl-plans__permo">{{ 'homepage.plans.permo' | t: amount: plan_permo }}</p>
-              {%- endif -%}
-              {%- if b.description != blank -%}<p class="sl-plans__desc">{{ b.description }}</p>{%- endif -%}
-              {%- if b.note != blank -%}<p class="sl-plans__note">{{ b.note }}</p>{%- endif -%}
-              <a class="sl-btn{% if b.featured %} sl-plans__cta--featured{% else %} sl-btn--outline{% endif %} sl-plans__cta" href="{{ plan_url }}">{{ b.cta_label | default: 'Get Pro' }}</a>
-            </div>
-          </li>
-        {%- endif -%}
-      {%- endfor -%}
-    </ul>
-
+    {%- comment -%}
+      The free entry point leads. The old order rendered Free last, after
+      all three paid tiers — the product's actual on-ramp buried under the
+      things it upsells to.
+    {%- endcomment -%}
     {%- for block in section.blocks -%}
       {%- if block.type == 'free_band' -%}
         {%- liquid
@@ -245,6 +135,153 @@
       {%- endif -%}
     {%- endfor -%}
 
+    <ul class="sl-plans__grid sl-reveal sl-reveal--d1">
+      {%- for block in section.blocks -%}
+        {%- if block.type == 'plan' -%}
+          {%- liquid
+            assign b = block.settings
+            assign plan_price = ''
+            assign plan_permo = ''
+            assign plan_yearly = ''
+            assign plan_url = b.url
+            if b.plan == 'season'
+              assign plan_price = season_live
+              assign plan_permo = season_permo_live
+              if plan_url == blank
+                assign plan_url = season_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46811170209964'
+              endif
+              if plan_permo == ''
+                assign plan_permo = '$5.83'
+              endif
+            elsif b.plan == 'founders'
+              assign plan_price = founders_live
+              if plan_url == blank
+                assign plan_url = founders_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46839745282220'
+              endif
+            elsif b.plan == 'coach'
+              assign plan_price = coach_live
+              assign plan_yearly = coach_yearly_live
+              if plan_url == blank
+                assign plan_url = coach_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46906759741612'
+              endif
+              if plan_price == ''
+                assign plan_price = '$19.99'
+              endif
+              if plan_yearly == ''
+                assign plan_yearly = '$139.99'
+              endif
+            else
+              assign plan_price = monthly_live
+              assign plan_yearly = season_live
+              if plan_url == blank
+                assign plan_url = monthly_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46811170177196'
+              endif
+              if plan_yearly == ''
+                assign plan_yearly = '$69.99'
+              endif
+            endif
+            if plan_price == ''
+              assign plan_price = b.price_text
+            endif
+            if plan_price == blank
+              case b.plan
+                when 'season'
+                  assign plan_price = '$69.99'
+                when 'founders'
+                  assign plan_price = '$249'
+                else
+                  assign plan_price = '$9.99'
+              endcase
+            endif
+            # Packaged card art ships as pre-encoded webp rungs (480/960/1536),
+            # cut by store-assets/plan_card_webp.py. Theme webps must be served
+            # whole via asset_url: asset_img_url is the legacy sizing filter,
+            # it does not process webp, and it emits the no-image placeholder —
+            # the same trap hero.liquid documents. So the responsive candidates
+            # cannot be cut on the CDN and are baked instead. The source
+            # photographs (caddieinsight-pro-card-v2.png and
+            # caddieinsight-founders-card-v2.png) stay in assets/ as the record
+            # behind them, but nothing here requests them: that was 3.7 MB of
+            # uncompressed PNG on the section where someone decides to pay.
+            # Every name is written out whole so theme-check's MissingAsset can
+            # still verify the binding.
+            #
+            # These hold the FILENAME; asset_url is applied at each use site
+            # below. Piping here instead reads better but trips theme-check's
+            # RemoteAsset warning: it inspects the src attribute literally, and
+            # a bare `{{ art_md }}` gives it no way to know the value already
+            # went through asset_url, so it assumes a remote host. Newer
+            # theme-check follows the assignment; the pinned 3.58.2 in CI does
+            # not, and the workflow runs --fail-level warning.
+            assign art_sm = 'caddieinsight-pro-card-v2-480.webp'
+            assign art_md = 'caddieinsight-pro-card-v2-960.webp'
+            assign art_lg = 'caddieinsight-pro-card-v2-1536.webp'
+            # coach reuses the pro card art — same product family
+            if b.plan == 'founders'
+              assign art_sm = 'caddieinsight-founders-card-v2-480.webp'
+              assign art_md = 'caddieinsight-founders-card-v2-960.webp'
+              assign art_lg = 'caddieinsight-founders-card-v2-1536.webp'
+            endif
+          -%}
+          <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
+            <div class="sl-plans__media">
+              {%- if b.image -%}
+                <img
+                  src="{{ b.image | image_url: width: 960 }}"
+                  srcset="{{ b.image | image_url: width: 480 }} 480w, {{ b.image | image_url: width: 960 }} 960w, {{ b.image | image_url: width: 1536 }} 1536w"
+                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
+                  width="{{ b.image.width }}"
+                  height="{{ b.image.height }}"
+                  alt=""
+                  loading="lazy"
+                  decoding="async">
+              {%- else -%}
+                <img
+                  src="{{ art_md | asset_url }}"
+                  srcset="{{ art_sm | asset_url }} 480w, {{ art_md | asset_url }} 960w, {{ art_lg | asset_url }} 1536w"
+                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
+                  width="1536"
+                  height="1024"
+                  alt=""
+                  loading="lazy"
+                  decoding="async">
+              {%- endif -%}
+            </div>
+            <div class="sl-plans__card-body">
+              {%- if b.badge != blank -%}<p class="sl-plans__badge">{{ b.badge }}</p>{%- endif -%}
+              <h3 class="sl-plans__name">{{ b.name | default: 'CaddieInsight Pro' }}</h3>
+              <p class="sl-plans__price">
+                <span class="sl-plans__amount">{{ plan_price }}</span>
+                {%- if b.term != blank -%}<span class="sl-plans__term">{{ b.term }}</span>{%- endif -%}
+                {%- if b.show_save -%}<span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{%- endif -%}
+              </p>
+              {%- if b.plan == 'season' -%}
+                <p class="sl-plans__permo">{{ 'homepage.plans.permo' | t: amount: plan_permo }}</p>
+              {%- endif -%}
+              {%- if plan_yearly != '' and plan_yearly != blank -%}
+                <p class="sl-plans__permo">{{ 'homepage.plans.yearly_line' | t: amount: plan_yearly }}{% if b.show_save %} <span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{% endif %}</p>
+              {%- endif -%}
+              {%- if b.description != blank -%}<p class="sl-plans__desc">{{ b.description }}</p>{%- endif -%}
+              {%- if b.note != blank -%}<p class="sl-plans__note">{{ b.note }}</p>{%- endif -%}
+              <a class="sl-btn{% if b.featured %} sl-plans__cta--featured{% else %} sl-btn--outline{% endif %} sl-plans__cta" href="{{ plan_url }}">{{ b.cta_label | default: 'Get Pro' }}</a>
+            </div>
+          </li>
+        {%- endif -%}
+      {%- endfor -%}
+    </ul>
+
     {%- if section.settings.footnote != blank -%}
       <p class="sl-plans__footnote">{{ section.settings.footnote }}</p>
     {%- endif -%}
@@ -259,8 +296,8 @@
   padding-bottom: var(--sl-section-space);
   background:
     radial-gradient(circle at 16% 8%, rgba(37, 111, 70, 0.22), transparent 34%),
-    #06110c;
-  color: #f5f2e9;
+    var(--sl-night);
+  color: var(--sl-cream);
 }
 /* one faint quarter-sweep, the same pendulum ghost the CTA banner carries */
 .sl-plans__arc {
@@ -270,7 +307,7 @@
   width: 660px;
   aspect-ratio: 1;
   border: 1.5px solid transparent;
-  border-bottom-color: rgba(245, 242, 233, 0.14);
+  border-bottom-color: rgba(var(--sl-cream-rgb), 0.14);
   border-radius: 50%;
   transform: rotate(-12deg);
   pointer-events: none;
@@ -281,19 +318,11 @@
   margin-inline: auto;
   text-align: center;
 }
-.sl-plans__eyebrow {
-  margin: 0 0 14px;
-  color: #ff9a42;
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-transform: uppercase;
-}
+.sl-plans .sl-eyebrow { color: var(--sl-accent-hover); }
 .sl-plans__title {
   max-width: 14ch;
   margin: 0 auto;
-  color: #f5f2e9;
+  color: var(--sl-cream);
   font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
   font-weight: 700;
@@ -308,7 +337,7 @@
   font-weight: 400;
   line-height: 1.55;
   letter-spacing: -0.012em;
-  color: rgba(245, 242, 233, 0.72);
+  color: rgba(var(--sl-cream-rgb), 0.72);
   text-align: center;
   text-wrap: pretty;
 }
@@ -331,13 +360,13 @@
   flex-direction: column;
   overflow: hidden;
   background: var(--sl-bg-card);
-  border: 1px solid rgba(245, 242, 233, 0.16);
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.16);
   border-radius: var(--sl-radius-lg);
   color: var(--sl-ink);
   box-shadow: 0 34px 76px -38px rgba(0, 0, 0, 0.85);
 }
 .sl-plans__card--featured {
-  border-color: rgba(240, 122, 24, 0.66);
+  border-color: rgba(var(--sl-accent-rgb), 0.66);
   box-shadow: 0 44px 92px -36px rgba(0, 0, 0, 0.95);
 }
 /* the featured card's kinetic hairline, entering from the left edge */
@@ -346,7 +375,7 @@
   display: block;
   flex: none;
   height: 3px;
-  background: linear-gradient(90deg, #f07a18 0%, #f07a18 58%, rgba(240, 122, 24, 0) 100%);
+  background: linear-gradient(90deg, var(--sl-accent) 0%, var(--sl-accent) 58%, rgba(var(--sl-accent-rgb), 0) 100%);
 }
 .sl-plans .sl-plans__card :focus-visible { outline-color: var(--sl-green-btn); }
 .sl-plans__media {
@@ -386,7 +415,7 @@
 }
 .sl-plans__name {
   margin: 0;
-  font-size: clamp(22px, 2vw, 26px);
+  font-size: var(--sl-text-2xl);
   font-weight: 800;
   letter-spacing: -0.015em;
   color: var(--sl-green);
@@ -399,7 +428,7 @@
   gap: 8px 10px;
 }
 .sl-plans__amount {
-  font-size: clamp(30px, 2.6vw, 38px);
+  font-size: var(--sl-text-3xl);
   font-weight: 800;
   letter-spacing: -0.02em;
   line-height: 1;
@@ -408,7 +437,7 @@
 }
 .sl-plans__term {
   font-family: var(--sl-font-mono);
-  font-size: 12px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -418,7 +447,7 @@
 .sl-plans__permo {
   margin: 0;
   font-family: var(--sl-font-mono);
-  font-size: 12px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.04em;
   font-variant-numeric: tabular-nums;
@@ -426,7 +455,7 @@
 }
 .sl-plans__desc {
   margin: 6px 0 0;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   line-height: 1.55;
   color: var(--sl-ink-soft);
   flex: 1;
@@ -437,7 +466,7 @@
   padding-top: 12px;
   border-top: 1px solid var(--sl-border);
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -448,15 +477,15 @@
   margin-top: 16px;
 }
 .sl-plans__cta--featured {
-  border-color: #f07a18;
-  background: #f07a18;
-  color: #06110c;
-  box-shadow: 0 16px 34px -20px rgba(240, 122, 24, 0.9);
+  border-color: var(--sl-accent);
+  background: var(--sl-accent);
+  color: var(--sl-night);
+  box-shadow: 0 16px 34px -20px rgba(var(--sl-accent-rgb), 0.9);
 }
 .sl-plans__cta--featured:hover {
-  border-color: #ff9a42;
-  background: #ff9a42;
-  color: #06110c;
+  border-color: var(--sl-accent-hover);
+  background: var(--sl-accent-hover);
+  color: var(--sl-night);
 }
 .sl-plans__free {
   margin-top: clamp(26px, 4vw, 40px);
@@ -464,7 +493,7 @@
   align-items: center;
   gap: clamp(18px, 3vw, 32px);
   padding: var(--sl-dense-inset) var(--sl-card-inset);
-  border: 1px solid rgba(245, 242, 233, 0.16);
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.16);
   border-radius: var(--sl-radius-lg);
   background: rgba(16, 40, 27, 0.55);
   -webkit-backdrop-filter: blur(14px);
@@ -476,7 +505,7 @@
 .sl-plans__free-media {
   flex: 0 0 200px;
   overflow: hidden;
-  border: 1px solid rgba(245, 242, 233, 0.18);
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.18);
   border-radius: var(--sl-radius-sm);
   line-height: 0;
 }
@@ -491,17 +520,17 @@
 }
 .sl-plans__free-name {
   margin: 0;
-  font-size: 19px;
+  font-size: var(--sl-text-lg);
   font-weight: 800;
   letter-spacing: -0.01em;
-  color: #f5f2e9;
+  color: var(--sl-cream);
 }
 .sl-plans__free-desc {
   margin: 6px 0 0;
   max-width: 58ch;
-  font-size: 14.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.55;
-  color: rgba(245, 242, 233, 0.7);
+  color: rgba(var(--sl-cream-rgb), 0.7);
   text-wrap: pretty;
 }
 .sl-plans__free-side {
@@ -513,7 +542,7 @@
 }
 .sl-plans__free-price {
   margin: 0;
-  font-size: 26px;
+  font-size: var(--sl-text-2xl);
   font-weight: 800;
   line-height: 1;
   font-variant-numeric: tabular-nums;
@@ -522,29 +551,29 @@
 .sl-plans__free-note {
   margin: 0;
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: rgba(245, 242, 233, 0.6);
+  color: rgba(var(--sl-cream-rgb), 0.6);
 }
 .sl-plans__ghost {
   min-height: 44px;
-  border-color: rgba(245, 242, 233, 0.45);
+  border-color: rgba(var(--sl-cream-rgb), 0.45);
   background: transparent;
-  color: #f5f2e9;
+  color: var(--sl-cream);
 }
 .sl-plans__ghost:hover {
-  border-color: rgba(245, 242, 233, 0.85);
-  background: rgba(245, 242, 233, 0.1);
+  border-color: rgba(var(--sl-cream-rgb), 0.85);
+  background: rgba(var(--sl-cream-rgb), 0.1);
   color: #ffffff;
 }
 .sl-plans__footnote {
   max-width: 62ch;
   margin: 18px auto 0;
-  font-size: 13px;
+  font-size: var(--sl-text-sm);
   line-height: 1.55;
-  color: rgba(245, 242, 233, 0.6);
+  color: rgba(var(--sl-cream-rgb), 0.6);
   text-align: center;
 }
 @media (prefers-reduced-motion: no-preference) {
@@ -556,7 +585,7 @@
     box-shadow: 0 48px 96px -36px rgba(0, 0, 0, 0.98);
   }
 }
-@media (min-width: 1020px) {
+@media (min-width: 1000px) {
   .sl-plans__grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     justify-items: stretch;
@@ -565,7 +594,7 @@
   .sl-plans__card { width: auto; }
   .sl-plans__card--featured { margin-block: -14px; }
 }
-@media (max-width: 1019px) {
+@media (max-width: 999px) {
   .sl-plans__card--featured { order: -1; }
 }
 @media (max-width: 749px) {

@@ -1,7 +1,7 @@
 <section id="{{ section.settings.anchor | default: 'how' }}" class="sl-how">
   <div class="sl-wrap sl-reveal">
     <div class="sl-how__head">
-      <p class="sl-how__eyebrow">{{ 'homepage.method.eyebrow' | t }}</p>
+      <p class="sl-eyebrow">{{ 'homepage.method.eyebrow' | t }}</p>
       <div class="sl-how__intro">
         <h2 class="sl-how__title">{{ section.settings.heading | default: 'A practice loop you can repeat.' }}</h2>
         <p>{{ 'homepage.method.intro' | t }}</p>
@@ -40,15 +40,6 @@
   padding-bottom: clamp(28px, 4vw, 48px);
   border-bottom: 1px solid var(--sl-border);
   text-align: center;
-}
-.sl-how__eyebrow {
-  margin: 0 0 16px;
-  color: var(--sl-orange);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  text-transform: uppercase;
 }
 .sl-how__intro {
   display: grid;
@@ -113,7 +104,7 @@
   bottom: -70px;
   width: 150px;
   height: 150px;
-  border: 1px solid rgba(20, 71, 44, 0.1);
+  border: 1px solid rgba(var(--sl-green-rgb), 0.1);
   border-radius: 50%;
 }
 .sl-step__num {
@@ -122,11 +113,11 @@
   height: 50px;
   display: grid;
   place-items: center;
-  border: 1px solid rgba(232, 114, 12, 0.32);
+  border: 1px solid rgba(var(--sl-accent-rgb), 0.32);
   border-radius: 50%;
   background: #fff7ed;
   font-family: var(--sl-font-mono);
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   font-weight: 500;
   letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
@@ -137,7 +128,7 @@
   margin: 22px 0 10px;
   color: var(--sl-green);
   font-family: var(--sl-font-display);
-  font-size: clamp(20px, 2vw, 23px);
+  font-size: var(--sl-text-xl);
   font-weight: 700;
   letter-spacing: -0.03em;
   text-align: left;
@@ -156,7 +147,7 @@
   padding-top: 14px;
   border-top: 1px solid var(--sl-border);
   font-family: var(--sl-font-mono);
-  font-size: 10.5px;
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -178,20 +169,19 @@
 .sl-how__foot-note {
   margin: 0 auto;
   max-width: 70ch;
-  font-size: 15px;
+  font-size: var(--sl-text-base);
   line-height: 1.6;
   color: var(--sl-ink-soft);
 }
-@media (min-width: 768px) {
+@media (min-width: 750px) {
   .sl-how__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
-@media (min-width: 1100px) {
+@media (min-width: 1280px) {
   .sl-how__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
-@media (max-width: 767px) {
+@media (max-width: 749px) {
   .sl-how { padding: clamp(62px, 17vw, 76px) 0; }
   .sl-how__head { padding-bottom: 26px; }
-  .sl-how__eyebrow { margin-bottom: 14px; }
   .sl-how__intro { gap: 16px; }
   .sl-how__intro > p { max-width: 34ch; }
   .sl-how__grid {

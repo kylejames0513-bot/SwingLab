@@ -1,0 +1,40 @@
+<div class="sl-wrap sl-main-collections">
+  <header class="sl-page-hero">
+    <p class="sl-eyebrow">{{ section.settings.eyebrow | default: 'Shop' }}</p>
+    <h1 class="sl-page-hero__title">{{ section.settings.heading | default: 'Collections' }}</h1>
+  </header>
+
+  <div class="sl-grid">
+    {%- for collection in collections -%}
+      <a href="{{ collection.url }}" class="sl-pcard">
+        <div class="sl-pcard-media">
+          {%- if collection.featured_image -%}
+            {{ collection.featured_image | image_url: width: 720 | image_tag: loading: 'lazy', alt: collection.title, class: 'sl-pcard-img', widths: '360, 540, 720', sizes: '(min-width: 1280px) 25vw, (min-width: 1000px) 33vw, (min-width: 560px) 50vw, calc(100vw - 48px)' }}
+          {%- else -%}
+            <div class="sl-placeholder sl-pcard-img" aria-hidden="true"></div>
+          {%- endif -%}
+        </div>
+        <h2 class="sl-pcard-title">{{ collection.title }}</h2>
+        <p class="sl-pcard-price">{{ collection.products_count }} {% if collection.products_count == 1 %}product{% else %}products{% endif %}</p>
+      </a>
+    {%- endfor -%}
+  </div>
+</div>
+
+{% stylesheet %}
+.sl-main-collections {
+  padding-top: var(--sl-space-7);
+  padding-bottom: var(--sl-space-9);
+}
+.sl-main-collections .sl-pcard-title { font-size: var(--sl-text-xl); }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Collections list",
+  "settings": [
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "Shop" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Collections" }
+  ]
+}
+{% endschema %}

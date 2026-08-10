@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 
@@ -155,7 +156,9 @@ def test_mobile_header_uses_one_cart_link_and_an_accessible_dialog():
     assert "data-menu-open" in HEADER and "data-menu-close" in HEADER
     assert "menu.showModal()" in HEADER and "menu.close()" in HEADER
     assert "document.documentElement.classList.add('sl-menu-open')" in HEADER
-    assert "window.matchMedia('(min-width: 981px)')" in HEADER
+    # The drawer closes exactly where the CSS retires the toggle — the 1000px
+    # system stop. The old sheet's 981px JS/CSS pair drifted apart once.
+    assert "window.matchMedia('(min-width: 1000px)')" in HEADER
 
 
 def test_home_header_overlays_the_hero_then_gains_a_scroll_surface():
@@ -165,9 +168,13 @@ def test_home_header_overlays_the_hero_then_gains_a_scroll_surface():
         '.shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"])'
         in HEADER
     )
-    assert "margin-bottom: calc(-76px - 38px);" in HEADER
-    assert "margin-bottom: calc(-64px - 38px);" in HEADER
-    assert "margin-bottom: calc(-60px - 72px);" in HEADER
+    assert "margin-bottom: calc(-76px - 52px);" in HEADER
+    # Below the 1000px stop the bar is 64px tall; the pull-up (and its
+    # signed-in variant, +52px of member rail) matches inside that media
+    # block so the hero sits flush at every width.
+    below_desktop = HEADER.split("@media (max-width: 999px)", 1)[1].split("@media", 1)[0]
+    assert ".shopify-section:has(> .sl-header--overlay) { margin-bottom: -64px; }" in below_desktop
+    assert "margin-bottom: calc(-64px - 52px);" in below_desktop
     assert (
         'body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner'
         in HEADER
@@ -180,16 +187,23 @@ def test_home_header_overlays_the_hero_then_gains_a_scroll_surface():
 
 
 def test_storefront_and_app_share_the_responsive_header_contract():
+    # The mechanics are shared: both surfaces run the same drawer/dropdown
+    # script contract. The breakpoint values diverge on purpose until the
+    # app shell restyle lands: the storefront sits on the four-stop system
+    # (560/750/1000/1280) while the app still carries 980/1280 — pinned
+    # per-surface below so the divergence stays visible, never silent.
     for source in (HEADER, APP_LAYOUT):
-        assert "max-width: 1280px" in source
-        assert "@media (max-width: 980px)" in source
-        assert "width: min(88vw, 360px)" in source
         assert "data-header-dropdown" in source
         assert "data-sl-menu" in source
         assert "data-menu-link" in source
         assert '<nav class="sl-menu__nav"' in source
         assert "closeOnBreakpointChange" in source
         assert "addEventListener('focusout'" in source
+    assert "max-width: var(--sl-maxw)" in HEADER  # 1280px, by token
+    assert "@media (min-width: 1000px)" in HEADER
+    assert "max-width: 1280px" in APP_LAYOUT
+    assert "@media (max-width: 980px)" in APP_LAYOUT
+    assert "width: min(88vw, 360px)" in APP_LAYOUT
 
 
 def test_storefront_header_reinitializes_cleanly_in_the_theme_editor():
@@ -204,22 +218,31 @@ def test_storefront_keeps_mobile_actions_readable():
     assert 'class="sl-header__cta sl-header__app"' in HEADER
     assert 'class="sl-header__cta sl-menu__cta"' in HEADER
     assert 'aria-label="{{ cart_aria }}"' in HEADER
-    tiny_mobile = HEADER.split("@media (max-width: 480px)", 1)[1].split(
-        "@media (max-width: 360px)", 1
-    )[0]
-    action_rule = tiny_mobile.split(".sl-header__actions {", 1)[1].split("}", 1)[0]
-    assert "width: 100%" in action_rule
-    assert "justify-content: space-between" in action_rule
-    assert ".sl-header__cart { min-height: 44px" in tiny_mobile
-    assert ".sl-header__cart-label { display: none; }" in tiny_mobile
-    assert ".sl-header__toggle { width: 44px; height: 44px" in tiny_mobile
-    assert "@media (max-width: 360px)" in HEADER
-    narrow_mobile = HEADER.split("@media (max-width: 360px)", 1)[1].split(
-        "@media (prefers-reduced-motion: reduce)", 1
-    )[0]
-    assert "left: 16px" not in narrow_mobile
-    assert "transform: none" not in narrow_mobile
-    assert "@media (min-width: 981px) and (max-width: 1099px)" in HEADER
+    # The primary CTA is present at EVERY width. The old sheet display:none'd
+    # it below 981px — the one action the storefront exists to produce,
+    # hidden from every phone and tablet. Compact on the smallest phones;
+    # never removed.
+    stylesheet = HEADER.split("{% stylesheet %}", 1)[1].split("{% endstylesheet %}", 1)[0]
+    for block in re.findall(r"[^{}]+\{[^{}]*\}", stylesheet):
+        selector, _, declarations = block.partition("{")
+        if ".sl-header__cta" in selector or ".sl-header__app" in selector:
+            assert "display: none" not in declarations, block.strip()
+    compact = HEADER.split("@media (max-width: 559px)", 1)[1].split("@media", 1)[0]
+    assert ".sl-header__cta { padding: 0 var(--sl-space-3); font-size: var(--sl-text-xs); }" in compact
+    # The cart label is visually hidden but still announced — clip, not
+    # display:none.
+    assert ".sl-header__cart-label" in compact
+    assert "clip: rect(0 0 0 0)" in compact
+    assert ".sl-menu { width: 100vw; }" in compact
+    # 44px touch targets are the base rule, not a mobile patch.
+    assert "min-height: 44px" in HEADER.split(".sl-header__cart {", 1)[1].split("}", 1)[0]
+    toggle_rule = HEADER.split(".sl-header__toggle {", 1)[1].split("}", 1)[0]
+    assert "width: 44px" in toggle_rule and "height: 44px" in toggle_rule
+    # The burger retires exactly at the desktop stop — a 1024px desktop gets
+    # real navigation, not a hamburger.
+    desktop = HEADER.split("@media (min-width: 1000px)", 1)[1].split("@media", 1)[0]
+    assert ".sl-header__toggle { display: none; }" in desktop
+    assert ".sl-header__desktop-nav { display: flex; }" in desktop
 
 
 def test_header_labels_describe_destinations():

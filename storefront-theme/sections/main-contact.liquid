@@ -7,7 +7,7 @@
 
 <div class="sl-wrap sl-main-contact">
   <header class="sl-main-contact__head">
-    <p class="sl-eyebrow sl-main-contact__eyebrow">{{ section.settings.eyebrow | default: 'Support' }}</p>
+    <p class="sl-eyebrow">{{ section.settings.eyebrow | default: 'Support' }}</p>
     <h1 class="sl-main-contact__title">{{ section.settings.heading | default: page.title }}</h1>
     {%- if section.settings.intro != blank -%}
       <p class="sl-main-contact__intro">{{ section.settings.intro }}</p>
@@ -92,14 +92,6 @@
 
 .sl-main-contact__head { margin: 0 0 8px; }
 
-.sl-main-contact__eyebrow {
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
-  font-weight: 500;
-  letter-spacing: var(--sl-eyebrow-track);
-  color: var(--sl-orange);
-  margin-bottom: 10px;
-}
 
 .sl-main-contact__title {
   margin: 0;
@@ -114,7 +106,7 @@
 .sl-main-contact__intro {
   max-width: 56ch;
   margin: 14px 0 0;
-  font-size: 16px;
+  font-size: var(--sl-text-base);
   line-height: 1.6;
   color: var(--sl-ink-soft);
   text-wrap: pretty;
@@ -177,7 +169,7 @@
   border-left: 4px solid var(--sl-green-btn);
   border-radius: var(--sl-radius-sm);
   background: rgba(26, 92, 56, 0.07);
-  font-size: 16px;
+  font-size: var(--sl-text-base);
   font-weight: 600;
   color: var(--sl-green);
   line-height: 1.55;
@@ -190,13 +182,13 @@
   border-radius: var(--sl-radius-sm);
   background: #fff8ed;
   color: var(--sl-ink);
-  font-size: 14.5px;
+  font-size: var(--sl-text-sm);
   line-height: 1.5;
 }
 
 .sl-main-contact__field-error {
   margin: 6px 0 0;
-  font-size: 13.5px;
+  font-size: var(--sl-text-sm);
   color: #9c3518;
 }
 

@@ -1,0 +1,578 @@
+{%- comment -%}
+  The membership buy box — CaddieInsight Pro (and only Pro-like products).
+  Assigned via templates/product.membership.json; gear stays on
+  templates/product.json → main-product.liquid. This used to be a
+  string-match branch on product.type inside a 971-line file, which is
+  why a $11.99 arm band got a three-row trust rail the $249 pass didn't.
+{%- endcomment -%}
+{%- assign current = product.selected_or_first_available_variant -%}
+{%- assign main_alt = product.featured_media.alt | default: product.title -%}
+{%- assign selected_selling_plan = product.selected_selling_plan -%}
+{%- assign current_is_lifetime = false -%}
+{%- if current.sku == 'SL-PRO-LIFE' -%}
+  {%- assign current_is_lifetime = true -%}
+{%- endif -%}
+
+<div class="sl-wrap sl-product sl-product--pro">
+  <div class="sl-product-media">
+    <div class="sl-main-product__frame">
+      {%- if product.featured_media -%}
+        {{ product.featured_media | image_url: width: 1400 | image_tag: class: 'sl-product-img', alt: main_alt, id: 'sl-main-image', fetchpriority: 'high', widths: '480, 720, 960, 1400', sizes: '(min-width: 960px) min(50vw, 560px), calc(100vw - 48px)' }}
+      {%- else -%}
+        <div class="sl-placeholder sl-product-img" aria-hidden="true"></div>
+      {%- endif -%}
+    </div>
+
+    {%- if product.media.size > 1 -%}
+      <div class="sl-product-thumbs sl-main-product__thumbs">
+        {%- for media in product.media -%}
+          {%- assign thumb_alt = media.alt | default: product.title -%}
+          <button type="button" class="sl-thumb{% if media.id == product.featured_media.id %} is-active{% endif %}"
+                  data-full="{{ media | image_url: width: 1400 }}"
+                  data-srcset="{{ media | image_url: width: 480 }} 480w, {{ media | image_url: width: 720 }} 720w, {{ media | image_url: width: 960 }} 960w, {{ media | image_url: width: 1400 }} 1400w"
+                  data-alt="{{ thumb_alt | escape }}"
+                  aria-label="{{ 'products.product.show_image' | t: number: forloop.index }}"
+                  aria-pressed="{% if media.id == product.featured_media.id %}true{% else %}false{% endif %}">
+            {{ media | image_url: width: 200 | image_tag: loading: 'lazy', alt: thumb_alt, widths: '104, 144, 200', sizes: '66px' }}
+          </button>
+        {%- endfor -%}
+      </div>
+    {%- endif -%}
+  </div>
+
+  <div class="sl-product-info">
+    {%- if product.type != blank -%}<p class="sl-eyebrow">{{ product.type }}</p>{%- endif -%}
+    <h1 class="sl-product-title">{{ product.title }}</h1>
+
+    <p class="sl-product-kicker">{{ 'products.product.pro_kicker' | t }}</p>
+    <p class="sl-price sl-main-product__price-pro" id="sl-price" role="status" aria-live="polite" aria-atomic="true">{{ current.price | money }}</p>
+
+    <ul class="sl-product-benefits" aria-label="{{ 'products.product.includes' | t }}">
+      <li>{{ 'products.product.benefit_unlimited' | t }}</li>
+      <li>{{ 'products.product.benefit_report' | t }}</li>
+      <li>{{ 'products.product.benefit_video' | t }}</li>
+      <li>{{ 'products.product.benefit_unlock' | t }}</li>
+    </ul>
+
+    <div data-app-pro-sales-link>
+    {% form 'product', product, class: 'sl-product-form' %}
+      {%- if product.variants.size > 1 -%}
+        <label class="sl-label" for="sl-variant">{{ 'products.product.plan' | t }}</label>
+        <select name="id" id="sl-variant" class="sl-select">
+          {%- for variant in product.variants -%}
+            <option value="{{ variant.id }}"
+                    {% if variant.id == current.id %}selected{% endif %}
+                    {% unless variant.available %}disabled{% endunless %}
+                    data-price="{{ variant.price | money }}"
+                    data-sku="{{ variant.sku | escape }}"
+                    data-available="{{ variant.available }}">
+              {{ variant.title }} – {{ variant.price | money }}{% unless variant.available %} ({{ 'products.product.sold_out' | t }}){% endunless %}
+            </option>
+          {%- endfor -%}
+        </select>
+      {%- else -%}
+        <input type="hidden" name="id" value="{{ current.id }}">
+      {%- endif -%}
+
+      <div id="sl-selling-plan-options" data-variant-id="{{ current.id }}">
+      {%- if current.selling_plan_allocations.size > 0 and current_is_lifetime == false -%}
+        {%- assign selected_plan_available = false -%}
+        {%- for allocation in current.selling_plan_allocations -%}
+          {%- if selected_selling_plan and selected_selling_plan.id == allocation.selling_plan.id -%}
+            {%- assign selected_plan_available = true -%}
+          {%- endif -%}
+        {%- endfor -%}
+
+        <fieldset class="sl-plan-set">
+          <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
+
+          {%- unless current.requires_selling_plan -%}
+            <label class="sl-plan-option">
+              <input type="radio" name="selling_plan" value="" {% unless selected_plan_available %}checked{% endunless %}>
+              <span>
+                <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
+                <small>{{ 'products.product.one_time_help' | t }}</small>
+              </span>
+            </label>
+          {%- endunless -%}
+
+          {%- assign plan_checked = false -%}
+          {%- for allocation in current.selling_plan_allocations -%}
+            {%- assign selling_plan = allocation.selling_plan -%}
+            {%- assign selling_plan_display_name = selling_plan.name -%}
+            {%- assign selling_plan_name_lower = selling_plan.name | downcase -%}
+            {%- if selling_plan_name_lower contains 'deliver every month' -%}
+              {%- assign selling_plan_display_name = 'Auto-renew monthly' -%}
+            {%- elsif selling_plan_name_lower contains 'deliver every year' -%}
+              {%- assign selling_plan_display_name = 'Auto-renew yearly' -%}
+            {%- endif -%}
+            {%- assign is_checked = false -%}
+            {%- if selected_plan_available and selected_selling_plan.id == selling_plan.id -%}
+              {%- assign is_checked = true -%}
+            {%- elsif current.requires_selling_plan and selected_plan_available == false and plan_checked == false -%}
+              {%- assign is_checked = true -%}
+            {%- endif -%}
+
+            <label class="sl-plan-option">
+              <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if is_checked %}checked{% endif %}>
+              <span>
+                <strong>{{ selling_plan_display_name }}</strong>
+                {%- if selling_plan.description != blank -%}
+                  <small>{{ selling_plan.description }}</small>
+                {%- endif -%}
+              </span>
+            </label>
+
+            {%- if is_checked -%}
+              {%- assign plan_checked = true -%}
+            {%- endif -%}
+          {%- endfor -%}
+        </fieldset>
+      {%- endif -%}
+      </div>
+
+      <aside class="sl-main-product__founders" id="sl-founders-note"{% unless current_is_lifetime %} hidden{% endunless %}>
+        <p class="sl-main-product__founders-label">{{ section.settings.founders_label | default: 'First 100 members · Never renews' }}</p>
+        <p class="sl-main-product__founders-body">{{ section.settings.founders_body | default: 'One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.' }}</p>
+      </aside>
+
+      {%- for variant in product.variants -%}
+        {%- assign variant_is_lifetime = false -%}
+        {%- if variant.sku == 'SL-PRO-LIFE' -%}
+          {%- assign variant_is_lifetime = true -%}
+        {%- endif -%}
+        <template data-sl-selling-plan-template="{{ variant.id }}">
+          {%- if variant.selling_plan_allocations.size > 0 and variant_is_lifetime == false -%}
+            <fieldset class="sl-plan-set">
+              <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
+
+              {%- unless variant.requires_selling_plan -%}
+                <label class="sl-plan-option">
+                  <input type="radio" name="selling_plan" value="" checked>
+                  <span>
+                    <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
+                    <small>{{ 'products.product.one_time_help' | t }}</small>
+                  </span>
+                </label>
+              {%- endunless -%}
+
+              {%- for allocation in variant.selling_plan_allocations -%}
+                {%- assign selling_plan = allocation.selling_plan -%}
+                {%- assign selling_plan_display_name = selling_plan.name -%}
+                {%- assign selling_plan_name_lower = selling_plan.name | downcase -%}
+                {%- if selling_plan_name_lower contains 'deliver every month' -%}
+                  {%- assign selling_plan_display_name = 'Auto-renew monthly' -%}
+                {%- elsif selling_plan_name_lower contains 'deliver every year' -%}
+                  {%- assign selling_plan_display_name = 'Auto-renew yearly' -%}
+                {%- endif -%}
+                <label class="sl-plan-option">
+                  <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if variant.requires_selling_plan and forloop.first %}checked{% endif %}>
+                  <span>
+                    <strong>{{ selling_plan_display_name }}</strong>
+                    {%- if selling_plan.description != blank -%}
+                      <small>{{ selling_plan.description }}</small>
+                    {%- endif -%}
+                  </span>
+                </label>
+              {%- endfor -%}
+            </fieldset>
+          {%- endif -%}
+        </template>
+      {%- endfor -%}
+
+      <button type="submit" class="sl-btn sl-btn--primary sl-add"
+              data-add-label="{{ 'products.product.add_to_cart' | t | escape }}"
+              data-sold-out-label="{{ 'products.product.sold_out' | t | escape }}"
+              {% unless current.available %}disabled{% endunless %}>
+        {% if current.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
+      </button>
+      {{ form | payment_button }}
+    {% endform %}
+
+    {%- comment -%}
+      The membership's own trust rail: refund terms, cancellation, and the
+      unlock mechanic. Gear's shipping/returns rail never belonged here.
+    {%- endcomment -%}
+    {%- assign membership_terms_label = 'products.product.membership_terms' | t -%}
+    {% render 'trust-rail',
+      label: membership_terms_label,
+      class: 'sl-trust--stack',
+      icon_1: 'shield-check',
+      text_1: section.settings.trust_1,
+      icon_2: 'refresh',
+      text_2: section.settings.trust_2,
+      icon_3: 'target',
+      text_3: section.settings.trust_3
+    %}
+
+    <div class="sl-product-note">
+      <strong>{{ 'products.product.unlock_heading' | t }}</strong>
+      <p>{{ 'products.product.unlock_body' | t }}</p>
+      <a href="https://app.caddieinsight.com">{{ 'products.product.open_app' | t }}</a>
+    </div>
+    </div>
+
+    <div class="sl-product-note" data-app-pro-member-only hidden>
+      <strong>{{ 'products.product.active_heading' | t }}</strong>
+      <p>{{ 'products.product.active_body' | t }}</p>
+      <a href="https://app.caddieinsight.com">{{ 'products.product.open_game_plan' | t }}</a>
+    </div>
+
+    {%- if product.description != blank -%}
+      <div class="sl-product-desc sl-main-product__desc">
+        <p class="sl-mono-label sl-main-product__desc-label">{{ 'products.product.membership_details' | t }}</p>
+        <div class="sl-rte">{{ product.description }}</div>
+      </div>
+    {%- endif -%}
+  </div>
+</div>
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": {{ product.title | json }},
+    "description": {{ product.description | strip_html | truncatewords: 60 | json }},
+    {%- if product.featured_media %}
+    "image": {{ product.featured_media | image_url: width: 1400 | prepend: 'https:' | json }},
+    {%- endif %}
+    "brand": {
+      "@type": "Brand",
+      "name": "CaddieInsight"
+    },
+    "url": {{ request.origin | append: product.url | json }},
+    "offers": [
+      {%- for variant in product.variants %}
+      {
+        "@type": "Offer",
+        "name": {{ variant.title | json }},
+        "price": {{ variant.price | divided_by: 100.0 | json }},
+        "priceCurrency": {{ cart.currency.iso_code | json }},
+        "availability": {% if variant.available %}"https://schema.org/InStock"{% else %}"https://schema.org/OutOfStock"{% endif %},
+        "url": {{ request.origin | append: variant.url | json }}
+      }{% unless forloop.last %},{% endunless %}
+      {%- endfor %}
+    ]
+  }
+</script>
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "BreadcrumbList",
+    "itemListElement": [
+      {
+        "@type": "ListItem",
+        "position": 1,
+        "name": "Home",
+        "item": {{ request.origin | append: routes.root_url | json }}
+      },
+      {
+        "@type": "ListItem",
+        "position": 2,
+        "name": {{ product.title | json }},
+        "item": {{ request.origin | append: product.url | json }}
+      }
+    ]
+  }
+</script>
+
+<script>
+  (function () {
+    var select = document.getElementById('sl-variant');
+    var price = document.getElementById('sl-price');
+    var planContainer = document.getElementById('sl-selling-plan-options');
+    var foundersNote = document.getElementById('sl-founders-note');
+    var addButton = document.querySelector('.sl-product-form .sl-add');
+    var planSelections = {};
+
+    function updateAddButton(option) {
+      if (!addButton || !option) return;
+      var available = option.dataset.available === 'true';
+      addButton.disabled = !available;
+      addButton.textContent = available
+        ? addButton.getAttribute('data-add-label')
+        : addButton.getAttribute('data-sold-out-label');
+    }
+
+    function rememberPlanSelection() {
+      if (!planContainer || !planContainer.dataset.variantId) return;
+      var checked = planContainer.querySelector('input[name="selling_plan"]:checked');
+      planSelections[planContainer.dataset.variantId] = checked ? checked.value : '';
+    }
+
+    function renderSellingPlans(variantId) {
+      if (!planContainer) return;
+      rememberPlanSelection();
+      var template = document.querySelector(
+        'template[data-sl-selling-plan-template="' + variantId + '"]'
+      );
+      planContainer.replaceChildren();
+      planContainer.dataset.variantId = variantId;
+      if (!template) return;
+      planContainer.appendChild(template.content.cloneNode(true));
+
+      var remembered = planSelections[variantId];
+      if (remembered === undefined) return;
+      var radios = planContainer.querySelectorAll('input[name="selling_plan"]');
+      radios.forEach(function (radio) {
+        radio.checked = radio.value === remembered;
+      });
+      if (!planContainer.querySelector('input[name="selling_plan"]:checked') && radios.length) {
+        radios[0].checked = true;
+      }
+    }
+
+    if (select) {
+      select.addEventListener('change', function () {
+        var opt = select.options[select.selectedIndex];
+        if (!opt) return;
+        renderSellingPlans(opt.value);
+        updateAddButton(opt);
+        if (foundersNote) foundersNote.hidden = (opt.dataset.sku || '') !== 'SL-PRO-LIFE';
+        if (price && opt.dataset.price) price.textContent = opt.dataset.price;
+      });
+    }
+
+    var main = document.getElementById('sl-main-image');
+    var thumbs = document.querySelectorAll('.sl-thumb');
+    thumbs.forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (!main) return;
+        main.src = btn.dataset.full;
+        main.alt = btn.dataset.alt || '';
+        /* Swap the whole responsive candidate set. The old handler removed
+           srcset/sizes, permanently downgrading the gallery to one fixed
+           1400px download after the first thumbnail click. */
+        if (btn.dataset.srcset) main.setAttribute('srcset', btn.dataset.srcset);
+        thumbs.forEach(function (thumb) {
+          var selected = thumb === btn;
+          thumb.classList.toggle('is-active', selected);
+          thumb.setAttribute('aria-pressed', selected ? 'true' : 'false');
+        });
+      });
+    });
+  })();
+</script>
+
+{% stylesheet %}
+/* Gallery frame/thumbs and the description block are shared components in
+   assets/base.css. This sheet holds only the membership buy box. */
+
+.sl-product--pro { align-items: start; }
+.sl-product--pro .sl-product-info { width: 100%; }
+
+.sl-product-kicker {
+  max-width: 560px;
+  margin: 0 0 16px;
+  font-size: var(--sl-text-lg);
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+}
+
+.sl-main-product__price-pro {
+  font-size: var(--sl-text-3xl);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  margin: 0 0 20px;
+}
+
+.sl-product-benefits {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-auto-rows: 1fr;
+  gap: 10px;
+  margin: 0 0 24px;
+  padding: 0;
+  list-style: none;
+}
+.sl-product-benefits li {
+  position: relative;
+  padding: 12px 14px 12px 38px;
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: rgba(255, 253, 249, 0.72);
+  color: var(--sl-ink-soft);
+  line-height: 1.4;
+}
+.sl-product-benefits li::before {
+  content: "";
+  position: absolute;
+  left: 15px;
+  top: 17px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--sl-orange);
+}
+
+.sl-product--pro .sl-product-form .shopify-payment-button { max-width: 520px; }
+.sl-product--pro .sl-product-form { align-items: stretch; }
+
+.sl-product--pro .sl-product-info .sl-select,
+.sl-product--pro .sl-add,
+.sl-product--pro .sl-plan-set,
+.sl-product--pro .sl-main-product__founders,
+.sl-product--pro .sl-product-note,
+.sl-product--pro .sl-trust,
+.sl-product--pro .sl-product-benefits,
+.sl-product--pro .sl-product-form {
+  width: 100%;
+  max-width: 520px;
+}
+
+.sl-plan-set {
+  width: 100%;
+  padding: 0;
+  margin: 4px 0 2px;
+  border: 0;
+}
+.sl-plan-option {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 13px 14px;
+  margin-top: 10px;
+  border: 1.5px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-bg-card);
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+.sl-plan-option:hover { border-color: rgba(var(--sl-green-rgb), 0.45); }
+.sl-plan-option:has(input:checked) {
+  border-color: var(--sl-green-btn);
+  box-shadow: 0 0 0 1px var(--sl-green-btn);
+}
+.sl-plan-option input {
+  margin-top: 4px;
+  accent-color: var(--sl-green-btn);
+}
+.sl-plan-option strong,
+.sl-plan-option small { display: block; }
+.sl-plan-option strong {
+  color: var(--sl-green);
+  font-size: var(--sl-text-base);
+}
+.sl-plan-option small {
+  margin-top: 3px;
+  color: var(--sl-ink-muted);
+  line-height: 1.35;
+}
+
+/* Founders Pass framing: the terms of the cap, stated like a spec */
+.sl-main-product__founders {
+  margin: 4px 0 2px;
+  padding: 14px 16px;
+  border: 1px solid rgba(var(--sl-accent-rgb), 0.38);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-orange-soft);
+}
+.sl-main-product__founders[hidden] { display: none !important; }
+.sl-main-product__founders-label {
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
+  color: var(--sl-orange);
+}
+.sl-main-product__founders-body {
+  margin: 6px 0 0;
+  font-size: var(--sl-text-sm);
+  line-height: 1.55;
+  color: var(--sl-ink-soft);
+}
+
+.sl-product-note {
+  max-width: 520px;
+  margin: 18px 0 24px;
+  padding: 18px;
+  border-left: 4px solid var(--sl-orange);
+  background: var(--sl-orange-soft);
+  border-radius: var(--sl-radius-sm);
+}
+.sl-product-note strong { color: var(--sl-green); }
+.sl-product-note p {
+  margin: 6px 0 8px;
+  color: var(--sl-ink-soft);
+  line-height: 1.55;
+}
+.sl-product-note a { font-weight: 700; }
+
+@media (max-width: 749px) {
+  .sl-product-info > .sl-eyebrow,
+  .sl-product-title,
+  .sl-product-kicker {
+    text-align: center;
+  }
+  .sl-product--pro .sl-product-form { align-items: center; }
+  .sl-product--pro .sl-product-info .sl-select,
+  .sl-product--pro .sl-add,
+  .sl-product--pro .sl-plan-set,
+  .sl-product--pro .sl-product-note,
+  .sl-product--pro .sl-product-benefits,
+  .sl-product--pro .sl-product-form,
+  .sl-product--pro .sl-main-product__founders,
+  .sl-product--pro .sl-trust {
+    margin-inline: auto;
+  }
+  .sl-product-note { text-align: center; }
+  .sl-product-benefits,
+  .sl-plan-set,
+  .sl-main-product__founders,
+  .sl-trust { text-align: left; }
+  .sl-main-product__desc-label { text-align: center; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Membership product",
+  "settings": [
+    {
+      "type": "header",
+      "content": "Founders Pass framing"
+    },
+    {
+      "type": "text",
+      "id": "founders_label",
+      "label": "Founders note label",
+      "default": "First 100 members · Never renews"
+    },
+    {
+      "type": "textarea",
+      "id": "founders_body",
+      "label": "Founders note body",
+      "default": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep."
+    },
+    {
+      "type": "header",
+      "content": "Membership terms rail"
+    },
+    {
+      "type": "text",
+      "id": "trust_1",
+      "label": "Terms line 1",
+      "default": "14-day refund on unused Pro",
+      "info": "Paired with the shield icon."
+    },
+    {
+      "type": "text",
+      "id": "trust_2",
+      "label": "Terms line 2",
+      "default": "Cancel anytime — access runs to term",
+      "info": "Paired with the renewal icon."
+    },
+    {
+      "type": "text",
+      "id": "trust_3",
+      "label": "Terms line 3",
+      "default": "Unlocks on your checkout email",
+      "info": "Paired with the target icon."
+    }
+  ]
+}
+{% endschema %}
