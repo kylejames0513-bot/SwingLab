@@ -72,12 +72,13 @@ def test_shared_type_scale_is_spelled_identically_on_both_surfaces():
         name = f"sl-text-{rung}"
         assert _token(LAYOUT, name) == _token(STOREFRONT, name), name
 
-    # The app stops at xl on purpose: --sl-text-2xl/3xl/4xl exist only in the
-    # storefront because only the storefront renders display type at those
-    # sizes. Adding them to the app shell would ship dead custom properties.
-    for unused in ("sl-text-2xl", "sl-text-3xl", "sl-text-4xl"):
-        assert f"--{unused}:" in STOREFRONT
-        assert f"--{unused}:" not in LAYOUT
+    # The full eight-rung scale ships on both surfaces now. The app used to
+    # stop at xl (the larger rungs were "dead custom properties"), but every
+    # missing rung was an invitation for the next display heading to be a
+    # hand-rolled clamp() instead of a decision — the exact rot the theme
+    # rebuild measured. Three inert declarations are cheaper than one fork.
+    for rung in ("sl-text-2xl", "sl-text-3xl", "sl-text-4xl"):
+        assert _token(LAYOUT, rung) == _token(STOREFRONT, rung), rung
 
 
 def test_tokens_that_differ_only_in_name_still_carry_the_same_value():
@@ -104,16 +105,15 @@ def test_no_surface_asks_for_a_weight_the_brand_face_does_not_load():
     faux-bolded by the browser, and faux-bold on a wordmark is the difference
     between a designed mark and a smeared one.
     """
-    # The storefront self-hosts the variable face (one file, 400-800); the
-    # app shell still loads the static Google Fonts set until the PR-E
-    # restyle brings it onto the same self-hosted files. Divergence is
-    # deliberate and pinned per-surface.
+    # Both surfaces self-host the same variable face (one file, 400-800).
     theme_layout = (ROOT / "storefront-theme" / "layout" / "theme.liquid").read_text(
         encoding="utf-8"
     )
-    assert "font-weight: 400 800" in theme_layout
-    assert "archivo-latin-var.woff2" in theme_layout
-    assert "family=Archivo:wght@400;500;600;700;800" in LAYOUT
+    for source in (theme_layout, LAYOUT):
+        assert "font-weight: 400 800" in source
+        assert "archivo-latin-var.woff2" in source
+        assert "fonts.googleapis.com" not in source
+        assert "fonts.gstatic.com" not in source
 
     styled = list((ROOT / "storefront-theme" / "sections").glob("*.liquid"))
     styled += [ROOT / "storefront-theme" / "assets" / "base.css"]
@@ -157,6 +157,8 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
     # first and depends on the shell having loaded it.
     assert 'font-family: "Archivo";' in theme  # self-hosted @font-face
     assert 'font-family: "IBM Plex Mono";' in theme
+    assert 'font-family: "Archivo";' in LAYOUT  # the app ships the same files
+    assert 'font-family: "IBM Plex Mono";' in LAYOUT
     assert '"Archivo"' in _token(STOREFRONT, "sl-font-sans")
     assert '"Archivo"' in _token(STOREFRONT, "sl-font-display")
     assert '"IBM Plex Mono"' in _token(STOREFRONT, "sl-font-mono")

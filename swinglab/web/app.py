@@ -3540,6 +3540,24 @@ def create_app(
                 club_selected = ""
             if club_selected:
                 listed = [j for j in listed if j.club == club_selected]
+        # The Proof Cycle's cross-session home. The landing page sells
+        # "proof the fix held" and /today shows the verdict per session;
+        # until now /progress — the surface that makes exactly that claim
+        # across sessions — never mentioned it. Same verified artifact,
+        # same cautious copy, for the selected comparison context.
+        progress_proof = None
+        proof_source_job = None
+        if club_aware_enabled():
+            if selected_context is not None:
+                proof_source_job = selected_job
+        else:
+            done_jobs = [j for j in listed if j.status == DONE]
+            if done_jobs:
+                proof_source_job = max(done_jobs, key=lambda j: j.created_at)
+        if proof_source_job is not None:
+            progress_proof = proof_cycle_view(
+                proof_cycle_artifact_for(proof_source_job)
+            )
         trends = build_trends(listed, cfg)
         explainers = build_explainers(cfg.coaching)
         cards = []
@@ -3597,6 +3615,7 @@ def create_app(
             latest_job_id=(
                 trends.samples[-1].job_id if trends.samples else None
             ),
+            progress_proof=progress_proof,
             clubs_present=clubs_present,
             club_selected=club_selected,
             context_label=context_label(selected_context),
