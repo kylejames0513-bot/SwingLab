@@ -4,7 +4,7 @@
 
 - The Shopify storefront and CaddieInsight application use separate origins.
 - `PUBLIC_BASE_URL` identifies the Railway application origin.
-- The GitHub repository remains `kylejames0513-bot/SwingLab`.
+- The GitHub repository is `kylejames0513-bot/caddieinsight` (renamed from `SwingLab`; old URLs redirect).
 - Railway platform settings, environment values, persistent-volume settings,
   and DNS are managed outside this repository.
 

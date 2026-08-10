@@ -5,7 +5,7 @@
 CaddieInsight has two complementary Shopify identity paths:
 
 1. The existing inbound bridge from merged
-   [GitHub PR #28](https://github.com/kylejames0513-bot/SwingLab/pull/28),
+   [GitHub PR #28](https://github.com/kylejames0513-bot/caddieinsight/pull/28),
    “Harden Shopify account and entitlement synchronization,” consumes signed
    Shopify customer and order webhooks. It provisions store-first account
    stubs, preserves the Shopify customer ID as the durable identity, and keeps

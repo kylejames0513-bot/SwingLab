@@ -107,7 +107,7 @@ the repository.
 | Plan and estimate | Hobby plan. For the Jul 23–Aug 23 billing period, Current Usage was `$0.34`, Estimated Bill was `$1.59`, and Current Bill was `$0.34` at measurement time. | Workspace **Usage** |
 | Project inventory | One project, internal name `desirable-spontaneity`, production environment. Dashboard showed `1/1 service online`. | **Projects** → `desirable-spontaneity` → `production` → **Architecture** |
 | Service inventory | Exactly one service: `SwingLab`, online at `app.caddieinsight.com`. One attached volume: `swinglab-volume`. | Project **Architecture** |
-| Deployment source | GitHub repository `kylejames0513-bot/SwingLab`; production branch `main`. | `SwingLab` → **Settings** → **Source** |
+| Deployment source | GitHub repository `kylejames0513-bot/caddieinsight`; production branch `main`. | `SwingLab` → **Settings** → **Source** |
 | Automatic deployment | Enabled. The page says changes to `main` are automatically pushed to production and shows `Auto deploys when pushed to GitHub`; the available action is **Disable**. | `SwingLab` → **Settings** → **Source** |
 | Builder/start command | Dockerfile builder automatically detected. The Custom Start Command editor is blank, so there is no Railway start-command override. The image `CMD` remains the runtime contract. | `SwingLab` → **Settings** → **Build** / **Deploy** → **Custom Start Command** |
 | Replica and region | Exactly one replica in `US East (Virginia, USA)`. The replica field is disabled and Railway says replicas are unavailable for attached volumes. | `SwingLab` → **Settings** → **Scale** → **Regions & Replicas** |

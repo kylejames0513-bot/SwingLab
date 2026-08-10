@@ -40,7 +40,7 @@ jobs:
         run: python -m pip_audit --local --skip-editable
 
       - name: Reject high-severity static findings
-        run: python -m bandit -q -lll -r swinglab -x tests
+        run: python -m bandit -q -lll -r swinglab
 
   secret-scan:
     runs-on: ubuntu-24.04

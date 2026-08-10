@@ -271,7 +271,11 @@ def hero_image():
     tracked(d, (w * s * 0.505, 1284 * s),
             "CHOOSE CLUB · FILM THE VIEW · WORK ONE PLAN · RE-FILM",
             mono(int(26 * s)), MINT, tracking=int(3 * s))
-    finish(img, "swinglab-hero.png", w, h)
+    # pro-home-hero-study.png, NOT swinglab-hero.png: that name is listed in
+    # tests/test_theme_brand_filenames.RETIRED_IN_FILES and was deliberately
+    # deleted from out/ — regenerating it here quietly resurrected a retired
+    # brand filename every time this script ran.
+    finish(img, "pro-home-hero-study.png", w, h)
 
 
 def report_band():

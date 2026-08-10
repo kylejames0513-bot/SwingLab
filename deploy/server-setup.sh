@@ -3,7 +3,7 @@
 #
 # Run as root (cloud web consoles log you in as root):
 #
-#   curl -fsSL https://raw.githubusercontent.com/kylejames0513-bot/SwingLab/main/deploy/server-setup.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/kylejames0513-bot/caddieinsight/main/deploy/server-setup.sh | bash
 #
 # When it finishes it prints the URL to open. CaddieInsight runs as a systemd
 # service ("swinglab"), restarts on crash and on reboot.
@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-REPO_URL="https://github.com/kylejames0513-bot/SwingLab.git"
+REPO_URL="https://github.com/kylejames0513-bot/caddieinsight.git"
 INSTALL_DIR=/opt/swinglab
 PORT=80
 
@@ -38,7 +38,7 @@ fi
 
 echo "==> Installing CaddieInsight into a virtualenv..."
 python3 -m venv "$INSTALL_DIR/.venv"
-"$INSTALL_DIR/.venv/bin/pip" install -q -e "$INSTALL_DIR[web]"
+"$INSTALL_DIR/.venv/bin/pip" install -q -e "$INSTALL_DIR[web,ops,backup]"
 
 echo "==> Creating the swinglab systemd service..."
 cat > /etc/systemd/system/swinglab.service <<EOF
