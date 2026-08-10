@@ -97,7 +97,9 @@ def _valid_report_html(*, presentation: str, outcome: str) -> str:
 
 
 def _valid_metrics_payload(
-    *, deliverables: dict[str, object] | None = None
+    *,
+    deliverables: dict[str, object] | None = None,
+    swing_pattern: dict[str, object] | None = None,
 ) -> dict[str, object]:
     swings: list[dict[str, object]] = []
     if deliverables is not None:
@@ -108,6 +110,11 @@ def _valid_metrics_payload(
                 "deliverables": deliverables,
             }
         )
+    if swing_pattern is not None:
+        return {
+            **_valid_metrics_payload(deliverables=deliverables),
+            "swing_pattern": swing_pattern,
+        }
     return {
         "generator": {"name": "CaddieInsight", "swinglab_version": "test"},
         "video": {
@@ -618,6 +625,7 @@ def test_real_presenter_document_with_swing_media_validates_as_a_complete_bundle
         media=media,
     )
     document = build_report_document(source, cfg)
+    assert document.depth.swing_pattern is not None
     root = _build_bundle(
         tmp_path,
         payload=report_view_to_dict(document.view),
@@ -625,7 +633,8 @@ def test_real_presenter_document_with_swing_media_validates_as_a_complete_bundle
             deliverables={
                 "strip": "media/positions-1.jpg",
                 "slowmo": "media/slow-1.mp4",
-            }
+            },
+            swing_pattern=document.depth.swing_pattern.as_dict(),
         ),
     )
 

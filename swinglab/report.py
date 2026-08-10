@@ -100,6 +100,7 @@ def write_metrics_json(
     session_notes: list[str],
     cfg: Config,
     meta: dict | None = None,
+    swing_pattern: dict | None = None,
 ) -> Path:
     def metrics_payload(swing: dict) -> dict:
         metrics = swing["metrics"]
@@ -123,6 +124,10 @@ def write_metrics_json(
         # Session context (camera angle, club, handedness) — additive; older
         # consumers that don't know the key simply ignore it.
         **({"meta": meta} if meta else {}),
+        # The session's Swing Pattern (swing_pattern.as_dict()) — additive,
+        # and absent rather than empty when the owner's plan does not
+        # include it: this file must not carry what the report withholds.
+        **({"swing_pattern": swing_pattern} if swing_pattern else {}),
         "swings": [
             {
                 "metrics": metrics_payload(s),

@@ -60,6 +60,7 @@ from .report_view import (
     MediaEntry,
     MediaRole,
     ReasonCode,
+    ReportOutcome,
     ReportViewV1,
     write_report_view,
 )
@@ -1407,6 +1408,12 @@ def build_report_bundle(
                 "hand": hand,
                 "analysis_fps": analysis_fps,
             },
+            swing_pattern=(
+                source.swing_pattern.as_dict()
+                if source.swing_pattern is not None
+                and document.view.outcome is not ReportOutcome.CAPTURE_ONLY
+                else None
+            ),
         )
         written_report = html_writer(report_path, document, cfg=cfg)
         if not isinstance(written_report, Path) or written_report.absolute() != report_path.absolute():

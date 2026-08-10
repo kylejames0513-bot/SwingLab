@@ -19,6 +19,7 @@ from .config import Config
 from .drills import Drill, drill_presentation, gear_shop_url, practice_plan
 from .ffmpeg import VideoInfo
 from .metrics import ANGLE_DTL, ANGLE_FACE_ON, SwingMetrics, finite_float, session_stats
+from .swing_pattern import SwingPattern, build_swing_pattern
 from .report_view import (
     GUIDED_REPORT_PRESENTATION_VERSION,
     Angle,
@@ -322,6 +323,12 @@ class ReportPresentationInput:
     navigation: ReportNavigation | None
     practice_blocks: Sequence[Mapping[str, object]] = ()
     session_details: Sequence[LabelValue] = ()
+    # The Swing Pattern shares the replay's entitlement: both are the Coach
+    # tier's report-level features, gated on the same creation-time snapshot.
+    # When locked the pattern is never computed — the teaser card describes
+    # the section without holding its results in the page.
+    swing_pattern: SwingPattern | None = None
+    swing_pattern_locked: bool = False
 
 
 @dataclass(frozen=True)
@@ -401,6 +408,8 @@ class ReportDepthContent:
     limitations: tuple[str, ...]
     gear: tuple[GearDetail, ...]
     navigation: ReportNavigation
+    swing_pattern: SwingPattern | None = None
+    swing_pattern_locked: bool = False
 
 
 @dataclass(frozen=True)
@@ -773,9 +782,11 @@ def build_report_view(source: ReportPresentationInput, cfg: Config) -> ReportVie
     )
     practice = _practice(source.primary_drill, source.alternative_drills, cfg)
     replay_count = sum(entry.role is MediaRole.COACH_REPLAY for entry in media)
+    pattern_axes = len(source.swing_pattern.axes) if source.swing_pattern else 0
     section_counts = (
         (OptionalSectionId.EVERY_SWING, "Every swing", len(source.swings), False),
         (OptionalSectionId.REPLAY, "Coach replay", replay_count, source.replay_locked),
+        (OptionalSectionId.SWING_PATTERN, "Swing Pattern", pattern_axes, source.swing_pattern_locked),
         (
             OptionalSectionId.ALTERNATIVE_DRILLS,
             "Try a different drill",
@@ -908,6 +919,15 @@ def prepare_report_input(
                 for drill in block["drills"]
                 if primary is not None and drill.id != primary.id
             )
+    # The pattern is a restatement of the scoped measurements, so it exists
+    # exactly when they do. Locked means never computed, not computed and
+    # hidden — a report written for a non-Coach owner must not carry the
+    # pattern anywhere in its bytes.
+    swing_pattern = (
+        None
+        if replay_locked or fatal_capture or not scoped
+        else build_swing_pattern(scoped, cfg, angle=angle)
+    )
     swing_sources = tuple(
         ReportSwingSource(
             metrics=(
@@ -958,6 +978,8 @@ def prepare_report_input(
             LabelValue("rotation", "Rotation metadata", f"{video.rotation} degrees"),
             *((LabelValue("level", "Experience level", level),) if level else ()),
         ),
+        swing_pattern=swing_pattern,
+        swing_pattern_locked=replay_locked,
     )
 
 
@@ -1050,6 +1072,8 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
          LabelValue("swings", "Detected swings", str(source.context.detected_swings)),
          *source.session_details),
         glossary, limitations, gear, navigation,
+        swing_pattern=None if capture_only else source.swing_pattern,
+        swing_pattern_locked=source.swing_pattern_locked and not capture_only,
     )
     if capture_only:
         return ReportDocument(
@@ -1066,6 +1090,12 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
                 for entry in media_by_key.values()
             ),
             source.replay_locked,
+        ),
+        (
+            OptionalSectionId.SWING_PATTERN,
+            "Swing Pattern",
+            len(source.swing_pattern.axes) if source.swing_pattern else 0,
+            source.swing_pattern_locked,
         ),
         (OptionalSectionId.SECONDARY_FINDINGS, "Secondary findings", len(findings), False),
         (OptionalSectionId.ALTERNATIVE_DRILLS, "Try a different drill", len(view.practice.alternatives) if view.practice else 0, False),

@@ -1289,6 +1289,45 @@
       </details>
       {% endif %}
 
+      {% set section = optional_by_id.get("swing_pattern") %}
+      {% if section and (section.available or section.locked) %}
+      <details class="optional-card" data-optional-section="swing_pattern">
+        <summary>{{ section.label }}{% if not section.locked %} · {{ section.item_count }}{% endif %}</summary>
+        {% if section.locked %}
+          {# Same contract as the replay lock: name what the section is,
+             quote no tier and no price (this HTML is written once and
+             kept), and send the golfer to /pricing. A locked pattern is
+             never computed upstream, so there is nothing to leak here. #}
+          <div class="replay-locked-note">
+            <span class="lock-badge">&#128274; Swing Pattern is locked</span>
+            <p>The Swing Pattern names how this swing is built, from the same
+            measurements shown above: whether the pelvis turn or the lead arm
+            peaks first in the downswing, how far the lower body travels going
+            back, how steady the head stays, the tempo character, and whether
+            the finish holds still.</p>
+            <p>Nothing in the coaching above is withheld — the priority, the
+            drill, the pass mark and every measurement here are complete.</p>
+            <a class="report-control" href="/pricing">See the plans that include the Swing Pattern →</a>
+          </div>
+        {% elif depth.swing_pattern %}
+          <article class="swing-pattern">
+            <h3>{{ depth.swing_pattern.name }}</h3>
+            <p>{{ depth.swing_pattern.summary }}</p>
+            <dl>
+              {% for axis in depth.swing_pattern.axes %}
+              <dt>{{ axis.label }}</dt>
+              <dd><strong>{{ axis.display }}</strong> — {{ axis.detail }}</dd>
+              {% endfor %}
+            </dl>
+            {% if depth.swing_pattern.unreadable %}
+            <p>Not readable from this clip: {{ depth.swing_pattern.unreadable | join(", ") }}.</p>
+            {% endif %}
+            {% if depth.swing_pattern.note %}<p>{{ depth.swing_pattern.note }}</p>{% endif %}
+          </article>
+        {% endif %}
+      </details>
+      {% endif %}
+
       {% set section = optional_by_id.get("secondary_findings") %}
       {% if section and (section.available or section.locked) %}
       <details class="optional-card" data-optional-section="secondary_findings">

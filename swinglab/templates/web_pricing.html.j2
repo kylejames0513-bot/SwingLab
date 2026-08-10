@@ -348,7 +348,10 @@
         <li>Everything in Pro</li>
         {% if replay_pro_only %}<li>The annotated coach replay of every swing —
           your own footage with your tracked body, hand path, and the numbers
-          at each swing event</li>{% endif %}
+          at each swing event</li>
+        <li>The Swing Pattern — your report names how your swing is built:
+          body-led or arm-led, centered or lateral, steady-headed or mobile,
+          read straight from your measurements</li>{% endif %}
         {% if progress_pro_only %}<li>The progress dashboard: every metric
           charted session over session, so you can watch a fix hold</li>{% endif %}
         <li>The proof cycle — a pass mark, a matched re-film, and a verdict
@@ -422,6 +425,17 @@
           <td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Included</td>
           {% else %}
           <td>Upgrade and re-film</td><td class="yes">Included</td>
+          {% endif %}
+        </tr>
+        {# The Swing Pattern shares the replay's entitlement gate — the two
+           are the Coach tier's report-level features, and this row must
+           never advertise a section the report does not render. #}
+        <tr>
+          <th scope="row">&#128274; Swing Pattern: how your swing is built</th>
+          {% if coach_tier_enabled %}
+          <td class="no">&mdash;</td><td class="no">&mdash;</td><td class="yes">Included</td>
+          {% else %}
+          <td class="no">&mdash;</td><td class="yes">Included</td>
           {% endif %}
         </tr>
       {% endif %}
