@@ -208,7 +208,7 @@ WebP plan cards, and the plans-band sizing fix.
 ## 5. Not blocking Pro, but do not sell gear until fixed
 
 - Sales tax is **off** on all 17 `CI-*` variants (`taxable: false` on tangible goods with TN nexus). The archived `SL-*` gear was correctly `true` — this is a 2026-08-03 import regression. `taxShipping` is also false.
-- The International market is enabled for Canada / UK / EU / Australia with **no shipping zone covering any of them** — only "Domestic" (US) and "Asia" (21 countries) exist.
+- ~~The International market is enabled for Canada / UK / EU / Australia with **no shipping zone covering any of them** — only "Domestic" (US) and "Asia" (21 countries) exist.~~ **Resolved 2026-08-10** by splitting the one 236-country International market into **Asia** (26) and **Rest of World** (210); see `international-markets.md`. The shipping zones are unchanged and still cover only the US and 21 Asian countries — that is now the deliberate shape rather than an accident, and Rest of World exists so those buyers keep membership checkout.
 - **Supplier cost is published in `compareAtPrice`** on all 17 variants, byte-identical to `inventoryItem.unitCost` and publicly visible at `/products/*.js`.
 - `CI-MAT-OUT` is a dead variant on a live product whose description says "Choose Indoor or Outdoor Use."
 - `/shop` is in the primary nav and ships zero products: `first_sale_catalog_only: true` plus a stale allowlist naming three **archived** seed products. The same stale allowlist is silently zeroing every in-report gear recommendation, killing the attach-rate revenue path with no error surfaced.
