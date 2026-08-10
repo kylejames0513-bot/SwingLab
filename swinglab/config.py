@@ -272,6 +272,14 @@ DEFAULTS: dict[str, Any] = {
         # would silently promote any future SKU that happened to be spelled
         # "SL-COACH-…", and this is the money path.
         "shopify_sku_tiers": {},
+        # Shopify variant id per /pricing card (monthly / yearly / lifetime /
+        # coach_monthly / coach_yearly) — each card's store CTA deep-links
+        # ?variant=<id>. Empty here: the ids belong to one specific store, so
+        # they live in the deployment's config.yaml. This key existed ONLY in
+        # config.yaml for a while, which meant a typo in it could not be
+        # caught — tests/test_config_schema.py now fails on any config.yaml
+        # key that has no DEFAULTS entry, which requires the entry to exist.
+        "shopify_variant_ids": {},
         # The two-tier ladder's compatibility floor. FALSE means one paid
         # tier, exactly as before: any paid plan unlocks the coach replay and
         # the progress dashboard, and the pricing page sells Pro alone. TRUE

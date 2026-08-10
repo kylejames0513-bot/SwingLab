@@ -2,10 +2,14 @@
 
 The document is committed so a route change shows up as a reviewable diff.
 The native client's route table is checked against it because
-`mobile/src/api/types.ts` is hand-written — the `/api/` handlers return bare
-JSONResponse, so there is nothing to generate types from yet. This narrows the
-drift that hand-writing invites: it catches a route that was renamed or
-removed. It cannot catch a field that changed shape.
+`mobile/src/api/types.ts` is hand-written. Every `/api/v1` operation HAS
+declared a response model since 2026-08-09 (`swinglab/web/api_models.py`), so
+the types could now be generated — the stated blocker is gone, and the
+hand-written types have in fact drifted (they share almost no fields with the
+real responses; see the 2026-08-10 scan). Until they are regenerated, this
+check narrows the drift only partially: it catches a route that was renamed
+or removed. It cannot catch a field that changed shape — which is exactly the
+class of break the mobile app currently has.
 """
 
 from __future__ import annotations

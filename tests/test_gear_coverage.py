@@ -118,9 +118,11 @@ UNRECOMMENDABLE = {
 def shipped_config() -> Config:
     """The config the deployed app runs, not the permissive code default.
 
-    Loading config.yaml is the whole point: shop.first_sale_catalog_only
-    defaults to False in swinglab/config.py and is True as shipped, so a test
-    built on Config() would exercise a gate the running app does not have.
+    Loading config.yaml is the whole point: a test built on bare Config()
+    exercises the permissive code defaults, not the deployment. (Historical
+    note: first_sale_catalog_only shipped True until 2026-08-09; it ships
+    False now — the whole catalogue is promotable — and this docstring's
+    earlier claim of the opposite misled a planning pass.)
     """
     return Config.load(SHIPPED_CONFIG)
 

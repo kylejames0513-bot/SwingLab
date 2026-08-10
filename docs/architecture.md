@@ -56,7 +56,7 @@ purchase entitlements. `swinglab.integrations.shopify` exposes those modules as
 without breaking existing imports.
 
 Merged
-[GitHub PR #28](https://github.com/kylejames0513-bot/SwingLab/pull/28) is the
+[GitHub PR #28](https://github.com/kylejames0513-bot/caddieinsight/pull/28) is the
 inbound identity foundation: customer webhooks provision or link store-first
 accounts, the Shopify customer ID is the durable identity, and email changes,
 deletion/redaction, replay, and entitlement conflicts are handled

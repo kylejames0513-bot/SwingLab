@@ -118,7 +118,13 @@ def founders_card():
     tracked(d, (rx, base + 18 * s), "NEVER RENEWS", mono(int(20 * s)),
             FACE_MUTED, tracking=int(4 * s), anchor="r")
 
-    finish(img, "caddieinsight-founders-card-v2.png", W, H)
+    # founders-card-instrument-study.png, NOT caddieinsight-founders-card-v2:
+    # that exact filename is the shipped PHOTOGRAPH the storefront's webp
+    # ladder is encoded from (plan_card_webp.py reads it). This module is an
+    # offline brand study by its own docstring — writing to the shipped name
+    # meant one careless `python founders_card.py && python plan_card_webp.py`
+    # replaced the storefront's photography with a vector drawing.
+    finish(img, "founders-card-instrument-study.png", W, H)
 
 
 if __name__ == "__main__":

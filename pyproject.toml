@@ -57,3 +57,13 @@ swinglab = ["templates/*.j2", "web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+# The fatal tier only: syntax errors (E9), broken comparisons and asserts
+# (F63/F7), and undefined names (F82). The repo passes this clean today, so
+# CI's lint gate flags real breakage and never style. Widening the selection
+# is a deliberate decision, not a default.
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E9", "F63", "F7", "F82"]

@@ -14,6 +14,55 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.11"
+      # The rule set is the fatal tier only (syntax errors, undefined names,
+      # broken comparisons) — the repo is clean on it today, so this gate
+      # catches real breakage without ever arguing about style. Widening the
+      # set is a deliberate, separate decision.
+      - name: Ruff (fatal rules only)
+        run: |
+          pip install ruff==0.15.8
+          ruff check swinglab scripts tests
+
+  mobile:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # The runner image ships a current Node; using it directly keeps this
+      # workflow free of unpinned third-party actions.
+      - name: Install dependencies
+        working-directory: mobile
+        run: npm ci --no-audit --no-fund
+      - name: Typecheck
+        working-directory: mobile
+        run: npm run typecheck
+      # CLAUDE.md: verify with expo export, not just tsc — typechecking never
+      # loads the Metro config and once hid a missing dependency that broke
+      # the bundler outright. This job did not exist when the committed
+      # lockfile itself drifted out of sync with package.json, which made
+      # `npm ci` fail for everyone; it exists so neither happens silently
+      # again.
+      - name: Export bundles
+        working-directory: mobile
+        env:
+          EXPO_NO_TELEMETRY: "1"
+        run: npx expo export --platform ios --platform android
+
   tests:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

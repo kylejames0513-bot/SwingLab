@@ -7,9 +7,10 @@ lockup can never drift out of sync:
     python store-assets/make_brand.py
 
 Outputs land in `store-assets/out/` (the reviewable source of truth) and are
-copied into `swinglab/web/static/` and `storefront-theme/assets/` under their
-historical filenames, so every CDN reference and theme `asset_url` keeps
-resolving.
+copied into `swinglab/web/static/` and `storefront-theme/assets/` under the
+caddieinsight-* names both surfaces actually serve. (They used to ship under
+the retired swinglab-* names, which meant regenerating the brand updated
+files nothing referenced while the served copies went stale.)
 
 Requires the two fonts fetched by the commands in README.md.
 """
@@ -116,7 +117,14 @@ def lockup(inverse: bool = False) -> Path:
     k = min(1400 / img.width, 300 / img.height)
     img = img.resize((round(img.width * k), round(img.height * k)),
                      Image.LANCZOS)
-    name = "swinglab-logo-inverse.png" if inverse else "swinglab-logo.png"
+    # The lockup draws "CaddieInsight" — it saves under the caddieinsight-*
+    # names the app and theme serve. It used to save under the retired
+    # swinglab-* names, so `make brand` regenerated a file nothing shipped
+    # while the live caddieinsight-logo*.png (a one-time hand copy) went
+    # stale. The generator and the served filename agree now.
+    name = (
+        "caddieinsight-logo-inverse.png" if inverse else "caddieinsight-logo.png"
+    )
     path = OUT / name
     img.save(path, "PNG", optimize=True)
     print("wrote", path)
@@ -199,12 +207,6 @@ def main() -> None:
 
     # Raster icons. Tick counts drop as the render shrinks so the bezel never
     # collapses into a solid ring.
-    icon_png(OUT / "swinglab-favicon.png", 512, radius_ratio=0.215, ticks=24,
-             bold=1.1)
-    # The same tile under the current brand name. Shipped alongside rather
-    # than replacing the swinglab- file, because the live theme references
-    # that filename in Shopify Files and overwriting a live-referenced name
-    # bypasses the unpublished-theme preview (store-assets/README.md).
     icon_png(OUT / "caddieinsight-favicon.png", 512, radius_ratio=0.215,
              ticks=24, bold=1.1)
     icon_png(OUT / "pwa-icon-192.png", 192, radius_ratio=0.215, ticks=24,
@@ -228,10 +230,12 @@ def main() -> None:
     lockup(inverse=True)
     og_card()
 
+    # Retired swinglab-* names are deliberately absent: shipping them kept
+    # resurrecting a brand the product had left, and the theme packager
+    # excludes them from the upload anyway.
     ship = {
-        "swinglab-logo.png": (STATIC, THEME),
-        "swinglab-logo-inverse.png": (STATIC, THEME),
-        "swinglab-favicon.png": (STATIC, THEME),
+        "caddieinsight-logo.png": (STATIC, THEME),
+        "caddieinsight-logo-inverse.png": (STATIC, THEME),
         "apple-touch-icon.png": (STATIC,),
         "pwa-icon.svg": (STATIC,),
         "pwa-icon-192.png": (STATIC,),
