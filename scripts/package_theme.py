@@ -251,8 +251,18 @@ Rebuild it rather than editing it.
          field, no shipping copy.
    - [ ] The gear collection populates.
    - [ ] Homepage plans band: all three cards render at the same size.
+   - [ ] Comparison table, on a phone: every feature card shows a value
+         beside the COACH label. A label over an empty cell means the
+         section schema and `templates/index.json` have drifted — Shopify
+         silently drops any block setting the schema does not declare.
 
 3. **Publish.** Leave the previous theme in the list — that is the rollback.
+
+3a. **Optional — hero video**: the hero plays a clip only after one is set.
+   Theme editor (**Customize** on the new theme) -> Home page -> **Premium
+   hero** -> **Hero video** -> upload a short muted loop (8–20s of filmed
+   range or swing footage). Without one the hero falls back to the photo
+   with a slow drift — that is by design, not a broken video.
 
 4. **Assign the membership template** (once, right after publishing this
    build): Shopify admin -> **Products -> CaddieInsight Pro -> Theme

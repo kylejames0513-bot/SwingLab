@@ -307,6 +307,13 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     assert "table-layout: fixed" not in mobile_comparison
     assert "padding: 8px" not in mobile_comparison
     assert comparison.count('data-col="') == 3
+    # Shopify silently drops any block setting the schema does not declare:
+    # index.json carried coach_value on every row while the live cards showed
+    # a Coach label over an empty cell. The schema must declare every id the
+    # template binds.
+    schema = comparison.split("{% schema %}", 1)[1]
+    for setting_id in ("feature", "free_value", "pro_value", "coach_value"):
+        assert f'"id": "{setting_id}"' in schema
 
 
 def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
