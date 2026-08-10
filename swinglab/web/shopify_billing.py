@@ -14,16 +14,17 @@ the commerce bridge: ``commerce_enabled()`` (and its compatibility alias
 ``enabled()``) then exposes Pro purchase links and requires inbox proof for
 Shopify-connected signup semantics. A store plus either signing secret keeps
 ``webhook_endpoint_enabled()`` available, so a privacy-only app can deliver
-mandatory compliance topics without advertising checkout. When neither
-commerce path is configured, Pro upgrades fall back to Stripe (billing.py) or
-"coming soon".
+mandatory compliance topics without advertising checkout. Without the
+store configured, Pro upgrades honestly read "coming soon" — this is the
+only purchase path (owner decision, 2026-08-10; the dormant Stripe
+fallback was removed with swinglab/web/billing.py).
 
 Setup, on the Shopify side:
 
 1. Create a product for Pro access. Each variant's SKU maps to a number of
    days of Pro in ``billing.shopify_skus`` (config.yaml) — e.g. variant
    ``SL-PRO-1MO`` grants 31 days. Prices live on the product in Shopify,
-   never in code (the same rule as Stripe prices and gear prices).
+   never in code (the same rule as gear prices).
 2. In Settings -> Notifications -> Webhooks, add ``orders/paid``,
    ``orders/cancelled``, and ``refunds/create`` webhooks pointing at
    ``https://<your-app>/webhooks/shopify`` and copy the signing secret
@@ -123,7 +124,7 @@ from ..integrations.shopify.identity import (
     normalize_shop_domain,
 )
 from . import mailer
-from .users import PRO_TIER, UserStore, stronger_tier
+from .users import FREE, PRO_TIER, UserStore, stronger_tier
 
 logger = logging.getLogger("swinglab.web.shopify")
 
@@ -552,6 +553,13 @@ def _order_tier(order: dict, cfg: Config) -> str:
     money for something it then withholds. Anything the tier map does not
     name is Pro — the same default as config, so an unconfigured install
     behaves exactly as it did before two tiers existed.
+
+    An order with NO membership SKU at all is FREE, not Pro. It used to
+    start at Pro and only ever climb, so a gear-only order stored tier
+    "pro" on its ledger row — a tier the order did not buy. Harmless only
+    because a guard three call-frames away also checks days > 0, and
+    claim_pending_grant reads the stored tier back for attribution; the
+    row should tell the truth on its own.
     """
     day_skus = {
         str(sku)
@@ -562,7 +570,7 @@ def _order_tier(order: dict, cfg: Config) -> str:
         str(sku): str(tier or "").strip().lower()
         for sku, tier in (cfg.billing.get("shopify_sku_tiers") or {}).items()
     }
-    best = PRO_TIER
+    best = FREE
     for item in order.get("line_items") or []:
         sku = str(item.get("sku") or "")
         if sku in day_skus:

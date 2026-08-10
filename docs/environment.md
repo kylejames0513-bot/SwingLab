@@ -13,7 +13,7 @@ below therefore means required for the stated production capability.
 | --- | --- | --- | --- |
 | `PORT` | Non-secret | Supplied by Railway or another platform | The container command and health check default to port 8000. |
 | `SWINGLAB_SECRET` | Secret | Accounts are enabled, as in the shipped config | A random key is generated at each start, so login sessions do not survive restarts. |
-| `PUBLIC_BASE_URL` | Non-secret | Canonical production links, Stripe redirects, or digest email links are used | Request-derived URLs are used where possible; digest links cannot be generated reliably. |
+| `PUBLIC_BASE_URL` | Non-secret | Canonical production links or digest email links are used | Request-derived URLs are used where possible; digest links cannot be generated reliably. |
 
 `PUBLIC_BASE_URL` is the application origin, not the Shopify storefront.
 
@@ -111,17 +111,15 @@ falling back to legacy local login. Before enabling it anywhere, register the
 exact callback and post-logout URLs in Shopify Customer Account settings and
 follow [Shopify Customer Account migration](shopify-customer-accounts.md).
 
-## Stripe billing
+## Commerce is Shopify-only
 
-Stripe is optional. Treat all three variables as one production bundle even
-though checkout availability can be detected from the key and price alone.
-
-| Variable | Sensitivity | Purpose |
-| --- | --- | --- |
-| `STRIPE_SECRET_KEY` | Secret | Server-side Stripe API credential. |
-| `STRIPE_PRICE_ID` | Non-secret identifier | Recurring price used to create checkout sessions. |
-| `STRIPE_WEBHOOK_SECRET` | Secret | Validates subscription webhook deliveries. |
-| `PUBLIC_BASE_URL` | Non-secret | Canonical checkout success, cancellation, and portal return URLs. |
+Purchases happen on the Shopify store, and only there (owner decision,
+2026-08-10). `SHOPIFY_STORE_DOMAIN` + `SHOPIFY_WEBHOOK_SECRET` (above) are
+the whole commerce contract: the store hosts checkout, and the signed
+`orders/paid` webhook is the only thing that grants entitlement. The
+`STRIPE_*` variables that used to appear here were removed along with the
+dormant Stripe checkout path — a second payment path is a second place for
+money to go wrong, and setting any `STRIPE_*` variable now does nothing.
 
 ## Email
 

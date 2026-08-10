@@ -2,7 +2,7 @@
 
 Stripe itself is never called: checkout/portal redirect out to Stripe's
 hosted pages, and plan changes arrive as webhook events — so the tests drive
-billing.apply_event directly with event payloads shaped like Stripe's.
+the Shopify order path (tests/test_shopify_billing.py owns its webhooks).
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from fastapi.testclient import TestClient
 from swinglab.config import Config
 from swinglab.report_bundle import CoreReportBundleError
 from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
-from swinglab.web import billing
 from swinglab.web import jobs as jobs_module
 from swinglab.web.app import create_app
 from swinglab.web.jobs import FAILED, JobManager
@@ -190,8 +189,6 @@ def test_password_login_rejects_cross_origin_form_post(app):
     (
         ("/logout", {}),
         ("/account/digest", {"enabled": "on"}),
-        ("/billing/checkout", {}),
-        ("/billing/portal", {}),
     ),
 )
 def test_session_mutating_forms_reject_cross_origin(app, path, data):
@@ -510,8 +507,6 @@ def test_shopify_only_pro_purchase_is_offered_at_both_quota_states(
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
     monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
     monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
-    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
-    monkeypatch.delenv("STRIPE_PRICE_ID", raising=False)
     cfg = Config()
     cfg.web["require_account"] = True
     cfg.billing["free_per_month"] = 1
@@ -571,73 +566,72 @@ def test_account_page_shows_usage(app):
     assert "Free" in html
 
 
-def test_stripe_events_flip_plan_state(tmp_path):
-    users = UserStore(tmp_path / "db.sqlite")
-    user = users.create("pro@example.com", "longenough")
+def test_the_stripe_purchase_path_is_gone(tmp_path):
+    """Purchases go through the Shopify store, and only the store.
 
-    billing.apply_event(
-        {
-            "type": "checkout.session.completed",
-            "data": {"object": {"client_reference_id": user.id, "customer": "cus_1"}},
-        },
-        users,
+    Owner decision, 2026-08-10. The dormant Stripe path was removed rather
+    than kept configured-off: a second payment path is a second place for
+    money to go wrong, and the one time it half-activated it would have
+    charged cards and granted nothing. These routes must not exist — a 404
+    here is the feature.
+    """
+    client = TestClient(
+        create_app(Config(), sessions_dir=tmp_path / "sessions")
     )
-    user = users.get(user.id)
-    assert user.is_pro and user.stripe_customer_id == "cus_1"
-
-    billing.apply_event(
-        {
-            "type": "customer.subscription.updated",
-            "data": {"object": {"customer": "cus_1", "status": "past_due"}},
-        },
-        users,
-    )
-    assert users.get(user.id).is_pro  # grace period while Stripe retries
-
-    billing.apply_event(
-        {
-            "type": "customer.subscription.deleted",
-            "data": {"object": {"customer": "cus_1"}},
-        },
-        users,
-    )
-    refreshed = users.get(user.id)
-    assert not refreshed.is_pro and refreshed.plan == "free"
+    for path in ("/billing/checkout", "/billing/portal", "/webhooks/stripe"):
+        assert client.post(path).status_code in (404, 405), path
 
 
-def test_checkout_unavailable_until_stripe_configured(app, monkeypatch):
-    monkeypatch.delenv("STRIPE_SECRET_KEY", raising=False)
+def test_pro_reads_coming_soon_without_the_store(app):
+    """No store configured means nothing to sell — deliberately."""
     client = TestClient(app)
     signup(client)
-    assert client.post("/billing/checkout", follow_redirects=False).status_code == 503
     assert "coming soon" in client.get("/account").text
 
 
-def test_stripe_pricing_keeps_the_annual_led_offer(tmp_path, monkeypatch):
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fake")
-    monkeypatch.setenv("STRIPE_PRICE_ID", "price_single_recurring_plan")
+def test_store_pricing_keeps_the_annual_led_offer(tmp_path, monkeypatch):
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
     cfg = Config()
     cfg.web["require_account"] = True
-    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
-    signup(client)
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    # The Shopify pair switches /signup to inbox-proof semantics (503 without
+    # a mailer) — create the account directly and log in.
+    app.state.users.create("kyle@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
 
     html = client.get("/pricing").text
-    assert html.count('action="/billing/checkout"') == 2
+    # Every buy control is a store link; no on-app checkout form exists.
+    assert 'action="/billing/checkout"' not in html
+    assert html.count("on the CaddieInsight store") >= 2
     assert "Pro — Season Pass" in html
     assert "Pro — monthly" in html
     assert html.index("Pro — Season Pass") < html.index("Pro — monthly")
     assert "$69.99/year" in html
-    assert "Stripe shows the exact price, billing interval" in html
+    assert "The store shows the available terms" in html
 
 
 def test_finite_pro_allowance_is_described_as_finite(tmp_path, monkeypatch):
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_fake")
-    monkeypatch.setenv("STRIPE_PRICE_ID", "price_single_recurring_plan")
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
     cfg = Config()
     cfg.web["require_account"] = True
     cfg.billing["pro_per_month"] = 12
-    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
-    signup(client)
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    # The Shopify pair switches /signup to inbox-proof semantics (503 without
+    # a mailer) — create the account directly and log in.
+    app.state.users.create("kyle@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
 
     html = client.get("/pricing").text
     assert "Up to 12 analyses a month" in " ".join(html.split())

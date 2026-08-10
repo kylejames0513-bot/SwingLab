@@ -25,8 +25,6 @@ def make_app(tmp_path, monkeypatch, *, history_reset: bool = True):
         "RESEND_API_KEY",
         "SWINGLAB_SMTP_URL",
         "SWINGLAB_MAIL_FROM",
-        "STRIPE_SECRET_KEY",
-        "STRIPE_PRICE_ID",
         "SHOPIFY_STORE_DOMAIN",
         "SHOPIFY_WEBHOOK_SECRET",
         "SHOPIFY_CUSTOMER_ACCOUNTS_ENABLED",

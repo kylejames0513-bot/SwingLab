@@ -6961,9 +6961,15 @@ class UserStore:
             self._conn.commit()
 
     def revoke_pro_days(self, user_id: str, days: float) -> None:
+        # COALESCE first: SQLite's scalar MAX returns NULL when ANY argument
+        # is NULL, so on a row whose pro_until was never set this used to
+        # write NULL rather than 0 — and NULL then poisons every later
+        # comparison against it. A revoke on an account with no time simply
+        # leaves it at zero.
         with self._lock:
             self._conn.execute(
-                "UPDATE users SET pro_until = MAX(0, pro_until - ?) WHERE id = ?",
+                "UPDATE users SET pro_until ="
+                " MAX(0, COALESCE(pro_until, 0) - ?) WHERE id = ?",
                 (days * 86400, user_id),
             )
             self._conn.commit()
@@ -6999,19 +7005,6 @@ class UserStore:
                 (email.strip().lower(),),
             ).fetchone()
         return row["days"] if row else 0.0
-
-    def pop_pending_grant(self, email: str) -> float:
-        """Claim (and clear) any parked days for this email."""
-        email = email.strip().lower()
-        with self._lock:
-            row = self._conn.execute(
-                "SELECT days FROM pro_grants WHERE email = ?", (email,)
-            ).fetchone()
-            if row is None:
-                return 0.0
-            self._conn.execute("DELETE FROM pro_grants WHERE email = ?", (email,))
-            self._conn.commit()
-        return row["days"]
 
     def claim_pending_grant(self, user_id: str, email: str) -> float:
         """Atomically move a parked Shopify grant onto a user.

@@ -52,6 +52,96 @@ def test_shared_brand_tokens_match_the_storefront_source_of_truth():
     assert _token(LAYOUT, "sl-orange-text") == "#8f4509"
     assert _token(LAYOUT, "sl-control-border") == "#6f7b72"
 
+    # ...and the storefront's own value is the display-copy counterpart, not a
+    # drifted duplicate. Both clear AA on both surface backgrounds (5.37:1 and
+    # 4.94:1 on --sl-bg); the app's is darker because it sets small interface
+    # text where the storefront sets prose. Pinning both ends stops a future
+    # "unify the tokens" pass from quietly trading contrast for symmetry.
+    assert _token(STOREFRONT, "sl-ink-muted") == "#626a63"
+
+
+def test_shared_type_scale_is_spelled_identically_on_both_surfaces():
+    """The rungs both surfaces define must match as text, not just as numbers.
+
+    They were already numerically equal while spelled differently (`.15vw`
+    against `0.15vw`). That is the kind of difference a comparison gets
+    "fixed" to ignore, and a normalising comparison eventually normalises away
+    a real divergence too — so the sources are spelled the same instead.
+    """
+    for rung in ("xs", "sm", "base", "lg", "xl"):
+        name = f"sl-text-{rung}"
+        assert _token(LAYOUT, name) == _token(STOREFRONT, name), name
+
+    # The app stops at xl on purpose: --sl-text-2xl/3xl/4xl exist only in the
+    # storefront because only the storefront renders display type at those
+    # sizes. Adding them to the app shell would ship dead custom properties.
+    for unused in ("sl-text-2xl", "sl-text-3xl", "sl-text-4xl"):
+        assert f"--{unused}:" in STOREFRONT
+        assert f"--{unused}:" not in LAYOUT
+
+
+def test_tokens_that_differ_only_in_name_still_carry_the_same_value():
+    """Two spellings, one value — asserted so the pair cannot drift apart.
+
+    Renaming either side would touch several hundred call sites across
+    base.css, the sections and the app templates for no customer benefit, so
+    both vocabularies stay. What must not happen is the numbers diverging
+    while the names hide it.
+    """
+    assert _token(LAYOUT, "sl-content") == _token(STOREFRONT, "sl-maxw")
+    assert _token(LAYOUT, "sl-radius-md") == _token(STOREFRONT, "sl-radius")
+    assert _token(LAYOUT, "sl-radius-control") == _token(
+        STOREFRONT, "sl-radius-control"
+    )
+
+
+def test_no_surface_asks_for_a_weight_the_brand_face_does_not_load():
+    """Archivo ships 400-800. Asking for 900 gets a synthetic bold.
+
+    Eight declarations across both surfaces asked for 900 — the header
+    lockups, the footer wordmark, the shop and comparison headings, the 404
+    and the report brand. A weight that is not loaded is either clamped or
+    faux-bolded by the browser, and faux-bold on a wordmark is the difference
+    between a designed mark and a smeared one.
+    """
+    loaded = "family=Archivo:wght@400;500;600;700;800"
+    theme_layout = (ROOT / "storefront-theme" / "layout" / "theme.liquid").read_text(
+        encoding="utf-8"
+    )
+    assert loaded in theme_layout
+    assert loaded in LAYOUT
+
+    styled = list((ROOT / "storefront-theme" / "sections").glob("*.liquid"))
+    styled += [ROOT / "storefront-theme" / "assets" / "base.css"]
+    styled += sorted(TEMPLATES.glob("*.html.j2"))
+    for path in styled:
+        source = path.read_text(encoding="utf-8")
+        assert not re.search(r"font-weight:\s*900\b", source), path.name
+
+
+def test_shared_photography_ships_the_same_bytes_to_both_surfaces():
+    """One photograph, one encode — whichever surface the visitor reaches.
+
+    The dusk-range hero and the default share card are the two images that
+    appear on both the storefront and the app. The hero pair had drifted to a
+    lighter off-recipe encode on the app side (54,298 B against the theme's
+    97,918 B for the same 1672x941 frame), so the surface people pay to use
+    was serving the worse copy of the same photograph. The recipe of record is
+    store-assets/plan_card_webp.py: quality=82, method=6, LANCZOS.
+    """
+    pairs = (
+        ("caddieinsight-range-hero-desktop.webp", "caddieinsight-range-hero.webp"),
+        ("caddieinsight-range-hero-mobile.webp", "caddieinsight-range-hero-mobile.webp"),
+        ("og-caddieinsight.png", "og-caddieinsight.png"),
+    )
+    for theme_name, app_name in pairs:
+        theme_bytes = (ROOT / "storefront-theme" / "assets" / theme_name).read_bytes()
+        app_bytes = (ROOT / "swinglab" / "web" / "static" / app_name).read_bytes()
+        assert theme_bytes == app_bytes, theme_name
+        # test_premium_landing.py holds the app to a 150 KB ceiling per asset;
+        # assert it here too so the theme side can never push past it.
+        assert len(theme_bytes) <= 150_000, theme_name
+
 
 def test_app_and_storefront_share_tour_caddie_type_stack():
     theme = (ROOT / "storefront-theme" / "layout" / "theme.liquid").read_text(

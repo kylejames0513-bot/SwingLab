@@ -287,7 +287,7 @@ DEFAULTS: dict[str, Any] = {
         "coach_price_monthly_text": "",
         "coach_price_annual_text": "",
         # DISPLAY strings for the pricing page only — what is actually
-        # charged always lives in Shopify/Stripe. Keep these matching the
+        # charged always lives in Shopify. Keep these matching the
         # store or don't set them. The badge is a display string for the
         # same reason: the "save 42%" arithmetic ($69.99/year vs the
         # $119.88 twelve months at $9.99 would cost) is only true of the

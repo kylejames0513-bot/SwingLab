@@ -7,7 +7,21 @@ modes to plain-English guidance plus a pointer at the filming checklist.
 The CLI keeps its detailed messages; the JSON API keeps the raw error too
 (machine consumers may want it) — only the rendered page is translated.
 
-Unknown errors pass through untouched: honest raw beats invented friendly.
+Unknown *pipeline* errors pass through untouched: honest raw beats invented
+friendly. That rule holds for messages written for a human — "No audio track",
+"analysis limit" — and breaks for messages written for a machine.
+
+Two kinds of error reach this function that were never meant for a golfer: a
+Python traceback (``jobs.py`` stores ``traceback.format_exc()`` on the job so
+the ops JSON and Sentry keep it) and internal recovery language about report
+publication. Passing those through disclosed absolute server paths, module
+names and internal function names on the status page — and, because the panel
+renders them in a ``<p>``, collapsed a multi-line traceback into one unreadable
+run-on line. ``_is_internal`` catches both and substitutes a generic apology.
+
+The raw text is deliberately NOT scrubbed anywhere else: ``job.error`` keeps
+it, ``/api/session/{id}`` keeps it, and the process log keeps the full
+untruncated traceback. Only the rendered page is translated.
 """
 
 from __future__ import annotations
@@ -48,6 +62,27 @@ _TOO_LONG_TIPS = (
     "much faster.",
 )
 
+_RETRY_TIPS = (
+    "Upload the same clip again — most of these clear on a second run.",
+    "If it fails again, email support and mention roughly when you uploaded; "
+    "the failure is already recorded on our side.",
+)
+
+# Substrings that mark an error as written for an operator, not a golfer. The
+# traceback marker is the load-bearing one: it is the text Python itself emits,
+# so it catches any future code path that stores a formatted exception without
+# that path having to know this module exists.
+_INTERNAL_MARKERS = (
+    "traceback (most recent call last)",
+    "unexpected error during analysis",
+    "report publication could not be validated",
+    "report presentation version",
+)
+
+
+def _is_internal(low: str) -> bool:
+    return any(marker in low for marker in _INTERNAL_MARKERS)
+
 
 def friendly_error(raw: str | None) -> ErrorHelp:
     """Plain guidance for a failed job's error text. Known pipeline
@@ -55,6 +90,17 @@ def friendly_error(raw: str | None) -> ErrorHelp:
     unrecognized is returned as-is."""
     raw = (raw or "").strip()
     low = raw.lower()
+
+    # Checked before the pipeline branches, not after: if the text is a
+    # traceback, nothing it happens to contain should steer the message.
+    if _is_internal(low):
+        return ErrorHelp(
+            message=(
+                "Something went wrong on our side while analyzing this clip "
+                "— not with your filming. The failure has been recorded."
+            ),
+            tips=_RETRY_TIPS,
+        )
 
     if "analysis limit" in low:
         # VideoTooLongError — keep the honest headline (it carries the real

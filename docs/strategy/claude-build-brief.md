@@ -71,14 +71,16 @@ Analysis → prescription → commerce → proof. Competitors do one or two of
 those. Nobody does the round trip, and the round trip is why the store and the
 app must not drift apart.
 
-**It is already built, and it is broken in two places, not one.** The table
-below was written against the tag layer alone and is corrected in
-`docs/runbooks/gear-coverage.md`: the tag gaps are real, but they are not what
-is stopping the loop. `shop.first_sale_catalog_only` is on in `config.yaml`
-and its allowlist names three products that were all archived in the
-2026-08-03 restock, so the gate filters the entire live catalogue to nothing.
-**The app recommends no gear at all today, for any flag, and `/shop` is
-empty** — the tag coverage below is moot until that is settled.
+**It is already built, and the gate that was strangling it is now off.**
+> **Correction (2026-08-10):** an earlier revision of this paragraph said the
+> first-sale gate was on and "the app recommends no gear at all today, for
+> any flag, and `/shop` is empty." `shop.first_sale_catalog_only` was set to
+> `false` on 2026-08-09 (owner decision) — the catalogue is promotable and
+> `/shop` serves it. This file asks to be pasted into fresh sessions as
+> ground truth, which makes a stale claim here maximally expensive: verify
+> against `config.yaml` and the live store before trusting this section.
+The tag gaps below are the part that remains true — they are a sourcing
+problem, not a configuration one.
 
 `swinglab/drills.py` gives every drill a `gear_tag`, and `swinglab/web/shop.py`
 matches that tag to Shopify products. The live catalogue carries tags for 3 of

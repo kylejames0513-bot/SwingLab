@@ -86,3 +86,14 @@ def test_unexpected_analysis_error_is_logged_with_traceback(
     assert "boom: simulated bug" in data["error"]  # the job keeps its message
     logged = [r for r in caplog.records if "Unexpected error" in r.message]
     assert logged and logged[0].exc_info  # traceback attached for Sentry/ops
+
+    # ...and the page the golfer actually opens shows none of it. The two
+    # assertions above are about the ops surfaces, which are supposed to keep
+    # the raw text; this one is the surface that is not, and its absence is
+    # why a formatted traceback reached customers for as long as it did.
+    page = client.get(f"/session/{job_id}").text
+    assert "Traceback (most recent call last)" not in page
+    assert "boom: simulated bug" not in page
+    assert "jobs.py" not in page
+    assert "RuntimeError" not in page
+    assert "went wrong on our side" in page

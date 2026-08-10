@@ -615,10 +615,18 @@ def test_progress_renders_cards_flags_and_cta(accounts_app):
 # -- conversion moments ------------------------------------------------------
 
 def test_blocked_upload_page_shows_own_trend_and_pro_cta(accounts_app, monkeypatch):
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setenv("STRIPE_PRICE_ID", "price_x")
+    # The Shopify pair makes Pro purchasable — and also switches /signup to
+    # inbox-proof semantics, which 503s without a mailer. Create the account
+    # directly and log in, the same pattern test_accounts.py uses.
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
+    accounts_app.state.users.create("kyle@example.com", "longenough")
     client = TestClient(accounts_app)
-    signup(client)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
     upload_and_wait(client)
     upload_and_wait(client)  # free_per_month = 2 -> quota exhausted
     html = client.get("/").text
@@ -631,13 +639,19 @@ def test_blocked_upload_page_stays_generic_without_trend_data(tmp_path, monkeypa
     from tests.test_web import fake_analyze_ok  # writes an empty metrics.json
 
     monkeypatch.setattr(jobs_module, "analyze_video", fake_analyze_ok)
-    monkeypatch.setenv("STRIPE_SECRET_KEY", "sk_test_x")
-    monkeypatch.setenv("STRIPE_PRICE_ID", "price_x")
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "teststore.myshopify.com")
+    monkeypatch.setenv("SHOPIFY_WEBHOOK_SECRET", "test-secret")
     cfg = Config()
     cfg.web["require_account"] = True
     cfg.billing["free_per_month"] = 1
-    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "sessions"))
-    signup(client)
+    app = create_app(cfg, sessions_dir=tmp_path / "sessions")
+    app.state.users.create("kyle@example.com", "longenough")
+    client = TestClient(app)
+    assert client.post(
+        "/login",
+        data={"email": "kyle@example.com", "password": "longenough"},
+        follow_redirects=False,
+    ).status_code == 303
     upload_and_wait(client)
     html = client.get("/").text
     # free_per_month = 1, so the copy goes singular.
