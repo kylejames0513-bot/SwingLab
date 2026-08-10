@@ -8,10 +8,13 @@
   assign monthly_live = ''
   assign season_live = ''
   assign founders_live = ''
+  assign coach_live = ''
+  assign coach_yearly_live = ''
   assign season_permo_live = ''
   assign monthly_live_url = ''
   assign season_live_url = ''
   assign founders_live_url = ''
+  assign coach_live_url = ''
   if pro_product != blank
     for variant in pro_product.variants
       if variant.sku == 'SL-PRO-LIFE'
@@ -26,6 +29,11 @@
         assign monthly_cents = variant.price
         assign monthly_live = variant.price | money
         assign monthly_live_url = variant.url
+      elsif variant.sku == 'SL-COACH-1MO'
+        assign coach_live = variant.price | money
+        assign coach_live_url = variant.url
+      elsif variant.sku == 'SL-COACH-12MO'
+        assign coach_yearly_live = variant.price | money
       endif
     endfor
     if monthly_live == ''
@@ -65,129 +73,11 @@
       {%- endif -%}
     </header>
 
-    <ul class="sl-plans__grid sl-reveal sl-reveal--d1">
-      {%- for block in section.blocks -%}
-        {%- if block.type == 'plan' -%}
-          {%- liquid
-            assign b = block.settings
-            assign plan_price = ''
-            assign plan_permo = ''
-            assign plan_url = b.url
-            if b.plan == 'season'
-              assign plan_price = season_live
-              assign plan_permo = season_permo_live
-              if plan_url == blank
-                assign plan_url = season_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46811170209964'
-              endif
-              if plan_permo == ''
-                assign plan_permo = '$5.83'
-              endif
-            elsif b.plan == 'founders'
-              assign plan_price = founders_live
-              if plan_url == blank
-                assign plan_url = founders_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46839745282220'
-              endif
-            else
-              assign plan_price = monthly_live
-              if plan_url == blank
-                assign plan_url = monthly_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46811170177196'
-              endif
-            endif
-            if plan_price == ''
-              assign plan_price = b.price_text
-            endif
-            if plan_price == blank
-              case b.plan
-                when 'season'
-                  assign plan_price = '$69.99'
-                when 'founders'
-                  assign plan_price = '$249'
-                else
-                  assign plan_price = '$9.99'
-              endcase
-            endif
-            # Packaged card art ships as pre-encoded webp rungs (480/960/1536),
-            # cut by store-assets/plan_card_webp.py. Theme webps must be served
-            # whole via asset_url: asset_img_url is the legacy sizing filter,
-            # it does not process webp, and it emits the no-image placeholder —
-            # the same trap hero.liquid documents. So the responsive candidates
-            # cannot be cut on the CDN and are baked instead. The source
-            # photographs (caddieinsight-pro-card-v2.png and
-            # caddieinsight-founders-card-v2.png) stay in assets/ as the record
-            # behind them, but nothing here requests them: that was 3.7 MB of
-            # uncompressed PNG on the section where someone decides to pay.
-            # Every name is written out whole so theme-check's MissingAsset can
-            # still verify the binding.
-            #
-            # These hold the FILENAME; asset_url is applied at each use site
-            # below. Piping here instead reads better but trips theme-check's
-            # RemoteAsset warning: it inspects the src attribute literally, and
-            # a bare `{{ art_md }}` gives it no way to know the value already
-            # went through asset_url, so it assumes a remote host. Newer
-            # theme-check follows the assignment; the pinned 3.58.2 in CI does
-            # not, and the workflow runs --fail-level warning.
-            assign art_sm = 'caddieinsight-pro-card-v2-480.webp'
-            assign art_md = 'caddieinsight-pro-card-v2-960.webp'
-            assign art_lg = 'caddieinsight-pro-card-v2-1536.webp'
-            if b.plan == 'founders'
-              assign art_sm = 'caddieinsight-founders-card-v2-480.webp'
-              assign art_md = 'caddieinsight-founders-card-v2-960.webp'
-              assign art_lg = 'caddieinsight-founders-card-v2-1536.webp'
-            endif
-          -%}
-          <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
-            <div class="sl-plans__media">
-              {%- if b.image -%}
-                <img
-                  src="{{ b.image | image_url: width: 960 }}"
-                  srcset="{{ b.image | image_url: width: 480 }} 480w, {{ b.image | image_url: width: 960 }} 960w, {{ b.image | image_url: width: 1536 }} 1536w"
-                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
-                  width="{{ b.image.width }}"
-                  height="{{ b.image.height }}"
-                  alt=""
-                  loading="lazy"
-                  decoding="async">
-              {%- else -%}
-                <img
-                  src="{{ art_md | asset_url }}"
-                  srcset="{{ art_sm | asset_url }} 480w, {{ art_md | asset_url }} 960w, {{ art_lg | asset_url }} 1536w"
-                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
-                  width="1536"
-                  height="1024"
-                  alt=""
-                  loading="lazy"
-                  decoding="async">
-              {%- endif -%}
-            </div>
-            <div class="sl-plans__card-body">
-              {%- if b.badge != blank -%}<p class="sl-plans__badge">{{ b.badge }}</p>{%- endif -%}
-              <h3 class="sl-plans__name">{{ b.name | default: 'CaddieInsight Pro' }}</h3>
-              <p class="sl-plans__price">
-                <span class="sl-plans__amount">{{ plan_price }}</span>
-                {%- if b.term != blank -%}<span class="sl-plans__term">{{ b.term }}</span>{%- endif -%}
-                {%- if b.show_save -%}<span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{%- endif -%}
-              </p>
-              {%- if b.plan == 'season' -%}
-                <p class="sl-plans__permo">{{ 'homepage.plans.permo' | t: amount: plan_permo }}</p>
-              {%- endif -%}
-              {%- if b.description != blank -%}<p class="sl-plans__desc">{{ b.description }}</p>{%- endif -%}
-              {%- if b.note != blank -%}<p class="sl-plans__note">{{ b.note }}</p>{%- endif -%}
-              <a class="sl-btn{% if b.featured %} sl-plans__cta--featured{% else %} sl-btn--outline{% endif %} sl-plans__cta" href="{{ plan_url }}">{{ b.cta_label | default: 'Get Pro' }}</a>
-            </div>
-          </li>
-        {%- endif -%}
-      {%- endfor -%}
-    </ul>
-
+    {%- comment -%}
+      The free entry point leads. The old order rendered Free last, after
+      all three paid tiers — the product's actual on-ramp buried under the
+      things it upsells to.
+    {%- endcomment -%}
     {%- for block in section.blocks -%}
       {%- if block.type == 'free_band' -%}
         {%- liquid
@@ -244,6 +134,153 @@
         </aside>
       {%- endif -%}
     {%- endfor -%}
+
+    <ul class="sl-plans__grid sl-reveal sl-reveal--d1">
+      {%- for block in section.blocks -%}
+        {%- if block.type == 'plan' -%}
+          {%- liquid
+            assign b = block.settings
+            assign plan_price = ''
+            assign plan_permo = ''
+            assign plan_yearly = ''
+            assign plan_url = b.url
+            if b.plan == 'season'
+              assign plan_price = season_live
+              assign plan_permo = season_permo_live
+              if plan_url == blank
+                assign plan_url = season_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46811170209964'
+              endif
+              if plan_permo == ''
+                assign plan_permo = '$5.83'
+              endif
+            elsif b.plan == 'founders'
+              assign plan_price = founders_live
+              if plan_url == blank
+                assign plan_url = founders_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46839745282220'
+              endif
+            elsif b.plan == 'coach'
+              assign plan_price = coach_live
+              assign plan_yearly = coach_yearly_live
+              if plan_url == blank
+                assign plan_url = coach_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46906759741612'
+              endif
+              if plan_price == ''
+                assign plan_price = '$19.99'
+              endif
+              if plan_yearly == ''
+                assign plan_yearly = '$139.99'
+              endif
+            else
+              assign plan_price = monthly_live
+              assign plan_yearly = season_live
+              if plan_url == blank
+                assign plan_url = monthly_live_url
+              endif
+              if plan_url == blank
+                assign plan_url = '/products/swinglab-pro?variant=46811170177196'
+              endif
+              if plan_yearly == ''
+                assign plan_yearly = '$69.99'
+              endif
+            endif
+            if plan_price == ''
+              assign plan_price = b.price_text
+            endif
+            if plan_price == blank
+              case b.plan
+                when 'season'
+                  assign plan_price = '$69.99'
+                when 'founders'
+                  assign plan_price = '$249'
+                else
+                  assign plan_price = '$9.99'
+              endcase
+            endif
+            # Packaged card art ships as pre-encoded webp rungs (480/960/1536),
+            # cut by store-assets/plan_card_webp.py. Theme webps must be served
+            # whole via asset_url: asset_img_url is the legacy sizing filter,
+            # it does not process webp, and it emits the no-image placeholder —
+            # the same trap hero.liquid documents. So the responsive candidates
+            # cannot be cut on the CDN and are baked instead. The source
+            # photographs (caddieinsight-pro-card-v2.png and
+            # caddieinsight-founders-card-v2.png) stay in assets/ as the record
+            # behind them, but nothing here requests them: that was 3.7 MB of
+            # uncompressed PNG on the section where someone decides to pay.
+            # Every name is written out whole so theme-check's MissingAsset can
+            # still verify the binding.
+            #
+            # These hold the FILENAME; asset_url is applied at each use site
+            # below. Piping here instead reads better but trips theme-check's
+            # RemoteAsset warning: it inspects the src attribute literally, and
+            # a bare `{{ art_md }}` gives it no way to know the value already
+            # went through asset_url, so it assumes a remote host. Newer
+            # theme-check follows the assignment; the pinned 3.58.2 in CI does
+            # not, and the workflow runs --fail-level warning.
+            assign art_sm = 'caddieinsight-pro-card-v2-480.webp'
+            assign art_md = 'caddieinsight-pro-card-v2-960.webp'
+            assign art_lg = 'caddieinsight-pro-card-v2-1536.webp'
+            # coach reuses the pro card art — same product family
+            if b.plan == 'founders'
+              assign art_sm = 'caddieinsight-founders-card-v2-480.webp'
+              assign art_md = 'caddieinsight-founders-card-v2-960.webp'
+              assign art_lg = 'caddieinsight-founders-card-v2-1536.webp'
+            endif
+          -%}
+          <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
+            <div class="sl-plans__media">
+              {%- if b.image -%}
+                <img
+                  src="{{ b.image | image_url: width: 960 }}"
+                  srcset="{{ b.image | image_url: width: 480 }} 480w, {{ b.image | image_url: width: 960 }} 960w, {{ b.image | image_url: width: 1536 }} 1536w"
+                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
+                  width="{{ b.image.width }}"
+                  height="{{ b.image.height }}"
+                  alt=""
+                  loading="lazy"
+                  decoding="async">
+              {%- else -%}
+                <img
+                  src="{{ art_md | asset_url }}"
+                  srcset="{{ art_sm | asset_url }} 480w, {{ art_md | asset_url }} 960w, {{ art_lg | asset_url }} 1536w"
+                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
+                  width="1536"
+                  height="1024"
+                  alt=""
+                  loading="lazy"
+                  decoding="async">
+              {%- endif -%}
+            </div>
+            <div class="sl-plans__card-body">
+              {%- if b.badge != blank -%}<p class="sl-plans__badge">{{ b.badge }}</p>{%- endif -%}
+              <h3 class="sl-plans__name">{{ b.name | default: 'CaddieInsight Pro' }}</h3>
+              <p class="sl-plans__price">
+                <span class="sl-plans__amount">{{ plan_price }}</span>
+                {%- if b.term != blank -%}<span class="sl-plans__term">{{ b.term }}</span>{%- endif -%}
+                {%- if b.show_save -%}<span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{%- endif -%}
+              </p>
+              {%- if b.plan == 'season' -%}
+                <p class="sl-plans__permo">{{ 'homepage.plans.permo' | t: amount: plan_permo }}</p>
+              {%- endif -%}
+              {%- if plan_yearly != '' and plan_yearly != blank -%}
+                <p class="sl-plans__permo">{{ 'homepage.plans.yearly_line' | t: amount: plan_yearly }}{% if b.show_save %} <span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{% endif %}</p>
+              {%- endif -%}
+              {%- if b.description != blank -%}<p class="sl-plans__desc">{{ b.description }}</p>{%- endif -%}
+              {%- if b.note != blank -%}<p class="sl-plans__note">{{ b.note }}</p>{%- endif -%}
+              <a class="sl-btn{% if b.featured %} sl-plans__cta--featured{% else %} sl-btn--outline{% endif %} sl-plans__cta" href="{{ plan_url }}">{{ b.cta_label | default: 'Get Pro' }}</a>
+            </div>
+          </li>
+        {%- endif -%}
+      {%- endfor -%}
+    </ul>
 
     {%- if section.settings.footnote != blank -%}
       <p class="sl-plans__footnote">{{ section.settings.footnote }}</p>

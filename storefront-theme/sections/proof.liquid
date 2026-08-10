@@ -1,0 +1,95 @@
+{%- comment -%}
+  The proof slot. Social proof does not exist yet — no reviews, no
+  customer before/afters — and inventing it is off the table (the
+  anti-fake checklist in docs/strategy/positioning-and-growth.md). This
+  section renders NOTHING until a block is added, so the homepage keeps a
+  designed home for real proof the day it exists instead of needing a
+  redesign to add it.
+{%- endcomment -%}
+{%- if section.blocks.size > 0 -%}
+<section class="sl-proof" aria-labelledby="Proof-{{ section.id }}">
+  <div class="sl-wrap sl-reveal">
+    {%- assign head_eyebrow = section.settings.eyebrow | default: 'From the range' -%}
+    {%- assign head_title = section.settings.heading | default: 'Proof it moved' -%}
+    {%- assign head_id = 'Proof-' | append: section.id -%}
+    {% render 'section-head', eyebrow: head_eyebrow, title: head_title, center: true, heading_id: head_id %}
+    <div class="sl-proof__grid">
+      {%- for block in section.blocks -%}
+        <figure class="sl-proof__card"{{ block.shopify_attributes }}>
+          {%- if block.settings.image -%}
+            <div class="sl-proof__media">
+              {{ block.settings.image | image_url: width: 960 | image_tag: loading: 'lazy', alt: block.settings.alt | default: '', widths: '480, 720, 960', sizes: '(min-width: 1000px) 33vw, (min-width: 560px) 50vw, calc(100vw - 48px)' }}
+            </div>
+          {%- endif -%}
+          <blockquote class="sl-proof__quote">{{ block.settings.quote }}</blockquote>
+          {%- if block.settings.attribution != blank -%}
+            <figcaption class="sl-mono-label">{{ block.settings.attribution }}</figcaption>
+          {%- endif -%}
+        </figure>
+      {%- endfor -%}
+    </div>
+  </div>
+</section>
+{%- endif -%}
+
+{% stylesheet %}
+.sl-proof {
+  padding-top: var(--sl-section-space-compact);
+  padding-bottom: var(--sl-section-space-compact);
+  border-top: 1px solid var(--sl-border);
+}
+.sl-proof__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sl-space-5);
+}
+@media (min-width: 560px) {
+  .sl-proof__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1000px) {
+  .sl-proof__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.sl-proof__card {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-3);
+  padding: var(--sl-card-inset);
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-card);
+}
+.sl-proof__media img { border-radius: var(--sl-radius-sm); }
+.sl-proof__quote {
+  margin: 0;
+  font-size: var(--sl-text-base);
+  line-height: 1.62;
+  color: var(--sl-ink);
+  text-wrap: pretty;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Proof",
+  "settings": [
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "From the range" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Proof it moved" }
+  ],
+  "blocks": [
+    {
+      "type": "proof",
+      "name": "Proof card",
+      "settings": [
+        { "type": "image_picker", "id": "image", "label": "Before/after or screenshot" },
+        { "type": "text", "id": "alt", "label": "Image alt text" },
+        { "type": "textarea", "id": "quote", "label": "Quote or result", "info": "Real customers and real numbers only — never invented proof." },
+        { "type": "text", "id": "attribution", "label": "Attribution" }
+      ]
+    }
+  ],
+  "max_blocks": 6,
+  "presets": [{ "name": "Proof" }]
+}
+{% endschema %}

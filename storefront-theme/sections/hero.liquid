@@ -439,7 +439,12 @@
     justify-items: stretch;
     gap: 0;
   }
-  .sl-hero__signal-band { display: none; }
+  /* The signal card is the only visual showing what the product produces —
+     it stays on phones, compact and full-width, instead of vanishing. */
+  .sl-hero__signal-band {
+    padding-top: var(--sl-space-3);
+    padding-bottom: var(--sl-space-6);
+  }
   .sl-hero__copy {
     margin-inline: 0;
     text-align: left;
@@ -494,7 +499,10 @@
     margin: 14px 0 0;
     text-align: left;
   }
-  .sl-hero__signal { display: none; }
+  .sl-hero__signal {
+    width: 100%;
+    padding: var(--sl-space-4) var(--sl-space-4) var(--sl-space-3);
+  }
 }
 @media (max-width: 559px) {
   .sl-hero__brand { font-size: var(--sl-text-xl); letter-spacing: -0.03em; }

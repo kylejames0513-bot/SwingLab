@@ -4,14 +4,21 @@
   # Variants match by SKU first; lifetime access is always SKU SL-PRO-LIFE.
   assign pro_product = all_products['swinglab-pro']
   assign live_pro_price = ''
+  assign live_coach_price = ''
   if pro_product != blank
     assign monthly_price = pro_product.price_min | money
     assign yearly_price = ''
     assign founders_price = ''
+    assign coach_monthly_price = ''
+    assign coach_yearly_price = ''
     for variant in pro_product.variants
       assign variant_title = variant.title | downcase
       if variant.sku == 'SL-PRO-LIFE'
         assign founders_price = variant.price | money
+      elsif variant.sku == 'SL-COACH-1MO'
+        assign coach_monthly_price = variant.price | money
+      elsif variant.sku == 'SL-COACH-12MO'
+        assign coach_yearly_price = variant.price | money
       elsif variant.sku == 'SL-PRO-12MO'
         assign yearly_price = variant.price | money
       elsif yearly_price == '' and variant_title contains 'year' or variant_title contains 'annual' or variant_title contains 'season'
@@ -22,7 +29,19 @@
     if yearly_price != blank
       assign live_pro_price = live_pro_price | append: ' · Season Pass ' | append: yearly_price | append: '/yr'
     endif
-    if founders_price != blank
+    if coach_monthly_price != blank
+      assign live_coach_price = coach_monthly_price | append: '/mo'
+      if coach_yearly_price != blank
+        assign live_coach_price = live_coach_price | append: ' · ' | append: coach_yearly_price | append: '/yr'
+      endif
+      # Founders is Coach-for-life, so its price belongs to the Coach column
+      # when that column renders...
+      if founders_price != blank
+        assign live_coach_price = live_coach_price | append: ' · Founders Pass ' | append: founders_price
+      endif
+    endif
+    # ...and stays on the Pro line only for a two-column configuration.
+    if founders_price != blank and section.settings.coach_label == blank
       assign live_pro_price = live_pro_price | append: ' · Founders Pass ' | append: founders_price
     endif
   endif
@@ -48,6 +67,9 @@
             <th scope="col" class="sl-compare__feature-head"><span class="visually-hidden">Feature</span></th>
             <th scope="col" class="sl-compare__col">{{ section.settings.free_label | default: 'Free' }}</th>
             <th scope="col" class="sl-compare__col sl-compare__col--pro">{{ section.settings.pro_label | default: 'Pro' }}</th>
+            {%- if section.settings.coach_label != blank -%}
+              <th scope="col" class="sl-compare__col sl-compare__col--pro">{{ section.settings.coach_label }}</th>
+            {%- endif -%}
           </tr>
         </thead>
         <tbody>
@@ -63,6 +85,15 @@
                   {{ block.settings.pro_value }}
                 {%- endif -%}
               </td>
+              {%- if section.settings.coach_label != blank -%}
+                <td class="sl-compare__pro">
+                  {%- if feature_key == 'price' and live_coach_price != blank -%}
+                    {{ live_coach_price }}
+                  {%- else -%}
+                    {{ block.settings.coach_value }}
+                  {%- endif -%}
+                </td>
+              {%- endif -%}
             </tr>
           {%- endfor -%}
         </tbody>
@@ -136,7 +167,7 @@
 }
 .sl-compare__table {
   width: 100%;
-  min-width: 560px;
+  min-width: 640px;
   border-collapse: separate;
   border-spacing: 0;
 }
@@ -262,6 +293,7 @@
     { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Both plans use the same coaching engine. Pro removes the monthly limit and adds replay plus progress tracking." },
     { "type": "text", "id": "free_label", "label": "Free column label", "default": "Free" },
     { "type": "text", "id": "pro_label", "label": "Pro column label", "default": "Pro" },
+    { "type": "text", "id": "coach_label", "label": "Coach column label", "info": "Leave empty to hide the Coach column." },
     { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Get Pro" },
     { "type": "url", "id": "primary_url", "label": "Primary button link" },
     { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Start free" },
