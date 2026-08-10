@@ -1,0 +1,45 @@
+<div class="sl-wrap sl-auth">
+  <header class="sl-page-hero">
+    <p class="sl-eyebrow">Store account</p>
+    <h1 class="sl-page-hero__title">Create account</h1>
+  </header>
+
+  <div class="sl-auth__card">
+    {% form 'create_customer', class: 'sl-auth__form' %}
+      {%- if form.errors -%}
+        <div class="sl-auth__errors" role="alert">{{ form.errors | default_errors }}</div>
+      {%- endif -%}
+      <div class="sl-auth__field">
+        <label class="sl-label" for="sl-reg-first">First name</label>
+        <input id="sl-reg-first" class="sl-input" type="text" name="customer[first_name]" autocomplete="given-name">
+      </div>
+      <div class="sl-auth__field">
+        <label class="sl-label" for="sl-reg-last">Last name</label>
+        <input id="sl-reg-last" class="sl-input" type="text" name="customer[last_name]" autocomplete="family-name">
+      </div>
+      <div class="sl-auth__field">
+        <label class="sl-label" for="sl-reg-email">Email</label>
+        <input id="sl-reg-email" class="sl-input" type="email" name="customer[email]" autocomplete="email" required>
+      </div>
+      <div class="sl-auth__field">
+        <label class="sl-label" for="sl-reg-password">Password</label>
+        <input id="sl-reg-password" class="sl-input" type="password" name="customer[password]" autocomplete="new-password" required>
+      </div>
+      <button type="submit" class="sl-btn sl-btn--primary">Create account</button>
+    {% endform %}
+  </div>
+
+  <p class="sl-auth__alt">Already have one? <a href="{{ routes.account_login_url }}">Sign in</a></p>
+  <div class="sl-note">
+    <strong>This is the store account</strong> — orders, addresses, and
+    subscriptions. The free swing-analysis account lives at
+    <a href="https://app.caddieinsight.com/signup">app.caddieinsight.com</a>.
+  </div>
+</div>
+
+{% schema %}
+{
+  "name": "Register",
+  "settings": []
+}
+{% endschema %}

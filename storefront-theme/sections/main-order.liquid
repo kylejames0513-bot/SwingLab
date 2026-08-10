@@ -1,0 +1,77 @@
+<div class="sl-wrap sl-account sl-main-order">
+  <header class="sl-account__head">
+    <div>
+      <p class="sl-eyebrow">Order {{ order.name }}</p>
+      <h1 class="sl-page-hero__title">{{ order.created_at | date: '%B %-d, %Y' }}</h1>
+      <p class="sl-mono-label">{{ order.financial_status_label }} · {{ order.fulfillment_status_label }}</p>
+    </div>
+    <a class="sl-btn sl-btn--sm sl-btn--outline" href="{{ routes.account_url }}">All orders</a>
+  </header>
+
+  <div class="sl-account__panel">
+    <div class="sl-account__scroll">
+      <table class="sl-spec-table">
+        <thead>
+          <tr><th scope="col">Item</th><th scope="col">Price</th><th scope="col">Qty</th><th scope="col">Total</th></tr>
+        </thead>
+        <tbody>
+          {%- for line_item in order.line_items -%}
+            <tr>
+              <th scope="row">
+                {{ line_item.title }}
+                {%- if line_item.selling_plan_allocation -%}
+                  <br><span class="sl-mono-label">{{ line_item.selling_plan_allocation.selling_plan.name }}</span>
+                {%- endif -%}
+              </th>
+              <td>{{ line_item.final_price | money }}</td>
+              <td>{{ line_item.quantity }}</td>
+              <td>{{ line_item.final_line_price | money }}</td>
+            </tr>
+          {%- endfor -%}
+        </tbody>
+        <tfoot>
+          <tr><th scope="row" colspan="3">Subtotal</th><td>{{ order.line_items_subtotal_price | money }}</td></tr>
+          {%- for shipping_method in order.shipping_methods -%}
+            <tr><th scope="row" colspan="3">Shipping ({{ shipping_method.title }})</th><td>{{ shipping_method.price | money }}</td></tr>
+          {%- endfor -%}
+          {%- if order.total_refunded_amount > 0 -%}
+            <tr><th scope="row" colspan="3">Refunded</th><td>−{{ order.total_refunded_amount | money }}</td></tr>
+          {%- endif -%}
+          <tr><th scope="row" colspan="3">Total</th><td><strong>{{ order.total_net_amount | money }}</strong></td></tr>
+        </tfoot>
+      </table>
+    </div>
+  </div>
+
+  <div class="sl-account__grid sl-main-order__addresses">
+    {%- if order.shipping_address -%}
+      <section class="sl-account__panel" aria-labelledby="OrderShipping">
+        <h2 id="OrderShipping">Shipping address</h2>
+        <p>{{ order.shipping_address | format_address }}</p>
+      </section>
+    {%- endif -%}
+    {%- if order.billing_address -%}
+      <section class="sl-account__panel" aria-labelledby="OrderBilling">
+        <h2 id="OrderBilling">Billing address</h2>
+        <p>{{ order.billing_address | format_address }}</p>
+      </section>
+    {%- endif -%}
+  </div>
+</div>
+
+{% stylesheet %}
+.sl-main-order__addresses {
+  margin-top: var(--sl-space-5);
+  grid-template-columns: 1fr;
+}
+@media (min-width: 750px) {
+  .sl-main-order__addresses { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Order",
+  "settings": []
+}
+{% endschema %}

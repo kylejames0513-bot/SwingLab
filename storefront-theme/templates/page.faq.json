@@ -1,0 +1,111 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-page",
+      "settings": {}
+    },
+    "faq": {
+      "type": "faq",
+      "blocks": {
+        "q_filming": {
+          "type": "qa",
+          "settings": {
+            "question": "How should I film my swing?",
+            "answer": "Phone at hip height, face-on, ball on a tee — portrait clips straight off a phone work fine. Down-the-line clips get tempo & rhythm only for now; film face-on for the full report."
+          }
+        },
+        "q_trim": {
+          "type": "qa",
+          "settings": {
+            "question": "Do I need to trim the clip first?",
+            "answer": "No. Upload the whole clip — CaddieInsight listens for audible strikes and separates detected swings automatically. If a strike is not audible or detection misses it, you can supply a manual strike time."
+          }
+        },
+        "q_club": {
+          "type": "qa",
+          "settings": {
+            "question": "Why do I have to choose a club?",
+            "answer": "For irons, hybrids, fairway woods, and drivers, supported club context helps rank responsible coaching. CaddieInsight requires the club before upload and keeps it with the report. A wedge is stored and used for matched comparisons, but its coaching remains neutral until shot intent and lie are captured."
+          }
+        },
+        "q_history": {
+          "type": "qa",
+          "settings": {
+            "question": "Can I delete my swing history and start over?",
+            "answer": "Yes. Your account includes a deliberate delete-history flow so you can remove prior sessions and restart your practice record."
+          }
+        },
+        "q_free": {
+          "type": "qa",
+          "settings": {
+            "question": "What does the free plan include?",
+            "answer": "One full swing analysis per calendar month, free forever. It produces the complete report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes. Pro adds unlimited filming; Coach adds the annotated replay, the progress dashboard, and the matched re-film verdict."
+          }
+        },
+        "q_pricing": {
+          "type": "qa",
+          "settings": {
+            "question": "What do the paid plans cost?",
+            "answer": "Pro is $9.99/month or $69.99 for a full year. Coach is $19.99/month or $139.99/year and adds the replay, the dashboard, and the proof cycle. The Founders Pass is one payment of $249, includes every Coach feature for good, and never renews — only the first 100 members can buy one, because a lifetime product is only honest if the business can afford to keep running it."
+          }
+        },
+        "q_pro_unlock": {
+          "type": "qa",
+          "settings": {
+            "question": "How does Pro unlock after I buy it here?",
+            "answer": "Pro connects to the CaddieInsight account linked to your purchase email. After checkout, open the app to sign in or finish account setup; access activates when the paid order is confirmed."
+          }
+        },
+        "q_lefty": {
+          "type": "qa",
+          "settings": {
+            "question": "Does it work for left-handed golfers?",
+            "answer": "Yes. Choose your handedness when you upload, and every measurement, overlay, and coaching note is computed for a left-handed swing."
+          }
+        },
+        "q_shipping": {
+          "type": "qa",
+          "settings": {
+            "question": "How long does gear take to arrive?",
+            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and U.S. delivery typically takes 6–12 business days, with tracking emailed at dispatch."
+          }
+        },
+        "q_returns": {
+          "type": "qa",
+          "settings": {
+            "question": "What if a training aid isn't right for me?",
+            "answer": "Unused gear may be returned within 30 days. See the Shipping & Returns page for eligibility and instructions."
+          }
+        },
+        "q_refund": {
+          "type": "qa",
+          "settings": {
+            "question": "Can I get a refund on Pro?",
+            "answer": "CaddieInsight Pro and other digital services are refundable within 14 days of purchase if unused."
+          }
+        }
+      },
+      "block_order": [
+        "q_filming",
+        "q_trim",
+        "q_club",
+        "q_history",
+        "q_free",
+        "q_pricing",
+        "q_pro_unlock",
+        "q_lefty",
+        "q_shipping",
+        "q_returns",
+        "q_refund"
+      ],
+      "settings": {
+        "anchor": "faq",
+        "heading": "Questions, answered"
+      }
+    }
+  },
+  "order": [
+    "main",
+    "faq"
+  ]
+}

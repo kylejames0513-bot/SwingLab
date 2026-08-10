@@ -1,0 +1,118 @@
+{%- comment -%}
+  The blog index — the Practice Letter's on-site home. The footer
+  newsletter promises weekly content; until this template existed the
+  promise had nowhere on the storefront to live.
+{%- endcomment -%}
+<div class="sl-wrap sl-main-blog">
+  <header class="sl-page-hero">
+    <p class="sl-eyebrow">{{ section.settings.eyebrow | default: 'The Practice Letter' }}</p>
+    <h1 class="sl-page-hero__title">{{ blog.title }}</h1>
+    {%- if section.settings.intro != blank -%}
+      <p class="sl-page-hero__lede">{{ section.settings.intro }}</p>
+    {%- endif -%}
+  </header>
+
+  {%- paginate blog.articles by 12 -%}
+    {%- if blog.articles.size == 0 -%}
+      <p class="sl-empty">{{ section.settings.empty_text | default: 'The first letter is being written. The signup form in the footer gets it to your inbox the day it lands.' }}</p>
+    {%- else -%}
+      <div class="sl-main-blog__grid">
+        {%- for article in blog.articles -%}
+          <article class="sl-main-blog__card">
+            <a href="{{ article.url }}" class="sl-main-blog__link">
+              {%- if article.image -%}
+                <div class="sl-main-blog__media">
+                  {{ article.image | image_url: width: 720 | image_tag: loading: 'lazy', alt: article.image.alt | default: article.title, widths: '360, 540, 720', sizes: '(min-width: 1000px) 33vw, (min-width: 560px) 50vw, calc(100vw - 48px)' }}
+                </div>
+              {%- endif -%}
+              <p class="sl-mono-label">{{ article.published_at | date: '%b %-d, %Y' }}</p>
+              <h2 class="sl-main-blog__title">{{ article.title }}</h2>
+              {%- if article.excerpt_or_content != blank -%}
+                <p class="sl-main-blog__excerpt">{{ article.excerpt_or_content | strip_html | truncatewords: 32 }}</p>
+              {%- endif -%}
+            </a>
+          </article>
+        {%- endfor -%}
+      </div>
+
+      {%- if paginate.pages > 1 -%}
+        <nav class="sl-main-blog__pagination" aria-label="Pagination">
+          {%- if paginate.previous -%}
+            <a class="sl-btn sl-btn--outline" href="{{ paginate.previous.url }}">Newer letters</a>
+          {%- endif -%}
+          <span class="sl-mono-label">{{ paginate.current_page }} / {{ paginate.pages }}</span>
+          {%- if paginate.next -%}
+            <a class="sl-btn sl-btn--outline" href="{{ paginate.next.url }}">Older letters</a>
+          {%- endif -%}
+        </nav>
+      {%- endif -%}
+    {%- endif -%}
+  {%- endpaginate -%}
+</div>
+
+{% stylesheet %}
+.sl-main-blog {
+  padding-top: var(--sl-space-7);
+  padding-bottom: var(--sl-space-9);
+}
+.sl-main-blog__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sl-space-5);
+}
+@media (min-width: 560px) {
+  .sl-main-blog__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1000px) {
+  .sl-main-blog__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+.sl-main-blog__card {
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  background: var(--sl-bg-card);
+  box-shadow: var(--sl-shadow-card);
+  overflow: hidden;
+}
+.sl-main-blog__link {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-2);
+  height: 100%;
+  padding: var(--sl-card-inset);
+  color: inherit;
+  text-decoration: none;
+}
+.sl-main-blog__media {
+  margin: calc(-1 * var(--sl-card-inset)) calc(-1 * var(--sl-card-inset)) var(--sl-space-2);
+}
+.sl-main-blog__media img { width: 100%; height: auto; aspect-ratio: 3 / 2; object-fit: cover; }
+.sl-main-blog__title {
+  margin: 0;
+  font-size: var(--sl-text-xl);
+  letter-spacing: -0.02em;
+}
+.sl-main-blog__link:hover .sl-main-blog__title { color: var(--sl-green-btn); }
+.sl-main-blog__excerpt {
+  margin: 0;
+  color: var(--sl-ink-soft);
+  line-height: 1.6;
+}
+.sl-main-blog__pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sl-space-4);
+  margin-top: var(--sl-space-7);
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Blog",
+  "settings": [
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "The Practice Letter" },
+    { "type": "textarea", "id": "intro", "label": "Intro", "default": "One practical drill each week — the setup, the pass mark, and what must match on the next clip." },
+    { "type": "textarea", "id": "empty_text", "label": "Empty-state text" }
+  ]
+}
+{% endschema %}

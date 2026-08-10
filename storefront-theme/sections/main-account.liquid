@@ -1,0 +1,83 @@
+<div class="sl-wrap sl-account">
+  <header class="sl-account__head">
+    <div>
+      <p class="sl-eyebrow">Store account</p>
+      <h1 class="sl-page-hero__title">{{ customer.first_name | default: 'Your account' }}</h1>
+    </div>
+    <a class="sl-btn sl-btn--sm sl-btn--outline" href="{{ routes.account_logout_url }}">Log out</a>
+  </header>
+
+  <div class="sl-account__grid">
+    <section class="sl-account__panel" aria-labelledby="AccountOrders">
+      <h2 id="AccountOrders">Orders</h2>
+      {%- paginate customer.orders by 10 -%}
+        {%- if customer.orders.size == 0 -%}
+          <p class="sl-empty">No orders yet. <a href="{{ routes.all_products_collection_url }}">The gear collection</a> is where they start.</p>
+        {%- else -%}
+          <div class="sl-account__scroll">
+            <table class="sl-spec-table">
+              <thead>
+                <tr><th scope="col">Order</th><th scope="col">Date</th><th scope="col">Status</th><th scope="col">Total</th></tr>
+              </thead>
+              <tbody>
+                {%- for order in customer.orders -%}
+                  <tr>
+                    <th scope="row"><a href="{{ order.customer_url }}">{{ order.name }}</a></th>
+                    <td>{{ order.created_at | date: '%b %-d, %Y' }}</td>
+                    <td>{{ order.financial_status_label }} · {{ order.fulfillment_status_label }}</td>
+                    <td>{{ order.total_net_amount | money }}</td>
+                  </tr>
+                {%- endfor -%}
+              </tbody>
+            </table>
+          </div>
+          {%- if paginate.pages > 1 -%}
+            <nav class="sl-account__pagination" aria-label="Orders pagination">
+              {%- if paginate.previous -%}<a href="{{ paginate.previous.url }}">Newer</a>{%- endif -%}
+              <span class="sl-mono-label">{{ paginate.current_page }} / {{ paginate.pages }}</span>
+              {%- if paginate.next -%}<a href="{{ paginate.next.url }}">Older</a>{%- endif -%}
+            </nav>
+          {%- endif -%}
+        {%- endif -%}
+      {%- endpaginate -%}
+    </section>
+
+    <div>
+      <section class="sl-account__panel" aria-labelledby="AccountAddresses">
+        <h2 id="AccountAddresses">Addresses</h2>
+        {%- if customer.default_address -%}
+          <p>{{ customer.default_address | format_address }}</p>
+        {%- else -%}
+          <p class="sl-empty">No saved addresses.</p>
+        {%- endif -%}
+        <a class="sl-btn sl-btn--sm sl-btn--outline" href="{{ routes.account_addresses_url }}">Manage addresses</a>
+      </section>
+
+      <section class="sl-account__panel sl-account__panel--app" aria-labelledby="AccountApp">
+        <h2 id="AccountApp">Your swing reports</h2>
+        <p>Membership unlocks on the CaddieInsight account matching your
+          checkout email. Reports, drills, and your progress live in the app.</p>
+        <a class="sl-btn sl-btn--sm sl-btn--primary" href="https://app.caddieinsight.com">Open the app</a>
+      </section>
+    </div>
+  </div>
+</div>
+
+{% stylesheet %}
+.sl-account__scroll { overflow-x: auto; }
+.sl-account__pagination {
+  display: flex;
+  align-items: center;
+  gap: var(--sl-space-3);
+  margin-top: var(--sl-space-4);
+}
+.sl-account__panel--app { margin-top: var(--sl-space-5); }
+.sl-account__panel .sl-btn { margin-top: var(--sl-space-3); }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Account",
+  "settings": []
+}
+{% endschema %}

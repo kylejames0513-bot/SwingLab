@@ -1,0 +1,58 @@
+<article class="sl-wrap sl-main-article">
+  <header class="sl-page-hero sl-main-article__head">
+    <p class="sl-eyebrow">{{ blog.title }}</p>
+    <h1 class="sl-page-hero__title">{{ article.title }}</h1>
+    <p class="sl-mono-label">{{ article.published_at | date: '%B %-d, %Y' }}{% if article.author != blank %} · {{ article.author }}{% endif %}</p>
+  </header>
+
+  {%- if article.image -%}
+    <div class="sl-main-article__media">
+      {{ article.image | image_url: width: 1400 | image_tag: alt: article.image.alt | default: article.title, widths: '720, 1000, 1400', sizes: '(min-width: 1000px) 860px, calc(100vw - 48px)', fetchpriority: 'high' }}
+    </div>
+  {%- endif -%}
+
+  <div class="sl-rte sl-main-article__body">
+    {{ article.content }}
+  </div>
+
+  <footer class="sl-main-article__foot">
+    <a class="sl-btn sl-btn--outline" href="{{ blog.url }}">All letters</a>
+  </footer>
+</article>
+
+<script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    "headline": {{ article.title | json }},
+    "datePublished": {{ article.published_at | date: '%Y-%m-%dT%H:%M:%S%z' | json }},
+    {%- if article.image %}
+    "image": {{ article.image | image_url: width: 1400 | prepend: 'https:' | json }},
+    {%- endif %}
+    "author": { "@type": "Organization", "name": "CaddieInsight" },
+    "publisher": { "@type": "Organization", "name": "CaddieInsight" },
+    "url": {{ request.origin | append: article.url | json }}
+  }
+</script>
+
+{% stylesheet %}
+.sl-main-article {
+  max-width: 860px;
+  padding-top: var(--sl-space-7);
+  padding-bottom: var(--sl-space-9);
+}
+.sl-main-article__head { margin-bottom: var(--sl-space-6); }
+.sl-main-article__media { margin-bottom: var(--sl-space-6); }
+.sl-main-article__media img { border-radius: var(--sl-radius-lg); }
+.sl-main-article__body { font-size: var(--sl-text-lg); }
+.sl-main-article__body h2 { margin: var(--sl-space-6) 0 var(--sl-space-3); }
+.sl-main-article__body h3 { margin: var(--sl-space-5) 0 var(--sl-space-2); }
+.sl-main-article__foot { margin-top: var(--sl-space-7); }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Article",
+  "settings": []
+}
+{% endschema %}

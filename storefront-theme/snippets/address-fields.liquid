@@ -1,0 +1,55 @@
+{%- comment -%}
+  The address form body, shared by the new-address and edit-address forms
+  in sections/main-addresses.liquid.
+
+  Accepts:
+  - form     (required) the customer_address form object
+  - address  (optional) existing address for field values
+{%- endcomment -%}
+{%- assign uid = form.id -%}
+{%- if form.errors -%}
+  <div class="sl-auth__errors" role="alert">{{ form.errors | default_errors }}</div>
+{%- endif -%}
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-first-{{ uid }}">First name</label>
+  <input id="af-first-{{ uid }}" class="sl-input" type="text" name="address[first_name]" value="{{ address.first_name | escape }}" autocomplete="given-name">
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-last-{{ uid }}">Last name</label>
+  <input id="af-last-{{ uid }}" class="sl-input" type="text" name="address[last_name]" value="{{ address.last_name | escape }}" autocomplete="family-name">
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-address1-{{ uid }}">Address</label>
+  <input id="af-address1-{{ uid }}" class="sl-input" type="text" name="address[address1]" value="{{ address.address1 | escape }}" autocomplete="address-line1">
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-address2-{{ uid }}">Apartment, suite, etc.</label>
+  <input id="af-address2-{{ uid }}" class="sl-input" type="text" name="address[address2]" value="{{ address.address2 | escape }}" autocomplete="address-line2">
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-city-{{ uid }}">City</label>
+  <input id="af-city-{{ uid }}" class="sl-input" type="text" name="address[city]" value="{{ address.city | escape }}" autocomplete="address-level2">
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-country-{{ uid }}">Country/region</label>
+  {%- comment -%}
+    all_country_option_tags is a Liquid object, not a filter — it emits
+    every <option> with no selection. The data-default hook lets the
+    section's two-line script preselect the saved country.
+  {%- endcomment -%}
+  <select id="af-country-{{ uid }}" class="sl-select" name="address[country]" autocomplete="country-name" data-default="{{ address.country | escape }}">
+    {{ all_country_option_tags }}
+  </select>
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-province-{{ uid }}">State/province</label>
+  <input id="af-province-{{ uid }}" class="sl-input" type="text" name="address[province]" value="{{ address.province | escape }}" autocomplete="address-level1">
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-zip-{{ uid }}">ZIP/postal code</label>
+  <input id="af-zip-{{ uid }}" class="sl-input" type="text" name="address[zip]" value="{{ address.zip | escape }}" autocomplete="postal-code">
+</div>
+<div class="sl-auth__field">
+  <label class="sl-label" for="af-phone-{{ uid }}">Phone</label>
+  <input id="af-phone-{{ uid }}" class="sl-input" type="tel" name="address[phone]" value="{{ address.phone | escape }}" autocomplete="tel">
+</div>

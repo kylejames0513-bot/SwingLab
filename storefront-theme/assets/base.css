@@ -864,6 +864,87 @@ img { max-width: 100%; display: block; }
 .sl-main-product__desc-label { margin: 0 0 14px; }
 .sl-main-product__desc .sl-rte { max-width: 60ch; }
 
+/* ---- customer accounts: one card recipe for every auth surface ----
+   The store sells subscriptions; these pages were unbranded Shopify
+   defaults until the 2026-08 rebuild. */
+.sl-auth {
+  width: min(100%, 480px);
+  margin: 0 auto;
+  padding-top: var(--sl-space-7);
+  padding-bottom: var(--sl-space-9);
+}
+.sl-auth__card {
+  padding: var(--sl-card-inset);
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-card);
+}
+.sl-auth__form {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-4);
+}
+.sl-auth__field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sl-space-1);
+}
+.sl-auth__errors {
+  margin: 0;
+  padding: var(--sl-space-3) var(--sl-space-4);
+  border-left: 4px solid var(--sl-orange);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-orange-soft);
+  color: var(--sl-ink);
+}
+.sl-auth__errors ul { margin: var(--sl-space-1) 0 0; padding-left: 18px; }
+.sl-auth__alt {
+  margin: var(--sl-space-4) 0 0;
+  color: var(--sl-ink-soft);
+  text-align: center;
+}
+.sl-account {
+  padding-top: var(--sl-space-7);
+  padding-bottom: var(--sl-space-9);
+}
+.sl-account__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--sl-space-3);
+  margin-bottom: var(--sl-space-6);
+}
+.sl-account__grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: var(--sl-space-5);
+  align-items: start;
+}
+@media (min-width: 1000px) {
+  .sl-account__grid { grid-template-columns: 2fr 1fr; }
+}
+.sl-account__panel {
+  padding: var(--sl-card-inset);
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
+  box-shadow: var(--sl-shadow-card);
+}
+.sl-account__panel h2 { margin: 0 0 var(--sl-space-3); font-size: var(--sl-text-xl); }
+.sl-account .sl-spec-table { width: 100%; }
+.sl-address {
+  padding: var(--sl-space-4) 0;
+  border-bottom: 1px solid var(--sl-border);
+}
+.sl-address:last-child { border-bottom: 0; }
+.sl-address__actions {
+  display: flex;
+  gap: var(--sl-space-3);
+  margin-top: var(--sl-space-2);
+}
+
 /* compare-at pricing + sale badge */
 .sl-price-compare {
   font-size: 0.72em;

@@ -1,0 +1,92 @@
+<div class="sl-wrap sl-auth sl-main-addresses">
+  <header class="sl-account__head">
+    <div>
+      <p class="sl-eyebrow">Store account</p>
+      <h1 class="sl-page-hero__title">Addresses</h1>
+    </div>
+    <a class="sl-btn sl-btn--sm sl-btn--outline" href="{{ routes.account_url }}">Back to account</a>
+  </header>
+
+  <div class="sl-auth__card">
+    <details class="sl-main-addresses__new">
+      <summary class="sl-btn sl-btn--sm sl-btn--primary">Add a new address</summary>
+      {% form 'customer_address', customer.new_address, class: 'sl-auth__form' %}
+        {% render 'address-fields', form: form %}
+        <button type="submit" class="sl-btn sl-btn--primary">Save address</button>
+      {% endform %}
+    </details>
+
+    {%- for address in customer.addresses -%}
+      <div class="sl-address">
+        {%- if address == customer.default_address -%}
+          <p class="sl-mono-label">Default</p>
+        {%- endif -%}
+        <p>{{ address | format_address }}</p>
+        <div class="sl-address__actions">
+          <details>
+            <summary>Edit</summary>
+            {% form 'customer_address', address, class: 'sl-auth__form' %}
+              {% render 'address-fields', form: form, address: address %}
+              <label class="sl-main-addresses__default">
+                <input type="checkbox" name="address[default]" value="1" {% if address == customer.default_address %}checked{% endif %}>
+                Set as default
+              </label>
+              <button type="submit" class="sl-btn sl-btn--sm sl-btn--primary">Update</button>
+            {% endform %}
+          </details>
+          {% form 'customer_address', address %}
+            <input type="hidden" name="_method" value="delete">
+            <button type="submit" class="sl-main-addresses__delete" onclick="return confirm('Delete this address?')">Delete</button>
+          {% endform %}
+        </div>
+      </div>
+    {%- endfor -%}
+
+    {%- if customer.addresses.size == 0 -%}
+      <p class="sl-empty">No saved addresses yet.</p>
+    {%- endif -%}
+  </div>
+</div>
+
+<script>
+  (function () {
+    document.querySelectorAll('select[data-default]').forEach(function (sel) {
+      var want = sel.dataset.default;
+      if (!want) return;
+      Array.prototype.some.call(sel.options, function (opt) {
+        if (opt.value === want || opt.text === want) {
+          sel.value = opt.value;
+          return true;
+        }
+        return false;
+      });
+    });
+  })();
+</script>
+
+{% stylesheet %}
+.sl-main-addresses { width: min(100%, 640px); }
+.sl-main-addresses__new { margin-bottom: var(--sl-space-5); }
+.sl-main-addresses__new summary { display: inline-flex; cursor: pointer; list-style: none; }
+.sl-main-addresses__new summary::-webkit-details-marker { display: none; }
+.sl-main-addresses__new[open] { margin-bottom: var(--sl-space-6); }
+.sl-main-addresses__new[open] summary { margin-bottom: var(--sl-space-4); }
+.sl-address__actions details summary { cursor: pointer; color: var(--sl-green-btn); }
+.sl-address__actions details[open] summary { margin-bottom: var(--sl-space-3); }
+.sl-main-addresses__default { display: flex; align-items: center; gap: var(--sl-space-2); }
+.sl-main-addresses__delete {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--sl-orange);
+  cursor: pointer;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Addresses",
+  "settings": []
+}
+{% endschema %}
