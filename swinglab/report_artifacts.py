@@ -190,10 +190,29 @@ class ReportArtifactValidationError(ValueError):
 @dataclass(frozen=True)
 class ReportEntitlementSnapshot:
     coach_replay: Literal["available", "locked", "disabled"]
+    # The Swing Pattern's own creation-time entitlement. It cannot be a
+    # projection of coach_replay: "disabled" there means the annotated
+    # renderer is off — a statement about a renderer, decided before any
+    # tier check — and the pattern needs no renderer. Deriving the pattern
+    # from replay_locked would unlock a Coach-only section for Free users
+    # the moment ops turned the replay renderer off.
+    swing_pattern: Literal["available", "locked"] | None = None
 
     def __post_init__(self) -> None:
         if self.coach_replay not in ("available", "locked", "disabled"):
             raise ReportArtifactValidationError("invalid coach replay entitlement")
+        if self.swing_pattern is None:
+            # Snapshots persisted before the pattern existed derive the
+            # closest honest value: an owner recorded as locked stays
+            # locked; "available" and "disabled" (bare installs, renderer
+            # off before the pattern shipped) stay ungated.
+            object.__setattr__(
+                self,
+                "swing_pattern",
+                "locked" if self.coach_replay == "locked" else "available",
+            )
+        elif self.swing_pattern not in ("available", "locked"):
+            raise ReportArtifactValidationError("invalid swing pattern entitlement")
 
     def to_json(self) -> str:
         return report_entitlements_to_json(self)
@@ -1259,7 +1278,12 @@ def _parse_sha256(value: object, *, label: str) -> str:
 def report_entitlements_to_json(snapshot: ReportEntitlementSnapshot) -> str:
     if not isinstance(snapshot, ReportEntitlementSnapshot):
         _err("expected ReportEntitlementSnapshot")
-    return _canonical_json({"coach_replay": snapshot.coach_replay}).decode("utf-8")
+    return _canonical_json(
+        {
+            "coach_replay": snapshot.coach_replay,
+            "swing_pattern": snapshot.swing_pattern,
+        }
+    ).decode("utf-8")
 
 
 def report_entitlements_from_json(value: str) -> ReportEntitlementSnapshot:
@@ -1269,9 +1293,26 @@ def report_entitlements_from_json(value: str) -> ReportEntitlementSnapshot:
     if len(raw) > MAX_REPORT_ENTITLEMENTS_BYTES:
         _err("report entitlements JSON exceeds maximum size")
     payload = _expect_object(_decode_json(raw, label="report entitlements"), label="report entitlements")
-    _expect_keys(payload, {"coach_replay"}, label="report entitlements")
-    snapshot = ReportEntitlementSnapshot(cast(Any, payload["coach_replay"]))
-    if raw != _canonical_json({"coach_replay": snapshot.coach_replay}):
+    # Snapshots persisted before the Swing Pattern carry only coach_replay;
+    # they parse forever (jobs are immutable) and derive the pattern value
+    # in __post_init__. New snapshots always persist both keys.
+    if set(payload) == {"coach_replay"}:
+        snapshot = ReportEntitlementSnapshot(cast(Any, payload["coach_replay"]))
+        canonical = _canonical_json({"coach_replay": snapshot.coach_replay})
+    else:
+        _expect_keys(
+            payload, {"coach_replay", "swing_pattern"}, label="report entitlements"
+        )
+        snapshot = ReportEntitlementSnapshot(
+            cast(Any, payload["coach_replay"]), cast(Any, payload["swing_pattern"])
+        )
+        canonical = _canonical_json(
+            {
+                "coach_replay": snapshot.coach_replay,
+                "swing_pattern": snapshot.swing_pattern,
+            }
+        )
+    if raw != canonical:
         _err("report entitlements JSON is not canonical")
     return snapshot
 
@@ -1639,7 +1680,9 @@ def _validate_metrics(raw: bytes, *, view: ReportViewV1) -> None:
         "session_notes",
         "disclaimer",
     }
-    if set(payload) not in (required, required | {"meta"}):
+    optional = {"meta", "swing_pattern"}
+    present = set(payload)
+    if not required <= present or present - required - optional:
         _err("metrics fields are invalid")
     generator = _expect_object(payload["generator"], label="metrics generator")
     _expect_keys(generator, {"name", "swinglab_version"}, label="metrics generator")
@@ -1693,6 +1736,69 @@ def _validate_metrics(raw: bytes, *, view: ReportViewV1) -> None:
         _err("metrics session_notes must be an array of strings")
     if not isinstance(payload["disclaimer"], str):
         _err("metrics disclaimer must be a string")
+
+    # The Swing Pattern is entitlement-gated the same way the coach replay
+    # is: the view's optional section is the authority, and this file may
+    # carry the pattern exactly when that section says it is available.
+    # Both directions are enforced — a locked report leaking the pattern
+    # and an entitled report missing it are the same class of bug.
+    pattern_section = next(
+        (
+            section
+            for section in view.optional_sections
+            if section.id is OptionalSectionId.SWING_PATTERN
+        ),
+        None,
+    )
+    pattern = payload.get("swing_pattern")
+    pattern_available = pattern_section is not None and pattern_section.available
+    if pattern is not None:
+        if not pattern_available:
+            _err("metrics swing_pattern must not outrun the report's entitlement")
+        body = _expect_object(pattern, label="metrics swing_pattern")
+        _expect_keys(
+            body,
+            {"name", "summary", "measured_swings", "unreadable", "note", "axes"},
+            label="metrics swing_pattern",
+        )
+        _expect_nonempty_string(body["name"], label="metrics swing_pattern name")
+        _expect_nonempty_string(body["summary"], label="metrics swing_pattern summary")
+        if not isinstance(body["note"], str):
+            _err("metrics swing_pattern note must be a string")
+        measured = body["measured_swings"]
+        if isinstance(measured, bool) or not isinstance(measured, int) or measured < 1:
+            _err("metrics swing_pattern measured_swings must be a positive integer")
+        unreadable = body["unreadable"]
+        if not isinstance(unreadable, list) or any(
+            not isinstance(item, str) or not item for item in unreadable
+        ):
+            _err("metrics swing_pattern unreadable must be an array of strings")
+        axes = body["axes"]
+        if not isinstance(axes, list) or not axes:
+            _err("metrics swing_pattern axes must be a nonempty array")
+        assert pattern_section is not None
+        if len(axes) != pattern_section.item_count:
+            _err("metrics swing_pattern axes must match the report's section count")
+        for raw_axis in axes:
+            axis = _expect_object(raw_axis, label="metrics swing_pattern axis")
+            _expect_keys(
+                axis,
+                {"key", "label", "position", "display", "detail", "value", "unit"},
+                label="metrics swing_pattern axis",
+            )
+            for field in ("key", "label", "position", "display", "detail", "unit"):
+                _expect_nonempty_string(
+                    axis[field], label=f"metrics swing_pattern axis {field}"
+                )
+            value = axis["value"]
+            if (
+                isinstance(value, bool)
+                or not isinstance(value, (int, float))
+                or not math.isfinite(value)
+            ):
+                _err("metrics swing_pattern axis value must be a finite number")
+    elif pattern_available:
+        _err("metrics swing_pattern is missing for an entitled report")
 
     expected_roles = (
         {
@@ -1826,11 +1932,16 @@ def _validate_media_relationships(
         if section.id in optional_by_id:
             _err("duplicate optional report section")
         optional_by_id[section.id] = section
-        if section.id == OptionalSectionId.REPLAY and section.locked:
+        if (
+            section.id in (OptionalSectionId.REPLAY, OptionalSectionId.SWING_PATTERN)
+            and section.locked
+        ):
+            # The replay and the Swing Pattern are the two entitlement-gated
+            # sections; locked means withheld, so neither may claim content.
             if section.available or section.item_count != 0:
-                _err("locked replay section cannot claim rendered items")
+                _err("locked coach section cannot claim rendered items")
         elif section.locked:
-            _err("only the replay section can be locked")
+            _err("only the coach-gated sections can be locked")
         elif section.available != (section.item_count > 0):
             _err("optional section availability must match its item count")
 

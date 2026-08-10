@@ -232,6 +232,15 @@
             "coach_value": "Included"
           }
         },
+        "r_pattern": {
+          "type": "row",
+          "settings": {
+            "feature": "Swing Pattern — how your swing is built, named in your report",
+            "free_value": "—",
+            "pro_value": "—",
+            "coach_value": "Included"
+          }
+        },
         "r_progress": {
           "type": "row",
           "settings": {
@@ -265,6 +274,7 @@
         "r_analyses",
         "r_refilms",
         "r_replay",
+        "r_pattern",
         "r_progress",
         "r_proof",
         "r_price"

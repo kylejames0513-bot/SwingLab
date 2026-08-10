@@ -400,6 +400,13 @@ def analyze_video(
         and report_entitlements is not None
         and report_entitlements.coach_replay == "available"
     )
+    # The pattern's own snapshot field — deliberately not replay_locked,
+    # which is False when the annotated renderer is merely disabled.
+    guided_pattern_locked = bool(
+        guided
+        and report_entitlements is not None
+        and report_entitlements.swing_pattern == "locked"
+    )
     try:
         for swing_no, strike_s in enumerate(strikes, start=1):
             try:
@@ -490,6 +497,7 @@ def analyze_video(
             level=level,
             analysis_fps=analysis_fps,
             replay_locked=guided_replay_locked,
+            swing_pattern_locked=guided_pattern_locked,
             evidence_snapshots=evidence_snapshots,
             reason_codes=tuple(dict.fromkeys(reason_codes)),
         )

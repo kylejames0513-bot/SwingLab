@@ -97,7 +97,9 @@ def _valid_report_html(*, presentation: str, outcome: str) -> str:
 
 
 def _valid_metrics_payload(
-    *, deliverables: dict[str, object] | None = None
+    *,
+    deliverables: dict[str, object] | None = None,
+    swing_pattern: dict[str, object] | None = None,
 ) -> dict[str, object]:
     swings: list[dict[str, object]] = []
     if deliverables is not None:
@@ -108,6 +110,11 @@ def _valid_metrics_payload(
                 "deliverables": deliverables,
             }
         )
+    if swing_pattern is not None:
+        return {
+            **_valid_metrics_payload(deliverables=deliverables),
+            "swing_pattern": swing_pattern,
+        }
     return {
         "generator": {"name": "CaddieInsight", "swinglab_version": "test"},
         "video": {
@@ -392,12 +399,25 @@ def test_entitlement_snapshot_has_canonical_json_round_trip_and_strict_enum():
 
     encoded = report_entitlements_to_json(snapshot)
 
-    assert encoded == '{"coach_replay":"locked"}\n'
+    assert encoded == '{"coach_replay":"locked","swing_pattern":"locked"}\n'
     assert report_entitlements_from_json(encoded) == snapshot
+    # Rows persisted before the Swing Pattern parse forever and derive the
+    # pattern value: locked stays locked, disabled stays ungated (that state
+    # is about a renderer, not a tier).
+    assert report_entitlements_from_json('{"coach_replay":"locked"}\n') == snapshot
+    legacy_disabled = report_entitlements_from_json('{"coach_replay":"disabled"}\n')
+    assert legacy_disabled.swing_pattern == "available"
+    # A disabled renderer never unlocks the pattern for a locked owner.
+    mixed = ReportEntitlementSnapshot("disabled", "locked")
+    assert report_entitlements_from_json(report_entitlements_to_json(mixed)) == mixed
     with pytest.raises(ReportArtifactValidationError):
         report_entitlements_from_json('{"coach_replay":"future"}\n')
     with pytest.raises(ReportArtifactValidationError):
         report_entitlements_from_json('{"coach_replay":"locked","extra":true}\n')
+    with pytest.raises(ReportArtifactValidationError):
+        report_entitlements_from_json(
+            '{"coach_replay":"locked","swing_pattern":"future"}\n'
+        )
 
 
 @pytest.mark.parametrize(
@@ -618,6 +638,7 @@ def test_real_presenter_document_with_swing_media_validates_as_a_complete_bundle
         media=media,
     )
     document = build_report_document(source, cfg)
+    assert document.depth.swing_pattern is not None
     root = _build_bundle(
         tmp_path,
         payload=report_view_to_dict(document.view),
@@ -625,7 +646,8 @@ def test_real_presenter_document_with_swing_media_validates_as_a_complete_bundle
             deliverables={
                 "strip": "media/positions-1.jpg",
                 "slowmo": "media/slow-1.mp4",
-            }
+            },
+            swing_pattern=document.depth.swing_pattern.as_dict(),
         ),
     )
 

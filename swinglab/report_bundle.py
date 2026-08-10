@@ -60,6 +60,7 @@ from .report_view import (
     MediaEntry,
     MediaRole,
     ReasonCode,
+    ReportOutcome,
     ReportViewV1,
     write_report_view,
 )
@@ -1280,6 +1281,7 @@ def build_report_bundle(
     replay_locked: bool,
     evidence_snapshots: Sequence[EvidenceSnapshot],
     reason_codes: Sequence[ReasonCode],
+    swing_pattern_locked: bool = False,
 ) -> StagedReportBundle:
     """Build and strictly validate one complete unpublished directory."""
     _validate_attempt_descriptor(attempt)
@@ -1306,6 +1308,7 @@ def build_report_bundle(
             level=level,
             analysis_fps=analysis_fps,
             replay_locked=replay_locked,
+            swing_pattern_locked=swing_pattern_locked,
             media=initial_media,
             reason_codes=tuple(reason_codes),
         )
@@ -1407,6 +1410,12 @@ def build_report_bundle(
                 "hand": hand,
                 "analysis_fps": analysis_fps,
             },
+            swing_pattern=(
+                source.swing_pattern.as_dict()
+                if source.swing_pattern is not None
+                and document.view.outcome is not ReportOutcome.CAPTURE_ONLY
+                else None
+            ),
         )
         written_report = html_writer(report_path, document, cfg=cfg)
         if not isinstance(written_report, Path) or written_report.absolute() != report_path.absolute():

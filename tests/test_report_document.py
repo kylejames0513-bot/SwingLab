@@ -48,6 +48,11 @@ def _depth_count(document: ReportDocument, section_id: str) -> int:
         "gear": len(document.depth.gear),
         "alternative_drills": len(alternatives),
         "replay": sum(item.coach_replay_media_key is not None for item in document.depth.swings),
+        "swing_pattern": (
+            len(document.depth.swing_pattern.axes)
+            if document.depth.swing_pattern
+            else 0
+        ),
     }[section_id]
 
 

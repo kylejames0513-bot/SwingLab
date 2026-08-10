@@ -59,7 +59,7 @@ class MeasurementUnit(StrEnum): SECONDS="seconds"; RATIO="ratio"; SHOULDER_WIDTH
 class BenchmarkRelation(StrEnum): ABOVE="above"; BELOW="below"; BETWEEN="between"; CONTEXT_ONLY="context_only"; NONE="none"
 class TargetComparator(StrEnum): LTE="lte"; GTE="gte"; BETWEEN="between"; ALL_LTE="all_lte"; ALL_GTE="all_gte"; COUNT_LTE="count_lte"; COUNT_GTE="count_gte"
 class TargetWindow(StrEnum): SWING="swing"; SESSION="session"; CONSECUTIVE_SESSIONS="consecutive_sessions"
-class OptionalSectionId(StrEnum): EVERY_SWING="every_swing"; REPLAY="replay"; SECONDARY_FINDINGS="secondary_findings"; ALTERNATIVE_DRILLS="alternative_drills"; MORE_STRENGTHS="more_strengths"; MEASUREMENTS="measurements"; GLOSSARY="glossary"; GEAR="gear"
+class OptionalSectionId(StrEnum): EVERY_SWING="every_swing"; REPLAY="replay"; SWING_PATTERN="swing_pattern"; SECONDARY_FINDINGS="secondary_findings"; ALTERNATIVE_DRILLS="alternative_drills"; MORE_STRENGTHS="more_strengths"; MEASUREMENTS="measurements"; GLOSSARY="glossary"; GEAR="gear"
 class MediaRole(StrEnum): PRIORITY_EVIDENCE="priority_evidence"; DRILL_ILLUSTRATION="drill_illustration"; KEY_POSITIONS="key_positions"; SLOW_MOTION="slow_motion"; COACH_REPLAY="coach_replay"; VIDEO_POSTER="video_poster"; CAPTURE_PLAYBACK="capture_playback"
 class Entitlement(StrEnum): CORE="core"; FREE="free"; PRO="pro"
 
