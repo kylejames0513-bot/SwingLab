@@ -315,7 +315,17 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
 
     assert '<section id="home-hero" class="sl-hero" aria-labelledby=' in hero_source
     assert hero_source.count("<h1") == 1
-    assert '<figure class="sl-hero__backdrop">' in hero_source
+    # The hero is video-capable: a merchant-picked muted loop replaces the
+    # photo backdrop; without one, the photo carries a slow drift (behind
+    # the reduced-motion gate) so the hero never reads as a static slab.
+    assert '<figure class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}">' in hero_source
+    assert "section.settings.video | video_tag" in hero_source
+    for param in ("autoplay: true", "loop: true", "muted: true", "controls: false", "playsinline: true"):
+        assert param in hero_source, param
+    assert '"type": "video"' in hero_source
+    assert "sl-hero-drift" in hero_source
+    drift_gate = hero_source.split("@media (prefers-reduced-motion: no-preference)", 1)[1]
+    assert "sl-hero-drift" in drift_gate.split("}", 3)[0] + drift_gate
     assert "sl-hero__disclosure" not in hero_source
     assert "sl-hero__capture" not in hero_source
     assert "<picture>" in hero_source
