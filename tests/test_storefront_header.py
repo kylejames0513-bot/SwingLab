@@ -78,7 +78,15 @@ def test_storefront_homepage_prominently_welcomes_signed_in_members():
     assert "data-app-member-tier" in HEADER
     assert "data-app-member-greeting" in HEADER
     assert "data-app-member-action" in HEADER
-    assert HEADER.count(" data-app-pro-sales-link") == 4
+    # Plans/Pro nav links are NAVIGATION, never hidden for members — they
+    # carry data-app-plans-link (href swaps to the Pro PDP when signed in)
+    # instead of the sales-link attribute the auth script hides for isPro.
+    # Members once lost Plans from the nav entirely because of that attr.
+    assert HEADER.count(" data-app-pro-sales-link") == 0
+    assert HEADER.count(" data-app-plans-link") == 4
+    assert HEADER.count('data-member-url="{{ pro_product.url }}"') == 4
+    assert "eachAppAuthNode('[data-app-plans-link]'" in HEADER
+    assert "node.dataset.visitorUrl" in HEADER
     assert "node.hidden = isPro;" in HEADER
     assert 'body:has(.sl-header[data-app-authenticated="true"]' in HEADER
     assert "announcement.hidden = authenticated;" not in HEADER

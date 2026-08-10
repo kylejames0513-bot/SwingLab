@@ -416,7 +416,9 @@
 }
 @media (max-width: 749px) {
   .sl-hero {
-    --sl-mobile-hero-height: clamp(600px, calc(100svh - 102px), 680px);
+    /* Short enough that the copy plus the compact signal card below read
+       as one screen; the card carries the rest of the story. */
+    --sl-mobile-hero-height: clamp(480px, calc(88svh - 220px), 560px);
     min-height: var(--sl-mobile-hero-height);
   }
   .sl-hero::before {
@@ -439,12 +441,8 @@
     justify-items: stretch;
     gap: 0;
   }
-  /* The signal card is the only visual showing what the product produces —
-     it stays on phones, compact and full-width, instead of vanishing. */
-  .sl-hero__signal-band {
-    padding-top: var(--sl-space-3);
-    padding-bottom: var(--sl-space-6);
-  }
+  /* The signal card stays on phones (the only visual showing what the
+     product produces) — as a compact fact strip; rules further down. */
   .sl-hero__copy {
     margin-inline: 0;
     text-align: left;
@@ -484,24 +482,67 @@
     text-decoration: none;
   }
   .sl-hero__secondary:hover { border-color: rgba(238, 242, 239, 0.72); background: rgba(238, 242, 239, 0.1); }
+  /* One quiet mono line: the 2-column grid orphaned the third chip and
+     its green dots fought the orange brand dot. Middots, one color. */
   .sl-hero__proof {
-    width: fit-content;
-    margin: 18px 0 0;
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, max-content));
-    justify-content: start;
-    gap: 8px 16px;
+    width: 100%;
+    margin: 16px 0 0;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 4px 0;
   }
-  .sl-hero__proof li { padding-left: 13px; font-size: var(--sl-text-xs); letter-spacing: 0.09em; }
-  .sl-hero__proof li::before { width: 5px; height: 5px; }
+  .sl-hero__proof li {
+    padding-left: 0;
+    color: rgba(var(--sl-cream-rgb), 0.55);
+    font-size: var(--sl-text-xs);
+    letter-spacing: 0.09em;
+  }
+  .sl-hero__proof li::before { display: none; }
+  .sl-hero__proof li + li::before {
+    content: "\00B7";
+    display: inline;
+    position: static;
+    margin: 0 var(--sl-space-2);
+    background: none;
+    width: auto;
+    height: auto;
+  }
   .sl-hero__fine {
-    max-width: 36ch;
-    margin: 14px 0 0;
+    max-width: 40ch;
+    margin: 6px 0 0;
+    color: rgba(var(--sl-cream-rgb), 0.45);
     text-align: left;
   }
   .sl-hero__signal {
     width: 100%;
     padding: var(--sl-space-4) var(--sl-space-4) var(--sl-space-3);
+  }
+  /* Compact fact strip: the arc chart stretched edge to edge and the three
+     columns double-wrapped their labels. On phones the card is the facts —
+     label left, value right, one hairline per row. */
+  .sl-hero__trace { display: none; }
+  .sl-hero__signal-grid {
+    margin-top: var(--sl-space-2);
+    display: block;
+  }
+  .sl-hero__signal-grid > div {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sl-space-3);
+    padding: var(--sl-space-2) 0;
+  }
+  .sl-hero__signal-grid > div + div {
+    border-left: 0;
+    border-top: 1px solid rgba(238, 242, 239, 0.12);
+  }
+  .sl-hero__signal-grid dt { letter-spacing: 0.08em; }
+  .sl-hero__signal-grid dd { margin: 0; text-align: right; }
+  .sl-hero__signal-note { margin-top: var(--sl-space-2); }
+  .sl-hero__signal-band {
+    padding-top: var(--sl-space-2);
+    padding-bottom: var(--sl-space-5);
   }
 }
 @media (max-width: 559px) {

@@ -347,6 +347,13 @@
     text-align: center;
   }
   .sl-product-form { align-items: center; }
+  /* Full-width controls read as one column instead of a ragged center. */
+  .sl-main-product__gear-form .sl-select,
+  .sl-main-product__gear-form .sl-add {
+    width: 100%;
+    min-width: 0;
+  }
+  .sl-product-thumbs { justify-content: center; }
   .sl-trust--stack { margin-inline: auto; text-align: left; }
   .sl-main-product__flags,
   .sl-main-product__price {
