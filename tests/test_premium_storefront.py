@@ -294,15 +294,19 @@ def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     assert "max-width: 520px" in product
 
     comparison = source("sections/comparison.liquid")
+    # On phones each feature is a card: title band, then one labeled row per
+    # plan (td::before carries the column name). The old 2-column grid stack
+    # garbled the moment the Coach column made three value cells.
     mobile_comparison = comparison.split("@media (max-width: 749px)", 1)[1]
     assert "min-width: 0" in mobile_comparison
-    assert "display: grid" in mobile_comparison
-    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" in mobile_comparison
-    assert "grid-column: 1 / -1" in mobile_comparison
-    assert "padding: var(--sl-dense-inset)" in mobile_comparison
+    assert ".sl-compare__table thead { display: none; }" in mobile_comparison
+    assert "content: attr(data-col)" in mobile_comparison
+    assert "justify-content: space-between" in mobile_comparison
     assert "overflow-wrap: anywhere" in mobile_comparison
+    assert "grid-template-columns: repeat(2, minmax(0, 1fr))" not in mobile_comparison
     assert "table-layout: fixed" not in mobile_comparison
     assert "padding: 8px" not in mobile_comparison
+    assert comparison.count('data-col="') == 3
 
 
 def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
