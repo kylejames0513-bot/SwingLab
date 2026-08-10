@@ -77,8 +77,8 @@
           {%- assign feature_key = block.settings.feature | downcase | strip -%}
           <tr {{ block.shopify_attributes }}>
               <th scope="row">{{ block.settings.feature }}</th>
-              <td>{{ block.settings.free_value }}</td>
-              <td class="sl-compare__pro">
+              <td data-col="{{ section.settings.free_label | default: 'Free' | escape }}">{{ block.settings.free_value }}</td>
+              <td class="sl-compare__pro" data-col="{{ section.settings.pro_label | default: 'Pro' | escape }}">
                 {%- if feature_key == 'price' and live_pro_price != blank -%}
                   {{ live_pro_price }}
                 {%- else -%}
@@ -86,7 +86,7 @@
                 {%- endif -%}
               </td>
               {%- if section.settings.coach_label != blank -%}
-                <td class="sl-compare__pro">
+                <td class="sl-compare__pro" data-col="{{ section.settings.coach_label | escape }}">
                   {%- if feature_key == 'price' and live_coach_price != blank -%}
                     {{ live_coach_price }}
                   {%- else -%}
@@ -244,34 +244,51 @@
   text-align: left;
 }
 @media (max-width: 749px) {
+  /* The desktop grid stack was built for two value columns and garbled the
+     moment Coach made three. On phones each feature is a small card: the
+     feature title, then one labeled row per plan — nothing wraps, nothing
+     orphans. */
   .sl-compare__scroll { overflow-x: visible; }
-  .sl-compare__table {
-    display: block;
-    min-width: 0;
-  }
-  .sl-compare__table thead,
+  .sl-compare__table { display: block; min-width: 0; }
+  .sl-compare__table thead { display: none; }
   .sl-compare__table tbody { display: block; }
-  .sl-compare__table thead tr,
   .sl-compare__table tbody tr {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    display: block;
+    margin-bottom: var(--sl-space-3);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-bg-card);
+    overflow: hidden;
   }
-  .sl-compare__feature-head { display: none; }
-  .sl-compare__col { width: auto; }
   .sl-compare__table tbody th {
-    grid-column: 1 / -1;
+    display: block;
     width: auto;
+    padding: var(--sl-space-3) var(--sl-dense-inset);
     background: #f8f4eb;
+    text-align: left;
   }
-  .sl-compare__table th,
-  .sl-compare__table td {
-    min-height: 58px;
-    padding: var(--sl-dense-inset);
+  .sl-compare__table tbody td {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--sl-space-3);
+    width: auto;
+    padding: var(--sl-space-2) var(--sl-dense-inset);
+    text-align: right;
+    border-top: 1px solid var(--sl-border);
     overflow-wrap: anywhere;
   }
-}
-@media (max-width: 559px) {
-  .sl-compare__actions { grid-template-columns: 1fr; }
+  .sl-compare__table tbody td::before {
+    content: attr(data-col);
+    flex: none;
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sl-ink-muted);
+  }
+  .sl-compare__actions { width: 100%; }
 }
 @media (max-width: 749px) {
   .sl-compare__head { gap: 18px; }

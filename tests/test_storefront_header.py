@@ -78,7 +78,15 @@ def test_storefront_homepage_prominently_welcomes_signed_in_members():
     assert "data-app-member-tier" in HEADER
     assert "data-app-member-greeting" in HEADER
     assert "data-app-member-action" in HEADER
-    assert HEADER.count(" data-app-pro-sales-link") == 4
+    # Plans/Pro nav links are NAVIGATION, never hidden for members — they
+    # carry data-app-plans-link (href swaps to the Pro PDP when signed in)
+    # instead of the sales-link attribute the auth script hides for isPro.
+    # Members once lost Plans from the nav entirely because of that attr.
+    assert HEADER.count(" data-app-pro-sales-link") == 0
+    assert HEADER.count(" data-app-plans-link") == 4
+    assert HEADER.count('data-member-url="{{ pro_product.url }}"') == 4
+    assert "eachAppAuthNode('[data-app-plans-link]'" in HEADER
+    assert "node.dataset.visitorUrl" in HEADER
     assert "node.hidden = isPro;" in HEADER
     assert 'body:has(.sl-header[data-app-authenticated="true"]' in HEADER
     assert "announcement.hidden = authenticated;" not in HEADER
@@ -239,6 +247,9 @@ def test_storefront_keeps_mobile_actions_readable():
     assert "min-height: 44px" in HEADER.split(".sl-header__cart {", 1)[1].split("}", 1)[0]
     toggle_rule = HEADER.split(".sl-header__toggle {", 1)[1].split("}", 1)[0]
     assert "width: 44px" in toggle_rule and "height: 44px" in toggle_rule
+    # Buttons don't inherit color: without this, iOS Safari paints its
+    # default blue ButtonText into the currentColor hamburger bars.
+    assert "color: inherit" in toggle_rule
     # The burger retires exactly at the desktop stop — a 1024px desktop gets
     # real navigation, not a hamburger.
     desktop = HEADER.split("@media (min-width: 1000px)", 1)[1].split("@media", 1)[0]

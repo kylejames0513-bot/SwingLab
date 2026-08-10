@@ -89,7 +89,7 @@
       {%- if premium_header -%}
         <a href="{{ method_url }}" class="sl-header__link">{{ 'layout.navigation.method' | t }}</a>
         <a href="{{ sample_url }}" class="sl-header__link">{{ 'layout.navigation.sample_report' | t }}</a>
-        <a href="{{ plans_link_url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.plans' | t }}</a>
+        <a href="{{ plans_link_url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-plans-link data-member-url="{{ pro_product.url }}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.plans' | t }}</a>
         <a href="{{ gear_url }}" class="sl-header__link">{{ 'layout.navigation.gear' | t }}</a>
       {%- else -%}
         {%- if app_url != blank -%}
@@ -107,7 +107,7 @@
         {%- endif -%}
         <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
         {%- if pro_product != blank -%}
-          <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
+          <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-plans-link data-member-url="{{ pro_product.url }}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
         {%- endif -%}
       {%- endif -%}
     </nav>
@@ -196,7 +196,7 @@
           <a href="{{ sample_url }}" class="sl-menu__link" data-menu-link>
             <span>{{ 'layout.navigation.sample_report' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
-          <a href="{{ plans_link_url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
+          <a href="{{ plans_link_url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-plans-link data-member-url="{{ pro_product.url }}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
             <span>{{ 'layout.navigation.plans' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
           <a href="{{ gear_url }}" class="sl-menu__link" data-menu-link>
@@ -230,7 +230,7 @@
             <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
           {%- if pro_product != blank -%}
-            <a href="{{ pro_product.url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-pro-sales-link data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
+            <a href="{{ pro_product.url }}" class="sl-menu__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-plans-link data-member-url="{{ pro_product.url }}" data-menu-link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>
               <span>{{ 'layout.navigation.pro' | t }}</span><span aria-hidden="true">&rarr;</span>
             </a>
           {%- endif -%}
@@ -567,6 +567,9 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   border: 0;
   border-radius: var(--sl-radius-sm);
   background: none;
+  /* Buttons do not inherit color: without this, iOS Safari paints its
+     default blue ButtonText into the currentColor bars. */
+  color: inherit;
   cursor: pointer;
 }
 .sl-header__toggle span {
@@ -932,6 +935,18 @@ html.sl-menu-open { overflow: hidden; }
         });
         eachAppAuthNode('[data-app-pro-sales-link]', function (node) {
           node.hidden = isPro;
+        });
+        // Plans is NAVIGATION, never hidden. Signed-in members follow it to
+        // the Pro product page (the full ladder always renders there);
+        // signed-out visitors keep the homepage plans-band flow.
+        eachAppAuthNode('[data-app-plans-link]', function (node) {
+          var memberUrl = node.getAttribute('data-member-url');
+          if (!node.dataset.visitorUrl) node.dataset.visitorUrl = node.getAttribute('href');
+          if (authenticated && memberUrl) {
+            node.setAttribute('href', memberUrl);
+          } else if (node.dataset.visitorUrl) {
+            node.setAttribute('href', node.dataset.visitorUrl);
+          }
         });
         eachAppAuthNode('[data-app-pro-member-only]', function (node) {
           node.hidden = !isPro;

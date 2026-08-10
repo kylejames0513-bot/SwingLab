@@ -116,13 +116,13 @@
   "products": {
     "product": {
       "add_to_cart": "Add to cart",
-      "active_heading": "Your Pro membership is active",
-      "active_body": "Your account already has Pro access. Open your game plan instead of purchasing again.",
+      "active_heading": "Your membership is active",
+      "active_body": "You're covered. On Pro? Coach adds the annotated replay, the progress dashboard, and the proof cycle — upgrade right here. Otherwise your game plan is waiting.",
       "benefit_report": "Club-aware priority and a measured practice plan",
       "benefit_unlock": "Automatic access through your linked account or checkout email",
-      "benefit_unlimited": "Unlimited swing analyses while Pro is active",
+      "benefit_unlimited": "Unlimited swing analyses while your membership is active",
       "benefit_video": "Key frames, centerline overlay, and slow-motion clips",
-      "includes": "CaddieInsight Pro includes",
+      "includes": "What's included",
       "one_time_help": "Best for trying Pro or gifting a fixed access window.",
       "one_time_purchase": "One-time purchase",
       "open_app": "Open CaddieInsight app",
@@ -139,7 +139,11 @@
       "product_notes": "Product notes",
       "membership_details": "Membership details",
       "ordering_details": "Ordering details",
-      "membership_terms": "Membership terms"
+      "membership_terms": "Membership terms",
+      "benefit_coach_everything": "Everything in Pro — unlimited analyses, the full report, the practice plan",
+      "benefit_replay": "The annotated coach replay of every swing",
+      "benefit_dashboard": "The progress dashboard — every metric charted session over session",
+      "benefit_verdict": "The matched re-film verdict — proof the fix held"
     }
   },
   "collections": {
