@@ -101,10 +101,28 @@
         <span class="sl-hero__signal-live"><i aria-hidden="true"></i>{{ 'homepage.hero.signal_ready' | t }}</span>
       </div>
       <div class="sl-hero__trace" role="img" aria-label="{{ 'homepage.hero.trace_label' | t }}">
-        <span class="sl-hero__trace-line" aria-hidden="true"></span>
-        <span class="sl-hero__trace-dot sl-hero__trace-dot--one" aria-hidden="true"></span>
-        <span class="sl-hero__trace-dot sl-hero__trace-dot--two" aria-hidden="true"></span>
-        <span class="sl-hero__trace-dot sl-hero__trace-dot--three" aria-hidden="true"></span>
+        {%- comment -%}
+          The live read. One arc, drawn at the engine's own benchmark: the
+          backswing draws for three beats, holds at the top, and the strike
+          retraces it in one — the 3:1 tempo_ratio target, animated. Pose
+          crosshairs blink in as landmarks resolve; the pulse is impact.
+          pathLength="100" normalizes both paths so the dash keyframes are
+          percentages, not measured lengths. Every default below is the
+          fully drawn state, so reduced-motion (and print) get a complete
+          still trace rather than an empty box.
+        {%- endcomment -%}
+        <svg class="sl-hero__trace-svg" viewBox="0 0 280 88" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+          <path class="sl-hero__trace-arc" d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"/>
+          <path class="sl-hero__trace-strike" d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"/>
+          <g class="sl-hero__trace-tick sl-hero__trace-tick--mid" transform="translate(125 32)">
+            <path d="M -5 0 H 5 M 0 -5 V 5"/>
+          </g>
+          <g class="sl-hero__trace-tick sl-hero__trace-tick--top" transform="translate(214 20)">
+            <path d="M -5 0 H 5 M 0 -5 V 5"/>
+          </g>
+          <circle class="sl-hero__trace-impact" cx="54" cy="66" r="14"/>
+          <circle class="sl-hero__trace-ball" cx="54" cy="66" r="3.2"/>
+        </svg>
       </div>
       <dl class="sl-hero__signal-grid">
         <div><dt>{{ 'homepage.hero.club_label' | t }}</dt><dd>{{ section.settings.signal_club }}</dd></div>
@@ -383,28 +401,101 @@ video.sl-hero__video {
     rgba(255, 255, 255, 0.02);
   background-size: 24px 24px;
 }
-.sl-hero__trace-line {
+.sl-hero__trace-svg {
   position: absolute;
-  left: 14%;
-  top: 24%;
-  width: 74%;
-  height: 90%;
-  border-top: 2px solid #f28a32;
-  border-radius: 50%;
-  transform: rotate(-8deg);
-  filter: drop-shadow(0 0 8px rgba(242, 138, 50, 0.45));
+  inset: 0;
+  width: 100%;
+  height: 100%;
 }
-.sl-hero__trace-dot {
-  position: absolute;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--sl-bg);
-  box-shadow: 0 0 0 4px rgba(238, 242, 239, 0.12);
+/* Defaults are the FULLY DRAWN still: reduced-motion, print, and any
+   context without CSS animation all get a complete trace, never an empty
+   grid. The keyframes below override these only while running. */
+.sl-hero__trace-arc {
+  fill: none;
+  stroke: rgba(238, 242, 239, 0.45);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
 }
-.sl-hero__trace-dot--one { left: 22%; top: 57%; }
-.sl-hero__trace-dot--two { left: 52%; top: 30%; background: #f28a32; }
-.sl-hero__trace-dot--three { right: 14%; top: 50%; }
+.sl-hero__trace-strike {
+  fill: none;
+  stroke: #f28a32;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-dasharray: 100;
+  stroke-dashoffset: 0;
+  filter: drop-shadow(0 0 7px rgba(242, 138, 50, 0.5));
+}
+.sl-hero__trace-tick path {
+  fill: none;
+  stroke: rgba(238, 242, 239, 0.65);
+  stroke-width: 1.2;
+}
+.sl-hero__trace-impact {
+  fill: none;
+  stroke: #f28a32;
+  stroke-width: 1.4;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+}
+.sl-hero__trace-ball {
+  fill: var(--sl-bg);
+  opacity: 0.9;
+}
+/* The 9.2s read cycle. Stops encode the engine's own benchmark: the
+   backswing draws 3%→32% (2.67s), holds at the top, and the strike
+   retraces 35.6%→45% (0.86s) — the 3:1 tempo_ratio target, animated.
+   Then impact pulses, the read holds, fades, and the window rests. The
+   77% jump-frames reset dash offsets while opacity is 0. */
+@media (prefers-reduced-motion: no-preference) {
+  .sl-hero__trace-arc { animation: sl-swing-read 9.2s linear infinite; }
+  .sl-hero__trace-strike { animation: sl-swing-strike 9.2s linear infinite; }
+  .sl-hero__trace-tick--mid { animation: sl-swing-tick-mid 9.2s linear infinite; }
+  .sl-hero__trace-tick--top { animation: sl-swing-tick-top 9.2s linear infinite; }
+  .sl-hero__trace-impact { animation: sl-swing-impact 9.2s linear infinite; }
+  .sl-hero__trace-ball { animation: sl-swing-anchor 9.2s linear infinite; }
+  .sl-hero__signal-live i { animation: sl-live-blink 3.1s ease-in-out infinite; }
+}
+@keyframes sl-swing-read {
+  0%, 2.9% { stroke-dashoffset: 100; opacity: 0; }
+  3% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(0.33, 0, 0.45, 1); }
+  32%, 69.9% { stroke-dashoffset: 0; opacity: 1; }
+  76%, 76.9% { stroke-dashoffset: 0; opacity: 0; }
+  77%, 100% { stroke-dashoffset: 100; opacity: 0; }
+}
+@keyframes sl-swing-strike {
+  0%, 35.5% { stroke-dashoffset: -100; opacity: 0; }
+  35.6% { stroke-dashoffset: -100; opacity: 1; animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.6); }
+  45%, 69.9% { stroke-dashoffset: 0; opacity: 1; }
+  76%, 76.9% { stroke-dashoffset: 0; opacity: 0; }
+  77%, 100% { stroke-dashoffset: -100; opacity: 0; }
+}
+@keyframes sl-swing-tick-mid {
+  0%, 17% { opacity: 0; }
+  20%, 69.9% { opacity: 0.75; }
+  76%, 100% { opacity: 0; }
+}
+@keyframes sl-swing-tick-top {
+  0%, 31% { opacity: 0; }
+  33%, 69.9% { opacity: 0.9; }
+  76%, 100% { opacity: 0; }
+}
+@keyframes sl-swing-impact {
+  0%, 44.9% { opacity: 0; transform: scale(0.25); }
+  45% { opacity: 0.85; }
+  53%, 100% { opacity: 0; transform: scale(1.15); }
+}
+@keyframes sl-swing-anchor {
+  0%, 3% { opacity: 0; }
+  8%, 69.9% { opacity: 0.9; }
+  76%, 100% { opacity: 0; }
+}
+@keyframes sl-live-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
 .sl-hero__signal-grid {
   margin: 14px 0 0;
   display: grid;
@@ -550,10 +641,11 @@ video.sl-hero__video {
     width: 100%;
     padding: var(--sl-space-4) var(--sl-space-4) var(--sl-space-3);
   }
-  /* Compact fact strip: the arc chart stretched edge to edge and the three
-     columns double-wrapped their labels. On phones the card is the facts —
-     label left, value right, one hairline per row. */
-  .sl-hero__trace { display: none; }
+  /* The R2 pass hid the trace here because a static doodle didn't earn
+     its rows. The live read does — it's the one moving proof of what the
+     product produces — so it returns at a compact height above the
+     fact-strip rows. */
+  .sl-hero__trace { height: 64px; margin-top: 12px; }
   .sl-hero__signal-grid {
     margin-top: var(--sl-space-2);
     display: block;

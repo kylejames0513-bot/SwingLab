@@ -374,6 +374,27 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     # stays on phones (compact, full-width). The old sheet display:none'd it.
     assert ".sl-hero__signal { display: none; }" not in mobile_hero
     assert ".sl-hero__signal-band { display: none; }" not in mobile_hero
+    # R6: the trace is a LIVE read. One SVG arc drawn at the engine's own
+    # 3:1 tempo benchmark (backswing 3%→32% of the cycle, strike
+    # 35.6%→45%), pose crosshairs, an impact pulse — all inside the
+    # reduced-motion gate. pathLength normalizes the dash math, and the
+    # element DEFAULTS to the fully drawn still so reduced-motion and
+    # print get a complete trace, never an empty grid.
+    assert 'class="sl-hero__trace-svg"' in hero_source
+    # Two normalized copies of the same arc: the dim backswing draw and the
+    # bright strike that retraces it.
+    assert hero_source.count('d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"') == 2
+    assert "sl-hero__trace-strike" in hero_source
+    assert "sl-hero__trace-impact" in hero_source
+    for keyframes in (
+        "sl-swing-read", "sl-swing-strike", "sl-swing-impact", "sl-live-blink"
+    ):
+        assert f"@keyframes {keyframes}" in hero_source, keyframes
+        assert f"animation: {keyframes}" in hero_source, keyframes
+    motion_gated = hero_source.split("@media (prefers-reduced-motion: no-preference)", 2)[2]
+    assert "animation: sl-swing-read 9.2s linear infinite" in motion_gated
+    strike_rules = hero_source.split(".sl-hero__trace-strike {", 1)[1].split("}", 1)[0]
+    assert "stroke-dashoffset: 0" in strike_rules  # drawn-by-default still
     assert "width: 100%;" in mobile_hero.split(".sl-hero__signal {", 1)[1].split("}", 1)[0]
     assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
     assert ".sl-hero__fine { display: none; }" not in mobile_hero

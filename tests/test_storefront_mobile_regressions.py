@@ -185,9 +185,12 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     assert any("display: flex" in rule for rule in proof_rules)
     assert ".sl-hero__proof li::before { display: none; }" in mobile_css
     assert 'content: "\\00B7"' in mobile_css
-    # The signal card is a compact fact strip on phones: no stretched arc
-    # chart, facts stacked as label/value rows.
-    assert ".sl-hero__trace { display: none; }" in mobile_css
+    # The signal card is a compact fact strip on phones — but the trace
+    # returned in R6 as the LIVE read (the one moving proof of what the
+    # product produces), at a compact height instead of the old stretched
+    # chart. It must never be display: none again while it animates.
+    assert ".sl-hero__trace { display: none; }" not in mobile_css
+    assert ".sl-hero__trace { height: 64px; margin-top: 12px; }" in mobile_css
 
 
 def test_mobile_method_section_is_compact_centered_and_semantic():
