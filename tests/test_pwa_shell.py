@@ -143,7 +143,7 @@ def test_tab_bar_is_hidden_before_its_media_query_turns_it_on():
     bar; CSS of equal specificity resolves by source order, so the reverse
     silently hides the tab bar on phones."""
     hidden = LAYOUT.index(".sl-tabbar { display: none; }")
-    shown = LAYOUT.index("@media (max-width: 980px)")
+    shown = LAYOUT.index("@media (max-width: 999px)")  # the 1000px system stop
     assert hidden < shown
 
 
