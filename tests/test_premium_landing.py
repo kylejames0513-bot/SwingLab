@@ -57,7 +57,7 @@ def test_landing_uses_storefront_hero_without_decorative_capture_frame(tmp_path)
     html = " ".join(response.text.split())
 
     desktop = 'src="/static/caddieinsight-range-hero.webp"'
-    mobile = 'srcset="/static/caddieinsight-range-hero-mobile.webp"'
+    mobile = 'srcset="/static/caddieinsight-range-hero-mobile-v2.webp"'
     assert desktop in html
     assert mobile in html
     assert (
@@ -83,7 +83,7 @@ def test_landing_uses_storefront_hero_without_decorative_capture_frame(tmp_path)
     ("asset_path", "expected_size"),
     (
         ("/static/caddieinsight-range-hero.webp", (1672, 941)),
-        ("/static/caddieinsight-range-hero-mobile.webp", (1122, 1402)),
+        ("/static/caddieinsight-range-hero-mobile-v2.webp", (1122, 932)),
     ),
 )
 def test_storefront_hero_assets_are_local_optimized_and_public(

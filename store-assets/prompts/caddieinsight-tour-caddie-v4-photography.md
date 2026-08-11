@@ -80,13 +80,25 @@ dawn, phone mounted on a low tripod behind them.`
 
 ## 2. Hero — mobile
 
-- **File:** `caddieinsight-range-hero-mobile.webp` (both theme assets and app
-  static)
-- **Canonical size:** 1122 × 1402 (4:5 portrait)
+- **File:** `caddieinsight-range-hero-mobile-v2.webp` (both theme assets and
+  app static). The `-v2` suffix is the 1122 × 932 crop that both surfaces
+  bind; the uncropped 1122 × 1402 `caddieinsight-range-hero-mobile.webp`
+  remains the source of record and the rollback frame.
+- **Canonical size:** 1122 × 932 shipped, from a 1122 × 1402 (4:5) source
 - **Crop safety:** this is a **purpose-built portrait companion**, not a crop
   of the desktop frame — the subject must be re-composed for vertical. Copy
   sits over the **bottom 60%**, so put the golfer in the **upper third** and
   keep everything below the waistline dark and quiet.
+- **The delivered frame did not meet that brief, and it cost the section.**
+  The golfer landed at 55–87% down the frame with two thirds sky above him.
+  On a phone `object-fit: cover` is narrower than the image, so it crops the
+  WIDTH and renders the full height: every dead row was paid for, the golfer
+  rendered 330 px tall inside a 1019 px hero, and his legs sat behind the
+  readout card. No CSS can correct this — `object-position`'s Y component is
+  inert whenever cover is cropping X, which is every phone width the theme
+  supports. `store-assets/phone_hero_crop.py` cuts 470 px of sky off the top
+  and takes him to 54% of the frame. **Re-composing to the brief above is
+  still the better fix; the crop is what the delivered art allows.**
 
 > Photoreal vertical editorial photograph of a covered practice range at first
 > light. A single adult golfer at the top of an iron follow-through occupies
@@ -226,7 +238,8 @@ byte-identical:
 | --- | --- |
 | `caddieinsight-range-hero.webp` | `swinglab/web/static/` |
 | `caddieinsight-range-hero-desktop.webp` | `storefront-theme/assets/` (same image as above) |
-| `caddieinsight-range-hero-mobile.webp` | `swinglab/web/static/` **and** `storefront-theme/assets/` |
+| `caddieinsight-range-hero-mobile-v2.webp` | `swinglab/web/static/` **and** `storefront-theme/assets/` — the crop both surfaces bind |
+| `caddieinsight-range-hero-mobile.webp` | `swinglab/web/static/` **and** `storefront-theme/assets/` — uncropped source, no longer bound |
 | `caddieinsight-*-card-v2.png` | `store-assets/out/` **and** `storefront-theme/assets/` |
 | `og-swinglab.png` | `store-assets/out/` |
 

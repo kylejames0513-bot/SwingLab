@@ -150,7 +150,10 @@ def test_shared_photography_ships_the_same_bytes_to_both_surfaces():
     """
     pairs = (
         ("caddieinsight-range-hero-desktop.webp", "caddieinsight-range-hero.webp"),
-        ("caddieinsight-range-hero-mobile.webp", "caddieinsight-range-hero-mobile.webp"),
+        (
+            "caddieinsight-range-hero-mobile-v2.webp",
+            "caddieinsight-range-hero-mobile-v2.webp",
+        ),
         ("og-caddieinsight.png", "og-caddieinsight.png"),
     )
     for theme_name, app_name in pairs:
