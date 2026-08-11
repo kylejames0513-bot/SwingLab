@@ -246,6 +246,60 @@
     return { joints: out, phase: a.phase };
   }
 
+  /* The bounding box of everything this animation ever draws, measured by
+     walking the whole cycle once rather than hand-written. The figure used to
+     be laid out against the raw 0-1 pose space, but nothing actually reaches
+     those edges — the body spans about x 0.36-0.66 and the clubhead swings
+     out to 0.24-0.80 — so a third of the box was permanent empty margin and
+     the skeleton read as a tiny doll in a large grid.
+     Measuring means a pose edit re-fits automatically instead of silently
+     re-introducing the same problem. */
+  /* How much of the swing ARC is allowed to run past the edge, 0..1.
+     0 keeps every millimetre of the arc inside the box, which sounds right
+     and is why the figure ended up tiny: the clubhead sweeps a loop roughly
+     three times the golfer's own height, so fitting the loop shrinks the
+     golfer to a doll. 1 fits the BODY and lets the arc bleed out entirely.
+     The container clips, and a trace running off the edge reads as motion
+     rather than as a mistake — but the impact end of the arc must stay
+     visible, because that is where the ball is. */
+  var ARC_BLEED = 0.62;
+
+  var CONTENT = (function () {
+    var all = { minX: 1, maxX: 0, minY: 1, maxY: 0 };
+    var body = { minX: 1, maxX: 0, minY: 1, maxY: 0 };
+    for (var t = 0; t <= 1; t += 0.004) {
+      var joints = poseAt(t).joints;
+      for (var key in joints) {
+        if (!Object.prototype.hasOwnProperty.call(joints, key)) { continue; }
+        var p = joints[key];
+        if (p[0] < all.minX) { all.minX = p[0]; }
+        if (p[0] > all.maxX) { all.maxX = p[0]; }
+        if (p[1] < all.minY) { all.minY = p[1]; }
+        if (p[1] > all.maxY) { all.maxY = p[1]; }
+        if (key === 'club') { continue; }
+        if (p[0] < body.minX) { body.minX = p[0]; }
+        if (p[0] > body.maxX) { body.maxX = p[0]; }
+        if (p[1] < body.minY) { body.minY = p[1]; }
+        if (p[1] > body.maxY) { body.maxY = p[1]; }
+      }
+    }
+    function mix(a, b) { return a + (b - a) * ARC_BLEED; }
+    var box = {
+      minX: mix(all.minX, body.minX),
+      maxX: mix(all.maxX, body.maxX),
+      minY: mix(all.minY, body.minY),
+      /* the bottom is NOT mixed: address, impact and the pulse all live on
+         that line, and cropping it would cut the ball off the graphic */
+      maxY: all.maxY
+    };
+    /* the skull sits outside its joint, and the impact pulse expands past
+       the clubhead — without a bleed both clip against a filled box */
+    var pad = 0.05;
+    box.minX -= pad; box.maxX += pad;
+    box.minY -= pad; box.maxY += pad;
+    return box;
+  }());
+
   function SwingTrace(canvas, options) {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d');
@@ -270,13 +324,27 @@
     return true;
   };
 
-  /* The box the figure is drawn into: a centred square-ish frame so the
-     skeleton keeps its proportions in a wide hero and a narrow phone. */
+  /* Fit CONTENT to the canvas and centre it, so the figure is as large as the
+     box allows at every viewport instead of floating inside a fixed margin.
+
+     ONE scale for both axes, deliberately: f.w and f.h are pixels-per-unit,
+     and letting them differ (as the old frame did, via a 1.15 ratio against
+     the height) stretches the skeleton — a golfer who gets wider on a wide
+     hero and narrower on a phone. Uniform scale keeps the proportions the
+     poses were drawn with, and the leftover space becomes even margin. */
   SwingTrace.prototype.frame = function () {
-    var pad = Math.min(this.w, this.h) * 0.06;
-    var h = this.h - pad * 2;
-    var w = Math.min(this.w - pad * 2, h * 1.15);
-    return { x: (this.w - w) / 2, y: pad, w: w, h: h };
+    var pad = Math.min(this.w, this.h) * 0.04;
+    var availableW = Math.max(1, this.w - pad * 2);
+    var availableH = Math.max(1, this.h - pad * 2);
+    var contentW = CONTENT.maxX - CONTENT.minX;
+    var contentH = CONTENT.maxY - CONTENT.minY;
+    var scale = Math.min(availableW / contentW, availableH / contentH);
+    return {
+      x: pad + (availableW - contentW * scale) / 2 - CONTENT.minX * scale,
+      y: pad + (availableH - contentH * scale) / 2 - CONTENT.minY * scale,
+      w: scale,
+      h: scale
+    };
   };
 
   SwingTrace.prototype.pt = function (j, f) {

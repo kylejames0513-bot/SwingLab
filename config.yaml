@@ -8,8 +8,13 @@ brand:
   # immutable CDN filename only after that File is uploaded and reviewed.
   logo_url: "/static/caddieinsight-logo.png"
                              # optional hosted wordmark for the web-app header
-  primary_color: "#1a5c38"   # headers, table accents, skeleton "corrected" tint in legends
-  accent_color: "#e8720c"    # highlights, warnings, "captured" tint in legends
+  # INSTRUMENT signals. These tint the DRAWN imagery — overlay skeletons,
+  # annotated chips, drill diagrams — so leaving them on the retired green
+  # and orange meant every generated frame inside a report still carried the
+  # old brand while the page around it did not. They also feed the sample
+  # report's freshness digest, so changing them regenerates it.
+  primary_color: "#5fe3c0"   # the read: skeleton "corrected" tint, chip grounds
+  accent_color: "#f0a818"    # the measurement: "captured" tint, highlights
   footer_text: "CaddieInsight — swing analysis from a single phone video."
   watermark: false           # stamp brand name onto generated images
   disclaimer: >-
