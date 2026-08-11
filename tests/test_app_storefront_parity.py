@@ -244,7 +244,14 @@ def test_app_shell_uses_homepage_premium_chrome_and_footer():
     # template were mapped onto tokens; these are two of them, and the
     # assertion now checks that the menu panel and the signal are DERIVED.
     assert "background: rgba(var(--sl-night-rgb), .96);" in LAYOUT
-    assert "background: var(--sl-accent);" in LAYOUT
+    # The signal colour must NOT be a background anywhere in the shell. This
+    # assertion originally pinned `background: #f07a18` on the header CTA, so
+    # re-pointing it at the token preserved the very thing the palette forbids:
+    # amber marks a value the engine measured, and the most prominent amber
+    # object in the whole product was a button. Both CTAs are bone now, which
+    # on a near-black field is louder than amber was anyway.
+    assert "background: var(--sl-accent);" not in LAYOUT
+    assert "background: var(--sl-orange);" not in LAYOUT
     # ...and that no raw hex survived below the token sheet at all. The one
     # allowed exception would be a colour with no token, and there is none:
     # the last holdout was an error red at 2.97:1 on the dark field, which

@@ -148,6 +148,9 @@
      which is the one string a reader most needs to be able to read.
      7.62:1. #}
     --sl-danger: #ff7a6b;
+    {# Hover for a bone control — see base.css. Cyan is the live
+       readout and never interaction feedback. #}
+    --sl-ink-hi: #fbfcf9;
     --sl-cream-rgb: 237, 239, 233;
     --sl-night-rgb: 4, 9, 7;
     --sl-accent-rgb: 240, 168, 24;
@@ -262,7 +265,7 @@
     text-underline-offset: 0.2em;
     text-decoration-thickness: 1px;
   }
-  a:hover { color: var(--sl-trace); text-decoration-color: currentColor; }
+  a:hover { color: var(--sl-ink-hi); text-decoration-color: currentColor; }
   img { max-width: 100%; }
   ::selection { background: rgba(var(--sl-trace-rgb), .26); color: var(--sl-ink); }
   :focus-visible {
@@ -460,7 +463,7 @@
     color: var(--sl-trace);
   }
   .sl-header--premium .sl-header__member:hover {
-    border-color: var(--sl-trace);
+    border-color: var(--sl-ink-hi);
     background: rgba(var(--sl-trace-rgb), .17);
     color: #fff;
   }
@@ -572,15 +575,19 @@
     white-space: nowrap;
   }
   .sl-header__cta { background: var(--sl-green); color: var(--sl-green-ink); }
-  .sl-header__cta:hover { background: var(--sl-green-btn); color: #fff; }
+  .sl-header__cta:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
   .sl-header__cart { background: transparent; color: var(--sl-green); }
   .sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange-text); }
+  {# Bone, not amber. This was the loudest violation of the palette's one
+     rule left on either surface: amber marks a value the ENGINE MEASURED,
+     and the single most prominent amber object in the product was a button.
+     Bone on a near-black field is also simply louder than amber was. #}
   .sl-header--premium .sl-header__cta {
     min-height: 44px;
-    border-color: var(--sl-accent);
-    background: var(--sl-accent);
-    color: var(--sl-night);
-    box-shadow: 0 12px 30px -18px rgba(var(--sl-accent-rgb), .9);
+    border-color: var(--sl-ink);
+    background: var(--sl-ink);
+    color: var(--sl-green-ink);
+    box-shadow: none;
   }
   .sl-header--premium .sl-header__cta:hover {
     border-color: var(--sl-accent-hover);
@@ -792,19 +799,24 @@
     background: rgba(var(--sl-accent-rgb), .16);
     color: var(--sl-focus-dark);
   }
-  /* The premium header CTA is dark ink on amber. This rule previously took
-     only the ink and left the base green background underneath, putting
-     var(--sl-night) on var(--sl-brand-green) — 1.57:1, effectively unreadable. It now carries the
-     background it was always meant to sit on (6.9:1). */
+  /* The mobile menu CTA is field ink on bone — the same treatment as the
+     header action, for the same reason: a call to action is not a measured
+     value, so it does not take the signal colour.
+
+     This rule previously set only the ink and left the base green background
+     underneath, putting var(--sl-night) on var(--sl-brand-green): 1.57:1 and
+     effectively unreadable. It carries its own background now (16.75:1), and
+     tests/test_premium_accessibility.py computes that ratio rather than
+     trusting the declaration. */
   .sl-premium-chrome .sl-menu .sl-menu__cta {
-    border-color: var(--sl-accent);
-    background: var(--sl-accent);
-    color: var(--sl-night);
+    border-color: var(--sl-ink);
+    background: var(--sl-ink);
+    color: var(--sl-green-ink);
   }
   .sl-premium-chrome .sl-menu .sl-menu__cta:hover {
-    border-color: var(--sl-accent-hover);
-    background: var(--sl-accent-hover);
-    color: var(--sl-night);
+    border-color: var(--sl-ink-hi);
+    background: var(--sl-ink-hi);
+    color: var(--sl-green-ink);
   }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {

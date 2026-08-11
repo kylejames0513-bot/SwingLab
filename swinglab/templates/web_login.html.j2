@@ -2,19 +2,28 @@
 {% block title %}{{ brand.name }} — {% if landing %}Swing analysis from your phone{% elif auth_view == "signup" %}Create a free account{% else %}Sign in{% endif %}{% endblock %}
 {% block style %}
   {% if landing %}
+  /* The landing page is the one full-bleed surface in the app: the hero runs
+     edge to edge and the footer butts straight onto it. */
   main { max-width: none; margin: 0; padding: 0; }
   .sl-app-footer { margin-top: 0; }
   {% else %}
   main { max-width: 620px; margin-top: clamp(40px, 7vw, 76px); }
   {% endif %}
   .landing { background: var(--sl-bg); }
+
+  /* ------------------------------------------------------------------ hero
+     The photograph is atmosphere, not the subject. It is desaturated and
+     dimmed hard so the readout beside it is the brightest object on the
+     page — the same treatment storefront-theme/sections/hero.liquid gives
+     the identical frame, so a visitor crossing from the store lands on the
+     same picture in the same key. */
   .landing-hero {
     position: relative;
     isolation: isolate;
-    min-height: clamp(700px, 78svh, 860px);
     overflow: hidden;
-    background: var(--sl-night);
-    color: #eef2ef;
+    background: var(--sl-bg);
+    color: var(--sl-ink);
+    border-bottom: 1px solid var(--sl-border);
   }
   .landing-hero::before,
   .landing-hero::after {
@@ -26,18 +35,24 @@
   .landing-hero::before {
     z-index: 1;
     background:
-      linear-gradient(105deg, rgba(4, 13, 9, .96) 0%, rgba(4, 13, 9, .84) 38%, rgba(4, 13, 9, .28) 64%, rgba(4, 13, 9, .12) 100%),
-      linear-gradient(0deg, rgba(4, 13, 9, .88) 0%, transparent 42%, rgba(4, 13, 9, .14) 100%);
+      linear-gradient(180deg, rgba(var(--sl-field-rgb), .72) 0%, rgba(var(--sl-field-rgb), .5) 46%, rgba(var(--sl-field-rgb), .94) 100%),
+      linear-gradient(90deg, rgba(var(--sl-field-rgb), .9) 0%, rgba(var(--sl-field-rgb), .34) 54%, rgba(var(--sl-field-rgb), .82) 100%);
   }
+  /* The 8px instrument grid the shell paints under the whole app, continued
+     across the photograph so the hero reads as one ruled surface rather than
+     as a picture with a panel dropped on it. Brightest at the readout edge. */
   .landing-hero::after {
     z-index: 2;
-    opacity: .2;
+    opacity: .5;
     background-image:
-      linear-gradient(rgba(255, 255, 255, .03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, .03) 1px, transparent 1px);
-    background-size: 64px 64px;
-    -webkit-mask-image: linear-gradient(90deg, #000, transparent 74%);
-    mask-image: linear-gradient(90deg, #000, transparent 74%);
+      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px);
+    background-size: 8px 8px;
+    {# A mask reads the alpha channel only, so the opaque stop just means
+       "keep" — it is derived from a token rather than written as a literal
+       black so this file holds no raw colour at all. #}
+    -webkit-mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-cream-rgb), 1) 62%);
+    mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-cream-rgb), 1) 62%);
   }
   .landing-hero__backdrop,
   .landing-hero__backdrop picture {
@@ -51,169 +66,210 @@
     display: block;
     object-fit: cover;
     object-position: center;
+    filter: grayscale(.72) contrast(1.08) brightness(.66);
   }
   .landing-hero__inner {
     position: relative;
     z-index: 4;
     width: 100%;
     max-width: var(--sl-content);
-    min-height: clamp(700px, 78svh, 860px);
     margin: 0 auto;
-    padding: clamp(96px, 11vw, 140px) var(--sl-pad-x) clamp(72px, 9vw, 120px);
+    padding: clamp(64px, 9vw, 116px) var(--sl-pad-x) clamp(56px, 7vw, 92px);
     display: grid;
-    grid-template-columns: minmax(0, 1.15fr) minmax(260px, .5fr);
-    align-items: end;
-    gap: clamp(28px, 4vw, 64px);
+    grid-template-columns: minmax(0, 1fr);
+    align-items: center;
+    gap: clamp(32px, 5vw, 56px);
   }
-  .hero-copy { max-width: 720px; }
+  .hero-copy { width: 100%; max-width: 620px; }
+  /* The wordmark used to be set as a second headline competing with the H1.
+     It is a mono eyebrow now — the instrument states what it is in small
+     caps and lets the measurement have the display type. */
   .hero-copy .hero-brand {
-    margin: 0 0 18px;
+    margin: 0 0 clamp(18px, 2vw, 26px);
     display: inline-flex;
     align-items: center;
-    gap: 12px;
-    color: #f8fbf9;
-    font-size: clamp(28px, 3.4vw, 42px);
-    font-weight: 800;
-    letter-spacing: -.04em;
+    gap: 10px;
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
     line-height: 1;
+    text-transform: uppercase;
   }
+  /* Cyan, because this dot is the "instrument is reading" light. */
   .hero-copy .hero-brand::before {
-    width: 10px;
-    height: 10px;
+    width: 7px;
+    height: 7px;
     flex: 0 0 auto;
     border-radius: 50%;
-    background: #f07a18;
-    box-shadow: 0 0 0 7px rgba(240, 122, 24, .14);
+    background: var(--sl-trace);
+    box-shadow: 0 0 0 4px rgba(var(--sl-trace-rgb), .14);
     content: "";
   }
   .hero-copy h1 {
-    max-width: 14ch;
+    max-width: 13ch;
     margin: 0;
-    color: #f8fbf9;
-    font-size: clamp(42px, 5.4vw, 72px);
-    font-weight: 700;
-    letter-spacing: -.045em;
-    line-height: 1.02;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: .98;
+    text-transform: uppercase;
     text-wrap: balance;
   }
   .hero-lead {
-    max-width: 46ch;
-    margin: 20px 0 0;
-    color: rgba(238, 242, 239, .78);
-    font-size: clamp(16px, 1.35vw, 19px);
+    max-width: 42ch;
+    margin: clamp(18px, 2vw, 24px) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-lg);
     line-height: 1.55;
     text-wrap: pretty;
   }
   .hero-ctas {
     width: min(100%, 480px);
-    margin-top: 28px;
+    margin: clamp(26px, 3vw, 34px) 0 0;
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sl-space-3);
   }
   .hero-ctas a.button {
     min-height: 52px;
     margin: 0;
     padding: 14px 22px;
+    gap: 10px;
     border-radius: var(--sl-radius-control);
   }
+  /* Bone on the field, never amber: amber marks a value the engine measured,
+     and a call to action is not one. The shell's base button paints white ink
+     on what is now a bone fill, so every button on this page restates its ink
+     rather than inheriting an invisible one. */
   .hero-ctas a.button.landing-primary {
-    border-color: #f07a18;
-    background: #f07a18;
-    color: #06110c;
-    box-shadow: 0 18px 38px -20px rgba(240, 122, 24, .9);
+    border: 1.5px solid var(--sl-green-btn);
+    background: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: none;
   }
-  .hero-ctas a.button.landing-primary:hover { border-color: #ff9a42; background: #ff9a42; color: #06110c; }
-  .landing-primary span { margin-left: 10px; }
+  /* Hover inverts the fill instead of reaching for a signal colour — both
+     signal colours already mean something specific on this page. */
+  .hero-ctas a.button.landing-primary:hover {
+    border-color: var(--sl-green-btn);
+    background: transparent;
+    color: var(--sl-green-btn);
+    box-shadow: none;
+  }
+  .landing-primary span { margin-left: 0; transition: transform .2s ease; }
+  .hero-ctas a.button.landing-primary:hover span { transform: translateX(4px); }
   .hero-ctas .hero-secondary {
-    border-color: rgba(238, 242, 239, .42);
-    background: rgba(6, 17, 12, .36);
-    color: #eef2ef;
-    -webkit-backdrop-filter: blur(14px);
-    backdrop-filter: blur(14px);
+    border: 1.5px solid var(--sl-control-border);
+    background: transparent;
+    color: var(--sl-ink);
+    box-shadow: none;
   }
   .hero-ctas .hero-secondary:hover {
-    border-color: rgba(238, 242, 239, .8);
-    background: rgba(238, 242, 239, .1);
-    color: #fff;
+    border-color: var(--sl-green-btn);
+    background: rgba(var(--sl-cream-rgb), .06);
+    color: var(--sl-ink);
   }
-  .hero-signin-note { margin: 14px 0 0; color: rgba(238, 242, 239, .68); font-size: .83rem; }
-  .hero-signin-note a { color: #eef2ef; font-weight: 700; }
-  .hero-signin-note a:hover { color: #ffad62; }
+  .hero-signin-note {
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-sm);
+  }
+  .hero-signin-note a { color: var(--sl-ink); font-weight: 700; }
   .hero-proof-points {
-    margin: 22px 0 0;
+    margin: clamp(22px, 2.5vw, 28px) 0 0;
     padding: 0;
     display: flex;
     flex-wrap: wrap;
-    gap: 8px 18px;
+    gap: var(--sl-space-2) var(--sl-space-5);
     list-style: none;
   }
   .hero-proof-points li {
     position: relative;
     padding-left: 14px;
-    color: rgba(238, 242, 239, .62);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: 10.5px;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
     letter-spacing: .12em;
     text-transform: uppercase;
   }
+  /* A square tick, not a bullet — the whole surface is ruled, not rounded. */
   .hero-proof-points li::before {
     position: absolute;
-    top: .54em;
+    top: .44em;
     left: 0;
-    width: 6px;
-    height: 6px;
-    background: #75d59b;
-    border-radius: 50%;
+    width: 5px;
+    height: 5px;
+    background: var(--sl-trace);
     content: "";
   }
-  .hero-fine { margin: 14px 0 0; color: rgba(238, 242, 239, .58); font-size: 12.5px; }
+  .hero-fine {
+    max-width: 46ch;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+  }
+
+  /* --------------------------------------------------------- the readout
+     The example session, built as an instrument panel: mono head, a ruled
+     well for the trace, and a 1px-gap bordered grid of measured values. */
   .hero-signal {
-    width: min(100%, 320px);
-    margin: 0 0 8px auto;
-    padding: 18px 18px 16px;
-    align-self: end;
-    border: 1px solid rgba(238, 242, 239, .16);
-    border-radius: var(--sl-radius-md);
-    background: rgba(5, 16, 10, .55);
-    -webkit-backdrop-filter: blur(18px);
-    backdrop-filter: blur(18px);
-    box-shadow: 0 28px 64px -36px rgba(0, 0, 0, .85);
+    width: 100%;
+    margin: 0;
+    padding: clamp(16px, 1.6vw, 22px);
+    align-self: stretch;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-lg);
+    background: rgba(var(--sl-night-rgb), .72);
+    -webkit-backdrop-filter: blur(14px);
+    backdrop-filter: blur(14px);
+    box-shadow: var(--sl-shadow-lg);
   }
   .hero-signal__head {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    color: rgba(245, 242, 233, .6);
+    gap: var(--sl-space-3);
+    padding-bottom: var(--sl-space-3);
+    border-bottom: 1px solid var(--sl-border);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: 9.5px;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
     letter-spacing: .14em;
     text-transform: uppercase;
   }
-  .hero-signal__ready { display: inline-flex; align-items: center; gap: 7px; color: #8be4ad; }
+  /* Cyan is the live read and nothing else — this is the one place on the
+     page entitled to it besides the trace itself. */
+  .hero-signal__ready {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--sl-trace);
+  }
   .hero-signal__ready::before {
-    width: 7px;
-    height: 7px;
+    width: 6px;
+    height: 6px;
     border-radius: 50%;
     background: currentColor;
-    box-shadow: 0 0 0 5px rgba(139, 228, 173, .12);
+    box-shadow: 0 0 0 4px rgba(var(--sl-trace-rgb), .12);
     content: "";
   }
   .hero-trace {
     position: relative;
-    height: 112px;
-    margin-top: 16px;
+    margin-top: var(--sl-space-3);
+    aspect-ratio: 5 / 4;
     overflow: hidden;
-    border: 1px solid rgba(245, 242, 233, .1);
-    border-radius: 15px;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
     background:
-      linear-gradient(rgba(255, 255, 255, .035) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(255, 255, 255, .035) 1px, transparent 1px),
-      rgba(255, 255, 255, .025);
-    background-size: 28px 28px;
+      linear-gradient(rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
+      var(--sl-night);
+    background-size: 16px 16px;
   }
   .hero-trace__line {
     position: absolute;
@@ -221,158 +277,231 @@
     top: 22%;
     width: 70%;
     height: 92%;
-    border-top: 2px solid #f28a32;
+    border-top: 2px solid var(--sl-trace);
     border-radius: 50%;
+    opacity: .85;
     transform: rotate(-8deg);
-    filter: drop-shadow(0 0 8px rgba(242, 138, 50, .52));
   }
   .hero-trace__dot {
     position: absolute;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #f5f2e9;
-    box-shadow: 0 0 0 4px rgba(245, 242, 233, .12);
+    width: 6px;
+    height: 6px;
+    background: rgba(var(--sl-cream-rgb), .5);
   }
   .hero-trace__dot--one { left: 22%; top: 57%; }
-  .hero-trace__dot--two { left: 52%; top: 30%; background: #f28a32; }
+  /* The middle mark is the one the engine called: amber. */
+  .hero-trace__dot--two { left: 52%; top: 30%; background: var(--sl-accent); }
   .hero-trace__dot--three { right: 14%; top: 50%; }
-  .hero-signal dl { margin: 16px 0 0; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .hero-signal dl > div { min-width: 0; padding: 0 10px; }
-  .hero-signal dl > div:first-child { padding-left: 0; }
-  .hero-signal dl > div:last-child { padding-right: 0; }
-  .hero-signal dl > div + div { border-left: 1px solid rgba(245, 242, 233, .12); }
+  /* 1px-gap bordered grid: the rules between cells are the panel background
+     showing through, so the whole block is one ruled instrument face. */
+  .hero-signal dl {
+    margin: var(--sl-space-4) 0 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
+  }
+  .hero-signal dl > div {
+    min-width: 0;
+    padding: var(--sl-space-3);
+    background: var(--sl-bg-card);
+  }
   .hero-signal dt {
-    color: rgba(245, 242, 233, .6);
+    margin: 0 0 6px;
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: 8.5px;
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
     letter-spacing: .12em;
     text-transform: uppercase;
   }
-  .hero-signal dd { margin: 6px 0 0; color: #f5f2e9; font-size: 11px; font-weight: 700; line-height: 1.35; }
-  .hero-signal__note { margin: 14px 0 0; color: rgba(245, 242, 233, .62); font-size: 10.5px; line-height: 1.45; }
-  .hero-signal__link { color: #f5f2e9; font-weight: 700; }
+  /* These three ARE the readout's values, so they are the amber. */
+  .hero-signal dd {
+    margin: 0;
+    color: var(--sl-accent);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    line-height: 1.3;
+  }
+  .hero-signal__note {
+    margin: var(--sl-space-3) 0 0;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+    line-height: 1.5;
+  }
+  .hero-signal__link { color: var(--sl-ink); font-weight: 700; }
+
+  /* ------------------------------------------------------------ the body */
   .landing-body {
     width: 100%;
     max-width: var(--sl-content);
     margin: 0 auto;
-    padding: clamp(64px, 9vw, 112px) var(--sl-pad-x);
+    padding: clamp(56px, 8vw, 104px) var(--sl-pad-x);
     display: grid;
-    gap: clamp(64px, 9vw, 108px);
+    gap: clamp(56px, 8vw, 100px);
   }
   .report-proof {
     display: grid;
-    grid-template-columns: minmax(0, .86fr) minmax(390px, 1.14fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    gap: clamp(36px, 7vw, 82px);
+    gap: clamp(32px, 6vw, 72px);
   }
   .report-proof__copy h2,
   .landing-section-head h2 {
     margin: 0;
     color: var(--sl-green);
-    font-size: clamp(2rem, 4vw, 3.25rem);
-    letter-spacing: -.045em;
-    line-height: 1.04;
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-support);
+    letter-spacing: -.02em;
+    line-height: 1.02;
+    text-transform: uppercase;
     text-wrap: balance;
   }
   .report-proof__copy > p:not(.sl-eyebrow),
-  .landing-section-head p:last-child { margin: 16px 0 0; color: var(--sl-ink-soft); }
-  .report-proof__copy .button { margin-top: 24px; }
+  .landing-section-head p:last-child {
+    max-width: 54ch;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+  }
+  /* The shell's secondary button is a hairline control, so it takes the
+     interactive border token rather than the decorative one (1.33:1 would
+     fail WCAG 1.4.11 as a control edge). */
+  .report-proof__copy .button.secondary {
+    margin-top: var(--sl-space-5);
+    min-height: 48px;
+    border: 1.5px solid var(--sl-control-border);
+    color: var(--sl-ink);
+  }
+  .report-proof__copy .button.secondary:hover {
+    border-color: var(--sl-green-btn);
+    background: rgba(var(--sl-cream-rgb), .06);
+    color: var(--sl-ink);
+  }
   .preview-figure { margin: 0; }
   .preview-shell {
     overflow: hidden;
     background: var(--sl-bg-card);
     border: 1px solid var(--sl-border-strong);
-    border-radius: var(--sl-radius-xl);
+    border-radius: var(--sl-radius-lg);
     box-shadow: var(--sl-shadow-lg);
   }
   .preview-topbar {
-    min-height: 52px;
-    padding: 12px 16px;
+    min-height: 44px;
+    padding: var(--sl-space-3) var(--sl-space-4);
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    background: #f1f1eb;
+    gap: var(--sl-space-4);
+    background: var(--sl-night);
     border-bottom: 1px solid var(--sl-border);
     color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .68rem;
-    letter-spacing: .06em;
+    font-size: var(--sl-text-xs);
+    letter-spacing: .12em;
     text-transform: uppercase;
   }
+  /* Registration ticks, not window-chrome buttons. They are decoration, so
+     they take neither signal colour. */
   .preview-dots { display: inline-flex; gap: 5px; }
-  .preview-dots span { width: 7px; height: 7px; background: #bdc6be; border-radius: 50%; }
-  .preview-dots span:first-child { background: var(--sl-orange); }
+  .preview-dots span {
+    width: 5px;
+    height: 5px;
+    background: rgba(var(--sl-cream-rgb), .22);
+  }
+  .preview-dots span:first-child { background: rgba(var(--sl-cream-rgb), .45); }
   .preview-media {
     display: block;
     padding: clamp(12px, 2.4vw, 20px);
-    background: var(--sl-surface-dark);
+    background: var(--sl-night);
+    text-decoration: none;
   }
-  .preview-media:hover { background: #0c3421; }
+  .preview-media:hover { background: var(--sl-bg); }
   .preview-media img {
     width: 100%;
     aspect-ratio: 16 / 8;
     display: block;
     object-fit: contain;
-    background: #071f15;
-    border-radius: var(--sl-radius-md);
+    background: var(--sl-night);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
   }
   .preview-read {
-    padding: 20px;
+    padding: 0;
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    background: var(--sl-border);
+    border-top: 1px solid var(--sl-border);
   }
   .preview-read div {
     min-width: 0;
-    padding: 13px 14px;
-    background: var(--sl-surface-soft);
-    border-radius: var(--sl-radius-md);
+    padding: var(--sl-space-4);
+    background: var(--sl-bg-card);
   }
   .preview-read span {
     display: block;
-    margin-bottom: 4px;
+    margin-bottom: 6px;
     color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .64rem;
-    letter-spacing: .08em;
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .12em;
     text-transform: uppercase;
   }
-  .preview-read strong { color: var(--sl-green); font-size: .88rem; }
+  /* Bone, not amber: these name the report's structure. Nothing here was
+     measured. */
+  .preview-read strong { color: var(--sl-ink); font-size: var(--sl-text-sm); }
   .preview-caption {
-    margin: 14px 4px 0;
+    margin: var(--sl-space-3) 0 0;
     color: var(--sl-ink-muted);
-    font-size: .77rem;
+    font-size: var(--sl-text-xs);
     line-height: 1.5;
   }
   .preview-caption a { font-weight: 700; }
   .landing-section-head { max-width: 690px; }
   .flow-club-note {
     max-width: 690px;
-    margin: 20px 0 0;
-    padding-left: 14px;
-    border-left: 3px solid var(--sl-orange);
+    margin: var(--sl-space-5) 0 0;
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border: 1px solid var(--sl-border);
+    border-left: 2px solid var(--sl-border-strong);
+    border-radius: 0 var(--sl-radius-sm) var(--sl-radius-sm) 0;
+    background: var(--sl-orange-soft);
     color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
   }
-  .flow-club-note strong { color: var(--sl-green); }
-  .flow-library-link { margin: 20px 0 0; color: var(--sl-ink-soft); }
+  .flow-club-note strong {
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-weight: 500;
+    letter-spacing: .04em;
+  }
+  .flow-library-link {
+    margin: var(--sl-space-5) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
   .flow-library-link a { font-weight: 700; }
   .proof-cycle-strip {
     display: grid;
-    grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr);
+    grid-template-columns: minmax(0, 1fr);
     align-items: center;
-    gap: clamp(32px, 6vw, 76px);
+    gap: clamp(32px, 6vw, 72px);
   }
   .proof-verdict {
     position: relative;
     overflow: hidden;
-    padding: clamp(22px, 3.5vw, 32px);
+    padding: clamp(20px, 3vw, 30px);
     background: var(--sl-bg-card);
     border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-lg);
     box-shadow: var(--sl-shadow-lg);
   }
+  /* The dial arc behind the verdict. It is decoration, so it is a hairline
+     in the decorative border token — the amber ring it used to be claimed a
+     measurement that was not there. */
   .proof-verdict::after {
     content: "";
     position: absolute;
@@ -380,7 +509,7 @@
     top: -118px;
     width: 240px;
     height: 240px;
-    border: 1.5px solid rgba(232, 114, 12, .34);
+    border: 1px solid var(--sl-border);
     border-radius: 50%;
     pointer-events: none;
   }
@@ -390,186 +519,355 @@
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 12px;
-    padding-bottom: 12px;
-    border-bottom: 1px dashed var(--sl-border-strong);
+    gap: var(--sl-space-3);
+    padding-bottom: var(--sl-space-3);
+    border-bottom: 1px solid var(--sl-border);
     color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .68rem;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
     letter-spacing: .12em;
     text-transform: uppercase;
   }
+  /* A pass mark IS a measured result, so the badge is the amber. It takes
+     --sl-orange-text rather than --sl-orange: the fill token is the signal at
+     display size, and this is nine-pixel-tracked mono on a wash. Naming the
+     token instead of its value is deliberate — a comment that quotes a hex
+     goes stale the next time the palette moves. */
   .proof-verdict__badge {
-    padding: 4px 11px;
-    border-radius: var(--sl-radius-control);
-    background: #e5f3ea;
-    color: var(--sl-green);
-    font-weight: 700;
-    letter-spacing: .08em;
+    position: relative;
+    z-index: 1;
+    flex: 0 0 auto;
+    padding: 4px 10px;
+    border: 1px solid rgba(var(--sl-accent-rgb), .38);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-orange-soft);
+    color: var(--sl-orange-text);
+    font-weight: 500;
+    letter-spacing: .12em;
   }
   .proof-verdict__reading {
-    margin: 16px 0 0;
-    color: var(--sl-green);
+    position: relative;
+    z-index: 1;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-orange-text);
     font-family: var(--sl-font-mono);
-    font-size: clamp(1.3rem, 2.5vw, 1.8rem);
-    font-weight: 700;
+    font-size: var(--sl-text-2xl);
+    font-weight: 500;
     font-variant-numeric: tabular-nums;
-    letter-spacing: -.02em;
+    letter-spacing: -.01em;
     line-height: 1.18;
   }
-  .proof-verdict__detail { margin: 9px 0 0; color: var(--sl-ink-soft); font-size: .92rem; }
+  .proof-verdict__detail {
+    position: relative;
+    z-index: 1;
+    margin: var(--sl-space-2) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
   .proof-verdict__note {
-    margin: 16px 0 0;
-    padding-top: 12px;
-    border-top: 1px dashed var(--sl-border-strong);
+    position: relative;
+    z-index: 1;
+    margin: var(--sl-space-4) 0 0;
+    padding-top: var(--sl-space-3);
+    border-top: 1px solid var(--sl-border);
     color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .73rem;
+    font-size: var(--sl-text-xs);
     line-height: 1.55;
   }
+  /* The four steps as one ruled block: 1px gaps filled by the border colour
+     rather than four floating cards. */
   .flow-list {
-    margin: 30px 0 0;
+    margin: var(--sl-space-6) 0 0;
     padding: 0;
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 12px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
     align-items: stretch;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
     list-style: none;
     counter-reset: journey;
   }
   .flow-list li {
-    min-height: 218px;
-    padding: 22px;
+    padding: clamp(18px, 2.2vw, 24px);
     position: relative;
     overflow: hidden;
     display: flex;
     flex-direction: column;
     height: 100%;
     background: var(--sl-bg-card);
-    border: 1px solid var(--sl-border);
-    border-radius: var(--sl-radius-lg);
-    box-shadow: var(--sl-shadow-sm);
     counter-increment: journey;
   }
+  /* The step index is an ordinal, not a measurement — mono, but muted bone.
+     Amber here would claim the engine had read something. */
   .flow-list li::before {
     display: block;
-    margin-bottom: 26px;
-    color: var(--sl-orange-text);
+    margin-bottom: var(--sl-space-5);
+    color: var(--sl-ink-muted);
     content: "0" counter(journey);
     font-family: var(--sl-font-mono);
-    font-size: .72rem;
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
     letter-spacing: .12em;
   }
   .flow-list li:not(:last-child)::after {
     position: absolute;
-    top: 27px;
-    right: 18px;
+    top: clamp(18px, 2.2vw, 24px);
+    right: clamp(18px, 2.2vw, 24px);
     color: var(--sl-border-strong);
-    content: "\2192";
-    font-size: 1.15rem;
+    content: "\2193";
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    line-height: 1;
   }
-  .flow-list h3 { margin: 0; color: var(--sl-green); font-size: 1.18rem; }
-  .flow-list p { margin: 10px 0 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .flow-list h3 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-lg);
+    letter-spacing: -.01em;
+    line-height: 1.15;
+  }
+  .flow-list p {
+    margin: var(--sl-space-3) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  /* The scope statement sits in the well — the darkest surface in the
+     system — because it is the page's most load-bearing honesty. */
   .scope-panel {
-    padding: clamp(26px, 5vw, 48px);
+    padding: clamp(24px, 4vw, 44px);
     display: grid;
-    grid-template-columns: .86fr 1.14fr;
-    gap: clamp(28px, 6vw, 68px);
-    color: var(--sl-green-ink);
-    background: var(--sl-surface-dark);
-    border: 1px solid rgba(255, 255, 255, .12);
-    border-radius: var(--sl-radius-xl);
+    grid-template-columns: minmax(0, 1fr);
+    gap: clamp(24px, 5vw, 56px);
+    color: var(--sl-ink);
+    background: var(--sl-night);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-lg);
     box-shadow: var(--sl-shadow-lg);
   }
-  .scope-panel .sl-eyebrow { color: var(--sl-premium-accent); }
-  .scope-panel h2 { margin: 0; font-size: clamp(1.8rem, 3.8vw, 3rem); line-height: 1.05; letter-spacing: -.04em; }
-  .scope-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-  .scope-grid div { height: 100%; padding: 18px; background: rgba(255, 255, 255, .07); border: 1px solid rgba(255, 255, 255, .11); border-radius: var(--sl-radius-md); }
-  .scope-grid h3 { margin: 0; color: #fff; font-size: .95rem; }
-  .scope-grid p { margin: 9px 0 0; color: #cbdad0; font-size: .86rem; }
+  .scope-panel h2 {
+    margin: 0;
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-support);
+    line-height: 1.02;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+  }
+  .scope-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
+  }
+  .scope-grid div {
+    height: 100%;
+    padding: var(--sl-space-4);
+    background: var(--sl-bg-card);
+  }
+  .scope-grid h3 {
+    margin: 0;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  .scope-grid p {
+    margin: var(--sl-space-3) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+
+  /* -------------------------------------------------------------- the auth
+     Same instrument, one column wide. */
   .auth-shell { max-width: 470px; margin: 0 auto; }
-  .auth-shell > h1 { color: var(--sl-green); font-size: clamp(1.8rem, 5vw, 2.5rem); line-height: 1.05; letter-spacing: -.035em; margin: 0 0 8px; }
-  .auth-shell .lead { color: var(--sl-ink-soft); margin: 0 0 20px; }
-  label { display: block; margin: 12px 0 4px; font-weight: 600; font-size: 0.9rem; }
+  .auth-shell > h1 {
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-support);
+    line-height: 1.02;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+    margin: 0 0 var(--sl-space-2);
+  }
+  .auth-shell .lead { color: var(--sl-ink-soft); margin: 0 0 var(--sl-space-5); }
+  label {
+    display: block;
+    margin: var(--sl-space-4) 0 6px;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+  }
+  /* Fields are wells cut into the panel. The shell's zero-specificity
+     baseline still fills them with a light surface, which after the inversion
+     put bone ink on near-white: every input on this page was unreadable until
+     this rule restated the fill AND the ink together. Restating only one is
+     how that defect happened in the first place. */
   input[type=email], input[type=password], input[type=text] {
-    width: 100%; min-height: 48px; padding: 11px 13px; border: 1.5px solid var(--sl-control-border); border-radius: 10px;
-    background: #fff; color: var(--sl-ink); font: inherit;
+    width: 100%; min-height: 48px; padding: 12px 13px;
+    border: 1.5px solid var(--sl-control-border); border-radius: var(--sl-radius-control);
+    background: var(--sl-night); color: var(--sl-ink); font: inherit;
     box-sizing: border-box; }
-  input:focus { border-color: var(--sl-green-btn); outline: 3px solid rgba(26, 92, 56, .16); outline-offset: 1px; }
-  .card button { width: 100%; }
-  .free-note { color: var(--sl-ink-muted); font-size: 0.86rem; margin-top: 12px; text-align: center; }
-  .opt { display: flex; gap: 8px; align-items: flex-start; font-weight: 400;
-         font-size: 0.85rem; color: var(--sl-ink-soft); margin: 14px 0 0; }
-  .opt input { margin-top: 2px; }
-  .notice { background: #e5f3ea; border-left: 4px solid var(--sl-green);
-            padding: 12px 16px; border-radius: 4px; margin-top: 20px; }
-  .aux-links { align-items: center; display: flex; flex-wrap: wrap; gap: 8px 16px;
-               justify-content: center; margin-top: 16px; }
-  .aux-link { color: var(--sl-ink-soft); font-size: 0.86rem; text-align: center; }
-  .back-home { display: block; margin: 20px auto 0; text-align: center; }
-  .resend button { background: white; color: var(--sl-ink); border: 1px solid var(--sl-control-border);
-                   margin-top: 12px; }
-  .account-note { background: var(--sl-orange-soft); border-radius: 10px;
-                  color: var(--sl-ink-soft); font-size: .88rem; margin-top: 18px;
-                  padding: 12px 14px; }
-  @media (max-width: 999px) {
-    .landing-hero__inner { grid-template-columns: minmax(0, 1fr) minmax(240px, .46fr); }
-    .hero-copy h1 { font-size: clamp(40px, 6.2vw, 58px); }
-    .report-proof { grid-template-columns: 1fr; }
-    .preview-figure { max-width: 680px; }
+  /* Six-digit codes are read back character by character, so they get the
+     mono face and real tracking. */
+  input[inputmode=numeric] {
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-lg);
+    letter-spacing: .34em;
+  }
+  input:focus {
+    border-color: var(--sl-green-btn);
+    outline: 2px solid var(--sl-focus-dark);
+    outline-offset: 1px;
+  }
+  /* The shell's button paints white ink on the bone fill — invisible on the
+     inverted palette. Dark ink on bone is 15:1. */
+  .card button {
+    width: 100%;
+    border: 1.5px solid var(--sl-green-btn);
+    background: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+  }
+  .card button:hover {
+    border-color: var(--sl-green-btn);
+    background: transparent;
+    color: var(--sl-green-btn);
+    box-shadow: none;
+  }
+  .free-note {
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-sm);
+    margin-top: var(--sl-space-4);
+    text-align: center;
+  }
+  .opt {
+    display: flex; gap: 10px; align-items: flex-start;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-sans);
+    font-size: var(--sl-text-sm);
+    font-weight: 400;
+    letter-spacing: normal;
+    text-transform: none;
+  }
+  .opt input { width: 20px; height: 20px; margin-top: 2px; flex: 0 0 auto; }
+  .notice {
+    margin-top: var(--sl-space-5);
+    padding: var(--sl-space-3) var(--sl-space-4);
+    background: var(--sl-orange-soft);
+    border: 1px solid var(--sl-border);
+    border-left: 2px solid var(--sl-border-strong);
+    border-radius: 0 var(--sl-radius-sm) var(--sl-radius-sm) 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  /* An error is the one string a reader most needs to be able to read, so it
+     gets a panel of its own rather than a line of loose red text. */
+  .auth-shell .error {
+    margin: 0 0 var(--sl-space-4);
+    padding: var(--sl-space-3) var(--sl-space-4);
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border-strong);
+    border-left: 2px solid var(--sl-danger);
+    border-radius: 0 var(--sl-radius-sm) var(--sl-radius-sm) 0;
+    color: var(--sl-danger);
+    font-size: var(--sl-text-sm);
+  }
+  .aux-links {
+    align-items: center; display: flex; flex-wrap: wrap; gap: var(--sl-space-2) var(--sl-space-4);
+    justify-content: center; margin-top: var(--sl-space-4);
+  }
+  .aux-link {
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    text-align: center;
+  }
+  /* 44px minimum target, and only on the anchors: one .aux-link is a
+     paragraph of fallback prose, which must stay a normal wrapping block. */
+  a.aux-link {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  a.back-home { display: flex; justify-content: center; margin: var(--sl-space-5) auto 0; }
+  /* The resend is the secondary action of the pair: hairline, not filled. */
+  .resend button {
+    background: transparent;
+    color: var(--sl-ink);
+    border: 1.5px solid var(--sl-control-border);
+    margin-top: var(--sl-space-3);
+    box-shadow: none;
+  }
+  .resend button:hover {
+    background: rgba(var(--sl-cream-rgb), .06);
+    border-color: var(--sl-green-btn);
+    color: var(--sl-ink);
+  }
+  .account-note {
+    background: var(--sl-orange-soft);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    margin-top: var(--sl-space-5);
+    padding: var(--sl-space-3) var(--sl-space-4);
+  }
+
+  @media (min-width: 560px) {
     .flow-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-    .proof-cycle-strip { grid-template-columns: 1fr; }
+    .flow-list li:not(:last-child)::after { content: "\2192"; }
+    .preview-read,
+    .scope-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hero-ctas { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .hero-signal dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1000px) {
+    /* Asymmetric on purpose: the copy takes five columns and the readout
+       seven, so the instrument is the larger object on the page. */
+    .landing-hero__inner {
+      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      gap: clamp(40px, 4vw, 72px);
+      min-height: clamp(620px, 74svh, 800px);
+    }
+    .hero-trace { aspect-ratio: 16 / 11; }
+    .report-proof { grid-template-columns: minmax(0, .86fr) minmax(390px, 1.14fr); }
+    .proof-cycle-strip { grid-template-columns: minmax(0, 1.05fr) minmax(300px, .95fr); }
+    .scope-panel { grid-template-columns: minmax(0, .86fr) minmax(0, 1.14fr); }
+    .flow-list { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  @media (max-width: 999px) {
+    .preview-figure { max-width: 680px; }
     .proof-verdict { max-width: 560px; }
   }
   @media (max-width: 749px) {
-    .landing-hero { min-height: clamp(600px, calc(100svh - 102px), 680px); }
+    /* The photograph is a portrait crop here and the copy sits on top of it,
+       so the wash runs top-to-bottom instead of left-to-right. */
     .landing-hero::before {
       background:
-        linear-gradient(180deg, rgba(4, 13, 9, .95) 0%, rgba(4, 13, 9, .8) 48%, rgba(4, 13, 9, .42) 76%, rgba(4, 13, 9, .72) 100%),
-        linear-gradient(90deg, rgba(4, 13, 9, .72), rgba(4, 13, 9, .08));
+        linear-gradient(180deg, rgba(var(--sl-field-rgb), .88) 0%, rgba(var(--sl-field-rgb), .58) 44%, rgba(var(--sl-field-rgb), .96) 100%);
     }
     .landing-hero::after {
-      background-size: 48px 48px;
-      -webkit-mask-image: linear-gradient(180deg, #000, transparent 68%);
-      mask-image: linear-gradient(180deg, #000, transparent 68%);
+      -webkit-mask-image: linear-gradient(180deg, transparent, rgba(var(--sl-cream-rgb), 1) 58%);
+      mask-image: linear-gradient(180deg, transparent, rgba(var(--sl-cream-rgb), 1) 58%);
     }
     .landing-hero__image { object-position: 32% center; }
-    .landing-hero__inner {
-      min-height: clamp(600px, calc(100svh - 102px), 680px);
-      padding-top: clamp(52px, 8vw, 68px);
-      padding-bottom: clamp(40px, 7vw, 56px);
-      grid-template-columns: 1fr;
-      align-content: end;
-      gap: 0;
-    }
-    .hero-copy .hero-brand { font-size: clamp(24px, 7vw, 32px); }
-    .hero-copy h1 { max-width: 11ch; font-size: clamp(36px, 9.5vw, 46px); line-height: 1.02; }
-    .hero-lead { max-width: 36ch; margin-top: 14px; font-size: 15.5px; line-height: 1.48; }
-    .hero-ctas { width: min(100%, 320px); grid-template-columns: 1fr; gap: 10px; margin-top: 20px; }
+    .landing-hero__inner { padding-top: clamp(48px, 8vw, 64px); }
+    .hero-ctas { width: 100%; }
     .hero-ctas a.button { width: 100%; min-height: 48px; padding: 12px 18px; }
-    .hero-ctas .hero-secondary {
-      width: 100%;
-      min-height: 44px;
-      padding: 10px 16px;
-      justify-self: stretch;
-      justify-content: center;
-      border: 1px solid rgba(238, 242, 239, .34);
-      background: rgba(6, 17, 12, .42);
-      text-decoration: none;
-    }
-    .hero-proof-points { width: fit-content; margin-top: 18px; display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); gap: 8px 16px; }
-    .hero-proof-points li { padding-left: 13px; font-size: 9.5px; letter-spacing: .09em; }
-    .hero-fine, .hero-signal { display: none; }
-    .landing-body { padding-top: 58px; padding-bottom: 72px; }
-    .preview-read, .scope-grid, .scope-panel { grid-template-columns: 1fr; }
-    .flow-list { grid-template-columns: 1fr; }
-    .flow-list li { min-height: 0; }
-    .flow-list li:not(:last-child)::after { content: "\2193"; }
+    .hero-proof-points { gap: var(--sl-space-2) var(--sl-space-4); }
   }
-  @media (max-width: 390px) {
-    .hero-copy .hero-brand { font-size: 22px; letter-spacing: -.03em; }
-    .hero-copy h1 { font-size: clamp(34px, 10vw, 42px); }
+  @media (prefers-reduced-motion: reduce) {
+    .landing-primary span,
+    .hero-ctas a.button.landing-primary:hover span { transition: none; transform: none; }
   }
 {% endblock %}
 {% block main %}

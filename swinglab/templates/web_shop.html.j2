@@ -1,23 +1,174 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Gear{% endblock %}
 {% block style %}
+  {# This is the one surface in the app where the engine measured nothing, so
+     it carries no amber at all. Rule 1 reserves the accent for a value the
+     engine read; a price is a number the store set, and dressing it in the
+     measurement colour would teach the accent to mean "look here", which is
+     precisely what it must never mean. Every value on this page is mono and
+     bone instead. #}
   main { max-width: 1040px; }
-  .shop-intro { max-width: 720px; margin-bottom: 30px; }
-  .shop-intro h1 { margin: 0 0 10px; color: var(--sl-green); font-size: clamp(2.2rem, 6vw, 3.8rem); line-height: 1; letter-spacing: -.048em; }
-  .shop-intro .hint { max-width: 680px; font-size: .98rem; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-          gap: 20px; align-items: stretch; margin-top: 24px; }
-  a.product { background: var(--sl-bg-card); border: 1px solid var(--sl-border); border-radius: var(--sl-radius-lg);
-              height: 100%; overflow: hidden; text-decoration: none; color: inherit;
-              display: flex; flex-direction: column; box-shadow: var(--sl-shadow-sm); transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
-  a.product:hover { border-color: var(--sl-green-btn); transform: translateY(-2px); box-shadow: var(--sl-shadow-md); }
-  a.product img { width: 100%; aspect-ratio: 20 / 13; object-fit: cover; background: #f0f0f0; }
-  .product__body { padding: 18px; display: flex; flex: 1; flex-direction: column; }
-  a.product h2 { margin: 0 0 7px; font-size: 1rem; color: var(--sl-green); }
-  .price { order: 3; font-weight: 700; margin: 16px 0 0; color: var(--sl-green); }
-  .desc { flex: 1; color: var(--sl-ink-soft); font-size: 0.88rem; margin: 0; }
-  .sold-out { color: #b3261e; font-size: 0.85rem; }
-  @media (prefers-reduced-motion: reduce) { a.product:hover { transform: none; } }
+
+  .shop-intro {
+    max-width: 720px;
+    margin-bottom: var(--sl-space-6);
+    padding-bottom: var(--sl-space-5);
+    border-bottom: 1px solid var(--sl-border);
+  }
+  {# Was a hand-rolled clamp(2.2rem, 6vw, 3.8rem). The shell ships the display
+     rung this heading always wanted, and the EXPANDED face occupies far more
+     line at the same point size — so the token, not a local clamp, and the
+     line-height comes down with it. #}
+  .shop-intro h1 {
+    margin: 0 0 var(--sl-space-3);
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    letter-spacing: -0.02em;
+    line-height: 0.98;
+    text-transform: uppercase;
+  }
+  .shop-intro .hint {
+    max-width: 68ch;
+    margin: 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-base);
+    line-height: 1.6;
+  }
+
+  {# A ruled grid, not a row of floating cards. The 1px gaps ARE the rules:
+     the grid paints the border colour and every cell paints the panel over
+     it, so the catalogue reads as one instrument face rather than as tiles.
+     One hairline round the outside closes the frame. #}
+  .grid {
+    margin-top: var(--sl-space-5);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 1px;
+    align-items: stretch;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
+  }
+  a.product {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--sl-bg-card);
+    color: var(--sl-ink);
+    text-decoration: none;
+    transition: background-color .18s ease, box-shadow .18s ease;
+  }
+  {# Two things this hover has to fix, both created by the inversion.
+
+     First, colour: the shell sends every `a:hover` to the trace cyan, and
+     that selector outranks `.desc` and `.price`, so hovering a card turned
+     its whole readout cyan — rule 2 says cyan is the live read and nothing
+     else, and a gear card is never a live read. The colour is pinned back to
+     bone here at a specificity the base rule cannot reach.
+
+     Second, shape: a cell in a ruled grid cannot take a border (the gap is
+     the border) and cannot lift on translate without tearing the rules it
+     sits in. An inset hairline lights it in place instead. #}
+  a.product:hover,
+  a.product:focus-visible {
+    background: var(--sl-surface-soft);
+    color: var(--sl-ink);
+    box-shadow: inset 0 0 0 1px var(--sl-control-border);
+  }
+  a.product:hover h2,
+  a.product:focus-visible h2 { color: var(--sl-green); }
+  {# The shell's 3px outset focus ring would straddle the 1px rule and paint
+     onto the neighbouring cell. Pulled inside the cell it actually marks. #}
+  a.product:focus-visible { outline-offset: -3px; }
+  a.product img {
+    width: 100%;
+    aspect-ratio: 20 / 13;
+    object-fit: cover;
+    {# The well, not the retired #f0f0f0. A light-grey plate is the loudest
+       thing on a near-black field, and it was showing for the whole of every
+       lazy image's load — a placeholder that shouts. #}
+    background: var(--sl-night);
+    border-bottom: 1px solid var(--sl-border);
+  }
+  .product__body {
+    padding: var(--sl-space-4);
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    gap: var(--sl-space-2);
+  }
+  {# The shell sets every h2 in the EXPANDED display face, which is drawn for
+     a headline at 34px and up; a product name at text-base in it is a wall of
+     width. The interface face carries names, the display face carries the
+     page title. #}
+  a.product h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-sans);
+    font-size: var(--sl-text-base);
+    font-weight: 700;
+    letter-spacing: -0.011em;
+    line-height: 1.25;
+  }
+  .desc {
+    flex: 1;
+    margin: 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+  {# The value line, ruled off from the prose above it and set in mono like
+     every other value in the product. `margin-top: auto` keeps it on the
+     floor of the cell even for the products that carry no description, so
+     the rule lands at the same height across a row. #}
+  .price {
+    order: 3;
+    margin: auto 0 0;
+    padding-top: var(--sl-space-3);
+    border-top: 1px solid var(--sl-border);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-base);
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  {# #b3261e was the light-surface red and lands at 2.97:1 on this panel — the
+     same literal the shell had to replace to keep error text readable. It is
+     deliberately NOT swapped for --sl-danger, though: sold out is a state the
+     store reported, not a failure, and red is the error channel. A null
+     reading reads muted. 6.02:1 on the panel, 5.49:1 on the hover surface. #}
+  .sold-out {
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  {# Nothing is on offer, so the empty state is the well rather than a lit
+     panel: a card styled like a product that holds no product reads as a
+     failed image load. #}
+  .card {
+    max-width: 720px;
+    margin-top: var(--sl-space-5);
+    background: var(--sl-night);
+    border-radius: var(--sl-radius-md);
+  }
+  .card p {
+    max-width: 62ch;
+    margin: 0;
+    color: var(--sl-ink-soft);
+  }
+
+  @media (max-width: 749px) {
+    .product__body { padding: var(--sl-space-3); }
+  }
+  {# The transitions above are colour only — no transform survived the reshape
+     — but the declaration is still motion the setting is entitled to stop. #}
+  @media (prefers-reduced-motion: reduce) {
+    a.product { transition: none; }
+  }
 {% endblock %}
 {% block main %}
   <header class="shop-intro">

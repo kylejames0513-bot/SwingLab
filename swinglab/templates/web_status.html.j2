@@ -1,179 +1,436 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — {{ "Re-film needed" if refilm_needed else ("Results ready" if done else ("Analysis failed" if failed else "Analyzing…")) }}{% endblock %}
 {% block style %}
+  {# This page is the instrument's live face. One panel: a ruled verdict band
+     that states where the machine currently stands, then a body that is either
+     a live readout or the measured result. Every surface below is a hairline
+     rule or a well — the light-era build leaned on tinted blocks and drop
+     shadows, and neither survives on a near-black field. #}
   main { max-width: 940px; }
   .status-surface {
     overflow: hidden;
     padding: 0;
-    border-radius: var(--sl-radius-xl);
+    border-radius: var(--sl-radius-lg);
   }
+
+  {# ----------------------------------------------------------- the band
+     The verdict band is a well, not a hero: darker than the panel around it
+     and carrying the same 8px technical grid the shell paints under the page,
+     so the header reads as part of one instrument instead of a coloured
+     banner bolted on top.
+
+     State used to be a background tint (#633117 for attention, #173b2a for
+     waiting). On the field a tinted block is just a smudge — indistinguishable
+     from the panel at a glance and impossible to keep on the contrast rungs.
+     State is now a 2px rule along the top edge plus the kicker colour, which
+     survives at any brightness and never touches the body text. #}
   .state-hero {
-    padding: clamp(28px, 6vw, 52px);
+    position: relative;
+    padding: var(--sl-space-5);
     background:
-      radial-gradient(circle at 92% 0, rgba(255, 255, 255, .13), transparent 18rem),
-      var(--sl-surface-dark);
-    color: var(--sl-green-ink);
+      linear-gradient(rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
+      radial-gradient(circle at 92% 0, rgba(var(--sl-cream-rgb), .05), transparent 20rem),
+      var(--sl-night);
+    background-size: 8px 8px, 8px 8px, auto, auto;
+    border-bottom: 1px solid var(--sl-border-strong);
+    color: var(--sl-ink);
+    box-shadow: inset 0 2px 0 var(--sl-border-strong);
   }
-  .state-hero--attention { background: #633117; }
-  .state-hero--waiting { background: #173b2a; }
+  {# CYAN IS THE LIVE READ. Queued and analyzing are the only moments this page
+     is actually reading something, so they are the only states that take the
+     trace colour — on the top rule, the kicker, the spinner and the bar. #}
+  .state-hero--waiting { box-shadow: inset 0 2px 0 var(--sl-trace); }
+  {# A stopped run and an unusable clip are error states, so they take the
+     error token. Amber is not available here: amber means the engine measured
+     something, and "we could not finish" is the absence of a measurement. #}
+  .state-hero--attention { box-shadow: inset 0 2px 0 var(--sl-danger); }
   .result-kicker {
-    margin: 0 0 12px;
-    color: #ffb47d;
+    margin: 0 0 var(--sl-space-3);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .72rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .12em;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
     text-transform: uppercase;
   }
+  .state-hero--waiting .result-kicker { color: var(--sl-trace); }
+  .state-hero--attention .result-kicker { color: var(--sl-danger); }
   .state-hero h1 {
-    max-width: 720px;
+    max-width: 20ch;
     margin: 0;
-    color: #fff;
-    font-size: clamp(2rem, 5vw, 3.6rem);
-    letter-spacing: -.045em;
-    line-height: 1.02;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: .98;
+    text-transform: uppercase;
     text-wrap: balance;
   }
   .state-summary {
-    max-width: 680px;
-    margin: 16px 0 0;
-    color: #d4e3d8;
-    font-size: clamp(.98rem, 1.6vw, 1.08rem);
+    max-width: 56ch;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-lg);
+    line-height: 1.55;
+    text-wrap: pretty;
   }
-  .state-body { padding: clamp(24px, 5vw, 44px); }
+  .state-body { padding: var(--sl-space-5); }
+
+  {# Sized in em rather than px so the ring tracks the display heading it sits
+     inside — at the top of the clamp the old fixed 24px read as a speck next
+     to a 54px line. #}
   .spinner {
-    width: 24px;
-    height: 24px;
     display: inline-block;
-    margin-right: 12px;
-    vertical-align: .05em;
-    border: 3px solid rgba(255, 255, 255, .28);
-    border-top-color: #ffb47d;
+    width: .48em;
+    height: .48em;
+    margin-right: .28em;
+    vertical-align: .04em;
+    border: 2px solid rgba(var(--sl-trace-rgb), .22);
+    border-top-color: var(--sl-trace);
     border-radius: 50%;
     animation: spin .9s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  {# The bar IS the live readout, so it is trace and nothing else on the page
+     competes for that colour. The track is a well so the fill reads as light
+     coming through rather than a block painted onto a card. #}
   .status-progress {
     width: 100%;
-    height: 14px;
+    height: 10px;
     margin: 0;
     overflow: hidden;
-    background: #dfe7e1;
-    border: 1px solid #ced9d1;
-    border-radius: var(--sl-radius-control);
+    background: var(--sl-night);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
   }
   .status-progress__fill {
     height: 100%;
     min-width: 0;
-    background: linear-gradient(90deg, var(--sl-green-btn), #3a8b59);
-    border-radius: inherit;
+    background: var(--sl-trace);
     transition: width .35s ease;
   }
   .status-progress.is-indeterminate .status-progress__fill {
     width: 38% !important;
-    background: linear-gradient(90deg, transparent, var(--sl-green-btn), transparent);
+    background: linear-gradient(90deg, transparent, var(--sl-trace), transparent);
     animation: status-indeterminate 1.4s ease-in-out infinite;
   }
   @keyframes status-indeterminate {
     from { transform: translateX(-105%); }
     to { transform: translateX(265%); }
   }
-  .bar-label { margin: 12px 0 0; color: var(--sl-ink); font-weight: 700; }
-  .processing-note { margin-bottom: 0; }
-  .coach-intro { max-width: 680px; color: var(--sl-ink-soft); margin: 0 0 22px; }
-  .result-path { display: grid; gap: 14px; }
-  .coach-block {
-    margin: 0;
-    padding: 20px;
-    background: var(--sl-surface-soft);
-    border: 1px solid #d6e3d9;
-    border-radius: var(--sl-radius-lg);
-  }
-  .coach-block.focus {
-    padding: clamp(22px, 4vw, 30px);
-    background: var(--sl-orange-soft);
-    border-color: #efc89d;
-  }
-  .coach-block h2,
-  .coach-block h3 {
-    margin: 0 0 10px;
-    color: var(--sl-green-btn);
+  {# The count under the bar is a readout, not a heading: mono, trace, sitting
+     directly under the thing it describes. #}
+  .bar-label {
+    margin: var(--sl-space-3) 0 0;
+    color: var(--sl-trace);
     font-family: var(--sl-font-mono);
-    font-size: .72rem;
+    font-size: var(--sl-text-sm);
     font-weight: 500;
-    letter-spacing: .12em;
-    text-transform: uppercase;
+    letter-spacing: .04em;
   }
-  .coach-block.focus h2 { color: var(--sl-orange-text); }
-  .coach-block p { margin: 7px 0; }
-  .coach-value { font-size: clamp(1.08rem, 2vw, 1.32rem); }
-  .coach-value strong { color: var(--sl-green); }
-  .coach-value .bench { color: var(--sl-ink-muted); font-size: .82rem; font-weight: 500; }
-  .coach-warning {
-    margin: 0 0 16px;
-    padding: 14px 16px;
-    color: #5b420c;
-    background: #fff8df;
-    border: 1px solid #e8cb72;
+  .processing-note { margin-bottom: 0; }
+
+  {# ------------------------------------------------------- the result
+     A 1px-gap bordered grid: the gap IS the rule, so adjacent panels share one
+     hairline instead of stacking two and drifting to 2px. #}
+  .coach-intro {
+    max-width: 62ch;
+    margin: 0 0 var(--sl-space-5);
+    color: var(--sl-ink-soft);
+  }
+  .result-path {
+    display: grid;
+    gap: 1px;
+    overflow: hidden;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
     border-radius: var(--sl-radius-md);
   }
-  .coach-trend { margin: 18px 0 0; color: var(--sl-ink-soft); font-size: .92rem; }
+  .coach-block {
+    margin: 0;
+    padding: var(--sl-space-5);
+    background: var(--sl-bg-card);
+  }
+  {# The priority panel is the one thing this page exists to deliver, so it
+     takes the dark amber wash — the only surface on the page that is not the
+     panel colour. #}
+  .coach-block.focus { background: var(--sl-orange-soft); }
+  .coach-block h2,
+  .coach-block h3 {
+    margin: 0 0 var(--sl-space-3);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-eyebrow-size);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  {# "Fix first" / "Protect" is the engine's verdict on a measurement, which is
+     what amber is for. 9.43:1 on the wash. #}
+  .coach-block.focus h2 { color: var(--sl-orange-text); }
+  .coach-block p { margin: var(--sl-space-2) 0; }
+  .coach-block p strong { color: var(--sl-ink); }
+  {# The focus name is a label and the value after the em dash is what the
+     engine measured, so only the number is amber. Colouring the whole line
+     would spend the signal on a heading and leave nothing to mark the reading
+     itself. #}
+  .coach-value {
+    color: var(--sl-orange);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-lg);
+    font-weight: 500;
+  }
+  .coach-value strong {
+    color: var(--sl-ink);
+    font-family: var(--sl-font-display);
+    font-weight: 800;
+    letter-spacing: -.01em;
+    text-transform: uppercase;
+  }
+  .coach-value .bench {
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 400;
+  }
+  {# A caveat about measurement quality, not a system error — dark wash and a
+     hairline, with the lead-in carrying the amber because it qualifies a
+     reading. The old #fff8df on #5b420c was a light-surface callout and would
+     have shipped as a glare panel. #}
+  .coach-warning {
+    margin: 0 0 var(--sl-space-5);
+    padding: var(--sl-space-4);
+    color: var(--sl-ink);
+    background: var(--sl-orange-soft);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-md);
+  }
+  .coach-warning strong { color: var(--sl-orange-text); }
+  .coach-trend {
+    margin: var(--sl-space-5) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  .coach-trend strong { color: var(--sl-ink); }
   .coach-actions {
-    margin-top: 22px;
+    margin-top: var(--sl-space-5);
     display: flex;
     flex-wrap: wrap;
-    gap: 10px;
+    gap: var(--sl-space-3);
     align-items: center;
   }
   .coach-actions .button { margin-top: 0; }
-  .proof-stack { margin-top: 18px; display: grid; gap: 12px; }
+  {# DEFECT, fixed here rather than in the shell. The shell's button rule still
+     carries `color: white` from the light era; --sl-green-btn is bone now, so
+     that pairs white on near-white at 1.06:1 — an invisible label on every
+     primary action this page renders. The shell is out of scope for this pass,
+     so the ink it was always meant to carry is pinned locally.
+
+     Bone on the field with a hairline. A button is never amber: amber means
+     the engine measured something, and an action is not a measurement. The
+     lift-and-drop-shadow is dropped too — a drop shadow is invisible on
+     near-black, and an instrument does not bounce. #}
+  .coach-actions .button,
+  .coach-actions .button:hover,
+  .coach-actions .button:active {
+    color: var(--sl-green-ink);
+    box-shadow: var(--sl-shadow-sm);
+    transform: none;
+  }
+  .coach-actions .button:hover {
+    background: var(--sl-ink);
+    border-color: var(--sl-ink);
+  }
+  {# --sl-control-border, never --sl-border: this is an interactive edge and
+     the decorative hairline sits at 1.33:1, under WCAG 1.4.11's 3:1. #}
+  .coach-actions .button.secondary {
+    background: transparent;
+    border-color: var(--sl-control-border);
+    color: var(--sl-ink);
+  }
+  .coach-actions .button.secondary:hover {
+    background: rgba(var(--sl-cream-rgb), .06);
+    border-color: var(--sl-ink);
+    color: var(--sl-ink);
+  }
+
+  {# ------------------------------------------------------ the proof cycle #}
+  .proof-stack {
+    margin-top: var(--sl-space-5);
+    display: grid;
+    gap: 1px;
+    overflow: hidden;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+  }
   .proof-cycle {
     margin: 0;
-    padding: 18px 20px;
-    background: #f4faf5;
-    border: 1px solid #b9cfbe;
-    border-radius: var(--sl-radius-lg);
+    padding: var(--sl-space-5);
+    background: var(--sl-bg-card);
+    border-left: 2px solid var(--sl-border-strong);
   }
-  .proof-cycle.positive { border-color: #77aa82; background: #eff8f1; }
-  .proof-cycle.neutral { border-color: #d7c477; background: #fffbea; }
-  .proof-cycle.attention { border-color: #e2a476; background: #fff6ef; }
+  {# Tone rides the left rule, not a tinted panel. Both signal colours are
+     already spoken for — amber is a measured value, cyan is the live read — so
+     a confirmed cycle takes bone (the instrument's own ink), an unresolved one
+     takes the control hairline, and a regression takes the error token. #}
+  .proof-cycle.positive { border-left-color: var(--sl-ink); }
+  .proof-cycle.neutral { border-left-color: var(--sl-control-border); }
+  .proof-cycle.attention { border-left-color: var(--sl-danger); }
   .proof-cycle-kicker {
-    margin: 0 0 5px;
-    color: var(--sl-green-btn);
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .72rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .12em;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
     text-transform: uppercase;
   }
-  .proof-cycle h2 { margin: 0 0 6px; color: var(--sl-green); font-size: 1.02rem; }
-  .proof-cycle p { margin: 6px 0; }
-  .failure-panel { padding: 20px; background: #fff3ef; border: 1px solid #e9b7a8; border-radius: var(--sl-radius-lg); }
-  .failure-panel .error { margin-top: 0; font-size: 1rem; font-style: normal; }
-  .technical-details { margin-top: 28px; border-top: 1px solid var(--sl-border); padding-top: 18px; }
-  .technical-details summary { color: var(--sl-ink-soft); cursor: pointer; font-size: .86rem; font-weight: 700; }
-  .technical-details summary:hover { color: var(--sl-green-btn); }
+  .proof-cycle h2 {
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-lg);
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .proof-cycle p { margin: var(--sl-space-2) 0; }
+  .proof-cycle p strong { color: var(--sl-ink); }
+
+  {# ---------------------------------------------------------- failure
+     A well with an error rule down its edge. The message inside keeps the
+     shell's .error token (7.62:1); the old #fff3ef on #e9b7a8 was a
+     light-surface pink and reads as a bright bruise on the field. #}
+  .failure-panel {
+    padding: var(--sl-space-5);
+    background: var(--sl-night);
+    border: 1px solid var(--sl-border-strong);
+    border-left: 2px solid var(--sl-danger);
+    border-radius: var(--sl-radius-md);
+  }
+  .failure-panel h2 {
+    margin: 0 0 var(--sl-space-3);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-eyebrow-size);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .failure-panel .error { margin-top: 0; font-size: var(--sl-text-base); font-style: normal; }
+  .failure-panel ul { margin: var(--sl-space-2) 0 0; padding-left: 1.15em; }
+  .failure-panel li { margin: var(--sl-space-1) 0; color: var(--sl-ink-soft); }
+
+  {# ------------------------------------------------------------ the log #}
+  .technical-details {
+    margin-top: var(--sl-space-6);
+    padding-top: var(--sl-space-2);
+    border-top: 1px solid var(--sl-border);
+  }
+  {# 44px minimum target, bought with padding so the summary keeps
+     display: list-item and its disclosure marker — display: flex here would
+     silently delete the triangle in Chromium. Hover goes to trace, the shell's
+     idiom for an interactive text colour, never to amber. #}
+  .technical-details summary {
+    min-height: 44px;
+    padding: var(--sl-space-3) 0;
+    color: var(--sl-ink-soft);
+    cursor: pointer;
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    letter-spacing: .04em;
+  }
+  .technical-details summary:hover { color: var(--sl-ink-hi); }
   .log {
     max-height: 240px;
-    margin: 14px 0 0;
-    padding: 14px 16px;
+    margin: var(--sl-space-3) 0 0;
+    padding: var(--sl-space-4);
     overflow-y: auto;
-    color: #dce8df;
-    background: #122219;
-    border-radius: var(--sl-radius-md);
+    color: var(--sl-ink-soft);
+    background: var(--sl-night);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
     font-family: var(--sl-font-mono);
-    font-size: .78rem;
+    font-size: var(--sl-text-xs);
+    line-height: 1.65;
     white-space: pre-wrap;
   }
-  .gear-heading { margin: 30px 0 0; color: var(--sl-green); }
-  .gear { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 12px; margin-top: 12px; }
-  a.gear-item { padding: 12px; color: inherit; text-decoration: none; background: var(--sl-bg-card); border: 1px solid var(--sl-border); border-radius: var(--sl-radius-md); font-size: .88rem; }
-  a.gear-item:hover { border-color: var(--sl-green-btn); box-shadow: var(--sl-shadow-sm); }
-  a.gear-item img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: var(--sl-radius-sm); background: #f0f0f0; }
-  a.gear-item .name { display: block; margin-top: 8px; color: var(--sl-green); }
-  a.gear-item .price { display: block; margin-top: 2px; font-weight: 700; }
-  @media (max-width: 640px) {
-    .status-surface { border-radius: var(--sl-radius-lg); }
+
+  {# ----------------------------------------------------------- the gear #}
+  .gear-heading {
+    margin: var(--sl-space-6) 0 0;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-lg);
+    font-weight: 800;
+    text-transform: uppercase;
+  }
+  .gear {
+    margin-top: var(--sl-space-3);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+  }
+  a.gear-item {
+    padding: var(--sl-space-3);
+    color: var(--sl-ink);
+    text-decoration: none;
+    background: var(--sl-bg-card);
+    font-size: var(--sl-text-sm);
+  }
+  a.gear-item:hover { background: var(--sl-orange-soft); }
+  a.gear-item img {
+    width: 100%;
+    aspect-ratio: 1;
+    object-fit: cover;
+    background: var(--sl-night);
+    border-radius: var(--sl-radius-sm);
+  }
+  {# The card kills the shell underline, so the title carries it instead —
+     the shell's rule is that a bone link needs a second signal, and a bordered
+     tile is not one on a page made entirely of bordered tiles. #}
+  a.gear-item .name {
+    display: block;
+    margin-top: var(--sl-space-2);
+    color: var(--sl-ink);
+    text-decoration: underline;
+    text-decoration-color: rgba(var(--sl-cream-rgb), .32);
+    text-underline-offset: .2em;
+  }
+  a.gear-item:hover .name { text-decoration-color: currentColor; }
+  {# A store price is not something the engine measured, so it stays bone mono.
+     Spending the signal colour here would make a shop listing read as a swing
+     metric — the exact confusion rule 1 exists to prevent. #}
+  a.gear-item .price {
+    display: block;
+    margin-top: var(--sl-space-1);
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+  }
+
+  @media (min-width: 560px) {
+    .state-hero,
+    .state-body { padding: var(--sl-space-6); }
+  }
+  @media (min-width: 1000px) {
+    .state-hero { padding: var(--sl-space-7) var(--sl-space-6); }
+  }
+  @media (max-width: 749px) {
+    .status-surface { border-radius: var(--sl-radius-md); }
     .coach-actions { align-items: stretch; flex-direction: column; }
     .coach-actions .button { width: 100%; }
   }

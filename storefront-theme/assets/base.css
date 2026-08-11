@@ -90,6 +90,12 @@
      which is the one string a reader most needs to be able to read.
      7.62:1. */
   --sl-danger: #ff7a6b;
+  /* The hover state for a bone control. An earlier pass filled these with
+     --sl-trace, which looked good and broke colour rule 2 in 21 places:
+     cyan marks the LIVE READOUT and nothing else, and a pointer resting on a
+     button is not a reading. A lifted bone (1.13x the luminance of --sl-ink)
+     gives a perceptible change without spending a signal. */
+  --sl-ink-hi: #fbfcf9;
   /* RGB triplets for alpha-derivations: rgba(var(--sl-cream-rgb), .72) etc.
      Deriving from these keeps every wash traceable to a named colour. */
   --sl-cream-rgb: 237, 239, 233;
@@ -236,7 +242,7 @@ a {
   text-decoration-thickness: 1px;
 }
 a:hover {
-  color: var(--sl-trace);
+  color: var(--sl-ink-hi);
   text-decoration-color: currentColor;
 }
 
@@ -356,7 +362,7 @@ img { max-width: 100%; display: block; }
    so the primary action does not need — and must not take — the signal
    colour: amber means a value the engine measured. */
 .sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-green-ink); }
-.sl-btn--primary:hover { background: var(--sl-trace); color: var(--sl-green-ink); }
+.sl-btn--primary:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
 /* --sl-control-border, not --sl-border: an outline button's edge IS the
    control, and --sl-border is 1.33:1 (WCAG 1.4.11 wants 3:1). */
 .sl-btn--outline { background: transparent; color: var(--sl-ink); border-color: var(--sl-control-border); }
@@ -366,7 +372,7 @@ img { max-width: 100%; display: block; }
    on #070f0b with a transparent border — 1.06:1, an invisible button.
    It is the bone treatment, which is what the name was always after. */
 .sl-btn--light { background: var(--sl-ink); color: var(--sl-green-ink); border-color: var(--sl-ink); }
-.sl-btn--light:hover { background: var(--sl-trace); color: var(--sl-green-ink); border-color: var(--sl-trace); }
+.sl-btn--light:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); border-color: var(--sl-ink-hi); }
 .sl-btn--sm {
   min-height: 38px;
   padding: 9px 18px;

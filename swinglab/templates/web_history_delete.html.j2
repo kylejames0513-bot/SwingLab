@@ -1,82 +1,311 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Start over{% endblock %}
 {% block style %}
+  /* ------------------------------------------------------- start over
+     The only customer-facing page in the app that destroys data, so every
+     decision here works against the reader's momentum rather than with it.
+
+     There is no amber and no cyan on this page, on purpose. Amber marks a
+     value the engine measured and cyan marks a live read; this page measures
+     nothing and reads nothing. Borrowing either one to make a warning "pop"
+     is exactly the emphasis creep the two colour rules exist to stop, so the
+     only signal colour here is --sl-danger, and it is spent on the two
+     things that carry risk: the scope of the deletion and the button that
+     performs it. */
   main { max-width: 850px; }
-  .reset-shell { display: grid; gap: 20px; }
-  .reset-header {
-    padding: clamp(26px, 5vw, 42px);
-    border: 1px solid #e2c3be;
-    border-radius: var(--sl-radius-xl);
-    background:
-      radial-gradient(circle at 90% 10%, rgba(164, 43, 34, .08), transparent 15rem),
-      linear-gradient(135deg, #fffefa, #fff4f1);
+
+  /* One ruled instrument face instead of three floating cards. The 1px gaps
+     ARE the hairlines — the shell's border colour sits behind the grid and
+     shows through where the panels do not paint. */
+  .reset-shell {
+    display: grid;
+    gap: 1px;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-border);
     box-shadow: var(--sl-shadow-md);
   }
-  .reset-header .sl-eyebrow { margin-bottom: 8px; color: #8a2820; }
+
+  /* The headline sits on the well, a step deeper than the panels below it,
+     so the page opens on its own darkest surface. */
+  .reset-header {
+    padding: clamp(26px, 5vw, 42px);
+    background:
+      radial-gradient(circle at 92% 6%, rgba(var(--sl-cream-rgb), .05), transparent 15rem),
+      var(--sl-night);
+  }
+  /* The shell paints .sl-eyebrow amber. Amber is the measured-value colour
+     and "Danger zone" is not a measurement — the single thing this line
+     carries is risk, so it takes the risk colour. */
+  .reset-header .sl-eyebrow {
+    margin-bottom: var(--sl-space-4);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sl-space-2);
+    color: var(--sl-danger);
+    font-size: var(--sl-eyebrow-size);
+    letter-spacing: var(--sl-eyebrow-track);
+  }
+  .reset-header .sl-eyebrow::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    background: currentColor;
+  }
   .reset-header h1 {
-    max-width: 700px;
+    max-width: 17ch;
     margin: 0;
-    color: #741f19;
-    font-size: clamp(2rem, 6vw, 3.65rem);
-    line-height: 1.03;
-    letter-spacing: -.045em;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: .98;
+    text-transform: uppercase;
   }
-  .reset-header p:last-child { max-width: 680px; margin: 15px 0 0; color: #654943; font-size: 1rem; }
-  .reset-card {
-    padding: clamp(23px, 4vw, 34px);
-    border: 1px solid var(--sl-border);
-    border-radius: var(--sl-radius-lg);
+  .reset-header > p:last-child {
+    max-width: 58ch;
+    margin: var(--sl-space-5) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-lg);
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+
+  /* The scope table: two panels butted against one hairline, same 1px-gap
+     construction as the storefront readout grid. Reading "what goes" beside
+     "what stays" is the whole point of the page, so they must sit on one
+     rule rather than float apart. */
+  .reset-scope {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    background: var(--sl-border);
+  }
+  .scope-card {
+    padding: clamp(20px, 3vw, 28px);
     background: var(--sl-bg-card);
-    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
   }
-  .reset-card h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.3rem, 3vw, 1.75rem); letter-spacing: -.025em; }
-  .reset-card > p { color: var(--sl-ink-soft); }
-  .reset-scope { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-  .scope-card { padding: 20px; border: 1px solid var(--sl-border); border-radius: 14px; background: #fff; }
-  .scope-card--delete { border-color: #e6c8c3; background: #fff8f6; }
-  .scope-card--keep { border-color: #c9d9cd; background: #f1f7f2; }
-  .scope-card h2 { font-size: 1.08rem; }
-  .scope-card--delete h2 { color: #741f19; }
-  .scope-card ul { margin: 13px 0 0; padding-left: 20px; color: var(--sl-ink-soft); }
-  .scope-card li + li { margin-top: 7px; }
-  .reset-form { margin-top: 23px; padding-top: 22px; border-top: 1px solid var(--sl-border); }
-  .reset-form label { display: block; margin: 16px 0 7px; color: var(--sl-ink); font-weight: 750; }
+  /* The edge bar restates what the heading already says in words — it is a
+     second signal, never the only one, because a reader who cannot separate
+     these two colours must still be able to tell the panels apart. */
+  .scope-card--delete { box-shadow: inset 3px 0 0 var(--sl-danger); }
+  .scope-card--keep { box-shadow: inset 3px 0 0 var(--sl-ink-muted); }
+  /* Mono label above the values, not a display heading: these two headings
+     name a column of scope, they do not open a section. */
+  .scope-card h2 {
+    margin: 0;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+  .scope-card--delete h2 { color: var(--sl-danger); }
+  /* Ruled rows rather than bullets: each line is one item of scope, and a
+     hairline between them counts them for the reader. */
+  .scope-card ul {
+    margin: var(--sl-space-4) 0 0;
+    padding: 0;
+    list-style: none;
+  }
+  .scope-card li {
+    padding: var(--sl-space-3) 0;
+    border-top: 1px solid var(--sl-border);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.45;
+  }
+  .scope-card li:last-child { padding-bottom: 0; }
+
+  .reset-card {
+    padding: clamp(24px, 4vw, 34px);
+    background: var(--sl-bg-card);
+  }
+  .reset-card h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-xl);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    text-transform: uppercase;
+  }
+  /* There is deliberately no `.reset-card > p` rule here. The previous one
+     set body ink at (0,1,1) and outranked `.reset-error` at (0,1,0), so
+     every failed confirmation rendered in ordinary ink on the one page where
+     the error IS the message — and since .reset-card never has a plain <p>
+     child in the markup below, the rule was doing nothing else. */
+
+  .reset-error {
+    margin: var(--sl-space-4) 0 0;
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border: 1px solid var(--sl-danger);
+    border-left-width: 3px;
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-danger);
+    font-size: var(--sl-text-sm);
+  }
+  .reauth-note {
+    margin: var(--sl-space-4) 0 0;
+    padding: var(--sl-space-4);
+    border: 1px solid var(--sl-border);
+    border-left: 3px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+
+  .reset-form {
+    margin-top: var(--sl-space-5);
+    padding-top: var(--sl-space-5);
+    border-top: 1px solid var(--sl-border);
+  }
+  .reset-form label {
+    display: block;
+    margin: var(--sl-space-5) 0 var(--sl-space-2);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+  }
+  /* The shell's zero-specificity control baseline still paints inputs #fff —
+     a white slab on a near-black page. Both fields take the well instead,
+     edged in --sl-control-border (4.29:1): --sl-border is 1.33:1 and is
+     decorative only, never an interactive edge. Mono because what goes in
+     the first field is a literal that has to match character for
+     character. */
   .reset-form input {
     width: 100%;
     max-width: 460px;
     min-height: 48px;
-    padding: 11px 12px;
-    border: 1px solid var(--sl-border-strong);
-    border-radius: 9px;
-    background: #fff;
+    padding: var(--sl-space-3);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    background: var(--sl-night);
     color: var(--sl-ink);
-    font: inherit;
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-base);
+    font-weight: 400;
+    letter-spacing: .04em;
   }
-  .reset-form input:focus-visible { border-color: var(--sl-orange); }
-  .reset-code { padding: 2px 6px; border-radius: 5px; background: #f3ded9; color: #741f19; font-family: var(--sl-font-mono); font-size: .9em; font-weight: 700; }
-  .reset-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 21px; }
+  /* Was --sl-orange. A focused field is not a measured value, and the shell
+     already draws the amber focus ring around it. */
+  .reset-form input:focus-visible { border-color: var(--sl-ink); }
+  .reset-code {
+    padding: 3px var(--sl-space-2);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .06em;
+    /* The label above is uppercased for the instrument look; this chip must
+       NOT inherit that. The server compares the typed phrase case-sensitively
+       against HISTORY_RESET_CONFIRMATION, so a CSS transform here would be
+       free to lie about what to type the moment that constant stops being
+       upper case. Bone, not amber — it is a string to retype, not a
+       reading. */
+    text-transform: none;
+  }
+
+  .reset-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sl-space-3);
+    margin-top: var(--sl-space-5);
+  }
   .reset-actions form { margin: 0; }
-  .reset-actions .danger-button {
+  /* The shell's main-button baseline is bone on bone (background
+     var(--sl-green-btn), color white) — an unreadable label since the
+     inversion. Every button on this page states its own ink. This is the
+     SAFE action of the pair: re-authenticating is the bone primary. */
+  .reset-actions button {
+    min-height: 48px;
     margin: 0;
-    border-color: #922a22;
-    background: #922a22;
-    color: #fff;
-    box-shadow: 0 10px 24px -16px rgba(116, 31, 25, .7);
+    padding: var(--sl-space-3) var(--sl-space-5);
+    border: 1px solid var(--sl-green-btn);
+    border-radius: var(--sl-radius-control);
+    background: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+    font-family: var(--sl-font-sans);
+    font-size: var(--sl-text-sm);
+    font-weight: 700;
   }
-  .reset-actions .danger-button:hover { border-color: #741f19; background: #741f19; }
-  .reset-cancel { min-height: 46px; display: inline-flex; align-items: center; padding: 10px 4px; font-weight: 750; }
-  .reset-error { margin: 0; padding: 13px 15px; border: 1px solid #e2b7b1; border-left: 4px solid #922a22; border-radius: 9px; background: #fff0ed; color: #741f19; }
-  .reauth-note { margin: 0; padding: 17px 18px; border: 1px solid #d9c8b2; border-radius: 12px; background: #fff7eb; color: var(--sl-ink-soft); }
-  @media (max-width: 650px) {
-    main { padding-inline: 14px; }
-    .reset-shell { gap: 16px; }
-    .reset-header, .reset-card { border-radius: 19px; }
-    .reset-scope { grid-template-columns: 1fr; }
+  .reset-actions button:hover {
+    border-color: var(--sl-ink-hi);
+    background: var(--sl-ink-hi);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+    transform: none;
+  }
+  /* The irreversible control, and pointedly NOT the bone primary: on a page
+     whose whole job is to slow the reader down, the destructive action must
+     not also be the brightest, easiest object to hit. It is outlined in the
+     risk colour and only fills once a pointer or the keyboard has committed
+     to it (7.18:1 outlined, 7.88:1 filled). Amber was never a candidate — a
+     call to action is not a measurement. */
+  .reset-actions .danger-button {
+    border-color: var(--sl-danger);
+    background: transparent;
+    color: var(--sl-danger);
+  }
+  .reset-actions .danger-button:hover,
+  .reset-actions .danger-button:focus-visible {
+    border-color: var(--sl-danger);
+    background: var(--sl-danger);
+    color: var(--sl-night);
+    transform: none;
+  }
+  /* The way out is a full-size target beside the destructive one, not a word
+     tucked underneath it. Bordered, so the underline the shell gives links
+     is not the thing holding it together. */
+  .reset-cancel {
+    min-height: 48px;
+    display: inline-flex;
+    align-items: center;
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    color: var(--sl-ink);
+    font-size: var(--sl-text-sm);
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .reset-cancel:hover {
+    border-color: var(--sl-ink);
+    background: rgba(var(--sl-cream-rgb), .06);
+    color: var(--sl-ink);
+  }
+
+  @media (max-width: 749px) {
+    .reset-scope { grid-template-columns: minmax(0, 1fr); }
+    .reset-form input { max-width: none; }
+    /* Stacked full-width targets, and the destructive one still reads as the
+       outlined control rather than as the default thumb lands on. */
     .reset-actions { align-items: stretch; flex-direction: column; }
     .reset-actions > *, .reset-actions button { width: 100%; text-align: center; }
+    .reset-cancel { justify-content: center; }
   }
   @media (prefers-reduced-motion: reduce) {
-    .reset-shell * { transition: none !important; }
+    .reset-shell *,
+    .reset-shell *::before,
+    .reset-shell *::after {
+      animation-duration: .01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: .01ms !important;
+    }
   }
 {% endblock %}
 {% block main %}

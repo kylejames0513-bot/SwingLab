@@ -603,12 +603,25 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   background: rgba(var(--sl-cream-rgb), 0.08);
   color: var(--sl-accent-hover);
 }
+/* Bone, not amber. Amber marks a value the engine measured, and the single
+   most prominent amber object on the storefront was this button — which is
+   how a reader learns amber means "important" instead. On a near-black field
+   bone is louder than amber was, so the rule costs nothing here.
+
+   The cart count keeps a signal-adjacent treatment because it IS a count:
+   a number the store is reporting, which is the closest thing the chrome has
+   to a measured value. It is a border rather than a fill so it does not read
+   as a second call to action beside the first. */
 .sl-header--premium .sl-header__cta {
-  background: var(--sl-accent);
-  color: var(--sl-night);
+  background: var(--sl-ink);
+  color: var(--sl-green-ink);
 }
-.sl-header--premium .sl-header__cta:hover { background: var(--sl-accent-hover); color: var(--sl-night); }
-.sl-header--premium .sl-header__cart-count { background: var(--sl-accent); color: var(--sl-night); }
+.sl-header--premium .sl-header__cta:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
+.sl-header--premium .sl-header__cart-count {
+  background: transparent;
+  border: 1px solid var(--sl-accent);
+  color: var(--sl-accent);
+}
 
 .sl-header--overlay {
   position: relative;
