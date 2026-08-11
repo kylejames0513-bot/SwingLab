@@ -61,25 +61,32 @@
 
    The guided report asks for Archivo first and relies on the shell having
    loaded it. Only the two faces above the fold are preloaded. #}
-<link rel="preload" href="/static/archivo-latin-var.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/static/archivo-expanded-latin-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/barlow-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/barlow-condensed-latin-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/dm-mono-latin-500.woff2" as="font" type="font/woff2" crossorigin>
 <style>
   @font-face {
-    font-family: "Archivo";
+    font-family: "Barlow";
     font-style: normal;
-    font-weight: 400 800;
+    font-weight: 400;
     font-display: swap;
-    src: url("/static/archivo-latin-var.woff2") format("woff2");
+    src: url("/static/barlow-latin-400.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
   @font-face {
-    font-family: "Archivo Expanded";
+    font-family: "Barlow";
     font-style: normal;
-    font-weight: 800;
-    font-stretch: 125%;
+    font-weight: 500;
     font-display: swap;
-    src: url("/static/archivo-expanded-latin-800.woff2") format("woff2");
+    src: url("/static/barlow-latin-500.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: "Barlow Condensed";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("/static/barlow-condensed-latin-600.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
   @font-face {
@@ -103,79 +110,98 @@
   :root {
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
-    {# The field is dark on both surfaces now. Every token below whose name is
-       shared with storefront-theme/assets/base.css is spelled EXACTLY as that
-       file spells it — the parity contract compares text, not numbers.
+    {# INDUSTRY, 2026-08-11: the ground is PAPER on both surfaces and the deep
+       green survives as the one reversed FIELD. Every token below whose name
+       is shared with storefront-theme/assets/base.css is spelled EXACTLY as
+       that file spells it — the parity contract compares text, not numbers.
 
-       The names did not change even though every value did: --sl-green is
-       referenced 131 times across the two surfaces and --sl-border 90, and
-       renaming would have touched ~1,400 call sites to buy nothing. The
-       tokens were already used for the role their name describes, so
-       redefining in place inverts the system at once. #}
-    --sl-bg: #070f0b;
-    --sl-bg-card: #0d1712;
-    --sl-surface-soft: #14201a;
-    --sl-surface-dark: #040907;
-    --sl-night: #040907;
-    --sl-ink: #edefe9;
-    {# Deliberately lighter than the storefront's #78857d, for the same reason
-       it used to be DARKER: this surface sets small interface text where the
+       The names still did not change, for the reason they did not change in
+       the 2026-08-10 inversion: --sl-green is referenced 131 times across the
+       two surfaces and --sl-border 90, and renaming would have touched ~1,400
+       call sites to buy nothing. The tokens were already used for the role
+       their name describes, so redefining in place inverts the system at
+       once. #}
+    --sl-bg: #f2f2f3;
+    --sl-bg-card: #f2f2f3;
+    --sl-surface-soft: #eef6ff;
+    --sl-surface-dark: #e9e9ea;
+    --sl-night: #e9e9ea;
+    --sl-ink: #1d1f20;
+    {# Deliberately DARKER than the storefront's #6a6a6d, for the same reason
+       it used to be lighter: this surface sets small interface text where the
        storefront sets display prose, so it needs the extra headroom. The
-       rationale survived the inversion; the direction flipped. 6.33 on the
-       field against the storefront's 5.04. #}
-    --sl-ink-soft: #a8b3ac;
-    --sl-ink-muted: #8b968e;
-    --sl-green: #edefe9;
-    --sl-green-btn: #edefe9;
-    --sl-green-ink: #070f0b;
-    --sl-orange: #f0a818;
-    --sl-orange-text: #f5b833;
-    --sl-orange-soft: #14201a;
-    --sl-cream: #edefe9;
-    --sl-accent: #f0a818;
-    --sl-accent-hover: #ffc04d;
-    --sl-focus-dark: #ffc04d;
-    --sl-arc: rgba(95, 227, 192, 0.28);
-    --sl-trace: #5fe3c0;
-    --sl-trace-dim: #3f9c86;
-    --sl-paper: #f2efe6;
-    --sl-paper-ink: #10160f;
-    --sl-paper-soft: #454f48;
-    --sl-paper-line: #d8d3c4;
+       rationale has now survived two inversions; only the direction flips.
+       5.43 on paper against the storefront's 4.82. #}
+    --sl-ink-soft: #5d5d60;
+    --sl-ink-muted: #626265;
+    --sl-green: #1d1f20;
+    --sl-green-btn: #2c455d;
+    --sl-green-ink: #f2f2f3;
+    --sl-orange: #416180;
+    {# The signal at app-text headroom: 7.38 against the storefront's 5.78. #}
+    --sl-orange-text: #375169;
+    --sl-orange-soft: #eef6ff;
+    --sl-cream: #f2f2f3;
+    --sl-accent: #416180;
+    --sl-accent-hover: #2c455d;
+    --sl-steel: #5980a6;
+    --sl-focus: #416180;
+    --sl-focus-dark: #94bce3;
+    --sl-arc: rgba(89, 128, 166, 0.28);
+    --sl-trace: #94bce3;
+    --sl-trace-dim: #5980a6;
+    --sl-field: #070f0b;
+    --sl-field-lift: #0b1712;
+    --sl-field-ink: #f2f2f3;
+    --sl-field-soft: #a8b3ac;
+    --sl-field-muted: #8f9a93;
+    --sl-field-rule: #243229;
+    --sl-field-control: #66756c;
+    --sl-paper: #f2f2f3;
+    --sl-paper-ink: #1d1f20;
+    --sl-paper-soft: #5d5d60;
+    --sl-paper-line: #d0d1d1;
     --sl-brand-green: #0f3d28;
-    {# Error text. #b3261e was a light-surface red and lands at 2.97:1 on the
-     field — the inversion would have shipped unreadable error messages,
-     which is the one string a reader most needs to be able to read.
-     7.62:1. #}
-    --sl-danger: #ff7a6b;
-    {# Hover for a bone control — see base.css. Cyan is the live
-       readout and never interaction feedback. #}
-    --sl-ink-hi: #fbfcf9;
-    --sl-cream-rgb: 237, 239, 233;
-    --sl-night-rgb: 4, 9, 7;
-    --sl-accent-rgb: 240, 168, 24;
-    --sl-green-rgb: 237, 239, 233;
-    --sl-trace-rgb: 95, 227, 192;
+    {# Error text returns to the light-surface red it originally was. The
+       2026-08-10 comment here recorded that #b3261e lands at 2.97 on a dark
+       field and had to be replaced; on paper it is 5.84 and correct again. #}
+    --sl-danger: #b3261e;
+    {# Hover for an ink control — see base.css. It deepens on paper where it
+       lifted on the field. Neither signal is ever interaction feedback. #}
+    --sl-ink-hi: #0b0c0c;
+    {# Wash on paper, cream on field — pick by ground. See base.css. #}
+    --sl-wash-rgb: 29, 31, 32;
+    --sl-cream-rgb: 242, 242, 243;
+    --sl-night-rgb: 233, 233, 234;
+    --sl-accent-rgb: 65, 97, 128;
+    --sl-steel-rgb: 89, 128, 166;
+    --sl-green-rgb: 29, 31, 32;
+    --sl-trace-rgb: 148, 188, 227;
     --sl-field-rgb: 7, 15, 11;
+    {# The premium chrome stays a FIELD — it is the one dark band in the app
+       shell, exactly as the announcement bar and hero are on the storefront. #}
     --sl-premium-accent: var(--sl-focus-dark);
-    --sl-premium-gradient: linear-gradient(135deg, #040907 0%, #0d1712 62%, #14201a 100%);
-    --sl-border: #1e2c25;
-    --sl-border-strong: #2e4238;
-    {# 4.29 on the field. Brighter than the storefront's #5c6b62 (3.45) for
-       the same headroom reason — an app control edge is smaller than a
-       storefront one. Both clear WCAG 1.4.11's 3:1 for non-text contrast;
-       --sl-border at 1.33 does not, and is decorative only. #}
-    --sl-control-border: #6b7a71;
-    --sl-radius-sm: 2px;
-    --sl-radius-md: 4px;
-    --sl-radius-lg: 8px;
-    --sl-radius-xl: 8px;
-    --sl-radius-control: 4px;
-    {# Drop shadows are invisible on a near-black field. An instrument
-       separates surfaces with a lit top edge and a deeper well instead. #}
-    --sl-shadow-sm: inset 0 1px 0 rgba(237, 239, 233, .04);
-    --sl-shadow-md: inset 0 1px 0 rgba(237, 239, 233, .05), 0 18px 40px -28px rgba(0, 0, 0, .9);
-    --sl-shadow-lg: inset 0 1px 0 rgba(237, 239, 233, .06), 0 40px 84px -44px rgba(0, 0, 0, 1);
+    --sl-premium-gradient: linear-gradient(135deg, #070f0b 0%, #0b1712 62%, #0d1a13 100%);
+    --sl-border: #d0d1d1;
+    --sl-border-strong: #b7b7ba;
+    {# 4.54 on paper. Darker than the storefront's #7a7a7d (3.82) for the same
+       headroom reason — an app control edge is smaller than a storefront one.
+       Both clear WCAG 1.4.11's 3:1 for non-text contrast; --sl-border at 1.37
+       does not, and is decorative only. #}
+    --sl-control-border: #6e6e71;
+    {# Blueprint objects are square — see base.css. #}
+    --sl-radius-sm: 0;
+    --sl-radius-md: 0;
+    --sl-radius-lg: 0;
+    --sl-radius-xl: 0;
+    --sl-radius-control: 0;
+    {# Elevation inverts with the ground: a soft ink cast is legible on paper
+       where the lit top edge did the work on the field. Shallow on purpose —
+       Industry's objects are line drawings, and a card that floats stops
+       reading as a drawing. #}
+    --sl-shadow-sm: 0 1px 2px rgba(29, 31, 32, .14);
+    --sl-shadow-md: 0 3px 10px rgba(29, 31, 32, .16);
+    --sl-shadow-lg: 0 12px 32px rgba(29, 31, 32, .22);
     --sl-content: 1280px;
     --sl-maxw: var(--sl-content);
     --sl-pad-x: clamp(24px, 5vw, 64px);
@@ -192,15 +218,21 @@
     {# The display rungs the storefront defines, spelled the same. The app
        used to stop before these and every big app heading was a hand-rolled
        clamp() — which is how two surfaces that share a typeface end up not
-       sharing a scale. Both came down when display moved to the EXPANDED
-       face: the same point size occupies far more line. #}
-    --sl-heading-display: clamp(34px, 4.1vw, 54px);
-    --sl-heading-support: clamp(27px, 3.2vw, 38px);
+       sharing a scale. They came DOWN when display moved to the expanded
+       face and go back UP now that it is condensed: the same point size
+       occupies far less line. #}
+    --sl-heading-display: clamp(40px, 5vw, 64px);
+    --sl-heading-support: clamp(30px, 3.8vw, 44px);
     --sl-eyebrow-size: 12px;
     --sl-eyebrow-track: 0.16em;
-    --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-    --sl-font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-sans: "Barlow", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --sl-font-display: "Barlow Condensed", "Barlow", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    {# The three weights that ship. Barlow has no variable font, so anything
+       else is synthesised — a rule that wants bolder takes the display FACE. #}
+    --sl-weight-body: 400;
+    --sl-weight-medium: 500;
+    --sl-weight-display: 600;
     {# Spelled exactly as storefront-theme/assets/base.css spells them —
        leading zeros included. The values were already numerically identical,
        but `.15vw` versus `0.15vw` is a textual difference, and a parity test
@@ -227,29 +259,23 @@
   body {
     margin: 0;
     min-height: 100vh;
-    {# The field, plus the 8px technical grid that runs under everything —
-       the same background the storefront paints. The grid is what makes the
-       surface read as a measuring instrument rather than as a dark theme. #}
-    background:
-      linear-gradient(rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
-      radial-gradient(1100px 560px at 14% -10%, rgba(var(--sl-trace-rgb), 0.05), transparent 60%),
-      radial-gradient(900px 480px at 92% 2%, rgba(var(--sl-accent-rgb), 0.04), transparent 55%),
-      var(--sl-bg);
-    background-size: 8px 8px, 8px 8px, auto, auto, auto;
-    background-attachment: fixed;
+    {# Plain paper — the same ground the storefront paints. The 8px technical
+       grid is GONE: it existed to stop a near-black page reading as a dark
+       theme, and under Industry the texture belongs to the objects instead
+       (the 115deg hatch on .sl-field, the vertical rules on a hero). #}
+    background: var(--sl-bg);
     color: var(--sl-ink);
     font-family: var(--sl-font-sans);
     font-size: var(--sl-text-base);
-    font-weight: 400;
-    line-height: 1.6;
-    letter-spacing: -0.011em;
+    font-weight: var(--sl-weight-body);
+    line-height: 1.55;
+    letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
   h1, h2, h3 {
     font-family: var(--sl-font-display);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 1.04;
     text-wrap: balance;
@@ -345,7 +371,7 @@
   .sl-app-banner a {
     flex: 0 0 auto;
     color: var(--sl-cream);
-    font-weight: 700;
+    font-weight: 500;
     text-underline-offset: 3px;
     white-space: nowrap;
   }
@@ -384,7 +410,7 @@
     flex-shrink: 0;
     color: var(--sl-green);
     font-size: 22px;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
     text-decoration: none;
   }
@@ -457,7 +483,7 @@
     background: var(--sl-ink);
     color: var(--sl-green);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 500;
     text-decoration: none;
     white-space: nowrap;
     overflow: hidden;
@@ -575,7 +601,7 @@
     border: 1.5px solid var(--sl-green);
     border-radius: var(--sl-radius-control);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1;
     text-decoration: none;
     white-space: nowrap;
@@ -675,7 +701,7 @@
     margin: 0;
     color: var(--sl-green);
     font-size: 20px;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
   }
   .sl-menu__close {
@@ -737,7 +763,7 @@
     border-radius: 8px;
     color: var(--sl-ink);
     font-size: 17px;
-    font-weight: 650;
+    font-weight: 500;
     text-decoration: none;
   }
   .sl-menu__link:hover { color: var(--sl-green-btn); }
@@ -861,7 +887,7 @@
     border: 1.5px solid var(--sl-green-btn);
     padding: 11px 22px;
     font: inherit;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.2;
     border-radius: var(--sl-radius-control);
     cursor: pointer;
@@ -917,7 +943,7 @@
     color: var(--sl-ink-soft);
     font-size: .9rem;
   }
-  .sl-profile-reminder a { font-weight: 750; white-space: nowrap; }
+  .sl-profile-reminder a { font-weight: 500; white-space: nowrap; }
   .disclaimer { color: var(--sl-ink-muted); font-style: italic; font-size: 0.85rem; margin-top: 24px; }
   .sl-app-footer {
     margin-top: clamp(48px, 8vw, 96px);
@@ -938,7 +964,7 @@
     display: inline-flex;
     color: var(--sl-cream);
     font-size: 22px;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -.02em;
     text-decoration: none;
   }

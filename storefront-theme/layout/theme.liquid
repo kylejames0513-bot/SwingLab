@@ -23,12 +23,12 @@
   {%- endcomment -%}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   {%- comment -%}
-    A literal colour, not var(--sl-night): the theme-color meta is parsed by
+    A literal colour, not var(--sl-bg): the theme-color meta is parsed by
     the browser chrome and not by the CSSOM, so a var() reference is not
     resolved — it is discarded, and this tag has therefore never coloured
-    anything. Both branches also collapse now that every surface is dark.
+    anything. The ground is paper now, so the literal moves with it.
   {%- endcomment -%}
-  <meta name="theme-color" content="#070f0b">
+  <meta name="theme-color" content="#f2f2f3">
   <link rel="canonical" href="{{ canonical_url }}">
   {% comment %}theme-check-disable RemoteAsset{% endcomment %}
   <link rel="preconnect" href="https://app.caddieinsight.com" crossorigin>
@@ -95,36 +95,47 @@
     three above the fold are preloaded so the swap window is as small as this
     connection allows.
 
-    Archivo variable carries interface weights 400-800. Display is a SEPARATE
-    static instance at wdth 125 / wght 800 rather than a dual-axis variable
-    file, because wdth 125 is a named instance in Archivo's STAT table and so
-    ships pre-built at 14,536 bytes — the dual-axis file is 90,104. The
-    measurements are in store-assets/make_fonts.py, which writes these files
-    into this directory and swinglab/web/static/ in one pass so both surfaces
-    load byte-identical faces.
+    Barlow has NO variable font — Google serves it static at v13 and the css2
+    endpoint rejects a weight range outright — so each weight is its own 22 KB
+    file and the weight palette is a budget. Interface ships 400 and 500 only;
+    the display voice is a separate FAMILY, Barlow Condensed 600, rather than
+    a heavier grade of the body face. The measurements are in
+    store-assets/make_fonts.py, which writes these files into this directory
+    and swinglab/web/static/ in one pass so both surfaces load byte-identical
+    faces.
+
+    Three preloads for three above-the-fold voices: body, display and the mono
+    that carries every measured value.
 
     theme-check's AssetPreload rule rejects a hand-written <link rel=preload>;
     preload_tag is the only accepted spelling.
   {%- endcomment -%}
-  {{ 'archivo-latin-var.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
-  {{ 'archivo-expanded-latin-800.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
+  {{ 'barlow-latin-400.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
+  {{ 'barlow-condensed-latin-600.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
   {{ 'dm-mono-latin-500.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
   {% style %}
     @font-face {
-      font-family: "Archivo";
+      font-family: "Barlow";
       font-style: normal;
-      font-weight: 400 800;
+      font-weight: 400;
       font-display: swap;
-      src: url("{{ 'archivo-latin-var.woff2' | asset_url }}") format("woff2");
+      src: url("{{ 'barlow-latin-400.woff2' | asset_url }}") format("woff2");
       unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
     }
     @font-face {
-      font-family: "Archivo Expanded";
+      font-family: "Barlow";
       font-style: normal;
-      font-weight: 800;
-      font-stretch: 125%;
+      font-weight: 500;
       font-display: swap;
-      src: url("{{ 'archivo-expanded-latin-800.woff2' | asset_url }}") format("woff2");
+      src: url("{{ 'barlow-latin-500.woff2' | asset_url }}") format("woff2");
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: "Barlow Condensed";
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url("{{ 'barlow-condensed-latin-600.woff2' | asset_url }}") format("woff2");
       unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
     }
     @font-face {
@@ -154,8 +165,8 @@
       config/settings_data.json both move with the palette.
     {%- endcomment -%}
     :root {
-      --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-      --sl-font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+      --sl-font-sans: "Barlow", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --sl-font-display: "Barlow Condensed", "Barlow", "Helvetica Neue", Helvetica, sans-serif;
       --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       --sl-bg: {{ settings.color_page_bg }};
       --sl-green: {{ settings.color_green }};

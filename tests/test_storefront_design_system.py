@@ -172,14 +172,22 @@ def test_the_named_colours_are_used_as_tokens():
 
 
 def test_no_weight_the_face_does_not_load():
-    """Archivo ships 400-800; 900 renders as synthetic bold."""
+    """Barlow ships 400 and 500; the display voice is a separate FAMILY.
+
+    This used to police one value (900) because Archivo's variable file
+    covered 400-800 and only 900 fell off the end. Barlow has no variable
+    font, so the loadable set is a three-weight budget and 700/800 are just
+    as synthetic as 900 was.
+    """
+    loadable = {"400", "500", "600"}
     for name, body in _sources().items():
-        assert not re.search(r"font-weight:\s*900\b", body), name
+        for match in re.finditer(r"font-weight:\s*(\d{3})\b", body):
+            assert match.group(1) in loadable, f"{name}: {match.group(0)}"
 
 
 def test_fonts_are_self_hosted_and_preloaded():
     """Google Fonts was a render-blocking third-party sheet loaded AFTER
-    base.css. The four latin woff2 files ship in assets/ and three preload.
+    base.css. The five latin woff2 files ship in assets/ and three preload.
 
     Self-hosting is not a preference here: headless Chromium in the
     verification container cannot reach Google Fonts and fails SILENTLY, so a
@@ -190,8 +198,9 @@ def test_fonts_are_self_hosted_and_preloaded():
     assert "fonts.googleapis.com" not in layout
     assert "fonts.gstatic.com" not in layout
     for asset in (
-        "archivo-latin-var.woff2",
-        "archivo-expanded-latin-800.woff2",
+        "barlow-latin-400.woff2",
+        "barlow-latin-500.woff2",
+        "barlow-condensed-latin-600.woff2",
         "dm-mono-latin-400.woff2",
         "dm-mono-latin-500.woff2",
     ):
@@ -201,13 +210,23 @@ def test_fonts_are_self_hosted_and_preloaded():
     # The retired faces are gone rather than orphaned in assets/. A theme zip
     # ships every file in the directory, so a leftover font is dead weight in
     # every release and an invitation for a later @font-face to resurrect it.
-    for retired in ("plex-mono-latin-400.woff2", "plex-mono-latin-500.woff2"):
+    for retired in (
+        "plex-mono-latin-400.woff2",
+        "plex-mono-latin-500.woff2",
+        "archivo-latin-var.woff2",
+        "archivo-expanded-latin-800.woff2",
+    ):
         assert not (THEME / "assets" / retired).exists(), retired
         assert retired not in layout, retired
     # preload_tag is Shopify's own emitter for <link rel="preload"> —
     # theme-check's AssetPreload rule requires it over a hand-written link.
     assert layout.count("| preload_tag: as: 'font'") >= 2
-    assert 'font-weight: 400 800' in layout  # the variable-font range
+    # Three families, declared once each. Barlow ships two weights of the body
+    # face; asking for a range here would mean somebody reached for a variable
+    # font that does not exist.
+    assert 'font-family: "Barlow";' in layout
+    assert 'font-family: "Barlow Condensed";' in layout
+    assert "font-weight: 400 800" not in layout
 
 
 def test_the_spacing_scale_exists():
