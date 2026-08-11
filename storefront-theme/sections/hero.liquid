@@ -573,15 +573,23 @@ video.sl-hero__video { position: absolute; inset: 0; }
     left: -8px;
     color: var(--sl-ink-muted);
   }
-  /* aspect-ratio: auto is load-bearing, not tidying. The base rule sets
-     aspect-ratio: 5/4, and a height with a live aspect-ratio also fixes the
-     WIDTH — 64px tall became 80px wide, so the readout rendered as a
-     thumbnail in the corner of its own panel. Height wins only once the
-     ratio stops competing for it. */
+  /* THE LIVE READ IS THE SUBJECT OF THIS SECTION. It shipped at height: 64px,
+     which is a thumbnail: the still's 320x260 artwork is drawn with
+     preserveAspectRatio="meet", so a 308x64 box scales it to 25% and strands
+     a ~79px figure in a strip of empty grid. The canvas sizes itself from the
+     same box, so the animation was drawn just as small.
+     64px was chosen to protect the fold, and it was buying nothing — on a
+     phone the readout starts around 610px down, so it is below the fold at
+     any height. The primary CTA, which is what the fold has to protect, sits
+     at ~310px and does not move.
+     The ratio is what must be declared, not the height. A fixed px height
+     with a live aspect-ratio is the bug that shipped before this one: the
+     base 5/4 kept fixing the WIDTH, so 64px tall rendered 80px wide. Declare
+     one, let the other derive. */
   .sl-hero__trace {
-    aspect-ratio: auto;
+    aspect-ratio: 5 / 4;
     width: 100%;
-    height: 64px;
+    height: auto;
     margin-top: 12px;
   }
   .sl-hero__readout-grid { grid-template-columns: minmax(0, 1fr); }

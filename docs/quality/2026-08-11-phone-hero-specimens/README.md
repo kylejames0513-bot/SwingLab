@@ -20,9 +20,20 @@ What changed, and why each part was necessary:
 
 | | before | after |
 | --- | --- | --- |
-| golfer, rendered height | 330 px in a 1019 px hero | 546 px |
+| **live trace box** | 308 × 64 px, artwork drawn at **25%** | 308 × 246 px, drawn at **94%** |
+| golfer in the photograph | 330 px tall in a 1019 px hero | 546 px |
 | phone asset | 1122 × 1402, 104 KB | 1122 × 932, 51 KB |
-| worst-case type contrast | 2.4:1 (fine print, had the scrim been lifted alone) | 4.87:1 against a 4.5 target |
+| worst-case type contrast | 2.4:1 (fine print, had the scrim been lifted alone) | 4.89:1 against a 4.5 target |
+
+The **live trace** is the headline fix here. It is the thing the section is
+for — the generative read built in `048951f` — and on a phone it was a
+thumbnail. The still is drawn `preserveAspectRatio="meet"` from a 320 × 260
+viewBox, so a 308 × 64 strip scaled the artwork to 25% and stranded a ~79 px
+figure in a field of empty grid; `swing-trace.js` measures the same box, so
+the animation was drawn just as small. The 64 px was there to protect the
+fold and was buying nothing: the readout starts ~552 px down the phone hero,
+below the fold at any height, while the primary CTA that the fold actually
+has to protect sits at 310 px and does not move.
 
 The asset had to be re-cropped; CSS alone could not do it. Two thirds of the
 v1 portrait frame is empty sky, and on a phone `object-fit: cover` is narrower
