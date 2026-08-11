@@ -394,10 +394,14 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
         in hero_source
     )
     assert "pointer-events: none" in hero_source
-    # R8 type softening: the display face carries less tracking at hero
-    # size, and the body/chips read a touch brighter.
-    assert "letter-spacing: -0.028em;" in hero_source
+    # R8/R9 type: the headline is condensed-gothic caps (Oswald — the
+    # PLAY BETTER GOLF register), slight positive tracking, never the old
+    # tight-tracked grotesque.
+    title_rules = hero_source.split(".sl-hero__title {", 1)[1].split("}", 1)[0]
+    assert "text-transform: uppercase;" in title_rules
+    assert "letter-spacing: 0.02em;" in title_rules
     assert "letter-spacing: -0.042em;" not in hero_source
+    assert "letter-spacing: -0.028em;" not in hero_source
     # Load choreography rises the copy stack once, inside the same gate as
     # the drift.
     assert "@keyframes sl-hero-rise" in hero_source

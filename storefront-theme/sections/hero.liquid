@@ -390,11 +390,13 @@ video.sl-hero__video {
   color: var(--sl-bg-card);
   font-family: var(--sl-font-display);
   font-size: var(--sl-text-4xl);
-  font-weight: 700;
-  /* -0.042em rendered cramped on phones; the display face carries less
-     tracking at this size. */
-  letter-spacing: -0.028em;
-  line-height: 1.05;
+  font-weight: 600;
+  /* Condensed-gothic caps — the PLAY BETTER GOLF register. The face is
+     tall and narrow, so caps at slight positive tracking stay legible
+     where the old tight-tracked grotesque read cramped. */
+  letter-spacing: 0.02em;
+  line-height: 1.04;
+  text-transform: uppercase;
   text-align: left;
   text-wrap: balance;
 }

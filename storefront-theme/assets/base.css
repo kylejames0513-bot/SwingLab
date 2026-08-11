@@ -60,6 +60,7 @@
 
   --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
   --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+  --sl-font-headline: "Oswald", "Archivo", "Arial Narrow", sans-serif;
   --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   /* ==== space — the scale that did not exist. Gaps, margins and paddings
@@ -141,10 +142,14 @@ body {
 }
 
 h1, h2, h3, .sl-h2, .sl-page-hero__title {
-  font-family: var(--sl-font-display);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
+  /* The headline voice is the condensed gothic — tall, athletic,
+     scoreboard-adjacent (Oswald descends from Alternate Gothic, the
+     face the best consumer golf brands set their headlines in).
+     Condensed wants near-zero tracking, not the grotesque's negative. */
+  font-family: var(--sl-font-headline);
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  line-height: 1.08;
   text-wrap: balance;
   color: var(--sl-green);
 }
