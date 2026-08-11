@@ -192,7 +192,16 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     # parent is how the trace disappeared the first time).
     assert ".sl-hero__trace { display: none; }" not in mobile_css
     assert ".sl-hero__readout { display: none; }" not in mobile_css
-    assert ".sl-hero__trace { height: 64px; margin-top: 12px; }" in mobile_css
+    # Pinned as behaviour, not as a one-line spelling. The literal string
+    # this replaced was satisfied by a rule that ALSO left aspect-ratio: 5/4
+    # live from the base declaration, so the 64px height fixed the width to
+    # 80px and the readout rendered as a thumbnail in the corner of its own
+    # panel. The pin passed; the layout was broken. aspect-ratio must be
+    # released for the height to mean anything.
+    trace_rules = declarations(mobile_css, ".sl-hero__trace")
+    assert trace_rules
+    assert any("height: 64px" in rule for rule in trace_rules)
+    assert any("aspect-ratio: auto" in rule for rule in trace_rules)
 
 
 def test_mobile_method_section_stays_a_compact_left_flowing_spec_sheet():
