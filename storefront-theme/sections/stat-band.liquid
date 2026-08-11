@@ -76,7 +76,10 @@
 }
 .sl-stats__value {
   margin: 0;
-  color: var(--sl-accent);
+  /* Cream, not accent: four orange numbers in a row read as alarm, and
+     the owner's note was "colors need changed". The accent stays with
+     the CTAs. */
+  color: var(--sl-bg);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-3xl);
   font-weight: 500;

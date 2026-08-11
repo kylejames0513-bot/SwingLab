@@ -185,12 +185,14 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     assert any("display: flex" in rule for rule in proof_rules)
     assert ".sl-hero__proof li::before { display: none; }" in mobile_css
     assert 'content: "\\00B7"' in mobile_css
-    # The signal card is a compact fact strip on phones — but the trace
-    # returned in R6 as the LIVE read (the one moving proof of what the
-    # product produces), at a compact height instead of the old stretched
-    # chart. It must never be display: none again while it animates.
-    assert ".sl-hero__trace { display: none; }" not in mobile_css
-    assert ".sl-hero__trace { height: 64px; margin-top: 12px; }" in mobile_css
+    # R8: the example-session card left the hero entirely ("it just looks
+    # too much") — the hero is photograph, flight, and copy. Its live
+    # trace lives on in example-session.liquid at a mobile-friendly
+    # height; no signal or trace rules may creep back into the hero.
+    assert "sl-hero__signal" not in HERO
+    assert "sl-hero__trace " not in HERO
+    example = (THEME / "sections" / "example-session.liquid").read_text(encoding="utf-8")
+    assert ".sl-example__trace { height: 80px; }" in example.split("@media (max-width: 749px)", 1)[1]
 
 
 def test_mobile_method_section_is_compact_centered_and_semantic():

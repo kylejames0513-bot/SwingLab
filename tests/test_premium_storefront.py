@@ -72,6 +72,7 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "stats",
         "how_it_works",
         "report",
+        "example",
         "gear",
         "proof",
         "plans",
@@ -346,7 +347,6 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "loading: 'eager'" in hero_source
     assert "preload: true" not in hero_source
     assert "fetchpriority: 'high'" in hero_source
-    assert "homepage.hero.signal_disclosure" in hero_source
     assert "assign hero_image_alt = hero_image_label" in hero_source
     assert "alt: hero_image_alt" in hero_source
     assert "alt: section.settings.heading" not in hero_source
@@ -362,48 +362,30 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert hero_locale["image_label"] == (
         "Golfer filming a driver swing at a dawn driving range"
     )
-    assert hero_locale["signal_label"] == "CaddieInsight example analysis"
-    assert hero_locale["signal_status"] == "Example session"
-    assert "demonstration data" in hero_locale["signal_disclosure"].lower()
-    assert '<aside class="sl-hero__signal' in hero_source
-    assert 'class="sl-hero__signal-band' in hero_source
     assert "grid-template-columns: minmax(0, 1fr);" in hero_source
     assert "grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.5fr)" not in hero_source
     mobile_hero = hero_source.split("@media (max-width: 749px)", 1)[1]
     assert "min-height: 720px" not in mobile_hero
     assert "min-height: 980px" not in mobile_hero
     assert "min-height: 1020px" not in mobile_hero
-    # The signal card — the only visual showing what the product produces —
-    # stays on phones (compact, full-width). The old sheet display:none'd it.
-    assert ".sl-hero__signal { display: none; }" not in mobile_hero
-    assert ".sl-hero__signal-band { display: none; }" not in mobile_hero
-    # R6: the trace is a LIVE read. One SVG arc drawn at the engine's own
-    # 3:1 tempo benchmark (backswing 3%→32% of the cycle, strike
-    # 35.6%→45%), pose crosshairs, an impact pulse — all inside the
-    # reduced-motion gate. pathLength normalizes the dash math, and the
-    # element DEFAULTS to the fully drawn still so reduced-motion and
-    # print get a complete trace, never an empty grid.
-    assert 'class="sl-hero__trace-svg"' in hero_source
-    # Two normalized copies of the same arc: the dim backswing draw and the
-    # bright strike that retraces it.
-    assert hero_source.count('d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"') == 2
-    assert "sl-hero__trace-strike" in hero_source
-    assert "sl-hero__trace-impact" in hero_source
-    for keyframes in (
-        "sl-swing-read", "sl-swing-strike", "sl-swing-impact", "sl-live-blink"
-    ):
-        assert f"@keyframes {keyframes}" in hero_source, keyframes
-        assert f"animation: {keyframes}" in hero_source, keyframes
-    motion_gated = hero_source.split("@media (prefers-reduced-motion: no-preference)", 2)[2]
-    assert "animation: sl-swing-read 9.2s linear infinite" in motion_gated
-    strike_rules = hero_source.split(".sl-hero__trace-strike {", 1)[1].split("}", 1)[0]
-    assert "stroke-dashoffset: 0" in strike_rules  # drawn-by-default still
-    # R7: shot tracers — a canvas layer arcing glowing ball flights across
-    # the dusk photo. Atmosphere, never content: the script refuses to run
-    # under reduced motion or Save-Data, parks offscreen via
+    # R8: the hero is photograph, flight, and copy — the example-session
+    # card moved to its own section after the owner's "it just looks too
+    # much". Nothing signal-shaped may creep back in.
+    assert "sl-hero__signal" not in hero_source
+    assert "sl-hero__trace " not in hero_source
+    assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
+    assert ".sl-hero__fine { display: none; }" not in mobile_hero
+    # R7/R8: shot tracers — a canvas layer arcing one glowing ball flight
+    # off the golfer's strike. Anchors are image-space fractions mapped
+    # through the object-fit: cover transform so the launch sits on the
+    # golfer at every viewport; a strike flash sells the hit; the script
+    # refuses reduced motion and Save-Data, parks offscreen via
     # IntersectionObserver, and the canvas is display:none'd under the
     # reduce gate as belt-and-braces.
     assert '<canvas class="sl-hero__tracers" aria-hidden="true"></canvas>' in hero_source
+    assert "function coverMap" in hero_source
+    assert "Strike flash" in hero_source
+    assert "tracers.length === 0" in hero_source  # one ball at a time
     assert "prefers-reduced-motion: reduce" in hero_source
     assert "conn.saveData" in hero_source
     assert "IntersectionObserver" in hero_source
@@ -412,14 +394,53 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
         in hero_source
     )
     assert "pointer-events: none" in hero_source
-    assert "width: 100%;" in mobile_hero.split(".sl-hero__signal {", 1)[1].split("}", 1)[0]
-    assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
-    assert ".sl-hero__fine { display: none; }" not in mobile_hero
+    # R8 type softening: the display face carries less tracking at hero
+    # size, and the body/chips read a touch brighter.
+    assert "letter-spacing: -0.028em;" in hero_source
+    assert "letter-spacing: -0.042em;" not in hero_source
     # Load choreography rises the copy stack once, inside the same gate as
     # the drift.
     assert "@keyframes sl-hero-rise" in hero_source
     drift_gate_block = hero_source.split("@media (prefers-reduced-motion: no-preference)", 1)[1]
     assert "sl-hero-rise" in drift_gate_block.split("@keyframes", 1)[0]
+
+
+def test_example_session_carries_the_live_read_out_of_the_hero():
+    """R8: the example-session card left the hero for its own quiet
+    section after the report — one dark chart window (the live trace at
+    the 3:1 read), facts inline, the demonstration-data disclosure. The
+    animation contract is unchanged: drawn-still defaults, motion only
+    inside the no-preference gate."""
+    example = source("sections/example-session.liquid")
+    hero_locale = LOCALE["homepage"]["hero"]
+    assert hero_locale["signal_label"] == "CaddieInsight example analysis"
+    assert hero_locale["signal_status"] == "Example session"
+    assert "demonstration data" in hero_locale["signal_disclosure"].lower()
+    for key in ("signal_label", "signal_status", "signal_ready", "trace_label",
+                "club_label", "priority_label", "target_label", "signal_disclosure"):
+        assert f"homepage.hero.{key}" in example, key
+    assert example.count('d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"') == 2
+    for keyframes in (
+        "sl-example-read", "sl-example-strike", "sl-example-impact", "sl-example-blink"
+    ):
+        assert f"@keyframes {keyframes}" in example, keyframes
+        assert f"animation: {keyframes}" in example, keyframes
+    motion_gated = example.split("@media (prefers-reduced-motion: no-preference)", 1)[1]
+    assert "animation: sl-example-read 9.2s linear infinite" in motion_gated
+    strike_rules = example.split(".sl-example__trace-strike {", 1)[1].split("}", 1)[0]
+    assert "stroke-dashoffset: 0" in strike_rules  # drawn-by-default still
+    schema = example.split("{% schema %}", 1)[1]
+    for setting_id in ("signal_club", "signal_priority", "signal_target"):
+        assert f'"id": "{setting_id}"' in schema
+    import json as _json
+
+    index = _json.loads(source("templates/index.json"))
+    assert index["sections"]["example"]["type"] == "example-session"
+    order = index["order"]
+    assert order.index("example") == order.index("report") + 1
+    assert index["sections"]["example"]["settings"]["signal_priority"] == "Lead-hip control"
+    # The hero no longer declares the sample facts; the section owns them.
+    assert '"id": "signal_club"' not in source("sections/hero.liquid")
 
 
 def test_stat_band_counts_only_honest_engine_numbers():

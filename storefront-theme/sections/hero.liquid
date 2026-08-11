@@ -105,44 +105,12 @@
     </div>
   </div>
 
-  <div class="sl-hero__signal-band sl-wrap">
-    <aside class="sl-hero__signal sl-reveal sl-reveal--d1 is-in" aria-label="{{ 'homepage.hero.signal_label' | t }}">
-      <div class="sl-hero__signal-head">
-        <span>{{ 'homepage.hero.signal_status' | t }}</span>
-        <span class="sl-hero__signal-live"><i aria-hidden="true"></i>{{ 'homepage.hero.signal_ready' | t }}</span>
-      </div>
-      <div class="sl-hero__trace" role="img" aria-label="{{ 'homepage.hero.trace_label' | t }}">
-        {%- comment -%}
-          The live read. One arc, drawn at the engine's own benchmark: the
-          backswing draws for three beats, holds at the top, and the strike
-          retraces it in one — the 3:1 tempo_ratio target, animated. Pose
-          crosshairs blink in as landmarks resolve; the pulse is impact.
-          pathLength="100" normalizes both paths so the dash keyframes are
-          percentages, not measured lengths. Every default below is the
-          fully drawn state, so reduced-motion (and print) get a complete
-          still trace rather than an empty box.
-        {%- endcomment -%}
-        <svg class="sl-hero__trace-svg" viewBox="0 0 280 88" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
-          <path class="sl-hero__trace-arc" d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"/>
-          <path class="sl-hero__trace-strike" d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"/>
-          <g class="sl-hero__trace-tick sl-hero__trace-tick--mid" transform="translate(125 32)">
-            <path d="M -5 0 H 5 M 0 -5 V 5"/>
-          </g>
-          <g class="sl-hero__trace-tick sl-hero__trace-tick--top" transform="translate(214 20)">
-            <path d="M -5 0 H 5 M 0 -5 V 5"/>
-          </g>
-          <circle class="sl-hero__trace-impact" cx="54" cy="66" r="14"/>
-          <circle class="sl-hero__trace-ball" cx="54" cy="66" r="3.2"/>
-        </svg>
-      </div>
-      <dl class="sl-hero__signal-grid">
-        <div><dt>{{ 'homepage.hero.club_label' | t }}</dt><dd>{{ section.settings.signal_club }}</dd></div>
-        <div><dt>{{ 'homepage.hero.priority_label' | t }}</dt><dd>{{ section.settings.signal_priority }}</dd></div>
-        <div><dt>{{ 'homepage.hero.target_label' | t }}</dt><dd>{{ section.settings.signal_target }}</dd></div>
-      </dl>
-      <p class="sl-hero__signal-note">{{ 'homepage.hero.signal_disclosure' | t }}</p>
-    </aside>
-  </div>
+  {%- comment -%}
+    The example-session card lived here through R7 and the owner's
+    verdict was "it just looks too much" — it fought the tracers for the
+    same corner. It now has its own section (example-session.liquid,
+    after the report section); the hero is photograph, flight, and copy.
+  {%- endcomment -%}
 </section>
 
 <script>
@@ -165,22 +133,48 @@
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 
-    /* One flight: a quadratic arc from the golfer's corner of the photo
-       into the sky. Eased fast-then-floating, drawn as a fading trail
-       with a bright head — the TV shot-tracer, not confetti. */
-    function spawn(now) {
+    /* The flight is anchored to the PHOTOGRAPH, not the viewport: the
+       ball leaves the tee in front of the golfer and climbs down-range
+       into the sunset, like the broadcast tracer it quotes. Anchors are
+       image-space fractions mapped through the same object-fit: cover
+       transform the browser applies to the backdrop, so the launch sits
+       on the golfer at every viewport. The two packaged crops place him
+       differently — measured, not guessed. */
+    function coverMap(fx, fy, iw, ih, posX) {
+      var scale = Math.max(width / iw, height / ih);
+      var drawW = iw * scale, drawH = ih * scale;
+      var offX = (width - drawW) * posX;
+      var offY = (height - drawH) * 0.5;
+      return { x: offX + fx * drawW, y: offY + fy * drawH };
+    }
+    function anchors() {
       var phone = width < 750;
-      var x0 = width * (phone ? 0.16 : 0.24) + Math.random() * width * 0.06;
-      var y0 = height * 0.82 + Math.random() * height * 0.05;
-      var x2 = width * (0.72 + Math.random() * 0.3);
-      var y2 = height * (0.06 + Math.random() * 0.2);
-      var x1 = (x0 + x2) * 0.44;
-      var y1 = y2 - height * (0.18 + Math.random() * 0.1);
-      var warm = Math.random() < 0.72;
+      /* Mobile crop (1122x1402, object-position 32%): golfer center-right,
+         ball at his stance, sun low right. Desktop (1672x941, centered):
+         golfer at two-thirds, sun on the right horizon. */
+      var iw = phone ? 1122 : 1672, ih = phone ? 1402 : 941, posX = phone ? 0.32 : 0.5;
+      var ball = phone ? [0.60, 0.845] : [0.615, 0.745];
+      var apex = phone ? [0.78, 0.52] : [0.77, 0.36];
+      var land = phone ? [0.915, 0.665] : [0.905, 0.545];
+      return {
+        p0: coverMap(ball[0], ball[1], iw, ih, posX),
+        p1: coverMap(apex[0], apex[1], iw, ih, posX),
+        p2: coverMap(land[0], land[1], iw, ih, posX)
+      };
+    }
+
+    /* One ball at a time — a shot every few seconds, not a fireworks
+       show. The strike flash at launch is what sells "he hit that". */
+    function spawn(now) {
+      var a = anchors();
+      var jx = (Math.random() - 0.5) * width * 0.02;
+      var jy = (Math.random() - 0.5) * height * 0.015;
       tracers.push({
-        x0: x0, y0: y0, x1: x1, y1: y1, x2: x2, y2: y2,
-        born: now, flight: 2600 + Math.random() * 700, linger: 1500,
-        hue: warm ? '255, 173, 98' : '238, 242, 239'
+        x0: a.p0.x, y0: a.p0.y,
+        x1: a.p1.x + jx * 3, y1: a.p1.y + jy * 3,
+        x2: a.p2.x + jx, y2: a.p2.y + jy,
+        born: now, flight: 2400 + Math.random() * 500, linger: 1400,
+        hue: '255, 173, 98'
       });
     }
 
@@ -197,9 +191,9 @@
       if (!visible || reduce.matches) { ctx.clearRect(0, 0, width, height); return; }
       ctx.clearRect(0, 0, width, height);
       var phone = width < 750;
-      if (now >= nextAt && tracers.length < (phone ? 1 : 2)) {
+      if (now >= nextAt && tracers.length === 0) {
         spawn(now);
-        nextAt = now + 3800 + Math.random() * 2700;
+        nextAt = now + 5200 + Math.random() * 2400;
       }
       for (var i = tracers.length - 1; i >= 0; i--) {
         var tr = tracers[i];
@@ -208,6 +202,19 @@
         var raw = Math.min(age / tr.flight, 1);
         var head = 1 - Math.pow(1 - raw, 2.4);
         var fade = age <= tr.flight ? 1 : 1 - (age - tr.flight) / tr.linger;
+        /* Strike flash: a fast bright burst at the tee in the first
+           220ms — the "he hit that" moment. */
+        if (age < 220) {
+          var ft = age / 220;
+          var fr = (phone ? 10 : 16) * (0.4 + ft * 0.6);
+          var flash = ctx.createRadialGradient(tr.x0, tr.y0, 0, tr.x0, tr.y0, fr);
+          flash.addColorStop(0, 'rgba(255, 238, 210, ' + (0.9 * (1 - ft)).toFixed(3) + ')');
+          flash.addColorStop(1, 'rgba(' + tr.hue + ', 0)');
+          ctx.fillStyle = flash;
+          ctx.beginPath();
+          ctx.arc(tr.x0, tr.y0, fr, 0, Math.PI * 2);
+          ctx.fill();
+        }
         var steps = 34;
         for (var s = 1; s <= steps; s++) {
           var t1 = head * (s / steps);
@@ -216,18 +223,20 @@
           ctx.beginPath();
           ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
           ctx.strokeStyle = 'rgba(' + tr.hue + ',' + (0.34 * fade * Math.pow(s / steps, 2.2)).toFixed(3) + ')';
-          ctx.lineWidth = phone ? 1.4 : 1.8;
+          /* The trail thins with distance — perspective, not decoration. */
+          ctx.lineWidth = (phone ? 2 : 2.4) * (1 - 0.65 * t1);
           ctx.lineCap = 'round';
           ctx.stroke();
         }
         if (age <= tr.flight) {
           var hp = pointAt(head, tr);
-          var glow = ctx.createRadialGradient(hp.x, hp.y, 0, hp.x, hp.y, phone ? 7 : 10);
+          var headR = (phone ? 6 : 9) * (1 - 0.5 * head);
+          var glow = ctx.createRadialGradient(hp.x, hp.y, 0, hp.x, hp.y, headR);
           glow.addColorStop(0, 'rgba(255, 232, 200, ' + (0.9 * fade).toFixed(3) + ')');
           glow.addColorStop(1, 'rgba(' + tr.hue + ', 0)');
           ctx.fillStyle = glow;
           ctx.beginPath();
-          ctx.arc(hp.x, hp.y, phone ? 7 : 10, 0, Math.PI * 2);
+          ctx.arc(hp.x, hp.y, headR, 0, Math.PI * 2);
           ctx.fill();
         }
       }
@@ -351,15 +360,6 @@ video.sl-hero__video {
   width: 100%;
   max-width: 720px;
 }
-.sl-hero__signal-band {
-  position: relative;
-  z-index: 4;
-  margin-top: 0;
-  padding-top: clamp(8px, 1.5vw, 20px);
-  padding-bottom: clamp(36px, 5vw, 64px);
-  display: flex;
-  justify-content: flex-end;
-}
 .sl-hero__brand {
   margin: 0 0 16px;
   display: inline-flex;
@@ -391,15 +391,17 @@ video.sl-hero__video {
   font-family: var(--sl-font-display);
   font-size: var(--sl-text-4xl);
   font-weight: 700;
-  letter-spacing: -0.042em;
-  line-height: 1.02;
+  /* -0.042em rendered cramped on phones; the display face carries less
+     tracking at this size. */
+  letter-spacing: -0.028em;
+  line-height: 1.05;
   text-align: left;
   text-wrap: balance;
 }
 .sl-hero__body {
   max-width: 40ch;
   margin: 18px 0 0;
-  color: rgba(238, 242, 239, 0.78);
+  color: rgba(238, 242, 239, 0.86);
   font-size: var(--sl-text-lg);
   font-weight: 400;
   line-height: 1.55;
@@ -469,11 +471,11 @@ video.sl-hero__video {
 .sl-hero__proof li {
   position: relative;
   padding-left: 14px;
-  color: rgba(238, 242, 239, 0.62);
+  color: rgba(238, 242, 239, 0.66);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
 }
 .sl-hero__proof li::before {
@@ -490,181 +492,6 @@ video.sl-hero__video {
   margin: 14px 0 0;
   color: rgba(238, 242, 239, 0.58);
   font-size: var(--sl-text-xs);
-  text-align: left;
-}
-.sl-hero__signal {
-  width: min(100%, 320px);
-  margin: 0;
-  padding: 18px 18px 16px;
-  text-align: left;
-  border: 1px solid rgba(238, 242, 239, 0.16);
-  border-radius: var(--sl-radius);
-  background: rgba(5, 16, 10, 0.55);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 28px 64px -36px rgba(0, 0, 0, 0.85);
-}
-.sl-hero__signal-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  color: rgba(238, 242, 239, 0.58);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-text-xs);
-  font-weight: 500;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-.sl-hero__signal-live { display: inline-flex; align-items: center; gap: 7px; color: #8be4ad; }
-.sl-hero__signal-live i {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: currentColor;
-  box-shadow: 0 0 0 5px rgba(139, 228, 173, 0.12);
-}
-.sl-hero__trace {
-  position: relative;
-  height: 88px;
-  margin-top: 14px;
-  overflow: hidden;
-  border: 1px solid rgba(238, 242, 239, 0.1);
-  border-radius: var(--sl-radius-sm);
-  background:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    rgba(255, 255, 255, 0.02);
-  background-size: 24px 24px;
-}
-.sl-hero__trace-svg {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-}
-/* Defaults are the FULLY DRAWN still: reduced-motion, print, and any
-   context without CSS animation all get a complete trace, never an empty
-   grid. The keyframes below override these only while running. */
-.sl-hero__trace-arc {
-  fill: none;
-  stroke: rgba(238, 242, 239, 0.45);
-  stroke-width: 1.6;
-  stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-}
-.sl-hero__trace-strike {
-  fill: none;
-  stroke: #f28a32;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-  filter: drop-shadow(0 0 7px rgba(242, 138, 50, 0.5));
-}
-.sl-hero__trace-tick path {
-  fill: none;
-  stroke: rgba(238, 242, 239, 0.65);
-  stroke-width: 1.2;
-}
-.sl-hero__trace-impact {
-  fill: none;
-  stroke: #f28a32;
-  stroke-width: 1.4;
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.sl-hero__trace-ball {
-  fill: var(--sl-bg);
-  opacity: 0.9;
-}
-/* The 9.2s read cycle. Stops encode the engine's own benchmark: the
-   backswing draws 3%→32% (2.67s), holds at the top, and the strike
-   retraces 35.6%→45% (0.86s) — the 3:1 tempo_ratio target, animated.
-   Then impact pulses, the read holds, fades, and the window rests. The
-   77% jump-frames reset dash offsets while opacity is 0. */
-@media (prefers-reduced-motion: no-preference) {
-  .sl-hero__trace-arc { animation: sl-swing-read 9.2s linear infinite; }
-  .sl-hero__trace-strike { animation: sl-swing-strike 9.2s linear infinite; }
-  .sl-hero__trace-tick--mid { animation: sl-swing-tick-mid 9.2s linear infinite; }
-  .sl-hero__trace-tick--top { animation: sl-swing-tick-top 9.2s linear infinite; }
-  .sl-hero__trace-impact { animation: sl-swing-impact 9.2s linear infinite; }
-  .sl-hero__trace-ball { animation: sl-swing-anchor 9.2s linear infinite; }
-  .sl-hero__signal-live i { animation: sl-live-blink 3.1s ease-in-out infinite; }
-}
-@keyframes sl-swing-read {
-  0%, 2.9% { stroke-dashoffset: 100; opacity: 0; }
-  3% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(0.33, 0, 0.45, 1); }
-  32%, 69.9% { stroke-dashoffset: 0; opacity: 1; }
-  76%, 76.9% { stroke-dashoffset: 0; opacity: 0; }
-  77%, 100% { stroke-dashoffset: 100; opacity: 0; }
-}
-@keyframes sl-swing-strike {
-  0%, 35.5% { stroke-dashoffset: -100; opacity: 0; }
-  35.6% { stroke-dashoffset: -100; opacity: 1; animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.6); }
-  45%, 69.9% { stroke-dashoffset: 0; opacity: 1; }
-  76%, 76.9% { stroke-dashoffset: 0; opacity: 0; }
-  77%, 100% { stroke-dashoffset: -100; opacity: 0; }
-}
-@keyframes sl-swing-tick-mid {
-  0%, 17% { opacity: 0; }
-  20%, 69.9% { opacity: 0.75; }
-  76%, 100% { opacity: 0; }
-}
-@keyframes sl-swing-tick-top {
-  0%, 31% { opacity: 0; }
-  33%, 69.9% { opacity: 0.9; }
-  76%, 100% { opacity: 0; }
-}
-@keyframes sl-swing-impact {
-  0%, 44.9% { opacity: 0; transform: scale(0.25); }
-  45% { opacity: 0.85; }
-  53%, 100% { opacity: 0; transform: scale(1.15); }
-}
-@keyframes sl-swing-anchor {
-  0%, 3% { opacity: 0; }
-  8%, 69.9% { opacity: 0.9; }
-  76%, 100% { opacity: 0; }
-}
-@keyframes sl-live-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-.sl-hero__signal-grid {
-  margin: 14px 0 0;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
-}
-.sl-hero__signal-grid > div { min-width: 0; padding: 0 10px; }
-.sl-hero__signal-grid > div:first-child { padding-left: 0; }
-.sl-hero__signal-grid > div:last-child { padding-right: 0; }
-.sl-hero__signal-grid > div + div { border-left: 1px solid rgba(238, 242, 239, 0.12); }
-.sl-hero__signal-grid dt {
-  color: rgba(238, 242, 239, 0.58);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-text-xs);
-  font-weight: 500;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  text-align: left;
-}
-.sl-hero__signal-grid dd {
-  margin: 5px 0 0;
-  color: var(--sl-bg);
-  font-size: var(--sl-text-xs);
-  font-weight: 700;
-  line-height: 1.3;
-  text-align: left;
-}
-.sl-hero__signal-note {
-  margin: 12px 0 0;
-  color: rgba(238, 242, 239, 0.58);
-  font-size: var(--sl-text-xs);
-  line-height: 1.4;
   text-align: left;
 }
 @media (max-width: 999px) {
@@ -774,37 +601,6 @@ video.sl-hero__video {
     color: rgba(var(--sl-cream-rgb), 0.45);
     text-align: left;
   }
-  .sl-hero__signal {
-    width: 100%;
-    padding: var(--sl-space-4) var(--sl-space-4) var(--sl-space-3);
-  }
-  /* The R2 pass hid the trace here because a static doodle didn't earn
-     its rows. The live read does — it's the one moving proof of what the
-     product produces — so it returns at a compact height above the
-     fact-strip rows. */
-  .sl-hero__trace { height: 64px; margin-top: 12px; }
-  .sl-hero__signal-grid {
-    margin-top: var(--sl-space-2);
-    display: block;
-  }
-  .sl-hero__signal-grid > div {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--sl-space-3);
-    padding: var(--sl-space-2) 0;
-  }
-  .sl-hero__signal-grid > div + div {
-    border-left: 0;
-    border-top: 1px solid rgba(238, 242, 239, 0.12);
-  }
-  .sl-hero__signal-grid dt { letter-spacing: 0.08em; }
-  .sl-hero__signal-grid dd { margin: 0; text-align: right; }
-  .sl-hero__signal-note { margin-top: var(--sl-space-2); }
-  .sl-hero__signal-band {
-    padding-top: var(--sl-space-3);
-    padding-bottom: var(--sl-space-6);
-  }
 }
 @media (max-width: 559px) {
   .sl-hero__brand { font-size: var(--sl-text-xl); letter-spacing: -0.03em; }
@@ -833,10 +629,7 @@ video.sl-hero__video {
     { "type": "text", "id": "fine_print", "label": "Fine print", "default": "Supported 2D movement and timing estimates from phone video." },
     { "type": "video", "id": "video", "label": "Hero video (loops, muted)", "info": "A short 8–20s loop — filmed range or swing footage works best. No audio needed; it plays muted. Leave blank and the hero uses the photograph with a slow drift instead." },
     { "type": "image_picker", "id": "image", "label": "Desktop hero image", "info": "Fallback and poster when no video is set. Leave blank to use the packaged dusk-range artwork (caddieinsight-range-hero-desktop.webp)." },
-    { "type": "image_picker", "id": "mobile_image", "label": "Mobile hero image", "info": "Leave blank to use the packaged portrait companion (caddieinsight-range-hero-mobile.webp)." },
-    { "type": "text", "id": "signal_club", "label": "Sample club", "default": "Iron" },
-    { "type": "text", "id": "signal_priority", "label": "Sample priority", "default": "Lead-hip control" },
-    { "type": "text", "id": "signal_target", "label": "Sample target", "default": "One pass mark" }
+    { "type": "image_picker", "id": "mobile_image", "label": "Mobile hero image", "info": "Leave blank to use the packaged portrait companion (caddieinsight-range-hero-mobile.webp)." }
   ],
   "presets": [{ "name": "Premium hero" }]
 }
