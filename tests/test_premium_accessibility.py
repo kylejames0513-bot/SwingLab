@@ -102,7 +102,11 @@ def test_primary_journey_uses_accessible_text_and_control_tokens():
     upload = (TEMPLATES / "web_upload.html.j2").read_text(encoding="utf-8")
     today = (TEMPLATES / "web_today.html.j2").read_text(encoding="utf-8")
 
-    assert ".sl-eyebrow" in LAYOUT and "color: var(--sl-orange-text);" in LAYOUT
+    # The eyebrow used to be pinned as amber. It is chrome, not a measured
+    # value, so it is --sl-ink-soft now and the gate checks the tokens that
+    # small text actually depends on instead.
+    assert ".sl-eyebrow" in LAYOUT
+    assert "color: var(--sl-ink-soft);" in LAYOUT
     assert "border: 1.5px solid var(--sl-control-border);" in login
     assert "color: var(--sl-orange-text);" in upload
     assert upload.count("var(--sl-control-border)") >= 2

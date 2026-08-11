@@ -1,8 +1,11 @@
 {%- liquid
-  # The step count is printed twice — once in the sheet slug, once as the
-  # denominator under every step number — so it is derived from the block
-  # count rather than authored. Add a fifth step in the editor and every
-  # "/04" becomes "/05" without anyone remembering to update a setting.
+  # Both halves of "01/04" are derived: the numerator from the block's
+  # position, the denominator from the block count. The `number` setting
+  # carried a "01" DEFAULT, which meant Shopify seeded every newly added
+  # block with it — so a merchant adding a fifth step got "01/05", colliding
+  # with step one, and the auto-numbering branch below could only ever fire
+  # if someone manually cleared a field the editor had just filled in. The
+  # setting stays as an override; it no longer has a default to fight.
   assign anchor = section.settings.anchor | default: 'how'
   assign step_total = section.blocks.size
   assign step_total_label = step_total
@@ -170,8 +173,6 @@
   grid-template-columns: var(--sl-how-rail) minmax(0, 1fr);
   column-gap: var(--sl-how-gap);
   row-gap: 0;
-  align-items: stretch;
-  justify-content: flex-start;
   padding: clamp(24px, 2.5vw, 32px) 0;
   text-align: left;
   /* The rail is painted, not bordered: a 1px background column pinned to the
@@ -355,7 +356,7 @@
       "type": "step",
       "name": "Step",
       "settings": [
-        { "type": "text", "id": "number", "label": "Step number", "default": "01", "info": "Leave blank to number from the block order." },
+        { "type": "text", "id": "number", "label": "Step number", "info": "Numbered from the block order unless you set this." },
         { "type": "text", "id": "title", "label": "Title", "default": "Choose the club" },
         { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club before upload—iron, wedge, hybrid, fairway wood, or driver. It stays with the report and your next comparison, so coaching reflects the equipment you actually used." },
         { "type": "text", "id": "caption", "label": "Caption (small mono line)", "info": "Optional specimen-style label under the body." }

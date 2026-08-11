@@ -701,6 +701,14 @@ img { max-width: 100%; display: block; }
 /* THE eyebrow. Twelve sections used to hand-roll their own copy of this
    rule; the only differences were margin nudges and the dark-surface
    colour, which dark sections override contextually. */
+/* An eyebrow is a LABEL, not a measurement, so it does not get the signal
+   colour. Amber marks a value the engine produced; spending it on decorative
+   type is what teaches a reader that amber means "important" and dissolves
+   the only rule this palette has.
+
+   The evidence that this was wrong is that FOUR rebuilt sections
+   independently wrote a local override to undo it. When four call sites
+   fight the base rule, the base rule is the bug. */
 .sl-eyebrow {
   margin: 0 0 14px;
   font-family: var(--sl-font-mono);
@@ -708,7 +716,7 @@ img { max-width: 100%; display: block; }
   font-weight: 500;
   letter-spacing: var(--sl-eyebrow-track);
   text-transform: uppercase;
-  color: var(--sl-orange);
+  color: var(--sl-ink-soft);
 }
 
 /* assurance strip: a quiet instrument panel under buy/checkout actions.

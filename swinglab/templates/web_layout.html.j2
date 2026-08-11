@@ -814,9 +814,11 @@
     padding: clamp(22px, 4vw, 32px);
     box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
   }
+  {# A label, not a measurement — the same reasoning as base.css. Amber is
+     reserved for values the engine produced, and an eyebrow is chrome. #}
   .sl-eyebrow {
     margin: 0 0 12px;
-    color: var(--sl-orange-text);
+    color: var(--sl-ink-soft);
     font-family: var(--sl-font-mono);
     font-size: .75rem;
     font-weight: 500;

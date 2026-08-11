@@ -213,8 +213,6 @@ def test_mobile_method_section_stays_a_compact_left_flowing_spec_sheet():
     assert '<li class="sl-step"' in HOW
 
     step_rules = declarations(HOW, ".sl-step")
-    assert any("align-items: stretch" in rule for rule in step_rules)
-    assert any("justify-content: flex-start" in rule for rule in step_rules)
     assert any("text-align: left" in rule for rule in step_rules)
     assert any(
         "grid-template-columns: var(--sl-how-rail) minmax(0, 1fr)" in rule
