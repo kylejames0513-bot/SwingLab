@@ -323,12 +323,13 @@ img { max-width: 100%; display: block; }
 .sl-placeholder {
   width: 100%;
   display: block;
-  background: repeating-linear-gradient(45deg, #e7ede6, #e7ede6 14px, #dde5db 14px, #dde5db 28px);
-  border: 1px solid #d8dfd5;
-  border-radius: 16px;
+  /* the empty state reads as unexposed film now, not as a light swatch */
+  background: repeating-linear-gradient(45deg, var(--sl-bg-card), var(--sl-bg-card) 14px, var(--sl-night) 14px, var(--sl-night) 28px);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
 }
 .sl-placeholder--warm {
-  background: repeating-linear-gradient(45deg, #efe9dd, #efe9dd 12px, #e8e1d2 12px, #e8e1d2 24px);
+  background: repeating-linear-gradient(45deg, var(--sl-orange-soft), var(--sl-orange-soft) 12px, var(--sl-night) 12px, var(--sl-night) 24px);
 }
 .sl-placeholder--flush { border-radius: 0; border: 0; }
 .sl-placeholder text { font-family: ui-monospace, monospace; }
@@ -351,12 +352,21 @@ img { max-width: 100%; display: block; }
   cursor: pointer;
   transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-.sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-bg-card); }
-.sl-btn--primary:hover { background: var(--sl-green); color: var(--sl-bg-card); }
-.sl-btn--outline { background: transparent; color: var(--sl-green); border-color: var(--sl-green); }
-.sl-btn--outline:hover { background: var(--sl-green); color: var(--sl-bg); }
-.sl-btn--light { background: var(--sl-bg-card); color: var(--sl-green); }
-.sl-btn--light:hover { background: #ffffff; color: var(--sl-green); }
+/* Bone fill, field text. On a near-black page the brightest thing wins,
+   so the primary action does not need — and must not take — the signal
+   colour: amber means a value the engine measured. */
+.sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-green-ink); }
+.sl-btn--primary:hover { background: var(--sl-trace); color: var(--sl-green-ink); }
+/* --sl-control-border, not --sl-border: an outline button's edge IS the
+   control, and --sl-border is 1.33:1 (WCAG 1.4.11 wants 3:1). */
+.sl-btn--outline { background: transparent; color: var(--sl-ink); border-color: var(--sl-control-border); }
+.sl-btn--outline:hover { background: rgba(var(--sl-cream-rgb), 0.08); color: var(--sl-ink); border-color: var(--sl-ink); }
+/* --light meant "readable on the dark green bands" when the page was
+   light. Every surface is dark now, so the inversion left it at #0d1712
+   on #070f0b with a transparent border — 1.06:1, an invisible button.
+   It is the bone treatment, which is what the name was always after. */
+.sl-btn--light { background: var(--sl-ink); color: var(--sl-green-ink); border-color: var(--sl-ink); }
+.sl-btn--light:hover { background: var(--sl-trace); color: var(--sl-green-ink); border-color: var(--sl-trace); }
 .sl-btn--sm {
   min-height: 38px;
   padding: 9px 18px;
@@ -425,7 +435,7 @@ img { max-width: 100%; display: block; }
   text-transform: uppercase;
   color: var(--sl-green);
   background: var(--sl-bg-card);
-  border: 1px solid rgba(15, 61, 40, 0.28);
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.18);
   border-radius: var(--sl-radius-sm);
   padding: 5px 12px;
   white-space: nowrap;
@@ -797,8 +807,8 @@ img { max-width: 100%; display: block; }
 .sl-rte code {
   font-family: var(--sl-font-mono);
   font-size: 0.88em;
-  background: #efece4;
-  border-radius: 6px;
+  background: var(--sl-night);
+  border-radius: var(--sl-radius-sm);
   padding: 1px 6px;
 }
 .sl-rte blockquote {
@@ -1061,7 +1071,7 @@ img { max-width: 100%; display: block; }
   font-weight: 500;
   color: var(--sl-ink-muted);
   text-decoration: line-through;
-  text-decoration-color: rgba(122, 130, 121, 0.7);
+  text-decoration-color: currentColor;
   margin-left: 7px;
   white-space: nowrap;
 }
@@ -1072,8 +1082,8 @@ img { max-width: 100%; display: block; }
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #fff;
-  background: var(--sl-orange);
+  color: var(--sl-green-ink);
+  background: var(--sl-ink);
   border-radius: var(--sl-radius-control);
   padding: 4px 11px;
   white-space: nowrap;
