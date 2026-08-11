@@ -32,8 +32,14 @@ STYLED = sorted(
 
 
 def _sources() -> dict[str, str]:
+    # as_posix(), not str(): str() spells this "assets\\base.css" on Windows,
+    # which never matched the "assets/base.css" guard in _below_token_sheet.
+    # The token sheet was therefore never stripped there and every literal
+    # that DEFINES a token was reported as a violation of it — so these gates
+    # could not pass on Windows at all, and the failure looked exactly like a
+    # real regression. Forward slashes on every platform.
     return {
-        str(path.relative_to(THEME)): path.read_text(encoding="utf-8")
+        path.relative_to(THEME).as_posix(): path.read_text(encoding="utf-8")
         for path in STYLED
     }
 
@@ -173,17 +179,31 @@ def test_no_weight_the_face_does_not_load():
 
 def test_fonts_are_self_hosted_and_preloaded():
     """Google Fonts was a render-blocking third-party sheet loaded AFTER
-    base.css. The three latin woff2 files ship in assets/ and preload."""
+    base.css. The four latin woff2 files ship in assets/ and three preload.
+
+    Self-hosting is not a preference here: headless Chromium in the
+    verification container cannot reach Google Fonts and fails SILENTLY, so a
+    page that depends on it renders in a system fallback while every
+    screenshot of it looks deliberate.
+    """
     layout = (THEME / "layout" / "theme.liquid").read_text(encoding="utf-8")
     assert "fonts.googleapis.com" not in layout
     assert "fonts.gstatic.com" not in layout
     for asset in (
         "archivo-latin-var.woff2",
-        "plex-mono-latin-400.woff2",
-        "plex-mono-latin-500.woff2",
+        "archivo-expanded-latin-800.woff2",
+        "dm-mono-latin-400.woff2",
+        "dm-mono-latin-500.woff2",
     ):
         assert (THEME / "assets" / asset).is_file(), asset
         assert asset in layout, asset
+
+    # The retired faces are gone rather than orphaned in assets/. A theme zip
+    # ships every file in the directory, so a leftover font is dead weight in
+    # every release and an invitation for a later @font-face to resurrect it.
+    for retired in ("plex-mono-latin-400.woff2", "plex-mono-latin-500.woff2"):
+        assert not (THEME / "assets" / retired).exists(), retired
+        assert retired not in layout, retired
     # preload_tag is Shopify's own emitter for <link rel="preload"> —
     # theme-check's AssetPreload rule requires it over a hand-written link.
     assert layout.count("| preload_tag: as: 'font'") >= 2
