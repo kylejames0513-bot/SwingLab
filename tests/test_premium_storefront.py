@@ -322,31 +322,37 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
 
     assert '<section id="home-hero" class="sl-hero" aria-labelledby=' in hero_source
     assert hero_source.count("<h1") == 1
-    # The hero is video-capable: a merchant-picked muted loop replaces the
-    # photo backdrop; without one, the photo carries a slow drift (behind
-    # the reduced-motion gate) so the hero never reads as a static slab.
-    assert '<figure class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}">' in hero_source
+
+    # Video-capable: a merchant-picked muted loop replaces the photo backdrop;
+    # without one the photo carries a slow drift behind the reduced-motion
+    # gate, so the hero never reads as a static slab.
+    assert 'class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}"' in hero_source
     assert "section.settings.video | video_tag" in hero_source
     for param in ("autoplay: true", "loop: true", "muted: true", "controls: false", "playsinline: true"):
         assert param in hero_source, param
     assert '"type": "video"' in hero_source
     assert "sl-hero-drift" in hero_source
-    drift_gate = hero_source.split("@media (prefers-reduced-motion: no-preference)", 1)[1]
-    assert "sl-hero-drift" in drift_gate.split("}", 3)[0] + drift_gate
-    assert "sl-hero__disclosure" not in hero_source
-    assert "sl-hero__capture" not in hero_source
+
     assert "<picture>" in hero_source
     assert 'media="(max-width: 749px)"' in hero_source
     assert "hero_mobile_image | image_url: width: 1122" in hero_source
-    assert 'widths: \'750, 1100, 1400, 1672\'' in hero_source
+    assert "widths: '750, 1100, 1400, 1672'" in hero_source
     assert "sizes: '100vw'" in hero_source
     assert "loading: 'eager'" in hero_source
     assert "preload: true" not in hero_source
     assert "fetchpriority: 'high'" in hero_source
-    assert "homepage.hero.signal_disclosure" in hero_source
-    assert "assign hero_image_alt = hero_image_label" in hero_source
-    assert "alt: hero_image_alt" in hero_source
+
+    # The backdrop is DECORATIVE now — the readout carries the meaning, so the
+    # photograph gets an empty alt and aria-hidden. It used to take a
+    # descriptive alt, which made a screen reader announce a stock photo
+    # before the headline. The old `assign hero_image_alt` went with it:
+    # theme-check's UnusedAssign is a warning, and package_theme.py runs at
+    # --fail-level warning, so one orphaned assign fails the whole zip.
+    assert 'aria-hidden="true"' in hero_source
+    assert "alt: ''" in hero_source
+    assert "assign hero_image_alt" not in hero_source
     assert "alt: section.settings.heading" not in hero_source
+
     assert (
         "section.settings.primary_label != blank and "
         "section.settings.primary_url != blank"
@@ -356,48 +362,56 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
         "section.settings.secondary_url != blank"
     ) in hero_source
     assert "default: '#'" not in hero_source
-    assert hero_locale["image_label"] == (
-        "Golfer filming a driver swing at a dawn driving range"
-    )
+
     assert hero_locale["signal_label"] == "CaddieInsight example analysis"
     assert hero_locale["signal_status"] == "Example session"
     assert "demonstration data" in hero_locale["signal_disclosure"].lower()
-    assert '<aside class="sl-hero__signal' in hero_source
-    assert 'class="sl-hero__signal-band' in hero_source
-    assert "grid-template-columns: minmax(0, 1fr);" in hero_source
-    assert "grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.5fr)" not in hero_source
+    assert "homepage.hero.signal_disclosure" in hero_source
+
+    # THE READOUT. It was a 320px card in the corner of a photograph; it is
+    # the subject now, and it is the only thing on this page that shows what
+    # the product actually does.
+    assert '<aside class="sl-hero__readout"' in hero_source
+    assert "data-swing-readout" in hero_source
+
+    # DEGRADATION IS THE CONTRACT, and it is the single most valuable thing
+    # this test pins. The markup ships a COMPLETE, fully drawn SVG still that
+    # is visible by default; swing-trace.js hides it only after the canvas
+    # initialises. Break the handshake and no-JS, canvas-less,
+    # reduced-motion and screenshot clients all render an empty box — a
+    # failure nobody sees in a browser with JS on.
+    assert "data-swing-still" in hero_source
+    assert "data-swing-trace" in hero_source
+    assert 'class="sl-hero__trace-still"' in hero_source
+    assert 'class="sl-hero__trace-canvas"' in hero_source
+    still = hero_source.split('data-swing-still', 1)[1].split("</svg>", 1)[0]
+    assert "sl-hero__trace-arc" in still
+    assert 'd="M 160 226' in still, "the still must carry a real drawn arc"
+    assert "[hidden]" in hero_source, "the still is hidden by JS, not by default"
+
+    # The phase label ships with the ready string rather than empty, so a
+    # client that never runs the canvas still reads a complete, truthful line.
+    assert "data-swing-phase" in hero_source
+    phase = hero_source.split("data-swing-phase", 1)[1].split("</span>", 1)[0]
+    assert "homepage.hero.signal_ready" in phase
+
+    # The readout stays on phones. The pre-2026 sheet display:none'd it, which
+    # hid the product from every visitor who arrived on a phone.
     mobile_hero = hero_source.split("@media (max-width: 749px)", 1)[1]
-    assert "min-height: 720px" not in mobile_hero
-    assert "min-height: 980px" not in mobile_hero
-    assert "min-height: 1020px" not in mobile_hero
-    # The signal card — the only visual showing what the product produces —
-    # stays on phones (compact, full-width). The old sheet display:none'd it.
-    assert ".sl-hero__signal { display: none; }" not in mobile_hero
-    assert ".sl-hero__signal-band { display: none; }" not in mobile_hero
-    # R6: the trace is a LIVE read. One SVG arc drawn at the engine's own
-    # 3:1 tempo benchmark (backswing 3%→32% of the cycle, strike
-    # 35.6%→45%), pose crosshairs, an impact pulse — all inside the
-    # reduced-motion gate. pathLength normalizes the dash math, and the
-    # element DEFAULTS to the fully drawn still so reduced-motion and
-    # print get a complete trace, never an empty grid.
-    assert 'class="sl-hero__trace-svg"' in hero_source
-    # Two normalized copies of the same arc: the dim backswing draw and the
-    # bright strike that retraces it.
-    assert hero_source.count('d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"') == 2
-    assert "sl-hero__trace-strike" in hero_source
-    assert "sl-hero__trace-impact" in hero_source
-    for keyframes in (
-        "sl-swing-read", "sl-swing-strike", "sl-swing-impact", "sl-live-blink"
-    ):
-        assert f"@keyframes {keyframes}" in hero_source, keyframes
-        assert f"animation: {keyframes}" in hero_source, keyframes
-    motion_gated = hero_source.split("@media (prefers-reduced-motion: no-preference)", 2)[2]
-    assert "animation: sl-swing-read 9.2s linear infinite" in motion_gated
-    strike_rules = hero_source.split(".sl-hero__trace-strike {", 1)[1].split("}", 1)[0]
-    assert "stroke-dashoffset: 0" in strike_rules  # drawn-by-default still
-    assert "width: 100%;" in mobile_hero.split(".sl-hero__signal {", 1)[1].split("}", 1)[0]
-    assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
+    assert ".sl-hero__readout { display: none; }" not in mobile_hero
+    assert ".sl-hero__trace { display: none; }" not in mobile_hero
     assert ".sl-hero__fine { display: none; }" not in mobile_hero
+    for slab in ("min-height: 720px", "min-height: 980px", "min-height: 1020px"):
+        assert slab not in mobile_hero, slab
+
+    # The primary action is BONE, not amber. Amber marks a value the engine
+    # measured; a call to action is not one. The three readout values ARE
+    # measurements, so they are the amber on this section.
+    primary = hero_source.split(".sl-hero__primary {", 1)[1].split("}", 1)[0]
+    assert "background: var(--sl-ink);" in primary
+    assert "var(--sl-accent)" not in primary and "var(--sl-orange)" not in primary
+    values = hero_source.split(".sl-hero__readout-grid dd {", 1)[1].split("}", 1)[0]
+    assert "color: var(--sl-accent);" in values
 
 
 def test_homepage_bordered_surfaces_preserve_reading_hierarchy():

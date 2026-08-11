@@ -468,9 +468,48 @@ video.sl-hero__video { position: absolute; inset: 0; }
 }
 
 @media (max-width: 749px) {
-  .sl-hero__title { max-width: 100%; }
-  .sl-hero__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  /* One custom property drives every height on the phone hero, so the fold
+     is tuned in one place instead of three. svh (not vh) is the whole point:
+     vh is the LARGEST viewport on iOS, so a vh-sized hero is taller than the
+     screen until the address bar retracts, and the CTA starts below the fold. */
+  .sl-hero { --sl-mobile-hero-height: 88svh; }
+  .sl-hero__inner {
+    min-height: var(--sl-mobile-hero-height);
+    align-content: end;
+    justify-items: stretch;
+    padding-top: clamp(56px, 18vw, 96px);
+  }
+  /* The portrait companion is framed on its subject rather than left to the
+     default centre crop, which on a narrow screen cut the golfer in half.
+     Not 58% — that was tuned for the old composition, where the copy sat on
+     the left and the frame had to be pushed right to clear it. The copy is
+     full-width here and the photograph is a ghost, so it centres. */
+  .sl-hero__image { object-position: center 42%; }
+  .sl-hero__copy { max-width: 100%; text-align: left; }
+  .sl-hero__title { max-width: 100%; text-align: left; }
+  .sl-hero__body { text-align: left; }
+  .sl-hero__actions { margin: 24px 0 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+  /* The proof chips are one quiet mono line on phones. The dot markers fought
+     the brand dot above them and a grid orphaned the third chip, so the
+     separator is a middot between items and the markers are gone. */
+  .sl-hero__proof { margin: 18px 0 0; display: flex; gap: 0 10px; }
+  .sl-hero__proof li { padding-left: 0; }
+  .sl-hero__proof li::before { display: none; }
+  .sl-hero__proof li + li::after {
+    content: "\00B7";
+    position: absolute;
+    left: -8px;
+    color: var(--sl-ink-muted);
+  }
+  .sl-hero__trace { height: 64px; margin-top: 12px; }
   .sl-hero__readout-grid { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 559px) {
+  /* The narrowest supported phone. The display face is EXPANDED, so it eats
+     line width far faster than the old condensed-neutral did — the headline
+     needs its own rung here rather than riding the fluid clamp down. */
+  .sl-hero__title { font-size: var(--sl-text-3xl); }
+  .sl-hero__inner { min-height: var(--sl-mobile-hero-height); }
 }
 {% endstylesheet %}
 
