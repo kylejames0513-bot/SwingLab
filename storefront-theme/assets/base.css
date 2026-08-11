@@ -85,6 +85,11 @@
   --sl-paper-soft: #454f48;     /* 7.41 on --sl-paper */
   --sl-paper-line: #d8d3c4;
   --sl-brand-green: #0f3d28;    /* the mark, and only the mark */
+  /* Error text. #b3261e was a light-surface red and lands at 2.97:1 on the
+     field — the inversion would have shipped unreadable error messages,
+     which is the one string a reader most needs to be able to read.
+     7.62:1. */
+  --sl-danger: #ff7a6b;
   /* RGB triplets for alpha-derivations: rgba(var(--sl-cream-rgb), .72) etc.
      Deriving from these keeps every wash traceable to a named colour. */
   --sl-cream-rgb: 237, 239, 233;
@@ -267,6 +272,25 @@ img { max-width: 100%; display: block; }
   padding-left: max(var(--sl-pad-x), env(safe-area-inset-left, 0px));
   padding-right: max(var(--sl-pad-x), env(safe-area-inset-right, 0px));
   box-sizing: border-box;
+}
+
+/* A horizontally scrollable region — the wide spec tables in the account
+   and order pages. It lives here rather than in a section because TWO
+   sections use it, and theme-check's ValidScopedCSSClass flags a class used
+   outside the file that defines it (that one warning failed the whole
+   theme-zip build, because package_theme.py runs at --fail-level warning).
+
+   tabindex="0" and a label go on the element in the markup: a scroll
+   container that only a mouse can reach is unreachable by keyboard, and
+   overflow alone gives no affordance that there is more to the right. */
+.sl-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.sl-scroll-x:focus-visible {
+  outline: 2px solid var(--sl-focus-dark);
+  outline-offset: 2px;
 }
 
 .visually-hidden {

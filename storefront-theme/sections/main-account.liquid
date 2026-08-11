@@ -14,7 +14,7 @@
         {%- if customer.orders.size == 0 -%}
           <p class="sl-empty">No orders yet. <a href="{{ routes.all_products_collection_url }}">The gear collection</a> is where they start.</p>
         {%- else -%}
-          <div class="sl-account__scroll">
+          <div class="sl-scroll-x" tabindex="0" role="region" aria-label="Order history">
             <table class="sl-spec-table">
               <thead>
                 <tr><th scope="col">Order</th><th scope="col">Date</th><th scope="col">Status</th><th scope="col">Total</th></tr>
@@ -64,7 +64,6 @@
 </div>
 
 {% stylesheet %}
-.sl-account__scroll { overflow-x: auto; }
 .sl-account__pagination {
   display: flex;
   align-items: center;

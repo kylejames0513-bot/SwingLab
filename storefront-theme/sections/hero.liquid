@@ -2,10 +2,15 @@
   # The dusk-range campaign pair still ships with the theme, but it is no
   # longer the subject — it is atmosphere behind the readout. An image picker
   # still lets a reviewed release swap the art.
-  assign hero_image_label = 'homepage.hero.image_label' | t
+  #
+  # hero_image_label / hero_image_alt are gone with it. The backdrop is
+  # decorative now (empty alt, aria-hidden), so the description had no
+  # consumer left — and theme-check's UnusedAssign is a WARNING, which
+  # scripts/package_theme.py runs at --fail-level warning. One orphaned
+  # assign therefore fails the whole theme-zip build, and with it all eight
+  # test_theme_package tests at fixture time.
   assign hero_image = section.settings.image
   assign hero_mobile_image = section.settings.mobile_image
-  assign hero_image_alt = hero_image_label
 -%}
 
 <section id="home-hero" class="sl-hero" aria-labelledby="HeroTitle-{{ section.id }}">

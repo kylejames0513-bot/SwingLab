@@ -143,6 +143,11 @@
     --sl-paper-soft: #454f48;
     --sl-paper-line: #d8d3c4;
     --sl-brand-green: #0f3d28;
+    {# Error text. #b3261e was a light-surface red and lands at 2.97:1 on the
+     field — the inversion would have shipped unreadable error messages,
+     which is the one string a reader most needs to be able to read.
+     7.62:1. #}
+    --sl-danger: #ff7a6b;
     --sl-cream-rgb: 237, 239, 233;
     --sl-night-rgb: 4, 9, 7;
     --sl-accent-rgb: 240, 168, 24;
@@ -223,10 +228,10 @@
        the same background the storefront paints. The grid is what makes the
        surface read as a measuring instrument rather than as a dark theme. #}
     background:
-      linear-gradient(rgba(237, 239, 233, 0.022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(237, 239, 233, 0.022) 1px, transparent 1px),
-      radial-gradient(1100px 560px at 14% -10%, rgba(95, 227, 192, 0.05), transparent 60%),
-      radial-gradient(900px 480px at 92% 2%, rgba(240, 168, 24, 0.04), transparent 55%),
+      linear-gradient(rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+      radial-gradient(1100px 560px at 14% -10%, rgba(var(--sl-trace-rgb), 0.05), transparent 60%),
+      radial-gradient(900px 480px at 92% 2%, rgba(var(--sl-accent-rgb), 0.04), transparent 55%),
       var(--sl-bg);
     background-size: 8px 8px, 8px 8px, auto, auto, auto;
     background-attachment: fixed;
@@ -253,13 +258,13 @@
   a {
     color: var(--sl-green-btn);
     text-decoration: underline;
-    text-decoration-color: rgba(237, 239, 233, .32);
+    text-decoration-color: rgba(var(--sl-cream-rgb), .32);
     text-underline-offset: 0.2em;
     text-decoration-thickness: 1px;
   }
   a:hover { color: var(--sl-trace); text-decoration-color: currentColor; }
   img { max-width: 100%; }
-  ::selection { background: rgba(95, 227, 192, .26); color: var(--sl-ink); }
+  ::selection { background: rgba(var(--sl-trace-rgb), .26); color: var(--sl-ink); }
   :focus-visible {
     outline: 2px solid var(--sl-focus-dark);
     outline-offset: 3px;
@@ -286,14 +291,14 @@
     padding: 8px var(--sl-pad-x);
     display: flex;
     align-items: center;
-    background: #050d09;
-    border-bottom: 1px solid rgba(245, 242, 233, .1);
-    color: rgba(245, 242, 233, .7);
+    background: var(--sl-night);
+    border-bottom: 1px solid rgba(var(--sl-cream-rgb), .1);
+    color: rgba(var(--sl-cream-rgb), .7);
     font-size: 12.5px;
   }
   .sl-app-banner--pro {
-    background: linear-gradient(90deg, #050d09 0%, #0b2116 50%, #050d09 100%);
-    border-bottom-color: rgba(117, 213, 155, .24);
+    background: linear-gradient(90deg, var(--sl-night) 0%, var(--sl-bg-card) 50%, var(--sl-night) 100%);
+    border-bottom-color: rgba(var(--sl-trace-rgb), .24);
   }
   .sl-app-banner__inner {
     width: 100%;
@@ -309,14 +314,14 @@
   }
   .sl-app-banner__status {
     flex: 0 0 auto;
-    color: #ffad62;
+    color: var(--sl-focus-dark);
     font-family: var(--sl-font-mono);
     font-size: 10px;
     font-weight: 500;
     letter-spacing: .13em;
     text-transform: uppercase;
   }
-  .sl-app-banner--pro .sl-app-banner__status { color: #75d59b; }
+  .sl-app-banner--pro .sl-app-banner__status { color: var(--sl-trace); }
   .sl-app-banner__allowance,
   .sl-app-banner__detail {
     min-width: 0;
@@ -331,17 +336,17 @@
     height: 6px;
     flex: 0 0 auto;
     border-radius: 50%;
-    background: #75d59b;
-    box-shadow: 0 0 0 5px rgba(117, 213, 155, .1);
+    background: var(--sl-trace);
+    box-shadow: 0 0 0 5px rgba(var(--sl-trace-rgb), .1);
   }
   .sl-app-banner a {
     flex: 0 0 auto;
-    color: #f5f2e9;
+    color: var(--sl-cream);
     font-weight: 700;
     text-underline-offset: 3px;
     white-space: nowrap;
   }
-  .sl-app-banner a:hover { color: #ffad62; }
+  .sl-app-banner a:hover { color: var(--sl-focus-dark); }
   .sl-header {
     position: sticky;
     top: 0;
@@ -355,7 +360,7 @@
   }
   .sl-header--premium {
     min-height: 76px;
-    background: rgba(6, 17, 12, .96);
+    background: rgba(var(--sl-night-rgb), .96);
     border-bottom-color: rgba(239, 241, 232, .12);
     box-shadow: 0 18px 48px -32px rgba(0, 0, 0, .85);
   }
@@ -381,7 +386,7 @@
     text-decoration: none;
   }
   .sl-header__logo-img { display: block; width: auto; height: 38px; }
-  .sl-header--premium .sl-header__logo { color: #f5f2e9; }
+  .sl-header--premium .sl-header__logo { color: var(--sl-cream); }
   .sl-header--premium .sl-header__logo-img { filter: brightness(0) invert(1); opacity: .96; }
   .sl-header__desktop-nav {
     display: flex;
@@ -417,17 +422,17 @@
     color: var(--sl-green);
   }
   .sl-header--premium .sl-header__link,
-  .sl-header--premium .sl-header__dropdown-trigger { color: rgba(245, 242, 233, .78); }
+  .sl-header--premium .sl-header__dropdown-trigger { color: rgba(var(--sl-cream-rgb), .78); }
   .sl-header--premium .sl-header__link:hover,
   .sl-header--premium .sl-header__dropdown-trigger:hover,
   .sl-header--premium .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
-    background: rgba(255, 255, 255, .08);
+    background: rgba(var(--sl-cream-rgb), .08);
     color: #fff;
   }
   .sl-header--premium .sl-header__link.is-current,
   .sl-header--premium .sl-header__dropdown-trigger.is-current {
-    background: rgba(232, 114, 12, .16);
-    color: #ffad62;
+    background: rgba(var(--sl-accent-rgb), .16);
+    color: var(--sl-focus-dark);
   }
   .sl-header__member {
     min-height: 40px;
@@ -438,9 +443,9 @@
     align-items: center;
     gap: 8px;
     flex: 0 1 auto;
-    border: 1px solid #b9cdbf;
+    border: 1px solid var(--sl-ink-soft);
     border-radius: var(--sl-radius-control);
-    background: #edf6ef;
+    background: var(--sl-ink);
     color: var(--sl-green);
     font-size: 13px;
     font-weight: 700;
@@ -448,15 +453,15 @@
     white-space: nowrap;
     overflow: hidden;
   }
-  .sl-header__member:hover { border-color: var(--sl-green-btn); background: #e3f1e7; color: var(--sl-green); }
+  .sl-header__member:hover { border-color: var(--sl-green-btn); background: var(--sl-ink-soft); color: var(--sl-green); }
   .sl-header--premium .sl-header__member {
-    border-color: rgba(117, 213, 155, .42);
-    background: rgba(117, 213, 155, .1);
-    color: #dff5e7;
+    border-color: rgba(var(--sl-trace-rgb), .42);
+    background: rgba(var(--sl-trace-rgb), .1);
+    color: var(--sl-trace);
   }
   .sl-header--premium .sl-header__member:hover {
-    border-color: #75d59b;
-    background: rgba(117, 213, 155, .17);
+    border-color: var(--sl-trace);
+    background: rgba(var(--sl-trace-rgb), .17);
     color: #fff;
   }
   .sl-header__member > span:last-child {
@@ -476,7 +481,7 @@
     font-size: 10px;
     letter-spacing: .08em;
   }
-  .sl-header--premium .sl-header__member-badge { background: #75d59b; color: #06110c; }
+  .sl-header--premium .sl-header__member-badge { background: var(--sl-trace); color: var(--sl-night); }
   .sl-header__account > summary,
   .sl-header__account .sl-header__dropdown-trigger {
     max-width: 136px;
@@ -539,10 +544,10 @@
     box-shadow: 0 24px 54px -22px rgba(0, 0, 0, .78);
   }
   .sl-header--premium .sl-header__dropdown-menu a,
-  .sl-header--premium .sl-header__logout { color: rgba(245, 242, 233, .86); }
+  .sl-header--premium .sl-header__logout { color: rgba(var(--sl-cream-rgb), .86); }
   .sl-header--premium .sl-header__dropdown-menu a:hover,
   .sl-header--premium .sl-header__logout:hover {
-    background: rgba(255, 255, 255, .08);
+    background: rgba(var(--sl-cream-rgb), .08);
     color: #fff;
   }
   .sl-header__actions {
@@ -572,21 +577,21 @@
   .sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange-text); }
   .sl-header--premium .sl-header__cta {
     min-height: 44px;
-    border-color: #f07a18;
-    background: #f07a18;
-    color: #06110c;
-    box-shadow: 0 12px 30px -18px rgba(240, 122, 24, .9);
+    border-color: var(--sl-accent);
+    background: var(--sl-accent);
+    color: var(--sl-night);
+    box-shadow: 0 12px 30px -18px rgba(var(--sl-accent-rgb), .9);
   }
   .sl-header--premium .sl-header__cta:hover {
-    border-color: #ff9a42;
-    background: #ff9a42;
-    color: #06110c;
+    border-color: var(--sl-accent-hover);
+    background: var(--sl-accent-hover);
+    color: var(--sl-night);
   }
   .sl-header--premium .sl-header__cart {
-    border-color: rgba(245, 242, 233, .48);
-    color: #f5f2e9;
+    border-color: rgba(var(--sl-cream-rgb), .48);
+    color: var(--sl-cream);
   }
-  .sl-header--premium .sl-header__cart:hover { border-color: #ff9a42; color: #ffb06b; }
+  .sl-header--premium .sl-header__cart:hover { border-color: var(--sl-accent-hover); color: var(--sl-focus-dark); }
   .sl-header__toggle {
     display: none;
     width: 44px;
@@ -605,10 +610,10 @@
   }
   .sl-header__toggle:hover { background: var(--sl-bg-card); color: var(--sl-green-btn); }
   .sl-header--premium .sl-header__toggle {
-    border-color: rgba(245, 242, 233, .5);
-    color: #f5f2e9;
+    border-color: rgba(var(--sl-cream-rgb), .5);
+    color: var(--sl-cream);
   }
-  .sl-header--premium .sl-header__toggle:hover { background: rgba(255, 255, 255, .08); color: #fff; }
+  .sl-header--premium .sl-header__toggle:hover { background: rgba(var(--sl-cream-rgb), .08); color: #fff; }
   .sl-header__toggle span {
     display: block;
     width: 100%;
@@ -758,48 +763,48 @@
     vertical-align: baseline;
   }
   .sl-premium-chrome .sl-menu .sl-menu__ios-hint {
-    border-color: rgba(245, 242, 233, .18);
-    background: rgba(245, 242, 233, .06);
-    color: rgba(245, 242, 233, .78);
+    border-color: rgba(var(--sl-cream-rgb), .18);
+    background: rgba(var(--sl-cream-rgb), .06);
+    color: rgba(var(--sl-cream-rgb), .78);
   }
-  .sl-premium-chrome .sl-menu .sl-menu__ios-hint strong { color: #f5f2e9; }
+  .sl-premium-chrome .sl-menu .sl-menu__ios-hint strong { color: var(--sl-cream); }
   .sl-menu__link.is-current {
     padding-inline: 10px;
     background: var(--sl-orange-soft);
     color: var(--sl-green);
   }
   .sl-premium-chrome .sl-menu .sl-menu__panel {
-    background: #091811;
-    border-left-color: rgba(245, 242, 233, .14);
+    background: var(--sl-bg-card);
+    border-left-color: rgba(var(--sl-cream-rgb), .14);
     box-shadow: -28px 0 70px -32px rgba(0, 0, 0, .86);
   }
   .sl-premium-chrome .sl-menu .sl-menu__title,
-  .sl-premium-chrome .sl-menu .sl-menu__link { color: #f5f2e9; }
+  .sl-premium-chrome .sl-menu .sl-menu__link { color: var(--sl-cream); }
   .sl-premium-chrome .sl-menu .sl-menu__close {
-    background: rgba(255, 255, 255, .06);
-    border-color: rgba(245, 242, 233, .24);
-    color: #f5f2e9;
+    background: rgba(var(--sl-cream-rgb), .06);
+    border-color: rgba(var(--sl-cream-rgb), .24);
+    color: var(--sl-cream);
   }
-  .sl-premium-chrome .sl-menu .sl-menu__group { border-top-color: rgba(245, 242, 233, .14); }
-  .sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: rgba(245, 242, 233, .55); }
-  .sl-premium-chrome .sl-menu .sl-menu__link:hover { color: #ffad62; }
+  .sl-premium-chrome .sl-menu .sl-menu__group { border-top-color: rgba(var(--sl-cream-rgb), .14); }
+  .sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: rgba(var(--sl-cream-rgb), .55); }
+  .sl-premium-chrome .sl-menu .sl-menu__link:hover { color: var(--sl-focus-dark); }
   .sl-premium-chrome .sl-menu .sl-menu__link.is-current {
-    background: rgba(232, 114, 12, .16);
-    color: #ffad62;
+    background: rgba(var(--sl-accent-rgb), .16);
+    color: var(--sl-focus-dark);
   }
   /* The premium header CTA is dark ink on amber. This rule previously took
      only the ink and left the base green background underneath, putting
-     #06110c on #0f3d28 — 1.57:1, effectively unreadable. It now carries the
+     var(--sl-night) on var(--sl-brand-green) — 1.57:1, effectively unreadable. It now carries the
      background it was always meant to sit on (6.9:1). */
   .sl-premium-chrome .sl-menu .sl-menu__cta {
-    border-color: #f07a18;
-    background: #f07a18;
-    color: #06110c;
+    border-color: var(--sl-accent);
+    background: var(--sl-accent);
+    color: var(--sl-night);
   }
   .sl-premium-chrome .sl-menu .sl-menu__cta:hover {
-    border-color: #ff9a42;
-    background: #ff9a42;
-    color: #06110c;
+    border-color: var(--sl-accent-hover);
+    background: var(--sl-accent-hover);
+    color: var(--sl-night);
   }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {
@@ -876,19 +881,19 @@
   }
   :where(main input[type=checkbox], main input[type=radio]) { accent-color: var(--sl-green-btn); }
   .hint { color: var(--sl-ink-soft); font-size: 0.88rem; margin-top: 4px; }
-  .bar { background: #e6e3dc; border-radius: 6px; height: 14px; margin: 14px 0 6px; }
+  .bar { background: var(--sl-ink-soft); border-radius: 6px; height: 14px; margin: 14px 0 6px; }
   .bar > div { background: var(--accent); border-radius: 6px; height: 100%;
                transition: width 0.4s; min-width: 6px; }
   .bar-label { color: var(--sl-ink-soft); font-size: 0.9rem; }
-  .error { color: #b3261e; white-space: pre-wrap; }
+  .error { color: var(--sl-danger); white-space: pre-wrap; }
   .sl-profile-reminder {
     padding: 10px var(--sl-pad-x);
     display: flex;
     align-items: center;
     justify-content: center;
     gap: 12px;
-    background: #e8f0ea;
-    border-bottom: 1px solid #efd3b3;
+    background: var(--sl-orange-soft);
+    border-bottom: 1px solid var(--sl-focus-dark);
     color: var(--sl-ink-soft);
     font-size: .9rem;
   }
@@ -897,8 +902,8 @@
   .sl-app-footer {
     margin-top: clamp(48px, 8vw, 96px);
     padding: clamp(40px, 6vw, 68px) var(--sl-pad-x) 28px;
-    background: #0f1712;
-    color: #9fb0a4;
+    background: var(--sl-bg-card);
+    color: var(--sl-ink-soft);
     font-size: .86rem;
   }
   .sl-app-footer__inner {
@@ -911,7 +916,7 @@
   }
   .sl-app-footer__logo {
     display: inline-flex;
-    color: #f5f2e9;
+    color: var(--sl-cream);
     font-size: 22px;
     font-weight: 800;
     letter-spacing: -.02em;
@@ -922,15 +927,15 @@
   .sl-app-footer__nav { display: grid; align-content: start; gap: 9px; }
   .sl-app-footer__nav strong {
     margin-bottom: 4px;
-    color: #f5f2e9;
+    color: var(--sl-cream);
     font-family: var(--sl-font-mono);
     font-size: 10px;
     font-weight: 500;
     letter-spacing: .15em;
     text-transform: uppercase;
   }
-  .sl-app-footer__nav a { color: #b8c5bb; text-decoration: none; }
-  .sl-app-footer__nav a:hover { color: #ffad62; }
+  .sl-app-footer__nav a { color: var(--sl-ink-soft); text-decoration: none; }
+  .sl-app-footer__nav a:hover { color: var(--sl-focus-dark); }
   .sl-app-footer__bottom {
     max-width: var(--sl-content);
     margin: 34px auto 0;
@@ -938,8 +943,8 @@
     display: flex;
     justify-content: space-between;
     gap: 18px;
-    border-top: 1px solid rgba(245, 242, 233, .12);
-    color: #7f9184;
+    border-top: 1px solid rgba(var(--sl-cream-rgb), .12);
+    color: var(--sl-ink-muted);
   }
   .sl-app-footer__bottom p { margin: 0; }
   /* ---------------------------------------------------------------- app
@@ -961,7 +966,7 @@
     padding: 6px 2px 4px;
     border: 0;
     background: none;
-    color: rgba(245, 242, 233, .62);
+    color: rgba(var(--sl-cream-rgb), .62);
     font: inherit;
     font-size: 10.5px;
     font-weight: 600;
@@ -982,8 +987,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .sl-tabbar__item:hover { color: rgba(245, 242, 233, .86); }
-  .sl-tabbar__item.is-current { color: #f5f2e9; }
+  .sl-tabbar__item:hover { color: rgba(var(--sl-cream-rgb), .86); }
+  .sl-tabbar__item.is-current { color: var(--sl-cream); }
   /* The active tab is marked by a short rule above the icon, not by color
      alone — color is not a sufficient state signal on its own. */
   .sl-tabbar__item.is-current::before {
@@ -1088,8 +1093,8 @@
       /* The home indicator sits in this padding, so the row of targets stays
          above it instead of fighting the system gesture. */
       padding-bottom: var(--sl-safe-bottom);
-      background: rgba(6, 17, 12, .97);
-      border-top: 1px solid rgba(245, 242, 233, .13);
+      background: rgba(var(--sl-night-rgb), .97);
+      border-top: 1px solid rgba(var(--sl-cream-rgb), .13);
       -webkit-backdrop-filter: saturate(150%) blur(12px);
       backdrop-filter: saturate(150%) blur(12px);
     }
@@ -1197,7 +1202,7 @@
           {% if require_account %}<a href="/today" {% if current_path == '/today' %}aria-current="page"{% endif %}>Today</a>{% endif %}
           <a href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
           {% if require_account %}
-            <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>
+            <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&var(--sl-trace-dim);</span>{% endif %}</a>
           {% endif %}
           <a href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
         </div>
@@ -1285,7 +1290,7 @@
         {% endif %}
         {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" data-menu-link {% if current_path == '/progress' %}aria-current="page"{% endif %}>
-          <span>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
+          <span>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&var(--sl-trace-dim);</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
         </a>
         {% endif %}
         <a class="sl-menu__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" data-menu-link {% if current_path == '/drills' %}aria-current="page"{% endif %}>

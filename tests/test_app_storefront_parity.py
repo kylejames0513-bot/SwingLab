@@ -231,8 +231,22 @@ def test_app_shell_uses_homepage_premium_chrome_and_footer():
     assert 'class="sl-app-footer"' in LAYOUT
     assert 'class="sl-app-footer__inner"' in LAYOUT
     assert ".sl-premium-chrome .sl-menu .sl-menu__panel" in LAYOUT
-    assert "background: rgba(6, 17, 12, .96);" in LAYOUT
-    assert "background: #f07a18;" in LAYOUT
+    # These two used to be pinned as the literals `rgba(6, 17, 12, .96)` and
+    # `#f07a18`. Pinning a literal pins the wrong thing: it survives a palette
+    # change by forcing the OLD colour to stay somewhere in the file, which is
+    # precisely the fork the token sheet exists to prevent. 92 literals in this
+    # template were mapped onto tokens; these are two of them, and the
+    # assertion now checks that the menu panel and the signal are DERIVED.
+    assert "background: rgba(var(--sl-night-rgb), .96);" in LAYOUT
+    assert "background: var(--sl-accent);" in LAYOUT
+    # ...and that no raw hex survived below the token sheet at all. The one
+    # allowed exception would be a colour with no token, and there is none:
+    # the last holdout was an error red at 2.97:1 on the dark field, which
+    # became --sl-danger rather than staying an unreadable literal.
+    below = LAYOUT[LAYOUT.index("--sl-tabbar-h") :]
+    assert not re.search(r"#[0-9a-fA-F]{6}\b", below), re.findall(
+        r"#[0-9a-fA-F]{6}\b", below
+    )
     assert ".sl-header--premium .sl-header__inner { min-height: 64px;" in LAYOUT
     assert "@media (max-width: 560px)" in LAYOUT
     assert ".sl-app-banner__detail { display: none; }" in LAYOUT
