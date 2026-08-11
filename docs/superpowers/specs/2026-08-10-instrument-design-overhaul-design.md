@@ -42,32 +42,45 @@ identity.
 ## 1. Type
 
 `store-assets/Archivo-var.ttf` carries `wght 100-900` **and `wdth 62-125`**.
-The shipped web font discards the width axis. Measured against Google's CDN,
-which is where the current file demonstrably came from (byte-identical at
-34,928):
+The shipped web font discards the width axis.
+
+The obvious move — ship the dual-axis file, drive width from CSS — is the
+wrong one. Measured against Google's CDN, which is demonstrably where the
+current file came from (the generator reproduces it byte-identically,
+sha256 `8f704806dbed`):
 
 | Shape | Bytes |
 | --- | --- |
 | `wght@400..800` (today) | 34,928 |
-| **`wdth,wght@100..125,400..800`** | **64,168** |
-| Two files (text + static expanded instance) | 71,156 |
+| `wdth,wght@100..125,400..800` — one dual-axis file | 90,104 |
+| `wdth,wght@118,800` — static, *not* a named instance | 37,420 |
+| **`wdth,wght@125,800` — static, IS a named instance** | **14,536** |
 
-One file covers both widths, costs less than the two-file split, and is more
-flexible. It replaces the current file under a new name.
+`wdth 125` is a named instance in Archivo's STAT table, so Google serves a
+pre-built static for it. Arbitrary points do not get that treatment: 118 falls
+back to a dynamic build at 2.5x the size, and `wdth 118 / wght 600..800`
+returns the entire variable font again at 90,104.
 
-| Role | Face | Setting |
-| --- | --- | --- |
-| Display | Archivo | `wdth 118`, `wght 800`, `-0.02em` |
-| Interface | Archivo | `wdth 100`, `wght 400-600` |
-| Data | DM Mono | `500`, uppercase, `+0.14em` |
+So the display face is a second, tiny file — and it lands at `wdth 125`, where
+the designer actually drew Expanded, rather than the 118 first proposed.
 
-DM Mono replaces IBM Plex Mono at ~15 KB/weight — a net cost of ~0.4 KB.
-It is already vendored at `store-assets/DMMono-Regular.ttf`, and
-`brand_mark.py` and `make_assets.py` already draw the instrument-sheet product
-artwork with it. Today the generated photography and the live site use
-different monos. After this change they use the same one.
+| Role | Face | Setting | Bytes |
+| --- | --- | --- | --- |
+| Display | Archivo Expanded | static `wdth 125` / `wght 800`, `-0.02em` | 14,536 |
+| Interface | Archivo | variable `wght 400-800`, `wdth 100` | 34,928 |
+| Data | DM Mono | `400` / `500`, uppercase, `+0.14em` | 29,808 |
 
-Font budget: 64.5 KB -> ~94 KB. Only Archivo and DM Mono 500 are preloaded.
+One display weight, not two. A single expanded weight used at several sizes is
+a more disciplined voice than a family of them, and it halves the cost.
+
+DM Mono replaces IBM Plex Mono at ~15 KB/weight — a net cost of ~0.2 KB. It is
+already vendored at `store-assets/DMMono-Regular.ttf`, and `brand_mark.py` and
+`make_assets.py` already draw the instrument-sheet product artwork with it.
+Today the generated photography and the live site use different monos. After
+this change they use the same one.
+
+Font budget: **64,524 -> 79,272 bytes, +14.7 KB.** All four faces are built by
+`store-assets/make_fonts.py` and written byte-identically into both surfaces.
 
 Fonts stay **self-hosted**. Never a Google Fonts URL at runtime: headless
 Chromium in the verification container cannot reach it and fails silently, and
