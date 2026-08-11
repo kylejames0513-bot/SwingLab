@@ -504,7 +504,17 @@ video.sl-hero__video { position: absolute; inset: 0; }
     left: -8px;
     color: var(--sl-ink-muted);
   }
-  .sl-hero__trace { height: 64px; margin-top: 12px; }
+  /* aspect-ratio: auto is load-bearing, not tidying. The base rule sets
+     aspect-ratio: 5/4, and a height with a live aspect-ratio also fixes the
+     WIDTH — 64px tall became 80px wide, so the readout rendered as a
+     thumbnail in the corner of its own panel. Height wins only once the
+     ratio stops competing for it. */
+  .sl-hero__trace {
+    aspect-ratio: auto;
+    width: 100%;
+    height: 64px;
+    margin-top: 12px;
+  }
   .sl-hero__readout-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 559px) {
