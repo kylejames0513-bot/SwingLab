@@ -45,9 +45,20 @@
         does not process webp and emits the no-image placeholder.
       {%- endcomment -%}
       <picture>
+        {%- comment -%}
+          The phone companion is the -v2 crop (1122x932), not the v1 frame
+          (1122x1402). Two thirds of v1 was empty sky, and on a phone cover
+          crops the WIDTH and renders the full height — so every dead row was
+          paid for and the golfer rendered 330px tall in a 1019px hero. See
+          store-assets/phone_hero_crop.py. width/height are declared on the
+          source because the two candidates have different aspect ratios, and
+          without them the phone reserves the img's 1672x941 box and shifts.
+        {%- endcomment -%}
         <source
           media="(max-width: 749px)"
-          srcset="{{ 'caddieinsight-range-hero-mobile.webp' | asset_url }}">
+          width="1122"
+          height="932"
+          srcset="{{ 'caddieinsight-range-hero-mobile-v2.webp' | asset_url }}">
         <img
           class="sl-hero__image"
           src="{{ 'caddieinsight-range-hero-desktop.webp' | asset_url }}"
@@ -170,21 +181,26 @@
   inset: 0;
   pointer-events: none;
 }
-/* Tuned against a render, not by eye: the first pass buried the photograph
-   so completely that the page was paying 98 KB for a layer that could not be
-   seen at all. It is a ghost now — present enough to place the product on a
-   range at dusk, quiet enough that the trace never competes with a tree
-   line. If it stops being visible, delete the image rather than ship it. */
+/* Tuned against a render, not by eye — and the previous tuning failed its own
+   test. The comment here used to promise "a ghost, present enough to place
+   the product on a range at dusk", and end "if it stops being visible, delete
+   the image rather than ship it". Measured at 1440 and at 390, it was not
+   visible: brightness 0.66 under a 0.72–0.94 scrim rendered a solid black
+   field, and the page was paying 95 KB for a layer nobody could see.
+   So the scrim now works where the type is instead of everywhere. It stays
+   heavy down the left edge, under the copy column, and clears through the
+   middle and right where the golfer and the sunset actually are. */
 .sl-hero::before {
   z-index: 1;
   background:
-    linear-gradient(180deg, rgba(7, 15, 11, 0.72) 0%, rgba(7, 15, 11, 0.5) 46%, rgba(7, 15, 11, 0.94) 100%),
-    linear-gradient(90deg, rgba(7, 15, 11, 0.9) 0%, rgba(7, 15, 11, 0.34) 54%, rgba(7, 15, 11, 0.82) 100%);
+    linear-gradient(180deg, rgba(7, 15, 11, 0.58) 0%, rgba(7, 15, 11, 0.14) 42%, rgba(7, 15, 11, 0.82) 100%),
+    linear-gradient(90deg, rgba(7, 15, 11, 0.93) 0%, rgba(7, 15, 11, 0.66) 30%, rgba(7, 15, 11, 0.08) 62%, rgba(7, 15, 11, 0.2) 100%);
 }
-/* the 8px instrument grid, brightest at the readout edge */
+/* the 8px instrument grid, brightest at the readout edge. Lighter than it
+   was, because it now rules over a photograph rather than over black. */
 .sl-hero::after {
   z-index: 2;
-  opacity: 0.5;
+  opacity: 0.34;
   background-image:
     linear-gradient(rgba(var(--sl-cream-rgb), 0.03) 1px, transparent 1px),
     linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.03) 1px, transparent 1px);
@@ -206,7 +222,11 @@ video.sl-hero__video {
   height: 100%;
   object-fit: cover;
   object-position: center;
-  filter: grayscale(0.72) contrast(1.08) brightness(0.66);
+  /* Desaturated enough to stay in the instrument's key, bright enough to be a
+     photograph. grayscale(0.72) + brightness(0.66) was neither: it read as
+     black, so the swing — the one thing on the page a golfer recognises
+     instantly — was not on the page at all. */
+  filter: grayscale(0.22) contrast(1.05) brightness(0.94);
 }
 .sl-hero__video,
 .sl-hero__video video,
@@ -232,13 +252,19 @@ video.sl-hero__video { position: absolute; inset: 0; }
   gap: clamp(36px, 5vw, 56px);
   align-items: center;
 }
-/* Asymmetric on purpose: the copy takes five columns and the readout seven,
-   so the instrument is the larger object on the page. */
+/* Asymmetric on purpose: the copy takes five columns and the readout six, so
+   the instrument is still the larger object on the page. It was seven, which
+   left the photograph nothing but the gutters — the golfer stands right of
+   centre in the frame and the panel was parked exactly on him. */
 @media (min-width: 1000px) {
   .sl-hero__inner {
-    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
     gap: clamp(40px, 4vw, 72px);
-    min-height: clamp(620px, 74svh, 800px);
+    /* Taller than it was (620/74svh/800). object-fit: cover ties the golfer's
+       rendered height to the SHORTER of the two constraints, so on a wide
+       desktop the section's height is what scales him — a taller hero is
+       literally a bigger swing, not just more padding. */
+    min-height: clamp(700px, 88svh, 960px);
   }
 }
 
@@ -476,6 +502,43 @@ video.sl-hero__video { position: absolute; inset: 0; }
      vh is the LARGEST viewport on iOS, so a vh-sized hero is taller than the
      screen until the address bar retracts, and the CTA starts below the fold. */
   .sl-hero { --sl-mobile-hero-height: 88svh; }
+  /* The desktop wash runs left-to-right, because on desktop the copy sits in
+     a left column and the photograph needs to clear the readout on the right.
+     Neither is true here: the copy is FULL WIDTH over a portrait crop, so a
+     left-edge wash protects nothing and leaves the right 40% of the screen
+     bright under type — `--sl-ink-muted` fine print over lit cloud measured
+     2.4:1. Vertical instead, weighted to the bands that actually carry text:
+     hard through the headline and body, easing off across the golfer, and
+     closing again under the fine print. */
+  /* Every stop is at the legibility boundary and not one point past it: the
+     scrim is what makes the type readable AND what turns the golfer back into
+     a silhouette, so it eases off wherever nothing is reading on top of it.
+     36% is the button band — two full-width opaque controls cover the
+     photograph there, so it costs nothing to open up. 48% is the chips and
+     the fine print, which is the tightest measurement on the section
+     (contrast_probe: 4.7:1 against a 4.5 target). Re-measure if you move it. */
+  .sl-hero::before {
+    background:
+      linear-gradient(180deg,
+        rgba(7, 15, 11, 0.78) 0%,
+        rgba(7, 15, 11, 0.82) 22%,
+        rgba(7, 15, 11, 0.72) 36%,
+        rgba(7, 15, 11, 0.8) 48%,
+        rgba(7, 15, 11, 0.76) 56%,
+        rgba(7, 15, 11, 0.42) 72%,
+        rgba(7, 15, 11, 0.5) 100%);
+  }
+  /* --sl-ink-muted's AA guarantee is measured against --sl-bg, and below this
+     breakpoint the background is no longer --sl-bg: it is a lit dusk sky. The
+     same colour that clears 5.04:1 on the flat field measured 2.69:1 over the
+     sunset behind these two lines. The band they sit in is scrimmed as hard
+     as it can be before the golfer turns back into a silhouette, so the rest
+     of the fix is here — one rung up the ink ramp, phone only. */
+  .sl-hero__proof li,
+  .sl-hero__fine { color: var(--sl-ink-soft); }
+  /* The grid is a desktop-edge device; on a phone it just adds noise over a
+     photograph that is now doing the work. */
+  .sl-hero::after { opacity: 0.2; }
   .sl-hero__inner {
     min-height: var(--sl-mobile-hero-height);
     align-content: end;
@@ -485,9 +548,15 @@ video.sl-hero__video { position: absolute; inset: 0; }
   /* The portrait companion is framed on its subject rather than left to the
      default centre crop, which on a narrow screen cut the golfer in half.
      Not 58% — that was tuned for the old composition, where the copy sat on
-     the left and the frame had to be pushed right to clear it. The copy is
-     full-width here and the photograph is a ghost, so it centres. */
-  .sl-hero__image { object-position: center 42%; }
+     the left and the frame had to be pushed right to clear it.
+     `center 42%` was the previous fix and it did nothing: the phone box is
+     narrower than the image is, so cover crops the WIDTH and shows the full
+     height, which leaves the Y component inert and the golfer — who stands at
+     59–85% across — sliced down the middle by the right edge of the crop.
+     Only X can ever move here. On the -v2 crop the visible window is ~357 of
+     1122 source px, and 80% lands it on the golfer, his arc, and the tripod
+     that explains what he is doing. */
+  .sl-hero__image { object-position: 80% center; }
   .sl-hero__copy { max-width: 100%; text-align: left; }
   .sl-hero__title { max-width: 100%; text-align: left; }
   .sl-hero__body { text-align: left; }
