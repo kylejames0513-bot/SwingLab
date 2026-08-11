@@ -1,9 +1,12 @@
 /* ============================================================
    CaddieInsight storefront — base styles & design tokens
-   Turf Instrument: cool mist field, deep forest ink, one kinetic
-   amber accent. Archivo carries display + interface; IBM Plex Mono
-   marks measured evidence. Soft-rectilinear controls keep the
-   storefront and app one instrument.
+   INSTRUMENT: a near-black field under an 8px technical grid, bone
+   type, and two signal colours with exactly one job each — amber
+   marks a value the engine measured, cyan marks the live readout,
+   and neither is ever decoration or a call to action. Archivo
+   Expanded carries display, Archivo the interface, DM Mono every
+   measurement. Tight radii (2/4/8) keep the storefront and the app
+   one instrument.
 
    Shared-pattern contract (available to every template/section):
    .sl-chip            mono label, letterspaced uppercase
@@ -133,8 +136,8 @@
 
   --sl-section-space: clamp(88px, 10vw, 128px);
   --sl-section-space-compact: clamp(56px, 7vw, 84px);
-  --sl-heading-display: clamp(42px, 5.4vw, 68px);
-  --sl-heading-support: clamp(34px, 4.2vw, 48px);
+  --sl-heading-display: clamp(34px, 4.1vw, 54px);
+  --sl-heading-support: clamp(27px, 3.2vw, 38px);
   /* 12px, up from 11: the eyebrow is uppercase mono at 0.16em tracking —
      the combination read as decoration, not type, below the floor. 12px is
      the type floor everywhere; nothing renders smaller. */
@@ -165,8 +168,8 @@
   --sl-text-lg: clamp(17px, 16.2px + 0.35vw, 19px);
   --sl-text-xl: clamp(20px, 18.8px + 0.55vw, 23px);
   --sl-text-2xl: clamp(24px, 21.8px + 1vw, 30px);
-  --sl-text-3xl: clamp(28px, 24.5px + 1.7vw, 38px);
-  --sl-text-4xl: clamp(34px, 28px + 2.8vw, 52px);
+  --sl-text-3xl: clamp(24px, 21px + 1.4vw, 32px);
+  --sl-text-4xl: clamp(28px, 23.5px + 2.1vw, 42px);
 }
 
 * { box-sizing: border-box; }

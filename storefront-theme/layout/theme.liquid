@@ -241,7 +241,25 @@
       document.documentElement.classList.add('sl-js');
       scan(document);
       document.addEventListener('shopify:section:load', function (e) { scan(e.target); });
+
+      /* A client that runs JS but never scrolls — an automated screenshot, a
+         preview renderer — gets .sl-js (opacity 0) and then no .is-in,
+         because the observer only fires on entry. Measured on the live site:
+         11 of 13 revealable blocks stayed invisible. JS-off and
+         reduced-motion were already covered; this is the case that was not.
+         Three seconds is far past any real reader's first scroll, so nobody
+         who scrolls ever sees this fire. */
+      setTimeout(function () {
+        var stuck = document.querySelectorAll('.sl-reveal:not(.is-in)');
+        for (var i = 0; i < stuck.length; i++) stuck[i].classList.add('is-in');
+      }, 3000);
     })();
   </script>
+  {%- comment -%}
+    The live read. Deferred because the hero ships a fully drawn SVG still
+    that this only replaces once the canvas is up — nothing above the fold
+    waits on it.
+  {%- endcomment -%}
+  <script src="{{ 'swing-trace.js' | asset_url }}" defer></script>
 </body>
 </html>
