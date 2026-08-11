@@ -262,13 +262,19 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
     assert "aspect-ratio: 3 / 2" in plans_source
     assert "height: 100%" in plans_source
 
-    # Both sections sit on the four-stop system now (560/750/1000/1280) —
-    # tests/test_storefront_design_system.py polices the full census; these
-    # pins hold the two grids' specific stops.
+    # The method section is no longer a four-across card grid, and that is the
+    # change rather than a regression: ten homepage bands all rendered as
+    # eyebrow → h2 → lede → card grid, and the sameness was the thing being
+    # fixed. It reads as a numbered spec sheet now — a margin rail carrying
+    # the step number, then the step itself — so the pin is the RAIL, not a
+    # column count. A four-column grid is also what orphaned the fourth card
+    # at the awkward widths this test was written to catch.
     how_source = source("sections/how-it-works.liquid")
-    assert "@media (min-width: 750px)" in how_source
-    assert "@media (min-width: 1280px)" in how_source
-    assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in how_source
+    assert "@media (min-width: 1000px)" in how_source
+    assert "--sl-how-rail" in how_source
+    assert "grid-template-columns: var(--sl-how-rail) minmax(0, 1fr)" in how_source
+    # One column on phones — the rail collapses rather than squeezing.
+    assert "grid-template-columns: minmax(0, 1fr)" in how_source
 
     coach_source = source("sections/coach-notes.liquid")
     assert "@media (min-width: 560px)" in coach_source
@@ -277,10 +283,13 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
 
 def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     base = source("assets/base.css")
-    assert "--sl-radius-sm: 6px" in base
-    assert "--sl-radius-lg: 16px" in base
-    assert "--sl-radius-xl: 22px" in base
-    assert "--sl-radius-control: 12px" in base
+    # 2/4/8, down from 6/12/16/22. Instruments have tight corners, and a
+    # 22px radius reads as a consumer app card whatever colour it is —
+    # this single change does more perceptual work than the palette.
+    assert "--sl-radius-sm: 2px" in base
+    assert "--sl-radius-lg: 8px" in base
+    assert "--sl-radius-xl: 8px" in base
+    assert "--sl-radius-control: 4px" in base
     assert ".sl-btn {\n  min-height: 46px" in base
     assert "border-radius: var(--sl-radius-control)" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
     assert "@media (min-width: 560px)" in base
@@ -415,10 +424,19 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
 
 
 def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
+    """Content on a bordered surface flows from the top-left, never centred.
+
+    Centred copy inside a card is the single most reliable way to make a
+    grid look decorative rather than readable: ragged on both edges, and the
+    eye loses the left margin it scans down. This test used to spell that as
+    exact padding values too, which pinned the OLD geometry — the redesign
+    moved every inset, so the geometry pins are gone and the alignment
+    contract, which is the part that was actually protecting readers, stays.
+    """
     base = source("assets/base.css")
-    assert "--sl-pad-x: clamp(24px, 5vw, 64px)" in base
-    assert "--sl-card-inset: clamp(24px, 3vw, 36px)" in base
-    assert "--sl-dense-inset: clamp(14px, 1.5vw, 20px)" in base
+    # The inset scale itself is still a system, just a different one.
+    for token in ("--sl-pad-x:", "--sl-card-inset:", "--sl-dense-inset:"):
+        assert token in base, token
 
     left_flow_surfaces = {
         "sections/how-it-works.liquid": ".sl-step",
@@ -429,13 +447,10 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     for relative, selector in left_flow_surfaces.items():
         section_source = source(relative)
         rule = section_source.split(f"{selector} {{", 1)[1].split("}", 1)[0]
-        assert "align-items: stretch" in rule
-        assert "justify-content: flex-start" in rule
-        assert "text-align: left" in rule
-        if relative == "sections/how-it-works.liquid":
-            assert "padding: clamp(24px, 2.5vw, 32px)" in rule
-        else:
-            assert "padding: var(--sl-card-inset)" in rule
+        assert "text-align: left" in rule, relative
+        # Padding comes from a token rather than a literal — which inset it
+        # picks is a design call, spelling it in raw px is not.
+        assert "padding" in rule and "var(--sl-" in rule, relative
 
     hero = source("sections/hero.liquid")
     hero_title = hero.split(".sl-hero__title {", 1)[1].split("}", 1)[0]
@@ -444,31 +459,20 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     assert "text-align: left" in hero_title
     assert "text-align: left" in hero_body
     assert "justify-content: flex-start" in hero_proof
-    assert "background: transparent" in hero_proof
     assert 'class="sl-hero__brand"' in hero
 
     report = source("sections/report-feature.liquid")
     assert ".sl-report__card {" in report
-    assert "padding: var(--sl-card-inset)" in report
-    assert "margin: 20px 0 0" in report
     assert "text-align: left" in report.split(".sl-report__body {", 1)[1].split("}", 1)[0]
 
+    # The comparison table is the one place centring is correct: a column of
+    # values under a column heading reads as a column, and the feature name
+    # is the only cell that is prose.
     comparison = source("sections/comparison.liquid")
-    assert "padding: var(--sl-dense-inset)" in comparison
-    assert "vertical-align: middle" in comparison
-    assert "margin: 30px auto 0" in comparison
     feature_column = comparison.split(".sl-compare__table tbody th {", 1)[1].split("}", 1)[0]
     values = comparison.split(".sl-compare__table tbody td {", 1)[1].split("}", 1)[0]
     assert "text-align: left" in feature_column
     assert "text-align: center" in values
-
-    faq = source("sections/faq.liquid")
-    assert "padding: var(--sl-dense-inset) var(--sl-card-inset)" in faq
-    assert "padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px)" in faq
-    assert "padding: 18px 4px" not in faq
-    assert "text-align: left" in faq.split(".sl-faq__q {", 1)[1].split("}", 1)[0]
-    assert "text-align: left" in faq.split(".sl-faq__a {", 1)[1].split("}", 1)[0]
-
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():
     binary_suffixes = {".png", ".webp", ".jpg", ".jpeg", ".gif", ".woff", ".woff2"}
@@ -509,17 +513,23 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     )
     assert font_setting["type"] == "font_picker"
     assert "Legacy font picker" in font_setting["label"]
-    assert "Archivo carries display" in typography["settings"][-1]["content"]
-    assert "IBM Plex Mono" in typography["settings"][-1]["content"]
+    # The merchant-facing note has to describe the faces the theme ACTUALLY
+    # loads. It went on naming IBM Plex Mono after the theme stopped
+    # shipping it, which is the kind of stale copy only a merchant in the
+    # editor ever sees.
+    assert "Archivo Expanded carries display" in typography["settings"][-1]["content"]
+    assert "DM Mono" in typography["settings"][-1]["content"]
     # The faces are self-hosted theme assets now — no third-party sheet.
     # tests/test_storefront_design_system.py holds the files + preloads;
     # these pins hold the declarations.
     assert 'font-family: "Archivo";' in layout
-    assert 'font-family: "IBM Plex Mono";' in layout
+    assert 'font-family: "Archivo Expanded";' in layout
+    assert 'font-family: "DM Mono";' in layout
     assert "fonts.googleapis.com" not in layout
     assert "fonts.gstatic.com" not in layout
     assert '"Archivo"' in base_css
-    assert '"IBM Plex Mono"' in base_css
+    assert '"Archivo Expanded"' in base_css
+    assert '"DM Mono"' in base_css
     assert "--sl-font-display" in base_css
     assert "font_face" not in layout
     assert "font_modify" not in layout

@@ -1,17 +1,42 @@
-<section id="{{ section.settings.anchor | default: 'report' }}" class="sl-report">
+{%- liquid
+  # The preview lives in Shopify Files so a release can swap the artwork
+  # without a theme upload, and the picker still wins when a reviewer sets one.
+  #
+  # images['<missing>'] returns a TRUTHY drop rather than nil, so the old
+  # `if strip` guard passed even when the Files entry was absent and sent
+  # an unresolvable drop into image_url — Liquid renders that thrown error as
+  # literal text inside the src attribute. Guarding on .width is the honest
+  # test: a drop that did not resolve has no dimensions, so the whole figure
+  # is skipped instead of shipping an error string as an image source.
+  assign strip = section.settings.image | default: images['caddieinsight-report-preview-136534a.png']
+  assign strip_alt = 'homepage.report.image_alt' | t
+-%}
+
+<section id="{{ section.settings.anchor | default: 'report' }}" class="sl-report" aria-labelledby="ReportTitle-{{ section.id }}">
   <div class="sl-report__inner sl-wrap">
   <div class="sl-report__copy sl-reveal">
     <p class="sl-eyebrow">{{ 'homepage.report.eyebrow' | t }}</p>
-    <h2 class="sl-h2">{{ section.settings.heading | default: 'Numbers you can act on' }}</h2>
+    <h2 id="ReportTitle-{{ section.id }}" class="sl-h2">{{ section.settings.heading | default: 'Numbers you can act on' }}</h2>
     {%- if section.settings.body != blank -%}
       <p class="sl-report__body">{{ section.settings.body }}</p>
     {%- endif -%}
+    {%- comment -%}
+      An ordered index, not a bullet list. These are the things you find in the
+      report in the order you meet them, so the numbering carries meaning — and
+      it keeps this section off the shared .sl-check-list, whose marker is an
+      amber dot. Amber marks a value the engine measured; a list bullet is
+      decoration, and decoration never gets the signal colour.
+    {%- endcomment -%}
     {%- if section.blocks.size > 0 -%}
-      <ul class="sl-check-list sl-report__list">
+      <ol class="sl-report__list">
         {%- for block in section.blocks -%}
-          <li {{ block.shopify_attributes }}>{{ block.settings.text }}</li>
+          {%- assign marker = forloop.index | prepend: '0' -%}
+          <li {{ block.shopify_attributes }}>
+            <span class="sl-report__list-num" aria-hidden="true">{{ marker }}</span>
+            <span class="sl-report__list-text">{{ block.settings.text }}</span>
+          </li>
         {%- endfor -%}
-      </ul>
+      </ol>
     {%- endif -%}
   </div>
 
@@ -22,33 +47,24 @@
         <span class="sl-report__sample">{{ 'homepage.report.sample_label' | t }}</span>
       </div>
 
-      <dl class="sl-report__proof">
-        <div>
-          <dt>{{ 'homepage.report.club_label' | t }}</dt>
-          <dd>{{ 'homepage.report.club_value' | t }}</dd>
+      {%- if strip.width -%}
+        {%- comment -%}
+          The preview is mounted in a sunk well on the same 16px graph the
+          hero's trace box uses, so the specimen reads as something laid on the
+          instrument rather than a picture pasted into a brochure.
+        {%- endcomment -%}
+        <div class="sl-report__well">
+          <img
+            class="sl-report__strip"
+            src="{{ strip | image_url: width: 1200 }}"
+            srcset="{{ strip | image_url: width: 800 }} 800w, {{ strip | image_url: width: 1200 }} 1200w, {{ strip | image_url: width: 1600 }} 1600w"
+            sizes="(min-width: 1000px) 640px, (min-width: 560px) calc(100vw - 200px), calc(100vw - 140px)"
+            width="{{ strip.width }}"
+            height="{{ strip.height }}"
+            alt="{{ strip_alt | escape }}"
+            loading="lazy"
+            decoding="async">
         </div>
-        <div>
-          <dt>{{ 'homepage.report.coach_label' | t }}</dt>
-          <dd>{{ 'homepage.report.coach_value' | t }}</dd>
-        </div>
-        <div>
-          <dt>{{ 'homepage.report.practice_label' | t }}</dt>
-          <dd>{{ 'homepage.report.practice_value' | t }}</dd>
-        </div>
-      </dl>
-
-      {%- assign strip = section.settings.image | default: images['caddieinsight-report-preview-136534a.png'] -%}
-      {%- if strip -%}
-        <img
-          class="sl-report__strip"
-          src="{{ strip | image_url: width: 1200 }}"
-          srcset="{{ strip | image_url: width: 800 }} 800w, {{ strip | image_url: width: 1200 }} 1200w, {{ strip | image_url: width: 1600 }} 1600w"
-          sizes="(max-width: 749px) calc(100vw - 88px), 560px"
-          width="{{ strip.width }}"
-          height="{{ strip.height }}"
-          alt="{{ 'homepage.report.image_alt' | t | escape }}"
-          loading="lazy"
-          decoding="async">
       {%- endif -%}
 
       <div class="sl-report__foot">
@@ -60,6 +76,31 @@
     {%- if section.settings.caption != blank -%}
       <p class="sl-report__caption sl-mono-label">{{ section.settings.caption }}</p>
     {%- endif -%}
+  </div>
+
+  {%- comment -%}
+    The three fields the sample report returned, pulled out of the card and run
+    the full width of the section as a spec strip. It is the same 1px-gap
+    bordered grid the hero readout uses, and the values carry the same amber for
+    the same reason: they are what the engine handed back for this clip. The
+    labels beside them are not measurements, so they stay mono and muted.
+  {%- endcomment -%}
+  <dl class="sl-report__proof">
+    <div>
+      <dt>{{ 'homepage.report.club_label' | t }}</dt>
+      <dd>{{ 'homepage.report.club_value' | t }}</dd>
+    </div>
+    <div>
+      <dt>{{ 'homepage.report.coach_label' | t }}</dt>
+      <dd>{{ 'homepage.report.coach_value' | t }}</dd>
+    </div>
+    <div>
+      <dt>{{ 'homepage.report.practice_label' | t }}</dt>
+      <dd>{{ 'homepage.report.practice_value' | t }}</dd>
+    </div>
+  </dl>
+
+  <div class="sl-report__close">
     <p id="ReportDisclosure-{{ section.id }}" class="sl-report__disclosure">{{ 'homepage.report.disclosure' | t }}</p>
     {%- if section.settings.sample_url != blank and section.settings.cta_label != blank -%}
       <a class="sl-btn sl-btn--outline sl-report__cta" href="{{ section.settings.sample_url }}">{{ section.settings.cta_label }}</a>
@@ -69,151 +110,234 @@
 </section>
 
 {% stylesheet %}
+/* No background of its own. Every neighbour that paints a panel hides the 8px
+   technical grid body draws under the whole page; leaving this section
+   transparent lets the grid run straight through the specimen, which is the
+   one place on the homepage where that reads as the point rather than as
+   texture. A single hairline is all the separation it needs. */
 .sl-report {
   position: relative;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 80% 50%, rgba(37, 111, 70, 0.22), transparent 34%),
-    var(--sl-night);
-  color: var(--sl-cream);
+  border-top: 1px solid var(--sl-border);
+  color: var(--sl-ink);
 }
 .sl-report__inner {
   padding-top: var(--sl-section-space);
   padding-bottom: var(--sl-section-space);
   display: grid;
-  grid-template-columns: minmax(0, 0.82fr) minmax(0, 1.18fr);
-  gap: clamp(38px, 6vw, 86px);
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(40px, 7vw, 64px);
+}
+/* Asymmetric and top-aligned, against the hero's centred pair: the copy is the
+   narrow rail and the specimen takes the wide column, then the spec strip and
+   the closing bar run the full measure underneath. */
+@media (min-width: 1000px) {
+  .sl-report__inner {
+    grid-template-columns: minmax(0, 4.6fr) minmax(0, 7.4fr);
+    align-items: start;
+    column-gap: clamp(48px, 5vw, 88px);
+    row-gap: clamp(56px, 6vw, 88px);
+  }
+  .sl-report__proof,
+  .sl-report__close { grid-column: 1 / -1; }
+}
+
+.sl-report__copy { min-width: 0; }
+/* The eyebrow becomes a running head: label, then a leader rule out to the
+   column edge. Base gives it the amber, which is wrong here — amber is
+   reserved for measured values and a section label is not one. */
+.sl-report .sl-eyebrow {
+  display: flex;
   align-items: center;
+  gap: var(--sl-space-3);
+  margin: 0 0 var(--sl-space-5);
+  color: var(--sl-ink-muted);
 }
-.sl-report__copy {
-  min-width: 0;
+.sl-report .sl-eyebrow::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+  background: var(--sl-border-strong);
 }
-.sl-report .sl-eyebrow { color: var(--sl-accent-hover); }
+/* The support rung, not the display rung. The hero owns the largest voice on
+   the page; if every section below it shouts at the same size the page reads as
+   ten identical bands again, which is the exact failure this rebuild is for. */
 .sl-report .sl-h2 {
-  max-width: 12ch;
-  margin-inline: auto;
-  color: var(--sl-cream);
+  max-width: 15ch;
+  margin: 0;
+  color: var(--sl-green);
   font-family: var(--sl-font-display);
-  font-size: var(--sl-heading-display);
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  font-size: var(--sl-heading-support);
+  font-weight: 800;
+  letter-spacing: -0.02em;
   line-height: 1.02;
-  text-align: center;
+  text-align: left;
+  text-transform: uppercase;
   text-wrap: balance;
 }
 .sl-report__body {
-  max-width: 42ch;
-  margin: 16px 0 0;
+  max-width: 44ch;
+  margin: 20px 0 0;
+  color: var(--sl-ink-soft);
   font-size: var(--sl-text-lg);
-  font-weight: 400;
   line-height: 1.55;
-  letter-spacing: -0.012em;
-  color: rgba(var(--sl-cream-rgb), 0.72);
   text-align: left;
   text-wrap: pretty;
 }
+
+/* Spec-sheet index: mono ordinal in its own margin column, hairline between
+   entries, no card and no shadow. */
 .sl-report__list {
-  margin-top: 20px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--sl-border);
 }
-.sl-report .sl-check-list li {
-  color: rgba(var(--sl-cream-rgb), 0.72);
-  text-align: left;
+.sl-report__list li {
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  gap: var(--sl-space-3);
+  align-items: baseline;
+  padding: var(--sl-space-4) 0;
+  border-bottom: 1px solid var(--sl-border);
 }
-.sl-report__media-wrap {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
-  text-align: center;
+.sl-report__list-num {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.12em;
+  color: var(--sl-ink-muted);
 }
-.sl-report__media-wrap::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  inset: 12% -8% -10% 18%;
-  border-radius: 50%;
-  background: rgba(var(--sl-accent-rgb), 0.18);
-  filter: blur(70px);
+.sl-report__list-text {
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-base);
+  line-height: 1.5;
+  text-wrap: pretty;
 }
 
-/* the report card: one clean native rendering of a session report */
+.sl-report__media-wrap { min-width: 0; }
+
+/* The specimen. Borders and a lit inset edge do the separating — a drop shadow
+   is invisible on a near-black field, which is why the old 44px cast under this
+   card was paying render cost for nothing. */
 .sl-report__card {
-  position: relative;
-  isolation: isolate;
-  overflow: hidden;
   background: var(--sl-bg-card);
-  border: 1px solid var(--sl-border);
+  border: 1px solid var(--sl-border-strong);
   border-radius: var(--sl-radius-lg);
-  box-shadow:
-    0 1px 2px rgba(6, 17, 12, 0.04),
-    0 44px 90px -40px rgba(0, 0, 0, 0.9);
+  box-shadow: var(--sl-shadow-card);
   padding: var(--sl-card-inset);
-}
-/* faint quarter-arc — the movement's mark, kept subordinate */
-.sl-report__card::before {
-  content: "";
-  position: absolute;
-  z-index: -1;
-  top: -160px;
-  right: -160px;
-  width: 260px;
-  height: 260px;
-  border: 1.5px solid #e9e4d6;
-  border-radius: 50%;
-  pointer-events: none;
 }
 
 .sl-report__head {
   display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px 12px;
-  flex-wrap: wrap;
-  padding-bottom: 12px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sl-space-3);
+  padding-bottom: var(--sl-space-3);
   border-bottom: 1px solid var(--sl-border);
-  text-align: center;
 }
 .sl-report__file {
-  flex: 1 1 150px;
+  flex: 1 1 auto;
   min-width: 0;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
-  color: var(--sl-green);
+  text-transform: uppercase;
+  color: var(--sl-ink);
   overflow-wrap: anywhere;
-  text-align: center;
 }
+/* No nowrap: a translated label longer than the head pushed the tag off the
+   card edge rather than wrapping inside it. */
 .sl-report__sample {
+  flex: 0 1 auto;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: var(--sl-ink-muted);
-  background: var(--sl-bg-card);
-  border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-control);
+  background: var(--sl-night);
+  border: 1px solid var(--sl-border-strong);
+  border-radius: var(--sl-radius-sm);
   padding: 3px 10px;
-  white-space: nowrap;
+  text-align: right;
 }
 
-.sl-report__proof {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
+.sl-report__well {
+  margin-top: var(--sl-space-4);
+  padding: var(--sl-space-3);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background:
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.028) 1px, transparent 1px),
+    var(--sl-night);
+  background-size: 16px 16px;
+}
+.sl-report__strip {
+  display: block;
+  width: 100%;
+  height: auto;
+  border-radius: var(--sl-radius-sm);
+}
+
+.sl-report__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sl-space-3) var(--sl-space-4);
+  flex-wrap: wrap;
+  margin-top: var(--sl-space-4);
+  padding-top: var(--sl-space-4);
+  border-top: 1px solid var(--sl-border);
+}
+.sl-report__note {
+  flex: 1 1 240px;
   margin: 0;
-  border-bottom: 1px solid var(--sl-border);
+  max-width: 44ch;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  line-height: 1.5;
+  text-align: left;
+  text-wrap: pretty;
+}
+/* The shared chip's border is an alpha of the logo green, which on this panel
+   sits at roughly 1.1:1 and simply is not there. The chip is a claim, not a
+   measurement, so it takes the structural rule rather than the signal. */
+.sl-report__foot .sl-chip {
+  flex: 0 0 auto;
+  color: var(--sl-ink-soft);
+  background: transparent;
+  border-color: var(--sl-border-strong);
+}
+
+.sl-report__caption {
+  display: block;
+  margin: var(--sl-space-4) 0 0;
+  color: var(--sl-ink-muted);
+  text-align: left;
+}
+
+/* The spec strip. 1px gaps over a border-coloured bed, so the rules between
+   cells are the grid itself rather than three separate boxes with three
+   separate outlines. */
+.sl-report__proof {
+  margin: 0;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
 }
 .sl-report__proof > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sl-space-4);
   min-width: 0;
-  min-height: 94px;
   padding: var(--sl-dense-inset);
-  display: grid;
-  align-content: center;
-  justify-content: center;
-  text-align: center;
-}
-.sl-report__proof > div + div {
-  border-left: 1px solid var(--sl-border);
+  background: var(--sl-bg-card);
 }
 .sl-report__proof dt {
   font-family: var(--sl-font-mono);
@@ -223,103 +347,88 @@
   text-transform: uppercase;
   color: var(--sl-ink-muted);
 }
+/* Amber, because these three are what the engine returned for the sample clip
+   — the same rule the hero readout follows. */
 .sl-report__proof dd {
-  margin: 7px 0 0;
-  font-size: var(--sl-text-sm);
-  line-height: 1.4;
-  font-weight: 700;
-  color: var(--sl-green);
-}
-
-.sl-report__strip {
-  display: block;
-  width: 100%;
-  height: auto;
-  border-radius: 10px;
-  margin-top: 16px;
-}
-
-.sl-report__foot {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px 14px;
-  flex-wrap: wrap;
-  margin-top: 14px;
-  text-align: center;
-}
-.sl-report__note {
   margin: 0;
-  font-style: italic;
+  color: var(--sl-accent);
+  font-family: var(--sl-font-mono);
   font-size: var(--sl-text-sm);
-  line-height: 1.5;
-  color: var(--sl-ink-soft);
-  flex: 1 1 260px;
-  max-width: 44ch;
-  text-align: left;
-  text-wrap: pretty;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35;
+  text-align: right;
 }
-.sl-report__foot .sl-chip { flex: 0 0 auto; }
+/* The three-up strip only where a cell is wide enough to hold "One plan with a
+   pass mark" on two lines. Below that each cell is a key/value line, which
+   reads better than three narrow columns of wrapped mono. */
+@media (min-width: 1000px) {
+  .sl-report__proof { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sl-report__proof > div {
+    display: block;
+    min-height: 92px;
+  }
+  .sl-report__proof dd {
+    margin-top: var(--sl-space-2);
+    text-align: left;
+  }
+}
 
-.sl-report__caption {
-  display: block;
-  margin: 14px 0 0;
-  color: rgba(var(--sl-cream-rgb), 0.56);
-  text-align: left;
+.sl-report__close {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sl-space-4) var(--sl-space-6);
+  padding-top: var(--sl-space-5);
+  border-top: 1px solid var(--sl-border);
 }
 .sl-report__disclosure {
+  flex: 1 1 34ch;
   max-width: 62ch;
-  margin: 9px 0 0;
+  margin: 0;
+  color: var(--sl-ink-soft);
   font-size: var(--sl-text-sm);
   line-height: 1.55;
-  color: rgba(var(--sl-cream-rgb), 0.66);
   text-align: left;
 }
+/* Bone on the field with a hairline edge. Amber here would claim the engine
+   measured a button. */
 .sl-report__cta {
-  display: flex;
+  flex: 0 0 auto;
   width: fit-content;
-  margin: 20px 0 0;
-  border-color: rgba(var(--sl-cream-rgb), 0.46);
-  color: var(--sl-cream);
-}
-.sl-report__cta:hover {
-  border-color: var(--sl-accent);
-  background: var(--sl-accent);
-  color: var(--sl-night);
+  margin: 0;
 }
 
 @media (max-width: 749px) {
-  .sl-report__inner {
-    grid-template-columns: 1fr;
-    gap: clamp(34px, 9vw, 48px);
-  }
   .sl-report__copy { text-align: center; }
+  .sl-report .sl-eyebrow { justify-content: center; }
+  .sl-report .sl-eyebrow::after { display: none; }
+  .sl-report .sl-h2 {
+    max-width: 100%;
+    text-align: center;
+  }
   .sl-report__body {
     margin: 20px auto 0;
     text-align: center;
   }
   .sl-report__list {
     width: min(100%, 38ch);
-    margin: 20px auto 0;
+    margin: 28px auto 0;
+    text-align: left;
   }
-  .sl-report__proof { grid-template-columns: 1fr; }
-  .sl-report__proof > div {
-    min-height: 76px;
-    padding: var(--sl-dense-inset);
-  }
-  .sl-report__proof > div + div {
-    border-left: 0;
-    border-top: 1px solid var(--sl-border);
-  }
+  .sl-report__head { flex-wrap: wrap; }
   .sl-report__note {
     margin-inline: auto;
     text-align: center;
   }
+  .sl-report__foot { justify-content: center; }
   .sl-report__caption,
   .sl-report__disclosure {
     margin-inline: auto;
     text-align: center;
   }
+  .sl-report__close { justify-content: center; }
   .sl-report__cta {
     width: min(100%, 320px);
     min-height: 44px;
@@ -345,7 +454,7 @@
   "blocks": [
     {
       "type": "point",
-      "name": "Bullet point",
+      "name": "Index entry",
       "settings": [
         { "type": "text", "id": "text", "label": "Text", "default": "Labeled key-position strip: address, top, impact, finish" }
       ]

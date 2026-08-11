@@ -390,36 +390,6 @@ img { max-width: 100%; display: block; }
 }
 
 /* One job per section: eyebrow → title → one supporting line */
-.sl-section-head {
-  display: grid;
-  gap: 14px;
-  max-width: 42rem;
-  margin: 0 0 clamp(28px, 4vw, 44px);
-}
-.sl-section-head--center {
-  margin-inline: auto;
-  text-align: center;
-  justify-items: center;
-}
-.sl-section-head .sl-eyebrow,
-.sl-section-head .sl-mono-label {
-  margin: 0;
-}
-.sl-section-head h2,
-.sl-section-head .sl-h2 {
-  margin: 0;
-  max-width: 16ch;
-}
-.sl-section-head__lede {
-  margin: 0;
-  max-width: 46ch;
-  color: var(--sl-ink-soft);
-  font-size: var(--sl-text-lg);
-  font-weight: 400;
-  line-height: 1.55;
-  letter-spacing: -0.012em;
-  text-wrap: pretty;
-}
 
 /* ============================================================
    Shared patterns (contract classes)

@@ -196,7 +196,13 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
     assert '"Archivo Expanded", "Archivo"' in _token(LAYOUT, "sl-font-display")
     assert '"Archivo Expanded", "Archivo"' in _token(STOREFRONT, "sl-font-display")
     assert "--sl-font-display" in STOREFRONT
-    assert ".sl-section-head" in STOREFRONT
+    # .sl-section-head is gone, and its absence is the point. It was ONE
+    # centred eyebrow/h2/lede stack that all ten homepage bands rendered,
+    # which is exactly the sameness this redesign set out to remove — so
+    # the snippet and its CSS went with the last caller. The shared
+    # vocabulary that survived is the mono eyebrow, which 31 sections use.
+    assert ".sl-section-head" not in STOREFRONT
+    assert ".sl-eyebrow" in STOREFRONT
 
     # store-assets/make_fonts.py writes every face into both surfaces in one
     # pass, so drift between them means somebody hand-placed a file. The
