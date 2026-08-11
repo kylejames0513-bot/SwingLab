@@ -12,11 +12,15 @@
   .landing { background: var(--sl-bg); }
 
   /* ------------------------------------------------------------------ hero
-     The photograph is atmosphere, not the subject. It is desaturated and
-     dimmed hard so the readout beside it is the brightest object on the
-     page — the same treatment storefront-theme/sections/hero.liquid gives
-     the identical frame, so a visitor crossing from the store lands on the
-     same picture in the same key. */
+     The photograph is atmosphere, not the subject — but atmosphere still has
+     to be visible. Desaturated and dimmed so the readout beside it stays the
+     brightest object on the page, and no further: the previous pass
+     (grayscale .72 / brightness .66 under a .72–.94 scrim) measured as solid
+     black at both 1440 and 390, which is not atmosphere, it is a 95 KB layer
+     nobody can see. Same treatment as
+     storefront-theme/sections/hero.liquid gives the identical frame, so a
+     visitor crossing from the store lands on the same picture in the same
+     key — change one and change the other. */
   .landing-hero {
     position: relative;
     isolation: isolate;
@@ -32,18 +36,21 @@
     pointer-events: none;
     content: "";
   }
+  /* The scrim works where the type is, not everywhere: heavy down the left
+     edge under the copy column, clearing through the middle and right where
+     the golfer and the sunset are. */
   .landing-hero::before {
     z-index: 1;
     background:
-      linear-gradient(180deg, rgba(var(--sl-field-rgb), .72) 0%, rgba(var(--sl-field-rgb), .5) 46%, rgba(var(--sl-field-rgb), .94) 100%),
-      linear-gradient(90deg, rgba(var(--sl-field-rgb), .9) 0%, rgba(var(--sl-field-rgb), .34) 54%, rgba(var(--sl-field-rgb), .82) 100%);
+      linear-gradient(180deg, rgba(var(--sl-field-rgb), .58) 0%, rgba(var(--sl-field-rgb), .14) 42%, rgba(var(--sl-field-rgb), .82) 100%),
+      linear-gradient(90deg, rgba(var(--sl-field-rgb), .93) 0%, rgba(var(--sl-field-rgb), .66) 30%, rgba(var(--sl-field-rgb), .08) 62%, rgba(var(--sl-field-rgb), .2) 100%);
   }
   /* The 8px instrument grid the shell paints under the whole app, continued
      across the photograph so the hero reads as one ruled surface rather than
      as a picture with a panel dropped on it. Brightest at the readout edge. */
   .landing-hero::after {
     z-index: 2;
-    opacity: .5;
+    opacity: .34;
     background-image:
       linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
       linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px);
@@ -66,7 +73,7 @@
     display: block;
     object-fit: cover;
     object-position: center;
-    filter: grayscale(.72) contrast(1.08) brightness(.66);
+    filter: grayscale(.22) contrast(1.05) brightness(.94);
   }
   .landing-hero__inner {
     position: relative;
@@ -831,12 +838,16 @@
     .hero-signal dl { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   }
   @media (min-width: 1000px) {
-    /* Asymmetric on purpose: the copy takes five columns and the readout
-       seven, so the instrument is the larger object on the page. */
+    /* Asymmetric on purpose: the copy takes five columns and the readout six,
+       so the instrument is still the larger object on the page. It was seven,
+       which left the photograph nothing but the gutters. */
     .landing-hero__inner {
-      grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
       gap: clamp(40px, 4vw, 72px);
-      min-height: clamp(620px, 74svh, 800px);
+      /* Taller than it was (620/74svh/800): object-fit: cover ties the
+         golfer's rendered height to the section's, so this is literally a
+         bigger swing rather than more padding. */
+      min-height: clamp(700px, 88svh, 960px);
     }
     .hero-trace { aspect-ratio: 16 / 11; }
     .report-proof { grid-template-columns: minmax(0, .86fr) minmax(390px, 1.14fr); }
@@ -850,16 +861,38 @@
   }
   @media (max-width: 749px) {
     /* The photograph is a portrait crop here and the copy sits on top of it,
-       so the wash runs top-to-bottom instead of left-to-right. */
+       so the wash runs top-to-bottom instead of left-to-right. Every stop sits
+       at the legibility boundary and no darker — the scrim is simultaneously
+       what makes the type readable and what flattens the golfer back into a
+       silhouette, so it eases off wherever nothing reads on top of it (the
+       button band, and everything below the signal card). Mirrors
+       storefront-theme/sections/hero.liquid; move one, move both. */
     .landing-hero::before {
       background:
-        linear-gradient(180deg, rgba(var(--sl-field-rgb), .88) 0%, rgba(var(--sl-field-rgb), .58) 44%, rgba(var(--sl-field-rgb), .96) 100%);
+        linear-gradient(180deg,
+          rgba(var(--sl-field-rgb), .78) 0%,
+          rgba(var(--sl-field-rgb), .82) 22%,
+          rgba(var(--sl-field-rgb), .72) 36%,
+          rgba(var(--sl-field-rgb), .8) 48%,
+          rgba(var(--sl-field-rgb), .76) 56%,
+          rgba(var(--sl-field-rgb), .42) 72%,
+          rgba(var(--sl-field-rgb), .5) 100%);
     }
     .landing-hero::after {
+      opacity: .2;
       -webkit-mask-image: linear-gradient(180deg, transparent, rgba(var(--sl-cream-rgb), 1) 58%);
       mask-image: linear-gradient(180deg, transparent, rgba(var(--sl-cream-rgb), 1) 58%);
     }
-    .landing-hero__image { object-position: 32% center; }
+    /* --sl-ink-muted's AA guarantee is measured against --sl-bg, and below
+       this breakpoint the background is a lit dusk sky rather than the flat
+       field. One rung up the ink ramp, phone only. */
+    .hero-proof-points li,
+    .hero-fine { color: var(--sl-ink-soft); }
+    {# 32% cropped the golfer clean out of frame: he stands right of centre in
+       the portrait companion, and the phone box is narrow enough that cover
+       shows only about a third of the image width. On the -v2 crop 80% lands
+       that window on the golfer, his arc, and the tripod. #}
+    .landing-hero__image { object-position: 80% center; }
     .landing-hero__inner { padding-top: clamp(48px, 8vw, 64px); }
     .hero-ctas { width: 100%; }
     .hero-ctas a.button { width: 100%; min-height: 48px; padding: 12px 18px; }
@@ -875,7 +908,13 @@
   <div class="landing">
     <section class="landing-hero" aria-labelledby="landing-title">
       <picture class="landing-hero__backdrop">
-        <source media="(max-width: 749px)" srcset="/static/caddieinsight-range-hero-mobile.webp">
+        {# The -v2 phone crop (1122x932), not the v1 frame (1122x1402): two
+           thirds of v1 was empty sky, and cover crops the WIDTH on a phone, so
+           every dead row rendered and the golfer came out a third of the
+           height he is now. store-assets/phone_hero_crop.py. width/height are
+           declared because the candidates have different aspect ratios. #}
+        <source media="(max-width: 749px)" width="1122" height="932"
+                srcset="/static/caddieinsight-range-hero-mobile-v2.webp">
         <img class="landing-hero__image" src="/static/caddieinsight-range-hero.webp"
              alt="Golfer completing a driver swing beside a phone on a tripod at a dusk driving range"
              width="1672" height="941" decoding="async" fetchpriority="high">

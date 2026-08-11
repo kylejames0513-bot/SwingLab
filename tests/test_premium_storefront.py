@@ -622,7 +622,12 @@ def test_storefront_uses_immutable_release_artwork_references():
     assert "image" not in hero
     assert "mobile_image" not in hero
     assert hero_source.count("'caddieinsight-range-hero-desktop.webp'") >= 1
-    assert hero_source.count("'caddieinsight-range-hero-mobile.webp'") >= 1
+    # The phone candidate is the -v2 crop. The v1 frame is 1122x1402 and two
+    # thirds of it is sky; on a phone `object-fit: cover` crops the WIDTH and
+    # renders every one of those dead rows, so the golfer came out 330px tall
+    # in a 1019px hero. Binding v1 here again re-ships that bug.
+    assert hero_source.count("'caddieinsight-range-hero-mobile-v2.webp'") >= 1
+    assert "'caddieinsight-range-hero-mobile.webp'" not in hero_source
     # Webp theme assets must be served whole: asset_img_url has no webp
     # support and renders the no-image placeholder in production.
     assert "asset_img_url" not in hero_source
@@ -636,9 +641,9 @@ def test_storefront_uses_immutable_release_artwork_references():
             (1672, 941),
             "db5cab06d63517ddf90218e00e28a975b4b344d79277dfbc7fc4fdd2fa2e75b7",
         ),
-        "caddieinsight-range-hero-mobile.webp": (
-            (1122, 1402),
-            "778fa0bd0a007e8b07c4ff20884e16763a9071256b5349088554a1e17b11d197",
+        "caddieinsight-range-hero-mobile-v2.webp": (
+            (1122, 932),
+            "7e6d9a76a1d4e3541b396cce474c22eb1ace484df3c820275cda7d9564b1a800",
         ),
     }
     for filename, (dimensions, expected_sha256) in expected_theme_webps.items():

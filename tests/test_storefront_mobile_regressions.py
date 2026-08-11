@@ -192,16 +192,30 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     # parent is how the trace disappeared the first time).
     assert ".sl-hero__trace { display: none; }" not in mobile_css
     assert ".sl-hero__readout { display: none; }" not in mobile_css
-    # Pinned as behaviour, not as a one-line spelling. The literal string
-    # this replaced was satisfied by a rule that ALSO left aspect-ratio: 5/4
-    # live from the base declaration, so the 64px height fixed the width to
-    # 80px and the readout rendered as a thumbnail in the corner of its own
-    # panel. The pin passed; the layout was broken. aspect-ratio must be
-    # released for the height to mean anything.
+    # The live read is what this section is FOR, so the phone must not render
+    # it as a thumbnail. Two different shapes of this bug have now shipped:
+    #
+    #   1. `height: 64px` with the base `aspect-ratio: 5/4` still live, which
+    #      fixed the WIDTH to 80px — a thumbnail in the corner of its own panel.
+    #   2. `height: 64px` with `aspect-ratio: auto`, which fixed #1 and left a
+    #      308x64 strip. The still is drawn preserveAspectRatio="meet" from a
+    #      320x260 viewBox, so that scales the artwork to 25% and stands a
+    #      ~79px figure in a field of empty grid. The canvas reads the same
+    #      box, so the animation was drawn just as small.
+    #
+    # Both passed a literal-string pin. What actually has to hold is that the
+    # box is full-width and its height DERIVES from a sane ratio, so neither a
+    # fixed thumbnail height nor a ratio fighting a height can come back.
     trace_rules = declarations(mobile_css, ".sl-hero__trace")
     assert trace_rules
-    assert any("height: 64px" in rule for rule in trace_rules)
-    assert any("aspect-ratio: auto" in rule for rule in trace_rules)
+    trace_css = " ".join(trace_rules)
+    assert "width: 100%" in trace_css
+    ratio = re.search(r"aspect-ratio:\s*(\d+)\s*/\s*(\d+)", trace_css)
+    assert ratio, "the phone trace needs a real ratio, not a thumbnail height"
+    assert 1.0 <= int(ratio.group(1)) / int(ratio.group(2)) <= 2.0
+    assert not re.search(r"height:\s*\d+px", trace_css), (
+        "a fixed px height alongside a live aspect-ratio is bug #1 above"
+    )
 
 
 def test_mobile_method_section_stays_a_compact_left_flowing_spec_sheet():
