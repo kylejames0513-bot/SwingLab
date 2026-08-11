@@ -1,47 +1,185 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — You’re offline{% endblock %}
 {% block style %}
-  .notice-card { display: grid; justify-items: start; gap: 4px; }
-  .notice-card h1 { margin: 0 0 6px; color: var(--sl-green); font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1; letter-spacing: -.045em; }
-  .notice-card p { max-width: 52ch; margin: 0; color: var(--sl-ink-soft); }
-  .notice-card__mark { width: 56px; height: 56px; margin-bottom: 10px; }
+  {# This page paints entirely out of Cache Storage — the service worker
+     precaches /offline and the shell's static assets and nothing else — so
+     every rule below has to be tokens plus the faces the shell already
+     loaded. Nothing here may depend on a request that, by definition,
+     cannot be made. #}
+  .notice-card {
+    {# --sl-card-inset and --sl-dense-inset are declared in the STOREFRONT's
+       base.css, not in this shell's :root. Used bare they resolve to nothing
+       and every padding on this panel silently collapses to zero, with no
+       warning anywhere. Each carries the inset .card already ships so the
+       page is correct today and picks the token up the day the shell
+       defines it. #}
+    --notice-inset: var(--sl-card-inset, clamp(22px, 4vw, 32px));
+    --notice-dense: var(--sl-dense-inset, clamp(14px, 1.5vw, 20px));
+    {# The rules are the layout. .card's own padding is handed to the two
+       regions below so the status strip can run edge to edge, and overflow
+       clips that strip to the corner. Tighter corner than .card's radius-lg:
+       this is an instrument panel, not a content card. #}
+    padding: 0;
+    border-radius: var(--sl-radius-md);
+    overflow: hidden;
+  }
+  {# The status strip. --sl-night is the well: recessed below the panel face,
+     separated by a hairline rather than by a gap. #}
+  .notice-card__head {
+    display: flex;
+    align-items: center;
+    gap: var(--sl-space-3);
+    padding: var(--notice-dense) var(--notice-inset);
+    background: var(--sl-night);
+    border-bottom: 1px solid var(--sl-border);
+  }
+  .notice-card__mark {
+    flex: 0 0 auto;
+    width: 36px;
+    height: 36px;
+  }
+  {# The shell's .sl-eyebrow already owns the mono face, tracking and case.
+     Only the trailing margin goes: the hairline under the strip is what
+     separates this line from the heading now. #}
+  .notice-card .sl-eyebrow {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sl-space-2);
+  }
+  {# The status lamp. The shell's banner dot is a cyan circle sitting in a
+     halo because it reports a live connection; this one is a square amber
+     lamp with no halo, because this page exists precisely when there is
+     nothing live to read. Cyan here would claim a reading the instrument
+     does not have. currentColor keeps it locked to the eyebrow. #}
+  .notice-card .sl-eyebrow::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 6px;
+    height: 6px;
+    background: currentColor;
+  }
+  .notice-card__body { padding: var(--notice-inset); }
+  {# The old rule here was a hand-rolled clamp() at -.045em tracking — cut
+     for the condensed face this app used to set. The display face is
+     EXPANDED now, so that tracking crushed the letterforms into each other
+     and the clamp put this heading on a scale no other page shares. Both
+     are gone: the type rungs size it, stepping up at the 560px stop rather
+     than riding a fluid curve down to an unreadable width on a phone. #}
+  .notice-card h1 {
+    margin: 0;
+    font-size: var(--sl-text-3xl);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  {# Scoped to a class, not to `.notice-card p`. The bare-element form also
+     matched the eyebrow paragraph and, at one type higher specificity than
+     .sl-eyebrow, quietly repainted it from the signal amber to body ink —
+     the strip lost its status colour for free. #}
+  .notice-card__lede {
+    max-width: 52ch;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+  }
+  {# The register. A 1px grid gap over a --sl-border ground IS the hairline:
+     one shared rule between rows instead of three borders that double up at
+     every junction. Rows sit in the well so they read as recessed cells. #}
   .notice-card__waiting {
     display: grid;
-    gap: 7px;
-    margin: 20px 0 0;
+    gap: 1px;
+    margin: var(--sl-space-5) 0 0;
     padding: 0;
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
     list-style: none;
     color: var(--sl-ink-soft);
     font-size: var(--sl-text-sm);
   }
-  .notice-card__waiting li { display: flex; gap: 9px; align-items: baseline; }
-  .notice-card__waiting span[aria-hidden] { color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: 10px; letter-spacing: .12em; }
+  .notice-card__waiting li {
+    display: grid;
+    grid-template-columns: 2.5rem minmax(0, 1fr);
+    align-items: baseline;
+    gap: var(--sl-space-2);
+    padding: var(--sl-space-3) var(--sl-space-4);
+    background: var(--sl-night);
+  }
+  {# An ordinal is an index, not a measurement, so it stays muted mono —
+     amber on it would claim the engine had read something. The old 10px sat
+     below the bottom rung of the scale and below the size mono stays
+     legible at on this field; --sl-text-xs is that floor (6.6:1 muted). #}
+  .notice-card__waiting span[aria-hidden] {
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .12em;
+  }
+  {# Bone on the field with its own hairline — the storefront hero's button,
+     byte for byte in behaviour. Amber is reserved for measured values and a
+     control is never one.
+
+     The hover was dead before this: --sl-green and --sl-green-btn both
+     resolve to bone after the inversion, so `background: var(--sl-green-btn)`
+     on hover repainted bone with bone. It moves to the trace colour, which
+     is the one moment on this page where cyan is honest — the control is
+     reaching for the live connection. #}
   .notice-card__retry {
-    min-height: 44px;
-    margin-top: 22px;
-    padding: 11px 20px;
-    border: 0;
+    min-height: 48px;
+    margin: var(--sl-space-5) 0 0;
+    padding: 13px 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border: 1px solid var(--sl-ink);
     border-radius: var(--sl-radius-control);
-    background: var(--sl-green);
+    background: var(--sl-ink);
     color: var(--sl-green-ink);
     font: inherit;
-    font-weight: 600;
+    font-weight: 700;
+    line-height: 1.2;
+    {# The shell's generic `main button` rule hangs a hand-rolled drop shadow
+       and a 1px hover lift off every button. Neither survives here: a drop
+       shadow is invisible on near-black, and a panel that lifts stops
+       reading as a panel. #}
+    box-shadow: none;
     cursor: pointer;
+    transition: background-color .18s ease, border-color .18s ease;
   }
-  .notice-card__retry:hover { background: var(--sl-green-btn); }
+  .notice-card__retry:hover {
+    border-color: var(--sl-ink-hi);
+    background: var(--sl-ink-hi);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+    transform: none;
+  }
+  .notice-card__retry:active { box-shadow: none; transform: none; }
+  @media (min-width: 560px) {
+    .notice-card h1 { font-size: var(--sl-heading-display); }
+  }
+  {# This page renders from the anonymous public shell — no golfer profile is
+     read for it, so the body never gets the .sl-reduced-motion class the
+     shell hangs the signed-in motion rules on. The media query is the only
+     reduced-motion signal that reaches this page. #}
+  @media (prefers-reduced-motion: reduce) {
+    .notice-card__retry { transition: none; }
+  }
 {% endblock %}
 {% block main %}
   <div class="card notice-card">
-    <img class="notice-card__mark" src="/static/pwa-icon.svg" alt="" aria-hidden="true" width="56" height="56">
-    <p class="sl-eyebrow">Connection needed</p>
-    <h1>You’re offline</h1>
-    <p>Nothing is lost. {{ brand.name }} keeps your swings on the server rather than on the phone, so everything reappears the moment you reconnect.</p>
-    <ul class="notice-card__waiting">
-      <li><span aria-hidden="true">01</span> Completed reports and practice plans are waiting on your account.</li>
-      <li><span aria-hidden="true">02</span> An upload needs a connection — the clip stays in your camera roll until then.</li>
-      <li><span aria-hidden="true">03</span> Analyses already running keep going; their result links keep working.</li>
-    </ul>
-    <button class="notice-card__retry" type="button" data-offline-retry>Try again</button>
+    <div class="notice-card__head">
+      <img class="notice-card__mark" src="/static/pwa-icon.svg" alt="" aria-hidden="true" width="36" height="36">
+      <p class="sl-eyebrow">Connection needed</p>
+    </div>
+    <div class="notice-card__body">
+      <h1>You’re offline</h1>
+      <p class="notice-card__lede">Nothing is lost. {{ brand.name }} keeps your swings on the server rather than on the phone, so everything reappears the moment you reconnect.</p>
+      <ul class="notice-card__waiting">
+        <li><span aria-hidden="true">01</span> Completed reports and practice plans are waiting on your account.</li>
+        <li><span aria-hidden="true">02</span> An upload needs a connection — the clip stays in your camera roll until then.</li>
+        <li><span aria-hidden="true">03</span> Analyses already running keep going; their result links keep working.</li>
+      </ul>
+      <button class="notice-card__retry" type="button" data-offline-retry>Try again</button>
+    </div>
   </div>
 {% endblock %}
 {% block script %}

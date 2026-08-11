@@ -45,52 +45,176 @@
       assign live_pro_price = live_pro_price | append: ' · Founders Pass ' | append: founders_price
     endif
   endif
+
+  # Column labels resolve once. They are read three times each (header cell,
+  # the mobile data-col label, and the plan count), and resolving them at the
+  # point of use is how the header and the phone label drifted apart before.
+  assign free_label = section.settings.free_label | default: 'Free'
+  assign pro_label = section.settings.pro_label | default: 'Pro'
+  assign coach_label = section.settings.coach_label
+  assign show_coach = false
+  assign plan_count = 2
+  if coach_label != blank
+    assign show_coach = true
+    assign plan_count = 3
+  endif
+
+  # The rail's live-read line must not claim something the table never does:
+  # the live price is substituted only into a row whose feature is literally
+  # "Price", so the claim is gated on that row actually existing.
+  assign has_price_row = false
+  for block in section.blocks
+    assign scan_key = block.settings.feature | downcase | strip
+    if scan_key == 'price'
+      assign has_price_row = true
+    endif
+  endfor
+  assign price_is_live = false
+  if has_price_row and live_pro_price != blank
+    assign price_is_live = true
+  endif
+
+  # Spec-sheet counts, zero-padded by hand — Liquid has no pad filter.
+  assign row_count = section.blocks.size
+  assign row_count_label = row_count
+  if row_count < 10
+    assign row_count_label = row_count | prepend: '0'
+  endif
+  assign plan_count_label = plan_count | prepend: '0'
+
+  # Values that mean "this plan does not include the row". Detecting them in
+  # Liquid rather than leaving the glyph to carry the meaning is what lets an
+  # excluded cell dim without dimming a real value, and what gives a screen
+  # reader a word instead of a punctuation mark it may not announce at all.
+  assign off_values = '—,–,-' | split: ','
 -%}
-<section id="{{ section.settings.anchor | default: 'compare' }}" class="sl-compare" data-app-upgrade-section>
+<section id="{{ section.settings.anchor | default: 'compare' }}"
+         class="sl-compare"
+         aria-labelledby="CompareTitle-{{ section.id }}"
+         data-app-upgrade-section>
   <div class="sl-wrap sl-reveal">
     <div class="sl-compare__head">
-      <p class="sl-eyebrow">{{ 'homepage.comparison.eyebrow' | t }}</p>
-      <h2 class="sl-h2">
-        <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Compare Free and Pro.' }}</span>
-        <span data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_heading' | t }}</span>
-      </h2>
-      {%- if section.settings.sub != blank -%}
-        <p class="sl-compare__sub" data-app-auth-signed-out>{{ section.settings.sub }}</p>
-      {%- endif -%}
-      <p class="sl-compare__sub" data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_subheading' | t }}</p>
+      {%- comment -%}
+        The margin rail. A spec sheet numbers its own table; this one counts
+        its rows and its columns, which is the only marginal note that cannot
+        go stale when a merchandiser adds a block in the theme editor. A
+        hardcoded section number would be wrong the first time the page is
+        reordered.
+      {%- endcomment -%}
+      <div class="sl-compare__rail">
+        <p class="sl-eyebrow" id="CompareRail-{{ section.id }}">{{ 'homepage.comparison.eyebrow' | t }}</p>
+        <p class="sl-compare__count" aria-hidden="true">
+          <span>{{ row_count_label }} ROWS</span>
+          <span>{{ plan_count_label }} PLANS</span>
+        </p>
+        {%- if price_is_live and section.settings.live_note != blank -%}
+          {%- comment -%}
+            Cyan is the live read and nothing else. The store answered with a
+            real price at render time, so this one line is genuinely live —
+            it disappears the moment the product or its variants stop
+            resolving and the table falls back to the typed values.
+          {%- endcomment -%}
+          <p class="sl-compare__live"><i aria-hidden="true"></i>{{ section.settings.live_note }}</p>
+        {%- endif -%}
+      </div>
+
+      <div class="sl-compare__lockup">
+        <h2 id="CompareTitle-{{ section.id }}" class="sl-h2">
+          <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Compare Free and Pro.' }}</span>
+          <span data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_heading' | t }}</span>
+        </h2>
+        {%- if section.settings.sub != blank -%}
+          <p class="sl-compare__sub" data-app-auth-signed-out>{{ section.settings.sub }}</p>
+        {%- endif -%}
+        <p class="sl-compare__sub" data-app-auth-signed-in hidden>{{ 'homepage.comparison.member_subheading' | t }}</p>
+      </div>
     </div>
 
-    <div class="sl-compare__scroll">
+    {%- comment -%}
+      A table that scrolls sideways is unreachable from a keyboard unless the
+      scroll container is focusable and named. It borrows the eyebrow for its
+      name so the region has a real, translated label instead of a second
+      copy of the heading.
+    {%- endcomment -%}
+    <div class="sl-compare__scroll" role="region" tabindex="0" aria-labelledby="CompareRail-{{ section.id }}">
       <table class="sl-compare__table">
         <thead>
           <tr>
             <th scope="col" class="sl-compare__feature-head"><span class="visually-hidden">Feature</span></th>
-            <th scope="col" class="sl-compare__col">{{ section.settings.free_label | default: 'Free' }}</th>
-            <th scope="col" class="sl-compare__col sl-compare__col--pro">{{ section.settings.pro_label | default: 'Pro' }}</th>
-            {%- if section.settings.coach_label != blank -%}
-              <th scope="col" class="sl-compare__col sl-compare__col--pro">{{ section.settings.coach_label }}</th>
+            <th scope="col" class="sl-compare__col sl-compare__col--free">{{ free_label }}</th>
+            {%- comment -%}
+              --pro reads as "a paid tier", not "the Pro plan" — Coach carries
+              it too. The name predates the Coach column and is kept because
+              it is what the stylesheet and every prior release were read
+              against; what it means is documented here instead.
+            {%- endcomment -%}
+            <th scope="col" class="sl-compare__col sl-compare__col--pro">{{ pro_label }}</th>
+            {%- if show_coach -%}
+              <th scope="col" class="sl-compare__col sl-compare__col--pro">{{ coach_label }}</th>
             {%- endif -%}
           </tr>
         </thead>
         <tbody>
           {%- for block in section.blocks -%}
-          {%- assign feature_key = block.settings.feature | downcase | strip -%}
-          <tr {{ block.shopify_attributes }}>
+            {%- liquid
+              assign feature_key = block.settings.feature | downcase | strip
+              assign is_price = false
+              if feature_key == 'price'
+                assign is_price = true
+              endif
+
+              assign free_value = block.settings.free_value | strip
+              assign pro_value = block.settings.pro_value | strip
+              assign coach_value = block.settings.coach_value | strip
+              if is_price and live_pro_price != blank
+                assign pro_value = live_pro_price
+              endif
+              if is_price and live_coach_price != blank
+                assign coach_value = live_coach_price
+              endif
+
+              # An unset cell reads as an explicit exclusion rather than a
+              # blank hole. The blank hole is exactly what shipped once, when
+              # the schema dropped coach_value and the Coach column rendered
+              # a label over eight empty cells.
+              assign free_off = false
+              assign pro_off = false
+              assign coach_off = false
+              if free_value == blank or off_values contains free_value
+                assign free_off = true
+              endif
+              if pro_value == blank or off_values contains pro_value
+                assign pro_off = true
+              endif
+              if coach_value == blank or off_values contains coach_value
+                assign coach_off = true
+              endif
+            -%}
+            <tr class="sl-compare__row{% if is_price %} sl-compare__row--metric{% endif %}" {{ block.shopify_attributes }}>
               <th scope="row">{{ block.settings.feature }}</th>
-              <td data-col="{{ section.settings.free_label | default: 'Free' | escape }}">{{ block.settings.free_value }}</td>
-              <td class="sl-compare__pro" data-col="{{ section.settings.pro_label | default: 'Pro' | escape }}">
-                {%- if feature_key == 'price' and live_pro_price != blank -%}
-                  {{ live_pro_price }}
+              <td class="sl-compare__cell sl-compare__free{% if free_off %} is-off{% endif %}{% if is_price %} sl-compare__cell--metric{% endif %}"
+                  data-col="{{ free_label | escape }}">
+                {%- if free_off -%}
+                  <span aria-hidden="true">—</span><span class="visually-hidden">Not included</span>
                 {%- else -%}
-                  {{ block.settings.pro_value }}
+                  {{ free_value }}
                 {%- endif -%}
               </td>
-              {%- if section.settings.coach_label != blank -%}
-                <td class="sl-compare__pro" data-col="{{ section.settings.coach_label | escape }}">
-                  {%- if feature_key == 'price' and live_coach_price != blank -%}
-                    {{ live_coach_price }}
+              <td class="sl-compare__cell sl-compare__pro{% if pro_off %} is-off{% endif %}{% if is_price %} sl-compare__cell--metric{% endif %}"
+                  data-col="{{ pro_label | escape }}">
+                {%- if pro_off -%}
+                  <span aria-hidden="true">—</span><span class="visually-hidden">Not included</span>
+                {%- else -%}
+                  {{ pro_value }}
+                {%- endif -%}
+              </td>
+              {%- if show_coach -%}
+                <td class="sl-compare__cell sl-compare__pro{% if coach_off %} is-off{% endif %}{% if is_price %} sl-compare__cell--metric{% endif %}"
+                    data-col="{{ coach_label | escape }}">
+                  {%- if coach_off -%}
+                    <span aria-hidden="true">—</span><span class="visually-hidden">Not included</span>
                   {%- else -%}
-                    {{ block.settings.coach_value }}
+                    {{ coach_value }}
                   {%- endif -%}
                 </td>
               {%- endif -%}
@@ -100,22 +224,27 @@
       </table>
     </div>
 
-    <div class="sl-compare__actions">
-      {%- if section.settings.primary_label != blank -%}
-        <a href="{{ section.settings.primary_url | default: '/products/swinglab-pro' }}"
-           class="sl-btn sl-btn--primary"
-           data-app-pro-sales-link>{{ section.settings.primary_label }}</a>
-      {%- endif -%}
-      {%- if section.settings.secondary_label != blank -%}
-        <a href="{{ section.settings.secondary_url | default: '#' }}"
-           class="sl-btn sl-btn--outline"
-           data-app-primary-cta
-           data-app-signed-out-label="{{ section.settings.secondary_label | escape }}"
-           data-app-signed-out-url="{{ section.settings.secondary_url | default: '#' }}">
-          <span data-app-cta-label>{{ section.settings.secondary_label }}</span>
-        </a>
-      {%- endif -%}
-    </div>
+    {%- if section.settings.primary_label != blank or section.settings.secondary_label != blank -%}
+      <div class="sl-compare__actions">
+        {%- if section.settings.primary_label != blank -%}
+          <a href="{{ section.settings.primary_url | default: '/products/swinglab-pro' }}"
+             class="sl-btn sl-btn--primary sl-compare__cta"
+             data-app-pro-sales-link>
+            <span>{{ section.settings.primary_label }}</span>
+            <span class="sl-compare__cta-arrow" aria-hidden="true">&rarr;</span>
+          </a>
+        {%- endif -%}
+        {%- if section.settings.secondary_label != blank -%}
+          <a href="{{ section.settings.secondary_url | default: '#' }}"
+             class="sl-btn sl-btn--outline sl-compare__cta"
+             data-app-primary-cta
+             data-app-signed-out-label="{{ section.settings.secondary_label | escape }}"
+             data-app-signed-out-url="{{ section.settings.secondary_url | default: '#' }}">
+            <span data-app-cta-label>{{ section.settings.secondary_label }}</span>
+          </a>
+        {%- endif -%}
+      </div>
+    {%- endif -%}
     {%- if section.settings.footnote != blank -%}
       <p class="sl-compare__footnote">{{ section.settings.footnote }}</p>
     {%- endif -%}
@@ -123,53 +252,118 @@
 </section>
 
 {% stylesheet %}
+/* The ledger is a sunk well. Its neighbours paint the page field, so a band
+   that painted the same field with the same centred eyebrow/heading/lede
+   stack is how ten sections became one indistinguishable stripe. Dropping to
+   --sl-night and letting the table panel sit inside it gives the section a
+   floor of its own, and gives the table three legible surfaces to work with:
+   well, panel, field. */
 .sl-compare {
   padding-top: var(--sl-section-space);
   padding-bottom: var(--sl-section-space);
-  background: #f0eee7;
+  border-top: 1px solid var(--sl-border-strong);
+  border-bottom: 1px solid var(--sl-border-strong);
+  color: var(--sl-ink);
+  background:
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+    var(--sl-night);
+  background-size: 8px 8px, 8px 8px, auto;
 }
+
+/* ---- head: a narrow mono rail against a wide lockup ---- */
 .sl-compare__head {
-  max-width: 880px;
-  margin-inline: auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 18px;
-  text-align: center;
+  display: grid;
+  gap: var(--sl-space-5);
+  align-items: start;
 }
-.sl-compare__head .sl-eyebrow { margin: 0; }
+@media (min-width: 1000px) {
+  .sl-compare__head {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 9fr);
+    gap: clamp(32px, 4vw, 72px);
+  }
+}
+.sl-compare__rail {
+  display: grid;
+  gap: var(--sl-space-3);
+  padding-top: var(--sl-space-1);
+}
+/* base.css paints .sl-eyebrow amber. Amber is the measured-value signal and
+   a section label is not a measurement, so it is quiet here. Overriding in
+   the section keeps the rule local — base.css is shared. */
+.sl-compare .sl-eyebrow {
+  margin: 0;
+  color: var(--sl-ink-soft);
+}
+.sl-compare__count {
+  margin: 0;
+  padding-top: var(--sl-space-3);
+  border-top: 1px solid var(--sl-border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-2) var(--sl-space-4);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.sl-compare__live {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: var(--sl-space-2);
+  color: var(--sl-trace);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  line-height: 1.5;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.sl-compare__live i {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 4px rgba(var(--sl-trace-rgb), 0.12);
+}
 .sl-compare .sl-h2 {
-  max-width: 13ch;
-  margin-inline: auto;
+  margin: 0;
+  max-width: 16ch;
+  font-family: var(--sl-font-display);
   font-size: var(--sl-heading-support);
   font-weight: 800;
-  letter-spacing: -0.045em;
   line-height: 1;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
   text-wrap: balance;
 }
 .sl-compare__sub {
-  margin: 0 auto;
-  font-size: var(--sl-text-base);
-  line-height: 1.55;
+  margin: var(--sl-space-4) 0 0;
+  max-width: 56ch;
   color: var(--sl-ink-soft);
-  text-align: center;
-  max-width: 60ch;
+  font-size: var(--sl-text-lg);
+  line-height: 1.55;
   text-wrap: pretty;
 }
+
+/* ---- the table ---- */
 .sl-compare__scroll {
-  margin-top: clamp(34px, 5vw, 54px);
+  margin-top: clamp(36px, 5vw, 60px);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  border: 1px solid #ded8cc;
-  border-radius: var(--sl-radius-lg);
-  background: rgba(255, 253, 249, 0.88);
-  box-shadow: 0 24px 60px -46px rgba(var(--sl-night-rgb), 0.5);
+  border: 1px solid var(--sl-border-strong);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-bg-card);
+  box-shadow: var(--sl-shadow-deep);
 }
 .sl-compare__table {
   width: 100%;
-  min-width: 640px;
-  border-collapse: separate;
-  border-spacing: 0;
+  min-width: 720px;
+  border-collapse: collapse;
 }
 .sl-compare__table th,
 .sl-compare__table td {
@@ -178,84 +372,155 @@
   text-align: center;
   vertical-align: middle;
 }
+/* The 1px hairline grid. Fencing every value column from its neighbour is
+   what turns a stack of rows into a matrix you can read across — a drop
+   shadow does nothing at all on a near-black field. */
+.sl-compare__table th + th,
+.sl-compare__table td { border-left: 1px solid var(--sl-border); }
+.sl-compare__table tbody tr:last-child th,
+.sl-compare__table tbody tr:last-child td { border-bottom: 0; }
 .sl-compare__table thead th {
+  padding-top: var(--sl-space-5);
+  padding-bottom: var(--sl-space-5);
+  border-bottom: 1px solid var(--sl-border-strong);
+  color: var(--sl-ink-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.16em;
   text-transform: uppercase;
-  color: var(--sl-ink-muted);
 }
 /* empty corner cell above the feature column; align with the row headers */
-.sl-compare__feature-head { padding: var(--sl-dense-inset); }
-.sl-compare__col { text-align: center; width: 22%; }
-.sl-compare__col--pro {
-  background: var(--sl-orange-soft);
-  color: var(--sl-green);
-  border-radius: 10px 10px 0 0;
-}
+.sl-compare__table thead th.sl-compare__feature-head { text-align: left; }
+.sl-compare__col { width: 20%; }
+/* Specificity is deliberate, not defensive: `.sl-compare__table thead th`
+   sets the muted label colour with two type selectors, so a single class
+   here would silently lose and the paid columns would read as fine print. */
+.sl-compare__table thead th.sl-compare__col--pro { color: var(--sl-ink); }
+/* Free drops to the page field, one step below the panel the paid tiers sit
+   on. The ladder is told by surface depth because both signal colours are
+   already spoken for: amber is a measured number, cyan is the live read, and
+   a plan tier is neither. */
+.sl-compare__col--free,
+.sl-compare__free { background-color: var(--sl-bg); }
 .sl-compare__table tbody th {
-  font-weight: 600;
-  font-size: var(--sl-text-base);
+  width: 40%;
   color: var(--sl-ink);
+  font-family: var(--sl-font-sans);
+  font-size: var(--sl-text-base);
+  font-weight: 600;
+  line-height: 1.4;
   text-align: left;
 }
 .sl-compare__table tbody td {
+  color: var(--sl-ink-soft);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-sm);
   font-variant-numeric: tabular-nums;
-  color: var(--sl-ink-soft);
+  line-height: 1.45;
   text-align: center;
 }
-.sl-compare__table tbody td.sl-compare__pro {
-  background: rgba(var(--sl-accent-rgb), 0.045);
+/* A dash is not a value. Fine-print colour so the eye counts what a plan
+   HAS, and the visually-hidden word carries the meaning to a reader that
+   would otherwise announce a bare em dash — or nothing. */
+.sl-compare__table tbody td.sl-compare__cell.is-off { color: var(--sl-ink-muted); }
+/* THE one amber in the section. Price is the only quantity in the table and
+   the only value the store itself reports; every other cell is an
+   entitlement, and amber does not mark entitlements. */
+.sl-compare__table tbody td.sl-compare__cell--metric {
+  color: var(--sl-accent);
+  font-weight: 500;
+}
+/* The total line. Price is a different kind of statement from the rows above
+   it, so it gets the structural rule. The width is 2px on purpose: collapsed
+   borders resolve a same-width tie in favour of the cell above, so a 1px
+   rule here would simply never paint. */
+.sl-compare__table tbody tr.sl-compare__row--metric th,
+.sl-compare__table tbody tr.sl-compare__row--metric td {
+  border-top: 2px solid var(--sl-border-strong);
+}
+/* Evidence-table reading: the row under the pointer lifts. The wash is an
+   inherited alpha rather than a background-color so it composites over each
+   column's own surface instead of flattening the Free column back into the
+   panel. */
+.sl-compare__table tbody th,
+.sl-compare__table tbody td {
+  background-image:
+    linear-gradient(rgba(var(--sl-cream-rgb), var(--sl-row-wash, 0)), rgba(var(--sl-cream-rgb), var(--sl-row-wash, 0)));
+}
+.sl-compare__table tbody tr:hover { --sl-row-wash: 0.045; }
+
+/* ---- action rail ---- */
+.sl-compare__actions {
+  width: 100%;
+  margin: 30px auto 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-3);
+}
+/* Bone on the field with a hairline edge, matching .sl-hero__primary. An
+   amber button would be claiming to be a measurement. */
+.sl-compare .sl-compare__cta {
+  min-height: 52px;
+  padding: 14px 24px;
+  border-width: 1px;
+  border-style: solid;
+  font-size: var(--sl-text-base);
+  font-weight: 600;
+}
+.sl-compare .sl-btn--primary {
+  border-color: var(--sl-ink);
+  background: var(--sl-ink);
+  color: var(--sl-bg);
+}
+.sl-compare .sl-btn--primary:hover {
+  border-color: var(--sl-ink-hi);
+  background: var(--sl-ink-hi);
+  color: var(--sl-bg);
+}
+.sl-compare .sl-btn--outline {
+  border-color: var(--sl-control-border);
+  background: transparent;
   color: var(--sl-ink);
 }
-.sl-compare__table tbody tr:last-child td.sl-compare__pro {
-  border-radius: 0 0 10px 10px;
-}
-/* evidence-table reading: the row under the pointer lifts quietly */
-.sl-compare__table tbody tr:hover th,
-.sl-compare__table tbody tr:hover td {
-  background: rgba(var(--sl-green-rgb), 0.05);
-}
-.sl-compare__table tbody tr:hover td.sl-compare__pro {
-  background: rgba(var(--sl-accent-rgb), 0.1);
+.sl-compare .sl-btn--outline:hover {
+  border-color: var(--sl-ink);
+  background: rgba(var(--sl-cream-rgb), 0.06);
+  color: var(--sl-ink);
 }
 @media (prefers-reduced-motion: no-preference) {
-  .sl-compare__table tbody th,
-  .sl-compare__table tbody td {
-    transition: background-color 0.14s ease;
-  }
-}
-.sl-compare__actions {
-  width: min(100%, 440px);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin: 30px auto 0;
+  .sl-compare__cta-arrow { transition: transform 0.2s ease; }
+  .sl-compare__cta:hover .sl-compare__cta-arrow { transform: translateX(4px); }
 }
 .sl-compare__footnote {
-  margin: 16px auto 0;
+  margin: var(--sl-space-4) 0 0;
+  max-width: 68ch;
+  color: var(--sl-ink-muted);
   font-size: var(--sl-text-sm);
   line-height: 1.55;
-  color: var(--sl-ink-muted);
-  max-width: 62ch;
   text-align: left;
 }
+
 @media (max-width: 749px) {
   /* The desktop grid stack was built for two value columns and garbled the
-     moment Coach made three. On phones each feature is a small card: the
-     feature title, then one labeled row per plan — nothing wraps, nothing
-     orphans. */
-  .sl-compare__scroll { overflow-x: visible; }
+     moment Coach made three. On phones each feature is a small panel: the
+     feature title on the sunk well, then one labeled row per plan — nothing
+     wraps, nothing orphans, and the header row is not needed because every
+     cell carries its own column name in data-col. */
+  .sl-compare__scroll {
+    overflow-x: visible;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
   .sl-compare__table { display: block; min-width: 0; }
   .sl-compare__table thead { display: none; }
   .sl-compare__table tbody { display: block; }
   .sl-compare__table tbody tr {
     display: block;
     margin-bottom: var(--sl-space-3);
-    border: 1px solid var(--sl-border);
+    border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-sm);
     background: var(--sl-bg-card);
     overflow: hidden;
@@ -264,7 +529,9 @@
     display: block;
     width: auto;
     padding: var(--sl-space-3) var(--sl-dense-inset);
-    background: #f8f4eb;
+    border: 0;
+    border-bottom: 1px solid var(--sl-border-strong);
+    background: var(--sl-night);
     text-align: left;
   }
   .sl-compare__table tbody td {
@@ -274,30 +541,36 @@
     gap: var(--sl-space-3);
     width: auto;
     padding: var(--sl-space-2) var(--sl-dense-inset);
-    text-align: right;
+    border: 0;
     border-top: 1px solid var(--sl-border);
+    text-align: right;
     overflow-wrap: anywhere;
   }
+  .sl-compare__table tbody tr td:first-of-type { border-top: 0; }
+  /* The desktop rule that strips the last row's bottom hairline outranks the
+     card title band above, so the last card would lose its divider. */
+  .sl-compare__table tbody tr:last-child th { border-bottom: 1px solid var(--sl-border-strong); }
+  /* Same story for the total rule: a card is already fenced on all four
+     sides, so the 2px desktop divider has to be handed back here or the
+     price card grows a stray line inside its own top edge. */
+  .sl-compare__table tbody tr.sl-compare__row--metric th { border-top: 0; }
+  .sl-compare__table tbody tr.sl-compare__row--metric td { border-top: 1px solid var(--sl-border); }
+  .sl-compare__table tbody tr.sl-compare__row--metric td:first-of-type { border-top: 0; }
   .sl-compare__table tbody td::before {
     content: attr(data-col);
     flex: none;
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
     letter-spacing: 0.1em;
     text-transform: uppercase;
-    color: var(--sl-ink-muted);
   }
-  .sl-compare__actions { width: 100%; }
-}
-@media (max-width: 749px) {
-  .sl-compare__head { gap: 18px; }
-  .sl-compare__sub {
-    margin-top: 0;
-    text-align: center;
-  }
-  .sl-compare__table tbody th { text-align: center; }
-  .sl-compare__footnote { text-align: center; }
+  /* Inside a card the Free row is a row, not a column, so the field tint
+     that separated it on desktop would just look like a misprint. */
+  .sl-compare__free { background-color: transparent; }
+  .sl-compare__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .sl-compare__cta { justify-content: center; }
 }
 {% endstylesheet %}
 
@@ -311,6 +584,7 @@
     { "type": "text", "id": "free_label", "label": "Free column label", "default": "Free" },
     { "type": "text", "id": "pro_label", "label": "Pro column label", "default": "Pro" },
     { "type": "text", "id": "coach_label", "label": "Coach column label", "info": "Leave empty to hide the Coach column." },
+    { "type": "text", "id": "live_note", "label": "Live-price note", "default": "Price read live from the store", "info": "Shown in cyan beside the section label only when a Price row exists AND the product resolved a real price. Leave empty to hide it." },
     { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Get Pro" },
     { "type": "url", "id": "primary_url", "label": "Primary button link" },
     { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Start free" },
@@ -325,7 +599,7 @@
         { "type": "text", "id": "feature", "label": "Feature", "default": "Swing analyses" },
         { "type": "text", "id": "free_value", "label": "Free value", "default": "1 per month" },
         { "type": "text", "id": "pro_value", "label": "Pro value", "default": "Unlimited" },
-        { "type": "text", "id": "coach_value", "label": "Coach value", "info": "Shown only when the Coach column label is set." }
+        { "type": "text", "id": "coach_value", "label": "Coach value", "info": "Shown only when the Coach column label is set. An empty cell renders as an explicit dash, not a blank." }
       ]
     }
   ],

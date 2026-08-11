@@ -1,24 +1,78 @@
-<section class="sl-coach" aria-labelledby="CoachNotes-{{ section.id }}">
-  <div class="sl-wrap sl-reveal">
-    {%- assign head_eyebrow = 'homepage.coach.eyebrow' | t -%}
-    {%- assign head_title = section.settings.heading | default: 'Coaching that shows its work' -%}
-    {%- assign head_id = 'CoachNotes-' | append: section.id -%}
-    {% render 'section-head',
-      eyebrow: head_eyebrow,
-      title: head_title,
-      lede: section.settings.sub,
-      center: true,
-      heading_id: head_id
-    %}
+{%- liquid
+  # render arguments and tag filters do not mix, so the one translated string
+  # this section owns is resolved up front. It is also the ONLY key here —
+  # locales/en.default.json is owned elsewhere, so nothing new is invented and
+  # homepage.coach.eyebrow keeps its single call site.
+  assign coach_eyebrow = 'homepage.coach.eyebrow' | t
+  assign coach_heading = section.settings.heading | default: 'Coaching that shows its work'
+  assign coach_heading_id = 'CoachNotes-' | append: section.id
+-%}
 
-    <div class="sl-coach__grid">
+<section class="sl-coach" aria-labelledby="{{ coach_heading_id }}">
+  <div class="sl-wrap sl-reveal">
+    {%- comment -%}
+      This used to open with the shared eyebrow → centred h2 → lede stack.
+      So did the nine other homepage bands, and ten identical openings is
+      exactly what made the page read as a brochure rather than a readout.
+      The head is hand-rolled here: the mono label sits in a margin stub the
+      way a spec sheet numbers its left column, the title and the lede take
+      unequal columns beside it, and nothing is centred.
+    {%- endcomment -%}
+    <header class="sl-coach__head">
+      <div class="sl-coach__stub">
+        <p class="sl-coach__kicker">{{ coach_eyebrow }}</p>
+        {%- if section.settings.stub != blank -%}
+          <p class="sl-coach__stub-note">{{ section.settings.stub }}</p>
+        {%- endif -%}
+      </div>
+      <h2 id="{{ coach_heading_id }}" class="sl-coach__title">{{ coach_heading }}</h2>
+      {%- if section.settings.sub != blank -%}
+        <p class="sl-coach__lede">{{ section.settings.sub }}</p>
+      {%- endif -%}
+    </header>
+
+    {%- comment -%}
+      A register, not a card grid. One column at every width, rows separated
+      by the 1px-gap idiom — container painted --sl-border, each row painted
+      --sl-bg-card — so what divides them is a hairline rule rather than a
+      shadowed card edge. A drop shadow is invisible on this field anyway;
+      the only cast that survives here is the inset lit edge below.
+
+      These are product behaviours, never quotes, so nothing here is marked
+      up as quoted speech and nothing is attributed to a person. Doing either
+      would turn documented behaviour into a testimonial we cannot support —
+      tests/test_premium_storefront.py greps this file to keep it that way,
+      so do not reach for a quotation element even as a styling hook.
+    {%- endcomment -%}
+    <div class="sl-coach__register">
       {%- for block in section.blocks -%}
+        {%- liquid
+          # Zero-padded so the ordinals sit as an even two-character column
+          # in the rail. max_blocks is 6, so the branch is the whole story.
+          assign coach_index = forloop.index
+          if coach_index < 10
+            assign coach_index = coach_index | prepend: '0'
+          endif
+        -%}
         <article class="sl-coach__card"{{ block.shopify_attributes }}>
-          {%- if block.settings.label != blank -%}
-            <h3 class="sl-coach__label">
-              <span class="sl-chip sl-chip--accent">{{ block.settings.label }}</span>
-            </h3>
-          {%- endif -%}
+          <div class="sl-coach__rail">
+            {%- comment -%}
+              The ordinal is a register position, not content: it is hidden
+              from assistive tech so a screen reader gets the label and the
+              entry, not "zero one" before every one of them.
+            {%- endcomment -%}
+            <span class="sl-coach__index" aria-hidden="true">{{ coach_index }}</span>
+            {%- if block.settings.label != blank -%}
+              {%- comment -%}
+                This label used to be an amber chip. Amber marks a value the
+                engine measured, and "CLUB CONTEXT" is the name of a
+                behaviour, not a measurement — so it is bone mono now. The
+                section carries neither signal colour for the same reason:
+                nothing here was measured and nothing here reads live.
+              {%- endcomment -%}
+              <h3 class="sl-coach__label">{{ block.settings.label }}</h3>
+            {%- endif -%}
+          </div>
           <p class="sl-coach__quote">{{ block.settings.quote }}</p>
         </article>
       {%- endfor -%}
@@ -31,17 +85,73 @@
 </section>
 
 {% stylesheet %}
+/* Full section rhythm rather than the compact rung: this is three long rows
+   of prose, and running them tight against the neighbouring bands is what
+   made the homepage scroll as one continuous stack of cards. */
 .sl-coach {
-  padding-top: var(--sl-section-space-compact);
-  padding-bottom: var(--sl-section-space-compact);
+  padding-top: var(--sl-section-space);
+  padding-bottom: var(--sl-section-space);
   border-top: 1px solid var(--sl-border);
 }
-.sl-coach__grid {
+
+.sl-coach__head {
   display: grid;
-  grid-template-columns: 1fr;
-  align-items: stretch;
-  gap: 20px;
-  margin-top: 30px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-5);
+  margin: 0 0 clamp(32px, 4vw, 48px);
+}
+/* Capped so the rule under the margin note stays a stub. Below 1000px the
+   head is one column, and without a measure that hairline would run the full
+   page width and read as a section divider instead of a label underline. */
+.sl-coach__stub {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sl-space-2);
+  max-width: 34ch;
+}
+.sl-coach__kicker,
+.sl-coach__stub-note {
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+/* The shared .sl-eyebrow paints itself amber, and amber is reserved for a
+   value the engine measured — so this section spells its own kicker instead
+   of borrowing a rule that would spend the signal on a section label. */
+.sl-coach__kicker { color: var(--sl-ink-soft); }
+.sl-coach__stub-note {
+  align-self: stretch;
+  padding-top: var(--sl-space-2);
+  border-top: 1px solid var(--sl-border);
+  color: var(--sl-ink-muted);
+}
+.sl-coach__title {
+  margin: 0;
+  max-width: 16ch;
+  font-size: var(--sl-heading-support);
+  text-transform: uppercase;
+  text-align: left;
+}
+.sl-coach__lede {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-lg);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.sl-coach__register {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
 }
 .sl-coach__card {
   margin: 0;
@@ -49,57 +159,115 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  height: 100%;
-  gap: 14px;
-  background: var(--sl-bg-card);
-  border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-lg);
+  gap: var(--sl-space-4);
   padding: var(--sl-card-inset);
-  box-shadow: var(--sl-shadow-card);
+  background: var(--sl-bg-card);
   text-align: left;
 }
-.sl-coach__label { align-self: center; margin: 0; line-height: 1; }
+/* The lit top edge from --sl-shadow-card, applied to the row that owns the
+   register's top edge. It cannot go on the container: the rows paint their
+   own background over an inset shadow, so it would never be seen. */
+.sl-coach__card:first-child {
+  box-shadow: inset 0 1px 0 rgba(var(--sl-cream-rgb), 0.05);
+}
+
+/* Below 560px the ordinal runs inline with the label — a phone should not
+   spend a whole line on two characters. The rail becomes a column at 560. */
+.sl-coach__rail {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sl-space-3);
+}
+.sl-coach__index {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-lg);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  color: var(--sl-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* An h3 inherits the expanded display face at 800 from base.css. DM Mono
+   ships 400 and 500 only, so anything heavier would synthesize a fake bold
+   — the family, weight and tracking are all restated deliberately. */
+.sl-coach__label {
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  line-height: 1.4;
+  text-transform: uppercase;
+  color: var(--sl-ink);
+  text-wrap: pretty;
+}
 .sl-coach__quote {
   margin: 0;
+  color: var(--sl-ink);
   font-size: var(--sl-text-base);
   line-height: 1.62;
-  color: var(--sl-ink);
   text-wrap: pretty;
 }
 .sl-coach__footnote {
   display: block;
-  margin: 22px auto 0;
+  max-width: 60ch;
+  margin: var(--sl-space-5) 0 0;
   text-align: left;
 }
 
 @media (min-width: 560px) {
-  .sl-coach__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (min-width: 560px) and (max-width: 999px) {
-  .sl-coach__card:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-    width: calc((100% - 20px) / 2);
-    justify-self: center;
-  }
-}
-@media (min-width: 1000px) {
-  .sl-coach__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-}
-@media (max-width: 749px) {
+  /* The row splits into a stub and its entry. gap drops to 0 because the
+     column rule and its own padding now do the separating — a gap on top of
+     a rule reads as two dividers for one boundary. */
   .sl-coach__card {
-    align-items: center;
-    text-align: center;
+    flex-direction: row;
+    gap: 0;
   }
+  .sl-coach__rail {
+    flex: 0 0 auto;
+    width: clamp(140px, 22%, 220px);
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sl-space-3);
+    padding-right: clamp(20px, 3vw, 32px);
+  }
+  .sl-coach__index {
+    padding-bottom: var(--sl-space-2);
+    border-bottom: 1px solid var(--sl-border);
+  }
+  /* Decorative hairline, never a control edge — --sl-border is the right
+     token for a column rule and the wrong one for anything clickable. */
   .sl-coach__quote {
-    max-width: 42ch;
-    margin-inline: auto;
-    text-align: center;
-  }
-  .sl-coach__footnote {
-    max-width: 52ch;
-    text-align: center;
+    flex: 1 1 auto;
+    padding-left: clamp(20px, 3vw, 32px);
+    border-left: 1px solid var(--sl-border);
   }
 }
+
+@media (min-width: 1000px) {
+  /* Three unequal columns — stub, title, lede — bottom-aligned so the mono
+     margin note sits on the title's baseline rather than floating above it.
+     The asymmetry is the whole point; nothing on this band is centred. */
+  .sl-coach__head {
+    grid-template-columns: minmax(0, 3fr) minmax(0, 5fr) minmax(0, 4fr);
+    align-items: end;
+    gap: clamp(32px, 3vw, 56px);
+  }
+  .sl-coach__rail { width: clamp(180px, 24%, 260px); }
+}
+
+@media (max-width: 749px) {
+  /* A 16ch measure is a good column beside a lede and a bad one when it is
+     the only thing on the line. */
+  .sl-coach__title { max-width: 100%; }
+}
+
+/* No transitions, hovers or animations are declared anywhere above: nothing
+   in this register is interactive, and a hover affordance on a row that
+   cannot be clicked is a lie. There is consequently no motion for
+   prefers-reduced-motion to switch off. */
 {% endstylesheet %}
 
 {% schema %}
@@ -107,6 +275,7 @@
   "name": "Coach notes",
   "settings": [
     { "type": "text", "id": "heading", "label": "Heading", "default": "Coaching that shows its work" },
+    { "type": "text", "id": "stub", "label": "Margin note", "default": "WHAT THE REPORT DOES" },
     { "type": "textarea", "id": "sub", "label": "Subheading", "default": "The report keeps the decision legible: which club you filmed, which supported movement comes first, what to practice, and what must match on the next clip." },
     { "type": "text", "id": "footnote", "label": "Footnote", "default": "PRODUCT FEATURES SHOWN · NOT A CUSTOMER TESTIMONIAL" }
   ],
@@ -115,7 +284,7 @@
       "type": "note",
       "name": "Report note",
       "settings": [
-        { "type": "text", "id": "label", "label": "Decision chip", "default": "CLUB CONTEXT" },
+        { "type": "text", "id": "label", "label": "Behaviour label", "default": "CLUB CONTEXT" },
         { "type": "textarea", "id": "quote", "label": "Card text", "default": "An iron and a driver ask different questions. Club selection is required before upload, stays attached to the report, and gives the next comparison the same equipment context." }
       ]
     }

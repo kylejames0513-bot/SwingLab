@@ -1,52 +1,475 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Drill library{% endblock %}
 {% block style %}
-  main { max-width: 980px; }
-  .lead { max-width: 720px; margin: 0 auto 30px; text-align: center; }
-  .lead h1 { margin: 0 0 10px; color: var(--sl-green); font-size: clamp(2.2rem, 6vw, 3.8rem); line-height: 1; letter-spacing: -.048em; }
-  .lead p { color: var(--sl-ink-soft); font-size: 1.02rem; max-width: 680px; margin: 0 auto; }
-  .path { background: var(--sl-surface-soft); border: 1px solid #c8d9cc; border-left: 5px solid var(--sl-green-btn);
-          padding: clamp(20px, 4vw, 30px); border-radius: var(--sl-radius-lg); margin-bottom: 32px; box-shadow: var(--sl-shadow-sm); }
-  .path h2 { margin: 0 0 6px; }
-  .path ol { margin: 10px 0 0; padding-left: 20px; color: var(--sl-ink); }
-  .path li { margin: 8px 0; }
-  .path .why { color: var(--sl-ink-soft); font-size: 0.9rem; }
-  .family { margin-bottom: 30px; }
-  .family > h2 { border-bottom: 2px solid var(--primary);
-                 padding-bottom: 6px; }
-  .drill { background: var(--sl-bg-card); border: 1px solid var(--sl-border); border-radius: var(--sl-radius-lg);
-           padding: clamp(18px, 4vw, 28px); margin: 14px 0; box-shadow: var(--sl-shadow-sm); }
-  .drill h3 { margin: 0 0 4px; }
-  .aim { color: var(--sl-ink-soft); margin: 0 0 8px; }
-  .drill ol { padding-left: 20px; color: var(--sl-ink-soft); }
-  .drill li { margin: 6px 0; }
-  .drill-media { display: flex; gap: 16px; flex-wrap: wrap;
-                 align-items: flex-start; margin: 10px 0; }
+  {# ------------------------------------------------------------------ page
+     The drill library is a reference instrument, not a landing page: ten
+     families, twenty protocols, each with a dosage and a pass mark the engine
+     re-checks on the next clip. It is read by scanning, so the page is ruled
+     panels and mono labels rather than a stack of soft cards.
+
+     NOTE ON SPACING TOKENS: --sl-card-inset / --sl-dense-inset exist only in
+     storefront-theme/assets/base.css, NOT in this app's :root. Using them here
+     would resolve to nothing and silently drop the padding, so every inset on
+     this page comes off the --sl-space-* rungs the shell actually defines. #}
+  main {
+    max-width: var(--sl-content);
+    margin-block: var(--sl-space-7) var(--sl-space-8);
+    {# The shell's 24/18px gutter is sized for a 720px prose column. This page
+       runs a grid to the edge, so it takes the instrument gutter — and the
+       safe-area inset with it, because a landscape notch otherwise clips the
+       first column of the drill grid. #}
+    padding-inline:
+      max(var(--sl-pad-x), var(--sl-safe-left))
+      max(var(--sl-pad-x), var(--sl-safe-right));
+  }
+
+  {# ---- masthead ---- #}
+  .lead {
+    max-width: none;
+    margin: 0 0 var(--sl-space-7);
+    padding-bottom: var(--sl-space-5);
+    border-bottom: 1px solid var(--sl-border-strong);
+    text-align: left;
+  }
+  .lead h1 {
+    max-width: 15ch;
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 0.98;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+  {# Scoped to its own class rather than `.lead p`, which would outrank the
+     shell's .sl-eyebrow and repaint the eyebrow as body copy. #}
+  .lead__lede {
+    max-width: 58ch;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-lg);
+    line-height: 1.55;
+    text-wrap: pretty;
+  }
+
+  {# ---- the beginner path ---- #}
+  .path {
+    margin: 0 0 var(--sl-space-7);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-night);
+    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
+    {# The week grid is full-bleed inside the panel; without this its square
+       cells punch through the panel's own tight corners. #}
+    overflow: hidden;
+  }
+  .path__head { padding: var(--sl-space-5); }
+  .path h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-2xl);
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.06;
+    text-transform: uppercase;
+  }
+  .path .why {
+    max-width: 68ch;
+    margin: var(--sl-space-3) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+  {# max-width: none, because .why's prose measure would otherwise shrink this
+     paragraph's BOX and take its top rule with it — a hairline that stops
+     two-thirds of the way across the panel reads as a rendering fault. The
+     note is one line here, so the panel width is a fine measure for it. #}
+  .path__foot {
+    max-width: none;
+    padding: var(--sl-space-4) var(--sl-space-5) var(--sl-space-5);
+    border-top: 1px solid var(--sl-border);
+  }
+  {# A 1px-gap bordered grid: the container paints the rules, the cells paint
+     the surface. Four weeks divide evenly at 1, 2 and 4 columns, so the row
+     never ends on a bare strip of border colour. #}
+  .path__weeks {
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    list-style: none;
+    background: var(--sl-border);
+    border-block: 1px solid var(--sl-border);
+  }
+  .path__weeks > li {
+    margin: 0;
+    padding: var(--sl-space-4) var(--sl-space-5) var(--sl-space-5);
+    background: var(--sl-bg-card);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+  {# The ordinal already lives in the copy ("Week 1 — Tempo"), so the cell gets
+     a tick instead of a second, competing number. Bone, not amber: an index
+     is not something the engine measured. #}
+  .path__weeks > li strong {
+    position: relative;
+    display: block;
+    margin-bottom: var(--sl-space-2);
+    padding-top: var(--sl-space-4);
+    color: var(--sl-ink);
+    font-size: var(--sl-text-base);
+    font-weight: 700;
+  }
+  .path__weeks > li strong::before {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 18px;
+    height: 2px;
+    background: var(--sl-green-btn);
+  }
+
+  {# ---- families ---- #}
+  .family { margin: 0 0 var(--sl-space-8); }
+  .family__head {
+    margin: 0 0 var(--sl-space-5);
+    display: flex;
+    align-items: center;
+    gap: var(--sl-space-4);
+  }
+  {# --primary is the raw brand green the shell interpolates straight from
+     config (#1a5c38). It lands at 1.3:1 on the field, so the old 2px rule
+     under every family title was invisible the moment the design inverted.
+     A hairline in a real border token is the instrument answer anyway. #}
+  .family__rule {
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--sl-border-strong);
+  }
+  .family > .family__head h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-xl);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    text-transform: uppercase;
+    text-wrap: balance;
+  }
+
+  {# ---- drill panels ---- #}
+  .drill-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sl-space-4);
+  }
+  .drill {
+    display: flex;
+    flex-direction: column;
+    gap: var(--sl-space-4);
+    margin: 0;
+    padding: var(--sl-space-5);
+    background: var(--sl-bg-card);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  {# Sans, not the display face the shell gives every h3. Twenty drill names
+     set in expanded uppercase would weigh exactly as much as the page title
+     and flatten the hierarchy the reader scans by. #}
+  .drill h3 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-sans);
+    font-size: var(--sl-text-lg);
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    line-height: 1.2;
+  }
+  .aim {
+    margin: calc(var(--sl-space-2) * -1) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+  {# decimal-leading-zero markers, styled through ::marker rather than replaced
+     by a counter on a list-style:none list — the list keeps its semantics in
+     Safari, and no ::marker `content` is set, which is the one part of the
+     pseudo-element with uneven support. #}
+  .drill__steps {
+    margin: 0;
+    {# Normal block flow, not a grid: an outside marker on a grid item is the
+       kind of thing that renders in three browsers and vanishes in the
+       fourth, and the step numbers are the whole point of a protocol. #}
+    padding-left: var(--sl-space-6);
+    list-style: decimal-leading-zero;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+  .drill__steps > li { margin: 0; padding-left: var(--sl-space-1); }
+  .drill__steps > li + li { margin-top: var(--sl-space-2); }
+  .drill__steps > li::marker {
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+  }
+
+  {# ---- setup plate and motion loop ---- #}
+  .drill-media {
+    display: flex;
+    gap: var(--sl-space-4);
+    flex-wrap: wrap;
+    align-items: flex-start;
+    margin: 0;
+  }
   .drill-media figure { margin: 0; }
-  .drill-media figcaption { color: var(--sl-ink-muted); font-size: 0.8rem; }
-  .drill-media details > summary { cursor: pointer; color: var(--primary);
-                                   font-size: 0.9rem; }
-  .dose { color: var(--sl-ink); font-size: 0.92rem; }
-  .gear-note { color: var(--sl-ink-muted); font-size: 0.85rem; }
-  .gear-link { text-align: center; margin: 24px 0; }
-  .cta { text-align: center; margin: 28px 0; }
+  {# The diagram's strokes are the brand green the SERVER bakes into the SVG
+     (swinglab/diagrams.py reads brand.primary_color), so no token on this page
+     can re-tint them: #1a5c38 on the field is 1.3:1 and the stick figure
+     simply disappears. It gets the one light surface the system allows — a
+     paper plate, which is the same answer report.html.j2 reached for with its
+     white backing, and which reads as a spec drawing besides. #}
+  .drill-media .drill-svg {
+    display: block;
+    width: 168px;
+    height: auto;
+    background: var(--sl-paper);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+  }
+  {# Prop and count labels ship at the generator's grey, which is 2.2:1 on the
+     plate. Same defect report.html.j2 fixes by hand, in a token here. #}
+  .drill-svg text { fill: var(--sl-paper-soft); }
+  {# The plate caption is a LABEL, so it is mono and tracks with the plate. #}
+  .drill-media figcaption {
+    max-width: 168px;
+    margin-top: var(--sl-space-2);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    line-height: 1.45;
+    text-transform: uppercase;
+  }
+  {# The disclosure's caption is a SENTENCE, not a label. Left on the label
+     rule it set seven lines of tracked mono in a 168px column, which is how a
+     reduced-motion disclosure ends up unreadable. #}
+  .drill-media details figcaption {
+    max-width: 30ch;
+    font-family: var(--sl-font-sans);
+    font-weight: 400;
+    letter-spacing: normal;
+    line-height: 1.5;
+    text-transform: none;
+  }
+  .drill-media details { min-width: 0; }
+  {# A real control, so a real control edge (--sl-control-border, 4.29:1) and a
+     44px target — the old summary was --primary text on the field, both
+     invisible and untappable. #}
+  .drill-media details > summary {
+    min-height: 44px;
+    padding: 11px var(--sl-space-4);
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sl-space-2);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    background: transparent;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
+    text-transform: uppercase;
+    list-style: none;
+    cursor: pointer;
+    transition: border-color .18s ease, background-color .18s ease;
+  }
+  .drill-media details > summary::-webkit-details-marker { display: none; }
+  .drill-media details > summary:hover {
+    border-color: var(--sl-green-btn);
+    background: rgba(var(--sl-cream-rgb), .06);
+  }
+  .drill-media details > summary::after {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-right: 1.5px solid currentColor;
+    border-bottom: 1.5px solid currentColor;
+    transform: translateY(-2px) rotate(45deg);
+    transition: transform .18s ease;
+  }
+  .drill-media details[open] > summary::after { transform: translateY(1px) rotate(225deg); }
+  .drill-media details[open] > summary { margin-bottom: var(--sl-space-3); }
+
+  {# ---- the readout: dosage and pass mark ---- #}
+  .drill__spec {
+    {# Pinned to the foot of the panel so specs line up across a row of cards
+       whose protocols differ in length. #}
+    margin: auto 0 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    background: var(--sl-border-strong);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    overflow: hidden;
+  }
+  .drill__spec > div {
+    padding: var(--sl-space-3) var(--sl-space-4);
+    background: var(--sl-night);
+  }
+  .drill__spec dt {
+    margin: 0 0 var(--sl-space-1);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
+    text-transform: uppercase;
+  }
+  .drill__spec dd {
+    margin: 0;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    line-height: 1.45;
+  }
+  {# THE amber on this page. The pass mark is the number the engine measures on
+     the next clip — the one thing here that is a measured value rather than
+     instruction. --sl-orange-text, not --sl-orange, because this is small
+     text (10.6:1 on the well). #}
+  .drill__spec dd.is-pass { color: var(--sl-orange-text); }
+  .gear-note {
+    margin: 0;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+    line-height: 1.5;
+  }
+
+  {# ---- closing ---- #}
+  .gear-link {
+    margin: var(--sl-space-6) 0 0;
+    padding: var(--sl-space-4) var(--sl-space-5);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+    background: var(--sl-bg-card);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+    text-align: left;
+  }
+  .cta {
+    margin: var(--sl-space-7) 0 0;
+    padding: var(--sl-space-6) var(--sl-space-5);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-night);
+    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
+    text-align: center;
+  }
+  {# The shell paints a.button bone and then sets `color: white` on top of it —
+     1.06:1, which is a primary action nobody can read after the inversion.
+     The shell is not this file's to edit, so the page states the ink the bone
+     surface actually needs. Bone with dark ink, never amber: a call to action
+     is not a measured value. Hover goes to the trace colour, matching the
+     storefront hero's primary. #}
+  .cta a.button {
+    margin-top: 0;
+    background: var(--sl-green-btn);
+    border-color: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+  }
+  .cta a.button:hover {
+    background: var(--sl-ink-hi);
+    border-color: var(--sl-ink-hi);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+  }
+  .cta a.button:active { box-shadow: none; }
+  .cta .hint {
+    max-width: 52ch;
+    margin: var(--sl-space-4) auto 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+  {# Full width for the same reason as .path__foot: a prose measure here would
+     shorten the closing rule, not the sentence. #}
+  .disclaimer {
+    max-width: none;
+    margin: var(--sl-space-6) 0 0;
+    padding-top: var(--sl-space-4);
+    border-top: 1px solid var(--sl-border);
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+    line-height: 1.5;
+  }
+
+  @media (min-width: 560px) {
+    .path__weeks { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1000px) {
+    {# Masthead as a two-part instrument head: the title left, the lede in its
+       own column, both sitting on the same baseline rule. #}
+    .lead {
+      display: grid;
+      grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+      gap: var(--sl-space-7);
+      align-items: end;
+    }
+    .lead .sl-eyebrow { grid-column: 1 / -1; }
+    .lead__lede { margin-top: 0; }
+    .path__weeks { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .drill-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1280px) {
+    .drill-grid { gap: var(--sl-space-5); }
+    .drill { padding: var(--sl-space-6); }
+  }
+  {# The shell already disables transitions globally under reduced motion, but
+     this page states it for its own controls too: the disclosure chevron is
+     the only thing here that moves, and it must not. #}
+  @media (prefers-reduced-motion: reduce) {
+    .drill-media details > summary,
+    .drill-media details > summary::after,
+    .cta a.button { transition: none; }
+  }
 {% endblock %}
 {% block main %}
-  <div class="lead">
+  <header class="lead">
     <p class="sl-eyebrow">Practice with a pass mark</p>
     <h1>The drill library</h1>
-    <p>Every drill our practice plans prescribe, free to read — each with a
+    <p class="lead__lede">Every drill our practice plans prescribe, free to read — each with a
       setup diagram, a step-by-step protocol, a dosage, and a measurable
       pass mark in the same numbers your report prints. Film a swing and
       your report picks the drills your numbers actually call for.</p>
-  </div>
+  </header>
 
-  <div class="path" id="beginner-path">
-    <h2>New to golf? The four-week Beginner Path</h2>
-    <p class="why">You don't need all of this at once. One family a week,
-      in this order, builds the swing from the ground up — and a re-film at
-      the end shows the change in numbers, not vibes.</p>
-    <ol>
+  <section class="path" id="beginner-path">
+    <div class="path__head">
+      <h2>New to golf? The four-week Beginner Path</h2>
+      <p class="why">You don't need all of this at once. One family a week,
+        in this order, builds the swing from the ground up — and a re-film at
+        the end shows the change in numbers, not vibes.</p>
+    </div>
+    {# role="list" restores the list semantics Safari drops from a
+       list-style:none list; the ordinal is carried by the copy in each cell. #}
+    <ol class="path__weeks" role="list">
       <li><strong>Week 1 — <a href="#family-tempo">Tempo</a>.</strong>
         Rhythm first: every other fix is easier inside a repeating beat.</li>
       <li><strong>Week 2 — <a href="#family-balance">Finish balance</a> and
@@ -59,40 +482,56 @@
         then re-film.</strong> Groove one count for every swing, film a
         session, and let the report show what moved.</li>
     </ol>
-    <p class="why">Each drill below says exactly what number tells you it
+    <p class="why path__foot">Each drill below says exactly what number tells you it
       worked{% if user or not require_account %} — upload a clip to get
       yours{% else %} — <a href="/signup">a free account</a> gets
       {% if free_per_month <= 0 %}unlimited full analyses{% else %}{{ free_per_month }} full analys{% if free_per_month == 1 %}is{% else %}es{% endif %}
       every month{% endif %}{% endif %}.</p>
-  </div>
+  </section>
 
   {% for fam in families %}
-  <div class="family" id="family-{{ fam.key }}">
-    <h2>{{ fam.title }}</h2>
-    {% for d in fam.drills %}
-    <div class="drill" id="drill-{{ d.id }}">
-      <h3>{{ d.name }}</h3>
-      <p class="aim">{{ d.aim }}</p>
-      <ol>
-        {% for step in d.protocol %}<li>{{ step }}</li>{% endfor %}
-      </ol>
-      {% if d.id in drill_media %}
-      <div class="drill-media">
-        <figure>{{ drill_media[d.id].diagram|safe }}<figcaption>Setup</figcaption></figure>
-        <details>
-          <summary>Show the motion</summary>
-          <figure>{{ drill_media[d.id].animation|safe }}<figcaption>Loops
-          through the drill's key positions; holds the setup pose when your
-          device asks for reduced motion.</figcaption></figure>
-        </details>
-      </div>
-      {% endif %}
-      <p class="dose"><strong>Dosage:</strong> {{ d.dosage }}<br>
-        <strong>Pass mark</strong> — {{ d.success_metric }}</p>
-      {% if d.gear_note %}<p class="gear-note">{{ d.gear_note }}</p>{% endif %}
+  <section class="family" id="family-{{ fam.key }}">
+    <div class="family__head">
+      <h2>{{ fam.title }}</h2>
+      <span class="family__rule" aria-hidden="true"></span>
     </div>
+    <div class="drill-grid">
+    {% for d in fam.drills %}
+      <article class="drill" id="drill-{{ d.id }}">
+        <h3>{{ d.name }}</h3>
+        <p class="aim">{{ d.aim }}</p>
+        <ol class="drill__steps">
+          {% for step in d.protocol %}<li>{{ step }}</li>{% endfor %}
+        </ol>
+        {% if d.id in drill_media %}
+        <div class="drill-media">
+          <figure>{{ drill_media[d.id].diagram|safe }}<figcaption>Setup</figcaption></figure>
+          <details>
+            <summary>Show the motion</summary>
+            <figure>{{ drill_media[d.id].animation|safe }}<figcaption>Loops
+            through the drill's key positions; holds the setup pose when your
+            device asks for reduced motion.</figcaption></figure>
+          </details>
+        </div>
+        {% endif %}
+        {# Mono label over mono value, the pass mark in amber: the same readout
+           shape the report prints, so the library and the report read as one
+           instrument. #}
+        <dl class="drill__spec">
+          <div>
+            <dt>Dosage</dt>
+            <dd>{{ d.dosage }}</dd>
+          </div>
+          <div>
+            <dt>Pass mark</dt>
+            <dd class="is-pass">{{ d.success_metric }}</dd>
+          </div>
+        </dl>
+        {% if d.gear_note %}<p class="gear-note">{{ d.gear_note }}</p>{% endif %}
+      </article>
     {% endfor %}
-  </div>
+    </div>
+  </section>
   {% endfor %}
 
   {% if gear_url %}

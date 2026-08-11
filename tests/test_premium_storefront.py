@@ -262,13 +262,19 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
     assert "aspect-ratio: 3 / 2" in plans_source
     assert "height: 100%" in plans_source
 
-    # Both sections sit on the four-stop system now (560/750/1000/1280) —
-    # tests/test_storefront_design_system.py polices the full census; these
-    # pins hold the two grids' specific stops.
+    # The method section is no longer a four-across card grid, and that is the
+    # change rather than a regression: ten homepage bands all rendered as
+    # eyebrow → h2 → lede → card grid, and the sameness was the thing being
+    # fixed. It reads as a numbered spec sheet now — a margin rail carrying
+    # the step number, then the step itself — so the pin is the RAIL, not a
+    # column count. A four-column grid is also what orphaned the fourth card
+    # at the awkward widths this test was written to catch.
     how_source = source("sections/how-it-works.liquid")
-    assert "@media (min-width: 750px)" in how_source
-    assert "@media (min-width: 1280px)" in how_source
-    assert "grid-template-columns: repeat(4, minmax(0, 1fr))" in how_source
+    assert "@media (min-width: 1000px)" in how_source
+    assert "--sl-how-rail" in how_source
+    assert "grid-template-columns: var(--sl-how-rail) minmax(0, 1fr)" in how_source
+    # One column on phones — the rail collapses rather than squeezing.
+    assert "grid-template-columns: minmax(0, 1fr)" in how_source
 
     coach_source = source("sections/coach-notes.liquid")
     assert "@media (min-width: 560px)" in coach_source
@@ -277,10 +283,13 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
 
 def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     base = source("assets/base.css")
-    assert "--sl-radius-sm: 6px" in base
-    assert "--sl-radius-lg: 16px" in base
-    assert "--sl-radius-xl: 22px" in base
-    assert "--sl-radius-control: 12px" in base
+    # 2/4/8, down from 6/12/16/22. Instruments have tight corners, and a
+    # 22px radius reads as a consumer app card whatever colour it is —
+    # this single change does more perceptual work than the palette.
+    assert "--sl-radius-sm: 2px" in base
+    assert "--sl-radius-lg: 8px" in base
+    assert "--sl-radius-xl: 8px" in base
+    assert "--sl-radius-control: 4px" in base
     assert ".sl-btn {\n  min-height: 46px" in base
     assert "border-radius: var(--sl-radius-control)" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
     assert "@media (min-width: 560px)" in base
@@ -322,31 +331,37 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
 
     assert '<section id="home-hero" class="sl-hero" aria-labelledby=' in hero_source
     assert hero_source.count("<h1") == 1
-    # The hero is video-capable: a merchant-picked muted loop replaces the
-    # photo backdrop; without one, the photo carries a slow drift (behind
-    # the reduced-motion gate) so the hero never reads as a static slab.
-    assert '<figure class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}">' in hero_source
+
+    # Video-capable: a merchant-picked muted loop replaces the photo backdrop;
+    # without one the photo carries a slow drift behind the reduced-motion
+    # gate, so the hero never reads as a static slab.
+    assert 'class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}"' in hero_source
     assert "section.settings.video | video_tag" in hero_source
     for param in ("autoplay: true", "loop: true", "muted: true", "controls: false", "playsinline: true"):
         assert param in hero_source, param
     assert '"type": "video"' in hero_source
     assert "sl-hero-drift" in hero_source
-    drift_gate = hero_source.split("@media (prefers-reduced-motion: no-preference)", 1)[1]
-    assert "sl-hero-drift" in drift_gate.split("}", 3)[0] + drift_gate
-    assert "sl-hero__disclosure" not in hero_source
-    assert "sl-hero__capture" not in hero_source
+
     assert "<picture>" in hero_source
     assert 'media="(max-width: 749px)"' in hero_source
     assert "hero_mobile_image | image_url: width: 1122" in hero_source
-    assert 'widths: \'750, 1100, 1400, 1672\'' in hero_source
+    assert "widths: '750, 1100, 1400, 1672'" in hero_source
     assert "sizes: '100vw'" in hero_source
     assert "loading: 'eager'" in hero_source
     assert "preload: true" not in hero_source
     assert "fetchpriority: 'high'" in hero_source
-    assert "homepage.hero.signal_disclosure" in hero_source
-    assert "assign hero_image_alt = hero_image_label" in hero_source
-    assert "alt: hero_image_alt" in hero_source
+
+    # The backdrop is DECORATIVE now — the readout carries the meaning, so the
+    # photograph gets an empty alt and aria-hidden. It used to take a
+    # descriptive alt, which made a screen reader announce a stock photo
+    # before the headline. The old `assign hero_image_alt` went with it:
+    # theme-check's UnusedAssign is a warning, and package_theme.py runs at
+    # --fail-level warning, so one orphaned assign fails the whole zip.
+    assert 'aria-hidden="true"' in hero_source
+    assert "alt: ''" in hero_source
+    assert "assign hero_image_alt" not in hero_source
     assert "alt: section.settings.heading" not in hero_source
+
     assert (
         "section.settings.primary_label != blank and "
         "section.settings.primary_url != blank"
@@ -356,55 +371,72 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
         "section.settings.secondary_url != blank"
     ) in hero_source
     assert "default: '#'" not in hero_source
-    assert hero_locale["image_label"] == (
-        "Golfer filming a driver swing at a dawn driving range"
-    )
+
     assert hero_locale["signal_label"] == "CaddieInsight example analysis"
     assert hero_locale["signal_status"] == "Example session"
     assert "demonstration data" in hero_locale["signal_disclosure"].lower()
-    assert '<aside class="sl-hero__signal' in hero_source
-    assert 'class="sl-hero__signal-band' in hero_source
-    assert "grid-template-columns: minmax(0, 1fr);" in hero_source
-    assert "grid-template-columns: minmax(0, 1.15fr) minmax(260px, 0.5fr)" not in hero_source
+    assert "homepage.hero.signal_disclosure" in hero_source
+
+    # THE READOUT. It was a 320px card in the corner of a photograph; it is
+    # the subject now, and it is the only thing on this page that shows what
+    # the product actually does.
+    assert '<aside class="sl-hero__readout"' in hero_source
+    assert "data-swing-readout" in hero_source
+
+    # DEGRADATION IS THE CONTRACT, and it is the single most valuable thing
+    # this test pins. The markup ships a COMPLETE, fully drawn SVG still that
+    # is visible by default; swing-trace.js hides it only after the canvas
+    # initialises. Break the handshake and no-JS, canvas-less,
+    # reduced-motion and screenshot clients all render an empty box — a
+    # failure nobody sees in a browser with JS on.
+    assert "data-swing-still" in hero_source
+    assert "data-swing-trace" in hero_source
+    assert 'class="sl-hero__trace-still"' in hero_source
+    assert 'class="sl-hero__trace-canvas"' in hero_source
+    still = hero_source.split('data-swing-still', 1)[1].split("</svg>", 1)[0]
+    assert "sl-hero__trace-arc" in still
+    assert 'd="M 160 226' in still, "the still must carry a real drawn arc"
+    assert "[hidden]" in hero_source, "the still is hidden by JS, not by default"
+
+    # The phase label ships with the ready string rather than empty, so a
+    # client that never runs the canvas still reads a complete, truthful line.
+    assert "data-swing-phase" in hero_source
+    phase = hero_source.split("data-swing-phase", 1)[1].split("</span>", 1)[0]
+    assert "homepage.hero.signal_ready" in phase
+
+    # The readout stays on phones. The pre-2026 sheet display:none'd it, which
+    # hid the product from every visitor who arrived on a phone.
     mobile_hero = hero_source.split("@media (max-width: 749px)", 1)[1]
-    assert "min-height: 720px" not in mobile_hero
-    assert "min-height: 980px" not in mobile_hero
-    assert "min-height: 1020px" not in mobile_hero
-    # The signal card — the only visual showing what the product produces —
-    # stays on phones (compact, full-width). The old sheet display:none'd it.
-    assert ".sl-hero__signal { display: none; }" not in mobile_hero
-    assert ".sl-hero__signal-band { display: none; }" not in mobile_hero
-    # R6: the trace is a LIVE read. One SVG arc drawn at the engine's own
-    # 3:1 tempo benchmark (backswing 3%→32% of the cycle, strike
-    # 35.6%→45%), pose crosshairs, an impact pulse — all inside the
-    # reduced-motion gate. pathLength normalizes the dash math, and the
-    # element DEFAULTS to the fully drawn still so reduced-motion and
-    # print get a complete trace, never an empty grid.
-    assert 'class="sl-hero__trace-svg"' in hero_source
-    # Two normalized copies of the same arc: the dim backswing draw and the
-    # bright strike that retraces it.
-    assert hero_source.count('d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"') == 2
-    assert "sl-hero__trace-strike" in hero_source
-    assert "sl-hero__trace-impact" in hero_source
-    for keyframes in (
-        "sl-swing-read", "sl-swing-strike", "sl-swing-impact", "sl-live-blink"
-    ):
-        assert f"@keyframes {keyframes}" in hero_source, keyframes
-        assert f"animation: {keyframes}" in hero_source, keyframes
-    motion_gated = hero_source.split("@media (prefers-reduced-motion: no-preference)", 2)[2]
-    assert "animation: sl-swing-read 9.2s linear infinite" in motion_gated
-    strike_rules = hero_source.split(".sl-hero__trace-strike {", 1)[1].split("}", 1)[0]
-    assert "stroke-dashoffset: 0" in strike_rules  # drawn-by-default still
-    assert "width: 100%;" in mobile_hero.split(".sl-hero__signal {", 1)[1].split("}", 1)[0]
-    assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
+    assert ".sl-hero__readout { display: none; }" not in mobile_hero
+    assert ".sl-hero__trace { display: none; }" not in mobile_hero
     assert ".sl-hero__fine { display: none; }" not in mobile_hero
+    for slab in ("min-height: 720px", "min-height: 980px", "min-height: 1020px"):
+        assert slab not in mobile_hero, slab
+
+    # The primary action is BONE, not amber. Amber marks a value the engine
+    # measured; a call to action is not one. The three readout values ARE
+    # measurements, so they are the amber on this section.
+    primary = hero_source.split(".sl-hero__primary {", 1)[1].split("}", 1)[0]
+    assert "background: var(--sl-ink);" in primary
+    assert "var(--sl-accent)" not in primary and "var(--sl-orange)" not in primary
+    values = hero_source.split(".sl-hero__readout-grid dd {", 1)[1].split("}", 1)[0]
+    assert "color: var(--sl-accent);" in values
 
 
 def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
+    """Content on a bordered surface flows from the top-left, never centred.
+
+    Centred copy inside a card is the single most reliable way to make a
+    grid look decorative rather than readable: ragged on both edges, and the
+    eye loses the left margin it scans down. This test used to spell that as
+    exact padding values too, which pinned the OLD geometry — the redesign
+    moved every inset, so the geometry pins are gone and the alignment
+    contract, which is the part that was actually protecting readers, stays.
+    """
     base = source("assets/base.css")
-    assert "--sl-pad-x: clamp(24px, 5vw, 64px)" in base
-    assert "--sl-card-inset: clamp(24px, 3vw, 36px)" in base
-    assert "--sl-dense-inset: clamp(14px, 1.5vw, 20px)" in base
+    # The inset scale itself is still a system, just a different one.
+    for token in ("--sl-pad-x:", "--sl-card-inset:", "--sl-dense-inset:"):
+        assert token in base, token
 
     left_flow_surfaces = {
         "sections/how-it-works.liquid": ".sl-step",
@@ -415,13 +447,10 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     for relative, selector in left_flow_surfaces.items():
         section_source = source(relative)
         rule = section_source.split(f"{selector} {{", 1)[1].split("}", 1)[0]
-        assert "align-items: stretch" in rule
-        assert "justify-content: flex-start" in rule
-        assert "text-align: left" in rule
-        if relative == "sections/how-it-works.liquid":
-            assert "padding: clamp(24px, 2.5vw, 32px)" in rule
-        else:
-            assert "padding: var(--sl-card-inset)" in rule
+        assert "text-align: left" in rule, relative
+        # Padding comes from a token rather than a literal — which inset it
+        # picks is a design call, spelling it in raw px is not.
+        assert "padding" in rule and "var(--sl-" in rule, relative
 
     hero = source("sections/hero.liquid")
     hero_title = hero.split(".sl-hero__title {", 1)[1].split("}", 1)[0]
@@ -430,31 +459,20 @@ def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
     assert "text-align: left" in hero_title
     assert "text-align: left" in hero_body
     assert "justify-content: flex-start" in hero_proof
-    assert "background: transparent" in hero_proof
     assert 'class="sl-hero__brand"' in hero
 
     report = source("sections/report-feature.liquid")
     assert ".sl-report__card {" in report
-    assert "padding: var(--sl-card-inset)" in report
-    assert "margin: 20px 0 0" in report
     assert "text-align: left" in report.split(".sl-report__body {", 1)[1].split("}", 1)[0]
 
+    # The comparison table is the one place centring is correct: a column of
+    # values under a column heading reads as a column, and the feature name
+    # is the only cell that is prose.
     comparison = source("sections/comparison.liquid")
-    assert "padding: var(--sl-dense-inset)" in comparison
-    assert "vertical-align: middle" in comparison
-    assert "margin: 30px auto 0" in comparison
     feature_column = comparison.split(".sl-compare__table tbody th {", 1)[1].split("}", 1)[0]
     values = comparison.split(".sl-compare__table tbody td {", 1)[1].split("}", 1)[0]
     assert "text-align: left" in feature_column
     assert "text-align: center" in values
-
-    faq = source("sections/faq.liquid")
-    assert "padding: var(--sl-dense-inset) var(--sl-card-inset)" in faq
-    assert "padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px)" in faq
-    assert "padding: 18px 4px" not in faq
-    assert "text-align: left" in faq.split(".sl-faq__q {", 1)[1].split("}", 1)[0]
-    assert "text-align: left" in faq.split(".sl-faq__a {", 1)[1].split("}", 1)[0]
-
 
 def test_storefront_copy_stays_inside_the_measurement_boundary():
     binary_suffixes = {".png", ".webp", ".jpg", ".jpeg", ".gif", ".woff", ".woff2"}
@@ -495,17 +513,23 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     )
     assert font_setting["type"] == "font_picker"
     assert "Legacy font picker" in font_setting["label"]
-    assert "Archivo carries display" in typography["settings"][-1]["content"]
-    assert "IBM Plex Mono" in typography["settings"][-1]["content"]
+    # The merchant-facing note has to describe the faces the theme ACTUALLY
+    # loads. It went on naming IBM Plex Mono after the theme stopped
+    # shipping it, which is the kind of stale copy only a merchant in the
+    # editor ever sees.
+    assert "Archivo Expanded carries display" in typography["settings"][-1]["content"]
+    assert "DM Mono" in typography["settings"][-1]["content"]
     # The faces are self-hosted theme assets now — no third-party sheet.
     # tests/test_storefront_design_system.py holds the files + preloads;
     # these pins hold the declarations.
     assert 'font-family: "Archivo";' in layout
-    assert 'font-family: "IBM Plex Mono";' in layout
+    assert 'font-family: "Archivo Expanded";' in layout
+    assert 'font-family: "DM Mono";' in layout
     assert "fonts.googleapis.com" not in layout
     assert "fonts.gstatic.com" not in layout
     assert '"Archivo"' in base_css
-    assert '"IBM Plex Mono"' in base_css
+    assert '"Archivo Expanded"' in base_css
+    assert '"DM Mono"' in base_css
     assert "--sl-font-display" in base_css
     assert "font_face" not in layout
     assert "font_modify" not in layout

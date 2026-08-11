@@ -5,68 +5,409 @@
   section renders NOTHING until a block is added, so the homepage keeps a
   designed home for real proof the day it exists instead of needing a
   redesign to add it.
+
+  INSTRUMENT REBUILD. The old shape was the page's tenth centred
+  eyebrow/h2/three-card grid, which is exactly the sameness this pass is
+  fixing. It is an EVIDENCE LOG now: a sunk well cut into the field, a
+  left rail carrying the label and the standing disclosure, and one full
+  width record per customer numbered in the margin like a spec sheet.
+  Records stack rather than sitting three-up on purpose — proof is read,
+  not scanned, and a stack cannot be mistaken for the feature grids above
+  and below it.
 {%- endcomment -%}
 {%- if section.blocks.size > 0 -%}
-<section class="sl-proof" aria-labelledby="Proof-{{ section.id }}">
+{%- liquid
+  assign head_eyebrow = section.settings.eyebrow | default: 'From the range'
+  assign head_title = section.settings.heading | default: 'Proof it moved'
+  assign head_id = 'Proof-' | append: section.id
+  # The log counter is a plain count of records on this page, not something
+  # the engine measured, so it is bone — amber would be a lie about what the
+  # number means.
+  assign record_total = section.blocks.size | prepend: '0' | slice: -2, 2
+-%}
+<section class="sl-proof" aria-labelledby="{{ head_id }}">
   <div class="sl-wrap sl-reveal">
-    {%- assign head_eyebrow = section.settings.eyebrow | default: 'From the range' -%}
-    {%- assign head_title = section.settings.heading | default: 'Proof it moved' -%}
-    {%- assign head_id = 'Proof-' | append: section.id -%}
-    {% render 'section-head', eyebrow: head_eyebrow, title: head_title, center: true, heading_id: head_id %}
-    <div class="sl-proof__grid">
-      {%- for block in section.blocks -%}
-        <figure class="sl-proof__card"{{ block.shopify_attributes }}>
-          {%- if block.settings.image -%}
-            <div class="sl-proof__media">
-              {{ block.settings.image | image_url: width: 960 | image_tag: loading: 'lazy', alt: block.settings.alt | default: '', widths: '480, 720, 960', sizes: '(min-width: 1000px) 33vw, (min-width: 560px) 50vw, calc(100vw - 48px)' }}
-            </div>
+    <div class="sl-proof__layout">
+      <div class="sl-proof__rail">
+        <p class="sl-proof__index">
+          <span>{{ section.settings.log_label }}</span>
+          <span class="sl-proof__index-count">{{ record_total }}</span>
+        </p>
+        {%- if head_eyebrow != blank -%}
+          {%- comment -%}
+            Deliberately not .sl-eyebrow: that shared rule paints the eyebrow
+            amber, and amber is reserved for a value the engine measured. A
+            section label is not one, so this rail sets its own quiet mono.
+          {%- endcomment -%}
+          <p class="sl-proof__eyebrow">{{ head_eyebrow }}</p>
+        {%- endif -%}
+        <h2 id="{{ head_id }}" class="sl-proof__title">{{ head_title }}</h2>
+        {%- if section.settings.lede != blank -%}
+          <p class="sl-proof__lede">{{ section.settings.lede }}</p>
+        {%- endif -%}
+        {%- if section.settings.disclosure != blank -%}
+          {%- comment -%}
+            The scope disclosure sits with the heading rather than under the
+            last record. Anyone who reads far enough to be persuaded has
+            already read the rule these records are held to.
+          {%- endcomment -%}
+          <p class="sl-proof__disclosure">{{ section.settings.disclosure }}</p>
+        {%- endif -%}
+      </div>
+
+      <div class="sl-proof__records">
+        {%- assign record_index = 0 -%}
+        {%- for block in section.blocks -%}
+          {%- liquid
+            assign has_metric = false
+            if block.settings.metric_label != blank or block.settings.metric_value != blank
+              assign has_metric = true
+            endif
+            assign has_reading = false
+            if block.settings.image or has_metric
+              assign has_reading = true
+            endif
+            assign is_empty = false
+            if block.settings.quote == blank and block.settings.image == blank and has_metric == false
+              assign is_empty = true
+            endif
+          -%}
+          {%- comment -%}
+            A wholly empty block is skipped on the live store — a blank row is
+            worse than no row — but it still renders in the theme editor,
+            because a block that emits no shopify_attributes cannot be
+            selected and a merchant who adds one would be stuck with an
+            invisible, unclickable card.
+          {%- endcomment -%}
+          {%- if is_empty -%}
+            {%- comment -%}
+              unless, not `== false`: request.design_mode is absent rather
+              than false on some contexts, and nil == false is false in
+              Liquid, which would have shipped the blank row it is here to
+              prevent.
+            {%- endcomment -%}
+            {%- unless request.design_mode -%}
+              {%- continue -%}
+            {%- endunless -%}
           {%- endif -%}
-          <blockquote class="sl-proof__quote">{{ block.settings.quote }}</blockquote>
-          {%- if block.settings.attribution != blank -%}
-            <figcaption class="sl-mono-label">{{ block.settings.attribution }}</figcaption>
-          {%- endif -%}
-        </figure>
-      {%- endfor -%}
+          {%- liquid
+            assign record_index = record_index | plus: 1
+            assign record_no = record_index | prepend: '0' | slice: -2, 2
+            assign record_alt = block.settings.alt | default: ''
+          -%}
+          <figure class="sl-proof__card{% if has_reading %} sl-proof__card--reading{% endif %}"{{ block.shopify_attributes }}>
+            <p class="sl-proof__num" aria-hidden="true">{{ record_no }}</p>
+
+            {%- if block.settings.quote != blank -%}
+              <blockquote class="sl-proof__quote">{{ block.settings.quote }}</blockquote>
+            {%- endif -%}
+
+            {%- if has_reading -%}
+              <div class="sl-proof__reading">
+                {%- if block.settings.image -%}
+                  {%- comment -%}
+                    An image with no alt text is a decoration by definition, so
+                    the whole well is hidden from assistive tech rather than
+                    announcing an unlabelled screenshot between the quote and
+                    the reading.
+                  {%- endcomment -%}
+                  <div class="sl-proof__media"{% if block.settings.alt == blank %} aria-hidden="true"{% endif %}>
+                    {{ block.settings.image | image_url: width: 720 | image_tag:
+                      loading: 'lazy',
+                      alt: record_alt,
+                      widths: '220, 320, 440, 640',
+                      sizes: '(min-width: 1000px) 220px, (min-width: 560px) 320px, calc(100vw - 160px)' }}
+                  </div>
+                {%- endif -%}
+                {%- if has_metric -%}
+                  {%- comment -%}
+                    THE ONE AMBER ON THIS SECTION. The value is a reading the
+                    engine produced; the label above it, the quote beside it
+                    and the attribution below it are all bone.
+                  {%- endcomment -%}
+                  <dl class="sl-proof__metric">
+                    <dt>{{ block.settings.metric_label | default: 'Measured' }}</dt>
+                    <dd>{{ block.settings.metric_value }}</dd>
+                  </dl>
+                {%- endif -%}
+              </div>
+            {%- endif -%}
+
+            {%- if block.settings.attribution != blank or block.settings.meta != blank -%}
+              <figcaption class="sl-proof__cite sl-mono-label">
+                {%- if block.settings.attribution != blank -%}
+                  <span class="sl-proof__cite-name">{{ block.settings.attribution }}</span>
+                {%- endif -%}
+                {%- if block.settings.meta != blank -%}
+                  <span class="sl-proof__cite-meta">{{ block.settings.meta }}</span>
+                {%- endif -%}
+              </figcaption>
+            {%- endif -%}
+          </figure>
+        {%- endfor -%}
+      </div>
     </div>
   </div>
 </section>
 {%- endif -%}
 
 {% stylesheet %}
+/* The band is a SUNK WELL. Every neighbour on this page is a raised panel
+   sitting on the field; cutting the evidence log into it is what stops this
+   reading as band five of ten, and --sl-night is exactly the token for it. */
 .sl-proof {
-  padding-top: var(--sl-section-space-compact);
-  padding-bottom: var(--sl-section-space-compact);
-  border-top: 1px solid var(--sl-border);
+  position: relative;
+  isolation: isolate;
+  padding-top: var(--sl-section-space);
+  padding-bottom: var(--sl-section-space);
+  background: var(--sl-night);
+  border-top: 1px solid var(--sl-border-strong);
+  border-bottom: 1px solid var(--sl-border-strong);
 }
-.sl-proof__grid {
+/* An opaque band would blank the body's fixed 8px grid, and the surface
+   would stop reading as graph paper right where the numbers are. This
+   re-lays it at the well's own depth. */
+.sl-proof::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.7;
+  background-image:
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.024) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.024) 1px, transparent 1px);
+  background-size: 8px 8px;
+}
+.sl-proof > .sl-wrap {
+  position: relative;
+  z-index: 1;
+}
+
+.sl-proof__layout {
   display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--sl-space-5);
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(32px, 4vw, 48px);
 }
-@media (min-width: 560px) {
-  .sl-proof__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
+/* 4/8 — the mirror of the hero's 5/7. The records are the argument here and
+   the heading is only the label on the jar, so the log takes the width. */
 @media (min-width: 1000px) {
-  .sl-proof__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sl-proof__layout {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    gap: clamp(40px, 4vw, 72px);
+    align-items: start;
+  }
 }
+
+/* ---- the rail ---- */
+.sl-proof__index {
+  margin: 0 0 var(--sl-space-5);
+  padding-bottom: var(--sl-space-3);
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sl-space-3);
+  border-bottom: 1px solid var(--sl-border-strong);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.sl-proof__index-count { color: var(--sl-ink-soft); }
+.sl-proof__eyebrow {
+  margin: 0 0 var(--sl-space-4);
+  color: var(--sl-ink-soft);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.sl-proof__title {
+  margin: 0;
+  max-width: 14ch;
+  color: var(--sl-green);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-heading-support);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.sl-proof__lede {
+  margin: var(--sl-space-4) 0 0;
+  max-width: 40ch;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-base);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.sl-proof__disclosure {
+  margin: var(--sl-space-5) 0 0;
+  padding-top: var(--sl-space-4);
+  max-width: 42ch;
+  border-top: 1px solid var(--sl-border);
+  color: var(--sl-ink-muted);
+  font-size: var(--sl-text-xs);
+  line-height: 1.65;
+  text-wrap: pretty;
+}
+
+/* ---- the log ---- */
+/* One slab, hairline gaps. The 1px grid gap IS the rule between records —
+   drop shadows are invisible at this depth and a stack of rounded cards
+   would just be the old grid turned sideways. */
+.sl-proof__records {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border-strong);
+  border: 1px solid var(--sl-border-strong);
+  border-radius: var(--sl-radius-sm);
+  overflow: hidden;
+}
+/* The margin gutter is a real column at every width, so the record number
+   and its hairline run the full height of the record the way a ruled
+   specimen sheet does. */
 .sl-proof__card {
   margin: 0;
+  padding: var(--sl-space-5) var(--sl-card-inset);
+  background: var(--sl-bg-card);
+  display: grid;
+  grid-template-columns: 40px minmax(0, 1fr);
+  grid-template-areas:
+    "num quote"
+    "num reading"
+    "num cite";
+  gap: var(--sl-space-4) var(--sl-space-5);
+  align-content: start;
+  /* The shadow token belongs on the record, not the slab: an inset lit edge
+     set on the slab lands exactly under the first record's opaque fill and
+     paints nothing. Per record it is the 1px highlight that seats each one
+     against the well. */
+  box-shadow: var(--sl-shadow-card);
+}
+@media (min-width: 1000px) {
+  .sl-proof__card {
+    grid-template-columns: 44px minmax(0, 1fr);
+    grid-template-areas:
+      "num quote"
+      "num cite";
+  }
+  /* The reading only earns a column when there is one. Reserving 220px for
+     a record with no image and no measurement left a dead trough down the
+     right of the log. */
+  .sl-proof__card--reading {
+    grid-template-columns: 44px minmax(0, 1fr) minmax(0, 220px);
+    grid-template-areas:
+      "num quote reading"
+      "num cite  reading";
+  }
+}
+.sl-proof__num {
+  grid-area: num;
+  align-self: stretch;
+  margin: 0;
+  padding-right: var(--sl-space-3);
+  border-right: 1px solid var(--sl-border);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.1em;
+  line-height: 1.9;
+}
+.sl-proof__quote {
+  grid-area: quote;
+  margin: 0;
+  color: var(--sl-ink);
+  font-size: var(--sl-text-lg);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.sl-proof__cite {
+  grid-area: cite;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sl-space-2) var(--sl-space-4);
+  /* .sl-mono-label supplies the mono/uppercase/tracking; only the colour is
+     lifted, because --sl-ink-muted at 12px sits at 4.79:1 on the card and
+     the attribution is the line that has to be readable. */
+  color: var(--sl-ink-soft);
+}
+.sl-proof__cite-meta { color: var(--sl-ink-muted); }
+
+.sl-proof__reading {
+  grid-area: reading;
+  align-self: start;
+  max-width: 320px;
   display: flex;
   flex-direction: column;
   gap: var(--sl-space-3);
-  padding: var(--sl-card-inset);
-  background: var(--sl-bg-card);
-  border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-lg);
-  box-shadow: var(--sl-shadow-card);
 }
-.sl-proof__media img { border-radius: var(--sl-radius-sm); }
-.sl-proof__quote {
+.sl-proof__media {
+  overflow: hidden;
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-night);
+  line-height: 0;
+}
+.sl-proof__media img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+/* Sunk one step below the card so the reading reads as a display, not a
+   caption. */
+.sl-proof__metric {
   margin: 0;
-  font-size: var(--sl-text-base);
-  line-height: 1.62;
-  color: var(--sl-ink);
-  text-wrap: pretty;
+  padding: var(--sl-space-3) var(--sl-space-4);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+  background: var(--sl-night);
+}
+.sl-proof__metric dt {
+  margin: 0 0 6px;
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+.sl-proof__metric dd {
+  margin: 0;
+  color: var(--sl-accent);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-sm);
+  font-weight: 500;
+  line-height: 1.35;
+  /* A measured value is arbitrary text a merchant typed. It wraps rather
+     than punching out of a 220px column. */
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 749px) {
+  /* The gutter keeps its rule but gives back width — a 40px margin plus a
+     24px gap is a quarter of a phone screen the quote is not getting. 32px
+     is the floor, not a nudge: two tabular digits at 12px with 0.1em
+     tracking measure ~17px, and anything tighter pushes the rule through
+     the number instead of standing beside it. */
+  .sl-proof__card {
+    grid-template-columns: 32px minmax(0, 1fr);
+    padding-left: var(--sl-dense-inset);
+    padding-right: var(--sl-dense-inset);
+    gap: var(--sl-space-4) var(--sl-space-3);
+  }
+  .sl-proof__num { padding-right: var(--sl-space-2); }
+  .sl-proof__title { max-width: 100%; }
 }
 {% endstylesheet %}
 
@@ -74,8 +415,11 @@
 {
   "name": "Proof",
   "settings": [
+    { "type": "text", "id": "log_label", "label": "Log label", "default": "Evidence log", "info": "The mono label at the top of the rail. The record count beside it is generated." },
     { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "From the range" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Proof it moved" }
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Proof it moved" },
+    { "type": "textarea", "id": "lede", "label": "Lede", "default": "One record per customer: the priority their report named, and what the next one measured." },
+    { "type": "textarea", "id": "disclosure", "label": "Scope disclosure", "default": "Real customers and real numbers only — never invented proof. This band stays empty until there is something true to put in it.", "info": "Renders in the rail beside the heading. See the anti-fake checklist in docs/strategy/positioning-and-growth.md." }
   ],
   "blocks": [
     {
@@ -83,9 +427,12 @@
       "name": "Proof card",
       "settings": [
         { "type": "image_picker", "id": "image", "label": "Before/after or screenshot" },
-        { "type": "text", "id": "alt", "label": "Image alt text" },
+        { "type": "text", "id": "alt", "label": "Image alt text", "info": "Leave blank only if the image adds nothing the quote does not already say — a blank alt hides it from screen readers." },
         { "type": "textarea", "id": "quote", "label": "Quote or result", "info": "Real customers and real numbers only — never invented proof." },
-        { "type": "text", "id": "attribution", "label": "Attribution" }
+        { "type": "text", "id": "attribution", "label": "Attribution" },
+        { "type": "text", "id": "meta", "label": "Record context", "info": "Club, plan, or dates — whatever makes the record checkable." },
+        { "type": "text", "id": "metric_label", "label": "Measured label", "default": "Measured" },
+        { "type": "text", "id": "metric_value", "label": "Measured value", "info": "Prints in amber, which on this theme means the engine measured it. Leave blank rather than round or estimate." }
       ]
     }
   ],

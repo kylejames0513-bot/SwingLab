@@ -4,291 +4,442 @@
 {% set allowance_used = allowance_spent and not refilm_credit_active %}
 {% block title %}{{ brand.name }} — Analyze your swing{% endblock %}
 {% block style %}
+  {# ---------------------------------------------------------------- page
+     The capture flow is the instrument's INPUT panel: hairline-ruled
+     sections, a mono channel index on every field, ruled option rows, and
+     one bone action at the end. The only amber text on the page is the
+     allowance count, because that is the only number here the engine
+     actually measured. #}
   main#MainContent {
     width: 100%;
-    max-width: 1280px;
-    margin: 42px auto 64px;
-    padding: 0 var(--sl-pad-x);
+    max-width: var(--sl-content);
+    margin: clamp(24px, 4vw, 42px) auto var(--sl-space-8);
+    {# The shell paints under the notch (viewport-fit=cover), so the content
+       column re-insets itself instead of trusting the page padding alone. #}
+    padding-left: max(var(--sl-pad-x), var(--sl-safe-left));
+    padding-right: max(var(--sl-pad-x), var(--sl-safe-right));
   }
   .upload-page {
-    --upload-panel: #f8fbf9;
-    --upload-wash: #eef5ef;
-    --upload-warm: #fff4e7;
-    --upload-line: #ddd8cd;
+    {# Native selects, checkboxes and radios draw their own chrome. Without a
+       declared scheme the field goes dark but the <select>'s dropdown popup
+       stays light — the one surface page CSS cannot reach. #}
+    color-scheme: dark;
     color: var(--sl-ink);
   }
+
+  {# ------------------------------------------------------------- masthead
+     This was a 24px-radius card with a drop shadow and a decorative ring.
+     A drop shadow is invisible on near-black, so separation is now a
+     hairline plus the 8px technical grid both surfaces run under
+     everything. #}
   .upload-hero {
     position: relative;
+    isolation: isolate;
     overflow: hidden;
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(230px, 290px);
-    gap: clamp(28px, 6vw, 76px);
-    align-items: end;
-    margin-bottom: 24px;
-    padding: clamp(28px, 5vw, 54px);
-    border: 1px solid rgba(20, 71, 44, .18);
-    border-radius: 24px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sl-space-5);
+    margin-bottom: var(--sl-space-5);
+    padding: clamp(24px, 4vw, 40px);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-lg);
     background:
-      radial-gradient(circle at 88% 14%, rgba(232, 114, 12, .18), transparent 30%),
+      radial-gradient(620px 320px at 92% 6%, rgba(var(--sl-accent-rgb), .09), transparent 62%),
+      radial-gradient(700px 380px at 2% 0%, rgba(var(--sl-trace-rgb), .06), transparent 58%),
       var(--sl-premium-gradient);
-    box-shadow: 0 28px 70px -45px rgba(8, 38, 24, .75);
-    color: #f8fbf8;
+    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
+    color: var(--sl-ink);
   }
+  {# Replaces the decorative ring with the instrument ruling, masked so it
+     builds toward the status readout and never crosses the headline. #}
   .upload-hero::after {
     content: "";
     position: absolute;
-    right: -64px;
-    bottom: -108px;
-    width: 280px;
-    height: 280px;
-    border: 1px solid rgba(255, 255, 255, .12);
-    border-radius: 50%;
-    box-shadow: 0 0 0 38px rgba(255, 255, 255, .035),
-                0 0 0 78px rgba(255, 255, 255, .025);
+    inset: 0;
+    z-index: 0;
+    opacity: .55;
+    background-image:
+      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px);
+    background-size: 8px 8px;
+    -webkit-mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-night-rgb), 1) 62%);
+    mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-night-rgb), 1) 62%);
     pointer-events: none;
   }
   .upload-hero__copy,
   .upload-status { position: relative; z-index: 1; }
+  {# Was --sl-premium-accent, i.e. amber. Amber marks a value the engine
+     measured; a section label is not one, so the eyebrow is mono bone-muted
+     like every other label on the page. #}
   .upload-eyebrow {
-    margin: 0 0 10px;
-    color: var(--sl-premium-accent);
+    margin: 0 0 var(--sl-space-3);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .72rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .12em;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
     text-transform: uppercase;
   }
   .upload-hero h1 {
-    max-width: 680px;
+    max-width: 18ch;
     margin: 0;
-    color: white;
-    font-size: clamp(2rem, 5vw, 3.85rem);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    font-weight: 800;
+    letter-spacing: -.02em;
     line-height: .98;
-    letter-spacing: -.045em;
+    text-transform: uppercase;
+    text-wrap: balance;
   }
   .upload-hero__lede {
-    max-width: 650px;
-    margin: 18px 0 0;
-    color: rgba(248, 251, 248, .82);
-    font-size: clamp(.98rem, 1.7vw, 1.12rem);
-    line-height: 1.65;
+    max-width: 46ch;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-lg);
+    line-height: 1.55;
+    text-wrap: pretty;
   }
+  {# 1px-gap bordered grid: the gap IS the rule, so the three steps read as
+     three cells of one instrument instead of three floating pills. #}
   .journey {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 9px;
-    margin-top: 24px;
+    margin-top: var(--sl-space-6);
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
+    border: 1px solid var(--sl-border);
+    background: var(--sl-border);
   }
   .journey span {
-    display: inline-flex;
+    display: flex;
     align-items: center;
-    gap: 8px;
-    padding: 8px 11px;
-    border: 1px solid rgba(255, 255, 255, .18);
-    border-radius: var(--sl-radius-control);
-    background: rgba(255, 255, 255, .07);
-    color: rgba(255, 255, 255, .9);
-    font-size: .78rem;
+    gap: var(--sl-space-3);
+    padding: var(--sl-space-3);
+    background: var(--sl-bg-card);
+    color: var(--sl-ink);
+    font-size: var(--sl-text-sm);
     font-weight: 600;
   }
   .journey b {
-    color: var(--sl-premium-accent);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .67rem;
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .1em;
   }
+
+  {# ------------------------------------------------------------- readout #}
   .upload-status {
-    padding: 20px;
-    border: 1px solid rgba(255, 255, 255, .18);
-    border-radius: 16px;
-    background: rgba(255, 255, 255, .09);
-    backdrop-filter: blur(10px);
+    padding: var(--sl-space-4);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-md);
+    background: rgba(var(--sl-night-rgb), .74);
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
   }
   .upload-status__label {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 0 0 8px;
-    color: var(--sl-premium-accent);
+    gap: var(--sl-space-2);
+    margin: 0 0 var(--sl-space-3);
+    padding-bottom: var(--sl-space-3);
+    border-bottom: 1px solid var(--sl-border);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .7rem;
-    letter-spacing: .1em;
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
   }
+  {# Trace, never amber: this dot reports the machine's live state. It is the
+     same signal the shell's banner dot carries. #}
   .upload-status__dot {
     width: 7px;
     height: 7px;
+    flex: 0 0 auto;
     border-radius: 50%;
-    background: var(--sl-premium-accent);
-    box-shadow: 0 0 0 4px rgba(244, 169, 94, .15);
+    background: var(--sl-trace);
+    box-shadow: 0 0 0 4px rgba(var(--sl-trace-rgb), .14);
   }
-  .upload-status strong { display: block; color: white; font-size: 1.05rem; }
-  .upload-status p { margin: 6px 0 0; color: rgba(255, 255, 255, .72); font-size: .84rem; }
-  .upload-status a { color: white; font-weight: 700; }
+  .upload-status strong {
+    display: block;
+    color: var(--sl-ink);
+    font-size: var(--sl-text-lg);
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .upload-status p {
+    margin: var(--sl-space-2) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  {# The shell already gives links bone plus an underline; overriding the
+     colour here (it used to be a hard `white`) would only weaken it. #}
+  .upload-status a { font-weight: 700; }
+
   .upload-layout {
     display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(280px, 340px);
-    gap: 24px;
+    gap: var(--sl-space-5);
     align-items: start;
   }
+
+  {# ---------------------------------------------------------- input panel #}
   .analysis-card {
     overflow: hidden;
     padding: 0;
-    border-radius: 20px;
+    border-radius: var(--sl-radius-lg);
   }
   .analysis-card__head {
-    padding: clamp(24px, 4vw, 36px);
-    border-bottom: 1px solid var(--upload-line);
-    background: linear-gradient(180deg, #f8fbf9, #eef2ef);
+    padding: clamp(20px, 3vw, 32px);
+    border-bottom: 1px solid var(--sl-border);
+    background: rgba(var(--sl-night-rgb), .55);
   }
   .analysis-card__head h2 {
-    margin: 3px 0 8px;
+    margin: var(--sl-space-2) 0 var(--sl-space-3);
     color: var(--sl-green);
-    font-size: clamp(1.55rem, 3vw, 2.15rem);
-    letter-spacing: -.03em;
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-3xl);
+    letter-spacing: -.02em;
+    text-transform: uppercase;
   }
   .analysis-card__head p:last-child {
-    max-width: 610px;
+    max-width: 62ch;
     margin: 0;
     color: var(--sl-ink-soft);
-    line-height: 1.55;
+    font-size: var(--sl-text-sm);
+    line-height: 1.6;
   }
   .section-kicker {
     margin: 0;
-    color: var(--sl-orange-text);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .72rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .12em;
+    letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
   }
+
+  {# ------------------------------------------------------- allowance meter
+     The dark wash callout, and the one panel on this page that reports a
+     measured quantity. #}
   .usage-panel {
     margin: 0;
-    padding: 16px clamp(24px, 4vw, 36px);
-    border-bottom: 1px solid var(--upload-line);
-    background: var(--upload-warm);
+    padding: var(--sl-space-4) clamp(20px, 3vw, 32px);
+    border-bottom: 1px solid var(--sl-border);
+    background: var(--sl-orange-soft);
   }
   .usage-panel p,
   .usage-panel .hint { margin: 0; }
-  .usage-panel p + p { margin-top: 8px; }
-  .usage-panel__kicker { margin: 0 0 6px; }
-  .usage-panel .error { font-weight: 700; }
-  .trend-note {
-    padding: 10px 13px;
-    border-left: 3px solid var(--sl-orange);
-    border-radius: 6px;
-    background: rgba(255, 255, 255, .62);
-    color: var(--sl-ink-soft);
+  .usage-panel p + p { margin-top: var(--sl-space-2); }
+  .usage-panel__kicker { margin: 0 0 var(--sl-space-2); }
+  .usage-panel .hint { color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
+  {# "3 analyses left" is a count the account meter measured, so it is the
+     one string here that earns the signal colour and the mono face. 10.3:1
+     on the wash. #}
+  .usage-panel .hint strong {
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-weight: 500;
   }
-  #upload-form { padding: 0 clamp(24px, 4vw, 36px) clamp(28px, 4vw, 38px); }
+  .usage-panel .error { font-weight: 700; }
+  {# The amber rule flags engine-derived content: trend_line is computed from
+     the golfer's own sessions, not written by us. #}
+  .trend-note {
+    padding: var(--sl-space-3);
+    border: 1px solid var(--sl-border);
+    border-left: 3px solid var(--sl-orange);
+    border-radius: 0 var(--sl-radius-sm) var(--sl-radius-sm) 0;
+    background: rgba(var(--sl-night-rgb), .6);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  {# The shell still paints main buttons bone-on-`white` — a light-era
+     declaration that survived the inversion and renders the label invisible.
+     Every action on this page therefore states its own ink. Bone on the
+     field with a hairline; amber would claim a measurement. #}
+  .usage-panel .button,
+  #submit {
+    background: var(--sl-green-btn);
+    border: 1px solid var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  .usage-panel .button:hover,
+  #submit:hover {
+    background: var(--sl-ink-hi);
+    border-color: var(--sl-ink-hi);
+    color: var(--sl-green-ink);
+  }
+
+  #upload-form { padding: 0 clamp(20px, 3vw, 32px) clamp(24px, 3vw, 34px); }
   .flow-section {
-    padding: clamp(26px, 4vw, 36px) 0;
-    border-bottom: 1px solid var(--upload-line);
+    padding: clamp(24px, 3vw, 32px) 0;
+    border-bottom: 1px solid var(--sl-border);
   }
   .flow-section:last-of-type { border-bottom: 0; }
-  .flow-section__head { margin-bottom: 22px; }
-  .flow-section__head h3 { margin: 3px 0 5px; color: var(--sl-green); font-size: 1.18rem; }
-  .flow-section__head p:last-child { margin: 0; color: var(--sl-ink-soft); font-size: .9rem; }
-  .field-block + .field-block { margin-top: 24px; }
+  .flow-section__head { margin-bottom: var(--sl-space-5); }
+  .flow-section__head h3 {
+    margin: var(--sl-space-2) 0 var(--sl-space-1);
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-lg);
+    letter-spacing: -.01em;
+    text-transform: uppercase;
+  }
+  .flow-section__head p:last-child {
+    margin: 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  .field-block + .field-block { margin-top: var(--sl-space-5); }
   .field-label,
   .angle-group legend {
     width: 100%;
-    margin: 0 0 8px;
+    margin: 0 0 var(--sl-space-2);
     padding: 0;
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: var(--sl-space-3);
     color: var(--sl-ink);
-    font-size: .98rem;
-    font-weight: 750;
+    font-size: var(--sl-text-base);
+    font-weight: 700;
   }
+  {# A mono index in a tight box rather than a filled circle: these are
+     positions in a sequence, so they should read like channel labels. #}
   .field-number {
-    width: 27px;
-    height: 27px;
-    flex: 0 0 27px;
+    width: 28px;
+    height: 28px;
+    flex: 0 0 28px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    border-radius: 50%;
-    background: var(--sl-green);
-    color: white;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink-soft);
     font-family: var(--sl-font-mono);
-    font-size: .7rem;
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
   }
+  {# Was burnt-orange ink on a peach chip — a light-surface pair, and
+     amber-adjacent for a flag that marks no measurement at all. Bone-muted
+     in a hairline box instead. #}
   .required-badge {
     margin-left: auto;
-    padding: 4px 7px;
-    border-radius: var(--sl-radius-control);
-    background: #fce9dc;
-    color: #8b3b08;
+    padding: 3px var(--sl-space-2);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .62rem;
-    letter-spacing: .06em;
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .08em;
     text-transform: uppercase;
   }
+  {# Bare element selectors on purpose: the shell's control baseline is
+     wrapped in :where(), and it still fills every input with opaque white.
+     Left alone, this form would show white wells on a near-black field. #}
   input[type=text], select {
     width: 100%;
-    min-height: 50px;
-    padding: 11px 13px;
+    min-height: 48px;
+    padding: 12px 13px;
     box-sizing: border-box;
     border: 1.5px solid var(--sl-control-border);
-    border-radius: 10px;
-    background: white;
+    border-radius: var(--sl-radius-control);
+    background: var(--sl-night);
     color: var(--sl-ink);
     font: inherit;
   }
+  input[type=text]::placeholder { color: var(--sl-ink-muted); }
   input[type=text]:focus,
   select:focus {
-    border-color: var(--sl-green-btn);
-    outline: 3px solid rgba(26, 92, 56, .14);
-    outline-offset: 1px;
+    border-color: var(--sl-ink);
+    outline: 2px solid var(--sl-focus-dark);
+    outline-offset: 2px;
   }
   .club-block {
-    padding: 18px;
-    border: 1.5px solid rgba(20, 71, 44, .28);
-    border-radius: 14px;
-    background: var(--upload-wash);
+    padding: var(--sl-space-4);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-md);
+    background: rgba(var(--sl-night-rgb), .6);
   }
-  .field-help { margin: 8px 0 0; color: var(--sl-ink-soft); font-size: .84rem; line-height: 1.5; }
-  .angle-group { min-width: 0; margin: 24px 0 0; padding: 0; border: 0; }
-  .radio-row { display: grid; gap: 10px; margin-top: 9px; }
+  .field-help {
+    margin: var(--sl-space-2) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+  .field-help strong { color: var(--sl-ink); }
+  .angle-group { min-width: 0; margin: var(--sl-space-5) 0 0; padding: 0; border: 0; }
+  {# Ruled option rows: one hairline grid, one cell per choice, no floating
+     rounded cards. #}
+  .radio-row {
+    display: grid;
+    gap: 1px;
+    margin-top: var(--sl-space-3);
+    border: 1px solid var(--sl-border);
+    background: var(--sl-border);
+  }
   .radio-row label {
     min-height: 48px;
     margin: 0;
-    padding: 13px 14px;
+    padding: var(--sl-space-3) var(--sl-space-4);
     display: flex;
-    gap: 11px;
+    gap: var(--sl-space-3);
     align-items: flex-start;
-    border: 1px solid var(--upload-line);
-    border-radius: 12px;
-    background: white;
+    background: var(--sl-bg-card);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
     font-weight: 400;
     line-height: 1.45;
     cursor: pointer;
+    transition: background-color .15s ease, box-shadow .15s ease;
   }
-  .radio-row label:hover { border-color: rgba(20, 71, 44, .5); background: #fbfdfb; }
-  .radio-row input { margin: 4px 0 0; accent-color: var(--sl-green-btn); }
+  .radio-row label strong { color: var(--sl-ink); font-weight: 700; }
+  .radio-row label:hover { background: var(--sl-orange-soft); }
+  .radio-row input {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    margin: 2px 0 0;
+    accent-color: var(--sl-green-btn);
+  }
+  {# The selected row carries an inset bone rule as well as the wash, so the
+     state never rests on colour alone. #}
   .radio-row label:has(input:checked) {
-    border-color: var(--sl-green-btn);
-    background: var(--upload-wash);
+    background: var(--sl-orange-soft);
     box-shadow: inset 3px 0 0 var(--sl-green-btn);
+    color: var(--sl-ink);
   }
+
+  {# ---------------------------------------------------------- capture well
+     The 16px ruling is the same one the storefront's trace panel uses, so an
+     empty target still reads as part of the machine rather than a blank box. #}
   .drop {
     min-height: 150px;
-    margin-top: 7px;
-    padding: 28px 18px;
+    margin-top: var(--sl-space-3);
+    padding: var(--sl-space-6) var(--sl-space-4);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 7px;
+    gap: var(--sl-space-2);
     box-sizing: border-box;
-    border: 2px dashed var(--sl-control-border);
-    border-radius: 16px;
-    background: #faf8f3;
+    border: 1.5px dashed var(--sl-control-border);
+    border-radius: var(--sl-radius-md);
+    background:
+      linear-gradient(rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
+      var(--sl-night);
+    background-size: 16px 16px, 16px 16px, auto;
     color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
     text-align: center;
     cursor: pointer;
-    transition: border-color .15s ease, background .15s ease, transform .15s ease;
+    transition: border-color .15s ease, background-color .15s ease, transform .15s ease;
   }
   .drop::before {
     content: "\2191";
@@ -296,150 +447,309 @@
     height: 38px;
     display: grid;
     place-items: center;
-    border-radius: 50%;
-    background: var(--sl-green);
-    color: white;
-    font-size: 1.2rem;
-    font-weight: 800;
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-sm);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-lg);
+    font-weight: 500;
   }
+  {# Every drop state is bone. An amber edge would read as a measurement and
+     a trace edge is reserved for the live meter below. #}
   .drop:hover,
-  .drop:focus-visible { border-color: var(--sl-orange); background: var(--upload-warm); }
-  .drop.dragover { border-color: var(--sl-orange); background: var(--upload-warm); transform: translateY(-2px); }
-  .drop.has-file { border-style: solid; border-color: var(--sl-green-btn); background: var(--upload-wash); color: var(--sl-ink); }
-  .drop input[type=file] { display: none; }
-  .drop .filename { font-weight: 750; }
-  .transfer-option {
-    margin-top: 20px;
-    padding: 16px;
-    border: 1px solid #dbd2c4;
-    border-radius: var(--sl-radius-md);
-    background: var(--upload-warm);
+  .drop:focus-visible { border-color: var(--sl-ink); color: var(--sl-ink); }
+  .drop.dragover {
+    border-color: var(--sl-ink);
+    background-color: var(--sl-orange-soft);
+    transform: translateY(-2px);
   }
-  .check { display: flex; align-items: flex-start; gap: 10px; margin-top: 16px; }
-  .transfer-option .check { margin-top: 0; }
-  .check input { margin-top: 4px; accent-color: var(--sl-green-btn); }
-  .check label { margin: 0; line-height: 1.48; }
-  details.advanced {
-    margin-top: 20px;
-    border: 1px solid var(--upload-line);
+  .drop.has-file {
+    border-style: solid;
+    border-color: var(--sl-ink);
+    background-color: var(--sl-orange-soft);
+    color: var(--sl-ink);
+  }
+  .drop input[type=file] { display: none; }
+  .drop .filename { color: var(--sl-ink); font-family: var(--sl-font-mono); font-weight: 500; }
+
+  .transfer-option {
+    margin-top: var(--sl-space-5);
+    padding: var(--sl-space-4);
+    border: 1px solid var(--sl-border);
     border-radius: var(--sl-radius-md);
-    background: white;
+    background: var(--sl-orange-soft);
+  }
+  .check {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sl-space-3);
+    margin-top: var(--sl-space-4);
+  }
+  .transfer-option .check { margin-top: 0; }
+  {# 20px, not the 13px default: the box is its own target and has to clear
+     WCAG 2.2's minimum on a phone. #}
+  .check input {
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    margin-top: 2px;
+    accent-color: var(--sl-green-btn);
+  }
+  .check label {
+    margin: 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+  .check label strong { color: var(--sl-ink); }
+  details.advanced {
+    margin-top: var(--sl-space-5);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-md);
+    background: rgba(var(--sl-night-rgb), .55);
   }
   details.advanced > summary {
-    padding: 15px 17px;
-    color: var(--sl-green);
-    font-weight: 750;
+    min-height: 48px;
+    padding: var(--sl-space-3) var(--sl-space-4);
+    display: flex;
+    align-items: center;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    letter-spacing: .08em;
+    text-transform: uppercase;
     cursor: pointer;
   }
-  details.advanced[open] > summary { border-bottom: 1px solid var(--upload-line); }
-  .advanced__body { padding: 4px 17px 20px; }
-  .advanced__body > label { display: block; margin: 18px 0 7px; font-weight: 700; }
-  .submit-zone { padding-top: 28px; }
+  details.advanced[open] > summary { border-bottom: 1px solid var(--sl-border); }
+  .advanced__body { padding: var(--sl-space-1) var(--sl-space-4) var(--sl-space-5); }
+  .advanced__body > label {
+    display: block;
+    margin: var(--sl-space-5) 0 var(--sl-space-2);
+    color: var(--sl-ink);
+    font-weight: 700;
+  }
+
+  {# ------------------------------------------------------------- the action #}
+  .submit-zone { padding-top: var(--sl-space-6); }
   #submit {
     width: 100%;
     min-height: 54px;
     margin: 0;
-    border-radius: 11px;
-    box-shadow: 0 12px 28px -18px rgba(20, 71, 44, .85);
-    font-size: 1rem;
+    border-radius: var(--sl-radius-control);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    letter-spacing: .1em;
+    text-transform: uppercase;
   }
-  .submit-note { margin: 10px 0 0; text-align: center; }
-  #upload-progress { display: none; margin-top: 18px; }
+  {# The shell disables buttons to a mid-grey fill on the same mid-grey edge
+     — a light-era value that is far brighter than the field and therefore
+     reads as ENABLED here. A blocked action is an empty outline instead. #}
+  #submit:disabled,
+  #submit:disabled:hover {
+    background: transparent;
+    border-color: var(--sl-control-border);
+    color: var(--sl-ink-muted);
+    box-shadow: none;
+    transform: none;
+    cursor: not-allowed;
+  }
+  .submit-note {
+    margin: var(--sl-space-3) 0 0;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-sm);
+    text-align: center;
+  }
+  #upload-progress { display: none; margin-top: var(--sl-space-4); }
+  {# The live meter. Trace, because upload progress is the one thing on this
+     page that is a live readout of the machine working — the shell's default
+     fill is var(--accent), which is brand-configured and could be anything. #}
+  #upload-progress .bar {
+    height: 10px;
+    margin: var(--sl-space-3) 0 var(--sl-space-2);
+    overflow: hidden;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+  }
+  #upload-progress .bar > div {
+    height: 100%;
+    min-width: 4px;
+    border-radius: 0;
+    background: var(--sl-trace);
+    transition: width .4s ease;
+  }
+  #upload-progress .bar-label {
+    margin: 0;
+    color: var(--sl-trace-dim);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
   #upload-error:empty { display: none; }
-  #upload-error { margin: 14px 0 0; }
-  .upload-sidebar { display: grid; gap: 18px; }
+  {# The error keeps the shell's --sl-danger ink (7.62:1) and gains a well so
+     a failed upload is a panel, not a stray red line. #}
+  #upload-error {
+    margin: var(--sl-space-4) 0 0;
+    padding: var(--sl-space-3);
+    border: 1px solid var(--sl-border);
+    border-left: 3px solid var(--sl-danger);
+    border-radius: 0 var(--sl-radius-sm) var(--sl-radius-sm) 0;
+    background: rgba(var(--sl-night-rgb), .6);
+    font-size: var(--sl-text-sm);
+  }
+
+  {# --------------------------------------------------------- reference rail #}
+  .upload-sidebar { display: grid; gap: var(--sl-space-4); }
   .sidebar-card {
-    padding: 22px;
-    border: 1px solid var(--upload-line);
-    border-radius: 18px;
-    background: var(--upload-panel);
-    box-shadow: 0 16px 38px -32px rgba(15, 42, 27, .55);
+    padding: var(--sl-space-5);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm);
   }
   .sidebar-card h2,
-  .sidebar-card h3 { margin: 4px 0 11px; color: var(--sl-green); font-size: 1.08rem; }
-  .sidebar-card p { color: var(--sl-ink-soft); font-size: .88rem; line-height: 1.55; }
-  .sidebar-card ul { margin: 14px 0 0; padding-left: 20px; color: var(--sl-ink-soft); }
+  .sidebar-card h3 {
+    margin: var(--sl-space-2) 0 var(--sl-space-3);
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-lg);
+    letter-spacing: -.01em;
+    text-transform: uppercase;
+  }
+  .sidebar-card p {
+    margin: 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+  }
+  .sidebar-card ul {
+    margin: var(--sl-space-4) 0 0;
+    padding-left: var(--sl-space-4);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
   .sidebar-card li { padding-left: 3px; line-height: 1.5; }
-  .sidebar-card li + li { margin-top: 9px; }
+  .sidebar-card li + li { margin-top: var(--sl-space-3); }
+  .sidebar-card strong { color: var(--sl-ink); }
+  {# Ruled rows, not a dashed list: the checklist is a procedure, and each
+     step gets its own hairline-separated line. #}
   .sidebar-card .checklist {
-    margin: 14px 0 0;
+    margin: var(--sl-space-4) 0 0;
     padding: 0;
     list-style: none;
     counter-reset: filmstep;
+    border-top: 1px solid var(--sl-border);
   }
   .sidebar-card .checklist li {
     position: relative;
     margin: 0;
-    padding: 10px 0 10px 34px;
+    padding: var(--sl-space-3) 0 var(--sl-space-3) 34px;
+    border-bottom: 1px solid var(--sl-border);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
     line-height: 1.5;
     counter-increment: filmstep;
   }
-  .sidebar-card .checklist li + li { margin-top: 0; border-top: 1px dashed var(--upload-line); }
+  .sidebar-card .checklist li + li { margin-top: 0; }
+  {# These counters were amber. They are step numbers, not measurements, so
+     they drop to mono bone-muted with the rest of the index type. #}
   .sidebar-card .checklist li::before {
     content: "0" counter(filmstep);
     position: absolute;
     left: 0;
-    top: 12px;
-    color: var(--sl-orange-text);
+    top: var(--sl-space-3);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .68rem;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
     letter-spacing: .08em;
   }
-  .sidebar-card--dark { border-color: var(--sl-green); background: var(--sl-green); color: white; }
-  .sidebar-card--dark .section-kicker { color: var(--sl-premium-accent); }
-  .sidebar-card--dark h3 { color: white; }
+  {# "--dark" meant a green fill on a light page. On the field the equivalent
+     emphasis is depth: the well surface behind a stronger edge. #}
+  .sidebar-card--dark {
+    border-color: var(--sl-border-strong);
+    background: var(--sl-night);
+  }
+  .sidebar-card--dark .section-kicker { color: var(--sl-ink-muted); }
+  .sidebar-card--dark h3 { color: var(--sl-ink); }
   .sidebar-card--dark p,
-  .sidebar-card--dark ul { color: rgba(255, 255, 255, .78); }
-  .sidebar-card--dark strong { color: white; }
+  .sidebar-card--dark ul { color: var(--sl-ink-soft); }
+  .sidebar-card--dark strong { color: var(--sl-ink); }
+
   .first-run {
-    margin: 0 0 24px;
-    padding: 17px 20px;
+    margin: 0 0 var(--sl-space-5);
+    padding: var(--sl-space-4);
     display: grid;
     grid-template-columns: auto 1fr;
-    gap: 14px;
+    gap: var(--sl-space-3);
     align-items: start;
-    border: 1px solid #e8c59f;
-    border-radius: 16px;
-    background: var(--upload-warm);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-md);
+    background: var(--sl-orange-soft);
   }
   .first-run__mark {
-    width: 34px;
-    height: 34px;
+    width: 32px;
+    height: 32px;
     display: grid;
     place-items: center;
-    border-radius: 50%;
-    background: var(--sl-orange);
-    color: white;
-    font-weight: 800;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
   }
-  .first-run strong { color: var(--sl-green); }
-  .first-run p { margin: 3px 0 0; color: var(--sl-ink-soft); font-size: .9rem; line-height: 1.5; }
-  .disclaimer { max-width: 760px; margin: 26px auto 0; text-align: center; }
-  @media (min-width: 901px) {
+  .first-run strong { color: var(--sl-ink); }
+  .first-run p {
+    margin: var(--sl-space-1) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.5;
+  }
+  .disclaimer { max-width: 76ch; margin: var(--sl-space-6) auto 0; text-align: center; }
+
+  @media (min-width: 560px) {
+    .journey { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (min-width: 1000px) {
+    .upload-hero {
+      grid-template-columns: minmax(0, 1fr) minmax(240px, 300px);
+      gap: clamp(32px, 5vw, 72px);
+      align-items: end;
+      padding: clamp(32px, 4vw, 52px);
+    }
+    {# The reference rail follows the form down a long page. #}
     .upload-sidebar { position: sticky; top: 88px; }
   }
+  {# 900px is not one of the system's stops, but tests/test_premium_upload.py
+     pins this query and the single-column rule inside it — and it is the
+     honest number: a form plus a 340px reference column is exactly what
+     stops fitting here. #}
   @media (max-width: 900px) {
-    main#MainContent { margin-top: 28px; }
-    .upload-hero { grid-template-columns: 1fr; gap: 24px; }
-    .upload-status { max-width: 420px; }
     .upload-layout { grid-template-columns: 1fr; }
   }
-  @media (max-width: 560px) {
-    main#MainContent { margin-top: 18px; }
-    .upload-hero { padding: 26px 22px; border-radius: 18px; }
-    .upload-hero h1 { font-size: 2.15rem; }
-    .journey { display: grid; }
-    .journey span { width: fit-content; }
-    .analysis-card { border-radius: 16px; }
+  @media (max-width: 999px) {
+    main#MainContent { margin-top: var(--sl-space-5); }
+    .upload-status { max-width: 420px; }
+  }
+  @media (max-width: 749px) {
+    main#MainContent { margin-top: var(--sl-space-4); }
+    .upload-hero { padding: var(--sl-space-5) var(--sl-space-4); }
     .analysis-card__head,
     .usage-panel,
-    #upload-form { padding-inline: 20px; }
-    .club-block { padding: 15px; }
-    .required-badge { font-size: .58rem; }
+    #upload-form { padding-inline: var(--sl-space-4); }
+    .club-block { padding: var(--sl-space-3); }
+    .sidebar-card { padding: var(--sl-space-4); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .drop { transition: none; }
+    .drop,
+    .radio-row label,
+    #upload-progress .bar > div { transition: none; }
     .drop.dragover { transform: none; }
     .bar > div { transition: none; }
   }

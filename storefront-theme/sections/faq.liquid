@@ -1,24 +1,84 @@
-<section id="{{ section.settings.anchor | default: 'faq' }}" class="sl-faq">
-  <div class="sl-wrap sl-reveal">
-    {%- assign head_eyebrow = 'homepage.faq.eyebrow' | t -%}
-    {%- assign head_title = section.settings.heading | default: 'Questions, answered' -%}
-    {% render 'section-head', eyebrow: head_eyebrow, title: head_title, center: true %}
-    <div class="sl-faq__list">
-      {%- for block in section.blocks -%}
-        <details class="sl-faq__item"{{ block.shopify_attributes }}>
-          <summary class="sl-faq__q">
-            <span class="sl-faq__num" aria-hidden="true">{%- if forloop.index < 10 -%}0{%- endif -%}{{ forloop.index }}</span>
-            <h3 class="sl-faq__q-text">{{ block.settings.question }}</h3>
-            <span class="sl-faq__icon" aria-hidden="true"></span>
-          </summary>
-          <div class="sl-faq__a">
-            <p>{{ block.settings.answer }}</p>
-          </div>
-        </details>
-      {%- endfor -%}
-    </div>
+{%- liquid
+  # 'homepage.faq.eyebrow' is the only translation key this section owns and
+  # locales/en.default.json is owned elsewhere, so every other label below is
+  # either merchant copy declared in the schema or derived from the blocks.
+  # Nothing here invents a string a translator has never seen.
+  assign head_eyebrow = 'homepage.faq.eyebrow' | t
+  assign head_title = section.settings.heading | default: 'Questions, answered'
+  assign anchor = section.settings.anchor | default: 'faq'
+  assign heading_id = 'FaqTitle-' | append: section.id
+-%}
+
+<section id="{{ anchor }}" class="sl-faq" aria-labelledby="{{ heading_id }}">
+  <div class="sl-wrap sl-faq__inner">
+    {%- comment -%}
+      Deliberately not the shared section-head snippet. Nine bands above this
+      one open with the same centred eyebrow → h2 → lede and then a grid of
+      cards; a tenth repetition is the thing that made the page read as one
+      template applied ten times. The heading here is a fixed left rail and
+      the questions run in a ruled column beside it, so the FAQ looks like
+      the index at the back of a manual rather than another marketing band.
+    {%- endcomment -%}
+    <header class="sl-faq__rail sl-reveal">
+      <p class="sl-faq__eyebrow">
+        {%- comment -%}
+          Not .sl-eyebrow. That shared class paints amber, and amber marks a
+          value the engine measured — "BEFORE YOU FILM" is a label, not a
+          measurement. Spending the signal on section furniture is exactly
+          what trains the eye to read it as decoration.
+        {%- endcomment -%}
+        <span>{{ head_eyebrow }}</span>
+        <span class="sl-faq__rule" aria-hidden="true"></span>
+        {%- comment -%}
+          Derived, never typed. A hand-written entry count goes stale the
+          first time somebody adds a question in the theme editor, and a
+          stale number on a page about honesty is a bad trade.
+        {%- endcomment -%}
+        <span class="sl-faq__count" aria-hidden="true">{{ section.blocks.size }}</span>
+      </p>
+      <h2 id="{{ heading_id }}" class="sl-faq__title">{{ head_title }}</h2>
+      {%- if section.settings.lede != blank -%}
+        <p class="sl-faq__lede">{{ section.settings.lede }}</p>
+      {%- endif -%}
+      {%- comment -%}
+        Both halves are guarded because Shopify's `url` setting type takes no
+        default: the label ships with one and the link does not, so an
+        un-configured store must render nothing rather than a live control
+        pointing at an empty href.
+      {%- endcomment -%}
+      {%- if section.settings.link_label != blank and section.settings.link_url != blank -%}
+        <a class="sl-faq__link" href="{{ section.settings.link_url }}">
+          <span>{{ section.settings.link_label }}</span>
+          <span aria-hidden="true">&rarr;</span>
+        </a>
+      {%- endif -%}
+    </header>
+
+    {%- if section.blocks.size > 0 -%}
+      <div class="sl-faq__list sl-reveal sl-reveal--d1">
+        {%- for block in section.blocks -%}
+          <details class="sl-faq__item"{{ block.shopify_attributes }}>
+            <summary class="sl-faq__q">
+              <span class="sl-faq__num" aria-hidden="true">{%- if forloop.index < 10 -%}0{%- endif -%}{{ forloop.index }}</span>
+              <h3 class="sl-faq__q-text">{{ block.settings.question }}</h3>
+              <span class="sl-faq__icon" aria-hidden="true"></span>
+            </summary>
+            <div class="sl-faq__a">
+              <p>{{ block.settings.answer }}</p>
+            </div>
+          </details>
+        {%- endfor -%}
+      </div>
+    {%- endif -%}
   </div>
 </section>
+
+{%- comment -%}
+  Native <details>/<summary> stays. It carries the disclosure role and the
+  expanded state to assistive tech without a line of JavaScript, so the
+  accordion still works in the theme editor's re-render, with JS disabled,
+  and inside a print or reader view.
+{%- endcomment -%}
 
 {%- if section.blocks.size > 0 -%}
 <script type="application/ld+json">
@@ -43,89 +103,244 @@
 
 {% stylesheet %}
 .sl-faq {
-  padding-top: var(--sl-section-space-compact);
-  padding-bottom: var(--sl-section-space-compact);
-}
-.sl-faq__list {
-  margin: 0 auto;
+  padding-top: var(--sl-section-space);
+  padding-bottom: var(--sl-section-space);
   border-top: 1px solid var(--sl-border);
-  max-width: 860px;
 }
-.sl-faq__item { border-bottom: 1px solid var(--sl-border); }
-.sl-faq__q {
+/* The header goes sticky once the page scrolls, so an in-page jump to #faq
+   used to land the heading underneath it. */
+.sl-faq { scroll-margin-top: var(--sl-space-8); }
+
+.sl-faq__inner {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: clamp(32px, 5vw, 48px);
+}
+/* 4/8 rather than 6/6: the rail is a label and the questions are the
+   content, so the column widths should say which is which. */
+@media (min-width: 1000px) {
+  .sl-faq__inner {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 8fr);
+    gap: clamp(40px, 5vw, 80px);
+    align-items: start;
+  }
+  /* Clears the sticky header bar (64px + its padding) so the rail parks
+     below it instead of behind it. */
+  .sl-faq__rail {
+    position: sticky;
+    top: var(--sl-space-9);
+  }
+}
+
+.sl-faq__eyebrow {
+  margin: 0 0 var(--sl-space-5);
   display: flex;
-  align-items: baseline;
-  gap: 16px;
-  min-height: 72px;
-  padding: var(--sl-dense-inset) var(--sl-card-inset);
+  align-items: center;
+  gap: var(--sl-space-3);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  line-height: 1;
+  text-transform: uppercase;
+}
+.sl-faq__rule {
+  flex: 1;
+  height: 1px;
+  background: var(--sl-border-strong);
+}
+.sl-faq__count {
+  color: var(--sl-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+.sl-faq__title {
+  margin: 0;
+  max-width: 12ch;
+  color: var(--sl-ink);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-heading-support);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
+  text-transform: uppercase;
+  text-wrap: balance;
+}
+.sl-faq__lede {
+  margin: var(--sl-space-5) 0 0;
+  max-width: 36ch;
+  color: var(--sl-ink-soft);
   font-size: var(--sl-text-base);
-  font-weight: 600;
-  color: var(--sl-green);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.sl-faq__link {
+  margin-top: var(--sl-space-6);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sl-space-2);
+  padding-bottom: 6px;
+  /* An interactive edge, so --sl-control-border (3.45:1), never the
+     decorative 1.33:1 hairline. */
+  border-bottom: 1px solid var(--sl-control-border);
+  color: var(--sl-ink);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+.sl-faq__link:hover { border-bottom-color: var(--sl-ink); }
+
+/* ---- the entries ---- */
+.sl-faq__list { border-top: 1px solid var(--sl-border-strong); }
+/* The rule that divides rail from entries. The rows carry their own inset,
+   so the questions never sit on top of it. */
+@media (min-width: 1000px) {
+  .sl-faq__list { border-left: 1px solid var(--sl-border); }
+}
+.sl-faq__item {
+  position: relative;
+  border-bottom: 1px solid var(--sl-border);
+}
+.sl-faq__item:last-child { border-bottom-color: var(--sl-border-strong); }
+
+/* An open row SINKS. A cast shadow is invisible against --sl-bg — the old
+   card treatment was painting near-black onto near-black — so depth here is
+   the darker --sl-night well plus the lit top edge every --sl-shadow-* token
+   now leads with. */
+.sl-faq__item[open] {
+  background: var(--sl-night);
+  box-shadow: inset 0 1px 0 rgba(var(--sl-cream-rgb), 0.05);
+}
+.sl-faq__item[open]::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: -1px;
+  left: 0;
+  width: 2px;
+  background: var(--sl-ink);
+}
+
+.sl-faq__q {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: baseline;
+  align-content: center;
+  min-height: 68px;
+  padding: var(--sl-dense-inset) var(--sl-card-inset);
+  color: var(--sl-ink);
   cursor: pointer;
   list-style: none;
   text-align: left;
 }
 .sl-faq__q::-webkit-details-marker { display: none; }
-.sl-faq__q:hover .sl-faq__q-text { color: var(--sl-green-btn); }
+.sl-faq__q:hover { background: rgba(var(--sl-cream-rgb), 0.03); }
+
+/* The 48px number track is not a coincidence: .sl-faq__a indents by exactly
+   --sl-card-inset + 48px, so the answer's first character lands under the
+   question's. Change one and change the other. */
 .sl-faq__num {
-  flex: none;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.08em;
-  color: var(--sl-orange);
-  transform: translateY(-2px);
+  /* NOT amber, which is what this was. Amber marks a value the engine
+     measured; the position of a question in a list measures nothing. */
+  color: var(--sl-ink-muted);
+  font-variant-numeric: tabular-nums;
 }
-/* a real heading (11 questions were invisible to heading navigation),
-   restyled to sit inside the summary row like the span it replaced */
+.sl-faq__q:hover .sl-faq__num,
+.sl-faq__item[open] .sl-faq__num { color: var(--sl-ink-soft); }
+
+/* A real heading — eleven questions were invisible to heading navigation —
+   restyled to sit in the row like the span it replaced. Questions are
+   interface type, so they take the sans face rather than the expanded
+   display 800 that base.css gives every h3. */
 .sl-faq__q-text {
-  flex: 1;
   min-width: 0;
   margin: 0;
-  font: inherit;
-  letter-spacing: inherit;
+  font-family: var(--sl-font-sans);
+  font-size: var(--sl-text-lg);
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.35;
   color: inherit;
+  text-wrap: pretty;
 }
+
+/* Reads as a control, so it takes a control-grade edge even though the
+   whole summary is the hit area. align-self opts it out of the row's
+   baseline alignment and centres it instead. */
 .sl-faq__icon {
   position: relative;
-  flex: none;
-  width: 14px;
-  height: 14px;
-  margin-left: 8px;
+  align-self: center;
+  margin-left: var(--sl-space-4);
+  width: 22px;
+  height: 22px;
+  border: 1px solid var(--sl-control-border);
+  border-radius: var(--sl-radius-sm);
 }
 .sl-faq__icon::before,
 .sl-faq__icon::after {
   content: "";
   position: absolute;
-  background: var(--sl-green);
-  border-radius: 1px;
-  transition: transform .2s ease;
+  background: var(--sl-ink-soft);
 }
-.sl-faq__icon::before {
-  left: 0;
-  top: 6px;
-  width: 14px;
-  height: 2px;
-}
-.sl-faq__icon::after {
-  left: 6px;
-  top: 0;
-  width: 2px;
-  height: 14px;
-}
+/* 2px strokes in a 20px padding box land on the exact centre. A 1px stroke
+   would need a half-pixel offset to centre, and half-pixel nudges are how
+   the old sheet drifted off its own scale. */
+.sl-faq__icon::before { top: 9px; left: 5px; width: 10px; height: 2px; }
+.sl-faq__icon::after { top: 5px; left: 9px; width: 2px; height: 10px; }
+.sl-faq__q:hover .sl-faq__icon { border-color: var(--sl-ink-soft); }
+.sl-faq__item[open] .sl-faq__icon { border-color: var(--sl-ink); }
+.sl-faq__item[open] .sl-faq__icon::before,
+.sl-faq__item[open] .sl-faq__icon::after { background: var(--sl-ink); }
+/* The plus becoming a minus is state, not decoration, so the transform
+   applies unconditionally; only the tween is motion. The old rule declared
+   its transition outside any guard. */
 .sl-faq__item[open] .sl-faq__icon::after { transform: scaleY(0); }
-.sl-faq__a {
-  width: 100%;
-  max-width: 70ch;
-  margin: 0;
-  padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px);
-  font-size: var(--sl-text-base);
-  line-height: 1.62;
-  color: var(--sl-ink-soft);
-  text-align: left;
+@media (prefers-reduced-motion: no-preference) {
+  .sl-faq__icon { transition: border-color .2s ease; }
+  .sl-faq__icon::before,
+  .sl-faq__icon::after { transition: transform .2s ease, background-color .2s ease; }
+  .sl-faq__link span:last-child { transition: transform .2s ease; }
+  .sl-faq__link:hover span:last-child { transform: translateX(3px); }
 }
-.sl-faq__a p { margin: 0 0 10px; }
+
+.sl-faq__a {
+  max-width: 74ch;
+  padding: 0 var(--sl-card-inset) var(--sl-card-inset) calc(var(--sl-card-inset) + 48px);
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-base);
+  line-height: 1.65;
+  text-align: left;
+  text-wrap: pretty;
+}
+.sl-faq__a p { margin: 0 0 var(--sl-space-3); }
 .sl-faq__a p:last-child { margin-bottom: 0; }
+.sl-faq__a a { color: var(--sl-ink); }
+
+@media (max-width: 749px) {
+  /* The .sl-wrap gutter already insets this column. Paying --sl-card-inset
+     on top of it started the questions a quarter of the way across a phone,
+     so rows run to the gutter and the number takes a narrower margin —
+     answer indent moved in step to keep the two columns aligned. */
+  .sl-faq__q {
+    grid-template-columns: var(--sl-space-6) minmax(0, 1fr) auto;
+    padding-left: 0;
+    padding-right: 0;
+  }
+  .sl-faq__a {
+    padding-left: var(--sl-space-6);
+    padding-right: 0;
+  }
+  .sl-faq__icon { margin-left: var(--sl-space-3); }
+  .sl-faq__title { max-width: 100%; }
+}
 {% endstylesheet %}
 
 {% schema %}
@@ -133,7 +348,10 @@
   "name": "FAQ",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "faq" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Questions, answered" }
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Questions, answered" },
+    { "type": "textarea", "id": "lede", "label": "Rail lede", "default": "What people ask before their first upload — filming, reports, plans, gear, and billing." },
+    { "type": "text", "id": "link_label", "label": "Rail link label", "default": "Ask us anything" },
+    { "type": "url", "id": "link_url", "label": "Rail link (hidden until set)" }
   ],
   "blocks": [
     {
@@ -182,7 +400,14 @@
           "type": "qa",
           "settings": {
             "question": "What does the free plan include?",
-            "answer": "One full swing analysis per calendar month, free forever. It produces the complete report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes. Pro adds unlimited filming, the annotated coach replay, and the progress dashboard."
+            "answer": "One full swing analysis per calendar month, free forever. It produces the complete report: metrics table, key-position strip, centerline overlay, slow motion, and coaching notes. Pro adds unlimited filming; Coach adds the annotated replay, the progress dashboard, and the matched re-film verdict."
+          }
+        },
+        {
+          "type": "qa",
+          "settings": {
+            "question": "What do the paid plans cost?",
+            "answer": "Pro is $9.99/month or $69.99 for a full year. Coach is $19.99/month or $139.99/year and adds the replay, the dashboard, and the proof cycle. The Founders Pass is one payment of $249, includes every Coach feature for good, and never renews — only the first 100 members can buy one, because a lifetime product is only honest if the business can afford to keep running it."
           }
         },
         {
@@ -203,14 +428,14 @@
           "type": "qa",
           "settings": {
             "question": "How long does gear take to arrive?",
-            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and US delivery typically takes 6–12 business days, with tracking emailed at dispatch."
+            "answer": "Training aids ship from partner warehouses. Orders are processed in 1–2 business days and U.S. delivery typically takes 6–12 business days, with tracking emailed at dispatch."
           }
         },
         {
           "type": "qa",
           "settings": {
             "question": "What if a training aid isn't right for me?",
-            "answer": "Unused gear can be returned within 30 days, no questions asked. See the Shipping & Returns page for the details."
+            "answer": "Unused gear may be returned within 30 days. See the Shipping & Returns page for eligibility and instructions."
           }
         },
         {

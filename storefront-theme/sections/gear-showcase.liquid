@@ -4,70 +4,179 @@
     assign gear_collection = collections['swinglab-gear']
   endif
   assign max_products = section.settings.max_products | default: 6
+
+  # The rack counter is a spec-sheet line, so it needs both numbers. Both are
+  # defaulted because a store without the collection still renders this
+  # section: all_products_count on a nil collection is nil, and printing a
+  # blank into "  /  " looks like a bug rather than an empty rack.
+  assign gear_total = gear_collection.all_products_count | default: 0
+  assign gear_shown = gear_collection.products.size | default: 0
+  if gear_shown > max_products
+    assign gear_shown = max_products
+  endif
 -%}
-<section id="{{ section.settings.anchor | default: 'gear' }}" class="sl-gear">
+<section id="{{ section.settings.anchor | default: 'gear' }}"
+         class="sl-gear"
+         aria-labelledby="GearTitle-{{ section.id }}">
   <div class="sl-wrap sl-reveal">
-    <div class="sl-gear__head">
-      <div class="sl-gear__head-copy">
-        <h2 class="sl-h2">{{ section.settings.heading | default: 'Train what the report flagged' }}</h2>
+    {%- comment -%}
+      Three columns, deliberately uneven: the spec mark sits out in the
+      margin, the heading takes the middle, and the lede plus the rack
+      counter and the collection link take the right. The old head was a
+      centred stack — the same shape as every other band on this page, which
+      is exactly the sameness the rebuild exists to break.
+    {%- endcomment -%}
+    <header class="sl-gear__head">
+      <div class="sl-gear__mark">
+        {%- if section.settings.index_label != blank -%}
+          <span class="sl-gear__index" aria-hidden="true">{{ section.settings.index_label }}</span>
+        {%- endif -%}
+        {%- if section.settings.eyebrow != blank -%}
+          {%- comment -%}
+            Not .sl-eyebrow: the shared class paints amber, and amber is
+            reserved for a value the engine measured. A section label is not
+            one, so this one is mono and muted.
+          {%- endcomment -%}
+          <span class="sl-gear__eyebrow">{{ section.settings.eyebrow }}</span>
+        {%- endif -%}
+      </div>
+
+      <h2 id="GearTitle-{{ section.id }}" class="sl-gear__heading">
+        {{- section.settings.heading | default: 'Train the priority your report surfaces' -}}
+      </h2>
+
+      <div class="sl-gear__aside">
         {%- if section.settings.sub != blank -%}
           <p class="sl-gear__sub">{{ section.settings.sub }}</p>
         {%- endif -%}
+        {%- if gear_total > 0 or section.settings.link_label != blank -%}
+          <div class="sl-gear__meta">
+            {%- if gear_total > 0 -%}
+              <p class="sl-gear__count">
+                <span class="sl-gear__count-label">In the rack</span>
+                <span class="sl-gear__count-value">{{ gear_shown }} / {{ gear_total }}</span>
+              </p>
+            {%- endif -%}
+            {%- if section.settings.link_label != blank and gear_collection != blank -%}
+              <a href="{{ gear_collection.url }}" class="sl-btn sl-btn--outline sl-btn--sm sl-gear__all">
+                <span>{{ section.settings.link_label }}</span>
+                <span aria-hidden="true">&rarr;</span>
+              </a>
+            {%- endif -%}
+          </div>
+        {%- endif -%}
       </div>
-      {%- if section.settings.link_label != blank and gear_collection != blank -%}
-        <a href="{{ gear_collection.url }}" class="sl-btn sl-btn--outline sl-btn--sm sl-gear__all">{{ section.settings.link_label }}</a>
-      {%- endif -%}
-    </div>
+    </header>
 
+    {%- comment -%}
+      One bordered field with 1px gaps, not six floating cards: the grid
+      paints --sl-border and each cell paints over it, so the rules between
+      entries are hairlines rather than shadowed edges. Drop shadows are
+      invisible on a near-black field, which is what the old card treatment
+      was spending its budget on.
+    {%- endcomment -%}
     <ul class="sl-gear__grid">
       {%- for product in gear_collection.products limit: max_products -%}
+        {%- liquid
+          assign gear_num = forloop.index | prepend: '0' | slice: -2, 2
+
+          # Mirror the product-card snippet: prefilter swinglab: tags, cap at
+          # two. The labels are joined here rather than emitted inside the
+          # loop because a separator printed on "not forloop.first" leads with
+          # a stray dot whenever the first tag maps to no customer label.
+          assign gear_flag_str = ''
+          for tag in product.tags
+            assign gt = tag | downcase | strip
+            assign gt_prefix = gt | slice: 0, 9
+            if gt_prefix == 'swinglab:'
+              assign gear_flag_str = gear_flag_str | append: gt | append: ','
+            endif
+          endfor
+          assign gear_flag_tags = gear_flag_str | split: ','
+        -%}
+        {%- assign gear_flag_line = '' -%}
+        {%- for tag in gear_flag_tags limit: 2 -%}
+          {%- capture flag_label -%}
+            {%- render 'swinglab-tag-label', tag: tag -%}
+          {%- endcapture -%}
+          {%- assign flag_label = flag_label | strip -%}
+          {%- if flag_label != blank -%}
+            {%- if gear_flag_line == blank -%}
+              {%- assign gear_flag_line = flag_label -%}
+            {%- else -%}
+              {%- assign gear_flag_line = gear_flag_line | append: ' · ' | append: flag_label -%}
+            {%- endif -%}
+          {%- endif -%}
+        {%- endfor -%}
+
         <li class="sl-gear__cell">
           <a href="{{ product.url }}" class="sl-gear__card">
+            <p class="sl-gear__stamp">
+              <span class="sl-gear__num">{{ gear_num }}</span>
+              {%- unless product.available -%}
+                <span class="sl-gear__state">Sold out</span>
+              {%- endunless -%}
+            </p>
+
             <div class="sl-gear__media">
               {%- if product.featured_image -%}
+                {%- comment -%}
+                  alt="" on purpose: the link already carries the product
+                  title as text, so a descriptive alt makes every card
+                  announce its own name twice before the price.
+                {%- endcomment -%}
                 <img
                   src="{{ product.featured_image | image_url: width: 640 }}"
                   srcset="{{ product.featured_image | image_url: width: 420 }} 420w, {{ product.featured_image | image_url: width: 640 }} 640w, {{ product.featured_image | image_url: width: 960 }} 960w"
-                  sizes="(max-width: 699px) 100vw, (max-width: 1019px) 50vw, 33vw"
+                  sizes="(min-width: 1000px) 33vw, (min-width: 560px) 50vw, calc(100vw - 48px)"
                   width="{{ product.featured_image.width }}"
                   height="{{ product.featured_image.height }}"
-                  alt="{{ product.featured_image.alt | default: product.title | escape }}"
-                  loading="lazy">
+                  alt=""
+                  aria-hidden="true"
+                  loading="lazy"
+                  decoding="async">
               {%- else -%}
                 <div class="sl-gear__media-empty" aria-hidden="true"></div>
               {%- endif -%}
             </div>
+
             <div class="sl-gear__body">
-              {%- liquid
-                # mirror the product-card snippet: prefilter swinglab: tags, cap at two chips
-                assign gear_flag_str = ''
-                for tag in product.tags
-                  assign gt = tag | downcase | strip
-                  assign gt_prefix = gt | slice: 0, 9
-                  if gt_prefix == 'swinglab:'
-                    assign gear_flag_str = gear_flag_str | append: gt | append: ','
-                  endif
-                endfor
-                assign gear_flag_tags = gear_flag_str | split: ','
-              -%}
-              {%- capture flag_chips -%}
-                {%- for tag in gear_flag_tags limit: 2 -%}
-                  {%- capture flag_label -%}
-                    {%- render 'swinglab-tag-label', tag: tag -%}
-                  {%- endcapture -%}
-                  {%- assign flag_label = flag_label | strip -%}
-                  {%- if flag_label != blank -%}
-                    <span class="sl-chip">{{ flag_label | escape }}</span>
-                  {%- endif -%}
-                {%- endfor -%}
-              {%- endcapture -%}
-              {%- if flag_chips contains 'sl-chip' -%}
-                <div class="sl-gear__chips">{{ flag_chips }}</div>
-              {%- endif -%}
               <h3 class="sl-gear__title">{{ product.title }}</h3>
-              <p class="sl-gear__price">
-                {%- render 'price', product: product -%}
-              </p>
+              {%- comment -%}
+                The spec block, not a paragraph of marketing: two hairline
+                rows with mono values, seated at the foot of the cell so the
+                rows line up across a row of cards regardless of title length.
+              {%- endcomment -%}
+              <dl class="sl-gear__spec">
+                <div class="sl-gear__row">
+                  <dt>Priority</dt>
+                  {%- if gear_flag_line != blank -%}
+                    {%- comment -%}
+                      THIS is the amber in this section. The tag names the
+                      coaching priority the report surfaced, so it is the
+                      engine's output rather than a merchandising label.
+                    {%- endcomment -%}
+                    <dd class="sl-gear__value sl-gear__flag">{{ gear_flag_line | escape }}</dd>
+                  {%- else -%}
+                    {%- comment -%}
+                      Untagged gear maps to no priority. The row still renders
+                      so the spec blocks stay aligned, but an absent
+                      measurement must not wear the signal colour.
+                    {%- endcomment -%}
+                    <dd class="sl-gear__value sl-gear__flag--none">&mdash;</dd>
+                  {%- endif -%}
+                </div>
+                <div class="sl-gear__row">
+                  <dt>Price</dt>
+                  {%- comment -%}
+                    Bone, not amber: a price is a shop number, not something
+                    the engine measured.
+                  {%- endcomment -%}
+                  <dd class="sl-gear__value sl-gear__price">
+                    {%- render 'price', product: product -%}
+                  </dd>
+                </div>
+              </dl>
             </div>
           </a>
         </li>
@@ -77,174 +186,299 @@
         </li>
       {%- endfor -%}
     </ul>
+
+    {%- if section.settings.footnote != blank -%}
+      <p class="sl-gear__note">{{ section.settings.footnote }}</p>
+    {%- endif -%}
   </div>
 </section>
 
 {% stylesheet %}
 .sl-gear {
-  padding-top: var(--sl-section-space-compact);
-  padding-bottom: var(--sl-section-space-compact);
+  padding-top: var(--sl-section-space);
+  padding-bottom: var(--sl-section-space);
 }
+
+/* ---- head: spec mark / heading / lede + rack meta ---- */
 .sl-gear__head {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-5);
+  padding-bottom: var(--sl-space-6);
+  border-bottom: 1px solid var(--sl-border-strong);
+}
+.sl-gear__mark {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sl-space-3);
+  font-family: var(--sl-font-mono);
+}
+.sl-gear__index {
+  font-size: var(--sl-text-2xl);
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-ink-muted);
+}
+.sl-gear__eyebrow {
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--sl-ink-soft);
+}
+.sl-gear__heading {
+  margin: 0;
+  max-width: 15ch;
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-heading-support);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--sl-green);
+  text-wrap: balance;
+}
+.sl-gear__aside {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  align-items: center;
-  gap: 20px;
-  flex-wrap: wrap;
-  text-align: center;
-}
-.sl-gear__head-copy {
-  min-width: 0;
-  max-width: 72ch;
+  gap: var(--sl-space-5);
 }
 .sl-gear__sub {
-  margin: 10px auto 0;
+  margin: 0;
+  max-width: 46ch;
   font-size: var(--sl-text-base);
-  line-height: 1.55;
+  line-height: 1.6;
   color: var(--sl-ink-soft);
-  max-width: 56ch;
-  text-align: left;
   text-wrap: pretty;
 }
+.sl-gear__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sl-space-4) var(--sl-space-5);
+}
+.sl-gear__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sl-space-2);
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-ink-muted);
+}
+.sl-gear__count-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--sl-ink);
+}
 .sl-gear__all { flex-shrink: 0; }
+
+/* ---- the rack: one bordered field, 1px rules between entries ---- */
 .sl-gear__grid {
-  margin: 30px 0 0;
+  margin: var(--sl-space-7) 0 0;
   padding: 0;
   list-style: none;
   display: grid;
-  grid-template-columns: 1fr;
-  gap: 20px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
 }
-.sl-gear__cell { min-width: 0; }
+.sl-gear__cell {
+  min-width: 0;
+  background: var(--sl-bg-card);
+}
+/* Outside the motion gate on purpose: a background change is not motion, and
+   a reduced-motion reader still needs to see which cell is under the cursor.
+   Only the easing of it is gated. */
+.sl-gear__cell:hover { background: rgba(var(--sl-cream-rgb), 0.04); }
+/* base.css gives every link an underline and a cyan hover — right for inline
+   prose, wrong for a link the size of a card, and cyan belongs to the live
+   readout alone. The card suppresses both and moves the affordance onto the
+   title. */
 .sl-gear__card {
   display: flex;
   flex-direction: column;
   height: 100%;
-  text-decoration: none;
   color: inherit;
-  background: var(--sl-bg-card);
-  border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-lg);
-  overflow: hidden;
-  box-shadow: var(--sl-shadow-card);
+  text-decoration: none;
 }
+.sl-gear__card:hover { color: inherit; }
+.sl-gear__card:hover .sl-gear__title {
+  text-decoration: underline;
+  text-decoration-color: currentColor;
+  text-underline-offset: 0.24em;
+}
+/* The global ring draws 3px outside the element, which in a 1px-gap grid
+   lands on top of the neighbouring cell. Pull it inside the cell instead. */
+.sl-gear__card:focus-visible { outline-offset: -4px; }
+
+.sl-gear__stamp {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sl-space-3);
+  margin: 0;
+  padding: var(--sl-space-3) var(--sl-card-inset);
+  border-bottom: 1px solid var(--sl-border);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-ink-muted);
+}
+.sl-gear__num { font-variant-numeric: tabular-nums; }
+.sl-gear__state { color: var(--sl-ink-soft); }
+
+/* Dropshipped gear ships as bright studio plates. Seating them in the sunk
+   well and holding a hairline underneath frames each one as a specimen
+   rather than letting a white rectangle blow a hole in the field. */
 .sl-gear__media {
+  position: relative;
   line-height: 0;
   overflow: hidden;
   border-bottom: 1px solid var(--sl-border);
+  background: var(--sl-night);
 }
 .sl-gear__media img {
   width: 100%;
   height: auto; /* the img width/height attributes otherwise defeat the crop */
-  aspect-ratio: 1;
+  aspect-ratio: 5 / 4;
   object-fit: cover;
   display: block;
 }
 .sl-gear__media-empty {
   width: 100%;
-  aspect-ratio: 1;
-  background: repeating-linear-gradient(45deg, #e7ede6, #e7ede6 14px, #dde5db 14px, #dde5db 28px);
+  aspect-ratio: 5 / 4;
+  background:
+    repeating-linear-gradient(45deg, rgba(var(--sl-cream-rgb), 0.05) 0 8px, transparent 8px 16px),
+    var(--sl-night);
 }
+
 .sl-gear__body {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 8px;
-  padding: var(--sl-card-inset);
+  gap: var(--sl-space-4);
   flex: 1;
+  padding: var(--sl-card-inset);
   text-align: left;
 }
-.sl-gear__chips {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
-  gap: 6px;
-}
-.sl-gear__chips .sl-chip {
-  font-size: var(--sl-text-xs);
-  padding: 3px 10px;
-}
+/* base.css sets h1/h2/h3 to the expanded display face at 800 — correct for a
+   section title, far too loud for a product name inside a card. */
 .sl-gear__title {
-  position: relative;
-  margin: 2px 0 0;
-  padding-bottom: 13px;
+  margin: 0;
+  font-family: var(--sl-font-sans);
   font-size: var(--sl-text-lg);
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-weight: 600;
+  letter-spacing: -0.012em;
+  line-height: 1.3;
   color: var(--sl-green);
+  text-wrap: balance;
 }
-/* card accent: quiet arc under the title, kinetic on hover */
-.sl-gear__title::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  bottom: 0;
-  width: 34px;
-  height: 7px;
-  border-top: 2px solid var(--sl-arc);
-  border-radius: 50% 50% 0 0 / 100% 100% 0 0;
+.sl-gear__spec {
+  margin: auto 0 0; /* seats the spec at the foot however tall the title runs */
+  display: grid;
+  border-top: 1px solid var(--sl-border);
 }
-.sl-gear__card:hover .sl-gear__title {
-  color: var(--sl-green-btn);
+.sl-gear__row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sl-space-4);
+  padding: var(--sl-space-3) 0;
+  border-bottom: 1px solid var(--sl-border);
 }
-.sl-gear__card:hover .sl-gear__title::after {
-  width: 56px;
-  border-top-color: var(--sl-orange);
+.sl-gear__row:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
 }
-.sl-gear__price {
-  margin: auto 0 0;
-  padding-top: 8px;
-  font-size: var(--sl-text-base);
-  font-weight: 700;
-  font-variant-numeric: tabular-nums;
-  color: var(--sl-ink-soft);
-}
-.sl-gear__cell--empty { grid-column: 1 / -1; }
-.sl-gear__cell--empty code {
+.sl-gear__row dt {
   font-family: var(--sl-font-mono);
-  font-size: 0.88em;
-  background: #efece4;
-  border-radius: 6px;
-  padding: 1px 6px;
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-ink-muted);
+}
+.sl-gear__value {
+  margin: 0;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-sm);
+  font-weight: 500;
+  line-height: 1.35;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.sl-gear__flag {
+  color: var(--sl-accent);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-gear__flag--none { color: var(--sl-ink-muted); }
+.sl-gear__price {
+  color: var(--sl-ink);
+  font-variant-numeric: tabular-nums;
 }
 
-@media (min-width: 750px) {
-  .sl-gear__grid { grid-template-columns: repeat(2, 1fr); }
+.sl-gear__cell--empty {
+  grid-column: 1 / -1;
+  padding: var(--sl-card-inset);
+}
+.sl-gear__note {
+  margin: var(--sl-space-5) 0 0;
+  max-width: 64ch;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  line-height: 1.7;
+  color: var(--sl-ink-muted);
+}
+
+@media (min-width: 560px) {
+  .sl-gear__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1000px) {
-  .sl-gear__grid { grid-template-columns: repeat(3, 1fr); gap: 24px; }
+  .sl-gear__grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .sl-gear__head {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 5fr) minmax(0, 4fr);
+    align-items: start;
+    gap: var(--sl-space-6);
+  }
+  .sl-gear__mark {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sl-space-2);
+  }
+  .sl-gear__meta { flex-direction: column; align-items: flex-start; }
+}
+@media (min-width: 1280px) {
+  .sl-gear__head { gap: var(--sl-space-7); }
 }
 @media (max-width: 749px) {
-  .sl-gear__sub {
-    max-width: 52ch;
-    text-align: center;
-  }
+  /* The old sheet centred the card body on phones, which broke the left
+     reading edge the rest of the page holds. Everything stays left; only the
+     collection link goes full width so it clears the 44px touch target. */
   .sl-gear__all {
-    min-height: 44px;
+    width: 100%;
     justify-content: center;
   }
-  .sl-gear__body {
-    align-items: center;
-    text-align: center;
+  .sl-gear__meta {
+    flex-direction: column;
+    align-items: stretch;
   }
-  .sl-gear__chips { justify-content: center; }
-  .sl-gear__title::after {
-    left: 50%;
-    transform: translateX(-50%);
-  }
-  .sl-gear__cell--empty { text-align: center; }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .sl-gear__card { transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease; }
-  .sl-gear__title { transition: color .22s ease; }
-  .sl-gear__title::after { transition: width .22s ease, border-color .22s ease; }
-  .sl-gear__card:hover {
-    transform: translateY(-4px);
-    box-shadow: var(--sl-shadow-card-hover);
-    border-color: rgba(var(--sl-green-rgb), 0.35);
-  }
+  .sl-gear__cell { transition: background .2s ease; }
+  .sl-gear__all span:last-child { transition: transform .2s ease; }
+  .sl-gear__all:hover span:last-child { transform: translateX(4px); }
 }
 {% endstylesheet %}
 
@@ -253,11 +487,14 @@
   "name": "Gear showcase",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "gear" },
+    { "type": "text", "id": "index_label", "label": "Spec mark", "default": "04", "info": "Mono number set in the margin. Liquid cannot read its own position in the template order, so this is typed." },
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "Training aids" },
     { "type": "text", "id": "heading", "label": "Heading", "default": "Train the priority your report surfaces" },
     { "type": "textarea", "id": "sub", "label": "Subheading", "default": "The app maps supported coaching priorities to a drill first. When a relevant training aid exists, the recommendation stays tied to that practice job." },
     { "type": "collection", "id": "collection", "label": "Collection", "info": "Defaults to the swinglab-gear collection when left blank." },
     { "type": "range", "id": "max_products", "label": "Maximum products", "min": 3, "max": 12, "step": 1, "default": 6 },
-    { "type": "text", "id": "link_label", "label": "Link label", "default": "View all training gear" }
+    { "type": "text", "id": "link_label", "label": "Link label", "default": "View all training gear" },
+    { "type": "text", "id": "footnote", "label": "Footnote", "default": "Gear supports the drill a report prioritizes. None of it is required to use CaddieInsight." }
   ],
   "presets": [{ "name": "Gear showcase" }]
 }

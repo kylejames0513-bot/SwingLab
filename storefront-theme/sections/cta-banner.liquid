@@ -1,25 +1,139 @@
-<section class="sl-cta">
-  <span class="sl-cta__arc" aria-hidden="true"></span>
+{%- liquid
+  # The subheading is authored as one short sentence per step — "Choose the
+  # club. Film the view. Work one measured plan." As a paragraph that protocol
+  # read as filler under the headline; split on the sentence break it becomes
+  # the hairline rail below, out of the SAME authored setting. No second
+  # setting to keep in sync, and nothing duplicated from the bands above.
+  # Copy authored as one long sentence renders as one cell, which is still
+  # correct — the split degrades into the paragraph it started as.
+  # '||' is the join delimiter because prose never contains it; a single
+  # character would eventually collide with real copy.
+  assign sequence_parts = section.settings.sub | strip | split: '.'
+  assign sequence = ''
+  for part in sequence_parts
+    assign step = part | strip
+    if step != blank
+      assign sequence = sequence | append: step | append: '||'
+    endif
+  endfor
+  assign sequence = sequence | split: '||'
+
+  # The old markup pointed a dead `#` at the primary action whenever the link
+  # setting was empty — which is exactly what /pages/about ships, since
+  # templates/page.about.json renders this section with no settings at all.
+  # A button that goes nowhere is worse than no button, so each action now
+  # renders only once it has somewhere to go.
+  assign primary_url = section.settings.primary_url
+
+  # Same fix on the secondary, but it has a real fallback: the Pro product.
+  # Resolving through the product object rather than hardcoding
+  # '/products/swinglab-pro' keeps the localised route and yields blank —
+  # not a 404 — if the product is ever unpublished or renamed.
+  assign secondary_url = section.settings.secondary_url
+  if secondary_url == blank
+    assign pro_product = all_products['swinglab-pro']
+    if pro_product.handle != blank
+      assign secondary_url = pro_product.url
+    endif
+  endif
+
+  assign show_primary = false
+  if section.settings.primary_label != blank and primary_url != blank
+    assign show_primary = true
+  endif
+  assign show_secondary = false
+  if section.settings.secondary_label != blank and secondary_url != blank
+    assign show_secondary = true
+  endif
+
+  assign cta_title_id = 'CtaTitle-' | append: section.id
+-%}
+
+{%- comment -%}
+  THE TERMINAL BAND. Every section above this one presents a reading; this is
+  where the tape ends and the instrument hands back. So it is the quietest
+  surface on the page rather than the loudest: it sits in the sunk well, it
+  carries no amber and no cyan, and its only ornament is a ruled edge.
+
+  That absence is deliberate, not an oversight. Amber marks a value the engine
+  measured and cyan marks the live readout — a closing call to action is
+  neither, so a signal colour here would be decoration, and decoration is the
+  one thing those two colours are never allowed to be.
+{%- endcomment -%}
+<section class="sl-cta" aria-labelledby="{{ cta_title_id }}">
   <div class="sl-wrap">
-    <div class="sl-cta__inner sl-reveal">
-      <h2 class="sl-cta__title">{{ section.settings.heading | default: 'Your next range session should count.' }}</h2>
-      {%- if section.settings.sub != blank -%}
-        <p class="sl-cta__sub">{{ section.settings.sub }}</p>
-      {%- endif -%}
-      <div class="sl-cta__actions">
-        {%- if section.settings.primary_label != blank -%}
-          <a href="{{ section.settings.primary_url | default: '#' }}"
-             class="sl-btn sl-btn--light"
-             data-app-primary-cta
-             data-app-signed-out-label="{{ section.settings.primary_label | escape }}"
-             data-app-signed-out-url="{{ section.settings.primary_url | default: '#' }}">
-            <span data-app-cta-label>{{ section.settings.primary_label }}</span>
-          </a>
+    <div class="sl-cta__inner">
+      {%- comment -%}
+        Marginalia, set in the gutter like the notations down the edge of a
+        spec sheet. It is a printed label rather than a heading, so it never
+        enters the heading outline.
+      {%- endcomment -%}
+      <div class="sl-cta__margin">
+        {%- if section.settings.stamp != blank -%}
+          <p class="sl-cta__stamp">{{ section.settings.stamp }}</p>
         {%- endif -%}
-        {%- if section.settings.secondary_label != blank -%}
-          <a href="{{ section.settings.secondary_url | default: '/products/swinglab-pro' }}"
-             class="sl-btn sl-cta__ghost"
-             data-app-pro-sales-link>{{ section.settings.secondary_label }}</a>
+        <span class="sl-cta__ticks" aria-hidden="true"></span>
+      </div>
+
+      <div class="sl-cta__body sl-reveal">
+        <h2 id="{{ cta_title_id }}" class="sl-cta__title">{{ section.settings.heading | default: 'Your next range session should count.' }}</h2>
+
+        {%- if sequence.size > 0 -%}
+          {%- comment -%}
+            role="list" is not redundant here: Safari drops list semantics from
+            any list styled with list-style: none, and this one is. The printed
+            ordinals only restate the list order for sighted readers, so they
+            stay aria-hidden rather than being announced twice.
+          {%- endcomment -%}
+          <ol class="sl-cta__sequence" role="list">
+            {%- for step in sequence -%}
+              {%- liquid
+                assign ordinal = forloop.index
+                if ordinal < 10
+                  assign ordinal = ordinal | prepend: '0'
+                endif
+              -%}
+              <li class="sl-cta__step">
+                <span class="sl-cta__step-num" aria-hidden="true">{{ ordinal }}</span>
+                <span class="sl-cta__step-text">{{ step }}</span>
+              </li>
+            {%- endfor -%}
+          </ol>
+        {%- endif -%}
+
+        {%- comment -%}
+          The row itself is conditional, not just its children: an empty
+          .sl-cta__actions still carries its top margin, which would leave an
+          unexplained gap between the rail and the fine print.
+        {%- endcomment -%}
+        {%- if show_primary or show_secondary -%}
+          <div class="sl-cta__actions">
+            {%- if show_primary -%}
+              <a href="{{ primary_url }}"
+                 class="sl-btn sl-cta__primary"
+                 data-app-primary-cta
+                 data-app-signed-out-label="{{ section.settings.primary_label | escape }}"
+                 data-app-signed-out-url="{{ primary_url }}">
+                {%- comment -%}
+                  header.liquid rewrites [data-app-cta-label] when it has one and
+                  falls back to overwriting the whole node's textContent when it
+                  does not — so the arrow only survives because the label has its
+                  own span. Do not flatten these two.
+                {%- endcomment -%}
+                <span data-app-cta-label>{{ section.settings.primary_label }}</span>
+                <span aria-hidden="true">&rarr;</span>
+              </a>
+            {%- endif -%}
+            {%- if show_secondary -%}
+              <a href="{{ secondary_url }}"
+                 class="sl-btn sl-cta__secondary"
+                 data-app-pro-sales-link>{{ section.settings.secondary_label }}</a>
+            {%- endif -%}
+          </div>
+        {%- endif -%}
+
+        {%- if section.settings.fine_print != blank -%}
+          <p class="sl-cta__fine">{{ section.settings.fine_print }}</p>
         {%- endif -%}
       </div>
     </div>
@@ -27,74 +141,223 @@
 </section>
 
 {% stylesheet %}
+/* The well, not the field. The page darkens by one step at the end, which is
+   what separates this band from its neighbours without adding a single
+   decorative colour. The 8px instrument grid is repainted locally because the
+   well's own background would otherwise cover the one on <body>. */
 .sl-cta {
   position: relative;
-  overflow: clip;
-  background: var(--sl-green);
-  color: var(--sl-green-ink);
-  padding: var(--sl-section-space-compact) 0;
+  isolation: isolate;
+  background:
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+    var(--sl-night);
+  background-size: 8px 8px, 8px 8px, auto;
+  color: var(--sl-ink);
+  border-top: 1px solid var(--sl-border-strong);
+  border-bottom: 1px solid var(--sl-border-strong);
+  padding: var(--sl-section-space) 0 var(--sl-section-space-compact);
 }
-/* one faint quarter-sweep, the pendulum's ghost */
-.sl-cta__arc {
+/* The ruled edge — the graduated lip of a measuring face. Two repeating
+   gradients so the scale has major and minor ticks; one gradient can only
+   draw ticks of a single height. */
+.sl-cta::after {
+  content: "";
   position: absolute;
-  left: -180px;
-  bottom: -320px;
-  width: 620px;
-  aspect-ratio: 1;
-  border: 1.5px solid transparent;
-  border-top-color: rgba(233, 242, 236, 0.16);
-  border-radius: 50%;
-  transform: rotate(18deg);
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 12px;
   pointer-events: none;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.2) 0 1px, transparent 1px 48px),
+    repeating-linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.09) 0 1px, transparent 1px 8px);
+  background-size: 100% 12px, 100% 6px;
+  background-position: bottom left, bottom left;
+  background-repeat: no-repeat;
 }
+
 .sl-cta__inner {
   position: relative;
-  max-width: 720px;
-  margin: 0 auto;
-  text-align: left;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-5);
+}
+/* Asymmetric, and the gutter is a real rule rather than a gap: the margin
+   column gets the border and the grid gap goes to zero, so the hairline runs
+   the full height of the band the way a ruled column does on paper. */
+@media (min-width: 1000px) {
+  .sl-cta__inner {
+    grid-template-columns: minmax(0, 176px) minmax(0, 1fr);
+    gap: 0;
+  }
+}
+
+.sl-cta__margin {
+  display: flex;
+  align-items: center;
+  gap: var(--sl-space-4);
+}
+.sl-cta__stamp {
+  margin: 0;
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+/* The stamp's scale bar. On phones it runs across to the edge of the wrap; in
+   the desktop gutter it stands up and runs down the column. */
+.sl-cta__ticks {
+  flex: 1 1 auto;
+  height: 6px;
+  background-image: repeating-linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.16) 0 1px, transparent 1px 8px);
+}
+@media (min-width: 1000px) {
+  .sl-cta__margin {
+    flex-direction: column;
+    align-items: flex-start;
+    padding-right: var(--sl-space-5);
+    border-right: 1px solid var(--sl-border);
+  }
+  .sl-cta__ticks {
+    width: 6px;
+    height: auto;
+    min-height: var(--sl-space-9);
+    background-image: repeating-linear-gradient(180deg, rgba(var(--sl-cream-rgb), 0.16) 0 1px, transparent 1px 8px);
+  }
+}
+
+.sl-cta__body { min-width: 0; }
+@media (min-width: 1000px) {
+  .sl-cta__body { padding-left: clamp(28px, 3vw, 56px); }
 }
 .sl-cta__title {
   margin: 0;
-  font-size: var(--sl-text-3xl);
+  max-width: 20ch;
+  color: var(--sl-ink);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-heading-display);
   font-weight: 800;
   letter-spacing: -0.02em;
-  line-height: 1.08;
-  color: #fdfcf9;
-  text-align: center;
+  line-height: 1.02;
+  text-transform: uppercase;
   text-wrap: balance;
 }
-.sl-cta__sub {
-  margin: 16px auto 0;
-  font-size: var(--sl-text-lg);
-  line-height: 1.55;
-  color: rgba(233, 242, 236, 0.8);
-  max-width: 48ch;
-  text-align: center;
+
+/* The protocol as a spec strip: 1px gaps over the hairline colour, cells in
+   the raised panel. Shadows are invisible on a near-black field, so the
+   separation has to come from the border showing through the gaps. */
+.sl-cta__sequence {
+  margin: clamp(28px, 3.5vw, 40px) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
+}
+@media (min-width: 560px) {
+  .sl-cta__sequence { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (min-width: 1000px) {
+  .sl-cta__sequence { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.sl-cta__step {
+  display: grid;
+  align-content: start;
+  gap: var(--sl-space-2);
+  padding: var(--sl-dense-inset);
+  background: var(--sl-bg-card);
+}
+.sl-cta__step-num {
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.16em;
+  line-height: 1;
+}
+.sl-cta__step-text {
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  line-height: 1.45;
   text-wrap: pretty;
 }
+
 .sl-cta__actions {
-  width: min(100%, 460px);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin: 32px auto 0;
+  margin: clamp(26px, 3vw, 36px) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-3);
 }
-.sl-cta__ghost {
+/* header.liquid hides the Pro sales link for members by setting the hidden
+   attribute. .sl-btn's display: inline-flex outranks the UA's [hidden] rule,
+   so without this the link stayed visible to the members it is meant to skip
+   — the same latent bug main-product.liquid already fixed for its price. */
+.sl-cta__actions [hidden] { display: none; }
+.sl-cta__primary,
+.sl-cta__secondary {
+  min-height: 52px;
+  padding: 14px 24px;
+  border-radius: var(--sl-radius-control);
+  font-weight: 600;
+}
+/* Bone, matching the hero's primary exactly — the page's two main actions are
+   the same control and must not drift apart. Amber marks a measured value; a
+   button is not one. */
+.sl-cta__primary {
+  border-color: var(--sl-ink);
+  background: var(--sl-ink);
+  color: var(--sl-bg);
+}
+.sl-cta__primary:hover {
+  border-color: var(--sl-ink-hi);
+  background: var(--sl-ink-hi);
+  color: var(--sl-bg);
+}
+/* --sl-control-border, never --sl-border: this is the sole edge of an
+   interactive control and the decorative hairline is 1.33:1. */
+.sl-cta__secondary {
+  border-color: var(--sl-control-border);
   background: transparent;
-  color: var(--sl-green-ink);
-  border-color: rgba(233, 242, 236, 0.55);
+  color: var(--sl-ink);
 }
-.sl-cta__ghost:hover {
-  background: var(--sl-bg);
-  color: var(--sl-green);
-  border-color: var(--sl-bg);
+.sl-cta__secondary:hover {
+  border-color: var(--sl-ink);
+  background: rgba(var(--sl-cream-rgb), 0.06);
+  color: var(--sl-ink);
 }
+@media (prefers-reduced-motion: no-preference) {
+  .sl-cta__primary span:last-child { transition: transform .2s ease; }
+  .sl-cta__primary:hover span:last-child { transform: translateX(4px); }
+}
+
+/* The status line at the foot of a printout: mono, uppercase, held short so
+   it wraps into a stamp rather than running on as a paragraph. */
+.sl-cta__fine {
+  margin: var(--sl-space-5) 0 0;
+  max-width: 54ch;
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  line-height: 1.6;
+  text-transform: uppercase;
+  text-wrap: pretty;
+}
+
 @media (max-width: 749px) {
-  .sl-cta__inner { text-align: center; }
-  .sl-cta__sub { text-align: center; }
-}
-@media (max-width: 559px) {
-  .sl-cta__actions { grid-template-columns: 1fr; }
+  .sl-cta__title { max-width: 100%; }
+  /* Full-bleed stacked actions: side-by-side buttons on a phone put both
+     targets under the same thumb. */
+  .sl-cta__actions { display: grid; grid-template-columns: minmax(0, 1fr); }
 }
 {% endstylesheet %}
 
@@ -102,12 +365,41 @@
 {
   "name": "CTA banner",
   "settings": [
+    {
+      "type": "text",
+      "id": "stamp",
+      "label": "Margin stamp",
+      "info": "Mono label set in the gutter, like the notation on a spec sheet.",
+      "default": "End of readout"
+    },
     { "type": "text", "id": "heading", "label": "Heading", "default": "Your next range session should count." },
-    { "type": "textarea", "id": "sub", "label": "Subheading", "default": "Choose the club. Film the view. Work one measured plan. Re‑film by repeating the setup." },
+    {
+      "type": "textarea",
+      "id": "sub",
+      "label": "Protocol",
+      "info": "One short sentence per step. Each sentence renders as its own cell in the numbered rail.",
+      "default": "Choose the club. Film the view. Work one measured plan. Re‑film by repeating the setup."
+    },
     { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Analyze a swing free" },
-    { "type": "url", "id": "primary_url", "label": "Primary button link" },
+    {
+      "type": "url",
+      "id": "primary_url",
+      "label": "Primary button link",
+      "info": "Required — the button is hidden rather than pointed at a dead link."
+    },
     { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Get Pro" },
-    { "type": "url", "id": "secondary_url", "label": "Secondary button link" }
+    {
+      "type": "url",
+      "id": "secondary_url",
+      "label": "Secondary button link",
+      "info": "Defaults to the CaddieInsight Pro product page."
+    },
+    {
+      "type": "text",
+      "id": "fine_print",
+      "label": "Fine print",
+      "default": "No card required · One analysis and one matched re-film each month"
+    }
   ],
   "presets": [{ "name": "CTA banner" }]
 }

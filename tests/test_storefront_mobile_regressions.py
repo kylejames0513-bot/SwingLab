@@ -185,46 +185,61 @@ def test_mobile_hero_is_fluid_through_modern_iphone_widths():
     assert any("display: flex" in rule for rule in proof_rules)
     assert ".sl-hero__proof li::before { display: none; }" in mobile_css
     assert 'content: "\\00B7"' in mobile_css
-    # The signal card is a compact fact strip on phones — but the trace
-    # returned in R6 as the LIVE read (the one moving proof of what the
-    # product produces), at a compact height instead of the old stretched
-    # chart. It must never be display: none again while it animates.
+    # The readout is a compact fact strip on phones — but the trace stays,
+    # because it is the LIVE read and the one moving proof of what the product
+    # produces. It must never be display: none again while it animates, and
+    # the readout that contains it must not be hidden either (hiding the
+    # parent is how the trace disappeared the first time).
     assert ".sl-hero__trace { display: none; }" not in mobile_css
-    assert ".sl-hero__trace { height: 64px; margin-top: 12px; }" in mobile_css
+    assert ".sl-hero__readout { display: none; }" not in mobile_css
+    # Pinned as behaviour, not as a one-line spelling. The literal string
+    # this replaced was satisfied by a rule that ALSO left aspect-ratio: 5/4
+    # live from the base declaration, so the 64px height fixed the width to
+    # 80px and the readout rendered as a thumbnail in the corner of its own
+    # panel. The pin passed; the layout was broken. aspect-ratio must be
+    # released for the height to mean anything.
+    trace_rules = declarations(mobile_css, ".sl-hero__trace")
+    assert trace_rules
+    assert any("height: 64px" in rule for rule in trace_rules)
+    assert any("aspect-ratio: auto" in rule for rule in trace_rules)
 
 
-def test_mobile_method_section_is_compact_centered_and_semantic():
-    assert '<ol class="sl-how__grid">' in HOW
+def test_mobile_method_section_stays_a_compact_left_flowing_spec_sheet():
+    """The method section is a numbered spec sheet, and stays one on a phone.
+
+    This gate used to require the whole section be CENTRED below 749px. That
+    was right for the shape it had — four short cards in a grid — and is wrong
+    for the shape it has: a margin rail carrying the step number beside the
+    step. Centring a rail layout breaks the one alignment that makes it
+    readable, because the numbers stop forming a column the eye can run down.
+    So the section narrows its rail on a phone instead of re-flowing, and this
+    test pins THAT rather than the centring it replaced.
+    """
+    # role="list" is not redundant belt-and-braces here: list-style: none
+    # strips list semantics in WebKit, and "four steps, in order" is exactly
+    # the meaning a screen reader would otherwise lose on this section.
+    assert '<ol class="sl-how__grid" role="list">' in HOW
     assert '<li class="sl-step"' in HOW
-    assert "@media (min-width: 750px)" in HOW
 
-    intro_rules = declarations(HOW, ".sl-how__intro")
-    intro_copy_rules = declarations(HOW, ".sl-how__intro > p")
     step_rules = declarations(HOW, ".sl-step")
-    caption_rules = declarations(HOW, ".sl-step__caption")
-    assert any("grid-template-columns: minmax(0, 1fr)" in rule for rule in intro_rules)
-    assert any("margin-inline: auto" in rule for rule in intro_rules)
-    assert any("text-align: center" in rule for rule in intro_copy_rules)
-    assert any("align-items: stretch" in rule for rule in step_rules)
     assert any("text-align: left" in rule for rule in step_rules)
-    assert any("margin: auto 0 0" in rule for rule in caption_rules)
+    assert any(
+        "grid-template-columns: var(--sl-how-rail) minmax(0, 1fr)" in rule
+        for rule in step_rules
+    )
 
     mobile_css = phone_css(HOW, {749})
-    mobile_step_rules = declarations(mobile_css, ".sl-step")
-    mobile_body_rules = declarations(mobile_css, ".sl-step__body")
-    mobile_title_rules = declarations(mobile_css, ".sl-step__title")
-    mobile_caption_rules = declarations(mobile_css, ".sl-step__caption")
-    mobile_foot_rules = declarations(mobile_css, ".sl-how__foot-note")
-    assert mobile_step_rules
-    assert any("align-items: center" in rule for rule in mobile_step_rules)
-    assert any("text-align: center" in rule for rule in mobile_step_rules)
-    assert any("padding:" in rule for rule in mobile_step_rules)
-    assert any("margin-inline: auto" in rule for rule in mobile_body_rules)
-    assert any("text-align: center" in rule for rule in mobile_body_rules)
-    assert any("text-align: center" in rule for rule in mobile_title_rules)
-    assert any("text-align: center" in rule for rule in mobile_caption_rules)
-    assert any("text-align: center" in rule for rule in mobile_foot_rules)
-
+    assert mobile_css
+    # The rail narrows rather than disappearing, and the section takes the
+    # compact vertical rhythm — that is what "compact on a phone" means here.
+    assert "--sl-how-rail" in mobile_css
+    assert "--sl-section-space-compact" in mobile_css
+    # Nothing re-centres, and the copy is allowed the full width it just won.
+    assert "text-align: center" not in mobile_css
+    # body and caption share one rule, so this reads the CSS rather than
+    # going through declarations(), which keys off a rule's first selector.
+    assert ".sl-step__body," in mobile_css
+    assert ".sl-step__caption { max-width: 100%; }" in mobile_css
 
 def test_method_page_removes_double_top_spacing_and_centers_phone_actions():
     assert "page.handle == 'the-swinglab-method'" in MAIN_PAGE

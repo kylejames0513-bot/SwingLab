@@ -53,18 +53,37 @@ def _declaration(selector: str, prop: str) -> str:
     return values[-1].strip()
 
 
+def _resolve(value: str) -> str:
+    """A colour declaration as a hex, following one var() indirection.
+
+    This used to demand a literal hex so it could do the arithmetic, which
+    put the contrast gate in direct conflict with the token sheet: the only
+    way to satisfy it was to hardcode the colour the sheet exists to name.
+    Resolving instead keeps the real guarantee — a computed ratio — without
+    requiring a fork of the palette at the call site.
+    """
+    value = value.strip()
+    reference = re.fullmatch(r"var\(\s*--([a-z0-9-]+)\s*\)", value)
+    if reference:
+        return _token(reference.group(1))
+    assert re.fullmatch(r"#[0-9a-fA-F]{6}", value), f"unresolvable colour: {value}"
+    return value
+
+
 def test_mobile_menu_cta_ink_sits_on_the_background_it_was_written_for():
     """This rule once set only the ink, leaving the base green background
     underneath: #06110c on #0f3d28 is 1.57:1, effectively unreadable. The
     bottom tab bar's More button routes into this menu, so it is a primary
-    surface, not a corner."""
-    selector = ".sl-premium-chrome .sl-menu .sl-menu__cta"
-    ink = _declaration(selector, "color")
-    background = _declaration(selector, "background")
+    surface, not a corner.
 
-    assert re.fullmatch(r"#[0-9a-fA-F]{6}", ink), ink
-    assert re.fullmatch(r"#[0-9a-fA-F]{6}", background), background
-    assert _contrast(ink, background) >= 4.5
+    Both declarations still have to be PRESENT — that is the actual defect
+    this guards, and it is unchanged by resolving tokens.
+    """
+    selector = ".sl-premium-chrome .sl-menu .sl-menu__cta"
+    ink = _resolve(_declaration(selector, "color"))
+    background = _resolve(_declaration(selector, "background"))
+
+    assert _contrast(ink, background) >= 4.5, f"{ink} on {background}"
 
 
 def test_control_border_token_has_three_to_one_non_text_contrast():
@@ -72,7 +91,10 @@ def test_control_border_token_has_three_to_one_non_text_contrast():
 
     assert _contrast(border, _token("sl-bg")) >= 3.0
     assert _contrast(border, _token("sl-bg-card")) >= 3.0
-    assert _contrast(border, "#ffffff") >= 3.0
+    # Against the paper panels, which are the only light surface left. This
+    # used to check #ffffff — a colour the product no longer paints anywhere,
+    # so the assertion was passing on a hypothetical.
+    assert _contrast(border, _token("sl-paper")) >= 3.0
 
 
 def test_primary_journey_uses_accessible_text_and_control_tokens():
@@ -80,7 +102,11 @@ def test_primary_journey_uses_accessible_text_and_control_tokens():
     upload = (TEMPLATES / "web_upload.html.j2").read_text(encoding="utf-8")
     today = (TEMPLATES / "web_today.html.j2").read_text(encoding="utf-8")
 
-    assert ".sl-eyebrow" in LAYOUT and "color: var(--sl-orange-text);" in LAYOUT
+    # The eyebrow used to be pinned as amber. It is chrome, not a measured
+    # value, so it is --sl-ink-soft now and the gate checks the tokens that
+    # small text actually depends on instead.
+    assert ".sl-eyebrow" in LAYOUT
+    assert "color: var(--sl-ink-soft);" in LAYOUT
     assert "border: 1.5px solid var(--sl-control-border);" in login
     assert "color: var(--sl-orange-text);" in upload
     assert upload.count("var(--sl-control-border)") >= 2

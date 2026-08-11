@@ -1,16 +1,94 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Unsubscribed{% endblock %}
 {% block style %}
-  .notice-card h1 { margin: 0 0 10px; color: var(--sl-green); font-size: clamp(2rem, 6vw, 3.25rem); line-height: 1; letter-spacing: -.045em; }
-  .notice-card p { color: var(--sl-ink-soft); }
+  {# One setting changed and this page confirms it. Nothing here was measured
+     and nothing here is live, so the page carries NO amber and NO cyan — both
+     of those mark readings the engine produced, and a preference the reader
+     set themselves is not one. What is left is the instrument's plainest
+     form: a well holding the reading, a hairline, and the note beneath it.
+
+     The panel also has no animation or transition at all, so the shell's
+     prefers-reduced-motion block has nothing on this page to switch off. #}
+  .notice-card {
+    /* The inset comes off the rows below so one hairline can run edge to
+       edge between them; the shell's card padding would have inset the rule
+       too and left it floating short of both sides. */
+    padding: 0;
+    border-radius: var(--sl-radius-md);
+    /* Only the lit inset edge. A drop shadow is invisible on a near-black
+       field, and this surface is meant to read as ruled rather than raised. */
+    box-shadow: var(--sl-shadow-sm);
+    /* Keeps the head's well square-cornered inside the panel's 4px radius. */
+    overflow: hidden;
+  }
+  {# --sl-card-inset / --sl-dense-inset are NOT declared in this app's shell
+     (only --sl-pad-x and the nine --sl-space-* rungs are). Referencing them
+     would resolve to nothing and collapse the panel to zero padding, so the
+     inset is built from the rungs — space-5/6 spans the same 24-32px the
+     shell's .card clamp did, without a hand-rolled clamp. #}
+  .notice-card__head {
+    padding: var(--sl-space-5);
+    border-bottom: 1px solid var(--sl-border);
+    /* The same 8px technical grid the field and the hero's trace box paint,
+       dropped into the well so the reading sits on measured ground. */
+    background:
+      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
+      var(--sl-night);
+    background-size: 8px 8px;
+  }
+  /* Muted, not the shell's global amber, and scoped to this panel so no other
+     page's eyebrow moves. "Preference saved" is a field label, and amber is
+     reserved for a value the engine measured — every mono label in the
+     finished storefront readout is --sl-ink-muted for the same reason.
+     6.54:1 on the well. */
+  .notice-card .sl-eyebrow {
+    margin: 0 0 var(--sl-space-3);
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-eyebrow-size);
+    letter-spacing: var(--sl-eyebrow-track);
+  }
+  /* Was clamp(2rem, 6vw, 3.25rem) — a hand-rolled size off the type scale.
+     The display face is EXPANDED and eats line width far faster than the old
+     face did, so the phone gets the 3xl rung and only 560px up steps to the
+     display rung. Colour, weight, tracking and leading all come from the
+     shell's h1, which already sets bone display type. */
+  .notice-card h1 {
+    margin: 0;
+    font-size: var(--sl-text-3xl);
+    text-transform: uppercase;
+  }
+  .notice-card__note { padding: var(--sl-space-5); }
+  .notice-card__note p {
+    /* A measure, not a full 720px line — the shell's main is wider than prose
+       wants to be read at. */
+    max-width: 54ch;
+    margin: 0;
+    color: var(--sl-ink-soft);
+    line-height: 1.65;
+    text-wrap: pretty;
+  }
+  @media (min-width: 560px) {
+    .notice-card__head,
+    .notice-card__note { padding: var(--sl-space-6); }
+    .notice-card h1 { font-size: var(--sl-heading-display); }
+  }
 {% endblock %}
 {% block main %}
   <div class="card notice-card">
-    <p class="sl-eyebrow">Preference saved</p>
-    <h1>You're unsubscribed</h1>
-    <p>The weekly practice-plan email is off — no more sends to this address.
-      Your reports and <a href="/progress">progress page</a> stay exactly
-      where they are, and you can turn the email back on any time from your
-      <a href="/account">account page</a>.</p>
+    {# Head and note are separate registers so the hairline between them has
+       full-width edges to meet. The two inline links stay inline prose: a
+       link inside a sentence is exempt from the 44px target minimum, and
+       padding them out to meet it would break the paragraph. #}
+    <div class="notice-card__head">
+      <p class="sl-eyebrow">Preference saved</p>
+      <h1>You're unsubscribed</h1>
+    </div>
+    <div class="notice-card__note">
+      <p>The weekly practice-plan email is off — no more sends to this address.
+        Your reports and <a href="/progress">progress page</a> stay exactly
+        where they are, and you can turn the email back on any time from your
+        <a href="/account">account page</a>.</p>
+    </div>
   </div>
 {% endblock %}

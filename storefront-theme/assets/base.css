@@ -1,9 +1,12 @@
 /* ============================================================
    CaddieInsight storefront — base styles & design tokens
-   Turf Instrument: cool mist field, deep forest ink, one kinetic
-   amber accent. Archivo carries display + interface; IBM Plex Mono
-   marks measured evidence. Soft-rectilinear controls keep the
-   storefront and app one instrument.
+   INSTRUMENT: a near-black field under an 8px technical grid, bone
+   type, and two signal colours with exactly one job each — amber
+   marks a value the engine measured, cyan marks the live readout,
+   and neither is ever decoration or a call to action. Archivo
+   Expanded carries display, Archivo the interface, DM Mono every
+   measurement. Tight radii (2/4/8) keep the storefront and the app
+   one instrument.
 
    Shared-pattern contract (available to every template/section):
    .sl-chip            mono label, letterspaced uppercase
@@ -30,37 +33,89 @@
      triplets, never new literals. (The old sheet named 14 colours while the
      theme used 4 greens, 4 oranges and 3 creams — the cream on every dark
      surface had 66 hardcoded uses and no name at all.) ==== */
-  --sl-bg: #eef2ef;             /* cool mist field */
-  --sl-bg-card: #f8fbf9;        /* quiet surface */
-  --sl-ink: #101a14;            /* primary text */
-  --sl-ink-soft: #445049;       /* secondary text */
-  --sl-ink-muted: #626a63;      /* fine print (AA on --sl-bg: 4.94) */
-  --sl-green: #0f3d28;          /* deep forest (headings, dark bg) */
-  --sl-green-btn: #1a5c38;      /* action green (brand primary) */
-  --sl-green-ink: #e6f2ea;      /* text on green */
-  --sl-orange: #9a4b0a;         /* accessible amber TEXT on light surfaces */
-  --sl-orange-soft: #e8f0ea;    /* cool wash for callouts */
-  --sl-accent: #f07a18;         /* kinetic accent on dark surfaces */
-  --sl-accent-hover: #ff9a42;   /* accent hover state */
-  --sl-focus-dark: #ffad62;     /* focus ring on dark surfaces (10.7:1) */
-  --sl-cream: #f5f2e9;          /* text on every dark surface */
-  --sl-night: #06110c;          /* night turf (footer, premium chrome) */
-  --sl-border: #d4ddd6;         /* hairline on light */
-  --sl-arc: rgba(20, 71, 44, 0.3);  /* the quiet-arc decoration, one place */
+  /* The field is dark on BOTH surfaces now. Every ratio in a comment below
+     is computed, not estimated — see docs/superpowers/specs/
+     2026-08-10-instrument-design-overhaul-design.md.
+
+     The names did not change even though every value did. --sl-green is
+     referenced 131 times and --sl-border 90; renaming would have touched
+     ~1,400 call sites across 50 files to buy exactly nothing. Redefining in
+     place inverts the whole system at once, because the tokens were already
+     used for the ROLE their name describes: --sl-ink is a colour 53 times
+     and never a background, --sl-border is a border 86 times. Where a name
+     survived but its role inverted, the comment says so. */
+  --sl-bg: #070f0b;             /* the field — near-black, faint green cast */
+  --sl-bg-card: #0d1712;        /* raised panel */
+  --sl-ink: #edefe9;            /* bone, primary type (16.75 on --sl-bg) */
+  --sl-ink-soft: #a8b3ac;       /* secondary text (8.97) */
+  --sl-ink-muted: #78857d;      /* fine print (AA on --sl-bg: 5.04) */
+  /* INVERTED ROLE: was deep forest, used as a colour 100 times for headings
+     and as a background 21. Headings on a dark field must be bone, so the
+     colour uses are correct for free and the 21 background uses are the ones
+     that need a hand. The forest green survives as --sl-brand-green. */
+  --sl-green: #edefe9;          /* headings — bone on the field */
+  --sl-green-btn: #edefe9;      /* primary action — bone, not a colour blob */
+  --sl-green-ink: #070f0b;      /* text ON the bone action (16.75) */
+  /* THE SIGNAL. Amber marks a value the engine measured — never emphasis,
+     never decoration, never a call to action. If you see amber, it is a
+     number the product produced. */
+  --sl-orange: #f0a818;         /* the signal (9.54 on --sl-bg) */
+  --sl-orange-soft: #14201a;    /* dark wash for callouts (ink on it: 14.48) */
+  --sl-accent: #f0a818;         /* same signal; the old split had no meaning */
+  --sl-accent-hover: #ffc04d;   /* signal hover */
+  --sl-focus-dark: #ffc04d;     /* focus ring on dark surfaces */
+  --sl-cream: #edefe9;          /* text on every dark surface */
+  --sl-night: #040907;          /* sunk well — inset, code, table stripe */
+  /* Two border tokens because they have two different jobs. --sl-border is
+     1.33:1 and is DECORATIVE ONLY: it may never be the sole boundary of an
+     interactive control. --sl-control-border clears WCAG 1.4.11 non-text
+     contrast at 3.45. Collapsing them is how control borders quietly stop
+     being visible. */
+  --sl-border: #1e2c25;         /* decorative hairline (1.33 — not a control) */
+  --sl-border-strong: #2e4238;  /* structural rule */
+  --sl-control-border: #5c6b62; /* interactive edges (3.45 on --sl-bg) */
+  --sl-arc: rgba(95, 227, 192, 0.28);  /* the quiet-arc decoration, one place */
+  /* THE TRACE. Cyan marks the live readout and nothing else. */
+  --sl-trace: #5fe3c0;          /* the live read (12.23 on --sl-bg) */
+  --sl-trace-dim: #3f9c86;      /* retired trace segments (5.83) */
+  /* Long-form prose still wants paper. These panels are the only light
+     surface left, and they are deliberate rather than default. */
+  --sl-paper: #f2efe6;
+  --sl-paper-ink: #10160f;      /* 15.97 on --sl-paper */
+  --sl-paper-soft: #454f48;     /* 7.41 on --sl-paper */
+  --sl-paper-line: #d8d3c4;
+  --sl-brand-green: #0f3d28;    /* the mark, and only the mark */
+  /* Error text. #b3261e was a light-surface red and lands at 2.97:1 on the
+     field — the inversion would have shipped unreadable error messages,
+     which is the one string a reader most needs to be able to read.
+     7.62:1. */
+  --sl-danger: #ff7a6b;
+  /* The hover state for a bone control. An earlier pass filled these with
+     --sl-trace, which looked good and broke colour rule 2 in 21 places:
+     cyan marks the LIVE READOUT and nothing else, and a pointer resting on a
+     button is not a reading. A lifted bone (1.13x the luminance of --sl-ink)
+     gives a perceptible change without spending a signal. */
+  --sl-ink-hi: #fbfcf9;
   /* RGB triplets for alpha-derivations: rgba(var(--sl-cream-rgb), .72) etc.
      Deriving from these keeps every wash traceable to a named colour. */
-  --sl-cream-rgb: 245, 242, 233;
-  --sl-night-rgb: 6, 17, 12;
-  --sl-accent-rgb: 240, 122, 24;
-  --sl-green-rgb: 15, 61, 40;
+  --sl-cream-rgb: 237, 239, 233;
+  --sl-night-rgb: 4, 9, 7;
+  --sl-accent-rgb: 240, 168, 24;
+  --sl-green-rgb: 237, 239, 233;
+  --sl-trace-rgb: 95, 227, 192;
+  --sl-field-rgb: 7, 15, 11;
   /* aliases kept for existing call sites */
   --sl-orange-bright: var(--sl-accent);
   --sl-footer: var(--sl-night);
-  --sl-footer-ink: #9fb0a4;
+  --sl-footer-ink: #8b968e;
 
+  /* Two faces, three voices. Archivo Expanded is a static wdth-125/wght-800
+     instance — a named instance in Archivo's STAT table, which is why it
+     costs 14,536 bytes where the dual-axis variable file costs 90,104.
+     store-assets/make_fonts.py has the measurements. */
   --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-  --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-  --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  --sl-font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+  --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
 
   /* ==== space — the scale that did not exist. Gaps, margins and paddings
      compose from these; arbitrary px was how 21 different gap values
@@ -80,26 +135,40 @@
   --sl-pad-x: clamp(24px, 5vw, 64px);
   --sl-card-inset: clamp(24px, 3vw, 36px);
   --sl-dense-inset: clamp(14px, 1.5vw, 20px);
-  --sl-radius-sm: 6px;
-  --sl-radius: 12px;
+  /* Instruments have tight corners. Dropping 6/12/16/22 to 2/4/8 does more
+     perceptual work than the palette does — a 22px radius reads as an app
+     card no matter what colour it is. Nothing on either surface is round. */
+  --sl-radius-sm: 2px;
+  --sl-radius: 4px;
   --sl-radius-md: var(--sl-radius);      /* app-vocabulary alias */
-  --sl-radius-lg: 16px;
-  --sl-radius-xl: 22px;
-  --sl-radius-control: 12px;
+  --sl-radius-lg: 8px;
+  --sl-radius-xl: 8px;
+  --sl-radius-control: 4px;
 
   --sl-section-space: clamp(88px, 10vw, 128px);
   --sl-section-space-compact: clamp(56px, 7vw, 84px);
-  --sl-heading-display: clamp(42px, 5.4vw, 68px);
-  --sl-heading-support: clamp(34px, 4.2vw, 48px);
+  --sl-heading-display: clamp(34px, 4.1vw, 54px);
+  --sl-heading-support: clamp(27px, 3.2vw, 38px);
   /* 12px, up from 11: the eyebrow is uppercase mono at 0.16em tracking —
      the combination read as decoration, not type, below the floor. 12px is
      the type floor everywhere; nothing renders smaller. */
   --sl-eyebrow-size: 12px;
   --sl-eyebrow-track: 0.16em;
 
-  --sl-shadow-card: 0 1px 2px rgba(6, 17, 12, 0.04), 0 14px 32px -18px rgba(6, 17, 12, 0.16);
-  --sl-shadow-card-hover: 0 2px 4px rgba(6, 17, 12, 0.05), 0 20px 44px -18px rgba(6, 17, 12, 0.2);
-  --sl-shadow-deep: 0 44px 90px -40px rgba(6, 17, 12, 0.9);
+  /* A drop shadow is invisible on a near-black field — the old card shadows
+     were painting #06110c onto #eef2ef and simply do nothing here. An
+     instrument separates surfaces with a lit top edge and a deeper well
+     instead, so every shadow leads with an inset hairline of --sl-cream-rgb
+     and keeps the cast only to seat the panel. */
+  --sl-shadow-card:
+    inset 0 1px 0 rgba(var(--sl-cream-rgb), 0.05),
+    0 18px 40px -28px rgba(0, 0, 0, 0.9);
+  --sl-shadow-card-hover:
+    inset 0 1px 0 rgba(var(--sl-cream-rgb), 0.09),
+    0 24px 52px -26px rgba(0, 0, 0, 0.95);
+  --sl-shadow-deep:
+    inset 0 1px 0 rgba(var(--sl-cream-rgb), 0.06),
+    0 48px 96px -44px rgba(0, 0, 0, 1);
 
   /* fluid type scale — MANDATORY. font-size appears only in this file;
      sections pick a rung. The old sheet had 142 raw px sizes against 37
@@ -110,8 +179,8 @@
   --sl-text-lg: clamp(17px, 16.2px + 0.35vw, 19px);
   --sl-text-xl: clamp(20px, 18.8px + 0.55vw, 23px);
   --sl-text-2xl: clamp(24px, 21.8px + 1vw, 30px);
-  --sl-text-3xl: clamp(28px, 24.5px + 1.7vw, 38px);
-  --sl-text-4xl: clamp(34px, 28px + 2.8vw, 52px);
+  --sl-text-3xl: clamp(24px, 21px + 1.4vw, 32px);
+  --sl-text-4xl: clamp(28px, 23.5px + 2.1vw, 42px);
 }
 
 * { box-sizing: border-box; }
@@ -129,10 +198,17 @@ body {
   font-weight: 400;
   line-height: 1.6;
   letter-spacing: -0.011em;
+  /* The field, plus the 8px technical grid that runs under everything. The
+     grid is what makes the surface read as a measuring instrument rather
+     than as a dark theme; it is fixed so content moves across it on scroll,
+     the way a trace moves across graph paper. */
   background:
-    radial-gradient(1200px 520px at 12% -8%, rgba(26, 92, 56, 0.08), transparent 58%),
-    radial-gradient(900px 480px at 92% 4%, rgba(var(--sl-accent-rgb), 0.05), transparent 52%),
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
+    radial-gradient(1100px 560px at 14% -10%, rgba(var(--sl-trace-rgb), 0.05), transparent 60%),
+    radial-gradient(900px 480px at 92% 2%, rgba(var(--sl-accent-rgb), 0.04), transparent 55%),
     var(--sl-bg);
+  background-size: 8px 8px, 8px 8px, auto, auto, auto;
   background-attachment: fixed;
   color: var(--sl-ink);
   -webkit-font-smoothing: antialiased;
@@ -140,35 +216,56 @@ body {
   font-feature-settings: "ss01" 0, "kern" 1;
 }
 
+/* Display type is the expanded face at a single weight. One expanded weight
+   used at several sizes is a more disciplined voice than a family of them,
+   and the static instance costs a sixth of the variable file. Tracking opens
+   slightly from the old -0.035em because expanded letterforms already carry
+   their own width — closing them up fights the face. */
 h1, h2, h3, .sl-h2, .sl-page-hero__title {
   font-family: var(--sl-font-display);
-  font-weight: 700;
-  letter-spacing: -0.035em;
-  line-height: 1.05;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.02;
   text-wrap: balance;
   color: var(--sl-green);
 }
 
-a { color: var(--sl-green-btn); }
-a:hover { color: var(--sl-orange); }
+/* Links are bone like body text, so they need a second signal to stay
+   distinguishable — the underline is that signal and it is not optional.
+   Hover moves to the trace colour rather than the amber signal: amber means
+   a measured value, and a link is not one. */
+a {
+  color: var(--sl-green-btn);
+  text-decoration: underline;
+  text-decoration-color: rgba(var(--sl-cream-rgb), 0.32);
+  text-underline-offset: 0.2em;
+  text-decoration-thickness: 1px;
+}
+a:hover {
+  color: var(--sl-ink-hi);
+  text-decoration-color: currentColor;
+}
 
 img { max-width: 100%; display: block; }
 
-::selection { background: rgba(var(--sl-accent-rgb), 0.22); }
-
-/* refined focus rings: visible for keyboards, quiet for pointers */
-:focus-visible {
-  outline: 3px solid var(--sl-green-btn);
-  outline-offset: 3px;
-  border-radius: 3px;
+::selection {
+  background: rgba(var(--sl-trace-rgb), 0.26);
+  color: var(--sl-ink);
 }
-.sl-announcement :focus-visible,
-.sl-hero :focus-visible,
-.sl-report :focus-visible,
-.sl-plans :focus-visible,
-.sl-cta :focus-visible,
-.sl-footer :focus-visible {
-  outline-color: var(--sl-focus-dark);
+
+/* Refined focus rings: visible for keyboards, quiet for pointers.
+   The old sheet had to re-colour the ring inside six dark sections because
+   the page was light and those bands were not. Every surface is dark now, so
+   one rule covers the whole document and the six-selector override is gone —
+   the exception list existed only to paper over the light/dark split. */
+:focus-visible {
+  outline: 2px solid var(--sl-focus-dark);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+/* ...except on the paper panels, which are the one light surface left. */
+.sl-paper :focus-visible {
+  outline-color: var(--sl-brand-green);
 }
 
 .sl-wrap {
@@ -181,6 +278,25 @@ img { max-width: 100%; display: block; }
   padding-left: max(var(--sl-pad-x), env(safe-area-inset-left, 0px));
   padding-right: max(var(--sl-pad-x), env(safe-area-inset-right, 0px));
   box-sizing: border-box;
+}
+
+/* A horizontally scrollable region — the wide spec tables in the account
+   and order pages. It lives here rather than in a section because TWO
+   sections use it, and theme-check's ValidScopedCSSClass flags a class used
+   outside the file that defines it (that one warning failed the whole
+   theme-zip build, because package_theme.py runs at --fail-level warning).
+
+   tabindex="0" and a label go on the element in the markup: a scroll
+   container that only a mouse can reach is unreachable by keyboard, and
+   overflow alone gives no affordance that there is more to the right. */
+.sl-scroll-x {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.sl-scroll-x:focus-visible {
+  outline: 2px solid var(--sl-focus-dark);
+  outline-offset: 2px;
 }
 
 .visually-hidden {
@@ -213,12 +329,13 @@ img { max-width: 100%; display: block; }
 .sl-placeholder {
   width: 100%;
   display: block;
-  background: repeating-linear-gradient(45deg, #e7ede6, #e7ede6 14px, #dde5db 14px, #dde5db 28px);
-  border: 1px solid #d8dfd5;
-  border-radius: 16px;
+  /* the empty state reads as unexposed film now, not as a light swatch */
+  background: repeating-linear-gradient(45deg, var(--sl-bg-card), var(--sl-bg-card) 14px, var(--sl-night) 14px, var(--sl-night) 28px);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-lg);
 }
 .sl-placeholder--warm {
-  background: repeating-linear-gradient(45deg, #efe9dd, #efe9dd 12px, #e8e1d2 12px, #e8e1d2 24px);
+  background: repeating-linear-gradient(45deg, var(--sl-orange-soft), var(--sl-orange-soft) 12px, var(--sl-night) 12px, var(--sl-night) 24px);
 }
 .sl-placeholder--flush { border-radius: 0; border: 0; }
 .sl-placeholder text { font-family: ui-monospace, monospace; }
@@ -241,12 +358,21 @@ img { max-width: 100%; display: block; }
   cursor: pointer;
   transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-.sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-bg-card); }
-.sl-btn--primary:hover { background: var(--sl-green); color: var(--sl-bg-card); }
-.sl-btn--outline { background: transparent; color: var(--sl-green); border-color: var(--sl-green); }
-.sl-btn--outline:hover { background: var(--sl-green); color: var(--sl-bg); }
-.sl-btn--light { background: var(--sl-bg-card); color: var(--sl-green); }
-.sl-btn--light:hover { background: #ffffff; color: var(--sl-green); }
+/* Bone fill, field text. On a near-black page the brightest thing wins,
+   so the primary action does not need — and must not take — the signal
+   colour: amber means a value the engine measured. */
+.sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-green-ink); }
+.sl-btn--primary:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
+/* --sl-control-border, not --sl-border: an outline button's edge IS the
+   control, and --sl-border is 1.33:1 (WCAG 1.4.11 wants 3:1). */
+.sl-btn--outline { background: transparent; color: var(--sl-ink); border-color: var(--sl-control-border); }
+.sl-btn--outline:hover { background: rgba(var(--sl-cream-rgb), 0.08); color: var(--sl-ink); border-color: var(--sl-ink); }
+/* --light meant "readable on the dark green bands" when the page was
+   light. Every surface is dark now, so the inversion left it at #0d1712
+   on #070f0b with a transparent border — 1.06:1, an invisible button.
+   It is the bone treatment, which is what the name was always after. */
+.sl-btn--light { background: var(--sl-ink); color: var(--sl-green-ink); border-color: var(--sl-ink); }
+.sl-btn--light:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); border-color: var(--sl-ink-hi); }
 .sl-btn--sm {
   min-height: 38px;
   padding: 9px 18px;
@@ -270,36 +396,6 @@ img { max-width: 100%; display: block; }
 }
 
 /* One job per section: eyebrow → title → one supporting line */
-.sl-section-head {
-  display: grid;
-  gap: 14px;
-  max-width: 42rem;
-  margin: 0 0 clamp(28px, 4vw, 44px);
-}
-.sl-section-head--center {
-  margin-inline: auto;
-  text-align: center;
-  justify-items: center;
-}
-.sl-section-head .sl-eyebrow,
-.sl-section-head .sl-mono-label {
-  margin: 0;
-}
-.sl-section-head h2,
-.sl-section-head .sl-h2 {
-  margin: 0;
-  max-width: 16ch;
-}
-.sl-section-head__lede {
-  margin: 0;
-  max-width: 46ch;
-  color: var(--sl-ink-soft);
-  font-size: var(--sl-text-lg);
-  font-weight: 400;
-  line-height: 1.55;
-  letter-spacing: -0.012em;
-  text-wrap: pretty;
-}
 
 /* ============================================================
    Shared patterns (contract classes)
@@ -315,7 +411,7 @@ img { max-width: 100%; display: block; }
   text-transform: uppercase;
   color: var(--sl-green);
   background: var(--sl-bg-card);
-  border: 1px solid rgba(15, 61, 40, 0.28);
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.18);
   border-radius: var(--sl-radius-sm);
   padding: 5px 12px;
   white-space: nowrap;
@@ -611,6 +707,14 @@ img { max-width: 100%; display: block; }
 /* THE eyebrow. Twelve sections used to hand-roll their own copy of this
    rule; the only differences were margin nudges and the dark-surface
    colour, which dark sections override contextually. */
+/* An eyebrow is a LABEL, not a measurement, so it does not get the signal
+   colour. Amber marks a value the engine produced; spending it on decorative
+   type is what teaches a reader that amber means "important" and dissolves
+   the only rule this palette has.
+
+   The evidence that this was wrong is that FOUR rebuilt sections
+   independently wrote a local override to undo it. When four call sites
+   fight the base rule, the base rule is the bug. */
 .sl-eyebrow {
   margin: 0 0 14px;
   font-family: var(--sl-font-mono);
@@ -618,7 +722,7 @@ img { max-width: 100%; display: block; }
   font-weight: 500;
   letter-spacing: var(--sl-eyebrow-track);
   text-transform: uppercase;
-  color: var(--sl-orange);
+  color: var(--sl-ink-soft);
 }
 
 /* assurance strip: a quiet instrument panel under buy/checkout actions.
@@ -687,8 +791,8 @@ img { max-width: 100%; display: block; }
 .sl-rte code {
   font-family: var(--sl-font-mono);
   font-size: 0.88em;
-  background: #efece4;
-  border-radius: 6px;
+  background: var(--sl-night);
+  border-radius: var(--sl-radius-sm);
   padding: 1px 6px;
 }
 .sl-rte blockquote {
@@ -951,7 +1055,7 @@ img { max-width: 100%; display: block; }
   font-weight: 500;
   color: var(--sl-ink-muted);
   text-decoration: line-through;
-  text-decoration-color: rgba(122, 130, 121, 0.7);
+  text-decoration-color: currentColor;
   margin-left: 7px;
   white-space: nowrap;
 }
@@ -962,8 +1066,8 @@ img { max-width: 100%; display: block; }
   font-weight: 500;
   letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: #fff;
-  background: var(--sl-orange);
+  color: var(--sl-green-ink);
+  background: var(--sl-ink);
   border-radius: var(--sl-radius-control);
   padding: 4px 11px;
   white-space: nowrap;

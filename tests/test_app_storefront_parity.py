@@ -46,18 +46,33 @@ def test_shared_brand_tokens_match_the_storefront_source_of_truth():
     for name in shared:
         assert _token(LAYOUT, name) == _token(STOREFRONT, name)
 
-    # These app values deliberately stay darker than the storefront's display
-    # colors so small text and control edges retain AA contrast.
-    assert _token(LAYOUT, "sl-ink-muted") == "#5a655e"
-    assert _token(LAYOUT, "sl-orange-text") == "#8f4509"
-    assert _token(LAYOUT, "sl-control-border") == "#6f7b72"
+    # These app values deliberately carry MORE headroom than the storefront's
+    # display colors so small text and control edges retain AA contrast.
+    #
+    # They used to be darker, for exactly the same reason: the field was light
+    # then. The rationale survived the inversion to a dark field and the
+    # direction flipped with it, which is the useful thing for this test to
+    # record — a future pass that re-derives these from a light-surface
+    # assumption will fail here rather than silently halve the contrast.
+    assert _token(LAYOUT, "sl-ink-muted") == "#8b968e"
+    assert _token(LAYOUT, "sl-orange-text") == "#f5b833"
+    assert _token(LAYOUT, "sl-control-border") == "#6b7a71"
 
     # ...and the storefront's own value is the display-copy counterpart, not a
-    # drifted duplicate. Both clear AA on both surface backgrounds (5.37:1 and
-    # 4.94:1 on --sl-bg); the app's is darker because it sets small interface
+    # drifted duplicate. Both clear AA on both surface backgrounds (6.33:1 and
+    # 5.04:1 on --sl-bg); the app's is lighter because it sets small interface
     # text where the storefront sets prose. Pinning both ends stops a future
     # "unify the tokens" pass from quietly trading contrast for symmetry.
-    assert _token(STOREFRONT, "sl-ink-muted") == "#626a63"
+    assert _token(STOREFRONT, "sl-ink-muted") == "#78857d"
+
+    # --sl-border is 1.33:1 on the field and is DECORATIVE ONLY. The control
+    # border is the one that has to clear WCAG 1.4.11's 3:1 for non-text
+    # contrast, on both surfaces. Two tokens, two jobs: collapsing them into
+    # one is how interactive edges quietly stop being visible, so both ends
+    # are pinned against a well-meaning simplification.
+    assert _token(STOREFRONT, "sl-control-border") == "#5c6b62"
+    assert _token(STOREFRONT, "sl-border") == _token(LAYOUT, "sl-border")
+    assert _token(STOREFRONT, "sl-control-border") != _token(STOREFRONT, "sl-border")
 
 
 def test_shared_type_scale_is_spelled_identically_on_both_surfaces():
@@ -155,19 +170,64 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
     # Archivo is the wordmark's own typeface, so headings and the shipped
     # lockup are cut from one shape. The guided report already lists it
     # first and depends on the shell having loaded it.
+    #
+    # Display is a SEPARATE family name rather than a font-stretch on the
+    # interface face, because it is a separate file: wdth 125 is a named
+    # instance in Archivo's STAT table and ships pre-built at 14,536 bytes,
+    # where the dual-axis variable font is 90,104. Asserting the family name
+    # is what stops a later "simplify the stack" pass from collapsing the two
+    # back into one declaration and quietly pulling in the larger file.
     assert 'font-family: "Archivo";' in theme  # self-hosted @font-face
-    assert 'font-family: "IBM Plex Mono";' in theme
+    assert 'font-family: "Archivo Expanded";' in theme
+    assert 'font-family: "DM Mono";' in theme
     assert 'font-family: "Archivo";' in LAYOUT  # the app ships the same files
-    assert 'font-family: "IBM Plex Mono";' in LAYOUT
+    assert 'font-family: "Archivo Expanded";' in LAYOUT
+    assert 'font-family: "DM Mono";' in LAYOUT
     assert '"Archivo"' in _token(STOREFRONT, "sl-font-sans")
-    assert '"Archivo"' in _token(STOREFRONT, "sl-font-display")
-    assert '"IBM Plex Mono"' in _token(STOREFRONT, "sl-font-mono")
+    assert '"Archivo Expanded"' in _token(STOREFRONT, "sl-font-display")
+    assert '"DM Mono"' in _token(STOREFRONT, "sl-font-mono")
     assert '"Archivo"' in _token(LAYOUT, "sl-font-sans")
-    assert '"Archivo"' in _token(LAYOUT, "sl-font-display")
-    assert '"IBM Plex Mono"' in _token(LAYOUT, "sl-font-mono")
+    assert '"Archivo Expanded"' in _token(LAYOUT, "sl-font-display")
+    assert '"DM Mono"' in _token(LAYOUT, "sl-font-mono")
     assert "Sora" not in _token(LAYOUT, "sl-font-display")
+    # The display stack falls back to plain Archivo before any system face, so
+    # a failed load of the 14 KB static degrades to the right typeface at the
+    # wrong width rather than to Helvetica.
+    assert '"Archivo Expanded", "Archivo"' in _token(LAYOUT, "sl-font-display")
+    assert '"Archivo Expanded", "Archivo"' in _token(STOREFRONT, "sl-font-display")
     assert "--sl-font-display" in STOREFRONT
-    assert ".sl-section-head" in STOREFRONT
+    # .sl-section-head is gone, and its absence is the point. It was ONE
+    # centred eyebrow/h2/lede stack that all ten homepage bands rendered,
+    # which is exactly the sameness this redesign set out to remove — so
+    # the snippet and its CSS went with the last caller. The shared
+    # vocabulary that survived is the mono eyebrow, which 31 sections use.
+    assert ".sl-section-head" not in STOREFRONT
+    assert ".sl-eyebrow" in STOREFRONT
+
+    # store-assets/make_fonts.py writes every face into both surfaces in one
+    # pass, so drift between them means somebody hand-placed a file. The
+    # guided report asks for Archivo and relies on the app shell having loaded
+    # the same face the storefront did; two builds of "the same" font are two
+    # different faces as far as a swap is concerned.
+    faces = (
+        "archivo-latin-var.woff2",
+        "archivo-expanded-latin-800.woff2",
+        "dm-mono-latin-400.woff2",
+        "dm-mono-latin-500.woff2",
+    )
+    for face in faces:
+        theme_bytes = (ROOT / "storefront-theme" / "assets" / face).read_bytes()
+        app_bytes = (ROOT / "swinglab" / "web" / "static" / face).read_bytes()
+        assert theme_bytes == app_bytes, face
+
+    # The whole type system is a third of the 150 KB single-asset ceiling.
+    # Pinning the total is what keeps a future "just add a display weight"
+    # from tripling the preload without anyone noticing: the dual-axis variable
+    # file alone would be 90,104 bytes.
+    total = sum(
+        (ROOT / "storefront-theme" / "assets" / face).stat().st_size for face in faces
+    )
+    assert total < 100_000, total
 
 
 def test_app_shell_uses_homepage_premium_chrome_and_footer():
@@ -177,8 +237,29 @@ def test_app_shell_uses_homepage_premium_chrome_and_footer():
     assert 'class="sl-app-footer"' in LAYOUT
     assert 'class="sl-app-footer__inner"' in LAYOUT
     assert ".sl-premium-chrome .sl-menu .sl-menu__panel" in LAYOUT
-    assert "background: rgba(6, 17, 12, .96);" in LAYOUT
-    assert "background: #f07a18;" in LAYOUT
+    # These two used to be pinned as the literals `rgba(6, 17, 12, .96)` and
+    # `#f07a18`. Pinning a literal pins the wrong thing: it survives a palette
+    # change by forcing the OLD colour to stay somewhere in the file, which is
+    # precisely the fork the token sheet exists to prevent. 92 literals in this
+    # template were mapped onto tokens; these are two of them, and the
+    # assertion now checks that the menu panel and the signal are DERIVED.
+    assert "background: rgba(var(--sl-night-rgb), .96);" in LAYOUT
+    # The signal colour must NOT be a background anywhere in the shell. This
+    # assertion originally pinned `background: #f07a18` on the header CTA, so
+    # re-pointing it at the token preserved the very thing the palette forbids:
+    # amber marks a value the engine measured, and the most prominent amber
+    # object in the whole product was a button. Both CTAs are bone now, which
+    # on a near-black field is louder than amber was anyway.
+    assert "background: var(--sl-accent);" not in LAYOUT
+    assert "background: var(--sl-orange);" not in LAYOUT
+    # ...and that no raw hex survived below the token sheet at all. The one
+    # allowed exception would be a colour with no token, and there is none:
+    # the last holdout was an error red at 2.97:1 on the dark field, which
+    # became --sl-danger rather than staying an unreadable literal.
+    below = LAYOUT[LAYOUT.index("--sl-tabbar-h") :]
+    assert not re.search(r"#[0-9a-fA-F]{6}\b", below), re.findall(
+        r"#[0-9a-fA-F]{6}\b", below
+    )
     assert ".sl-header--premium .sl-header__inner { min-height: 64px;" in LAYOUT
     assert "@media (max-width: 560px)" in LAYOUT
     assert ".sl-app-banner__detail { display: none; }" in LAYOUT

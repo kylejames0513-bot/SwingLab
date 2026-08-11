@@ -15,9 +15,24 @@
         "content": "Brand palette",
         "info": "These colors control the page background, primary green, and accessible accent text across the storefront."
       },
-      { "type": "color", "id": "color_page_bg", "label": "Page background", "default": "#eef2ef" },
-      { "type": "color", "id": "color_green", "label": "Deep green", "default": "#0f3d28" },
-      { "type": "color", "id": "color_accent", "label": "Accessible accent text", "default": "#9a4b0a" }
+      {
+        "type": "color",
+        "id": "color_page_bg",
+        "label": "Page field",
+        "default": "#070f0b"
+      },
+      {
+        "type": "color",
+        "id": "color_green",
+        "label": "Heading ink",
+        "default": "#edefe9"
+      },
+      {
+        "type": "color",
+        "id": "color_accent",
+        "label": "Signal (measured values)",
+        "default": "#f0a818"
+      }
     ]
   },
   {
@@ -28,11 +43,11 @@
         "id": "type_body_font",
         "label": "Legacy font picker (unused)",
         "default": "archivo_n4",
-        "info": "Tour Caddie v4 loads Archivo + IBM Plex Mono in theme.liquid to match the app. This picker is retained for theme editor compatibility only."
+        "info": "CaddieInsight loads Archivo, Archivo Expanded and DM Mono in theme.liquid to match the app. This picker is retained for theme editor compatibility only."
       },
       {
         "type": "paragraph",
-        "content": "Archivo carries display and interface type — the wordmark's own typeface. IBM Plex Mono marks measured evidence (chips, dosages, specimen labels). The same pairing ships on app.caddieinsight.com."
+        "content": "Archivo Expanded carries display type and Archivo the interface — the wordmark's own superfamily. DM Mono marks measured evidence (chips, dosages, specimen labels). The same three faces ship on app.caddieinsight.com, byte for byte."
       }
     ]
   }

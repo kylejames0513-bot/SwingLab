@@ -1,17 +1,64 @@
-<section id="{{ section.settings.anchor | default: 'how' }}" class="sl-how">
+{%- liquid
+  # Both halves of "01/04" are derived: the numerator from the block's
+  # position, the denominator from the block count. The `number` setting
+  # carried a "01" DEFAULT, which meant Shopify seeded every newly added
+  # block with it — so a merchant adding a fifth step got "01/05", colliding
+  # with step one, and the auto-numbering branch below could only ever fire
+  # if someone manually cleared a field the editor had just filled in. The
+  # setting stays as an override; it no longer has a default to fight.
+  assign anchor = section.settings.anchor | default: 'how'
+  assign step_total = section.blocks.size
+  assign step_total_label = step_total
+  if step_total < 10
+    assign step_total_label = step_total | prepend: '0'
+  endif
+-%}
+
+<section id="{{ anchor }}" class="sl-how" aria-labelledby="HowTitle-{{ section.id }}">
   <div class="sl-wrap sl-reveal">
-    <div class="sl-how__head">
-      <p class="sl-eyebrow">{{ 'homepage.method.eyebrow' | t }}</p>
+    <header class="sl-how__head">
+      {%- comment -%}
+        The slug is a sheet header, not another centred eyebrow: label left,
+        leader rule across the gap, count right. Ten bands on this page all
+        opened with the same centred eyebrow → h2 → lede stack, and that
+        sameness is the thing being fixed — the method reads as the index
+        page of a manual now.
+      {%- endcomment -%}
+      <div class="sl-how__slug">
+        <p class="sl-eyebrow">{{ 'homepage.method.eyebrow' | t }}</p>
+        <span class="sl-how__leader" aria-hidden="true"></span>
+        {%- if section.settings.sheet_label != blank -%}
+          <p class="sl-how__sheet">{{ step_total_label }} {{ section.settings.sheet_label }}</p>
+        {%- endif -%}
+      </div>
+
       <div class="sl-how__intro">
-        <h2 class="sl-how__title">{{ section.settings.heading | default: 'A practice loop you can repeat.' }}</h2>
+        <h2 id="HowTitle-{{ section.id }}" class="sl-how__title">{{ section.settings.heading | default: 'A practice loop you can repeat.' }}</h2>
         <p>{{ 'homepage.method.intro' | t }}</p>
       </div>
-    </div>
-    <ol class="sl-how__grid">
+    </header>
+
+    {%- comment -%}
+      role="list" is not redundant here: list-style: none strips list
+      semantics in WebKit, and "four steps, in order" is the whole point of
+      this section — it is the one piece of meaning a screen reader would
+      otherwise lose.
+    {%- endcomment -%}
+    <ol class="sl-how__grid" role="list">
       {%- for block in section.blocks -%}
+        {%- liquid
+          assign step_num = block.settings.number
+          if step_num == blank
+            # max_blocks is 6, so a single prepended zero is always correct
+            # and never produces "010".
+            assign step_num = forloop.index | prepend: '0'
+          endif
+        -%}
         <li class="sl-step"{{ block.shopify_attributes }}>
-          {%- assign step_num = block.settings.number | default: forloop.index -%}
-          <p class="sl-step__num">{{ step_num }}</p>
+          <p class="sl-step__num">
+            <span class="sl-step__num-value">{{ step_num }}</span>
+            <span class="sl-step__num-total" aria-hidden="true">/{{ step_total_label }}</span>
+          </p>
           <h3 class="sl-step__title">{{ block.settings.title }}</h3>
           <p class="sl-step__body">{{ block.settings.body }}</p>
           {%- if block.settings.caption != blank -%}
@@ -20,8 +67,12 @@
         </li>
       {%- endfor -%}
     </ol>
+
     {%- if section.settings.footer_note != blank -%}
       <div class="sl-how__foot">
+        {%- if section.settings.footer_label != blank -%}
+          <p class="sl-how__foot-label">{{ section.settings.footer_label }}</p>
+        {%- endif -%}
         <p class="sl-how__foot-note">{{ section.settings.footer_note }}</p>
       </div>
     {%- endif -%}
@@ -29,192 +80,264 @@
 </section>
 
 {% stylesheet %}
+/* THE METHOD SHEET. Four steps as ruled rows with the number set out in the
+   margin, not four cards in a grid — the sheet is the reason this section
+   does not look like its neighbours. Nothing here is raised off the field:
+   one hairline between rows, one painted rail down the number column, and a
+   pair of structural rules top and bottom.
+
+   Note what is absent: no amber and no cyan. Amber marks a value the engine
+   measured and cyan marks the live read; a step index is neither. This
+   section describes the procedure, so it spends no signal colour at all. */
 .sl-how {
-  background:
-    radial-gradient(900px 360px at 50% 0%, rgba(26, 92, 56, 0.06), transparent 60%),
-    var(--sl-bg);
+  /* The rail offset IS the first grid column, so the painted 1px line and
+     the number column cannot drift apart at any breakpoint. */
+  --sl-how-rail: 3.25rem;
+  --sl-how-gap: var(--sl-space-4);
+  /* Deliberately no background. The body's fixed 8px technical grid runs
+     straight through the section — the old build painted a green radial
+     wash here that was decoration on a light page and mud on a dark one. */
   color: var(--sl-ink);
   padding: var(--sl-section-space) 0;
 }
-.sl-how__head {
-  padding-bottom: clamp(28px, 4vw, 48px);
-  border-bottom: 1px solid var(--sl-border);
-  text-align: center;
+
+.sl-how__head { padding-bottom: clamp(32px, 4vw, 56px); }
+.sl-how__slug {
+  display: flex;
+  align-items: center;
+  gap: var(--sl-space-4);
+  margin-bottom: clamp(24px, 3vw, 40px);
 }
+/* base.css sets the shared eyebrow in the signal colour. That is amber spent
+   on a label, which teaches the page that amber means "important" rather
+   than "measured" — overridden locally rather than edited there, because
+   base.css is shared. */
+.sl-how__slug .sl-eyebrow {
+  margin: 0;
+  color: var(--sl-ink-soft);
+}
+.sl-how__leader {
+  flex: 1 1 auto;
+  min-width: var(--sl-space-5);
+  height: 1px;
+  background: var(--sl-border-strong);
+}
+.sl-how__sheet {
+  flex: 0 0 auto;
+  margin: 0;
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  line-height: 1;
+  text-transform: uppercase;
+  font-variant-numeric: tabular-nums;
+}
+
 .sl-how__intro {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 14px;
-  max-width: 720px;
-  margin-inline: auto;
+  gap: var(--sl-space-5);
 }
 .sl-how__title {
-  margin: 0 auto;
-  max-width: 14ch;
+  margin: 0;
+  max-width: 15ch;
   color: var(--sl-green);
   font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+  text-transform: uppercase;
   text-wrap: balance;
 }
 .sl-how__intro > p {
-  margin: 0 auto;
-  max-width: 42ch;
+  margin: 0;
+  max-width: 44ch;
   color: var(--sl-ink-soft);
   font-size: var(--sl-text-lg);
-  font-weight: 400;
   line-height: 1.55;
-  letter-spacing: -0.012em;
-  text-align: center;
   text-wrap: pretty;
 }
+
 .sl-how__grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  grid-auto-rows: 1fr;
-  align-items: stretch;
-  gap: 16px;
-  margin-top: clamp(30px, 4vw, 48px);
-  margin-bottom: 0;
+  margin: 0;
   padding: 0;
   list-style: none;
+  border-top: 1px solid var(--sl-border-strong);
+  border-bottom: 1px solid var(--sl-border-strong);
 }
 .sl-step {
-  position: relative;
-  overflow: hidden;
+  display: grid;
+  grid-template-columns: var(--sl-how-rail) minmax(0, 1fr);
+  column-gap: var(--sl-how-gap);
+  row-gap: 0;
+  padding: clamp(24px, 2.5vw, 32px) 0;
+  text-align: left;
+  /* The rail is painted, not bordered: a 1px background column pinned to the
+     right edge of the number column runs the full height of the row whichever
+     cell is tallest. A border on the number cell cannot do that once the body
+     column is the tall one. */
+  background-image: linear-gradient(var(--sl-border), var(--sl-border));
+  background-size: 1px 100%;
+  background-position: var(--sl-how-rail) 0;
+  background-repeat: no-repeat;
+  transition: background-color 0.2s ease;
+}
+.sl-step + .sl-step { border-top: 1px solid var(--sl-border); }
+.sl-step:hover { background-color: rgba(var(--sl-cream-rgb), 0.022); }
+
+.sl-step__num {
+  grid-column: 1;
+  grid-row: 1;
+  align-self: start;
+  margin: 0;
   display: flex;
   flex-direction: column;
-  align-items: stretch;
-  justify-content: flex-start;
-  height: 100%;
-  min-height: 0;
-  border: 1px solid #ded9ce;
-  border-radius: var(--sl-radius-lg);
-  padding: clamp(24px, 2.5vw, 32px);
-  text-align: left;
-  background: var(--sl-bg-card);
-  box-shadow: var(--sl-shadow-card);
-}
-.sl-step::after {
-  content: "";
-  position: absolute;
-  right: -50px;
-  bottom: -70px;
-  width: 150px;
-  height: 150px;
-  border: 1px solid rgba(var(--sl-green-rgb), 0.1);
-  border-radius: 50%;
-}
-.sl-step__num {
-  margin: 0;
-  width: 50px;
-  height: 50px;
-  display: grid;
-  place-items: center;
-  border: 1px solid rgba(var(--sl-accent-rgb), 0.32);
-  border-radius: 50%;
-  background: #fff7ed;
+  gap: var(--sl-space-1);
   font-family: var(--sl-font-mono);
-  font-size: var(--sl-text-base);
-  font-weight: 500;
-  letter-spacing: 0.08em;
   font-variant-numeric: tabular-nums;
-  color: var(--sl-orange);
-  align-self: flex-start;
+  line-height: 1;
 }
+/* NOT amber. The old build set these in the signal colour inside an
+   orange-ringed circle — the single loudest thing in the section was an
+   index. Both rungs clear AA on the field (8.97 and 5.04). */
+.sl-step__num-value {
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-2xl);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+}
+.sl-step__num-total {
+  color: var(--sl-ink-muted);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+}
+.sl-step:hover .sl-step__num-value { color: var(--sl-ink); }
+
 .sl-step__title {
-  margin: 22px 0 10px;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  margin: 0;
   color: var(--sl-green);
   font-family: var(--sl-font-display);
   font-size: var(--sl-text-xl);
-  font-weight: 700;
-  letter-spacing: -0.03em;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.06;
   text-align: left;
+  text-wrap: balance;
 }
 .sl-step__body {
-  margin: 0;
-  max-width: 34ch;
-  font-size: var(--sl-text-sm);
-  line-height: 1.55;
-  letter-spacing: -0.01em;
+  grid-column: 2;
+  grid-row: 2;
+  margin: var(--sl-space-3) 0 0;
+  max-width: 60ch;
   color: var(--sl-ink-soft);
+  font-size: var(--sl-text-base);
+  line-height: 1.6;
+  text-align: left;
+  text-wrap: pretty;
 }
 .sl-step__caption {
-  width: 100%;
-  margin: auto 0 0;
-  padding-top: 14px;
+  grid-column: 2;
+  grid-row: 3;
+  margin: var(--sl-space-4) 0 0;
+  max-width: 46ch;
+  padding-top: var(--sl-space-3);
   border-top: 1px solid var(--sl-border);
+  color: var(--sl-ink-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
+  line-height: 1.4;
   text-transform: uppercase;
-  color: var(--sl-ink-muted);
   text-align: left;
 }
-.sl-step__body { margin-bottom: 0; }
+
+/* The scope note is the last line of the sheet, so it takes the same columns
+   as a step rather than becoming another centred paragraph. It keeps the
+   empty rail column at every width: the note starting at the page gutter
+   while every step body starts 44px in was the one ragged left edge in the
+   section. */
 .sl-how__foot {
-  margin-top: 32px;
-  padding-top: 24px;
-  border-top: 1px solid var(--sl-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 18px;
-  flex-wrap: wrap;
-  text-align: center;
+  display: grid;
+  grid-template-columns: var(--sl-how-rail) minmax(0, 1fr);
+  column-gap: var(--sl-how-gap);
+  row-gap: var(--sl-space-3);
+  margin-top: clamp(24px, 3vw, 36px);
+}
+.sl-how__foot-label,
+.sl-how__foot-note { grid-column: 2; }
+.sl-how__foot-label {
+  margin: 0;
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  line-height: 1.4;
+  text-transform: uppercase;
 }
 .sl-how__foot-note {
-  margin: 0 auto;
-  max-width: 70ch;
-  font-size: var(--sl-text-base);
-  line-height: 1.6;
+  margin: 0;
+  max-width: 78ch;
   color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  line-height: 1.6;
+  text-wrap: pretty;
 }
-@media (min-width: 750px) {
-  .sl-how__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-}
-@media (min-width: 1280px) {
-  .sl-how__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-}
-@media (max-width: 749px) {
-  .sl-how { padding: clamp(62px, 17vw, 76px) 0; }
-  .sl-how__head { padding-bottom: 26px; }
-  .sl-how__intro { gap: 16px; }
-  .sl-how__intro > p { max-width: 34ch; }
-  .sl-how__grid {
-    gap: 12px;
-    margin-top: 24px;
+
+@media (min-width: 1000px) {
+  .sl-how {
+    --sl-how-rail: 5.5rem;
+    --sl-how-gap: clamp(24px, 3vw, 48px);
   }
-  .sl-step {
-    align-items: center;
-    padding: 24px 22px;
-    text-align: center;
+  /* Asymmetric on purpose: the display heading takes six columns and the
+     lede five, bottom-aligned to it, so the head reads as one line of the
+     sheet instead of a centred stack. */
+  .sl-how__intro {
+    grid-template-columns: minmax(0, 6fr) minmax(0, 5fr);
+    gap: clamp(32px, 5vw, 72px);
+    align-items: end;
   }
-  .sl-step__num { align-self: center; }
-  .sl-step__title {
-    margin: 22px 0 9px;
-    text-align: center;
-  }
+  .sl-step,
+  .sl-how__foot { grid-template-columns: var(--sl-how-rail) minmax(0, 4fr) minmax(0, 6fr); }
+  /* Title in the label column, prose in the wide one — the caption sits under
+     the prose it annotates, so an absent caption simply leaves row 2 empty
+     instead of opening a hole between title and body. */
   .sl-step__body {
-    margin-inline: auto;
-    max-width: 34ch;
-    text-align: center;
+    grid-column: 3;
+    grid-row: 1;
+    margin: 0;
   }
   .sl-step__caption {
-    padding-top: 12px;
-    text-align: center;
+    grid-column: 3;
+    grid-row: 2;
   }
-  .sl-how__foot {
-    margin-top: 24px;
-    padding-top: 20px;
+  .sl-how__foot-label { grid-column: 2; }
+  .sl-how__foot-note { grid-column: 3; }
+}
+
+@media (max-width: 749px) {
+  .sl-how {
+    --sl-how-rail: 2.75rem;
+    --sl-how-gap: var(--sl-space-3);
+    padding: var(--sl-section-space-compact) 0;
   }
-  .sl-how__foot-note {
-    max-width: 36ch;
-    text-align: center;
-  }
+  .sl-how__slug { gap: var(--sl-space-3); }
+  .sl-how__intro { gap: var(--sl-space-4); }
+  .sl-how__title { max-width: 100%; }
+  .sl-step__num-value { font-size: var(--sl-text-xl); }
+  .sl-step__body,
+  .sl-step__caption { max-width: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-step { transition: none; }
 }
 {% endstylesheet %}
 
@@ -223,7 +346,9 @@
   "name": "How it works",
   "settings": [
     { "type": "text", "id": "anchor", "label": "Section anchor id", "default": "how" },
+    { "type": "text", "id": "sheet_label", "label": "Sheet slug", "default": "Steps", "info": "Mono label on the right of the slug rule. The step count in front of it is counted from the blocks below." },
     { "type": "text", "id": "heading", "label": "Heading", "default": "A practice loop you can repeat." },
+    { "type": "text", "id": "footer_label", "label": "Scope note label", "default": "Scope", "info": "Mono label in the margin beside the note." },
     { "type": "text", "id": "footer_note", "label": "Footer note", "default": "Face-on supports movement coaching; down-the-line currently supports timing only. CaddieInsight estimates supported 2D movement and timing from phone video—not club path, face angle, launch, spin, carry, strike, or ball flight." }
   ],
   "blocks": [
@@ -231,7 +356,7 @@
       "type": "step",
       "name": "Step",
       "settings": [
-        { "type": "text", "id": "number", "label": "Step number", "default": "01" },
+        { "type": "text", "id": "number", "label": "Step number", "info": "Numbered from the block order unless you set this." },
         { "type": "text", "id": "title", "label": "Title", "default": "Choose the club" },
         { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club before upload—iron, wedge, hybrid, fairway wood, or driver. It stays with the report and your next comparison, so coaching reflects the equipment you actually used." },
         { "type": "text", "id": "caption", "label": "Caption (small mono line)", "info": "Optional specimen-style label under the body." }

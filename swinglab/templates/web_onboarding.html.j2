@@ -1,41 +1,261 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Your golfer setup{% endblock %}
 {% block style %}
+  {# First-run profile. Nothing on this page is measured — it is all input —
+     so there is no amber and no trace anywhere in it. The instrument
+     character has to come from the RULING instead: hairline-gapped cells
+     rather than gutters, a mono label above every control, and controls
+     recessed into the well so a field reads as a slot to fill rather than as
+     another panel stacked on the panel. #}
   main { max-width: 980px; }
-  .setup-card { padding: clamp(24px, 5vw, 46px); }
-  .setup-card h1 { max-width: 700px; margin: 0 0 12px; color: var(--sl-green); font-size: clamp(2rem, 5vw, 3.35rem); line-height: 1.02; letter-spacing: -.045em; }
-  .setup-lead { max-width: 700px; margin: 0 0 28px; color: var(--sl-ink-soft); font-size: 1.02rem; }
-  .setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 18px; }
+  {# color-scheme is declared nowhere else in the app, and this is the page
+     with eight native selects on it. Without it Chrome paints the option
+     popup with the OS light default while the closed control is dark — the
+     list flashes white every time a golfer opens one. It also gives the
+     checkboxes, radios and any inner scrollbar the dark rendering the field
+     expects. #}
+  .setup-card { padding: clamp(22px, 4vw, 40px); color-scheme: dark; }
+  .setup-card h1 {
+    max-width: 20ch;
+    margin: 0 0 var(--sl-space-3);
+    color: var(--sl-green);
+    {# The display face is EXPANDED and set uppercase; the old hand-rolled
+       clamp(2rem, 5vw, 3.35rem) predates --sl-heading-display and overshot it
+       badly once the wider face landed. #}
+    font-size: var(--sl-heading-display);
+    line-height: 0.98;
+    text-transform: uppercase;
+  }
+  .setup-lead {
+    max-width: 62ch;
+    margin: 0 0 var(--sl-space-6);
+    padding-bottom: var(--sl-space-5);
+    border-bottom: 1px solid var(--sl-border);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-base);
+  }
+  {# Errors are the one string a reader most needs to be able to read, so the
+     page gives them an edge and a well instead of leaving them as loose red
+     text on the panel. --sl-danger is the post-inversion red (7.62:1); the
+     old light-surface red was 2.97 and effectively invisible here. #}
+  .setup-card .error {
+    margin: 0 0 var(--sl-space-4);
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border: 1px solid var(--sl-danger);
+    border-left-width: 3px;
+    border-radius: var(--sl-radius-sm);
+    background: rgba(var(--sl-night-rgb), .6);
+    font-size: var(--sl-text-sm);
+  }
+  {# Was `border-left: 4px solid var(--primary)` over a #e5f3ea mint wash —
+     a light-surface callout that bound to the store's brand hex. The wash is
+     now the dark callout surface and the rule is bone: this notice confirms a
+     state change, and a state change is not a measured value, so it never
+     goes amber. #}
+  .setup-notice {
+    margin: 0 0 var(--sl-space-5);
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border: 1px solid var(--sl-border-strong);
+    border-left: 3px solid var(--sl-ink);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-orange-soft);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  .setup-notice strong { color: var(--sl-ink); }
+  {# The backup-password block is a nested instrument, so it drops into the
+     well rather than lifting off the panel — a drop shadow shows nothing on
+     near-black, and --sl-shadow-sm leads with the lit top edge that does. #}
+  .setup-security {
+    margin: 0 0 var(--sl-space-6);
+    padding: var(--sl-space-5);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-md);
+    background: var(--sl-night);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  .setup-security h2 {
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-green);
+    font-size: var(--sl-text-xl);
+    text-transform: uppercase;
+  }
+  .setup-security p { margin: 0 0 var(--sl-space-4); color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
+  .setup-security form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--sl-space-3); align-items: end; }
+  .setup-security form > div { min-width: 0; }
+  .setup-security .hint { margin: var(--sl-space-3) 0 0; }
+  {# The grid IS the ruling: 1px gaps over a --sl-border ground, cells on the
+     panel colour, so the lines read as scored rules across one surface
+     instead of as gutters between floating cards. #}
+  .setup-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+    background: var(--sl-border);
+    overflow: hidden;
+  }
+  .setup-grid > div,
+  .setup-grid fieldset {
+    min-width: 0;
+    margin: 0;
+    padding: var(--sl-space-4);
+    border: 0;
+    background: var(--sl-bg-card);
+  }
   .setup-grid__club { grid-column: 1 / -1; }
   .setup-grid .full { grid-column: 1 / -1; }
-  .setup-grid > div > label, .setup-grid legend { display: block; margin: 0 0 7px; color: var(--sl-ink); font-weight: 750; }
-  .setup-grid fieldset { min-width: 0; margin: 6px 0; padding: 0; border: 0; }
-  .setup-grid input[type="text"], .setup-grid select, .setup-security input {
-    width: 100%; min-height: 48px; padding: 10px 12px; border: 1.5px solid var(--sl-control-border); border-radius: var(--sl-radius-sm); background: #fff; color: var(--sl-ink); font: inherit;
-  }
-  .setup-grid input:focus, .setup-grid select:focus, .setup-security input:focus { border-color: var(--sl-green-btn); outline: 3px solid rgba(23, 98, 59, .14); outline-offset: 1px; }
-  .choice-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-  .choice-grid label { display: block; border: 1px solid var(--sl-border-strong); border-radius: var(--sl-radius-md); padding: 14px; background: #fff; cursor: pointer; }
-  .choice-grid input { margin-right: 7px; }
-  .choice-grid strong { display: block; color: var(--sl-green); margin: 5px 0 2px; }
-  .choice-grid span { font-size: .86rem; color: var(--sl-ink-soft); }
-  .consent { display: grid; gap: 12px; border-top: 1px solid var(--sl-border); margin-top: 24px; padding-top: 20px; }
-  .consent label { display: flex; align-items: flex-start; gap: 9px; }
-  .consent input { margin-top: 4px; }
-  .setup-security { margin: 20px 0 28px; padding: 20px; border: 1px solid #c8d9cc; border-radius: var(--sl-radius-md); background: var(--sl-surface-soft); }
-  .setup-security h2 { margin: 0 0 5px; color: var(--sl-green); font-size: 1.15rem; }
-  .setup-security p { margin: 5px 0 12px; }
-  .setup-security form { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; }
-  .setup-security form > div { min-width: 0; }
-  .setup-security input { width: 100%; }
-  .setup-security button { margin-top: 0; }
-  .setup-notice { padding: 12px 15px; border-left: 4px solid var(--primary); border-radius: 6px; background: #e5f3ea; }
   .setup-name { grid-column: 1 / -1; }
-  .setup-skip { margin: 20px 0 0; text-align: center; }
-  .setup-skip a { font-weight: 700; }
-  .setup-skip-hint { margin-top: 6px; text-align: center; }
-  @media (max-width: 620px) { .setup-grid, .choice-grid { grid-template-columns: 1fr; } }
-  @media (max-width: 620px) { .setup-security form { grid-template-columns: 1fr; } .setup-security button { width: 100%; } }
+  {# Mono, uppercase, tracked — the same label idiom the storefront readout
+     uses above every value. --sl-ink-muted is 5.96:1 on the panel, which
+     clears AA at this size; the label is deliberately quieter than the answer
+     it introduces. #}
+  .setup-grid > div > label,
+  .setup-grid legend,
+  .setup-security label {
+    display: block;
+    margin: 0 0 var(--sl-space-2);
+    padding: 0;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1.4;
+    text-transform: uppercase;
+  }
+  {# The required marker is aria-hidden, so bone is the only thing carrying it
+     visually and it has to be brighter than the label around it. #}
+  .setup-grid > div > label span { color: var(--sl-ink); }
+  .setup-grid input[type="text"], .setup-grid select, .setup-security input {
+    width: 100%; min-height: 48px; padding: 11px 13px; border: 1.5px solid var(--sl-control-border); border-radius: var(--sl-radius-control); background: var(--sl-night); color: var(--sl-ink); font: inherit;
+  }
+  .setup-grid ::placeholder, .setup-security ::placeholder { color: var(--sl-ink-muted); opacity: 1; }
+  {# The old focus ring was rgba(23, 98, 59, .14) — a translucent green wash
+     that was invisible against a light page and is invisible squared against
+     the field. Focus now takes the bone edge plus the shell's own focus
+     colour, so keyboard position is never a guess. #}
+  .setup-grid input[type="text"]:focus, .setup-grid select:focus, .setup-security input:focus {
+    border-color: var(--sl-green-btn);
+    outline: 2px solid var(--sl-focus-dark);
+    outline-offset: 1px;
+  }
+  .choice-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    border: 1px solid var(--sl-border);
+    background: var(--sl-border);
+  }
+  .choice-grid label {
+    display: block;
+    min-height: 44px;
+    padding: var(--sl-space-4);
+    background: var(--sl-bg-card);
+    cursor: pointer;
+    transition: background-color .18s ease, box-shadow .18s ease;
+  }
+  .choice-grid label:hover { background: var(--sl-orange-soft); }
+  {# The chosen mode carries a lit inner edge as well as the radio itself, so
+     the selected state never rests on a background wash alone. #}
+  .choice-grid label:has(input:checked) {
+    background: var(--sl-orange-soft);
+    box-shadow: inset 2px 0 0 var(--sl-ink);
+  }
+  {# The radio is smaller than the cell, so the cell has to show the keyboard
+     ring or focus lands on a 13px dot inside a 44px target. #}
+  .choice-grid label:has(input:focus-visible) { outline: 2px solid var(--sl-focus-dark); outline-offset: -2px; }
+  .choice-grid input { margin-right: var(--sl-space-2); }
+  .choice-grid strong {
+    display: block;
+    margin: var(--sl-space-1) 0 var(--sl-space-1);
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-base);
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    text-transform: uppercase;
+  }
+  .choice-grid span { color: var(--sl-ink-soft); font-size: var(--sl-text-sm); line-height: 1.45; }
+  {# Consent is the same ruled stack as the grid — three rows of one column —
+     so the page keeps a single structural idea from top to bottom. #}
+  .consent {
+    display: grid;
+    gap: 1px;
+    margin-top: var(--sl-space-5);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-md);
+    background: var(--sl-border);
+    overflow: hidden;
+  }
+  .consent label {
+    min-height: 44px;
+    padding: var(--sl-space-4);
+    display: flex;
+    align-items: flex-start;
+    gap: var(--sl-space-3);
+    background: var(--sl-bg-card);
+    cursor: pointer;
+  }
+  .consent label:hover { background: var(--sl-orange-soft); }
+  .consent input { flex: 0 0 auto; width: 18px; height: 18px; margin: 3px 0 0; }
+  .consent strong { color: var(--sl-ink); font-weight: 700; }
+  .setup-card .hint { margin-top: var(--sl-space-2); color: var(--sl-ink-soft); font-size: var(--sl-text-sm); line-height: 1.5; }
+  {# The shell paints main buttons `color: white` on --sl-green-btn, which is
+     BONE since the inversion — 1.06:1, an unreadable slab. Every button on
+     this page is one, so the page states the ink it needs. Bone on the field
+     is the button: a control never goes amber (amber is a measured value) and
+     never goes cyan (cyan is the live read), so the hover moves along the
+     bone ramp instead of changing hue. #}
+  .setup-card button, .setup-card a.button {
+    margin-top: var(--sl-space-5);
+    background: var(--sl-green-btn);
+    border-color: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+  }
+  .setup-card button:hover, .setup-card a.button:hover {
+    background: var(--sl-ink-soft);
+    border-color: var(--sl-ink-soft);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+  }
+  .setup-security button { margin-top: 0; }
+  .setup-skip {
+    margin: var(--sl-space-6) 0 0;
+    padding-top: var(--sl-space-5);
+    border-top: 1px solid var(--sl-border);
+    text-align: center;
+  }
+  {# Inline links are the one place a 44px target has to be asked for
+     explicitly — this is a real route out of the page, not decoration. #}
+  .setup-skip a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 var(--sl-space-2);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+  }
+  .setup-skip-hint { margin-top: 0; text-align: center; }
+  {# Six short selects sit two rows deep at three columns, which is the
+     density the panel wants once there is room for it. #}
+  @media (min-width: 1000px) {
+    .setup-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 749px) {
+    .setup-grid, .choice-grid { grid-template-columns: minmax(0, 1fr); }
+    .setup-security form { grid-template-columns: minmax(0, 1fr); }
+    .setup-security button { width: 100%; }
+    {# Direct child only: the security form's own button lives inside the
+       section and is sized by the rule above. #}
+    .setup-card > form > button { width: 100%; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .choice-grid label, .setup-card button, .setup-card a.button { transition: none; }
+  }
 {% endblock %}
 {% block main %}
 {% set display_name = submitted.display_name if submitted is defined else (profile.display_name if profile and profile.display_name else '') %}

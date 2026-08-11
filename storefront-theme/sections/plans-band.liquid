@@ -49,162 +49,205 @@
       assign save_pct = yearly_equiv | minus: season_cents | times: 100.0 | divided_by: yearly_equiv | round
     endif
   endif
+
+  # Split the blocks by type up front. The old markup walked section.blocks
+  # twice and filtered inline, which meant the ladder's <ul> was emitted even
+  # when it held nothing — on the new 1px-gap grid that is a visible empty
+  # bordered box, not the harmless nothing it used to be. Filtering here also
+  # lets forloop.index be the spec-sheet number directly, instead of a hand
+  # -rolled counter that would otherwise start the ladder at 02.
+  assign free_blocks = section.blocks | where: 'type', 'free_band'
+  assign plan_blocks = section.blocks | where: 'type', 'plan'
 -%}
 
 <section id="{{ section.settings.anchor | default: 'plans' }}"
          class="sl-plans"{% if section.settings.membership_section %} data-app-upgrade-section{% endif %}>
-  <span class="sl-plans__arc" aria-hidden="true"></span>
   <div class="sl-wrap">
+    {%- comment -%}
+      Asymmetric, left-aligned, and split across two columns — the old head
+      was a centred eyebrow/h2/lede stack, which was the shape every other
+      band on the page also used. The rule underneath is the section's own
+      structure rather than a decorative flourish.
+    {%- endcomment -%}
     <header class="sl-plans__head sl-reveal">
-      <p class="sl-eyebrow">{{ 'homepage.plans.eyebrow' | t }}</p>
-      <h2 class="sl-plans__title">
-        {%- if section.settings.membership_section -%}
-          <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}</span>
-          <span data-app-auth-signed-in hidden>{{ 'homepage.plans.member_heading' | t }}</span>
-        {%- else -%}
-          {{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}
+      <div class="sl-plans__head-lead">
+        <p class="sl-eyebrow">{{ 'homepage.plans.eyebrow' | t }}</p>
+        <h2 class="sl-plans__title">
+          {%- if section.settings.membership_section -%}
+            <span data-app-auth-signed-out>{{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}</span>
+            <span data-app-auth-signed-in hidden>{{ 'homepage.plans.member_heading' | t }}</span>
+          {%- else -%}
+            {{ section.settings.heading | default: 'Start free. Go Pro when the reps matter.' }}
+          {%- endif -%}
+        </h2>
+      </div>
+      <div class="sl-plans__head-note">
+        {%- if section.settings.subheading != blank -%}
+          <p class="sl-plans__sub"{% if section.settings.membership_section %} data-app-auth-signed-out{% endif %}>{{ section.settings.subheading }}</p>
         {%- endif -%}
-      </h2>
-      {%- if section.settings.subheading != blank -%}
-        <p class="sl-plans__sub"{% if section.settings.membership_section %} data-app-auth-signed-out{% endif %}>{{ section.settings.subheading }}</p>
-      {%- endif -%}
-      {%- if section.settings.membership_section -%}
-        <p class="sl-plans__sub" data-app-auth-signed-in hidden>{{ 'homepage.plans.member_subheading' | t }}</p>
-      {%- endif -%}
+        {%- if section.settings.membership_section -%}
+          <p class="sl-plans__sub" data-app-auth-signed-in hidden>{{ 'homepage.plans.member_subheading' | t }}</p>
+        {%- endif -%}
+      </div>
     </header>
 
     {%- comment -%}
       The free entry point leads. The old order rendered Free last, after
       all three paid tiers — the product's actual on-ramp buried under the
       things it upsells to.
+
+      It is the sunk well (--sl-night) where the paid cards are raised
+      panels, so the base unit reads as the floor of the ladder rather than
+      as a fourth card that lost.
     {%- endcomment -%}
-    {%- for block in section.blocks -%}
-      {%- if block.type == 'free_band' -%}
-        {%- liquid
-          assign fb = block.settings
-          assign free_url = fb.url
-          if free_url == blank
-            assign free_url = 'https://app.caddieinsight.com/signup'
-          endif
-        -%}
-        <aside class="sl-plans__free sl-reveal sl-reveal--d2"
-               aria-labelledby="PlansFree-{{ section.id }}"
-               {% if fb.member_visibility == 'signed_out' %}data-app-auth-signed-out{% endif %}{{ block.shopify_attributes }}>
-          {%- comment -%}
-            Same webp ladder and the same candidate widths as the paid cards.
-            The free band used to top out at 480w against a hard-coded
-            sizes="148px", so the free tier's photograph could never resolve
-            past a third of what the paid slots delivered, and the media box
-            stayed pinned at 148px even once the band stacked and had the room.
-            Its source photograph, caddieinsight-free-card-v2.png, stays in
-            assets/ as the record behind the rungs but is no longer requested.
-          {%- endcomment -%}
-          <div class="sl-plans__free-media" aria-hidden="true">
-            {%- if fb.image -%}
-              <img
-                src="{{ fb.image | image_url: width: 480 }}"
-                srcset="{{ fb.image | image_url: width: 480 }} 480w, {{ fb.image | image_url: width: 960 }} 960w, {{ fb.image | image_url: width: 1536 }} 1536w"
-                sizes="(max-width: 749px) min(100vw - 96px, 300px), 200px"
-                width="{{ fb.image.width }}"
-                height="{{ fb.image.height }}"
-                alt=""
-                loading="lazy"
-                decoding="async">
-            {%- else -%}
-              <img
-                src="{{ 'caddieinsight-free-card-v2-480.webp' | asset_url }}"
-                srcset="{{ 'caddieinsight-free-card-v2-480.webp' | asset_url }} 480w, {{ 'caddieinsight-free-card-v2-960.webp' | asset_url }} 960w, {{ 'caddieinsight-free-card-v2-1536.webp' | asset_url }} 1536w"
-                sizes="(max-width: 749px) min(100vw - 96px, 300px), 200px"
-                width="1536"
-                height="1024"
-                alt=""
-                loading="lazy"
-                decoding="async">
-            {%- endif -%}
-          </div>
-          <div class="sl-plans__free-copy">
-            <h3 id="PlansFree-{{ section.id }}" class="sl-plans__free-name">{{ fb.name | default: 'CaddieInsight Free' }}</h3>
-            {%- if fb.description != blank -%}<p class="sl-plans__free-desc">{{ fb.description }}</p>{%- endif -%}
-          </div>
-          <div class="sl-plans__free-side">
-            <p class="sl-plans__free-price">{{ fb.price_text | default: '$0' }}</p>
-            {%- if fb.note != blank -%}<p class="sl-plans__free-note">{{ fb.note }}</p>{%- endif -%}
-            <a class="sl-btn sl-plans__ghost" href="{{ free_url }}">{{ fb.cta_label | default: 'Start free' }}</a>
-          </div>
-        </aside>
-      {%- endif -%}
+    {%- for block in free_blocks -%}
+      {%- liquid
+        assign fb = block.settings
+        assign free_url = fb.url
+        if free_url == blank
+          assign free_url = 'https://app.caddieinsight.com/signup'
+        endif
+      -%}
+      <aside class="sl-plans__free sl-reveal sl-reveal--d1"
+             aria-labelledby="PlansFree-{{ section.id }}"
+             {% if fb.member_visibility == 'signed_out' %}data-app-auth-signed-out{% endif %} {{ block.shopify_attributes }}>
+        {%- comment -%}
+          Same webp ladder and the same candidate widths as the paid cards.
+          The free band used to top out at 480w against a hard-coded
+          sizes="148px", so the free tier's photograph could never resolve
+          past a third of what the paid slots delivered, and the media box
+          stayed pinned at 148px even once the band stacked and had the room.
+          Its source photograph, caddieinsight-free-card-v2.png, stays in
+          assets/ as the record behind the rungs but is no longer requested.
+        {%- endcomment -%}
+        <div class="sl-plans__free-media" aria-hidden="true">
+          {%- if fb.image -%}
+            <img
+              src="{{ fb.image | image_url: width: 480 }}"
+              srcset="{{ fb.image | image_url: width: 480 }} 480w, {{ fb.image | image_url: width: 960 }} 960w, {{ fb.image | image_url: width: 1536 }} 1536w"
+              sizes="(min-width: 560px) 200px, calc(100vw - 48px)"
+              width="{{ fb.image.width }}"
+              height="{{ fb.image.height }}"
+              alt=""
+              loading="lazy"
+              decoding="async">
+          {%- else -%}
+            <img
+              src="{{ 'caddieinsight-free-card-v2-480.webp' | asset_url }}"
+              srcset="{{ 'caddieinsight-free-card-v2-480.webp' | asset_url }} 480w, {{ 'caddieinsight-free-card-v2-960.webp' | asset_url }} 960w, {{ 'caddieinsight-free-card-v2-1536.webp' | asset_url }} 1536w"
+              sizes="(min-width: 560px) 200px, calc(100vw - 48px)"
+              width="1536"
+              height="1024"
+              alt=""
+              loading="lazy"
+              decoding="async">
+          {%- endif -%}
+        </div>
+        <div class="sl-plans__free-copy">
+          <p class="sl-plans__rail">
+            <span class="sl-plans__index">00</span>
+            {%- if fb.note != blank -%}<span class="sl-plans__badge">{{ fb.note }}</span>{%- endif -%}
+          </p>
+          <h3 id="PlansFree-{{ section.id }}" class="sl-plans__free-name">{{ fb.name | default: 'CaddieInsight Free' }}</h3>
+          {%- if fb.description != blank -%}<p class="sl-plans__free-desc">{{ fb.description }}</p>{%- endif -%}
+        </div>
+        <div class="sl-plans__free-side">
+          <p class="sl-plans__free-price">{{ fb.price_text | default: '$0' }}</p>
+          <a class="sl-btn sl-plans__cta sl-plans__ghost" href="{{ free_url }}">{{ fb.cta_label | default: 'Start free' }}</a>
+        </div>
+      </aside>
     {%- endfor -%}
 
-    <ul class="sl-plans__grid sl-reveal sl-reveal--d1">
-      {%- for block in section.blocks -%}
-        {%- if block.type == 'plan' -%}
+    {%- if plan_blocks.size > 0 -%}
+      {%- comment -%}
+        role="list" is not redundant here: Safari drops list semantics from a
+        <ul> once list-style is none, and this one is also display: grid.
+      {%- endcomment -%}
+      <ul class="sl-plans__grid sl-reveal sl-reveal--d2" role="list">
+        {%- for block in plan_blocks -%}
           {%- liquid
             assign b = block.settings
+            # max_blocks caps this section at six blocks, so the ladder can
+            # never reach 10 and one leading zero is always the right width.
+            assign card_index = forloop.index | prepend: '0'
+
             assign plan_price = ''
             assign plan_permo = ''
             assign plan_yearly = ''
-            assign plan_url = b.url
+            assign plan_variant_url = ''
+            assign plan_deeplink = ''
+            assign plan_price_default = ''
+            assign plan_permo_default = ''
+            assign plan_yearly_default = ''
             if b.plan == 'season'
               assign plan_price = season_live
               assign plan_permo = season_permo_live
-              if plan_url == blank
-                assign plan_url = season_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46811170209964'
-              endif
-              if plan_permo == ''
-                assign plan_permo = '$5.83'
-              endif
+              assign plan_variant_url = season_live_url
+              assign plan_deeplink = '/products/swinglab-pro?variant=46811170209964'
+              assign plan_price_default = '$69.99'
+              assign plan_permo_default = '$5.83'
             elsif b.plan == 'founders'
               assign plan_price = founders_live
-              if plan_url == blank
-                assign plan_url = founders_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46839745282220'
-              endif
+              assign plan_variant_url = founders_live_url
+              assign plan_deeplink = '/products/swinglab-pro?variant=46839745282220'
+              assign plan_price_default = '$249'
             elsif b.plan == 'coach'
               assign plan_price = coach_live
               assign plan_yearly = coach_yearly_live
-              if plan_url == blank
-                assign plan_url = coach_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46906759741612'
-              endif
-              if plan_price == ''
-                assign plan_price = '$19.99'
-              endif
-              if plan_yearly == ''
-                assign plan_yearly = '$139.99'
-              endif
+              assign plan_variant_url = coach_live_url
+              assign plan_deeplink = '/products/swinglab-pro?variant=46906759741612'
+              assign plan_price_default = '$19.99'
+              assign plan_yearly_default = '$139.99'
             else
               assign plan_price = monthly_live
               assign plan_yearly = season_live
-              if plan_url == blank
-                assign plan_url = monthly_live_url
-              endif
-              if plan_url == blank
-                assign plan_url = '/products/swinglab-pro?variant=46811170177196'
-              endif
-              if plan_yearly == ''
-                assign plan_yearly = '$69.99'
-              endif
+              assign plan_variant_url = monthly_live_url
+              assign plan_deeplink = '/products/swinglab-pro?variant=46811170177196'
+              assign plan_price_default = '$9.99'
+              assign plan_yearly_default = '$69.99'
             endif
-            if plan_price == ''
+
+            # The author's "Price fallback" now outranks the packaged literal.
+            # It used to be consulted only for monthly and founders — coach and
+            # season jumped straight to a hard-coded string — so index.json
+            # could carry price_text: "$19.99" and a correction typed there
+            # would be silently ignored on exactly the day the live variant
+            # stopped resolving, which is the only day the setting matters.
+            if plan_price == blank
               assign plan_price = b.price_text
             endif
             if plan_price == blank
-              case b.plan
-                when 'season'
-                  assign plan_price = '$69.99'
-                when 'founders'
-                  assign plan_price = '$249'
-                else
-                  assign plan_price = '$9.99'
-              endcase
+              assign plan_price = plan_price_default
             endif
+            if plan_permo == blank
+              assign plan_permo = plan_permo_default
+            endif
+            if plan_yearly == blank
+              assign plan_yearly = plan_yearly_default
+            endif
+
+            assign plan_url = b.url
+            if plan_url == blank
+              assign plan_url = plan_variant_url
+            endif
+            if plan_url == blank
+              assign plan_url = plan_deeplink
+            endif
+
+            # The saving is a property of paying yearly, so the chip belongs on
+            # the line that quotes the yearly price. It used to render in the
+            # price row too, which put "Save 42%" beside $9.99/mo — a claim the
+            # monthly plan is the discount, i.e. exactly backwards.
+            assign show_price_chip = false
+            assign show_yearly_chip = false
+            if b.show_save
+              if b.plan == 'season'
+                assign show_price_chip = true
+              elsif plan_yearly != blank
+                assign show_yearly_chip = true
+              endif
+            endif
+
             # Packaged card art ships as pre-encoded webp rungs (480/960/1536),
             # cut by store-assets/plan_card_webp.py. Theme webps must be served
             # whole via asset_url: asset_img_url is the legacy sizing filter,
@@ -236,12 +279,12 @@
             endif
           -%}
           <li class="sl-plans__card{% if b.featured %} sl-plans__card--featured{% endif %}"{{ block.shopify_attributes }}>
-            <div class="sl-plans__media">
+            <div class="sl-plans__media" aria-hidden="true">
               {%- if b.image -%}
                 <img
                   src="{{ b.image | image_url: width: 960 }}"
                   srcset="{{ b.image | image_url: width: 480 }} 480w, {{ b.image | image_url: width: 960 }} 960w, {{ b.image | image_url: width: 1536 }} 1536w"
-                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
+                  sizes="(min-width: 1000px) 384px, min(100vw - 48px, 560px)"
                   width="{{ b.image.width }}"
                   height="{{ b.image.height }}"
                   alt=""
@@ -251,7 +294,7 @@
                 <img
                   src="{{ art_md | asset_url }}"
                   srcset="{{ art_sm | asset_url }} 480w, {{ art_md | asset_url }} 960w, {{ art_lg | asset_url }} 1536w"
-                  sizes="(max-width: 749px) calc(100vw - 50px), (max-width: 1019px) min(100vw - 50px, 560px), 396px"
+                  sizes="(min-width: 1000px) 384px, min(100vw - 48px, 560px)"
                   width="1536"
                   height="1024"
                   alt=""
@@ -260,27 +303,30 @@
               {%- endif -%}
             </div>
             <div class="sl-plans__card-body">
-              {%- if b.badge != blank -%}<p class="sl-plans__badge">{{ b.badge }}</p>{%- endif -%}
+              <p class="sl-plans__rail">
+                <span class="sl-plans__index">{{ card_index }}</span>
+                {%- if b.badge != blank -%}<span class="sl-plans__badge">{{ b.badge }}</span>{%- endif -%}
+              </p>
               <h3 class="sl-plans__name">{{ b.name | default: 'CaddieInsight Pro' }}</h3>
               <p class="sl-plans__price">
                 <span class="sl-plans__amount">{{ plan_price }}</span>
                 {%- if b.term != blank -%}<span class="sl-plans__term">{{ b.term }}</span>{%- endif -%}
-                {%- if b.show_save -%}<span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{%- endif -%}
+                {%- if show_price_chip -%}<span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{%- endif -%}
               </p>
               {%- if b.plan == 'season' -%}
                 <p class="sl-plans__permo">{{ 'homepage.plans.permo' | t: amount: plan_permo }}</p>
               {%- endif -%}
-              {%- if plan_yearly != '' and plan_yearly != blank -%}
-                <p class="sl-plans__permo">{{ 'homepage.plans.yearly_line' | t: amount: plan_yearly }}{% if b.show_save %} <span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{% endif %}</p>
+              {%- if plan_yearly != blank -%}
+                <p class="sl-plans__permo">{{ 'homepage.plans.yearly_line' | t: amount: plan_yearly }}{% if show_yearly_chip %} <span class="sl-badge-save">{{ 'homepage.plans.save_chip' | t: percent: save_pct }}</span>{% endif %}</p>
               {%- endif -%}
               {%- if b.description != blank -%}<p class="sl-plans__desc">{{ b.description }}</p>{%- endif -%}
               {%- if b.note != blank -%}<p class="sl-plans__note">{{ b.note }}</p>{%- endif -%}
-              <a class="sl-btn{% if b.featured %} sl-plans__cta--featured{% else %} sl-btn--outline{% endif %} sl-plans__cta" href="{{ plan_url }}">{{ b.cta_label | default: 'Get Pro' }}</a>
+              <a class="sl-btn sl-plans__cta{% if b.featured %} sl-plans__cta--featured{% endif %}" href="{{ plan_url }}">{{ b.cta_label | default: 'Get Pro' }}</a>
             </div>
           </li>
-        {%- endif -%}
-      {%- endfor -%}
-    </ul>
+        {%- endfor -%}
+      </ul>
+    {%- endif -%}
 
     {%- if section.settings.footnote != blank -%}
       <p class="sl-plans__footnote">{{ section.settings.footnote }}</p>
@@ -289,101 +335,175 @@
 </section>
 
 {% stylesheet %}
+/* THIS SECTION CARRIES NO SIGNAL COLOUR, AND THAT IS THE DESIGN.
+   Amber marks a value the engine measured; a price is an offer someone
+   wrote, not a reading someone took, and a savings claim is merchandising.
+   Cyan is the live read. Borrowing either here would cost them their
+   meaning everywhere else on the page for a decorative gain, so the whole
+   ladder is bone, hairline and mono. Emphasis is structural instead: the
+   featured tier is raised and rule-capped, not coloured. */
 .sl-plans {
-  position: relative;
-  overflow: clip;
   padding-top: var(--sl-section-space);
   padding-bottom: var(--sl-section-space);
-  background:
-    radial-gradient(circle at 16% 8%, rgba(37, 111, 70, 0.22), transparent 34%),
-    var(--sl-night);
-  color: var(--sl-cream);
+  /* No panel of its own. body paints the 8px graph-paper field with
+     background-attachment: fixed, so leaving this transparent lets the grid
+     run under the ladder while the neighbours paint over it — these two
+     rules are the whole separation, in place of another dark slab. */
+  background: transparent;
+  border-top: 1px solid var(--sl-border-strong);
+  border-bottom: 1px solid var(--sl-border-strong);
+  color: var(--sl-ink);
 }
-/* one faint quarter-sweep, the same pendulum ghost the CTA banner carries */
-.sl-plans__arc {
-  position: absolute;
-  top: -300px;
-  right: -220px;
-  width: 660px;
-  aspect-ratio: 1;
-  border: 1.5px solid transparent;
-  border-bottom-color: rgba(var(--sl-cream-rgb), 0.14);
-  border-radius: 50%;
-  transform: rotate(-12deg);
-  pointer-events: none;
-}
+/* The shared eyebrow is amber in base.css. On this section that would be
+   the only amber, spent on a label — scoped back to a quiet mono line. */
+
 .sl-plans__head {
-  position: relative;
-  max-width: 720px;
-  margin-inline: auto;
-  text-align: center;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-5);
+  padding-bottom: var(--sl-space-6);
+  border-bottom: 1px solid var(--sl-border);
+  text-align: left;
 }
-.sl-plans .sl-eyebrow { color: var(--sl-accent-hover); }
 .sl-plans__title {
-  max-width: 14ch;
-  margin: 0 auto;
-  color: var(--sl-cream);
+  max-width: 20ch;
+  margin: 0;
+  color: var(--sl-ink);
   font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
-  font-weight: 700;
-  letter-spacing: -0.04em;
-  line-height: 1.02;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
+  text-transform: uppercase;
   text-wrap: balance;
 }
+/* No display: rule here — the signed-in copy is toggled with [hidden] by
+   sections/header.liquid, and any display value would defeat it. */
 .sl-plans__sub {
-  max-width: 42ch;
-  margin: 14px auto 0;
+  max-width: 46ch;
+  margin: 0;
+  color: var(--sl-ink-soft);
   font-size: var(--sl-text-lg);
-  font-weight: 400;
   line-height: 1.55;
-  letter-spacing: -0.012em;
-  color: rgba(var(--sl-cream-rgb), 0.72);
-  text-align: center;
   text-wrap: pretty;
 }
+
+/* ---- 00 · the base unit ---- */
+.sl-plans__free {
+  /* Below 1000px this shares the ladder's single 560px column. Left full
+     width it spanned the viewport while the cards below it stayed capped,
+     and the two read as two different systems on the same page. */
+  margin: var(--sl-space-7) auto 0;
+  max-width: 560px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+  /* The 1px-gap bordered grid: the container paints the hairline and each
+     cell paints over it, so the seams are rules rather than gutters. */
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border-strong);
+}
+.sl-plans__free-media,
+.sl-plans__free-copy,
+.sl-plans__free-side { background: var(--sl-night); }
+/* 200px, not the old 148px: the paid cards render their photograph at 384px,
+   and at 148 the free tier's read as a contact sheet next to them rather than
+   as the same campaign. It is still the compact band, just legible. */
+.sl-plans__free-media {
+  aspect-ratio: 3 / 2;
+  overflow: hidden;
+  line-height: 0;
+}
+.sl-plans__free-media img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+.sl-plans__free-copy { padding: var(--sl-card-inset); }
+.sl-plans__free-name {
+  margin: var(--sl-space-4) 0 0;
+  color: var(--sl-ink);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-text-xl);
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
+}
+.sl-plans__free-desc {
+  margin: var(--sl-space-3) 0 0;
+  max-width: 58ch;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+.sl-plans__free-side {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: var(--sl-space-4);
+  padding: var(--sl-card-inset);
+  text-align: left;
+}
+.sl-plans__free-price {
+  margin: 0;
+  color: var(--sl-ink);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-2xl);
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- the paid ladder ---- */
 .sl-plans__grid {
-  margin: clamp(36px, 5vw, 56px) 0 0;
+  margin: var(--sl-space-7) auto 0;
   padding: 0;
+  max-width: 560px;
   list-style: none;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  justify-items: center;
   align-items: stretch;
-  gap: 18px;
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border-strong);
 }
 .sl-plans__card {
   position: relative;
-  width: min(100%, 560px);
   min-width: 0;
   height: 100%;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
-  background: var(--sl-bg-card);
-  border: 1px solid rgba(var(--sl-cream-rgb), 0.16);
-  border-radius: var(--sl-radius-lg);
+  background: var(--sl-bg);
   color: var(--sl-ink);
-  box-shadow: 0 34px 76px -38px rgba(0, 0, 0, 0.85);
 }
-.sl-plans__card--featured {
-  border-color: rgba(var(--sl-accent-rgb), 0.66);
-  box-shadow: 0 44px 92px -36px rgba(0, 0, 0, 0.95);
-}
-/* the featured card's kinetic hairline, entering from the left edge */
-.sl-plans__card--featured::before {
+/* Every card carries the cap so the photographs stay on one baseline; only
+   the featured one inks it. This used to be an amber gradient hairline —
+   amber is a measured value on this system and a merchandising choice is
+   not one, so the mark is bone, and the raised panel does the rest. */
+.sl-plans__card::before {
   content: "";
   display: block;
   flex: none;
-  height: 3px;
-  background: linear-gradient(90deg, var(--sl-accent) 0%, var(--sl-accent) 58%, rgba(var(--sl-accent-rgb), 0) 100%);
+  height: 2px;
+  background: transparent;
 }
-.sl-plans .sl-plans__card :focus-visible { outline-color: var(--sl-green-btn); }
+.sl-plans__card--featured {
+  background: var(--sl-bg-card);
+  box-shadow: var(--sl-shadow-card);
+}
+.sl-plans__card--featured::before { background: var(--sl-ink); }
 .sl-plans__media {
   position: relative;
   aspect-ratio: 3 / 2;
   overflow: hidden;
   line-height: 0;
-  background: var(--sl-bg);
+  background: var(--sl-night);
   border-bottom: 1px solid var(--sl-border);
 }
 .sl-plans__media img {
@@ -391,8 +511,19 @@
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 42%;
-  transform: scale(1.01);
+  object-position: center;
+  /* A touch of the range light out of it. The card renders are glossier
+     than anything else on the field; this seats them without turning the
+     thing you are buying into a grey plate. */
+  filter: saturate(0.9) contrast(1.04) brightness(0.94);
+}
+/* the plate falls into the panel instead of ending on a hard edge */
+.sl-plans__media::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(var(--sl-field-rgb), 0) 60%, rgba(var(--sl-field-rgb), 0.55) 100%);
 }
 .sl-plans__card-body {
   padding: var(--sl-card-inset);
@@ -400,240 +531,210 @@
   flex-direction: column;
   align-items: stretch;
   justify-content: flex-start;
-  gap: 8px;
+  gap: var(--sl-space-2);
   flex: 1;
   text-align: left;
 }
-.sl-plans__badge {
-  margin: 0;
+/* the spec-sheet rail: index in the margin, term beside it, rule under */
+.sl-plans__rail {
+  margin: 0 0 var(--sl-space-2);
+  padding-bottom: var(--sl-space-3);
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sl-space-3);
+  border-bottom: 1px solid var(--sl-border);
+  color: var(--sl-ink-muted);
   font-family: var(--sl-font-mono);
-  font-size: var(--sl-eyebrow-size);
+  font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
+  line-height: 1;
   text-transform: uppercase;
-  color: var(--sl-orange);
 }
+.sl-plans__index {
+  padding: var(--sl-space-1) var(--sl-space-2);
+  border: 1px solid var(--sl-border-strong);
+  border-radius: var(--sl-radius-sm);
+  color: var(--sl-ink-soft);
+  font-variant-numeric: tabular-nums;
+}
+/* the second half of the featured mark — inverted, still bone */
+.sl-plans__card--featured .sl-plans__index {
+  border-color: var(--sl-ink);
+  background: var(--sl-ink);
+  color: var(--sl-bg);
+}
+.sl-plans__badge { margin: 0; }
 .sl-plans__name {
-  margin: 0;
-  font-size: var(--sl-text-2xl);
+  margin: var(--sl-space-2) 0 0;
+  color: var(--sl-ink);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-text-xl);
   font-weight: 800;
-  letter-spacing: -0.015em;
-  color: var(--sl-green);
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+  text-transform: uppercase;
 }
 .sl-plans__price {
-  margin: 2px 0 0;
+  margin: var(--sl-space-2) 0 0;
   display: flex;
   align-items: baseline;
   flex-wrap: wrap;
-  gap: 8px 10px;
+  gap: var(--sl-space-2) var(--sl-space-3);
 }
+/* Mono for every number on the surface, tabular so the three cards' prices
+   line up down the ladder rather than drifting by digit width. */
 .sl-plans__amount {
+  color: var(--sl-ink);
+  font-family: var(--sl-font-mono);
   font-size: var(--sl-text-3xl);
-  font-weight: 800;
+  font-weight: 500;
   letter-spacing: -0.02em;
   line-height: 1;
   font-variant-numeric: tabular-nums;
-  color: var(--sl-ink);
 }
-.sl-plans__term {
+.sl-plans__term,
+.sl-plans__permo {
+  margin: 0;
+  color: var(--sl-ink-soft);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--sl-ink-muted);
+  font-variant-numeric: tabular-nums;
 }
-.sl-plans__price .sl-badge-save { transform: translateY(-3px); }
-.sl-plans__permo {
-  margin: 0;
+.sl-plans__term { text-transform: uppercase; }
+/* base.css ships this chip as white on solid amber — 2.0:1, below AA, and
+   amber spent on a marketing claim besides. Scoped here to a hairline mono
+   tag that sits in the type rather than shouting over it. */
+.sl-plans .sl-badge-save {
+  padding: var(--sl-space-1) var(--sl-space-2);
+  border: 1px solid var(--sl-border-strong);
+  border-radius: var(--sl-radius-sm);
+  background: transparent;
+  color: var(--sl-ink-soft);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
-  letter-spacing: 0.04em;
-  font-variant-numeric: tabular-nums;
-  color: var(--sl-ink-soft);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
 .sl-plans__desc {
-  margin: 6px 0 0;
+  margin: var(--sl-space-3) 0 0;
+  color: var(--sl-ink-soft);
   font-size: var(--sl-text-base);
   line-height: 1.55;
-  color: var(--sl-ink-soft);
   flex: 1;
   text-wrap: pretty;
 }
 .sl-plans__note {
-  margin: 14px 0 0;
-  padding-top: 12px;
+  margin: var(--sl-space-4) 0 0;
+  padding-top: var(--sl-space-3);
   border-top: 1px solid var(--sl-border);
-  font-family: var(--sl-font-mono);
-  font-size: var(--sl-text-xs);
-  font-weight: 500;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
   color: var(--sl-ink-muted);
-}
-.sl-plans__cta {
-  width: 100%;
-  margin-top: 16px;
-}
-.sl-plans__cta--featured {
-  border-color: var(--sl-accent);
-  background: var(--sl-accent);
-  color: var(--sl-night);
-  box-shadow: 0 16px 34px -20px rgba(var(--sl-accent-rgb), 0.9);
-}
-.sl-plans__cta--featured:hover {
-  border-color: var(--sl-accent-hover);
-  background: var(--sl-accent-hover);
-  color: var(--sl-night);
-}
-.sl-plans__free {
-  margin-top: clamp(26px, 4vw, 40px);
-  display: flex;
-  align-items: center;
-  gap: clamp(18px, 3vw, 32px);
-  padding: var(--sl-dense-inset) var(--sl-card-inset);
-  border: 1px solid rgba(var(--sl-cream-rgb), 0.16);
-  border-radius: var(--sl-radius-lg);
-  background: rgba(16, 40, 27, 0.55);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-}
-/* 200px, not the old 148px: the paid cards render their photograph at 396px,
-   and at 148 the free tier's read as a contact sheet next to them rather than
-   as the same campaign. It is still the compact band, just legible. */
-.sl-plans__free-media {
-  flex: 0 0 200px;
-  overflow: hidden;
-  border: 1px solid rgba(var(--sl-cream-rgb), 0.18);
-  border-radius: var(--sl-radius-sm);
-  line-height: 0;
-}
-.sl-plans__free-media img {
-  display: block;
-  width: 100%;
-  height: auto;
-}
-.sl-plans__free-copy {
-  flex: 1;
-  min-width: 0;
-}
-.sl-plans__free-name {
-  margin: 0;
-  font-size: var(--sl-text-lg);
-  font-weight: 800;
-  letter-spacing: -0.01em;
-  color: var(--sl-cream);
-}
-.sl-plans__free-desc {
-  margin: 6px 0 0;
-  max-width: 58ch;
-  font-size: var(--sl-text-sm);
-  line-height: 1.55;
-  color: rgba(var(--sl-cream-rgb), 0.7);
-  text-wrap: pretty;
-}
-.sl-plans__free-side {
-  flex: none;
-  display: grid;
-  gap: 8px;
-  justify-items: end;
-  text-align: right;
-}
-.sl-plans__free-price {
-  margin: 0;
-  font-size: var(--sl-text-2xl);
-  font-weight: 800;
-  line-height: 1;
-  font-variant-numeric: tabular-nums;
-  color: #ffffff;
-}
-.sl-plans__free-note {
-  margin: 0;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
+  line-height: 1.5;
   text-transform: uppercase;
-  color: rgba(var(--sl-cream-rgb), 0.6);
 }
-.sl-plans__ghost {
-  min-height: 44px;
-  border-color: rgba(var(--sl-cream-rgb), 0.45);
+
+/* ---- controls ----
+   Scoped under .sl-plans because these override .sl-btn from base.css and
+   the two sheets' load order is not this file's to guarantee. Bone on the
+   field with a hairline edge, the same treatment as .sl-hero__primary —
+   an amber button would read as a measured value. */
+.sl-plans .sl-plans__cta {
+  width: 100%;
+  margin-top: var(--sl-space-4);
+  min-height: 48px;
+  border: 1px solid var(--sl-control-border);
+  border-radius: var(--sl-radius-control);
   background: transparent;
-  color: var(--sl-cream);
+  color: var(--sl-ink);
+  font-weight: 600;
 }
-.sl-plans__ghost:hover {
-  border-color: rgba(var(--sl-cream-rgb), 0.85);
-  background: rgba(var(--sl-cream-rgb), 0.1);
-  color: #ffffff;
+.sl-plans .sl-plans__cta:hover {
+  border-color: var(--sl-ink);
+  background: rgba(var(--sl-cream-rgb), 0.06);
+  color: var(--sl-ink);
 }
+/* One filled button on the section. Bone fill, field-coloured label. */
+.sl-plans .sl-plans__cta--featured {
+  border-color: var(--sl-ink);
+  background: var(--sl-ink);
+  color: var(--sl-bg);
+}
+.sl-plans .sl-plans__cta--featured:hover {
+  border-color: var(--sl-ink);
+  background: rgba(var(--sl-cream-rgb), 0.88);
+  color: var(--sl-bg);
+}
+/* The free band's cell is a flex column with its own gap, so the card
+   button's stacking margin would double the space above it. */
+.sl-plans .sl-plans__ghost { margin-top: 0; }
+
 .sl-plans__footnote {
-  max-width: 62ch;
-  margin: 18px auto 0;
-  font-size: var(--sl-text-sm);
-  line-height: 1.55;
-  color: rgba(var(--sl-cream-rgb), 0.6);
-  text-align: center;
+  margin: var(--sl-space-6) 0 0;
+  padding-top: var(--sl-space-4);
+  border-top: 1px solid var(--sl-border);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  line-height: 1.6;
+  text-align: left;
 }
+
+/* The buttons are deliberately absent here: .sl-btn already declares its own
+   transition in base.css, and re-declaring it at this specificity would drop
+   transform from the list and make base.css's gated hover lift snap. */
 @media (prefers-reduced-motion: no-preference) {
-  .sl-plans__card {
-    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
-  }
-  .sl-plans__card:hover {
-    transform: translateY(-4px);
-    box-shadow: 0 48px 96px -36px rgba(0, 0, 0, 0.98);
-  }
+  .sl-plans__card { transition: background-color 0.2s ease, box-shadow 0.2s ease; }
+}
+/* Hover lifts the panel, not the geometry: a translate would tear the 1px
+   seams the grid is built from. */
+.sl-plans__card:hover { background: var(--sl-bg-card); }
+.sl-plans__card--featured:hover {
+  background: var(--sl-bg-card);
+  box-shadow: var(--sl-shadow-card-hover);
+}
+
+@media (min-width: 560px) {
+  .sl-plans__free { grid-template-columns: 200px minmax(0, 1fr); }
+  .sl-plans__free-side { grid-column: 1 / -1; }
 }
 @media (min-width: 1000px) {
-  .sl-plans__grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    justify-items: stretch;
-    padding: 14px 0;
-  }
-  .sl-plans__card { width: auto; }
-  .sl-plans__card--featured { margin-block: -14px; }
-}
-@media (max-width: 999px) {
-  .sl-plans__card--featured { order: -1; }
-}
-@media (max-width: 749px) {
-  .sl-plans__card-body {
-    align-items: center;
-    text-align: center;
-  }
-  .sl-plans__price { justify-content: center; }
-  .sl-plans__desc {
-    max-width: 40ch;
-    margin-inline: auto;
-    text-align: center;
-  }
-  .sl-plans__note {
-    width: 100%;
-    text-align: center;
+  .sl-plans__head {
+    grid-template-columns: minmax(0, 7fr) minmax(0, 5fr);
+    gap: var(--sl-space-7);
+    align-items: end;
   }
   .sl-plans__free {
-    flex-direction: column;
-    padding: var(--sl-card-inset);
-    text-align: center;
+    margin-inline: 0;
+    max-width: none;
+    grid-template-columns: 200px minmax(0, 1fr) minmax(200px, 15rem);
   }
-  /* stacked: flex-basis would size the height here, so the width is set
-     directly — and the band has the full column, so the art gets to use it */
-  .sl-plans__free-media {
-    flex-basis: auto;
-    width: min(100%, 300px);
-  }
-  .sl-plans__free-desc { margin-inline: auto; }
   .sl-plans__free-side {
-    width: 100%;
-    justify-items: center;
-    text-align: center;
-  }
-  .sl-plans__ghost {
-    width: min(100%, 320px);
+    grid-column: auto;
     justify-content: center;
   }
+  .sl-plans__grid {
+    margin-inline: 0;
+    max-width: none;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
+/* No mobile reorder. The featured card used to be pulled to the top of the
+   stack because an amber hairline was the only thing marking it and a
+   visitor could scroll past it; it now carries a bone cap, a raised panel,
+   an inverted index and the one filled button, so it does not need to jump
+   the queue. Reordering also cost two things this layout depends on: the
+   spec-sheet numbers ran 02, 01, 03, and the price ladder read $19.99,
+   $9.99, $249 — block_order in templates/index.json is deliberate, and
+   this is the one viewport that used to ignore it. */
 {% endstylesheet %}
 
 {% schema %}
@@ -654,6 +755,7 @@
         { "type": "select", "id": "plan", "label": "Plan", "options": [
           { "value": "monthly", "label": "Pro Monthly (SKU SL-PRO-1MO)" },
           { "value": "season", "label": "Season Pass (SKU SL-PRO-12MO)" },
+          { "value": "coach", "label": "Coach Monthly (SKU SL-COACH-1MO)" },
           { "value": "founders", "label": "Founders Pass (SKU SL-PRO-LIFE)" }
         ], "default": "monthly", "info": "Chooses which live variant supplies the price and buy link." },
         { "type": "text", "id": "badge", "label": "Badge", "default": "MEMBERSHIP" },
@@ -664,8 +766,8 @@
         { "type": "text", "id": "note", "label": "Mono note", "info": "Specimen-style terms line above the button, e.g. FIRST 100 MEMBERS · NEVER RENEWS." },
         { "type": "text", "id": "cta_label", "label": "Button label", "default": "Get Pro" },
         { "type": "url", "id": "url", "label": "Button link", "info": "Leave blank to deep-link the matching variant on the Pro product page." },
-        { "type": "checkbox", "id": "featured", "label": "Feature this plan", "default": false },
-        { "type": "checkbox", "id": "show_save", "label": "Show the savings chip", "default": false, "info": "Computed against twelve months of the monthly price." },
+        { "type": "checkbox", "id": "featured", "label": "Feature this plan", "default": false, "info": "Raises the card and inks its rule. Feature one card only." },
+        { "type": "checkbox", "id": "show_save", "label": "Show the savings chip", "default": false, "info": "Computed against twelve months of the monthly price, and shown on the yearly line — the plan the saving belongs to." },
         { "type": "image_picker", "id": "image", "label": "Card art", "info": "Leave blank to use the packaged membership card artwork." }
       ]
     },
@@ -676,7 +778,7 @@
         { "type": "text", "id": "name", "label": "Plan name", "default": "CaddieInsight Free" },
         { "type": "textarea", "id": "description", "label": "Description", "default": "One full analysis and one matched re-film each month, with saved club context and a measurable practice plan." },
         { "type": "text", "id": "price_text", "label": "Price", "default": "$0" },
-        { "type": "text", "id": "note", "label": "Mono note", "default": "NO CARD REQUIRED" },
+        { "type": "text", "id": "note", "label": "Mono note", "default": "NO CARD REQUIRED", "info": "Sits in the band's spec rail, beside the 00 index." },
         { "type": "text", "id": "cta_label", "label": "Button label", "default": "Start free" },
         { "type": "url", "id": "url", "label": "Button link", "info": "Leave blank to link the app signup." },
         { "type": "select", "id": "member_visibility", "label": "Member visibility", "options": [
@@ -692,30 +794,33 @@
     {
       "name": "Plans band",
       "blocks": [
+        { "type": "free_band" },
         {
           "type": "plan",
           "settings": {
             "plan": "monthly",
-            "badge": "MEMBERSHIP · MONTHLY",
-            "name": "Pro Monthly",
+            "badge": "MEMBERSHIP · PRO",
+            "name": "CaddieInsight Pro",
+            "price_text": "$9.99",
             "term": "/mo",
-            "description": "Unlimited swing analyses, annotated coach replay, and progress tracking, billed month to month so you can start and stop freely.",
+            "description": "Unlimited swing analyses with the full report every time — film every range session and keep your whole practice record.",
             "note": "RENEWS MONTHLY · CANCEL ANYTIME",
-            "cta_label": "Go Pro monthly"
+            "cta_label": "Go Pro",
+            "show_save": true
           }
         },
         {
           "type": "plan",
           "settings": {
-            "plan": "season",
-            "badge": "MEMBERSHIP · SEASON",
-            "name": "Season Pass",
-            "term": "/yr",
-            "description": "Every Pro feature for a full year in one payment, the same coaching engine from first thaw to final round.",
-            "note": "12 MONTHS OF PRO · ONE PAYMENT",
-            "cta_label": "Get the Season Pass",
-            "featured": true,
-            "show_save": true
+            "plan": "coach",
+            "badge": "MEMBERSHIP · COACH",
+            "name": "CaddieInsight Coach",
+            "price_text": "$19.99",
+            "term": "/mo",
+            "description": "Everything in Pro, plus the annotated replay of every swing, the progress dashboard, and the matched re-film verdict that proves a fix held.",
+            "note": "PROOF THE FIX HELD · CANCEL ANYTIME",
+            "cta_label": "Get Coach",
+            "featured": true
           }
         },
         {
@@ -724,13 +829,13 @@
             "plan": "founders",
             "badge": "MEMBERSHIP · FOUNDERS",
             "name": "Founders Pass",
+            "price_text": "$249",
             "term": "one payment",
-            "description": "One payment, Pro for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
+            "description": "One payment, every Coach feature for good. Capped at the first hundred members so a lifetime promise stays one we can keep.",
             "note": "FIRST 100 MEMBERS · NEVER RENEWS",
             "cta_label": "Get the Founders Pass"
           }
-        },
-        { "type": "free_band" }
+        }
       ]
     }
   ]

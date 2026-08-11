@@ -1,119 +1,324 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Session history{% endblock %}
 {% block style %}
-  main { max-width: 1180px; }
-  .history-shell { display: grid; gap: 22px; }
+  /* ---------------------------------------------------------- sessions
+     A history page is a log, so it is built as one: a ruled panel, mono
+     column heads, hairline rows, and exactly one amber column.
+
+     Amber marks a value the ENGINE measured. On this page that is the
+     swing count and the capture verdict — never the buttons, never the
+     links, never a heading. Cyan marks a live read, which here means a
+     session the instrument is still working on. Everything else is bone
+     on the field. */
+  main { max-width: var(--sl-content); }
+  .history-shell { display: grid; gap: var(--sl-space-5); }
+
+  /* ---- masthead ---- */
   .history-header {
     display: flex;
     align-items: flex-end;
     justify-content: space-between;
-    gap: 24px;
-    padding: clamp(26px, 5vw, 44px);
-    border: 1px solid rgba(255, 255, 255, .14);
-    border-radius: var(--sl-radius-xl);
+    gap: var(--sl-space-5);
+    padding: clamp(24px, 4.5vw, 40px);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-lg);
+    /* The 8px technical grid the shell paints on <body> stops dead at any
+       opaque surface, so a well that has to read as instrument repaints
+       it. Same two gradients, same 8px step as the shell and the hero. */
     background:
-      radial-gradient(circle at 88% 12%, rgba(255, 203, 138, .18), transparent 16rem),
-      var(--sl-premium-gradient);
-    color: #fff;
-    box-shadow: var(--sl-shadow-lg);
+      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
+      var(--sl-night);
+    background-size: 8px 8px, 8px 8px, auto;
+    color: var(--sl-ink);
+    /* --sl-shadow-md already leads with the inset lit edge; adding
+       --sl-shadow-sm on top of it just declares the same highlight twice. */
+    box-shadow: var(--sl-shadow-md);
   }
-  .history-header__copy { max-width: 700px; }
-  .history-header .sl-eyebrow { margin-bottom: 8px; color: var(--sl-premium-accent); }
+  .history-header__copy { max-width: 62ch; }
+  /* The shell paints .sl-eyebrow amber, which is right where an eyebrow
+     labels a reading. "Your coaching record" is a page label, not a
+     measured value, so it drops to muted mono and gives the amber back. */
+  .history-header .sl-eyebrow {
+    margin-bottom: var(--sl-space-3);
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-eyebrow-size);
+    letter-spacing: var(--sl-eyebrow-track);
+  }
   .history-header h1 {
     margin: 0;
-    color: #fff;
-    font-size: clamp(2.2rem, 7vw, 4.6rem);
-    line-height: 1;
-    letter-spacing: -.05em;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    letter-spacing: -.02em;
+    line-height: .98;
+    text-transform: uppercase;
   }
-  .history-header p:last-child { margin: 13px 0 0; color: #dcebe1; }
-  .history-header .button { flex: 0 0 auto; margin: 0; border-color: #fff; background: #fff; color: var(--sl-green); box-shadow: none; }
-  .history-header .button:hover { border-color: #fff; background: #f5fbf7; color: var(--sl-green); }
+  .history-header p:last-child {
+    max-width: 46ch;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-base);
+  }
+  /* The shell's a.button still declares `color: white` on a --sl-green-btn
+     background. That token inverted to bone, so the shell rule now paints
+     white on #edefe9 — 1.06:1, a label you cannot see. Both buttons on
+     this page restate the pairing the design actually calls for: bone
+     plate, field-dark ink, hairline of its own colour. Hover goes to the
+     trace colour, never to amber. */
+  .history-shell .button {
+    margin: 0;
+    border-color: var(--sl-green-btn);
+    background: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+  }
+  .history-shell .button:hover {
+    border-color: var(--sl-ink-hi);
+    background: var(--sl-ink-hi);
+    color: var(--sl-night);
+    box-shadow: none;
+    /* The shell lifts buttons 1px on hover. An instrument panel does not
+       move, and holding still costs nothing under reduced motion. */
+    transform: none;
+  }
+  .history-header .button { flex: 0 0 auto; }
+
+  /* ---- the log ---- */
   .history-panel {
     overflow: hidden;
     border: 1px solid var(--sl-border);
     border-radius: var(--sl-radius-lg);
     background: var(--sl-bg-card);
-    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
+    box-shadow: var(--sl-shadow-md);
   }
-  .history-panel__heading { padding: 23px 25px 17px; border-bottom: 1px solid var(--sl-border); }
-  .history-panel__heading h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.25rem, 3vw, 1.7rem); letter-spacing: -.025em; }
-  .history-panel__heading p { margin: 5px 0 0; color: var(--sl-ink-soft); font-size: .9rem; }
+  .history-panel__heading {
+    padding: var(--sl-space-4) var(--sl-space-5);
+    border-bottom: 1px solid var(--sl-border-strong);
+    background: var(--sl-night);
+  }
+  .history-panel__heading h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-xl);
+    letter-spacing: -.01em;
+    text-transform: uppercase;
+  }
+  /* The count line is instrument caption, not prose: mono, tracked, quiet. */
+  .history-panel__heading p {
+    margin: var(--sl-space-2) 0 0;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
   .history-table-wrap { width: 100%; overflow-x: auto; }
   .history-table { width: 100%; border-collapse: collapse; }
   .history-table th,
-  .history-table td { padding: 17px 14px; border-bottom: 1px solid var(--sl-border); text-align: left; vertical-align: middle; }
+  .history-table td {
+    padding: var(--sl-space-3);
+    border-bottom: 1px solid var(--sl-border);
+    text-align: left;
+    vertical-align: middle;
+  }
   .history-table th:first-child,
-  .history-table td:first-child { padding-left: 25px; }
+  .history-table td:first-child { padding-left: var(--sl-space-5); }
   .history-table th:last-child,
-  .history-table td:last-child { padding-right: 25px; }
+  .history-table td:last-child { padding-right: var(--sl-space-5); }
   .history-table tbody tr:last-child td { border-bottom: 0; }
-  .history-table tbody tr:hover { background: #fafbf7; }
+  /* Composited over the card colour rather than replacing it, so the same
+     one rule works for the desktop rows and for the stacked cards below,
+     where a translucent background would let the divider rule bleed
+     through the whole card. */
+  .history-table tbody tr:hover {
+    background:
+      linear-gradient(rgba(var(--sl-cream-rgb), .04), rgba(var(--sl-cream-rgb), .04)),
+      var(--sl-bg-card);
+  }
   .history-table th {
     color: var(--sl-ink-muted);
-    background: #f7f7f2;
+    background: var(--sl-night);
+    border-bottom-color: var(--sl-border-strong);
     font-family: var(--sl-font-mono);
-    font-size: .68rem;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
-    letter-spacing: .07em;
+    letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
+    white-space: nowrap;
   }
-  .history-date { color: var(--sl-ink); font-size: .88rem; white-space: nowrap; }
-  .history-date__time { display: block; color: var(--sl-ink-muted); font-size: .73rem; }
+  /* A timestamp is recorded, not measured, so it stays bone — mono only
+     because a column of dates has to align digit for digit. */
+  .history-date {
+    display: block;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .history-date__time {
+    display: block;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+  }
   .history-session { min-width: 145px; }
-  .history-session__link { color: var(--sl-green); font-weight: 800; text-decoration: none; overflow-wrap: anywhere; }
-  .history-session__link:hover { color: var(--sl-orange-text); text-decoration: underline; }
+  /* The shell makes links bone and keeps the underline as the second,
+     non-optional signal. The old rule here stripped it and moved hover to
+     amber — a link is not a measured value, so hover goes to trace. */
+  .history-session__link {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--sl-green-btn);
+    font-weight: 700;
+    overflow-wrap: anywhere;
+  }
+  .history-session__link:hover { color: var(--sl-ink-hi); }
   .history-club { white-space: nowrap; }
   .history-chip {
     display: inline-flex;
     align-items: center;
     width: fit-content;
-    padding: 5px 9px;
-    border-radius: var(--sl-radius-control);
-    background: #e8ece9;
+    min-height: 26px;
+    padding: 0 var(--sl-space-2);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
     color: var(--sl-ink-soft);
     font-family: var(--sl-font-mono);
-    font-size: .68rem;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
-    letter-spacing: .025em;
+    letter-spacing: .06em;
+    text-transform: uppercase;
     white-space: nowrap;
   }
-  .history-chip--done { background: #e1f1e5; color: #155d35; }
-  .history-chip--refilm { background: #fff0e4; color: #8d3b10; }
-  .history-chip--failed { background: #f9e7e4; color: #8a2820; }
-  .history-chip--processing,
-  .history-chip--queued { background: #e9eff5; color: #285170; }
-  .history-swings { color: var(--sl-ink-soft); white-space: nowrap; }
-  .history-actions { display: flex; flex-wrap: wrap; gap: 6px 12px; min-width: 145px; }
-  .history-action { color: var(--sl-green-btn); font-size: .8rem; font-weight: 750; white-space: nowrap; }
-  .history-action--primary { color: var(--sl-green); }
-  .history-empty { padding: clamp(34px, 7vw, 70px) 24px; text-align: center; }
-  .history-empty__mark {
-    width: 52px;
-    height: 52px;
-    margin: 0 auto 16px;
-    display: grid;
-    place-items: center;
-    border-radius: 50%;
+  /* A finished read needs no colour spent on it — bone and a brighter
+     hairline are enough, which leaves amber free to mean one thing. */
+  .history-chip--done { border-color: var(--sl-border-strong); color: var(--sl-ink); }
+  /* The one amber chip: "re-film needed" is the engine's verdict on the
+     capture, the pass mark this page exists to report. */
+  .history-chip--refilm {
+    border-color: rgba(var(--sl-accent-rgb), .45);
     background: var(--sl-orange-soft);
     color: var(--sl-orange-text);
-    font-family: var(--sl-font-mono);
-    font-weight: 700;
   }
-  .history-empty h2 { margin: 0; color: var(--sl-green); }
-  .history-empty p { max-width: 470px; margin: 9px auto 0; color: var(--sl-ink-soft); }
-  .history-empty .button { margin-top: 19px; }
+  /* --sl-danger, not the old #8a2820: that was a light-surface red and
+     lands under 3:1 on the field. This clears 7.6:1. */
+  .history-chip--failed { border-color: var(--sl-danger); color: var(--sl-danger); }
+  /* Cyan is the live read and nothing else. Queued and analyzing are
+     exactly that — the instrument is reading this session right now. */
+  .history-chip--processing,
+  .history-chip--queued {
+    border-color: rgba(var(--sl-trace-rgb), .45);
+    background: rgba(var(--sl-trace-rgb), .08);
+    color: var(--sl-trace);
+  }
+  /* The measured number. --sl-orange-text rather than --sl-orange because
+     this lands at small-text size, where the brighter of the two is the
+     one that clears AA on the panel. */
+  .history-swings {
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .history-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--sl-space-2) var(--sl-space-3);
+    min-width: 145px;
+  }
+  .history-action {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .history-action:hover { color: var(--sl-ink-hi); }
+  /* The row's primary action is a control, not running text, so the
+     hairline carries the affordance and the underline comes off. Its edge
+     uses --sl-control-border (4.29:1), never the decorative --sl-border. */
+  .history-action--primary {
+    padding: 0 var(--sl-space-3);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    color: var(--sl-ink);
+    font-weight: 700;
+    text-decoration: none;
+  }
+  .history-action--primary:hover {
+    border-color: var(--sl-ink-hi);
+    background: rgba(var(--sl-trace-rgb), .1);
+    color: var(--sl-ink-hi);
+  }
+
+  /* ---- empty state ---- */
+  .history-empty { padding: clamp(32px, 6vw, 64px) var(--sl-space-5); text-align: center; }
+  /* "01" is a sequence marker, not a reading, so it is bone in a hairline
+     square — a circle of amber would have claimed a measurement. */
+  .history-empty__mark {
+    width: 44px;
+    height: 44px;
+    margin: 0 auto var(--sl-space-4);
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+  }
+  .history-empty h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-support);
+    text-transform: uppercase;
+  }
+  .history-empty p {
+    max-width: 46ch;
+    margin: var(--sl-space-3) auto 0;
+    color: var(--sl-ink-soft);
+  }
+  .history-empty .button { margin-top: var(--sl-space-5); }
+
+  /* ---- footer controls ---- */
   .history-footer {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 16px;
-    padding: 4px 3px;
+    gap: var(--sl-space-4);
+    padding: var(--sl-space-4) var(--sl-space-1) 0;
+    border-top: 1px solid var(--sl-border);
     color: var(--sl-ink-soft);
-    font-size: .88rem;
+    font-size: var(--sl-text-sm);
   }
-  .history-footer a { font-weight: 750; }
-  .history-footer__danger { color: #8a2820; }
+  .history-footer a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    font-weight: 700;
+  }
+  /* The shell sends every link hover to the trace colour. A destructive
+     link must not turn into the live-read colour on the way to being
+     clicked, so this one holds its danger red and brightens the rule
+     instead. */
+  .history-footer__danger { color: var(--sl-danger); }
+  .history-footer__danger:hover {
+    color: var(--sl-danger);
+    text-decoration-color: currentColor;
+  }
   .visually-hidden {
     position: absolute;
     width: 1px;
@@ -125,24 +330,30 @@
     white-space: nowrap;
     border: 0;
   }
+  /* 800px is off the project's breakpoint grid and stays that way on
+     purpose: tests/test_premium_retention.py pins this exact query and the
+     td::before labels below as the contract that the history table
+     degrades to labelled cards instead of a sideways scroll. */
   @media (max-width: 800px) {
-    .history-header { align-items: flex-start; flex-direction: column; }
+    .history-header { align-items: stretch; flex-direction: column; }
     .history-header .button { width: 100%; }
     .history-table-wrap { overflow: visible; }
-    .history-table,
-    .history-table tbody { display: block; }
+    .history-table { display: block; }
     .history-table thead { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); }
-    .history-table tbody { padding: 12px; }
+    /* One hairline-ruled stack: the 1px gap IS the rule, so the cards meet
+       the panel edge with no gutter, the way a printed log does. */
+    .history-table tbody {
+      display: grid;
+      gap: 1px;
+      background: var(--sl-border);
+    }
     .history-table tr {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 12px 18px;
-      padding: 17px;
-      border: 1px solid var(--sl-border);
-      border-radius: 14px;
-      background: #fff;
+      gap: var(--sl-space-3) var(--sl-space-4);
+      padding: var(--sl-space-4) var(--sl-space-5);
+      background: var(--sl-bg-card);
     }
-    .history-table tr + tr { margin-top: 11px; }
     .history-table th,
     .history-table td,
     .history-table th:first-child,
@@ -153,26 +364,32 @@
     .history-table td::before {
       content: attr(data-label);
       display: block;
-      margin-bottom: 3px;
+      margin-bottom: var(--sl-space-1);
       color: var(--sl-ink-muted);
       font-family: var(--sl-font-mono);
-      font-size: .62rem;
-      letter-spacing: .06em;
+      font-size: var(--sl-text-xs);
+      font-weight: 500;
+      letter-spacing: var(--sl-eyebrow-track);
       text-transform: uppercase;
     }
     .history-table td.history-session,
     .history-table td.history-result { grid-column: 1 / -1; }
   }
-  @media (max-width: 520px) {
-    .history-shell { gap: 16px; }
-    .history-header, .history-panel { border-radius: 19px; }
-    .history-table tr { grid-template-columns: 1fr; }
+  @media (max-width: 749px) {
+    .history-shell { gap: var(--sl-space-4); }
+    .history-table tr { grid-template-columns: minmax(0, 1fr); }
     .history-table td.history-session,
     .history-table td.history-result { grid-column: auto; }
-    .history-footer { align-items: flex-start; flex-direction: column; }
+    .history-footer { align-items: flex-start; flex-direction: column; gap: var(--sl-space-2); }
   }
   @media (prefers-reduced-motion: reduce) {
-    .history-panel *, .history-header * { transition: none !important; }
+    .history-shell *,
+    .history-shell *::before,
+    .history-shell *::after {
+      animation: none !important;
+      transition: none !important;
+      transform: none !important;
+    }
   }
 {% endblock %}
 {% block main %}

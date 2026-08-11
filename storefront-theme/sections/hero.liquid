@@ -1,20 +1,27 @@
 {%- liquid
-  # The dusk-range campaign pair ships with the theme as immutable webp
-  # assets; an image picker still lets a reviewed release swap the art.
-  assign hero_image_label = 'homepage.hero.image_label' | t
+  # The dusk-range campaign pair still ships with the theme, but it is no
+  # longer the subject — it is atmosphere behind the readout. An image picker
+  # still lets a reviewed release swap the art.
+  #
+  # hero_image_label / hero_image_alt are gone with it. The backdrop is
+  # decorative now (empty alt, aria-hidden), so the description had no
+  # consumer left — and theme-check's UnusedAssign is a WARNING, which
+  # scripts/package_theme.py runs at --fail-level warning. One orphaned
+  # assign therefore fails the whole theme-zip build, and with it all eight
+  # test_theme_package tests at fixture time.
   assign hero_image = section.settings.image
   assign hero_mobile_image = section.settings.mobile_image
-  assign hero_image_alt = hero_image_label
 -%}
 
 <section id="home-hero" class="sl-hero" aria-labelledby="HeroTitle-{{ section.id }}">
-  <figure class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}">
+  {%- comment -%}
+    The photograph is decoration now: it carries no information the copy does
+    not, so it is aria-hidden and the alt text goes with it. The old markup
+    gave a decorative backdrop a descriptive alt, which made a screen reader
+    announce a stock photo before the headline.
+  {%- endcomment -%}
+  <figure class="sl-hero__backdrop{% if section.settings.video == blank %} sl-hero__backdrop--motion{% endif %}" aria-hidden="true">
     {%- if section.settings.video != blank -%}
-      {%- comment -%}
-        A muted autoplaying loop. The photo below remains the fallback for
-        installs without a clip — and the LCP either way, since video_tag
-        ships its own poster frame.
-      {%- endcomment -%}
       {{ section.settings.video | video_tag: autoplay: true, loop: true, muted: true, controls: false, playsinline: true, class: 'sl-hero__video', image_size: '1672x' }}
     {%- elsif hero_image -%}
       <picture>
@@ -30,13 +37,12 @@
           sizes: '100vw',
           loading: 'eager',
           fetchpriority: 'high',
-          alt: hero_image_alt }}
+          alt: '' }}
       </picture>
     {%- else -%}
       {%- comment -%}
-        Theme webps are served whole via asset_url: the legacy sizing
-        filter does not process webp and emits the no-image placeholder.
-        Both files ship pre-optimized under ~110 KB.
+        Theme webps are served whole via asset_url: the legacy sizing filter
+        does not process webp and emits the no-image placeholder.
       {%- endcomment -%}
       <picture>
         <source
@@ -47,7 +53,7 @@
           src="{{ 'caddieinsight-range-hero-desktop.webp' | asset_url }}"
           width="1672"
           height="941"
-          alt="{{ hero_image_alt | escape }}"
+          alt=""
           loading="eager"
           fetchpriority="high"
           decoding="async">
@@ -56,11 +62,11 @@
   </figure>
 
   <div class="sl-hero__inner sl-wrap">
-    <div class="sl-hero__copy sl-reveal is-in">
+    <div class="sl-hero__copy">
       {%- if section.settings.eyebrow != blank -%}
-        <p class="sl-hero__brand"><span aria-hidden="true"></span>{{ section.settings.eyebrow }}</p>
+        <p class="sl-hero__brand"><span class="sl-hero__brand-dot" aria-hidden="true"></span>{{ section.settings.eyebrow }}</p>
       {%- endif -%}
-      <h1 id="HeroTitle-{{ section.id }}" class="sl-hero__title">{{ section.settings.heading | default: 'Bring one clear move to the range.' }}</h1>
+      <h1 id="HeroTitle-{{ section.id }}" class="sl-hero__title">{{ section.settings.heading | default: 'Prove the fix held.' }}</h1>
       {%- if section.settings.body != blank -%}
         <p class="sl-hero__body">{{ section.settings.body }}</p>
       {%- endif -%}
@@ -92,44 +98,56 @@
         <p class="sl-hero__fine">{{ section.settings.fine_print }}</p>
       {%- endif -%}
     </div>
-  </div>
 
-  <div class="sl-hero__signal-band sl-wrap">
-    <aside class="sl-hero__signal sl-reveal sl-reveal--d1 is-in" aria-label="{{ 'homepage.hero.signal_label' | t }}">
-      <div class="sl-hero__signal-head">
-        <span>{{ 'homepage.hero.signal_status' | t }}</span>
-        <span class="sl-hero__signal-live"><i aria-hidden="true"></i>{{ 'homepage.hero.signal_ready' | t }}</span>
+    {%- comment -%}
+      The readout. This used to be a 320px card tucked into the corner of a
+      photograph; it is the subject now, because it is the only thing on this
+      page that shows what the product actually does.
+    {%- endcomment -%}
+    <aside class="sl-hero__readout" data-swing-readout aria-label="{{ 'homepage.hero.signal_label' | t }}">
+      <div class="sl-hero__readout-head">
+        <span class="sl-hero__readout-title">{{ 'homepage.hero.signal_status' | t }}</span>
+        <span class="sl-hero__readout-live">
+          <i aria-hidden="true"></i>
+          {%- comment -%}
+            The phase label is written by the canvas as it passes each stage.
+            It ships with the ready string so a client that never runs the
+            animation still reads a complete, truthful line rather than an
+            empty one.
+          {%- endcomment -%}
+          <span data-swing-phase>{{ 'homepage.hero.signal_ready' | t }}</span>
+        </span>
       </div>
+
       <div class="sl-hero__trace" role="img" aria-label="{{ 'homepage.hero.trace_label' | t }}">
         {%- comment -%}
-          The live read. One arc, drawn at the engine's own benchmark: the
-          backswing draws for three beats, holds at the top, and the strike
-          retraces it in one — the 3:1 tempo_ratio target, animated. Pose
-          crosshairs blink in as landmarks resolve; the pulse is impact.
-          pathLength="100" normalizes both paths so the dash keyframes are
-          percentages, not measured lengths. Every default below is the
-          fully drawn state, so reduced-motion (and print) get a complete
-          still trace rather than an empty box.
+          DEGRADATION IS THE CONTRACT. The SVG below is a complete, fully
+          drawn still of the swing arc, visible by default. swing-trace.js
+          hides it only after the canvas has successfully initialised, so
+          no-JS, canvas-less, reduced-motion and screenshot clients all get a
+          finished graphic instead of an empty box. Removing the [hidden]
+          handshake means one of those cases silently renders nothing.
         {%- endcomment -%}
-        <svg class="sl-hero__trace-svg" viewBox="0 0 280 88" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
-          <path class="sl-hero__trace-arc" d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"/>
-          <path class="sl-hero__trace-strike" d="M 54 66 C 96 46, 148 10, 214 20" pathLength="100"/>
-          <g class="sl-hero__trace-tick sl-hero__trace-tick--mid" transform="translate(125 32)">
-            <path d="M -5 0 H 5 M 0 -5 V 5"/>
+        <svg class="sl-hero__trace-still" data-swing-still viewBox="0 0 320 260" preserveAspectRatio="xMidYMid meet" aria-hidden="true" focusable="false">
+          <path class="sl-hero__trace-arc"
+                d="M 160 226 C 108 214, 74 176, 70 128 C 66 82, 98 44, 142 34 C 186 24, 226 48, 240 92 C 254 138, 236 190, 194 216"
+                pathLength="100"/>
+          <g class="sl-hero__trace-figure">
+            <circle cx="160" cy="52" r="10"/>
+            <path d="M 160 62 V 88 M 128 92 H 192 M 128 92 L 118 128 M 192 92 L 202 128 M 118 128 L 160 150 M 202 128 L 160 150 M 138 152 H 182 M 138 152 L 132 200 M 182 152 L 188 200 M 132 200 L 130 244 M 188 200 L 190 244"/>
           </g>
-          <g class="sl-hero__trace-tick sl-hero__trace-tick--top" transform="translate(214 20)">
-            <path d="M -5 0 H 5 M 0 -5 V 5"/>
-          </g>
-          <circle class="sl-hero__trace-impact" cx="54" cy="66" r="14"/>
-          <circle class="sl-hero__trace-ball" cx="54" cy="66" r="3.2"/>
+          <g class="sl-hero__trace-tick"><path d="M 155 226 H 165 M 160 221 V 231"/></g>
+          <g class="sl-hero__trace-tick"><path d="M 137 34 H 147 M 142 29 V 39"/></g>
         </svg>
+        <canvas class="sl-hero__trace-canvas" data-swing-trace></canvas>
       </div>
-      <dl class="sl-hero__signal-grid">
+
+      <dl class="sl-hero__readout-grid">
         <div><dt>{{ 'homepage.hero.club_label' | t }}</dt><dd>{{ section.settings.signal_club }}</dd></div>
         <div><dt>{{ 'homepage.hero.priority_label' | t }}</dt><dd>{{ section.settings.signal_priority }}</dd></div>
         <div><dt>{{ 'homepage.hero.target_label' | t }}</dt><dd>{{ section.settings.signal_target }}</dd></div>
       </dl>
-      <p class="sl-hero__signal-note">{{ 'homepage.hero.signal_disclosure' | t }}</p>
+      <p class="sl-hero__readout-note">{{ 'homepage.hero.signal_disclosure' | t }}</p>
     </aside>
   </div>
 </section>
@@ -138,11 +156,13 @@
 .sl-hero {
   position: relative;
   isolation: isolate;
-  min-height: clamp(700px, 78svh, 860px);
   overflow: hidden;
-  background: var(--sl-night);
-  color: var(--sl-bg);
+  background: var(--sl-bg);
+  color: var(--sl-ink);
+  border-bottom: 1px solid var(--sl-border);
 }
+/* The photograph is atmosphere: desaturated hard, dropped to a whisper, and
+   masked away from the readout side so the trace never fights a tree line. */
 .sl-hero::before,
 .sl-hero::after {
   content: "";
@@ -150,21 +170,27 @@
   inset: 0;
   pointer-events: none;
 }
+/* Tuned against a render, not by eye: the first pass buried the photograph
+   so completely that the page was paying 98 KB for a layer that could not be
+   seen at all. It is a ghost now — present enough to place the product on a
+   range at dusk, quiet enough that the trace never competes with a tree
+   line. If it stops being visible, delete the image rather than ship it. */
 .sl-hero::before {
   z-index: 1;
   background:
-    linear-gradient(105deg, rgba(4, 13, 9, 0.96) 0%, rgba(4, 13, 9, 0.84) 38%, rgba(4, 13, 9, 0.28) 64%, rgba(4, 13, 9, 0.12) 100%),
-    linear-gradient(0deg, rgba(4, 13, 9, 0.88) 0%, transparent 42%, rgba(4, 13, 9, 0.14) 100%);
+    linear-gradient(180deg, rgba(7, 15, 11, 0.72) 0%, rgba(7, 15, 11, 0.5) 46%, rgba(7, 15, 11, 0.94) 100%),
+    linear-gradient(90deg, rgba(7, 15, 11, 0.9) 0%, rgba(7, 15, 11, 0.34) 54%, rgba(7, 15, 11, 0.82) 100%);
 }
+/* the 8px instrument grid, brightest at the readout edge */
 .sl-hero::after {
   z-index: 2;
-  opacity: 0.2;
+  opacity: 0.5;
   background-image:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
-  background-size: 64px 64px;
-  -webkit-mask-image: linear-gradient(90deg, #000, transparent 74%);
-  mask-image: linear-gradient(90deg, #000, transparent 74%);
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.03) 1px, transparent 1px);
+  background-size: 8px 8px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 62%);
+  mask-image: linear-gradient(90deg, transparent, #000 62%);
 }
 .sl-hero__backdrop,
 .sl-hero__backdrop picture {
@@ -172,167 +198,155 @@
   inset: 0;
   margin: 0;
 }
-.sl-hero__image {
+.sl-hero__image,
+.sl-hero__video,
+.sl-hero__video video,
+video.sl-hero__video {
   width: 100%;
   height: 100%;
   object-fit: cover;
   object-position: center;
+  filter: grayscale(0.72) contrast(1.08) brightness(0.66);
 }
 .sl-hero__video,
 .sl-hero__video video,
-video.sl-hero__video {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-/* With no video set, the photograph carries the motion: a slow drift,
-   far side of the reduced-motion gate. Alternate keeps the loop seamless. */
+video.sl-hero__video { position: absolute; inset: 0; }
 @media (prefers-reduced-motion: no-preference) {
   .sl-hero__backdrop--motion .sl-hero__image {
-    animation: sl-hero-drift 28s ease-in-out infinite alternate;
+    animation: sl-hero-drift 34s ease-in-out infinite alternate;
     will-change: transform;
   }
 }
 @keyframes sl-hero-drift {
   from { transform: scale(1) translateX(0); }
-  to { transform: scale(1.08) translateX(-1.5%); }
+  to { transform: scale(1.07) translateX(-1.4%); }
 }
+
 .sl-hero__inner {
   position: relative;
   z-index: 4;
-  min-height: clamp(700px, 78svh, 860px);
-  padding-top: clamp(96px, 11vw, 140px);
-  padding-bottom: clamp(72px, 9vw, 120px);
+  padding-top: clamp(72px, 9vw, 116px);
+  padding-bottom: clamp(56px, 7vw, 92px);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 0;
-  align-items: end;
+  gap: clamp(36px, 5vw, 56px);
+  align-items: center;
 }
-.sl-hero__copy {
-  width: 100%;
-  max-width: 720px;
+/* Asymmetric on purpose: the copy takes five columns and the readout seven,
+   so the instrument is the larger object on the page. */
+@media (min-width: 1000px) {
+  .sl-hero__inner {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: clamp(40px, 4vw, 72px);
+    min-height: clamp(620px, 74svh, 800px);
+  }
 }
-.sl-hero__signal-band {
-  position: relative;
-  z-index: 4;
-  margin-top: 0;
-  padding-top: clamp(8px, 1.5vw, 20px);
-  padding-bottom: clamp(36px, 5vw, 64px);
-  display: flex;
-  justify-content: flex-end;
-}
+
+.sl-hero__copy { width: 100%; max-width: 620px; }
 .sl-hero__brand {
-  margin: 0 0 16px;
+  margin: 0 0 clamp(18px, 2vw, 26px);
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  color: var(--sl-bg-card);
-  font-family: var(--sl-font-display);
-  font-size: var(--sl-text-3xl);
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  gap: 10px;
+  color: var(--sl-ink-soft);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
   line-height: 1;
+  text-transform: uppercase;
 }
-.sl-hero__brand span {
-  width: 10px;
-  height: 10px;
+.sl-hero__brand-dot {
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
-  background: var(--sl-accent);
-  box-shadow: 0 0 0 7px rgba(var(--sl-accent-rgb), 0.14);
-  animation: sl-hero-pulse 2.4s ease-in-out infinite;
+  background: var(--sl-trace);
+  box-shadow: 0 0 0 4px rgba(var(--sl-trace-rgb), 0.14);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .sl-hero__brand-dot { animation: sl-hero-pulse 2.6s ease-in-out infinite; }
 }
 @keyframes sl-hero-pulse {
-  0%, 100% { box-shadow: 0 0 0 6px rgba(var(--sl-accent-rgb), 0.1); }
-  50% { box-shadow: 0 0 0 10px rgba(var(--sl-accent-rgb), 0.04); }
+  0%, 100% { box-shadow: 0 0 0 3px rgba(var(--sl-trace-rgb), 0.16); }
+  50% { box-shadow: 0 0 0 8px rgba(var(--sl-trace-rgb), 0.04); }
 }
 .sl-hero__title {
-  max-width: 15ch;
+  max-width: 13ch;
   margin: 0;
-  color: var(--sl-bg-card);
+  color: var(--sl-ink);
   font-family: var(--sl-font-display);
-  font-size: var(--sl-text-4xl);
-  font-weight: 700;
-  letter-spacing: -0.042em;
-  line-height: 1.02;
+  font-size: var(--sl-heading-display);
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 0.98;
   text-align: left;
+  text-transform: uppercase;
   text-wrap: balance;
 }
 .sl-hero__body {
-  max-width: 40ch;
-  margin: 18px 0 0;
-  color: rgba(238, 242, 239, 0.78);
+  max-width: 42ch;
+  margin: clamp(18px, 2vw, 24px) 0 0;
+  color: var(--sl-ink-soft);
   font-size: var(--sl-text-lg);
-  font-weight: 400;
   line-height: 1.55;
-  letter-spacing: -0.01em;
   text-align: left;
   text-wrap: pretty;
 }
 .sl-hero__actions {
-  margin: 28px 0 0;
-  width: min(100%, 480px);
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  margin: clamp(26px, 3vw, 34px) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-3);
 }
 .sl-hero__primary,
 .sl-hero__secondary {
   min-height: 52px;
-  padding: 14px 22px;
+  padding: 14px 24px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 10px;
+  border: 1px solid transparent;
   border-radius: var(--sl-radius-control);
+  font-weight: 600;
+  text-decoration: none;
 }
+/* Bone, not amber. Amber marks a measured value; a button is not one. */
 .sl-hero__primary {
-  border-color: var(--sl-accent);
-  background: var(--sl-accent);
-  color: var(--sl-night);
-  box-shadow: 0 18px 38px -20px rgba(var(--sl-accent-rgb), 0.9);
+  border-color: var(--sl-ink);
+  background: var(--sl-ink);
+  color: var(--sl-bg);
 }
 .sl-hero__primary:hover {
-  border-color: var(--sl-accent-hover);
-  background: var(--sl-accent-hover);
-  color: var(--sl-night);
+  border-color: var(--sl-ink-hi);
+  background: var(--sl-ink-hi);
+  color: var(--sl-bg);
 }
-.sl-hero__primary span:last-child { margin-left: 10px; transition: transform 0.2s ease; }
+.sl-hero__primary span:last-child { transition: transform 0.2s ease; }
 .sl-hero__primary:hover span:last-child { transform: translateX(4px); }
 .sl-hero__secondary {
-  border-color: rgba(238, 242, 239, 0.42);
-  background: rgba(6, 17, 12, 0.36);
-  color: var(--sl-bg);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
+  border-color: var(--sl-control-border);
+  background: transparent;
+  color: var(--sl-ink);
 }
 .sl-hero__secondary:hover {
-  border-color: rgba(238, 242, 239, 0.8);
-  background: rgba(238, 242, 239, 0.1);
-  color: #ffffff;
-}
-.sl-hero__primary:focus-visible,
-.sl-hero__secondary:focus-visible {
-  outline: 3px solid var(--sl-focus-dark);
-  outline-offset: 4px;
+  border-color: var(--sl-ink);
+  background: rgba(var(--sl-cream-rgb), 0.06);
+  color: var(--sl-ink);
 }
 .sl-hero__proof {
-  width: fit-content;
-  max-width: 100%;
-  margin: 22px 0 0;
+  margin: clamp(22px, 2.5vw, 28px) 0 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
   justify-content: flex-start;
-  gap: 8px 18px;
+  gap: 8px 20px;
   list-style: none;
-  border: 0;
-  background: transparent;
 }
 .sl-hero__proof li {
   position: relative;
   padding-left: 14px;
-  color: rgba(238, 242, 239, 0.62);
+  color: var(--sl-ink-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
@@ -342,340 +356,173 @@ video.sl-hero__video {
 .sl-hero__proof li::before {
   content: "";
   position: absolute;
-  top: 0.42em;
+  top: 0.44em;
   left: 0;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #75d59b;
+  width: 5px;
+  height: 5px;
+  background: var(--sl-trace);
 }
 .sl-hero__fine {
   margin: 14px 0 0;
-  color: rgba(238, 242, 239, 0.58);
+  max-width: 46ch;
+  color: var(--sl-ink-muted);
   font-size: var(--sl-text-xs);
-  text-align: left;
 }
-.sl-hero__signal {
-  width: min(100%, 320px);
-  margin: 0;
-  padding: 18px 18px 16px;
-  text-align: left;
-  border: 1px solid rgba(238, 242, 239, 0.16);
-  border-radius: var(--sl-radius);
-  background: rgba(5, 16, 10, 0.55);
-  -webkit-backdrop-filter: blur(18px);
-  backdrop-filter: blur(18px);
-  box-shadow: 0 28px 64px -36px rgba(0, 0, 0, 0.85);
+
+/* ---- the readout ---- */
+.sl-hero__readout {
+  width: 100%;
+  padding: clamp(16px, 1.6vw, 22px);
+  border: 1px solid var(--sl-border-strong);
+  border-radius: var(--sl-radius-lg);
+  background: rgba(4, 9, 7, 0.72);
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: var(--sl-shadow-deep);
 }
-.sl-hero__signal-head {
+.sl-hero__readout-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  flex-wrap: wrap;
-  gap: 10px;
-  color: rgba(238, 242, 239, 0.58);
+  gap: var(--sl-space-3);
+  padding-bottom: var(--sl-space-3);
+  border-bottom: 1px solid var(--sl-border);
+  color: var(--sl-ink-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
-.sl-hero__signal-live { display: inline-flex; align-items: center; gap: 7px; color: #8be4ad; }
-.sl-hero__signal-live i {
-  width: 7px;
-  height: 7px;
+.sl-hero__readout-live { display: inline-flex; align-items: center; gap: 8px; color: var(--sl-trace); }
+.sl-hero__readout-live i {
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow: 0 0 0 5px rgba(139, 228, 173, 0.12);
+  box-shadow: 0 0 0 4px rgba(var(--sl-trace-rgb), 0.12);
 }
 .sl-hero__trace {
   position: relative;
-  height: 88px;
-  margin-top: 14px;
+  margin-top: var(--sl-space-3);
+  aspect-ratio: 5 / 4;
   overflow: hidden;
-  border: 1px solid rgba(238, 242, 239, 0.1);
+  border: 1px solid var(--sl-border);
   border-radius: var(--sl-radius-sm);
   background:
-    linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
-    rgba(255, 255, 255, 0.02);
-  background-size: 24px 24px;
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.028) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.028) 1px, transparent 1px),
+    var(--sl-night);
+  background-size: 16px 16px;
 }
-.sl-hero__trace-svg {
+@media (min-width: 1000px) { .sl-hero__trace { aspect-ratio: 16 / 11; } }
+.sl-hero__trace-canvas,
+.sl-hero__trace-still {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
 }
-/* Defaults are the FULLY DRAWN still: reduced-motion, print, and any
-   context without CSS animation all get a complete trace, never an empty
-   grid. The keyframes below override these only while running. */
+/* The still is the default state and the canvas paints over it. Both are
+   present until JS confirms the canvas took, so there is never a frame in
+   which this box is empty. */
+.sl-hero__trace-still[hidden] { display: none; }
 .sl-hero__trace-arc {
   fill: none;
-  stroke: rgba(238, 242, 239, 0.45);
-  stroke-width: 1.6;
+  stroke: var(--sl-trace);
+  stroke-width: 2;
   stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
+  opacity: 0.85;
 }
-.sl-hero__trace-strike {
-  fill: none;
-  stroke: #f28a32;
-  stroke-width: 2.2;
-  stroke-linecap: round;
-  stroke-dasharray: 100;
-  stroke-dashoffset: 0;
-  filter: drop-shadow(0 0 7px rgba(242, 138, 50, 0.5));
-}
-.sl-hero__trace-tick path {
-  fill: none;
-  stroke: rgba(238, 242, 239, 0.65);
-  stroke-width: 1.2;
-}
-.sl-hero__trace-impact {
-  fill: none;
-  stroke: #f28a32;
-  stroke-width: 1.4;
-  opacity: 0;
-  transform-box: fill-box;
-  transform-origin: center;
-}
-.sl-hero__trace-ball {
-  fill: var(--sl-bg);
-  opacity: 0.9;
-}
-/* The 9.2s read cycle. Stops encode the engine's own benchmark: the
-   backswing draws 3%→32% (2.67s), holds at the top, and the strike
-   retraces 35.6%→45% (0.86s) — the 3:1 tempo_ratio target, animated.
-   Then impact pulses, the read holds, fades, and the window rests. The
-   77% jump-frames reset dash offsets while opacity is 0. */
-@media (prefers-reduced-motion: no-preference) {
-  .sl-hero__trace-arc { animation: sl-swing-read 9.2s linear infinite; }
-  .sl-hero__trace-strike { animation: sl-swing-strike 9.2s linear infinite; }
-  .sl-hero__trace-tick--mid { animation: sl-swing-tick-mid 9.2s linear infinite; }
-  .sl-hero__trace-tick--top { animation: sl-swing-tick-top 9.2s linear infinite; }
-  .sl-hero__trace-impact { animation: sl-swing-impact 9.2s linear infinite; }
-  .sl-hero__trace-ball { animation: sl-swing-anchor 9.2s linear infinite; }
-  .sl-hero__signal-live i { animation: sl-live-blink 3.1s ease-in-out infinite; }
-}
-@keyframes sl-swing-read {
-  0%, 2.9% { stroke-dashoffset: 100; opacity: 0; }
-  3% { stroke-dashoffset: 100; opacity: 1; animation-timing-function: cubic-bezier(0.33, 0, 0.45, 1); }
-  32%, 69.9% { stroke-dashoffset: 0; opacity: 1; }
-  76%, 76.9% { stroke-dashoffset: 0; opacity: 0; }
-  77%, 100% { stroke-dashoffset: 100; opacity: 0; }
-}
-@keyframes sl-swing-strike {
-  0%, 35.5% { stroke-dashoffset: -100; opacity: 0; }
-  35.6% { stroke-dashoffset: -100; opacity: 1; animation-timing-function: cubic-bezier(0.55, 0, 0.85, 0.6); }
-  45%, 69.9% { stroke-dashoffset: 0; opacity: 1; }
-  76%, 76.9% { stroke-dashoffset: 0; opacity: 0; }
-  77%, 100% { stroke-dashoffset: -100; opacity: 0; }
-}
-@keyframes sl-swing-tick-mid {
-  0%, 17% { opacity: 0; }
-  20%, 69.9% { opacity: 0.75; }
-  76%, 100% { opacity: 0; }
-}
-@keyframes sl-swing-tick-top {
-  0%, 31% { opacity: 0; }
-  33%, 69.9% { opacity: 0.9; }
-  76%, 100% { opacity: 0; }
-}
-@keyframes sl-swing-impact {
-  0%, 44.9% { opacity: 0; transform: scale(0.25); }
-  45% { opacity: 0.85; }
-  53%, 100% { opacity: 0; transform: scale(1.15); }
-}
-@keyframes sl-swing-anchor {
-  0%, 3% { opacity: 0; }
-  8%, 69.9% { opacity: 0.9; }
-  76%, 100% { opacity: 0; }
-}
-@keyframes sl-live-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
-}
-.sl-hero__signal-grid {
-  margin: 14px 0 0;
+.sl-hero__trace-figure { fill: none; stroke: rgba(var(--sl-cream-rgb), 0.5); stroke-width: 1.6; stroke-linecap: round; }
+.sl-hero__trace-tick { fill: none; stroke: var(--sl-accent); stroke-width: 1; }
+.sl-hero__readout-grid {
+  margin: var(--sl-space-4) 0 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0;
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
 }
-.sl-hero__signal-grid > div { min-width: 0; padding: 0 10px; }
-.sl-hero__signal-grid > div:first-child { padding-left: 0; }
-.sl-hero__signal-grid > div:last-child { padding-right: 0; }
-.sl-hero__signal-grid > div + div { border-left: 1px solid rgba(238, 242, 239, 0.12); }
-.sl-hero__signal-grid dt {
-  color: rgba(238, 242, 239, 0.58);
+.sl-hero__readout-grid > div { padding: var(--sl-space-3); background: var(--sl-bg-card); }
+.sl-hero__readout-grid dt {
+  margin: 0 0 6px;
+  color: var(--sl-ink-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
-  letter-spacing: 0.1em;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  text-align: left;
 }
-.sl-hero__signal-grid dd {
-  margin: 5px 0 0;
-  color: var(--sl-bg);
-  font-size: var(--sl-text-xs);
-  font-weight: 700;
+/* The values ARE measurements, so they are the amber. */
+.sl-hero__readout-grid dd {
+  margin: 0;
+  color: var(--sl-accent);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-sm);
+  font-weight: 500;
   line-height: 1.3;
-  text-align: left;
 }
-.sl-hero__signal-note {
-  margin: 12px 0 0;
-  color: rgba(238, 242, 239, 0.58);
+.sl-hero__readout-note {
+  margin: var(--sl-space-3) 0 0;
+  color: var(--sl-ink-muted);
   font-size: var(--sl-text-xs);
-  line-height: 1.4;
-  text-align: left;
+  line-height: 1.5;
 }
-@media (max-width: 999px) {
-  .sl-hero__title { font-size: var(--sl-text-4xl); }
-}
+
 @media (max-width: 749px) {
-  .sl-hero {
-    /* Roomy but not sprawling: the copy breathes and the compact signal
-       card still lands within the first easy scroll. */
-    --sl-mobile-hero-height: clamp(560px, calc(96svh - 180px), 660px);
-    min-height: var(--sl-mobile-hero-height);
-  }
-  /* Bottom-anchored copy means the shade belongs at the BOTTOM. A modest
-     band under the header keeps nav contrast, the middle opens up so the
-     photograph actually shows, and the deep ramp starts where the type
-     starts. The old gradient was 95% opaque at the top — a black field. */
-  .sl-hero::before {
-    background:
-      linear-gradient(180deg, rgba(4, 13, 9, 0.6) 0%, rgba(4, 13, 9, 0.2) 26%, rgba(4, 13, 9, 0.34) 52%, rgba(4, 13, 9, 0.9) 100%),
-      linear-gradient(90deg, rgba(4, 13, 9, 0.28), rgba(4, 13, 9, 0.04));
-  }
-  .sl-hero::after {
-    background-size: 48px 48px;
-    -webkit-mask-image: linear-gradient(180deg, #000, transparent 68%);
-    mask-image: linear-gradient(180deg, #000, transparent 68%);
-  }
-  .sl-hero__image { object-position: 32% center; }
+  /* One custom property drives every height on the phone hero, so the fold
+     is tuned in one place instead of three. svh (not vh) is the whole point:
+     vh is the LARGEST viewport on iOS, so a vh-sized hero is taller than the
+     screen until the address bar retracts, and the CTA starts below the fold. */
+  .sl-hero { --sl-mobile-hero-height: 88svh; }
   .sl-hero__inner {
     min-height: var(--sl-mobile-hero-height);
-    padding-top: clamp(52px, 8vw, 68px);
-    padding-bottom: clamp(40px, 7vw, 56px);
-    grid-template-columns: 1fr;
     align-content: end;
     justify-items: stretch;
-    gap: 0;
+    padding-top: clamp(56px, 18vw, 96px);
   }
-  /* The signal card stays on phones (the only visual showing what the
-     product produces) — as a compact fact strip; rules further down. */
-  .sl-hero__copy {
-    margin-inline: 0;
-    text-align: left;
-  }
-  .sl-hero__brand {
-    font-size: var(--sl-text-2xl);
-  }
-  .sl-hero__title {
-    max-width: 11ch;
-    margin-inline: 0;
-    font-size: var(--sl-text-4xl);
-    line-height: 1.02;
-  }
-  .sl-hero__body {
-    max-width: 36ch;
-    margin-inline: 0;
-    margin-top: 16px;
-    font-size: var(--sl-text-base);
-    line-height: 1.48;
-    text-align: left;
-  }
-  .sl-hero__actions {
-    width: min(100%, 320px);
-    grid-template-columns: 1fr;
-    gap: 10px;
-    margin: 24px 0 0;
-  }
-  .sl-hero__primary { width: 100%; min-height: 48px; padding: 12px 18px; }
-  .sl-hero__secondary {
-    width: 100%;
-    min-height: 44px;
-    padding: 10px 16px;
-    justify-self: stretch;
-    justify-content: center;
-    border: 1px solid rgba(238, 242, 239, 0.34);
-    background: rgba(6, 17, 12, 0.42);
-    text-decoration: none;
-  }
-  .sl-hero__secondary:hover { border-color: rgba(238, 242, 239, 0.72); background: rgba(238, 242, 239, 0.1); }
-  /* One quiet mono line: the 2-column grid orphaned the third chip and
-     its green dots fought the orange brand dot. Middots, one color. */
-  .sl-hero__proof {
-    width: 100%;
-    margin: 18px 0 0;
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: flex-start;
-    gap: 4px 0;
-  }
-  .sl-hero__proof li {
-    padding-left: 0;
-    color: rgba(var(--sl-cream-rgb), 0.55);
-    font-size: var(--sl-text-xs);
-    letter-spacing: 0.09em;
-  }
+  /* The portrait companion is framed on its subject rather than left to the
+     default centre crop, which on a narrow screen cut the golfer in half.
+     Not 58% — that was tuned for the old composition, where the copy sat on
+     the left and the frame had to be pushed right to clear it. The copy is
+     full-width here and the photograph is a ghost, so it centres. */
+  .sl-hero__image { object-position: center 42%; }
+  .sl-hero__copy { max-width: 100%; text-align: left; }
+  .sl-hero__title { max-width: 100%; text-align: left; }
+  .sl-hero__body { text-align: left; }
+  .sl-hero__actions { margin: 24px 0 0; display: grid; grid-template-columns: minmax(0, 1fr); }
+  /* The proof chips are one quiet mono line on phones. The dot markers fought
+     the brand dot above them and a grid orphaned the third chip, so the
+     separator is a middot between items and the markers are gone. */
+  .sl-hero__proof { margin: 18px 0 0; display: flex; gap: 0 10px; }
+  .sl-hero__proof li { padding-left: 0; }
   .sl-hero__proof li::before { display: none; }
-  .sl-hero__proof li + li::before {
+  .sl-hero__proof li + li::after {
     content: "\00B7";
-    display: inline;
-    position: static;
-    margin: 0 var(--sl-space-2);
-    background: none;
-    width: auto;
-    height: auto;
+    position: absolute;
+    left: -8px;
+    color: var(--sl-ink-muted);
   }
-  .sl-hero__fine {
-    max-width: 40ch;
-    margin: 6px 0 0;
-    color: rgba(var(--sl-cream-rgb), 0.45);
-    text-align: left;
-  }
-  .sl-hero__signal {
+  /* aspect-ratio: auto is load-bearing, not tidying. The base rule sets
+     aspect-ratio: 5/4, and a height with a live aspect-ratio also fixes the
+     WIDTH — 64px tall became 80px wide, so the readout rendered as a
+     thumbnail in the corner of its own panel. Height wins only once the
+     ratio stops competing for it. */
+  .sl-hero__trace {
+    aspect-ratio: auto;
     width: 100%;
-    padding: var(--sl-space-4) var(--sl-space-4) var(--sl-space-3);
+    height: 64px;
+    margin-top: 12px;
   }
-  /* The R2 pass hid the trace here because a static doodle didn't earn
-     its rows. The live read does — it's the one moving proof of what the
-     product produces — so it returns at a compact height above the
-     fact-strip rows. */
-  .sl-hero__trace { height: 64px; margin-top: 12px; }
-  .sl-hero__signal-grid {
-    margin-top: var(--sl-space-2);
-    display: block;
-  }
-  .sl-hero__signal-grid > div {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: var(--sl-space-3);
-    padding: var(--sl-space-2) 0;
-  }
-  .sl-hero__signal-grid > div + div {
-    border-left: 0;
-    border-top: 1px solid rgba(238, 242, 239, 0.12);
-  }
-  .sl-hero__signal-grid dt { letter-spacing: 0.08em; }
-  .sl-hero__signal-grid dd { margin: 0; text-align: right; }
-  .sl-hero__signal-note { margin-top: var(--sl-space-2); }
-  .sl-hero__signal-band {
-    padding-top: var(--sl-space-3);
-    padding-bottom: var(--sl-space-6);
-  }
+  .sl-hero__readout-grid { grid-template-columns: minmax(0, 1fr); }
 }
 @media (max-width: 559px) {
-  .sl-hero__brand { font-size: var(--sl-text-xl); letter-spacing: -0.03em; }
-  .sl-hero__title { max-width: 10ch; font-size: var(--sl-text-4xl); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .sl-hero__primary span { transition: none; }
-  .sl-hero__brand span { animation: none; }
+  /* The narrowest supported phone. The display face is EXPANDED, so it eats
+     line width far faster than the old condensed-neutral did — the headline
+     needs its own rung here rather than riding the fluid clamp down. */
+  .sl-hero__title { font-size: var(--sl-text-3xl); }
+  .sl-hero__inner { min-height: var(--sl-mobile-hero-height); }
 }
 {% endstylesheet %}
 
@@ -683,23 +530,23 @@ video.sl-hero__video {
 {
   "name": "Premium hero",
   "settings": [
-    { "type": "text", "id": "eyebrow", "label": "Brand wordmark", "default": "CaddieInsight" },
-    { "type": "text", "id": "heading", "label": "Heading", "default": "Bring one clear move to the range." },
-    { "type": "textarea", "id": "body", "label": "Body", "default": "Choose the club, film one repeatable view, and get one prioritized coaching plan with a pass mark for your next clip." },
+    { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "CaddieInsight" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Prove the fix held." },
+    { "type": "textarea", "id": "body", "label": "Body", "default": "Film one repeatable view. Get one prioritized coaching plan with a drill and a pass mark for your next clip." },
     { "type": "text", "id": "primary_label", "label": "Primary button label", "default": "Analyze a swing free" },
     { "type": "url", "id": "primary_url", "label": "Primary button link" },
     { "type": "text", "id": "secondary_label", "label": "Secondary button label", "default": "Explore the sample report" },
     { "type": "url", "id": "secondary_url", "label": "Secondary button link" },
-    { "type": "text", "id": "chip1", "label": "Proof point 1", "default": "1 REPORT / MONTH" },
-    { "type": "text", "id": "chip2", "label": "Proof point 2", "default": "NO CARD" },
-    { "type": "text", "id": "chip3", "label": "Proof point 3", "default": "CLUB SAVED" },
+    { "type": "text", "id": "chip1", "label": "Proof chip 1", "default": "1 REPORT / MONTH" },
+    { "type": "text", "id": "chip2", "label": "Proof chip 2", "default": "NO CARD" },
+    { "type": "text", "id": "chip3", "label": "Proof chip 3", "default": "CLUB SAVED" },
     { "type": "text", "id": "fine_print", "label": "Fine print", "default": "Supported 2D movement and timing estimates from phone video." },
-    { "type": "video", "id": "video", "label": "Hero video (loops, muted)", "info": "A short 8–20s loop — filmed range or swing footage works best. No audio needed; it plays muted. Leave blank and the hero uses the photograph with a slow drift instead." },
-    { "type": "image_picker", "id": "image", "label": "Desktop hero image", "info": "Fallback and poster when no video is set. Leave blank to use the packaged dusk-range artwork (caddieinsight-range-hero-desktop.webp)." },
-    { "type": "image_picker", "id": "mobile_image", "label": "Mobile hero image", "info": "Leave blank to use the packaged portrait companion (caddieinsight-range-hero-mobile.webp)." },
-    { "type": "text", "id": "signal_club", "label": "Sample club", "default": "Iron" },
-    { "type": "text", "id": "signal_priority", "label": "Sample priority", "default": "Lead-hip control" },
-    { "type": "text", "id": "signal_target", "label": "Sample target", "default": "One pass mark" }
+    { "type": "video", "id": "video", "label": "Background video" },
+    { "type": "image_picker", "id": "image", "label": "Background image" },
+    { "type": "image_picker", "id": "mobile_image", "label": "Mobile background image" },
+    { "type": "text", "id": "signal_club", "label": "Readout: club", "default": "Iron" },
+    { "type": "text", "id": "signal_priority", "label": "Readout: coaching priority", "default": "Lead-hip control" },
+    { "type": "text", "id": "signal_target", "label": "Readout: practice target", "default": "One pass mark" }
   ],
   "presets": [{ "name": "Premium hero" }]
 }

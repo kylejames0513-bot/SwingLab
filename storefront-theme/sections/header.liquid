@@ -355,7 +355,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   text-decoration: none;
   white-space: nowrap;
 }
-.sl-member-rail__action:hover { border-color: var(--sl-accent); color: var(--sl-accent-hover); }
+.sl-member-rail__action:hover { border-color: var(--sl-ink); color: var(--sl-ink-hi); }
 
 /* -- overlay pull-up (contract) ------------------------------------------- */
 .shopify-section:has(> .sl-header--overlay) { margin-bottom: -76px; }
@@ -412,10 +412,14 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   list-style: none;
 }
 .sl-header__dropdown-trigger::-webkit-details-marker { display: none; }
+/* "You are here" is navigation state, not a measured value, so it is carried
+   by weight and an underline rather than by the signal colour. The nav is on
+   every page, which made this the most repeated wrong use of amber in the
+   product. */
 .sl-header__link:hover,
-.sl-header__dropdown-trigger:hover { color: var(--sl-orange); }
+.sl-header__dropdown-trigger:hover { color: var(--sl-ink); }
 .sl-header__link.is-current {
-  color: var(--sl-orange);
+  color: var(--sl-ink);
   text-decoration: underline;
   text-underline-offset: 6px;
   text-decoration-thickness: 2px;
@@ -591,7 +595,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
 .sl-header--premium .sl-header__dropdown-trigger:hover,
 .sl-header--premium .sl-header__cart:hover,
 .sl-header--premium .sl-header__search:hover { color: var(--sl-accent-hover); background: none; }
-.sl-header--premium .sl-header__link.is-current { color: var(--sl-accent-hover); }
+.sl-header--premium .sl-header__link.is-current { color: var(--sl-ink); }
 .sl-header--premium .sl-header__dropdown-menu {
   background: var(--sl-night);
   border-color: rgba(var(--sl-cream-rgb), 0.16);
@@ -603,12 +607,25 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   background: rgba(var(--sl-cream-rgb), 0.08);
   color: var(--sl-accent-hover);
 }
+/* Bone, not amber. Amber marks a value the engine measured, and the single
+   most prominent amber object on the storefront was this button — which is
+   how a reader learns amber means "important" instead. On a near-black field
+   bone is louder than amber was, so the rule costs nothing here.
+
+   The cart count keeps a signal-adjacent treatment because it IS a count:
+   a number the store is reporting, which is the closest thing the chrome has
+   to a measured value. It is a border rather than a fill so it does not read
+   as a second call to action beside the first. */
 .sl-header--premium .sl-header__cta {
-  background: var(--sl-accent);
-  color: var(--sl-night);
+  background: var(--sl-ink);
+  color: var(--sl-green-ink);
 }
-.sl-header--premium .sl-header__cta:hover { background: var(--sl-accent-hover); color: var(--sl-night); }
-.sl-header--premium .sl-header__cart-count { background: var(--sl-accent); color: var(--sl-night); }
+.sl-header--premium .sl-header__cta:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
+.sl-header--premium .sl-header__cart-count {
+  background: transparent;
+  border: 1px solid var(--sl-accent);
+  color: var(--sl-accent);
+}
 
 .sl-header--overlay {
   position: relative;
@@ -713,7 +730,7 @@ html.sl-menu-open { overflow: hidden; }
   cursor: pointer;
 }
 .sl-menu__link:hover { color: var(--sl-orange); }
-.sl-menu__link.is-current { color: var(--sl-orange); }
+.sl-menu__link.is-current { color: var(--sl-ink); }
 .sl-menu .sl-app-auth__welcome { padding-left: var(--sl-space-1); }
 
 /* Premium pages get the night drawer (contract: .sl-premium-chrome .sl-menu) */
@@ -724,8 +741,8 @@ html.sl-menu-open { overflow: hidden; }
 .sl-premium-chrome .sl-menu .sl-menu__close { border-color: rgba(var(--sl-cream-rgb), 0.3); }
 .sl-premium-chrome .sl-menu .sl-menu__link { border-bottom-color: rgba(var(--sl-cream-rgb), 0.12); }
 .sl-premium-chrome .sl-menu .sl-menu__link:hover,
-.sl-premium-chrome .sl-menu .sl-menu__link.is-current { color: var(--sl-accent-hover); }
-.sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: var(--sl-accent-hover); }
+.sl-premium-chrome .sl-menu .sl-menu__link.is-current { color: var(--sl-ink); }
+.sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: var(--sl-ink-muted); }
 .sl-premium-chrome .sl-menu .sl-menu__title { color: rgba(var(--sl-cream-rgb), 0.6); }
 .sl-premium-chrome .sl-menu .sl-app-auth__welcome { color: rgba(var(--sl-cream-rgb), 0.6); }
 

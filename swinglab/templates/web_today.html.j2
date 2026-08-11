@@ -1,172 +1,499 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Today{% endblock %}
 {% block style %}
-  main { max-width: 1160px; }
-  .today-shell { display: grid; gap: 22px; }
+  /* ------------------------------------------------------------------ today
+     The signed-in front panel. Everything here is RULED rather than floated:
+     on a near-black field a drop shadow renders as nothing at all, so the
+     hierarchy is carried by hairlines, a deeper well, and mono labels sitting
+     directly above the values they name. Amber appears only on a reading the
+     engine holds; cyan only where something is being read live. */
+  main {
+    /* The shell centres --sl-content INSIDE --sl-pad-x for both the header and
+       the footer, so matching it means ADDING the padding to the max-width,
+       not subtracting it. At the old fixed 1160px the dashboard rules sat
+       ~60px inboard of the logo directly above them, and a rule that nearly
+       lines up reads as a misprint on an instrument. */
+    max-width: calc(var(--sl-content) + var(--sl-pad-x) * 2);
+    padding-inline: var(--sl-pad-x);
+  }
+  .today-shell { display: grid; gap: var(--sl-space-4); }
+
+  /* --- masthead ---------------------------------------------------------- */
   .today-intro {
     position: relative;
     overflow: hidden;
-    padding: clamp(26px, 5vw, 48px);
-    border: 1px solid rgba(255, 255, 255, .14);
-    border-radius: var(--sl-radius-xl);
-    background:
-      radial-gradient(circle at 88% 14%, rgba(255, 204, 142, .2), transparent 17rem),
-      var(--sl-premium-gradient);
-    color: #fff;
-    box-shadow: var(--sl-shadow-lg);
+    padding: clamp(22px, 4vw, 40px);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-lg);
+    background: var(--sl-night);
+    box-shadow: var(--sl-shadow-sm);
   }
+  /* The 8px measuring grid, brightening toward the trailing edge — the same
+     device the storefront hero uses to say "this surface is an instrument".
+     It replaces an outlined circle that carried no meaning and a premium
+     gradient that no longer exists on a dark field. */
   .today-intro::after {
     content: "";
     position: absolute;
-    right: -74px;
-    bottom: -122px;
-    width: 270px;
-    height: 270px;
-    border: 1px solid rgba(255, 255, 255, .12);
-    border-radius: 50%;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      linear-gradient(rgba(var(--sl-cream-rgb), .035) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .035) 1px, transparent 1px);
+    background-size: 8px 8px;
+    -webkit-mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-night-rgb), 1) 92%);
+    mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-night-rgb), 1) 92%);
   }
-  .today-intro__copy { position: relative; z-index: 1; max-width: 730px; }
+  .today-intro__copy { position: relative; z-index: 1; max-width: 64ch; }
   .today-kicker {
-    margin: 0 0 7px;
-    color: var(--sl-orange-text);
+    margin: 0 0 var(--sl-space-3);
+    display: flex;
+    align-items: center;
+    gap: var(--sl-space-3);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .72rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .12em;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
     text-transform: uppercase;
   }
-  .today-intro .today-kicker { color: var(--sl-premium-accent); }
+  /* A hairline carries on from the label to the panel edge, the way a printed
+     label sits on a rule. It is the cheapest way to make a heading read as
+     part of a panel rather than as a paragraph. */
+  .today-kicker::after {
+    content: "";
+    flex: 1 1 auto;
+    height: 1px;
+    background: var(--sl-border-strong);
+  }
   .today-intro h1 {
     margin: 0;
-    color: #fff;
-    font-size: clamp(2.45rem, 8vw, 5rem);
-    line-height: .98;
-    letter-spacing: -.055em;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    font-weight: 800;
+    letter-spacing: -.02em;
+    line-height: .96;
+    text-transform: uppercase;
   }
-  .today-welcome { margin: 17px 0 3px; color: #fff; font-size: clamp(1.15rem, 3vw, 1.5rem); font-weight: 700; }
-  .today-intro__detail { margin: 0; max-width: 630px; color: #dcebe1; }
-  .today-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .today-welcome {
+    margin: var(--sl-space-4) 0 var(--sl-space-2);
+    color: var(--sl-ink);
+    font-size: var(--sl-text-xl);
+    font-weight: 700;
+    line-height: 1.25;
+  }
+  .today-intro__detail { margin: 0; max-width: 58ch; color: var(--sl-ink-soft); }
+
+  /* --- the three context readings ---------------------------------------- */
+  /* One instrument block, not three cards: a 1px lattice with the border
+     colour showing through the gaps. */
+  .today-metrics {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-border);
+  }
   .today-metric {
     min-width: 0;
     height: 100%;
-    padding: 18px;
-    border: 1px solid var(--sl-border);
-    border-radius: var(--sl-radius-md);
-    background: rgba(255, 254, 250, .88);
-    box-shadow: var(--sl-shadow-sm);
+    padding: var(--sl-space-4);
+    background: var(--sl-bg-card);
   }
-  .today-metric__label { margin: 0 0 7px; color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: .66rem; font-weight: 500; letter-spacing: .12em; text-transform: uppercase; }
-  .today-metric__value { margin: 0; color: var(--sl-green); font-size: clamp(1.05rem, 2vw, 1.3rem); font-weight: 800; }
-  .today-metric__detail { margin: 4px 0 0; color: var(--sl-ink-soft); font-size: .84rem; }
+  .today-metric__label {
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1.2;
+    text-transform: uppercase;
+  }
+  /* Amber, and mono, because these are the readings the engine holds for this
+     golfer and sizes every piece of its advice against — the same role the
+     storefront readout gives its club / priority / target values. Amber is
+     never spent on emphasis or on a button anywhere on this page. */
+  .today-metric__value {
+    margin: 0;
+    color: var(--sl-accent);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-lg);
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  /* Hidden by default and restored at 560px: below that the third column
+     cannot hold a readable sentence, so the tiles keep the reading and drop
+     the explanation of it rather than shipping a two-word-per-line column. */
+  .today-metric__detail { display: none; margin: var(--sl-space-2) 0 0; color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
+
+  /* --- the one priority --------------------------------------------------- */
   .next-move {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: clamp(20px, 4vw, 46px);
-    align-items: center;
-    padding: clamp(24px, 4vw, 38px);
-    border: 1px solid #d9c8b2;
+    gap: var(--sl-space-5);
+    align-items: start;
+    padding: clamp(20px, 3.5vw, 34px);
+    border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-lg);
-    background: linear-gradient(135deg, #fffdfa, #fff4e5);
-    box-shadow: var(--sl-shadow-md);
+    background: var(--sl-bg-card);
+    /* The only surface on the page carrying the deeper shadow: it is the one
+       block a golfer must read first, and on a dark field a lit top edge is
+       the only separation that is actually visible. */
+    box-shadow: var(--sl-shadow-sm), var(--sl-shadow-md);
   }
-  .next-move h2 { margin: 5px 0 9px; color: var(--sl-green); font-size: clamp(1.55rem, 4vw, 2.45rem); line-height: 1.08; letter-spacing: -.035em; }
-  .next-move p { margin: 8px 0; color: var(--sl-ink-soft); }
-  .next-move__actions { min-width: min(100%, 215px); display: grid; gap: 10px; justify-items: stretch; }
-  .next-move__actions .button { margin: 0; text-align: center; }
-  .next-move__secondary { font-size: .84rem; font-weight: 700; text-align: center; }
+  /* Display face, but NOT uppercased like the panel nameplates below. This
+     heading is a full sentence the engine wrote about one swing, and expanded
+     800-weight caps at sentence length stop being readable. */
+  .next-move h2 {
+    margin: var(--sl-space-3) 0 var(--sl-space-2);
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-support);
+    letter-spacing: -.02em;
+    line-height: 1.06;
+  }
+  .next-move p { margin: var(--sl-space-2) 0 0; color: var(--sl-ink-soft); }
+  .next-move p strong { color: var(--sl-ink); font-weight: 700; }
+  .next-move__actions { display: grid; gap: var(--sl-space-2); align-content: start; justify-items: stretch; }
+  /* Sits directly under the primary action, so it needs the same 44px target
+     even though it is a text link rather than a button. */
+  .next-move__secondary {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: var(--sl-text-sm);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  /* --- state pills -------------------------------------------------------- */
   .state-pill {
     display: inline-flex;
     align-items: center;
+    gap: var(--sl-space-2);
     width: fit-content;
-    padding: 5px 10px;
-    border-radius: var(--sl-radius-control);
-    background: #e7efe9;
-    color: var(--sl-green);
+    padding: 5px 9px;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink-soft);
     font-family: var(--sl-font-mono);
-    font-size: .66rem;
+    font-size: var(--sl-text-xs);
     font-weight: 500;
-    letter-spacing: .08em;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1.2;
     text-transform: uppercase;
   }
-  .state-pill--queued, .state-pill--processing { background: #e9eff5; color: #285170; }
-  .state-pill--failed, .state-pill--refilm { background: #fff0e4; color: #8d3b10; }
-  .state-pill--coaching_ready { background: #e1f1e5; color: #155d35; }
-  .dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(290px, .85fr); gap: 22px; align-items: start; }
+  /* A square tick rather than a dot: state is never carried by colour alone,
+     and the tick reads at a glance in the recent-session list too. */
+  .state-pill::before {
+    content: "";
+    flex: 0 0 auto;
+    width: 5px;
+    height: 5px;
+    background: currentColor;
+  }
+  /* Cyan is the LIVE READ and nothing else, which is exactly what these two
+     states are: the engine has the clip and is working on it right now. */
+  .state-pill--queued, .state-pill--processing { color: var(--sl-trace); border-color: rgba(var(--sl-trace-rgb), .38); }
+  /* --sl-danger, not the retired light-card red: that one lands at 2.97:1 on
+     this field, which would have made the pill a golfer most needs to read
+     the least readable thing on the page. No literal is spelled out here —
+     naming a dead colour is how one gets pinned back into the file. */
+  .state-pill--failed, .state-pill--refilm { color: var(--sl-danger); border-color: rgba(var(--sl-cream-rgb), .18); }
+  .state-pill--coaching_ready { color: var(--sl-ink); border-color: rgba(var(--sl-cream-rgb), .26); }
+  @media (prefers-reduced-motion: no-preference) {
+    .state-pill--queued::before,
+    .state-pill--processing::before { animation: today-live 2.4s ease-in-out infinite; }
+  }
+  @keyframes today-live {
+    0%, 100% { opacity: 1; }
+    50% { opacity: .34; }
+  }
+
+  /* --- panels -------------------------------------------------------------- */
+  .dashboard-grid { display: grid; gap: var(--sl-space-4); align-items: start; }
   .dashboard-panel {
     min-width: 0;
-    padding: clamp(21px, 3.5vw, 32px);
+    padding: clamp(18px, 3vw, 28px);
     border: 1px solid var(--sl-border);
     border-radius: var(--sl-radius-lg);
     background: var(--sl-bg-card);
     box-shadow: var(--sl-shadow-sm);
   }
-  .dashboard-panel__header { display: flex; justify-content: space-between; gap: 18px; align-items: baseline; margin-bottom: 17px; }
-  .dashboard-panel__header h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.35rem, 3vw, 1.85rem); letter-spacing: -.025em; }
-  .dashboard-panel__header a { font-size: .85rem; font-weight: 700; white-space: nowrap; }
-  .practice-lead { margin: -5px 0 18px; color: var(--sl-ink-soft); }
-  .practice-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 11px; margin: 17px 0; }
-  .practice-option { min-width: 0; height: 100%; padding: 14px; display: flex; flex-direction: column; border: 1px solid var(--sl-border-strong); border-radius: 12px; background: #fff; }
-  .practice-option.selected { border: 2px solid var(--sl-green-btn); background: #f0f7f2; }
-  .structured-practice .practice-option { flex-direction: row; gap: 9px; cursor: pointer; }
-  .structured-practice .practice-option input { flex: 0 0 auto; margin-top: 5px; }
-  .structured-practice label[for="practice-outcome"] { display: block; margin: 15px 0 6px; font-weight: 700; }
-  .structured-practice select { width: 100%; max-width: 360px; min-height: 44px; padding: 9px; border: 1px solid var(--sl-control-border); border-radius: 8px; background: #fff; color: var(--sl-ink); }
-  .practice-option h3, .practice-option h4 { margin: 0 0 7px; color: var(--sl-green); font-size: .96rem; line-height: 1.35; }
-  .practice-option p { margin: 7px 0; color: var(--sl-ink-soft); font-size: .84rem; }
-  .today-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 17px; }
-  .today-actions form { margin: 0; }
-  .proof-note { margin: 0 0 20px; padding: 17px 18px; border: 1px solid #c9d9cd; border-radius: var(--sl-radius-md); background: #f1f7f2; }
-  .proof-note[data-proof-state="attention"] { border-color: #e5c5ad; background: #fff5eb; }
-  .proof-note h3 { margin: 2px 0 7px; color: var(--sl-green); }
-  .proof-note p { margin: 6px 0; color: var(--sl-ink-soft); font-size: .9rem; }
-  .recent-list { margin: 0; padding: 0; display: grid; gap: 10px; list-style: none; }
-  .recent-session { padding: 14px; border: 1px solid var(--sl-border); border-radius: 12px; background: #fff; }
-  .recent-session__top { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-  .recent-session__link { color: var(--sl-green); font-weight: 800; text-decoration: none; }
-  .recent-session__meta { margin: 3px 0 0; color: var(--sl-ink-muted); font-size: .79rem; }
-  .recent-session__detail { margin: 9px 0 0; color: var(--sl-ink-soft); font-size: .85rem; }
-  .empty-note { margin: 0; padding: 17px; border: 1px dashed var(--sl-border-strong); border-radius: 12px; color: var(--sl-ink-soft); background: #fafaf6; }
-  .success { margin: 0; padding: 12px 16px; border-left: 4px solid var(--sl-green-btn); border-radius: 7px; background: #e5f3ea; color: #124529; }
-  .loop-strip { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 9px; padding: 5px 0 2px; color: var(--sl-ink-muted); font-family: var(--sl-font-mono); font-size: .72rem; text-transform: uppercase; letter-spacing: .08em; }
-  .loop-strip strong { color: var(--sl-green); }
-  .loop-strip__arrow { color: var(--sl-orange); }
-  @media (max-width: 850px) {
-    .dashboard-grid { grid-template-columns: 1fr; }
-    .next-move { grid-template-columns: 1fr; }
-    .next-move__actions { width: 100%; }
+  .dashboard-panel__header {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--sl-space-4);
+    align-items: baseline;
+    margin-bottom: var(--sl-space-4);
+    padding-bottom: var(--sl-space-3);
+    border-bottom: 1px solid var(--sl-border);
   }
-  @media (max-width: 720px) {
-    .today-shell { gap: 16px; }
-    .today-intro { border-radius: 22px; }
-    .practice-options { grid-template-columns: 1fr; }
-    /* The three context readings stay a row on phones. Stacking them turned
+  /* Panel nameplates ARE short enough for the expanded caps. */
+  .dashboard-panel__header h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-2xl);
+    letter-spacing: -.01em;
+    text-transform: uppercase;
+  }
+  /* A 12px mono link is a legible label but a 16px-tall tap target, so the
+     box is grown to 44px around it and the text stays on the heading's
+     baseline. */
+  .dashboard-panel__header a {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  .dashboard-panel h3 {
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-green);
+    font-family: var(--sl-font-sans);
+    font-size: var(--sl-text-lg);
+    font-weight: 700;
+    letter-spacing: -.01em;
+    line-height: 1.25;
+  }
+  .practice-lead { margin: 0 0 var(--sl-space-4); color: var(--sl-ink-soft); }
+  .practice-lead strong { color: var(--sl-ink); }
+  /* The bare follow-up links in this panel are standalone controls, not links
+     inside a sentence, so they get a real 44px target rather than the 24px a
+     line box gives them. */
+  .dashboard-panel > a:not(.button),
+  .today-actions > a:not(.button) {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    font-size: var(--sl-text-sm);
+    font-weight: 700;
+  }
+
+  /* --- proof cycle callout ------------------------------------------------- */
+  .proof-note {
+    margin: 0 0 var(--sl-space-5);
+    padding: var(--sl-space-4);
+    border: 1px solid var(--sl-border-strong);
+    border-left-width: 2px;
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-orange-soft);
+  }
+  .proof-note[data-proof-state="attention"] { border-left-color: var(--sl-danger); }
+  .proof-note h3 { margin: 0 0 var(--sl-space-2); }
+  .proof-note p { margin: var(--sl-space-2) 0 0; color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
+  .proof-note p strong { color: var(--sl-ink); }
+
+  /* --- practice options ---------------------------------------------------- */
+  .practice-options { display: grid; gap: var(--sl-space-2); margin: var(--sl-space-4) 0; }
+  /* These are controls, so they take the control edge (4.29:1) and not the
+     decorative hairline (1.33:1, which fails WCAG 1.4.11 for a control). */
+  .practice-option {
+    min-width: 0;
+    height: 100%;
+    padding: var(--sl-space-3);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+  }
+  /* The selected edge is drawn as an inset ring rather than by widening the
+     border to 2px: growing the border re-measures the box and nudged every
+     line inside it by a pixel each time the radio changed. */
+  .practice-option.selected {
+    border-color: var(--sl-green-btn);
+    box-shadow: inset 0 0 0 1px var(--sl-green-btn);
+    background: var(--sl-orange-soft);
+  }
+  .structured-practice .practice-option { flex-direction: row; gap: var(--sl-space-3); cursor: pointer; }
+  .structured-practice .practice-option input { flex: 0 0 auto; margin-top: 6px; }
+  .structured-practice label[for="practice-outcome"] {
+    display: block;
+    margin: var(--sl-space-4) 0 var(--sl-space-2);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+  }
+  .structured-practice select {
+    width: 100%;
+    max-width: 420px;
+    min-height: 44px;
+    padding: 10px 12px;
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    background: var(--sl-night);
+    color: var(--sl-ink);
+    font: inherit;
+  }
+  .structured-practice select:focus { border-color: var(--sl-green-btn); }
+  .practice-option h3, .practice-option h4 {
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-green);
+    font-family: var(--sl-font-sans);
+    font-size: var(--sl-text-sm);
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.35;
+  }
+  .practice-option p { margin: var(--sl-space-2) 0 0; color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
+  .practice-option p strong { color: var(--sl-ink); font-weight: 700; }
+  /* The pass mark is a measured threshold, so it is the one line in the card
+     that gets the signal colour and the mono face; its label stays muted so
+     the number is what the eye lands on. */
+  .practice-option__mark {
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+  }
+  .practice-option__mark strong,
+  .practice-option.selected .practice-option__mark strong {
+    color: var(--sl-ink-muted);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+  }
+
+  /* --- actions ------------------------------------------------------------- */
+  .today-actions { display: flex; flex-wrap: wrap; gap: var(--sl-space-3); align-items: center; margin-top: var(--sl-space-4); }
+  .today-actions form { margin: 0; }
+  /* Bone on the field with a hairline, never amber: amber marks a measured
+     value and a call to action is not one. The shell's base rule paints these
+     white-on-bone (it was written for the light field), so the ink token is
+     restated here rather than left to render as an invisible label. */
+  .today-shell button,
+  .today-shell a.button {
+    min-height: 46px;
+    margin: 0;
+    padding: 11px 20px;
+    border: 1px solid var(--sl-green-btn);
+    border-radius: var(--sl-radius-control);
+    background: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    font-weight: 700;
+    box-shadow: none;
+  }
+  .today-shell button:hover,
+  .today-shell a.button:hover {
+    border-color: var(--sl-ink-hi);
+    background: var(--sl-ink-hi);
+    color: var(--sl-green-ink);
+    transform: none;
+    box-shadow: none;
+  }
+  .today-shell a.button.secondary {
+    border-color: var(--sl-control-border);
+    background: transparent;
+    color: var(--sl-ink);
+  }
+  .today-shell a.button.secondary:hover {
+    border-color: var(--sl-green-btn);
+    background: rgba(var(--sl-cream-rgb), .06);
+    color: var(--sl-ink);
+  }
+  .success {
+    margin: 0;
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border: 1px solid var(--sl-border-strong);
+    border-left: 2px solid var(--sl-green-btn);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-orange-soft);
+    color: var(--sl-ink);
+    font-size: var(--sl-text-sm);
+  }
+
+  /* --- the log ------------------------------------------------------------- */
+  .recent-list {
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 1px;
+    overflow: hidden;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-border);
+    list-style: none;
+  }
+  .recent-session { padding: var(--sl-space-3) var(--sl-space-4); background: var(--sl-bg-card); }
+  .recent-session__top { display: flex; justify-content: space-between; gap: var(--sl-space-3); align-items: flex-start; }
+  .recent-session__link { color: var(--sl-green); font-weight: 700; }
+  .recent-session__meta {
+    margin: var(--sl-space-1) 0 0;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+  }
+  .recent-session__detail { margin: var(--sl-space-2) 0 0; color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
+  .empty-note {
+    margin: 0;
+    padding: var(--sl-space-4);
+    border: 1px dashed var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+
+  /* --- the loop legend ------------------------------------------------------ */
+  .loop-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: center;
+    gap: var(--sl-space-2);
+    padding-top: var(--sl-space-4);
+    border-top: 1px solid var(--sl-border);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+  }
+  .loop-strip strong { color: var(--sl-ink); font-weight: 500; }
+  /* The arrows diagram a process; they are not a reading, so they stay muted.
+     Amber here would spend the signal colour on decoration. */
+  .loop-strip__arrow { color: var(--sl-ink-muted); }
+
+  @media (min-width: 560px) {
+    .today-metric__detail { display: block; }
+  }
+  @media (min-width: 1000px) {
+    .today-shell { gap: var(--sl-space-5); }
+    .next-move { grid-template-columns: minmax(0, 1fr) minmax(200px, 250px); gap: var(--sl-space-6); align-items: center; }
+    .dashboard-grid { grid-template-columns: minmax(0, 1.65fr) minmax(290px, .85fr); gap: var(--sl-space-5); }
+    .practice-options { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  }
+  @media (max-width: 749px) {
+    /* The three context readings stay a ROW on phones. Stacking them turned
        three short facts into three full-width cards of mostly dead space —
        the single biggest reason Today read like a web page rather than an
-       app. They are stat tiles, so they keep tile proportions. */
-    .today-metrics { gap: 9px; }
-    .today-metric { padding: 13px 12px; }
-    /* Two of the three labels wrap at this width and one does not, which
-       left the readings sitting at three different heights. Reserving two
-       lines lands every value on the same baseline. */
-    .today-metric__label {
-      min-height: 2.3em;
-      margin-bottom: 4px;
-      font-size: .6rem;
-      letter-spacing: .1em;
-      line-height: 1.15;
-    }
-    .today-metric__value { font-size: .98rem; line-height: 1.2; }
-    .today-metric__detail { font-size: .76rem; line-height: 1.4; }
-    .next-move, .dashboard-panel { border-radius: 17px; }
+       app. They are readings on a panel, so they keep panel proportions. */
+    .today-metric { padding: var(--sl-space-3) var(--sl-space-2); }
+    /* Two of the three labels wrap at this width and one does not, which left
+       the readings sitting at three different heights. Reserving two lines
+       lands every value on the same baseline. */
+    .today-metric__label { min-height: 2.3em; margin-bottom: var(--sl-space-1); line-height: 1.15; }
     .dashboard-panel__header { align-items: flex-start; }
     .today-actions { align-items: stretch; }
     .today-actions > *, .today-actions .button, .today-actions button { width: 100%; text-align: center; }
-  }
-  @media (max-width: 430px) {
-    /* Below this the third column cannot hold a readable sentence, so the
-       tiles keep the reading and drop the explanation of it. */
-    .today-metric__detail { display: none; }
-    .today-metric { padding: 12px 10px; }
+    .next-move__actions { width: 100%; }
   }
 {% endblock %}
 {% block main %}
@@ -312,7 +639,7 @@
                       <h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
                       <p>{{ choice.detail }}</p>
                       <p><strong>Drill:</strong> {{ choice.dosage }}</p>
-                      <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
+                      <p class="practice-option__mark"><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
                     </div>
                   </label>
                 {% endfor %}
@@ -339,7 +666,7 @@
                   <h4>{{ choice.minutes }} minutes · {{ choice.title }}</h4>
                   <p>{{ choice.detail }}</p>
                   <p><strong>Drill:</strong> {{ choice.dosage }}</p>
-                  <p><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
+                  <p class="practice-option__mark"><strong>Pass mark:</strong> {{ choice.pass_mark }}</p>
                 </article>
               {% endfor %}
             </div>

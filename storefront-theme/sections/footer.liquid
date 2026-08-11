@@ -10,14 +10,19 @@
   assign shipping_page = pages['shipping-returns']
   assign about_page = pages['about']
   assign contact_url = pages['contact'].url | default: '/pages/contact'
+  assign menu_label = menu.title | default: 'Footer menu'
   assign newsletter_form_id = 'sl-footer-form-' | append: section.id
   assign newsletter_email_id = 'sl-footer-email-' | append: section.id
   assign newsletter_message_id = 'sl-footer-message-' | append: section.id
 
   comment
     A menu whose top-level links have children replaces the built-in
-    Shop / Learn / Support columns. A flat menu keeps the built-in
-    columns and renders as a compact link row above the fine print.
+    Shop / Learn / Support columns. A flat menu keeps the built-in columns
+    and ALSO renders as a compact strip across the foot of the same plate.
+    That second half was promised by this comment and drawn by no branch, so
+    until now a merchant who pointed a flat menu at the footer lost every
+    link in it silently — the setting saved, the section rendered, nothing
+    appeared.
   endcomment
   assign menu_is_nested = false
   if menu != blank
@@ -28,54 +33,81 @@
     endfor
   endif
 -%}
+{%- comment -%}
+  The footer is the spec plate on the back of the instrument. Four bands,
+  one column geometry, hairline rules — deliberately not another eyebrow /
+  heading / lede / card band, because the page above already has enough of
+  those and the plate is where a reader goes looking for a fact.
+{%- endcomment -%}
 <footer class="sl-footer">
   <div class="sl-wrap">
-    <div class="sl-footer__grid">
+    <div class="sl-footer__band sl-footer__grid">
       <div class="sl-footer__brand">
         <p class="sl-footer__wordmark">{{ section.settings.logo_text | default: 'CADDIEINSIGHT' }}</p>
         {%- if section.settings.tagline != blank -%}
           <p class="sl-footer__tagline">{{ section.settings.tagline }}</p>
         {%- endif -%}
         {%- if app_url != blank -%}
-          <a class="sl-footer__applink" href="{{ app_url }}">Open CaddieInsight</a>
+          <a class="sl-footer__applink" href="{{ app_url }}">
+            <span>Open CaddieInsight</span>
+            <span aria-hidden="true">&rarr;</span>
+          </a>
         {%- endif -%}
       </div>
 
-      {%- if menu_is_nested -%}
-        {%- for link in menu.links -%}
-          {%- if link.links.size > 0 -%}
-            <nav class="sl-footer__col" aria-label="{{ link.title | escape }}">
-              <p class="sl-footer__head">{{ link.title }}</p>
-              {%- for child in link.links -%}
-                <a class="sl-footer__link" href="{{ child.url }}"{% if child.url contains '/products/swinglab-pro' %} data-app-pro-sales-link{% endif %}>{{ child.title }}</a>
+      <div class="sl-footer__nav">
+        {%- if menu_is_nested -%}
+          {%- comment -%}
+            The channel number is numbered across the columns that actually
+            render, not by forloop.index — a flat link between two nested
+            ones would otherwise leave a gap in the sequence, and a spec
+            sheet that skips 02 is a spec sheet nobody trusts.
+          {%- endcomment -%}
+          {%- assign channel = 0 -%}
+          {%- for link in menu.links -%}
+            {%- if link.links.size > 0 -%}
+              {%- assign channel = channel | plus: 1 -%}
+              {%- assign channel_no = channel | prepend: '0' | slice: -2, 2 -%}
+              <nav class="sl-footer__col" aria-label="{{ link.title | escape }}">
+                <p class="sl-footer__head"><span class="sl-footer__ch" aria-hidden="true">{{ channel_no }}</span>{{ link.title }}</p>
+                {%- for child in link.links -%}
+                  <a class="sl-footer__link" href="{{ child.url }}"{% if child.url contains '/products/swinglab-pro' %} data-app-pro-sales-link{% endif %}>{{ child.title }}</a>
+                {%- endfor -%}
+              </nav>
+            {%- endif -%}
+          {%- endfor -%}
+        {%- else -%}
+          <nav class="sl-footer__col" aria-label="Shop">
+            <p class="sl-footer__head"><span class="sl-footer__ch" aria-hidden="true">01</span>Shop</p>
+            <a class="sl-footer__link" href="{{ gear_url }}">Training gear</a>
+            {%- if pro_product != blank -%}<a class="sl-footer__link" href="{{ pro_product.url }}" data-app-pro-sales-link>CaddieInsight Pro</a>{%- endif -%}
+            {%- if cap_product != blank -%}<a class="sl-footer__link" href="{{ cap_product.url }}">Performance cap</a>{%- endif -%}
+          </nav>
+          <nav class="sl-footer__col" aria-label="Learn">
+            <p class="sl-footer__head"><span class="sl-footer__ch" aria-hidden="true">02</span>Learn</p>
+            {%- if method_page != blank -%}<a class="sl-footer__link" href="{{ method_page.url }}">The Method</a>{%- endif -%}
+            {%- if how_page != blank -%}<a class="sl-footer__link" href="{{ how_page.url }}">How CaddieInsight works</a>{%- endif -%}
+            {%- if faq_page != blank -%}<a class="sl-footer__link" href="{{ faq_page.url }}">FAQ</a>{%- endif -%}
+          </nav>
+          <nav class="sl-footer__col" aria-label="Support">
+            <p class="sl-footer__head"><span class="sl-footer__ch" aria-hidden="true">03</span>Support</p>
+            <a class="sl-footer__link" href="{{ routes.account_url }}">Orders and subscriptions</a>
+            <a class="sl-footer__link" href="{{ contact_url }}">Contact</a>
+            {%- if shipping_page != blank -%}<a class="sl-footer__link" href="{{ shipping_page.url }}">Shipping and returns</a>{%- endif -%}
+            {%- if about_page != blank -%}<a class="sl-footer__link" href="{{ about_page.url }}">About</a>{%- endif -%}
+          </nav>
+          {%- if menu != blank -%}
+            <nav class="sl-footer__quicklinks" aria-label="{{ menu_label | escape }}">
+              {%- for link in menu.links -%}
+                <a class="sl-footer__link" href="{{ link.url }}"{% if link.url contains '/products/swinglab-pro' %} data-app-pro-sales-link{% endif %}>{{ link.title }}</a>
               {%- endfor -%}
             </nav>
           {%- endif -%}
-        {%- endfor -%}
-      {%- else -%}
-        <nav class="sl-footer__col" aria-label="Shop">
-          <p class="sl-footer__head">Shop</p>
-          <a class="sl-footer__link" href="{{ gear_url }}">Training gear</a>
-          {%- if pro_product != blank -%}<a class="sl-footer__link" href="{{ pro_product.url }}" data-app-pro-sales-link>CaddieInsight Pro</a>{%- endif -%}
-          {%- if cap_product != blank -%}<a class="sl-footer__link" href="{{ cap_product.url }}">Performance cap</a>{%- endif -%}
-        </nav>
-        <nav class="sl-footer__col" aria-label="Learn">
-          <p class="sl-footer__head">Learn</p>
-          {%- if method_page != blank -%}<a class="sl-footer__link" href="{{ method_page.url }}">The Method</a>{%- endif -%}
-          {%- if how_page != blank -%}<a class="sl-footer__link" href="{{ how_page.url }}">How CaddieInsight works</a>{%- endif -%}
-          {%- if faq_page != blank -%}<a class="sl-footer__link" href="{{ faq_page.url }}">FAQ</a>{%- endif -%}
-        </nav>
-        <nav class="sl-footer__col" aria-label="Support">
-          <p class="sl-footer__head">Support</p>
-          <a class="sl-footer__link" href="{{ routes.account_url }}">Orders and subscriptions</a>
-          <a class="sl-footer__link" href="{{ contact_url }}">Contact</a>
-          {%- if shipping_page != blank -%}<a class="sl-footer__link" href="{{ shipping_page.url }}">Shipping and returns</a>{%- endif -%}
-          {%- if about_page != blank -%}<a class="sl-footer__link" href="{{ about_page.url }}">About</a>{%- endif -%}
-        </nav>
-      {%- endif -%}
+        {%- endif -%}
+      </div>
     </div>
 
-    <div class="sl-footer__newsletter">
+    <div class="sl-footer__band sl-footer__newsletter">
       <div class="sl-footer__news-copy">
         <p class="sl-footer__head">{{ section.settings.newsletter_heading | default: 'The Practice Letter' }}</p>
         <p class="sl-footer__news-sub">{{ section.settings.newsletter_text | default: 'One practical drill each week.' }}</p>
@@ -108,240 +140,361 @@
     </div>
 
     {%- if shop.policies.size > 0 -%}
-      <nav class="sl-footer__policies" aria-label="Store policies">
-        <ul class="sl-footer__policies-list">
-          {%- for policy in shop.policies -%}
-            {%- if policy != blank -%}
-              <li><a class="sl-footer__link" href="{{ policy.url }}">{{ policy.title | escape }}</a></li>
-            {%- endif -%}
-          {%- endfor -%}
-        </ul>
-      </nav>
+      <div class="sl-footer__band sl-footer__policies">
+        <p class="sl-footer__rail">Policies</p>
+        <nav aria-label="Store policies">
+          <ul class="sl-footer__policies-list">
+            {%- for policy in shop.policies -%}
+              {%- if policy != blank -%}
+                <li><a class="sl-footer__link" href="{{ policy.url }}">{{ policy.title | escape }}</a></li>
+              {%- endif -%}
+            {%- endfor -%}
+          </ul>
+        </nav>
+      </div>
     {%- endif -%}
 
-    <div class="sl-footer__fine">
+    <div class="sl-footer__band sl-footer__fine">
+      <p class="sl-footer__copyright">&copy; {{ 'now' | date: '%Y' }} {{ shop.name }}</p>
       {%- if section.settings.disclaimer != blank -%}
         <p class="sl-footer__disclaimer">{{ section.settings.disclaimer }}</p>
       {%- endif -%}
-      <p class="sl-footer__copyright">&copy; {{ 'now' | date: '%Y' }} {{ shop.name }}</p>
     </div>
   </div>
 </footer>
 
 {% stylesheet %}
+/* The plate is the sunk well at the bottom of the field: --sl-footer is
+   --sl-night, one step darker than the page, so the footer reads as the back
+   of the instrument rather than as one more band. The 8px technical grid is
+   repainted here because the body's copy of it is fixed-attachment and this
+   background covers it — losing the grid under the plate is the one place the
+   surface stops looking machined.
+
+   NOTE ON COLOUR: this section carries neither signal. There is no measured
+   value and no live readout in a footer, so there is no amber and no resting
+   cyan anywhere below. Trace appears only where the shared system already
+   puts it — the hover state of a control. */
 .sl-footer {
-  background: var(--sl-footer);
+  position: relative;
+  background:
+    linear-gradient(rgba(var(--sl-cream-rgb), 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.02) 1px, transparent 1px),
+    var(--sl-footer);
+  background-size: 8px 8px, 8px 8px, auto;
   color: var(--sl-footer-ink);
-  padding-top: clamp(48px, 7vw, 80px);
-  padding-bottom: clamp(28px, 4vw, 40px);
+  border-top: 1px solid var(--sl-border-strong);
+  box-shadow: var(--sl-shadow-card);
   font-size: var(--sl-text-sm);
 }
-.sl-footer__grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 34px;
-  padding-bottom: clamp(30px, 5vw, 52px);
+/* A graduated scale across the top edge — minor ticks every 24px, major every
+   96px. It is the cheapest possible way to say "instrument" and it belongs to
+   this section alone, which is the point: the footer should not be able to be
+   mistaken for the band above it. */
+.sl-footer::before {
+  content: "";
+  display: block;
+  height: 8px;
+  background-image:
+    repeating-linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.09) 0 1px, transparent 1px 24px),
+    repeating-linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.2) 0 1px, transparent 1px 96px);
+  background-size: 100% 4px, 100% 8px;
+  background-repeat: no-repeat;
 }
-@media (min-width: 560px) {
-  .sl-footer__grid { grid-template-columns: repeat(2, 1fr); }
+
+/* One geometry, four bands. Every band splits 5/7 at the wide breakpoint —
+   the same asymmetry the hero uses for copy against readout — so the plate
+   reads as the same instrument seen from behind. */
+.sl-footer__band {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-5);
+  padding: clamp(28px, 3.4vw, 44px) 0;
+  border-top: 1px solid var(--sl-border);
 }
 @media (min-width: 1000px) {
-  .sl-footer__grid { grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 28px; }
+  .sl-footer__band {
+    grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+    gap: clamp(32px, 4vw, 64px);
+    align-items: start;
+  }
 }
-.sl-footer__brand { max-width: 340px; }
-.sl-footer__wordmark {
-  margin: 0 0 12px;
-  font-weight: 800;
-  font-size: var(--sl-text-lg);
-  letter-spacing: 0.08em;
-  color: var(--sl-green-ink);
+/* Explicit rather than :first-child / :last-child — a band can be dropped
+   entirely (no policies configured), and positional selectors would then put
+   the rule in the wrong place. */
+.sl-footer__grid {
+  border-top: 0;
+  padding-top: clamp(44px, 5vw, 72px);
 }
-.sl-footer__tagline {
-  margin: 0 0 16px;
-  line-height: 1.6;
-  color: #a8b8ad;
-}
-.sl-footer__applink {
-  display: inline-block;
-  color: var(--sl-green-ink);
-  text-decoration: none;
-  font-weight: 600;
-  font-size: var(--sl-text-sm);
-  border-bottom: 1px solid var(--sl-orange);
-  padding-bottom: 2px;
-}
-.sl-footer__applink:hover { color: #ffffff; }
-.sl-footer__col {
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-  align-items: flex-start;
-}
-.sl-footer__head {
-  margin: 0 0 4px;
+.sl-footer__fine { padding-bottom: clamp(32px, 4vw, 48px); }
+
+/* the mono label in the margin, spec-sheet style */
+.sl-footer__rail {
+  margin: 0;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
-  letter-spacing: 0.18em;
+  letter-spacing: var(--sl-eyebrow-track);
   text-transform: uppercase;
-  color: #a8b8ad;
+  color: var(--sl-ink-muted);
 }
+
+.sl-footer__brand { max-width: 34ch; }
+/* Was --sl-green-ink, which is now the near-black that sits ON a bone button:
+   the inversion left the wordmark, the app link, the newsletter line and the
+   text inside the email field all painting --sl-green-ink onto --sl-night —
+   two near-blacks. Four invisible elements, including the one the reader
+   types into. */
+.sl-footer__wordmark {
+  margin: 0;
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-text-xl);
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  line-height: 1;
+  text-transform: uppercase;
+  color: var(--sl-ink);
+}
+.sl-footer__tagline {
+  margin: var(--sl-space-4) 0 0;
+  color: var(--sl-ink-soft);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+/* The app link is a control, so it gets a control edge (--sl-control-border
+   clears 1.4.11 at 3.57:1 on the plate) instead of the old amber underline.
+   An amber rule under a link is decoration, and amber is not available for
+   decoration. */
+.sl-footer__applink {
+  margin: var(--sl-space-5) 0 0;
+  min-height: 44px;
+  padding: 10px 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sl-space-2);
+  border: 1px solid var(--sl-control-border);
+  border-radius: var(--sl-radius-control);
+  background: transparent;
+  color: var(--sl-ink);
+  font-size: var(--sl-text-sm);
+  font-weight: 600;
+  text-decoration: none;
+  transition: border-color .18s ease, background-color .18s ease;
+}
+.sl-footer__applink:hover {
+  border-color: var(--sl-ink);
+  background: rgba(var(--sl-cream-rgb), 0.06);
+  color: var(--sl-ink);
+}
+.sl-footer__applink span:last-child { transition: transform .18s ease; }
+.sl-footer__applink:hover span:last-child { transform: translateX(3px); }
+
+/* The channel block: a 1px-gap bordered grid whose gaps ARE the rules. A drop
+   shadow paints nothing on a near-black field, so separation is drawn, not
+   cast. */
+.sl-footer__nav {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
+  border-radius: var(--sl-radius-sm);
+}
+.sl-footer__col {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sl-space-2);
+  padding: var(--sl-dense-inset);
+  background: var(--sl-bg-card);
+}
+/* The flat-menu strip runs the full width of the same plate rather than
+   becoming a fourth column, so it never competes with the built-in columns
+   for a track. */
+.sl-footer__quicklinks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-2) var(--sl-space-5);
+  padding: var(--sl-dense-inset);
+  background: var(--sl-bg-card);
+}
+.sl-footer__head {
+  margin: 0 0 var(--sl-space-2);
+  display: flex;
+  align-items: baseline;
+  gap: var(--sl-space-2);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
+  color: var(--sl-ink);
+}
+.sl-footer__ch {
+  color: var(--sl-ink-muted);
+  font-variant-numeric: tabular-nums;
+}
+/* Links rest one step down from bone and brighten on hover; the underline is
+   the second signal, since colour alone is never the affordance. */
 .sl-footer__link {
-  color: #b7c5ba;
+  color: var(--sl-ink-soft);
   text-decoration: none;
   font-size: var(--sl-text-sm);
   text-underline-offset: 4px;
   transition: color .15s ease;
 }
-.sl-footer__link:hover {
-  color: var(--sl-green-ink);
+.sl-footer__link:hover,
+.sl-footer__link:focus-visible {
+  color: var(--sl-ink-hi);
   text-decoration: underline;
-  text-decoration-color: rgba(var(--sl-accent-rgb), 0.7);
 }
-@media (prefers-reduced-motion: reduce) {
-  .sl-footer__link { transition: none; }
-}
-.sl-footer__newsletter {
-  border-top: 1px solid rgba(159, 176, 164, 0.18);
-  padding: 26px 0 28px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 18px 40px;
-  align-items: center;
-  justify-content: space-between;
-}
-.sl-footer__news-copy .sl-footer__head { margin: 0 0 6px; }
+/* sections/header.liquid sets .hidden on every [data-app-pro-sales-link] once
+   the app session says the visitor already owns Pro. The phone rules below
+   give footer links display: inline-flex for a 44px target, and an author
+   display beats the UA's [hidden] { display: none } — which is how a Pro
+   member kept being sold Pro, on phones only. */
+.sl-footer .sl-footer__link[hidden] { display: none; }
+
 .sl-footer__news-sub {
   margin: 0;
-  color: var(--sl-green-ink);
+  color: var(--sl-ink);
   font-size: var(--sl-text-base);
-  font-weight: 600;
+  line-height: 1.5;
+  text-wrap: pretty;
 }
 .sl-footer__form {
   display: flex;
-  gap: 10px;
   flex-wrap: wrap;
   align-items: center;
-  flex: 0 1 420px;
-  min-width: min(100%, 300px);
+  gap: var(--sl-space-3);
 }
 .sl-footer__input {
-  flex: 1 1 200px;
+  flex: 1 1 220px;
   min-width: 0;
+  /* field and button share one height on the row — .sl-btn--sm is 38px in
+     base.css, which is both a mismatched control and under the 44px target */
+  min-height: 44px;
+  padding: 12px 16px;
   font: inherit;
   font-size: var(--sl-text-sm);
-  color: var(--sl-green-ink);
-  background: rgba(233, 242, 236, 0.06);
-  border: 1px solid rgba(159, 176, 164, 0.35);
+  color: var(--sl-ink);
+  background: var(--sl-bg-card);
+  border: 1px solid var(--sl-control-border);
   border-radius: var(--sl-radius-control);
-  padding: 11px 18px;
 }
-.sl-footer__input::placeholder { color: #a8b8ad; }
-.sl-footer__input:focus {
-  outline: 3px solid var(--sl-focus-dark);
-  outline-offset: 3px;
-  border-color: transparent;
+.sl-footer__input::placeholder { color: var(--sl-ink-muted); }
+/* No focus override: base.css's :focus-visible ring is already the dark-field
+   ring, and the old rule here also cleared the border colour, so a focused
+   field lost its own edge at the moment it most needed one. */
+/* The plate's one action, treated exactly like the hero's primary — bone on
+   the field, trace on hover. base.css's --light fill is card-coloured, which
+   on this darker plate is a panel that happens to be clickable. */
+.sl-footer__form .sl-btn--light {
+  min-height: 44px;
+  background: var(--sl-ink);
+  border-color: var(--sl-ink);
+  color: var(--sl-bg);
 }
-.sl-footer__form-ok { margin: 0; color: var(--sl-green-ink); }
+.sl-footer__form .sl-btn--light:hover {
+  background: var(--sl-ink-hi);
+  border-color: var(--sl-ink-hi);
+  color: var(--sl-bg);
+}
+.sl-footer__form-ok {
+  margin: 0;
+  color: var(--sl-ink);
+}
 .sl-footer__form-err {
-  margin: 4px 0 0;
+  margin: var(--sl-space-1) 0 0;
   width: 100%;
   font-size: var(--sl-text-sm);
-  color: #e8a06a;
+  /* --sl-danger, not a hand-mixed red: the literal this replaces was a warm
+     orange close enough to the amber signal to read as one, and an error
+     message is not a measurement. */
+  color: var(--sl-danger);
 }
-.sl-footer__policies {
-  border-top: 1px solid rgba(159, 176, 164, 0.18);
-  padding: 18px 0 22px;
-}
+
+/* the policy row is a deliberate specimen strip, not an afterthought */
 .sl-footer__policies-list {
   margin: 0;
   padding: 0;
   display: flex;
   flex-wrap: wrap;
-  gap: 8px 26px;
+  gap: var(--sl-space-2) var(--sl-space-5);
   list-style: none;
 }
-/* the policy row is a deliberate specimen strip, not an afterthought */
+/* Both mono strips — the flat-menu row and the policies row — are set as one
+   specimen, so a merchant menu cannot end up in a different voice from the
+   policy links sitting two bands below it. */
+.sl-footer__quicklinks .sl-footer__link,
 .sl-footer__policies-list .sl-footer__link {
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--sl-footer-ink);
-}
-.sl-footer__policies-list .sl-footer__link:hover {
-  color: var(--sl-green-ink);
-  text-decoration-color: rgba(var(--sl-accent-rgb), 0.7);
-}
-.sl-footer__fine {
-  border-top: 1px solid rgba(159, 176, 164, 0.18);
-  padding-top: 22px;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px 32px;
-  justify-content: space-between;
-  align-items: baseline;
-}
-.sl-footer__disclaimer {
-  margin: 0;
-  font-size: var(--sl-text-xs);
-  font-style: italic;
-  color: #a8b8ad;
-  max-width: 640px;
 }
 .sl-footer__copyright {
   margin: 0;
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
+  font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
-  color: #a8b8ad;
-  white-space: nowrap;
+  color: var(--sl-ink-muted);
 }
+.sl-footer__disclaimer {
+  margin: 0;
+  max-width: 68ch;
+  font-size: var(--sl-text-xs);
+  line-height: 1.6;
+  color: var(--sl-ink-muted);
+  text-wrap: pretty;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sl-footer__link,
+  .sl-footer__applink,
+  .sl-footer__applink span:last-child { transition: none; }
+  .sl-footer__applink:hover span:last-child { transform: none; }
+}
+
 @media (max-width: 749px) {
-  .sl-footer__grid {
-    grid-template-columns: 1fr;
-    gap: 30px;
-    text-align: center;
-  }
-  .sl-footer__brand {
-    margin-inline: auto;
-    text-align: center;
-  }
+  .sl-footer__grid { text-align: center; }
+  .sl-footer__brand { margin-inline: auto; }
   .sl-footer__applink {
-    min-height: 44px;
-    display: inline-flex;
-    align-items: center;
+    width: min(100%, 320px);
+    margin-inline: auto;
     justify-content: center;
   }
+  /* auto-fit would keep two 158px tracks on a phone; one channel per row is
+     the readable form. */
+  .sl-footer__nav { grid-template-columns: minmax(0, 1fr); }
   .sl-footer__col {
     align-items: center;
     gap: 0;
     text-align: center;
   }
-  .sl-footer__col .sl-footer__link,
+  .sl-footer__head { justify-content: center; }
+  .sl-footer__quicklinks { justify-content: center; }
+  .sl-footer__col .sl-footer__link:not([hidden]),
+  .sl-footer__quicklinks .sl-footer__link:not([hidden]),
   .sl-footer__policies-list .sl-footer__link {
     min-height: 44px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
   }
-  .sl-footer__newsletter {
-    flex-direction: column;
-    justify-content: center;
-    text-align: center;
-  }
+  .sl-footer__news-copy { text-align: center; }
   .sl-footer__form {
     width: 100%;
     max-width: 420px;
     margin-inline: auto;
-    flex: 0 1 auto;
     flex-direction: column;
     justify-content: center;
   }
   .sl-footer__input {
     width: 100%;
-    min-height: 44px;
     flex-basis: auto;
     text-align: center;
   }
@@ -351,16 +504,10 @@
     justify-content: center;
   }
   .sl-footer__form-ok,
-  .sl-footer__form-err {
-    text-align: center;
-  }
+  .sl-footer__form-err { text-align: center; }
+  .sl-footer__rail { text-align: center; }
   .sl-footer__policies-list { justify-content: center; }
-  .sl-footer__fine {
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-  }
+  .sl-footer__fine { text-align: center; }
   .sl-footer__disclaimer { margin-inline: auto; }
 }
 {% endstylesheet %}
@@ -392,7 +539,7 @@
       "type": "link_list",
       "id": "menu",
       "label": "Footer menu (optional)",
-      "info": "A menu with nested links replaces the built-in Shop, Learn, and Support columns."
+      "info": "A menu with nested links replaces the built-in Shop, Learn, and Support columns. A flat menu keeps them and adds a compact link strip."
     },
     {
       "type": "text",

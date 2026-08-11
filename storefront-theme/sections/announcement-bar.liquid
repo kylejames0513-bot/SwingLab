@@ -1,73 +1,172 @@
+{%- liquid
+  # Three strings decide whether this strip exists at all. An empty bar is
+  # not free on the new field: it still paints a 36px well and a hairline
+  # above the header, so the section renders nothing rather than an empty
+  # rule when the merchant clears the copy.
+  assign primary = section.settings.text
+  assign secondary = section.settings.secondary_text
+  assign strip_label = section.settings.label
+-%}
+
 {%- if section.settings.show_announcement -%}
-  {%- assign primary = section.settings.text -%}
-  {%- assign secondary = section.settings.secondary_text -%}
   {%- if primary != blank or secondary != blank -%}
+    {%- comment -%}
+      The strip is the instrument's status line, not a promo banner: a mono
+      channel label in the margin, the message, then a hairline running out
+      to a right-aligned secondary value. It shares the header's gutter and
+      max-width (see the stylesheet) so the label sits directly above the
+      wordmark instead of floating dead-centre over a left-aligned chrome.
+    {%- endcomment -%}
     <div class="sl-announcement" role="region" aria-label="{{ 'layout.announcement.label' | t }}">
-      {%- if primary != blank -%}
-        {%- if section.settings.link != blank -%}
-          <a class="sl-announcement__item sl-announcement__link" href="{{ section.settings.link }}">{{ primary }}</a>
-        {%- else -%}
-          <span class="sl-announcement__item">{{ primary }}</span>
+      <div class="sl-announcement__inner">
+        {%- if strip_label != blank -%}
+          <span class="sl-announcement__label">{{ strip_label }}</span>
         {%- endif -%}
-      {%- endif -%}
-      {%- if primary != blank and secondary != blank -%}
-        <span class="sl-announcement__dot" aria-hidden="true">&middot;</span>
-      {%- endif -%}
-      {%- if secondary != blank -%}
-        <span class="sl-announcement__item sl-announcement__item--secondary">{{ secondary }}</span>
-      {%- endif -%}
+        {%- if primary != blank -%}
+          {%- if section.settings.link != blank -%}
+            <a class="sl-announcement__item sl-announcement__link" href="{{ section.settings.link }}">{{ primary }}</a>
+          {%- else -%}
+            <span class="sl-announcement__item">{{ primary }}</span>
+          {%- endif -%}
+        {%- endif -%}
+        {%- comment -%}
+          Was a &middot; painted in --sl-orange. Amber marks a value the
+          engine measured, and a separator between two marketing strings is
+          not one — so the separator is now a hairline rule that grows to
+          fill the strip and pushes the secondary string to the right edge,
+          the way a scale runs between two labelled ends. It carries no
+          text, which is why it is empty rather than aria-hidden decoration
+          wrapped around a character.
+        {%- endcomment -%}
+        {%- if primary != blank and secondary != blank -%}
+          <span class="sl-announcement__dot" aria-hidden="true"></span>
+        {%- endif -%}
+        {%- if secondary != blank -%}
+          <span class="sl-announcement__item sl-announcement__item--secondary">{{ secondary }}</span>
+        {%- endif -%}
+      </div>
     </div>
   {%- endif -%}
 {%- endif -%}
 
 {% stylesheet %}
+/* ==========================================================================
+   Announcement strip — a status line above the chrome.
+
+   Two things this section must not do: grow past one line, and drift out of
+   alignment with the header. Both are handled structurally rather than with
+   per-width patches — every item is nowrap, the message is the only
+   flexible one and it truncates, so the strip is exactly one row tall at
+   every width and the header below it never moves.
+
+   Neither signal colour appears here. Amber marks a value the engine
+   measured and cyan marks the live readout; a discount code is neither, so
+   this strip is bone-on-well with hairline structure and nothing else. The
+   old sheet spent amber on a separator dot and on a link underline, which
+   is exactly the emphasis-creep the two colour rules exist to stop.
+
+   The .sl-premium-chrome override is gone rather than retuned: it existed to
+   darken this strip on the two pages that had premium chrome while the rest
+   of the store was light. Every page is the dark field now, so the override
+   said exactly what the base rule says. The body class itself is untouched —
+   header.liquid still styles the drawer with it.
+   ========================================================================== */
+
 .sl-announcement {
+  /* One local property drives the row height, the flex line the items
+     stretch into, and the link's line-height, so the phone override changes
+     a single number instead of three that can drift apart. */
+  --sl-announcement-h: 36px;
+  min-height: var(--sl-announcement-h);
+  /* Matches the header's gutter exactly (.sl-header uses padding: 0
+     var(--sl-pad-x) with a --sl-maxw inner), which is the whole point: the
+     mono label lands on the same vertical as the wordmark below it. */
+  padding: 0 var(--sl-pad-x);
+  background: var(--sl-night);
+  border-bottom: 1px solid var(--sl-border);
+  color: var(--sl-ink);
+}
+.sl-announcement__inner {
+  max-width: var(--sl-maxw);
+  margin: 0 auto;
+  min-height: var(--sl-announcement-h);
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  min-height: 40px;
-  background: var(--sl-green);
-  color: var(--sl-green-ink);
-  text-align: center;
-  font-size: var(--sl-text-sm);
-  letter-spacing: 0.04em;
-  padding: 9px var(--sl-pad-x);
+  gap: var(--sl-space-3);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
 }
-.sl-announcement__item { margin: 0; }
+
+/* The spec-sheet margin label: full-height hairline column, muted, so the
+   strip reads as a labelled channel rather than a sentence in a box. */
+.sl-announcement__label {
+  flex: none;
+  align-self: stretch;
+  display: inline-flex;
+  align-items: center;
+  padding-right: var(--sl-space-3);
+  border-right: 1px solid var(--sl-border-strong);
+  color: var(--sl-ink-muted);
+  letter-spacing: var(--sl-eyebrow-track);
+  white-space: nowrap;
+}
+
+.sl-announcement__item {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+/* display:block, not inline-flex: text-overflow does not apply to the
+   anonymous flex item a flex container wraps its text in, so a flex link
+   would clip mid-word instead of eliding. line-height fills the row so the
+   pointer target is the full strip height, not the 12px cap height. */
 .sl-announcement__link {
+  align-self: stretch;
+  display: block;
+  line-height: var(--sl-announcement-h);
   color: inherit;
   text-decoration: underline;
-  text-underline-offset: 3px;
-  text-decoration-color: rgba(233, 242, 236, 0.5);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+  text-decoration-color: rgba(var(--sl-cream-rgb), 0.4);
 }
 .sl-announcement__link:hover {
-  color: #ffffff;
-  text-decoration-color: var(--sl-orange);
+  color: var(--sl-ink);
+  text-decoration-color: var(--sl-ink);
 }
-.sl-announcement__item--secondary { color: rgba(233, 242, 236, 0.75); }
-.sl-announcement__dot { color: var(--sl-orange); font-weight: 700; }
-.sl-premium-chrome .sl-announcement {
-  background: var(--sl-night);
-  border-bottom: 1px solid rgba(var(--sl-cream-rgb), 0.1);
-  color: rgba(var(--sl-cream-rgb), 0.9);
+/* The header is position:relative with z-index 40 and paints over anything
+   that escapes this 36px strip, so the ring is inset rather than offset —
+   the inherited 3px offset would have its bottom edge covered. */
+.sl-announcement__link:focus-visible { outline-offset: -2px; }
+
+.sl-announcement__item--secondary {
+  flex: none;
+  color: var(--sl-ink-soft);
 }
-.sl-premium-chrome .sl-announcement__item--secondary { color: rgba(var(--sl-cream-rgb), 0.64); }
+
+.sl-announcement__dot {
+  flex: 1 1 auto;
+  min-width: var(--sl-space-5);
+  height: 1px;
+  background: var(--sl-border-strong);
+}
 
 @media (max-width: 749px) {
+  /* 44px is the touch floor and is pinned by
+     tests/test_storefront_mobile_regressions.py. The label and the
+     secondary string go so the message keeps the full gutter-to-gutter run
+     and the strip stays one line on a 320px screen. */
   .sl-announcement {
+    --sl-announcement-h: 44px;
     min-height: 44px;
-    padding-top: 0;
-    padding-bottom: 0;
-    font-size: var(--sl-text-xs);
   }
-  .sl-announcement__link {
-    min-height: 44px;
-    padding-block: 8px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
+  .sl-announcement__label,
   .sl-announcement__dot,
   .sl-announcement__item--secondary { display: none; }
 }
@@ -85,9 +184,17 @@
     },
     {
       "type": "text",
+      "id": "label",
+      "label": "Channel label",
+      "default": "OFFER",
+      "info": "Mono label in the left margin. Hidden on phones so the strip stays one line."
+    },
+    {
+      "type": "text",
       "id": "text",
       "label": "Text",
-      "default": "15% off gear · Code RANGE15"
+      "default": "15% off gear · Code RANGE15",
+      "info": "Set in uppercase mono. Long copy truncates rather than wrapping the strip to two lines."
     },
     {
       "type": "url",
@@ -99,7 +206,7 @@
       "type": "text",
       "id": "secondary_text",
       "label": "Secondary text",
-      "info": "Shown after a dot on larger screens and hidden on small screens."
+      "info": "Sits at the right edge after a hairline rule on larger screens, and is hidden on small screens."
     }
   ],
   "presets": [{ "name": "Announcement bar" }]

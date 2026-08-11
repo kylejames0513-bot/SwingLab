@@ -1,216 +1,409 @@
 {% extends "web_layout.html.j2" %}
 {% block title %}{{ brand.name }} — Pricing{% endblock %}
 {% block style %}
-  main { max-width: 1160px; }
-  .lead { max-width: 800px; margin: 0 auto 34px; text-align: center; }
-  .lead h1 { margin: 0 0 12px; color: var(--sl-green); font-size: clamp(2.25rem, 6vw, 4.25rem); line-height: .98; letter-spacing: -.052em; }
-  .lead p { color: var(--sl-ink-soft); font-size: 1.02rem; max-width: 720px; margin: 0 auto; }
-  .personal { text-align: center; color: var(--sl-ink-soft); font-size: 0.92rem;
-              margin: -12px 0 24px; }
-  .plans { display: flex; flex-wrap: wrap; gap: 16px; align-items: stretch; }
+  {# ------------------------------------------------------------------ pricing
+     The page that takes the money: every control here is a link to the Shopify
+     store. So this restyle is CSS only — not one href, price string, macro
+     branch, data-* hook or aria attribute moved. What changed is the surface
+     the sheet was written for: cream gradient cards, a bone-bright table
+     header and an orange CTA are all light-field assumptions.
+
+     Two rules shape the whole file:
+
+     - AMBER marks a value the ENGINE MEASURED. On a pricing page there is
+       exactly one such value — `trend_line`, the golfer's own before→after
+       read from their own sessions. Prices are numbers the STORE charges, the
+       savings badge is a claim, and a comparison tick is a plan fact. None of
+       them were measured, so none of them are amber. The page is deliberately
+       near-monochrome; the single amber strip is the one thing on it the
+       product actually computed.
+     - Buttons are BONE on the field with a hairline. An amber button would
+       read as a metric, and a checkout link is not one.
+
+     EVERY comment below is a Jinja comment, and that is not a style choice.
+     A /* */ inside this block is served to the browser verbatim, so a comment
+     that quotes page copy puts that copy in the response even when the
+     template decided not to render it. That is not hypothetical: quoting the
+     annual savings chip here leaked the string into the render with
+     billing.pro_annual_badge_text cleared — the stale claim that knob exists
+     to remove — and tests/test_membership_tiers.py::
+     test_annual_badge_is_a_display_string failed on it. Keep them Jinja. #}
+  main { max-width: var(--sl-content); }
+
+  {# ---- lead ----
+     Left-aligned and ruled rather than centred: this is the product's own
+     price sheet, and an instrument reads down a left edge. #}
+  .lead {
+    max-width: 820px;
+    margin: 0 0 var(--sl-space-6);
+    padding-bottom: var(--sl-space-5);
+    border-bottom: 1px solid var(--sl-border);
+    text-align: left;
+  }
+  {# The shared display rung, not a hand-rolled clamp(). The shell's token
+     sheet calls out exactly this: two surfaces that share a typeface and not
+     a scale is how they drift apart. #}
+  .lead h1 {
+    margin: 0 0 var(--sl-space-4);
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-display);
+    letter-spacing: -0.02em;
+    line-height: 0.98;
+    text-transform: uppercase;
+  }
+  {# :not(.sl-eyebrow) so the shell's eyebrow keeps its own mono rung — the
+     eyebrow is a <p> inside this block too. #}
+  .lead p:not(.sl-eyebrow) {
+    max-width: 70ch;
+    margin: 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-lg);
+    line-height: 1.55;
+  }
+  .lead p strong { color: var(--sl-ink); font-weight: 700; }
+
+  {# ---- the golfer's own numbers ----
+     THE measured value on this page, rendered only when two sessions of real
+     data exist. Amber mono, tabular, on the well — because this is the one
+     string here the engine produced rather than the price list. #}
+  .personal {
+    margin: 0 0 var(--sl-space-5);
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border: 1px solid var(--sl-border);
+    border-left: 2px solid var(--sl-accent);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-night);
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-sm);
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+  }
+
+  {# ---- the plan ladder ----
+     One ruled grid, not a row of floating cards: the rules are drawn by a 1px
+     gap over --sl-border, and each panel repaints itself in --sl-bg-card.
+
+     Flex rather than CSS grid on purpose. The card count is 3–6 depending on
+     which rungs the store can actually sell (the one-payment pass needs a
+     store, the upper tier needs its rollout flag, and its two cards are
+     independently gated), and flex grows the last row's items to fill it. A
+     grid would leave an empty track in the final row, and an empty cell in
+     this construction paints as a solid --sl-border block. #}
+  .plans {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1px;
+    align-items: stretch;
+    overflow: hidden;
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-border);
+    box-shadow: var(--sl-shadow-sm);
+  }
+  {# The shell's .card brings its own border, radius and shadow. Inside a
+     ruled grid those double every hairline and round each cell off the grid,
+     so they come off here and the 1px gap is the only rule. #}
   .plans .card {
-    flex: 1 1 250px;
+    flex: 1 1 260px;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    padding: clamp(22px, 3.5vw, 30px);
+    padding: clamp(20px, 2.4vw, 28px);
+    border: 0;
+    border-radius: 0;
+    background: var(--sl-bg-card);
+    box-shadow: none;
   }
-  .plans h2 { margin: 0 0 6px; color: var(--sl-green); font-size: 1.28rem; letter-spacing: -.02em; }
-  .price {
-    margin: 0 0 10px;
+  .plans h2 {
+    margin: 0 0 var(--sl-space-2);
     color: var(--sl-green);
-    font-size: 1.45rem;
-    font-weight: 800;
-    letter-spacing: -.025em;
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-xl);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+    text-transform: uppercase;
+  }
+  {# Bone mono, tabular, and deliberately NOT amber: a price is charged, not
+     measured. Weight 500 is the top of the DM Mono family we ship — the old
+     800 was a faux bold the browser drew itself. #}
+  .price {
+    margin: 0 0 var(--sl-space-4);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-2xl);
+    font-weight: 500;
+    letter-spacing: -0.01em;
     font-variant-numeric: tabular-nums;
   }
   .plans ul {
     flex: 1;
-    margin: 4px 0 16px;
+    margin: 0 0 var(--sl-space-5);
     padding: 0;
     list-style: none;
     align-content: start;
+    border-top: 1px solid var(--sl-border);
     color: var(--sl-ink-soft);
   }
   .plans li {
     position: relative;
     margin: 0;
-    padding: 9px 0 9px 19px;
-    font-size: .92rem;
+    padding: var(--sl-space-3) 0 var(--sl-space-3) var(--sl-space-4);
+    border-bottom: 1px solid var(--sl-border);
+    font-size: var(--sl-text-sm);
     line-height: 1.5;
   }
-  .plans li + li { border-top: 1px dashed var(--sl-border); }
+  {# A square tick, not a dot — and ink, not cyan: the trace colour marks the
+     live readout, and a feature list is not one. #}
   .plans li::before {
     content: "";
     position: absolute;
     left: 2px;
-    top: 1.28em;
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--sl-green-btn);
+    top: 1.34em;
+    width: 5px;
+    height: 5px;
+    background: var(--sl-ink-muted);
   }
+  {# The annual savings chip: a claim, not a measurement, so a bone hairline
+     rather than the filled green pill it used to be. #}
   .badge {
     display: inline-flex;
     width: fit-content;
-    margin: 0 0 14px;
-    padding: 5px 12px;
-    border-radius: var(--sl-radius-control);
-    background: #75d59b;
-    color: #06110c;
+    margin: 0 0 var(--sl-space-3);
+    padding: 5px 10px;
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-sm);
+    background: transparent;
+    color: var(--sl-ink);
     font-family: var(--sl-font-mono);
-    font-size: .66rem;
-    font-weight: 700;
-    letter-spacing: .08em;
+    font-size: var(--sl-eyebrow-size);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
   }
+
+  {# ---- the annual hero panel ----
+     The deepest well in the grid, with the buy box raised out of it. The old
+     treatment was a radial glow, a decorative ring and a 60px drop shadow:
+     none of those survive on a near-black field (the shell's shadow tokens
+     lead with an inset lit edge for exactly this reason), and none of them
+     said anything. Depth carries the hierarchy instead. #}
   .plans .card.hero {
     flex-basis: 100%;
-    position: relative;
-    overflow: hidden;
     display: grid;
-    grid-template-columns: minmax(0, 1.4fr) minmax(260px, .6fr);
-    gap: clamp(24px, 4vw, 56px);
-    align-items: center;
-    padding: clamp(26px, 4.5vw, 44px);
-    border: 1px solid rgba(255, 255, 255, .14);
-    border-radius: var(--sl-radius-xl);
-    background:
-      radial-gradient(circle at 86% 10%, rgba(255, 204, 142, .16), transparent 20rem),
-      var(--sl-premium-gradient);
-    color: #cfe0d5;
-    box-shadow: var(--sl-shadow-lg);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--sl-space-5);
+    align-items: start;
+    padding: clamp(24px, 3.4vw, 40px);
+    background: var(--sl-night);
+    box-shadow: var(--sl-shadow-sm);
   }
-  .plans .card.hero::after {
-    content: "";
-    position: absolute;
-    left: -84px;
-    bottom: -152px;
-    width: 300px;
-    height: 300px;
-    border: 1px solid rgba(255, 255, 255, .12);
-    border-radius: 50%;
-    pointer-events: none;
+  .card.hero h2 {
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-ink);
+    font-size: var(--sl-text-3xl);
   }
-  .card.hero .hero-plan__copy,
-  .card.hero .hero-plan__buy { position: relative; z-index: 1; }
-  .card.hero h2 { margin: 0 0 4px; color: #fff; font-size: clamp(1.6rem, 3vw, 2.2rem); letter-spacing: -.03em; }
-  .card.hero ul { margin-bottom: 0; color: #cfe0d5; }
-  .card.hero li + li { border-top-color: rgba(245, 242, 233, .16); }
-  .card.hero li::before { background: #75d59b; }
+  {# One step brighter, because these hairlines sit on the well rather than on
+     a panel. #}
+  .card.hero ul { margin-bottom: 0; border-top-color: var(--sl-border-strong); }
+  .card.hero li { border-bottom-color: var(--sl-border-strong); }
   .hero-plan__buy {
-    padding: clamp(18px, 2.5vw, 24px);
-    border: 1px solid rgba(245, 242, 233, .2);
-    border-radius: var(--sl-radius-lg);
-    background: rgba(5, 16, 10, .6);
-    -webkit-backdrop-filter: blur(16px);
-    backdrop-filter: blur(16px);
-    box-shadow: 0 28px 60px -34px rgba(0, 0, 0, .85);
+    padding: clamp(18px, 2vw, 24px);
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-bg-card);
+    box-shadow: var(--sl-shadow-sm);
   }
   .hero-plan__label {
-    margin: 0 0 8px;
-    color: #ffad62;
+    margin: 0 0 var(--sl-space-2);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .66rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .13em;
+    letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
   }
   .card.hero .price {
     margin: 0;
-    color: #fff;
-    font-size: clamp(1.45rem, 2.4vw, 1.85rem);
-    line-height: 1.2;
+    font-size: var(--sl-text-3xl);
+    line-height: 1.15;
   }
-  .card.hero a.button,
-  .card.hero button {
+
+  {# ---- checkout controls ----
+     The shell's baseline paints `background: var(--sl-green-btn)` with
+     `color: white`. Since the inversion --sl-green-btn IS the bone ink, so
+     that pairing is bone on bone — an invisible label. Here that is every
+     checkout link on the only paid surface the app has, so the ink is
+     corrected here to the token that exists for this exact pairing.
+     Bone face, field-coloured ink, hairline edge. Never amber. #}
+  .plans a.button,
+  .plans button {
     width: 100%;
-    margin-top: 16px;
-    border-color: #f07a18;
-    background: #f07a18;
-    color: #06110c;
-    box-shadow: 0 16px 34px -20px rgba(240, 122, 24, .9);
+    min-height: 46px;
+    margin-top: var(--sl-space-4);
+    padding: 11px 20px;
+    border: 1px solid var(--sl-green-btn);
+    border-radius: var(--sl-radius-control);
+    background: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+    box-shadow: none;
+    text-align: center;
   }
-  .card.hero a.button:hover,
-  .card.hero button:hover {
-    border-color: #ff9a42;
-    background: #ff9a42;
-    color: #06110c;
+  {# Hover goes to the trace colour, matching the storefront's primary button
+     and the shell's link hover. transform is cleared so nothing here moves —
+     the shell's reduced-motion block would neutralise it anyway, but a
+     checkout button has no reason to hop under the cursor. #}
+  .plans a.button:hover,
+  .plans button:hover {
+    border-color: var(--sl-ink-hi);
+    background: var(--sl-ink-hi);
+    color: var(--sl-green-ink);
+    transform: none;
+    box-shadow: none;
   }
-  .card.hero .hint { margin-top: 12px; color: rgba(245, 242, 233, .74); }
-  .card.hero .hint strong,
-  .card.hero .hint a { color: #fff; }
-  .card.founders { border-color: #d9c8b2; background: linear-gradient(180deg, #fffdfa, #fff7ec); }
+  .plans a.button:active,
+  .plans button:active { transform: none; box-shadow: none; }
+  {# The buy control sits on the bottom edge of every stacked card so the
+     panels line up whatever length their feature list is. The hero's button
+     lives inside .hero-plan__buy, which is block flow — auto computes to zero
+     there, hence the exclusion. #}
+  .plans .card form,
+  .plans .card:not(.hero) a.button,
+  .plans .card:not(.hero) button { margin-top: auto; }
+  .plans .hint {
+    margin-top: var(--sl-space-3);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+  }
+  .plans .hint strong { color: var(--sl-ink); }
+
+  {# ---- the one-payment card ---- #}
+  .card.founders { background: var(--sl-bg-card); }
   .founders-cap {
     width: fit-content;
-    margin: 0 0 12px;
-    padding: 5px 10px;
-    border: 1px solid #e5c9a4;
-    border-radius: var(--sl-radius-control);
-    background: #e8f0ea;
-    color: var(--sl-orange-text);
+    margin: 0 0 var(--sl-space-3);
+    padding: 4px 9px;
+    border: 1px solid var(--sl-border-strong);
+    border-radius: var(--sl-radius-sm);
+    background: var(--sl-orange-soft);
+    color: var(--sl-ink-soft);
     font-family: var(--sl-font-mono);
-    font-size: .64rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .1em;
+    letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
   }
   .founders-note {
-    margin: 16px 0 0;
-    padding-top: 12px;
-    border-top: 1px dashed var(--sl-border-strong);
+    margin: var(--sl-space-4) 0 0;
+    padding-top: var(--sl-space-3);
+    border-top: 1px solid var(--sl-border);
     color: var(--sl-ink-muted);
-    font-size: .8rem;
+    font-size: var(--sl-text-xs);
     line-height: 1.55;
   }
-  .plans .card.quiet { background: transparent; border-color: var(--sl-border-strong); box-shadow: none; }
-  .plans .card form,
-  .plans .card:not(.hero) a.button { margin-top: auto; }
-  .plans .card a.button { text-align: center; }
-  .card button { width: 100%; }
+
+  {# The unpopulated cell: the free rung sits on the field itself, so the paid
+     panels read as the filled ones. Transparent would have shown the grid's
+     own --sl-border through, which is why this is the field token. #}
+  .plans .card.quiet { background: var(--sl-bg); }
+
+  {# ---- comparison ---- #}
   .compare-section { margin-top: clamp(40px, 6vw, 64px); }
-  .compare-head { max-width: 680px; margin: 0 0 18px; }
-  .compare-head h2 { margin: 0; color: var(--sl-green); font-size: clamp(1.5rem, 3vw, 2.1rem); letter-spacing: -.035em; line-height: 1.08; }
+  .compare-head { max-width: 680px; margin: 0 0 var(--sl-space-4); }
+  .compare-head h2 {
+    margin: 0;
+    color: var(--sl-green);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-heading-support);
+    letter-spacing: -0.02em;
+    line-height: 1.06;
+    text-transform: uppercase;
+  }
   .compare-scroll {
     overflow-x: auto;
-    border: 1px solid var(--sl-border-strong);
-    border-radius: var(--sl-radius-lg);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
     background: var(--sl-bg-card);
     box-shadow: var(--sl-shadow-sm);
   }
   table.compare { width: 100%; min-width: 680px; border-collapse: collapse; }
-  .compare th, .compare td { padding: 13px 18px; border-bottom: 1px solid var(--sl-border);
-                             text-align: center; font-size: 0.92rem; }
+  .compare th, .compare td {
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border-bottom: 1px solid var(--sl-border);
+    text-align: center;
+    font-size: var(--sl-text-sm);
+  }
+  {# Mono labels on the well. The old rule filled this row with --sl-green,
+     which post-inversion is the bone ink — a full-width bone bar would be the
+     brightest object on a near-black page, and brightest around the least
+     important text on it. #}
   .compare thead th {
-    padding: 12px 18px;
-    background: var(--sl-green);
-    color: var(--sl-green-ink);
+    padding: var(--sl-space-3) var(--sl-space-4);
+    border-bottom: 1px solid var(--sl-border-strong);
+    background: var(--sl-night);
+    color: var(--sl-ink-muted);
     font-family: var(--sl-font-mono);
-    font-size: .68rem;
+    font-size: var(--sl-eyebrow-size);
     font-weight: 500;
-    letter-spacing: .14em;
+    letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
+    white-space: nowrap;
   }
   .compare thead th:first-child { text-align: left; }
-  .compare tbody th { background: transparent; color: var(--sl-ink); font-weight: 600; text-align: left; font-size: .9rem; }
-  .compare tbody tr:nth-child(even) { background: rgba(20, 71, 44, .04); }
+  .compare tbody th {
+    background: transparent;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-sans);
+    font-weight: 600;
+    text-align: left;
+  }
+  .compare tbody tr:nth-child(even) { background: rgba(var(--sl-cream-rgb), 0.022); }
   .compare td {
     color: var(--sl-ink-soft);
     font-family: var(--sl-font-mono);
-    font-size: .8rem;
+    font-size: var(--sl-text-xs);
     font-variant-numeric: tabular-nums;
   }
-  .compare .yes { color: var(--sl-green-btn); font-weight: 700; }
+  {# A tick in this table states a plan fact, not a measured value, so it is
+     bone rather than amber. The em dash carries the negative case in text, so
+     the distinction never rests on colour alone. #}
+  .compare .yes { color: var(--sl-ink); font-weight: 500; }
   .compare .no { color: var(--sl-ink-muted); }
-  .compare tr:last-child td, .compare tr:last-child th { border-bottom: none; }
-  .fineprint { max-width: 780px; margin: 16px auto 0; color: var(--sl-ink-muted); font-size: 0.82rem; text-align: center; line-height: 1.6; }
-  .compare-section + .fineprint { margin-top: 26px; padding-top: 18px; border-top: 1px dashed var(--sl-border-strong); }
-  @media (max-width: 999px) {
-    .plans .card.hero { grid-template-columns: 1fr; align-items: stretch; }
+  {# Scoped to tbody. `tr:last-child` also matched the single row inside
+     <thead>, which stripped the header's underline — invisible while that
+     header was a filled bar, and a missing rule the moment it stopped being
+     one. #}
+  .compare tbody tr:last-child td,
+  .compare tbody tr:last-child th { border-bottom: none; }
+
+  {# ---- fine print ---- #}
+  .fineprint {
+    max-width: 780px;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-sm);
+    line-height: 1.6;
+    text-align: left;
   }
-  @media (max-width: 640px) {
-    .plans { flex-direction: column; }
-    .plans .card { flex-basis: auto; }
+  .compare-section + .fineprint {
+    margin-top: var(--sl-space-6);
+    padding-top: var(--sl-space-4);
+    border-top: 1px solid var(--sl-border);
+  }
+
+  {# Two columns only once there is room for the buy box to stay a real panel
+     beside the copy; below that it stacks under it. #}
+  @media (min-width: 1000px) {
+    .plans .card.hero {
+      grid-template-columns: minmax(0, 1.5fr) minmax(280px, 0.5fr);
+      gap: clamp(32px, 4vw, 56px);
+      align-items: center;
+    }
+  }
+  @media (max-width: 749px) {
+    .plans .card { flex-basis: 100%; padding: var(--sl-space-5) var(--sl-space-4); }
+    .plans .card.hero { padding: var(--sl-space-5) var(--sl-space-4); }
   }
 {% endblock %}
 {% block main %}

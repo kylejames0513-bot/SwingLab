@@ -22,7 +22,13 @@
     env(safe-area-inset-*) rather than leaving letterbox bars.
   {%- endcomment -%}
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="{% if premium_chrome %}var(--sl-night){% else %}var(--sl-green){% endif %}">
+  {%- comment -%}
+    A literal colour, not var(--sl-night): the theme-color meta is parsed by
+    the browser chrome and not by the CSSOM, so a var() reference is not
+    resolved — it is discarded, and this tag has therefore never coloured
+    anything. Both branches also collapse now that every surface is dark.
+  {%- endcomment -%}
+  <meta name="theme-color" content="#070f0b">
   <link rel="canonical" href="{{ canonical_url }}">
   {% comment %}theme-check-disable RemoteAsset{% endcomment %}
   <link rel="preconnect" href="https://app.caddieinsight.com" crossorigin>
@@ -84,14 +90,25 @@
   {%- comment -%}
     Self-hosted type. Google Fonts was a render-blocking THIRD-PARTY
     stylesheet loaded after base.css — the CSSOM waited on a cross-origin
-    round trip before anything painted, for seven font files. These three
-    latin-subset woff2 files total ~64 KB, ship inside the theme, and are
-    preloaded so the swap window is as small as this connection allows.
-    Archivo is one variable file covering every weight the theme uses
-    (400-800); the app shell will move to the same files in the follow-up.
+    round trip before anything painted, for seven font files. These four
+    latin-subset woff2 files total ~79 KB, ship inside the theme, and the
+    three above the fold are preloaded so the swap window is as small as this
+    connection allows.
+
+    Archivo variable carries interface weights 400-800. Display is a SEPARATE
+    static instance at wdth 125 / wght 800 rather than a dual-axis variable
+    file, because wdth 125 is a named instance in Archivo's STAT table and so
+    ships pre-built at 14,536 bytes — the dual-axis file is 90,104. The
+    measurements are in store-assets/make_fonts.py, which writes these files
+    into this directory and swinglab/web/static/ in one pass so both surfaces
+    load byte-identical faces.
+
+    theme-check's AssetPreload rule rejects a hand-written <link rel=preload>;
+    preload_tag is the only accepted spelling.
   {%- endcomment -%}
   {{ 'archivo-latin-var.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
-  {{ 'plex-mono-latin-400.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
+  {{ 'archivo-expanded-latin-800.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
+  {{ 'dm-mono-latin-500.woff2' | asset_url | preload_tag: as: 'font', type: 'font/woff2', crossorigin: 'anonymous' }}
   {% style %}
     @font-face {
       font-family: "Archivo";
@@ -102,28 +119,44 @@
       unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
     }
     @font-face {
-      font-family: "IBM Plex Mono";
+      font-family: "Archivo Expanded";
       font-style: normal;
-      font-weight: 400;
+      font-weight: 800;
+      font-stretch: 125%;
       font-display: swap;
-      src: url("{{ 'plex-mono-latin-400.woff2' | asset_url }}") format("woff2");
+      src: url("{{ 'archivo-expanded-latin-800.woff2' | asset_url }}") format("woff2");
       unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
     }
     @font-face {
-      font-family: "IBM Plex Mono";
+      font-family: "DM Mono";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("{{ 'dm-mono-latin-400.woff2' | asset_url }}") format("woff2");
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+    }
+    @font-face {
+      font-family: "DM Mono";
       font-style: normal;
       font-weight: 500;
       font-display: swap;
-      src: url("{{ 'plex-mono-latin-500.woff2' | asset_url }}") format("woff2");
+      src: url("{{ 'dm-mono-latin-500.woff2' | asset_url }}") format("woff2");
       unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
     }
   {% endstyle %}
   {{ 'base.css' | asset_url | stylesheet_tag }}
   {% style %}
+    {%- comment -%}
+      These three merchant settings override base.css, so they are the reason
+      a palette change is not finished when base.css is finished: leave them
+      and the old light values win over every token beneath them. Their
+      defaults in config/settings_schema.json and their stored values in
+      config/settings_data.json both move with the palette.
+    {%- endcomment -%}
     :root {
       --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-      --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-      --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+      --sl-font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+      --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
       --sl-bg: {{ settings.color_page_bg }};
       --sl-green: {{ settings.color_green }};
       --sl-orange: {{ settings.color_accent }};
@@ -208,7 +241,25 @@
       document.documentElement.classList.add('sl-js');
       scan(document);
       document.addEventListener('shopify:section:load', function (e) { scan(e.target); });
+
+      /* A client that runs JS but never scrolls — an automated screenshot, a
+         preview renderer — gets .sl-js (opacity 0) and then no .is-in,
+         because the observer only fires on entry. Measured on the live site:
+         11 of 13 revealable blocks stayed invisible. JS-off and
+         reduced-motion were already covered; this is the case that was not.
+         Three seconds is far past any real reader's first scroll, so nobody
+         who scrolls ever sees this fire. */
+      setTimeout(function () {
+        var stuck = document.querySelectorAll('.sl-reveal:not(.is-in)');
+        for (var i = 0; i < stuck.length; i++) stuck[i].classList.add('is-in');
+      }, 3000);
     })();
   </script>
+  {%- comment -%}
+    The live read. Deferred because the hero ships a fully drawn SVG still
+    that this only replaces once the canvas is up — nothing above the fold
+    waits on it.
+  {%- endcomment -%}
+  <script src="{{ 'swing-trace.js' | asset_url }}" defer></script>
 </body>
 </html>
