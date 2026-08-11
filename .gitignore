@@ -37,3 +37,6 @@ store-assets/*.ttf
 # cruft docs/superpowers/specs/2026-08-08-tour-caddie-v3-revamp-design.md
 # called out.
 dist/
+
+# local settings backups the CLI writes beside settings.local.json
+.claude/settings.local.json.bak-*
