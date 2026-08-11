@@ -237,8 +237,13 @@ img { max-width: 100%; display: block; }
   gap: 8px;
   text-decoration: none;
   text-align: center;
-  font-weight: 700;
+  /* CTAs speak the headline voice: condensed caps, lightly tracked —
+     the register the headline set. Weight 500; 700 clumps in Oswald. */
+  font-family: var(--sl-font-headline);
+  font-weight: 500;
   font-size: var(--sl-text-base);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
   line-height: 1.2;
   padding: 12px clamp(22px, 3vw, 28px);
   border-radius: var(--sl-radius-control);

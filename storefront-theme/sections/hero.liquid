@@ -366,10 +366,13 @@ video.sl-hero__video {
   align-items: center;
   gap: 12px;
   color: var(--sl-bg-card);
-  font-family: var(--sl-font-display);
-  font-size: var(--sl-text-3xl);
-  font-weight: 700;
-  letter-spacing: -0.04em;
+  /* The wordmark is a masthead now — same condensed voice as the
+     headline under it, tracked open rather than crushed. */
+  font-family: var(--sl-font-headline);
+  font-size: var(--sl-text-2xl);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
   line-height: 1;
 }
 .sl-hero__brand span {
@@ -403,7 +406,7 @@ video.sl-hero__video {
 .sl-hero__body {
   max-width: 40ch;
   margin: 18px 0 0;
-  color: rgba(238, 242, 239, 0.86);
+  color: rgba(238, 242, 239, 0.9);
   font-size: var(--sl-text-lg);
   font-weight: 400;
   line-height: 1.55;
@@ -605,7 +608,7 @@ video.sl-hero__video {
   }
 }
 @media (max-width: 559px) {
-  .sl-hero__brand { font-size: var(--sl-text-xl); letter-spacing: -0.03em; }
+  .sl-hero__brand { font-size: var(--sl-text-xl); letter-spacing: 0.06em; }
   .sl-hero__title { max-width: 10ch; font-size: var(--sl-text-4xl); }
 }
 @media (prefers-reduced-motion: reduce) {
