@@ -36,8 +36,16 @@ SOURCES = sorted(
     ]
 )
 
-SIGNAL = re.compile(r"var\(--sl-(?:accent|orange)\)|var\(--sl-accent-rgb\)")
-TRACE = re.compile(r"var\(--sl-trace\)")
+# The report templates carry their OWN token names rather than --sl-*, because
+# a saved report has to survive being opened with no stylesheet beside it. The
+# names differ; the rules do not, and the report is where they were still being
+# broken after both other surfaces were clean — every section label in the
+# guided report was amber, on the one page a customer actually pays for.
+SIGNAL = re.compile(
+    r"var\(--sl-(?:accent|orange)\)|var\(--sl-accent-rgb\)"
+    r"|var\(--accent-(?:text|bright)\)|var\(--amber\)"
+)
+TRACE = re.compile(r"var\(--sl-trace\)|var\(--trace\)")
 # A CSS rule: everything up to the brace is the selector, the braces are the
 # body. Nested at-rules are not matched, which is fine — the declarations
 # inside them are still caught, because their inner rules match too.
