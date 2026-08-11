@@ -62,11 +62,14 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
     ]
 
     # The 2026-08 restructure: gear moved up (it is what the store ships),
-    # the stats band died (it restated the hero chips), the standalone
-    # email-capture died (the footer newsletter is the one form), and a
-    # proof slot waits empty for real social proof.
+    # the standalone email-capture died (the footer newsletter is the one
+    # form), and a proof slot waits empty for real social proof. The old
+    # stats band died for restating the hero chips; R7's returns with a
+    # different job — engine capability numbers (16 measurements, 2 angles,
+    # 3:1 benchmark, 1 pass mark), none of which appear in the chips.
     assert INDEX["order"] == [
         "hero",
+        "stats",
         "how_it_works",
         "report",
         "gear",
@@ -77,7 +80,7 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "faq",
         "cta",
     ]
-    assert "stats" not in INDEX["sections"]
+    assert INDEX["sections"]["stats"]["type"] == "stat-band"
     assert "email" not in INDEX["sections"]
     assert INDEX["sections"]["proof"]["block_order"] == []
 
@@ -395,9 +398,64 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     assert "animation: sl-swing-read 9.2s linear infinite" in motion_gated
     strike_rules = hero_source.split(".sl-hero__trace-strike {", 1)[1].split("}", 1)[0]
     assert "stroke-dashoffset: 0" in strike_rules  # drawn-by-default still
+    # R7: shot tracers — a canvas layer arcing glowing ball flights across
+    # the dusk photo. Atmosphere, never content: the script refuses to run
+    # under reduced motion or Save-Data, parks offscreen via
+    # IntersectionObserver, and the canvas is display:none'd under the
+    # reduce gate as belt-and-braces.
+    assert '<canvas class="sl-hero__tracers" aria-hidden="true"></canvas>' in hero_source
+    assert "prefers-reduced-motion: reduce" in hero_source
+    assert "conn.saveData" in hero_source
+    assert "IntersectionObserver" in hero_source
+    assert (
+        "@media (prefers-reduced-motion: reduce) {\n  .sl-hero__tracers { display: none; }"
+        in hero_source
+    )
+    assert "pointer-events: none" in hero_source
     assert "width: 100%;" in mobile_hero.split(".sl-hero__signal {", 1)[1].split("}", 1)[0]
     assert ".sl-hero__fine,\n  .sl-hero__signal { display: none; }" not in mobile_hero
     assert ".sl-hero__fine { display: none; }" not in mobile_hero
+    # Load choreography rises the copy stack once, inside the same gate as
+    # the drift.
+    assert "@keyframes sl-hero-rise" in hero_source
+    drift_gate_block = hero_source.split("@media (prefers-reduced-motion: no-preference)", 1)[1]
+    assert "sl-hero-rise" in drift_gate_block.split("@keyframes", 1)[0]
+
+
+def test_stat_band_counts_only_honest_engine_numbers():
+    """The numbers band under the hero. Every default is a verified engine
+    fact, the schema declares every id the template binds (the blank-Coach
+    lesson), and the count-up defers to reduced motion."""
+    stats = source("sections/stat-band.liquid")
+    assert 'data-stat-value="{{ block.settings.value | escape }}"' in stats
+    schema = stats.split("{% schema %}", 1)[1]
+    for setting_id in ("value", "label"):
+        assert f'"id": "{setting_id}"' in schema
+    # The four shipped figures, pinned to what the engine actually does:
+    # 16 measured values per swing (SwingMetrics minus bookkeeping), two
+    # camera angles, the 3:1 tempo benchmark, one pass mark per report.
+    for value, label in (
+        ("16", "Measurements a swing"),
+        ("2", "Filmed angles supported"),
+        ("3:1", "Tempo benchmark"),
+        ("1", "Pass mark per session"),
+    ):
+        assert value in schema and label in schema
+    # Count-up respects reduced motion and only ever animates plain
+    # integers — "3:1" must render as written, never be parsed apart.
+    assert "prefers-reduced-motion: reduce" in stats
+    assert "/^\\d+$/" in stats
+    import json as _json
+
+    index = _json.loads(source("templates/index.json"))
+    assert index["sections"]["stats"]["type"] == "stat-band"
+    order = index["order"]
+    assert order.index("stats") == order.index("hero") + 1
+    values = [
+        block["settings"]["value"]
+        for block in index["sections"]["stats"]["blocks"].values()
+    ]
+    assert values == ["16", "2", "3:1", "1"]
 
 
 def test_homepage_bordered_surfaces_preserve_reading_hierarchy():

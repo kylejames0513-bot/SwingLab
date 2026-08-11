@@ -365,9 +365,11 @@
   color: var(--sl-ink);
   box-shadow: 0 34px 76px -38px rgba(0, 0, 0, 0.85);
 }
+/* the faint accent halo is the static resting state too — with motion off
+   the featured card still reads lit, just not breathing */
 .sl-plans__card--featured {
   border-color: rgba(var(--sl-accent-rgb), 0.66);
-  box-shadow: 0 44px 92px -36px rgba(0, 0, 0, 0.95);
+  box-shadow: 0 44px 92px -36px rgba(0, 0, 0, 0.95), 0 0 38px -8px rgba(var(--sl-accent-rgb), 0.2);
 }
 /* the featured card's kinetic hairline, entering from the left edge */
 .sl-plans__card--featured::before {
@@ -577,12 +579,26 @@
   text-align: center;
 }
 @media (prefers-reduced-motion: no-preference) {
+  /* same recipe as how-it-works: sprung transform, plain ease on the paint */
   .sl-plans__card {
-    transition: transform 0.22s ease, box-shadow 0.22s ease, border-color 0.22s ease;
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s ease, border-color 0.25s ease;
   }
   .sl-plans__card:hover {
     transform: translateY(-4px);
+    border-color: rgba(var(--sl-cream-rgb), 0.34);
     box-shadow: 0 48px 96px -36px rgba(0, 0, 0, 0.98);
+  }
+  /* halo animates box-shadow on the card itself: overflow:hidden clips any
+     pseudo-element glow, and two stops on one card is a cheap repaint. The
+     running animation owns box-shadow, so the featured hover speaks through
+     lift and border only — the edge snaps to full accent instead. */
+  .sl-plans__card--featured {
+    animation: sl-plans-halo 7s ease-in-out infinite;
+  }
+  .sl-plans__card--featured:hover { border-color: var(--sl-accent); }
+  @keyframes sl-plans-halo {
+    0%, 100% { box-shadow: 0 44px 92px -36px rgba(0, 0, 0, 0.95), 0 0 38px -8px rgba(var(--sl-accent-rgb), 0.14); }
+    50% { box-shadow: 0 44px 92px -36px rgba(0, 0, 0, 0.95), 0 0 46px -6px rgba(var(--sl-accent-rgb), 0.3); }
   }
 }
 @media (min-width: 1000px) {

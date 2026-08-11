@@ -1,0 +1,133 @@
+{%- comment -%}
+  The numbers band — the missing beat between the hero's promise and the
+  method. Four honest figures in broadcast mono, counted up as they
+  scroll into view. Every default below is a verified engine fact
+  (metrics.py SwingMetrics: 16 measured values per swing once the
+  bookkeeping fields are excluded; two supported camera angles; the 3:1
+  tempo benchmark; one pass mark per report) — this band must never
+  advertise a number the engine does not produce.
+{%- endcomment -%}
+<section class="sl-stats" aria-label="{{ section.settings.aria_label | default: 'CaddieInsight by the numbers' }}">
+  <div class="sl-wrap">
+    <dl class="sl-stats__grid">
+      {%- for block in section.blocks -%}
+        <div class="sl-stats__cell sl-reveal" {{ block.shopify_attributes }}>
+          <dd class="sl-stats__value" data-stat-value="{{ block.settings.value | escape }}">{{ block.settings.value }}</dd>
+          <dt class="sl-stats__label">{{ block.settings.label }}</dt>
+        </div>
+      {%- endfor -%}
+    </dl>
+  </div>
+</section>
+
+<script>
+  (function () {
+    'use strict';
+    /* Count-up on first reveal. Integers only — "3:1" and friends are
+       left alone rather than mangled. Reduced-motion gets the final
+       number immediately. */
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var cells = document.querySelectorAll('.sl-stats__value');
+    if (!cells.length || !('IntersectionObserver' in window)) return;
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (!entry.isIntersecting) return;
+        io.unobserve(entry.target);
+        var raw = entry.target.getAttribute('data-stat-value') || '';
+        if (!/^\d+$/.test(raw)) return;
+        var target = parseInt(raw, 10);
+        var start = null;
+        function tick(now) {
+          if (start === null) start = now;
+          var t = Math.min((now - start) / 900, 1);
+          var eased = 1 - Math.pow(1 - t, 3);
+          entry.target.textContent = String(Math.round(target * eased));
+          if (t < 1) requestAnimationFrame(tick);
+        }
+        requestAnimationFrame(tick);
+      });
+    }, { threshold: 0.6 });
+    cells.forEach(function (cell) { io.observe(cell); });
+  })();
+</script>
+
+{% stylesheet %}
+.sl-stats {
+  background: var(--sl-night);
+  color: var(--sl-bg);
+  border-top: 1px solid rgba(238, 242, 239, 0.1);
+  padding-top: var(--sl-space-6);
+  padding-bottom: var(--sl-space-6);
+}
+.sl-stats__grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sl-space-5) var(--sl-space-4);
+}
+@media (min-width: 1000px) {
+  .sl-stats__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+.sl-stats__cell {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: center;
+}
+.sl-stats__value {
+  margin: 0;
+  color: var(--sl-accent);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-3xl);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.sl-stats__label {
+  color: rgba(238, 242, 239, 0.6);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+@media (max-width: 749px) {
+  .sl-stats {
+    padding-top: var(--sl-space-5);
+    padding-bottom: var(--sl-space-5);
+  }
+  .sl-stats__value { font-size: var(--sl-text-2xl); }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Stat band",
+  "settings": [
+    { "type": "text", "id": "aria_label", "label": "Accessible label", "default": "CaddieInsight by the numbers" }
+  ],
+  "blocks": [
+    {
+      "type": "stat",
+      "name": "Stat",
+      "settings": [
+        { "type": "text", "id": "value", "label": "Value", "default": "16", "info": "A plain integer counts up on scroll; anything else (3:1, 2x) renders as written." },
+        { "type": "text", "id": "label", "label": "Label", "default": "Measurements a swing" }
+      ]
+    }
+  ],
+  "max_blocks": 4,
+  "presets": [
+    {
+      "name": "Stat band",
+      "blocks": [
+        { "type": "stat", "settings": { "value": "16", "label": "Measurements a swing" } },
+        { "type": "stat", "settings": { "value": "2", "label": "Filmed angles supported" } },
+        { "type": "stat", "settings": { "value": "3:1", "label": "Tempo benchmark" } },
+        { "type": "stat", "settings": { "value": "1", "label": "Pass mark per session" } }
+      ]
+    }
+  ]
+}
+{% endschema %}

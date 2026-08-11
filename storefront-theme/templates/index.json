@@ -444,10 +444,22 @@
       "blocks": {},
       "block_order": [],
       "settings": {}
+    },
+    "stats": {
+      "type": "stat-band",
+      "blocks": {
+        "st_measure": { "type": "stat", "settings": { "value": "16", "label": "Measurements a swing" } },
+        "st_angles": { "type": "stat", "settings": { "value": "2", "label": "Filmed angles supported" } },
+        "st_tempo": { "type": "stat", "settings": { "value": "3:1", "label": "Tempo benchmark" } },
+        "st_pass": { "type": "stat", "settings": { "value": "1", "label": "Pass mark per session" } }
+      },
+      "block_order": ["st_measure", "st_angles", "st_tempo", "st_pass"],
+      "settings": {}
     }
   },
   "order": [
     "hero",
+    "stats",
     "how_it_works",
     "report",
     "gear",

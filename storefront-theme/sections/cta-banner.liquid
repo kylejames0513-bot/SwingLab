@@ -47,6 +47,26 @@
   transform: rotate(18deg);
   pointer-events: none;
 }
+/* diagonal sheen band — parked off-canvas so the static page shows nothing;
+   only the motion block below ever moves it. overflow:clip on .sl-cta crops it. */
+.sl-cta::after {
+  content: "";
+  position: absolute;
+  top: -30%;
+  bottom: -30%; /* bleed covers the corners the skew would otherwise expose */
+  left: 0;
+  width: 44%;
+  background: linear-gradient(
+    to right,
+    rgba(255, 255, 255, 0) 0%,
+    rgba(255, 255, 255, 0.05) 30%,
+    rgba(255, 255, 255, 0.08) 50%,
+    rgba(255, 255, 255, 0.05) 70%,
+    rgba(255, 255, 255, 0) 100%
+  );
+  transform: translateX(-130%) skewX(-16deg);
+  pointer-events: none;
+}
 .sl-cta__inner {
   position: relative;
   max-width: 720px;
@@ -88,6 +108,28 @@
   background: var(--sl-bg);
   color: var(--sl-green);
   border-color: var(--sl-bg);
+}
+@media (prefers-reduced-motion: no-preference) {
+  /* ~2.2s of travel, then rest — a glance, not a marquee */
+  .sl-cta::after { animation: sl-cta-sheen 9s linear infinite; }
+  /* base.css lifts every button 1px; the closing CTA earns a touch more,
+     on a slower curve. transform only — keep base's .18s color/border. */
+  .sl-cta__actions .sl-btn--light {
+    transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease,
+                transform 0.25s cubic-bezier(0.33, 1, 0.68, 1), box-shadow 0.18s ease;
+  }
+  .sl-cta__actions .sl-btn--light:not([disabled]):hover { transform: translateY(-2px); }
+  .sl-cta__actions .sl-btn--light:not([disabled]):active { transform: translateY(0); }
+}
+/* 24.5% of 9s = the 2.2s sweep; the identical frames after it are the rest */
+@keyframes sl-cta-sheen {
+  0% {
+    transform: translateX(-130%) skewX(-16deg);
+    animation-timing-function: cubic-bezier(0.4, 0, 0.6, 1);
+  }
+  24.5%, 100% {
+    transform: translateX(280%) skewX(-16deg);
+  }
 }
 @media (max-width: 749px) {
   .sl-cta__inner { text-align: center; }
