@@ -255,6 +255,16 @@ Rebuild it rather than editing it.
          beside the COACH label. A label over an empty cell means the
          section schema and `templates/index.json` have drifted — Shopify
          silently drops any block setting the schema does not declare.
+   - [ ] **Homepage hero, on a real phone** — this is the section that has
+         now shipped small twice, and a desktop window narrowed to phone
+         width is not a good enough check (`svh` and the address bar are
+         part of what goes wrong). Three things:
+         the swing figure in the EXAMPLE SESSION panel is a **large drawing
+         that fills its box**, not a speck in a strip; the **photograph is
+         visible** — a golfer, a lit sky, a tripod, not a black field; and
+         the fine print under the buttons is still **comfortably readable**
+         over the brighter photo. If the trace looks like a thumbnail again,
+         a fixed pixel height has come back onto `.sl-hero__trace`.
 
 3. **Publish.** Leave the previous theme in the list — that is the rollback.
 
