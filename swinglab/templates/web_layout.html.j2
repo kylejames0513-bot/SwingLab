@@ -6,7 +6,7 @@
    home indicator; every edge is then re-inset with env(safe-area-inset-*)
    below, so nothing lands under the hardware. #}
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#06110c">
+<meta name="theme-color" content="#070f0b">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="{{ brand.name }}">
@@ -49,13 +49,21 @@
 {# iOS ignores SVG touch icons — this PNG is generated from the same mark
    by store-assets/make_brand.py (opaque, 180x180). #}
 <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
-{# The same self-hosted faces the storefront ships (one variable Archivo
-   file covering 400-800 plus two Plex Mono weights, ~64 KB total, latin
-   subset) — replacing the render-blocking Google Fonts round-trips. The
-   guided report asks for Archivo first and relies on the shell having
-   loaded it. Same files, byte for byte, as storefront-theme/assets/. #}
+{# The same self-hosted faces the storefront ships, byte for byte (they are
+   written by store-assets/make_fonts.py into both surfaces in one pass):
+   Archivo variable 400-800 for interface, a static Archivo Expanded
+   wdth-125/wght-800 for display, and two DM Mono weights for every measured
+   value. ~79 KB total, latin subset, no third-party origin at runtime.
+
+   The display face is a separate static rather than the dual-axis variable
+   because wdth 125 is a NAMED instance in Archivo's STAT table and therefore
+   ships pre-built at 14,536 bytes, where the dual-axis file costs 90,104.
+
+   The guided report asks for Archivo first and relies on the shell having
+   loaded it. Only the two faces above the fold are preloaded. #}
 <link rel="preload" href="/static/archivo-latin-var.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/static/plex-mono-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/archivo-expanded-latin-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/dm-mono-latin-500.woff2" as="font" type="font/woff2" crossorigin>
 <style>
   @font-face {
     font-family: "Archivo";
@@ -66,19 +74,28 @@
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
   @font-face {
-    font-family: "IBM Plex Mono";
+    font-family: "Archivo Expanded";
     font-style: normal;
-    font-weight: 400;
+    font-weight: 800;
+    font-stretch: 125%;
     font-display: swap;
-    src: url("/static/plex-mono-latin-400.woff2") format("woff2");
+    src: url("/static/archivo-expanded-latin-800.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
   @font-face {
-    font-family: "IBM Plex Mono";
+    font-family: "DM Mono";
+    font-style: normal;
+    font-weight: 400;
+    font-display: swap;
+    src: url("/static/dm-mono-latin-400.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: "DM Mono";
     font-style: normal;
     font-weight: 500;
     font-display: swap;
-    src: url("/static/plex-mono-latin-500.woff2") format("woff2");
+    src: url("/static/dm-mono-latin-500.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
 </style>
@@ -86,44 +103,71 @@
   :root {
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
-    --sl-bg: #eef2ef;
-    --sl-bg-card: #f8fbf9;
-    --sl-surface-soft: #e2ebe4;
-    --sl-surface-dark: #0c2e1f;
-    --sl-night: #06110c;
-    --sl-ink: #101a14;
-    --sl-ink-soft: #445049;
-    --sl-ink-muted: #5a655e;
-    --sl-green: #0f3d28;
-    --sl-green-btn: #1a5c38;
-    --sl-green-ink: #e6f2ea;
-    --sl-orange: #9a4b0a;
-    --sl-orange-text: #8f4509;
-    --sl-orange-soft: #e8f0ea;
-    {# The dark-surface set, spelled exactly as storefront-theme/assets/
-       base.css spells it — the parity contract compares text, not numbers. #}
-    --sl-cream: #f5f2e9;
-    --sl-accent: #f07a18;
-    --sl-accent-hover: #ff9a42;
-    --sl-focus-dark: #ffad62;
-    --sl-arc: rgba(20, 71, 44, 0.3);
-    --sl-cream-rgb: 245, 242, 233;
-    --sl-night-rgb: 6, 17, 12;
-    --sl-accent-rgb: 240, 122, 24;
-    --sl-green-rgb: 15, 61, 40;
+    {# The field is dark on both surfaces now. Every token below whose name is
+       shared with storefront-theme/assets/base.css is spelled EXACTLY as that
+       file spells it — the parity contract compares text, not numbers.
+
+       The names did not change even though every value did: --sl-green is
+       referenced 131 times across the two surfaces and --sl-border 90, and
+       renaming would have touched ~1,400 call sites to buy nothing. The
+       tokens were already used for the role their name describes, so
+       redefining in place inverts the system at once. #}
+    --sl-bg: #070f0b;
+    --sl-bg-card: #0d1712;
+    --sl-surface-soft: #14201a;
+    --sl-surface-dark: #040907;
+    --sl-night: #040907;
+    --sl-ink: #edefe9;
+    {# Deliberately lighter than the storefront's #78857d, for the same reason
+       it used to be DARKER: this surface sets small interface text where the
+       storefront sets display prose, so it needs the extra headroom. The
+       rationale survived the inversion; the direction flipped. 6.33 on the
+       field against the storefront's 5.04. #}
+    --sl-ink-soft: #a8b3ac;
+    --sl-ink-muted: #8b968e;
+    --sl-green: #edefe9;
+    --sl-green-btn: #edefe9;
+    --sl-green-ink: #070f0b;
+    --sl-orange: #f0a818;
+    --sl-orange-text: #f5b833;
+    --sl-orange-soft: #14201a;
+    --sl-cream: #edefe9;
+    --sl-accent: #f0a818;
+    --sl-accent-hover: #ffc04d;
+    --sl-focus-dark: #ffc04d;
+    --sl-arc: rgba(95, 227, 192, 0.28);
+    --sl-trace: #5fe3c0;
+    --sl-trace-dim: #3f9c86;
+    --sl-paper: #f2efe6;
+    --sl-paper-ink: #10160f;
+    --sl-paper-soft: #454f48;
+    --sl-paper-line: #d8d3c4;
+    --sl-brand-green: #0f3d28;
+    --sl-cream-rgb: 237, 239, 233;
+    --sl-night-rgb: 4, 9, 7;
+    --sl-accent-rgb: 240, 168, 24;
+    --sl-green-rgb: 237, 239, 233;
+    --sl-trace-rgb: 95, 227, 192;
+    --sl-field-rgb: 7, 15, 11;
     --sl-premium-accent: var(--sl-focus-dark);
-    --sl-premium-gradient: linear-gradient(135deg, #06110c 0%, #0c2e1f 62%, #0f3d28 100%);
-    --sl-border: #d4ddd6;
-    --sl-border-strong: #b7c3bb;
-    --sl-control-border: #6f7b72;
-    --sl-radius-sm: 6px;
-    --sl-radius-md: 12px;
-    --sl-radius-lg: 16px;
-    --sl-radius-xl: 22px;
-    --sl-radius-control: 12px;
-    --sl-shadow-sm: 0 1px 2px rgba(6, 17, 12, .04);
-    --sl-shadow-md: 0 14px 32px -18px rgba(6, 17, 12, .16);
-    --sl-shadow-lg: 0 34px 80px -42px rgba(6, 17, 12, .45);
+    --sl-premium-gradient: linear-gradient(135deg, #040907 0%, #0d1712 62%, #14201a 100%);
+    --sl-border: #1e2c25;
+    --sl-border-strong: #2e4238;
+    {# 4.29 on the field. Brighter than the storefront's #5c6b62 (3.45) for
+       the same headroom reason — an app control edge is smaller than a
+       storefront one. Both clear WCAG 1.4.11's 3:1 for non-text contrast;
+       --sl-border at 1.33 does not, and is decorative only. #}
+    --sl-control-border: #6b7a71;
+    --sl-radius-sm: 2px;
+    --sl-radius-md: 4px;
+    --sl-radius-lg: 8px;
+    --sl-radius-xl: 8px;
+    --sl-radius-control: 4px;
+    {# Drop shadows are invisible on a near-black field. An instrument
+       separates surfaces with a lit top edge and a deeper well instead. #}
+    --sl-shadow-sm: inset 0 1px 0 rgba(237, 239, 233, .04);
+    --sl-shadow-md: inset 0 1px 0 rgba(237, 239, 233, .05), 0 18px 40px -28px rgba(0, 0, 0, .9);
+    --sl-shadow-lg: inset 0 1px 0 rgba(237, 239, 233, .06), 0 40px 84px -44px rgba(0, 0, 0, 1);
     --sl-content: 1280px;
     --sl-maxw: var(--sl-content);
     --sl-pad-x: clamp(24px, 5vw, 64px);
@@ -140,8 +184,8 @@
     --sl-eyebrow-size: 12px;
     --sl-eyebrow-track: 0.16em;
     --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-    --sl-font-display: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-    --sl-font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    --sl-font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
     {# Spelled exactly as storefront-theme/assets/base.css spells them —
        leading zeros included. The values were already numerically identical,
        but `.15vw` versus `0.15vw` is a textual difference, and a parity test
@@ -168,10 +212,16 @@
   body {
     margin: 0;
     min-height: 100vh;
+    {# The field, plus the 8px technical grid that runs under everything —
+       the same background the storefront paints. The grid is what makes the
+       surface read as a measuring instrument rather than as a dark theme. #}
     background:
-      radial-gradient(1200px 520px at 12% -8%, rgba(26, 92, 56, 0.08), transparent 58%),
-      radial-gradient(900px 480px at 92% 4%, rgba(240, 122, 24, 0.05), transparent 52%),
+      linear-gradient(rgba(237, 239, 233, 0.022) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(237, 239, 233, 0.022) 1px, transparent 1px),
+      radial-gradient(1100px 560px at 14% -10%, rgba(95, 227, 192, 0.05), transparent 60%),
+      radial-gradient(900px 480px at 92% 2%, rgba(240, 168, 24, 0.04), transparent 55%),
       var(--sl-bg);
+    background-size: 8px 8px, 8px 8px, auto, auto, auto;
     background-attachment: fixed;
     color: var(--sl-ink);
     font-family: var(--sl-font-sans);
@@ -184,20 +234,29 @@
   }
   h1, h2, h3 {
     font-family: var(--sl-font-display);
-    font-weight: 700;
-    letter-spacing: -0.035em;
-    line-height: 1.08;
+    font-weight: 800;
+    letter-spacing: -0.02em;
+    line-height: 1.04;
     text-wrap: balance;
     color: var(--sl-green);
   }
-  a { color: var(--sl-green-btn); }
-  a:hover { color: var(--sl-orange-text); }
+  {# Links are bone like body text, so the underline is the second signal
+     that keeps them distinguishable, and it is not optional. Hover goes to
+     the trace colour, never to amber: amber means a measured value. #}
+  a {
+    color: var(--sl-green-btn);
+    text-decoration: underline;
+    text-decoration-color: rgba(237, 239, 233, .32);
+    text-underline-offset: 0.2em;
+    text-decoration-thickness: 1px;
+  }
+  a:hover { color: var(--sl-trace); text-decoration-color: currentColor; }
   img { max-width: 100%; }
-  ::selection { background: rgba(232, 114, 12, .22); }
+  ::selection { background: rgba(95, 227, 192, .26); color: var(--sl-ink); }
   :focus-visible {
-    outline: 3px solid var(--sl-orange);
+    outline: 2px solid var(--sl-focus-dark);
     outline-offset: 3px;
-    border-radius: 3px;
+    border-radius: 2px;
   }
   .sl-skip {
     position: absolute;

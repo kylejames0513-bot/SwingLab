@@ -23,11 +23,29 @@ asserted:
 4. **Amber on dark green is the fitness-app default.** It is the palette of
    every competitor the positioning doc says never to name.
 
-And one real bug, found while capturing baselines: full-page screenshots of
-`caddieinsight.com` render every light section **completely blank**.
-`.sl-reveal` only receives `.is-in` from an IntersectionObserver, so any
-client that does not run that observer — a screenshot, a crawler, a reader
-with JS off — sees empty bands where the content should be.
+And one robustness gap, found while capturing baselines: full-page
+screenshots of `caddieinsight.com` render most sections **completely blank**.
+
+The first version of this note claimed that hit any client not running the
+observer. That was wrong, and measuring it is what corrected it — the
+existing defences are better than they looked:
+
+| Condition | Hidden `.sl-reveal` of 13 |
+| --- | --- |
+| JS off | 0 — the `<noscript>` override works |
+| `prefers-reduced-motion: reduce` | 0 — handled |
+| **JS on, never scrolled** | **11** |
+
+So the gap is narrow: a client that *executes* JS but never scrolls gets
+`.sl-js` (which sets `opacity: 0`) without ever getting `.is-in`. That is
+automated screenshots and some preview renderers — not readers, and not
+crawlers with JS off.
+
+It is still worth closing, because content that can be permanently invisible
+to *any* client is a bad default, and the fix is a few lines: a safety
+timeout that reveals anything still hidden after three seconds. Real users
+never reach it. The reveal stays progressive enhancement over a visible
+default rather than a gate in front of one.
 
 ## The direction
 
