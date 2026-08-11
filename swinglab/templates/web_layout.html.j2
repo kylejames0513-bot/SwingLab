@@ -419,10 +419,16 @@
     background: var(--sl-bg-card);
     color: var(--sl-green-btn);
   }
+  {# The current page is marked with bone and an underline, not amber. "You
+     are here" is navigation state, not a value the engine measured — and the
+     nav is on every screen, so amber here is the most repeated wrong use of
+     the signal in the product. The underline carries the state without
+     colour, which is also what keeps it legible to anyone who cannot
+     separate the two hues. #}
   .sl-header__link.is-current,
   .sl-header__dropdown-trigger.is-current {
-    background: var(--sl-orange-soft);
-    color: var(--sl-green);
+    background: rgba(var(--sl-cream-rgb), .10);
+    color: var(--sl-ink);
   }
   .sl-header--premium .sl-header__link,
   .sl-header--premium .sl-header__dropdown-trigger { color: rgba(var(--sl-cream-rgb), .78); }
@@ -430,12 +436,12 @@
   .sl-header--premium .sl-header__dropdown-trigger:hover,
   .sl-header--premium .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
     background: rgba(var(--sl-cream-rgb), .08);
-    color: #fff;
+    color: var(--sl-ink-hi);
   }
   .sl-header--premium .sl-header__link.is-current,
   .sl-header--premium .sl-header__dropdown-trigger.is-current {
-    background: rgba(var(--sl-accent-rgb), .16);
-    color: var(--sl-focus-dark);
+    background: rgba(var(--sl-cream-rgb), .12);
+    color: var(--sl-ink);
   }
   .sl-header__member {
     min-height: 40px;
@@ -551,7 +557,7 @@
   .sl-header--premium .sl-header__dropdown-menu a:hover,
   .sl-header--premium .sl-header__logout:hover {
     background: rgba(var(--sl-cream-rgb), .08);
-    color: #fff;
+    color: var(--sl-ink-hi);
   }
   .sl-header__actions {
     display: flex;
@@ -577,7 +583,7 @@
   .sl-header__cta { background: var(--sl-green); color: var(--sl-green-ink); }
   .sl-header__cta:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
   .sl-header__cart { background: transparent; color: var(--sl-green); }
-  .sl-header__cart:hover { border-color: var(--sl-orange); color: var(--sl-orange-text); }
+  .sl-header__cart:hover { border-color: var(--sl-ink); color: var(--sl-ink-hi); }
   {# Bone, not amber. This was the loudest violation of the palette's one
      rule left on either surface: amber marks a value the ENGINE MEASURED,
      and the single most prominent amber object in the product was a button.
@@ -794,10 +800,10 @@
   }
   .sl-premium-chrome .sl-menu .sl-menu__group { border-top-color: rgba(var(--sl-cream-rgb), .14); }
   .sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: rgba(var(--sl-cream-rgb), .55); }
-  .sl-premium-chrome .sl-menu .sl-menu__link:hover { color: var(--sl-focus-dark); }
+  .sl-premium-chrome .sl-menu .sl-menu__link:hover { color: var(--sl-ink-hi); }
   .sl-premium-chrome .sl-menu .sl-menu__link.is-current {
-    background: rgba(var(--sl-accent-rgb), .16);
-    color: var(--sl-focus-dark);
+    background: rgba(var(--sl-cream-rgb), .12);
+    color: var(--sl-ink);
   }
   /* The mobile menu CTA is field ink on bone — the same treatment as the
      header action, for the same reason: a call to action is not a measured

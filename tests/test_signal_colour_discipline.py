@@ -36,7 +36,7 @@ SOURCES = sorted(
     ]
 )
 
-SIGNAL = re.compile(r"var\(--sl-(?:accent|orange)\)")
+SIGNAL = re.compile(r"var\(--sl-(?:accent|orange)\)|var\(--sl-accent-rgb\)")
 TRACE = re.compile(r"var\(--sl-trace\)")
 # A CSS rule: everything up to the brace is the selector, the braces are the
 # body. Nested at-rules are not matched, which is fine — the declarations
@@ -78,7 +78,13 @@ def test_the_signal_colour_is_never_a_call_to_action():
     A bone fill on a near-black field is louder than amber anyway — this
     costs the design nothing and is the reason the rule is affordable.
     """
-    action = re.compile(r"btn|button|cta|__primary|__action|submit", re.I)
+    # `link` and `is-current` are here because the violation this gate
+    # missed on its first run was `.sl-header__link.is-current` — "you are
+    # here" painted amber, on every page, which made it the single most
+    # repeated wrong use of the signal in the product.
+    action = re.compile(
+        r"btn|button|cta|__primary|__action|submit|__link|is-current", re.I
+    )
     offenders = []
     for source, selector, body in _rules():
         if not action.search(selector):
