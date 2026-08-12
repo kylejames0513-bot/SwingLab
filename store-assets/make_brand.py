@@ -262,13 +262,26 @@ def main() -> None:
         # theme's night surfaces invert the standard mark with a CSS filter,
         # so nothing in the theme references this file.
         "caddieinsight-logo-inverse.png": (STATIC,),
-        "apple-touch-icon.png": (STATIC,),
+        # The theme needs this too. It was pointing its apple-touch-icon at the
+        # 512 favicon master, which carries an alpha channel iOS rejects — the
+        # home-screen tile came out with a black or white box behind the mark
+        # depending on the OS version. This one is 180 and opaque by
+        # construction, which is the whole reason it is generated separately.
+        "apple-touch-icon.png": (STATIC, THEME),
         "pwa-icon.svg": (STATIC,),
         "pwa-icon-192.png": (STATIC,),
         "pwa-icon-512.png": (STATIC,),
         "pwa-icon-maskable-512.png": (STATIC,),
         "app-icon-1024.png": (MOBILE,),
         "caddieinsight-favicon.png": (STATIC, THEME),
+        # The sized set from mockup 7a, which asks for real exports at
+        # 512/64/32/16 rather than one master the browser downscales. They were
+        # generated above and shipped nowhere, so both surfaces served the 512
+        # into a 16px tab slot — the exact case groove_count() exists to handle,
+        # decided correctly at generation time and then thrown away.
+        "caddieinsight-favicon-16.png": (STATIC, THEME),
+        "caddieinsight-favicon-32.png": (STATIC, THEME),
+        "caddieinsight-favicon-64.png": (STATIC, THEME),
         # Both surfaces, not just the theme. The share card is one of the
         # three images tests/test_app_storefront_parity.py holds to identical
         # bytes across the two surfaces, and shipping it to the theme alone

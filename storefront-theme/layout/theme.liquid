@@ -84,8 +84,27 @@
     <meta name="twitter:image" content="{{ 'og-caddieinsight.png' | asset_url | prepend: 'https:' | split: '?' | first }}">
   {%- endif -%}
 
-  <link rel="icon" type="image/png" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
-  <link rel="apple-touch-icon" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
+  {%- comment -%}
+    The sized set from mockup 7a, largest first so a browser that takes the
+    first acceptable match still gets a real export rather than a downscale.
+    brand_mark.groove_count() drops the grooves below 19px and thins them on
+    the way down, so the 16 and the 32 are genuinely different drawings — not
+    the 512 resampled, which is what a single-icon tag gets you and what this
+    store shipped until now.
+
+    asset_url unconditionally, never an images[] lookup: see the module
+    docstring on tests/test_theme_brand_filenames.py.
+  {%- endcomment -%}
+  <link rel="icon" type="image/png" sizes="512x512" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ 'caddieinsight-favicon-64.png' | asset_url }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ 'caddieinsight-favicon-32.png' | asset_url }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ 'caddieinsight-favicon-16.png' | asset_url }}">
+  {%- comment -%}
+    180 and opaque. iOS rejects an alpha channel on a home-screen tile and
+    fills it with black or white depending on the OS version, so this may not
+    be pointed at the 512 favicon master however convenient that is.
+  {%- endcomment -%}
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ 'apple-touch-icon.png' | asset_url }}">
 
   {%- comment -%}
     Self-hosted type. Google Fonts was a render-blocking THIRD-PARTY
