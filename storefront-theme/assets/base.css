@@ -530,6 +530,50 @@ img { max-width: 100%; display: block; }
   border: 1px solid var(--sl-border);
   border-radius: 0;
 }
+/* THE REGISTRATION MARKS ARE DRAWN BY THE BOX ITSELF — no child elements.
+
+   Industry's frame wants four `+` marks straddling the corners, and the
+   obvious encoding is four <i class="sl-corner"> children. That is what this
+   started as, and it is why the frame shipped on NOTHING: every card on both
+   surfaces is emitted by a section or a Jinja loop, so "add four spans" is 60
+   files of markup surgery, and a device that costs that much to apply does
+   not get applied. It sat defined and unused, which is worse than absent —
+   the tests were green and the system had no visible grammar.
+
+   Eight thin bars on ONE pseudo-element does the same drawing: a 1px x 11px
+   vertical and an 11px x 1px horizontal per corner, offset 5px so the cross
+   centres on the box corner. The whole device is now a class you can put on
+   an existing rule, so it costs one selector to apply and can be given to
+   things that were never authored to receive it.
+
+   The .sl-corner children below still work, for a case that wants a mark on
+   only one corner or a different inset. Nothing ships that today. */
+.sl-blueprint::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+  color: rgba(var(--sl-wash-rgb), 0.55);
+  background-image:
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+  background-size:
+    1px 11px, 11px 1px, 1px 11px, 11px 1px,
+    1px 11px, 11px 1px, 1px 11px, 11px 1px;
+  background-position:
+    left 5px top 0, left 0 top 5px,
+    right 5px top 0, right 0 top 5px,
+    left 5px bottom 0, left 0 bottom 5px,
+    right 5px bottom 0, right 0 bottom 5px;
+  background-repeat: no-repeat;
+}
+/* A framed object needs its marks to have somewhere to sit, so it may not be
+   clipped by its own overflow. The image treatments clip their overlay, so
+   when both land on one element the frame wins — the same collision the
+   source system documents. */
+.sl-blueprint { overflow: visible; }
 .sl-blueprint > .sl-corner {
   position: absolute;
   width: 11px;
@@ -552,8 +596,93 @@ img { max-width: 100%; display: block; }
 /* On the field the marks reverse with everything else. */
 .sl-field .sl-blueprint,
 .sl-blueprint--field { border-color: rgba(var(--sl-cream-rgb), 0.2); }
+.sl-field .sl-blueprint::after,
+.sl-blueprint--field::after { color: rgba(var(--sl-cream-rgb), 0.5); }
 .sl-field .sl-blueprint > .sl-corner,
 .sl-blueprint--field > .sl-corner { color: rgba(var(--sl-cream-rgb), 0.5); }
+
+/* ============================================================
+   WHERE THE FRAME ACTUALLY LANDS
+   ------------------------------------------------------------
+   The frame is this system's signature, and it belongs to CARDS, FIGURES and
+   PLATES — objects a reader parses as drawn things. It is deliberately NOT
+   given to every hairline box: notices, logs, chips, badges, menus, form
+   fields and buttons all carry `border: 1px solid var(--sl-border)` too, and
+   marking those turns a grammar into a texture. The test is whether the
+   object is a DRAWING of something.
+
+   THIS LIST IS STOREFRONT-ONLY. The app does not load base.css — it carries
+   its own copy of the sheet in web_layout.html.j2 — so the app's panels are
+   framed there, and putting them here would be dead CSS. That is not
+   hypothetical: the first pass at this block listed app selectors in this
+   file and rendered nothing, on top of an earlier pass that defined the whole
+   frame and used it in zero markup. Unmatched CSS is not an error anywhere in
+   the toolchain, so it fails silently twice over.
+
+   tests/test_blueprint_frame_is_used.py is the gate for both halves.
+   ============================================================ */
+.sl-hero__readout,
+.sl-hero__trace,
+.sl-report__card,
+.sl-report__sample,
+.sl-report__well,
+.sl-plans__grid,
+.sl-plans__index,
+.sl-cta__sequence,
+.sl-gear__grid,
+.sl-proof__metric,
+.sl-main-contact__form,
+.sl-stat-band,
+.sl-drill-card,
+.sl-pcard {
+  position: relative;
+  border-radius: 0;
+}
+.sl-hero__readout::after,
+.sl-hero__trace::after,
+.sl-report__card::after,
+.sl-report__sample::after,
+.sl-report__well::after,
+.sl-plans__grid::after,
+.sl-plans__index::after,
+.sl-cta__sequence::after,
+.sl-gear__grid::after,
+.sl-proof__metric::after,
+.sl-main-contact__form::after,
+.sl-stat-band::after,
+.sl-drill-card::after,
+.sl-pcard::after {
+  content: "";
+  position: absolute;
+  inset: -6px;
+  pointer-events: none;
+  z-index: 1;
+  color: rgba(var(--sl-wash-rgb), 0.55);
+  background-image:
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+    linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+  background-size:
+    1px 11px, 11px 1px, 1px 11px, 11px 1px,
+    1px 11px, 11px 1px, 1px 11px, 11px 1px;
+  background-position:
+    left 5px top 0, left 0 top 5px,
+    right 5px top 0, right 0 top 5px,
+    left 5px bottom 0, left 0 bottom 5px,
+    right 5px bottom 0, right 0 bottom 5px;
+  background-repeat: no-repeat;
+}
+/* On the field the marks reverse, like everything else on it. */
+.sl-hero__trace::after,
+.sl-field .sl-hero__readout::after,
+.sl-field .sl-stat-band::after,
+.sl-field .sl-report__well::after { color: rgba(var(--sl-cream-rgb), 0.5); }
+/* A framed object may not clip its own marks — they straddle the edge. */
+.sl-hero__trace,
+.sl-plans__grid,
+.sl-gear__grid,
+.sl-stat-band { overflow: visible; }
 
 /* THE FIELD — the one reversed ground. Opting a panel into this class is how
    a surface becomes dark; there is no other way, which is what keeps the

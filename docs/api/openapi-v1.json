@@ -2642,6 +2642,25 @@
         "summary": "Sample Report File"
       }
     },
+    "/scorecard": {
+      "get": {
+        "description": "A printable 18-hole card that carries the coaching record.\n\nMockup 5a. Public for the same reason /drills is: the card is proof of\nwhat the product is for, and a blank scorecard behind a login helps\nnobody. It is a DOCUMENT — meant to be printed, carried round eighteen\nholes, and filled in with a pencil — so it renders the same on screen\nas on paper.\n\nThe engine contributes exactly one line: the priority the golfer is\nworking on and the benchmark it has to clear, read from the same\nCaddieBrief that /today renders. That single line is the whole\ndifference between this and the thousand blank scorecards already on\nthe internet.\n\nA visitor with no readable session gets that line phrased as an\ninstruction rather than a fabricated measurement. Inventing a priority\nwould print a made-up number onto a card somebody then carries around\na golf course, which is the one place this product must not guess.",
+        "operationId": "scorecard_page_scorecard_get",
+        "responses": {
+          "200": {
+            "content": {
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Scorecard Page"
+      }
+    },
     "/service-worker.js": {
       "get": {
         "operationId": "service_worker_service_worker_js_get",

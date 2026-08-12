@@ -53,6 +53,7 @@ def test_robots_opens_the_public_pages_and_closes_the_private_ones(client):
         "/",
         "/pricing",
         "/drills",
+        "/scorecard",
         "/sample-report/",
     }
 
@@ -98,6 +99,7 @@ def test_sitemap_is_valid_xml_listing_exactly_the_public_pages(client):
         "/",
         "/pricing",
         "/drills",
+        "/scorecard",
         "/sample-report/",
     }
 

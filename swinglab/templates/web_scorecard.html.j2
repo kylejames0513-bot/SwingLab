@@ -1,0 +1,455 @@
+{% extends "web_layout.html.j2" %}
+{% block title %}{{ brand.name }} — Scorecard{% endblock %}
+{% block style %}
+  {# ------------------------------------------------------------- scorecard
+     Mockup 5a: an 18-hole card that behaves like a real scorecard and carries
+     the coaching record beside the score.
+
+     THIS PAGE IS A DOCUMENT, NOT A DASHBOARD. It is meant to be printed and
+     carried round eighteen holes in a back pocket, filled in with a pencil,
+     and read afterwards next to the range work. Two consequences run through
+     everything below:
+
+       - The screen view and the print view are the same object. There is no
+         separate print template, because a card that renders differently on
+         paper than on screen is a card nobody trusts.
+       - Every cell a golfer writes in is an EMPTY BOX with a real border, not
+         a faint tint. A pencil line has to be able to sit next to a printed
+         rule and still be the darker of the two.
+
+     The CLUB FILMED row is the whole reason this exists rather than being one
+     of the thousand blank scorecards already on the internet: it ties the
+     round to the swing work, so "did the priority hold under pressure" has an
+     answer that is not a feeling.
+
+     NOTE ON SPACING TOKENS: --sl-card-inset / --sl-dense-inset exist only in
+     storefront-theme/assets/base.css, NOT in this app's :root — using them
+     here resolves to nothing and silently drops the padding. Every inset on
+     this page comes off the --sl-space-* rungs the shell actually defines. #}
+  main {
+    max-width: var(--sl-content);
+    margin-block: var(--sl-space-7) var(--sl-space-8);
+    padding-inline: max(var(--sl-space-5), var(--sl-safe-left)) max(var(--sl-space-5), var(--sl-safe-right));
+    margin-inline: auto;
+  }
+  .card-intro { margin: 0 0 var(--sl-space-6); max-width: 62ch; }
+  .card-intro h1 { margin: 0 0 var(--sl-space-3); font-size: var(--sl-heading-support); }
+  .card-intro p { margin: 0 0 var(--sl-space-3); color: var(--sl-ink-soft); }
+  .card-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sl-space-3); }
+  {# The shell gives `main button` a top margin for stacked forms; in a row
+     of actions that pushes the two out of alignment with each other. #}
+  .card-actions button, .card-actions .button { margin-top: 0; }
+
+  .scorecard {
+    border: 1px solid var(--sl-border-strong);
+    background: var(--sl-bg);
+  }
+  .scorecard__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: var(--sl-space-5);
+    padding: var(--sl-space-5);
+    border-bottom: 1px solid var(--sl-border-strong);
+  }
+  .scorecard__brand { display: flex; align-items: center; gap: var(--sl-space-4); }
+  .scorecard__mark {
+    width: 38px;
+    height: 38px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    background: var(--sl-field);
+    color: var(--sl-field-ink);
+  }
+  .scorecard__mark-img { width: 24px; height: 24px; display: block; object-fit: contain; }
+  .scorecard__title { margin: 0; font-size: var(--sl-text-2xl); line-height: 1.1; }
+  .scorecard__meta { display: flex; flex-wrap: wrap; gap: var(--sl-space-5); }
+  .scorecard__meta div { min-width: 74px; }
+  .scorecard__meta dt {
+    margin: 0 0 2px;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  {# A field the golfer writes in gets a real rule, on screen as well as in
+     print — see the note at the top of this sheet. #}
+  .scorecard__meta dd {
+    margin: 0;
+    min-width: 5.5em;
+    min-height: 1.6em;
+    border-bottom: 1px solid var(--sl-control-border);
+    font-family: var(--sl-font-display);
+    font-weight: var(--sl-weight-display);
+    font-size: var(--sl-text-lg);
+  }
+
+  {# The table scrolls sideways under the desktop stop rather than shrinking:
+     21 columns at a legible size is wider than a phone, and a scorecard whose
+     numbers you cannot read is not a scorecard. The wrapper is what scrolls,
+     so the card's own frame stays put. #}
+  .scorecard__scroll {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: var(--sl-space-5) var(--sl-space-5) 0;
+  }
+  .scorecard table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: collapse;
+    table-layout: fixed;
+    font-variant-numeric: tabular-nums;
+  }
+  .scorecard thead tr { background: var(--sl-field); color: var(--sl-field-ink); }
+  .scorecard th {
+    padding: var(--sl-space-2) 2px;
+    font-family: var(--sl-font-display);
+    font-weight: var(--sl-weight-display);
+    font-size: var(--sl-text-sm);
+    text-align: center;
+  }
+  .scorecard th.row-label { width: 92px; text-align: left; padding-inline: var(--sl-space-2); }
+  .row-label {
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  {# OUT / IN are a summary of the nine beside them, and TOT of both. The
+     mockup separates them by ground rather than by weight, which keeps the
+     hole columns evenly ruled. #}
+  .scorecard th.sub { background: var(--sl-band); font-family: var(--sl-font-mono); font-size: var(--sl-text-xs); letter-spacing: 0.06em; }
+  .scorecard th.tot { background: var(--sl-trace-dim); font-family: var(--sl-font-mono); font-size: var(--sl-text-xs); letter-spacing: 0.06em; }
+  .scorecard td {
+    padding: var(--sl-space-2) 2px;
+    border-bottom: 1px solid var(--sl-border);
+    text-align: center;
+    font-size: var(--sl-text-sm);
+    color: var(--sl-ink-soft);
+  }
+  .scorecard td.row-label {
+    text-align: left;
+    padding-inline: var(--sl-space-2);
+    color: var(--sl-ink-muted);
+  }
+  .scorecard td.sub { background: var(--sl-night); }
+  .scorecard td.tot { background: rgba(var(--sl-steel-rgb), 0.14); color: var(--sl-ink); }
+
+  {# The written rows. A pencil needs a box with four sides it can sit inside,
+     and a printed cell that is only a bottom rule invites writing across the
+     column boundary — which is how a card ends up unreadable at the ninth. #}
+  .row-write td:not(.row-label) {
+    border: 1px solid var(--sl-control-border);
+    height: 2.4em;
+  }
+  .row-score td:not(.row-label) { height: 2.9em; }
+  .row-score td.row-label { color: var(--sl-accent); }
+  .row-club td:not(.row-label) {
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+  }
+
+  {# ------------------------------------------------------------ the record
+     Three cells: the round, the swings filmed during it, and the priority the
+     range work is about. The third is a FIELD cell because it is the one that
+     comes from the engine rather than from a pencil. #}
+  .scorecard__record {
+    display: grid;
+    gap: 1px;
+    background: var(--sl-border);
+    border-top: 1px solid var(--sl-border-strong);
+  }
+  @media (min-width: 750px) { .scorecard__record { grid-template-columns: repeat(3, 1fr); } }
+  .scorecard__record > div { background: var(--sl-bg); padding: var(--sl-space-4) var(--sl-space-5); }
+  .scorecard__record .is-engine { background: var(--sl-field); color: var(--sl-field-ink); }
+  .record-label {
+    margin: 0 0 var(--sl-space-1);
+    font-size: var(--sl-text-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sl-ink-muted);
+  }
+  .is-engine .record-label { color: var(--sl-field-muted); }
+  .record-value {
+    font-family: var(--sl-font-display);
+    font-weight: var(--sl-weight-display);
+    font-size: var(--sl-text-3xl);
+    line-height: 1.05;
+  }
+  .record-write {
+    display: block;
+    min-height: 1.5em;
+    border-bottom: 1px solid var(--sl-control-border);
+  }
+  .record-note { margin: var(--sl-space-1) 0 0; font-size: var(--sl-text-xs); color: var(--sl-ink-muted); }
+  .is-engine .record-note { color: var(--sl-field-soft); }
+
+  .scorecard__notes { padding: var(--sl-space-5); border-top: 1px solid var(--sl-border-strong); }
+  .scorecard__notes h2 {
+    margin: 0 0 var(--sl-space-3);
+    font-size: var(--sl-text-sm);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-weight: 500;
+  }
+  .notes-grid { display: grid; gap: var(--sl-space-4); }
+  @media (min-width: 750px) { .notes-grid { grid-template-columns: repeat(3, 1fr); } }
+  .note-col { border-left: 2px solid var(--sl-border-strong); padding-left: var(--sl-space-3); }
+  .note-col--priority { border-left-color: var(--sl-steel); }
+  .note-col h3 {
+    margin: 0 0 var(--sl-space-1);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sl-ink-muted);
+  }
+  .note-col--priority h3 { color: var(--sl-accent); }
+  .note-col p { margin: 0; font-size: var(--sl-text-sm); color: var(--sl-ink-soft); }
+  .note-lines { display: block; }
+  .note-lines span {
+    display: block;
+    height: 1.7em;
+    border-bottom: 1px solid var(--sl-border);
+  }
+
+  .scorecard__attest {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: var(--sl-space-4);
+    padding: var(--sl-space-4) var(--sl-space-5);
+    border-top: 1px solid var(--sl-border-strong);
+  }
+  .attest-label {
+    margin-right: auto;
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--sl-ink-muted);
+  }
+  .attest-line { display: block; height: 1.6em; border-bottom: 1px solid var(--sl-control-border); }
+  .attest-line--marker { width: min(220px, 40vw); }
+  .attest-line--date { width: min(120px, 28vw); }
+
+  {# Page-local, as in web_sessions.html.j2 — the shell defines no such
+     utility, and a caption is the only accessible way to say what 21 unlabelled
+     columns are for. #}
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .scorecard__scope {
+    margin: var(--sl-space-5) 0 0;
+    font-size: var(--sl-text-xs);
+    color: var(--sl-ink-muted);
+    max-width: 76ch;
+  }
+
+  {# ---------------------------------------------------------------- print
+     One landscape sheet. The chrome goes, the card stays, and the registration
+     marks go with the chrome: they are a screen device and a printer renders
+     them as eight stray dashes in the margin. #}
+  @media print {
+    @page { size: landscape; margin: 10mm; }
+    .sl-app-banner,
+    .sl-header,
+    .sl-app-footer,
+    .sl-tabbar,
+    .card-intro,
+    {# Page-local, as in web_sessions.html.j2 — the shell defines no such
+     utility, and a caption is the only accessible way to say what 21 unlabelled
+     columns are for. #}
+  .visually-hidden {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+  .scorecard__scope { display: none !important; }
+    main { margin: 0; padding: 0; max-width: none; }
+    .scorecard { border-color: #000; }
+    .scorecard::after { display: none; }
+    .scorecard__scroll { overflow: visible; padding: 6mm 6mm 0; }
+    .scorecard table { min-width: 0; }
+    .scorecard thead tr,
+    .scorecard th.sub,
+    .scorecard th.tot,
+    .scorecard__record .is-engine,
+    .scorecard__mark {
+      background: #fff !important;
+      color: #000 !important;
+      border: 1px solid #000;
+    }
+    .scorecard td.sub,
+    .scorecard td.tot { background: #fff !important; }
+    .is-engine .record-label,
+    .is-engine .record-note { color: #333 !important; }
+    .scorecard,
+    .scorecard__record > div { break-inside: avoid; }
+  }
+{% endblock %}
+
+{% block main %}
+<main>
+  <div class="card-intro">
+    <p class="sl-eyebrow">Take it round</p>
+    <h1>A scorecard that remembers what you were working on.</h1>
+    <p>
+      Print it, play eighteen, and mark the holes where you filmed a swing. The
+      card carries your current coaching priority and its pass mark, so when you
+      get back you can see whether the one job held up under pressure — not
+      just what you shot.
+    </p>
+    <div class="card-actions">
+      <button type="button" data-print-card>Print this card</button>
+      <a class="button secondary" href="/drills">See the drill for this priority</a>
+    </div>
+  </div>
+
+  <section class="scorecard" aria-label="Eighteen hole scorecard">
+    <div class="scorecard__head">
+      <div class="scorecard__brand">
+        <img class="scorecard__mark-img" src="/static/caddieinsight-favicon.png" alt="" width="24" height="24">
+        <div>
+          <p class="sl-eyebrow">{{ brand.name }} scorecard</p>
+          <h2 class="scorecard__title">Course &amp; tees</h2>
+        </div>
+      </div>
+      <dl class="scorecard__meta">
+        <div><dt>Date</dt><dd></dd></div>
+        <div><dt>Player</dt><dd></dd></div>
+        <div><dt>HCP</dt><dd></dd></div>
+      </dl>
+    </div>
+
+    <div class="scorecard__scroll">
+      <table>
+        <caption class="visually-hidden">
+          Eighteen holes with yardage, par, stroke index, your score, and which
+          holes you filmed a swing on.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" class="row-label">Hole</th>
+            {% for h in range(1, 10) %}<th scope="col">{{ h }}</th>{% endfor %}
+            <th scope="col" class="sub">Out</th>
+            {% for h in range(10, 19) %}<th scope="col">{{ h }}</th>{% endfor %}
+            <th scope="col" class="sub">In</th>
+            <th scope="col" class="tot">Tot</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in ('Yards', 'Par', 'Index') %}
+          <tr class="row-write">
+            <th scope="row" class="row-label">{{ row }}</th>
+            {% for _ in range(9) %}<td></td>{% endfor %}
+            <td class="sub"></td>
+            {% for _ in range(9) %}<td></td>{% endfor %}
+            <td class="sub"></td>
+            <td class="tot"></td>
+          </tr>
+          {% endfor %}
+          <tr class="row-write row-score">
+            <th scope="row" class="row-label">Score</th>
+            {% for _ in range(9) %}<td></td>{% endfor %}
+            <td class="sub"></td>
+            {% for _ in range(9) %}<td></td>{% endfor %}
+            <td class="sub"></td>
+            <td class="tot"></td>
+          </tr>
+          <tr class="row-write row-club">
+            <th scope="row" class="row-label">Club filmed</th>
+            {% for _ in range(9) %}<td></td>{% endfor %}
+            <td class="sub"></td>
+            {% for _ in range(9) %}<td></td>{% endfor %}
+            <td class="sub"></td>
+            <td class="tot"></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="scorecard__record">
+      <div>
+        <p class="record-label">Score to par</p>
+        <span class="record-value record-write"></span>
+        <p class="record-note">Fill in when the round is done.</p>
+      </div>
+      <div>
+        <p class="record-label">Swings filmed on course</p>
+        <span class="record-value record-write"></span>
+        <p class="record-note">Mark the holes in the club-filmed row.</p>
+      </div>
+      <div class="is-engine">
+        <p class="record-label">Priority to hold</p>
+        <p class="record-value">{{ priority_title }}</p>
+        <p class="record-note">{{ priority_note }}</p>
+      </div>
+    </div>
+
+    <div class="scorecard__notes">
+      <h2>Round notes</h2>
+      <div class="notes-grid">
+        <div class="note-col note-col--priority">
+          <h3>Where the priority slipped</h3>
+          <span class="note-lines" aria-hidden="true"><span></span><span></span><span></span></span>
+        </div>
+        <div class="note-col">
+          <h3>Holes filmed</h3>
+          <span class="note-lines" aria-hidden="true"><span></span><span></span><span></span></span>
+        </div>
+        <div class="note-col">
+          <h3>Next range session</h3>
+          <p>{{ next_session_note }}</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="scorecard__attest">
+      <span class="attest-label">Attest · marker signature</span>
+      <span class="attest-line attest-line--marker" aria-hidden="true"></span>
+      <span class="attest-line attest-line--date" aria-hidden="true"></span>
+      <span class="attest-label" style="margin-right:0">Date</span>
+    </div>
+  </section>
+
+  <p class="scorecard__scope">
+    The coaching line on this card comes from your most recent readable session.
+    Filming on course is for your own record — a swing filmed mid-round is rarely
+    a matched re-film, so it is not compared against your pass mark automatically.
+  </p>
+</main>
+{% endblock %}
+
+{% block script %}
+<script>
+  {# The button is a convenience for the screen; the page prints correctly from
+     the browser's own menu with or without it, which is the behaviour that
+     matters on a phone where this button may be the only affordance. #}
+  (function () {
+    var button = document.querySelector('[data-print-card]');
+    if (button) { button.addEventListener('click', function () { window.print(); }); }
+  })();
+</script>
+{% endblock %}
