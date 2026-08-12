@@ -1563,7 +1563,7 @@ def create_app(
     # /admin is absent on purpose: require_admin answers 404 when the token
     # is unset and the routes are meant to be invisible, so naming them in a
     # world-readable file would be the one place they are advertised.
-    PUBLIC_PATHS: tuple[str, ...] = ("/", "/pricing", "/drills", "/sample-report/")
+    PUBLIC_PATHS: tuple[str, ...] = ("/", "/pricing", "/drills", "/scorecard", "/sample-report/")
     CRAWLER_DENY: tuple[str, ...] = (
         "/session/",
         "/sessions",
@@ -1754,6 +1754,55 @@ def create_app(
             families=families,
             drill_media=drill_media,
             gear_url=gear_shop_url(cfg),
+        )
+
+    @app.get("/scorecard", response_class=HTMLResponse)
+    def scorecard_page(request: Request):
+        """A printable 18-hole card that carries the coaching record.
+
+        Mockup 5a. Public for the same reason /drills is: the card is proof of
+        what the product is for, and a blank scorecard behind a login helps
+        nobody. It is a DOCUMENT — meant to be printed, carried round eighteen
+        holes, and filled in with a pencil — so it renders the same on screen
+        as on paper.
+
+        The engine contributes exactly one line: the priority the golfer is
+        working on and the benchmark it has to clear, read from the same
+        CaddieBrief that /today renders. That single line is the whole
+        difference between this and the thousand blank scorecards already on
+        the internet.
+
+        A visitor with no readable session gets that line phrased as an
+        instruction rather than a fabricated measurement. Inventing a priority
+        would print a made-up number onto a card somebody then carries around
+        a golf course, which is the one place this product must not guess.
+        """
+        user = current_user(request)
+        priority_title = "Film one swing first"
+        priority_note = (
+            "Analyze a swing and your current priority prints here, with the "
+            "benchmark it has to clear."
+        )
+        next_session_note = (
+            "Work the drill your report names, then film a matched re-film "
+            "against its pass mark."
+        )
+        if user is not None:
+            recent_jobs = manager.list_recent(limit=1, user_id=user.id)
+            brief = caddie_brief_for(recent_jobs[0]) if recent_jobs else None
+            if brief is not None:
+                priority_title = brief.focus_name
+                priority_note = brief.benchmark_text or priority_note
+                if brief.drill is not None:
+                    next_session_note = (
+                        f"{brief.drill.name} — then a matched re-film."
+                    )
+        return render(
+            "web_scorecard.html.j2",
+            request,
+            priority_title=priority_title,
+            priority_note=priority_note,
+            next_session_note=next_session_note,
         )
 
     # -- accounts ---------------------------------------------------------

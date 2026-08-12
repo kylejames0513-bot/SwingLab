@@ -181,17 +181,20 @@
     font-size: var(--sl-text-xs);
   }
 
-  /* The chart sits in a well: night ground, the 16px instrument grid, a
-     hairline frame. The panel around it is a surface; this is the screen. */
+  /* The chart is an EVIDENCE TILE — the field under the 115deg hatch, the
+     same object the report's clip thumbnails and the drill diagrams are. It
+     had been a well on --sl-night, which is the paper recess now, and it was
+     still declaring `background-size: 16px 16px, 16px 16px, auto` for a grid
+     image that no longer existed: three layer sizes against no layers. */
   .trend-svg {
     width: 100%;
     height: auto;
     display: block;
     margin: var(--sl-space-4) 0;
-    border: 1px solid var(--sl-border);
+    border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-sm);
-    background: var(--sl-night);
-    background-size: 16px 16px, 16px 16px, auto;
+    background-color: var(--sl-field);
+    background-image: var(--sl-hatch);
   }
   /* The 320x120 viewBox scales to whatever width it is given, so a full-width
      panel renders a ~340px-tall chart and pushes the numbers out of the same
@@ -214,11 +217,18 @@
      The flagged dots are matched by the exact string the generator wrote,
      interpolated from the same brand dict it reads, so the selector cannot
      drift from the markup the way a copied literal would. */
-  .trend-svg polyline { stroke: var(--sl-ink-soft); }
-  .trend-svg line { stroke: var(--sl-control-border); }
-  .trend-svg circle { fill: var(--sl-ink); }
-  .trend-svg rect { fill: var(--sl-accent); opacity: .1; }
-  .trend-svg circle[fill="{{ brand.accent_color }}"] { fill: var(--sl-accent); }
+  /* Re-inked for the FIELD. The chart is a measured object on a dark ground,
+     so it follows the field's rule: the trend line and its in-spec dots are
+     paper, and the benchmark band is the trace — the live mark the sessions
+     are being read against. The signal is 3.00:1 here and would sink. */
+  .trend-svg polyline { stroke: var(--sl-field-ink); stroke-width: 2; }
+  .trend-svg line { stroke: var(--sl-trace); opacity: .75; }
+  .trend-svg circle { fill: var(--sl-field-ink); }
+  .trend-svg rect { fill: var(--sl-trace); opacity: .12; }
+  /* A session that crossed the benchmark. Matched by the exact string the
+     generator wrote, interpolated from the same brand dict it reads, so the
+     selector cannot drift from the markup the way a copied literal would. */
+  .trend-svg circle[fill="{{ brand.accent_color }}"] { fill: var(--sl-trace); }
 
   /* A 1px-gap bordered grid: the rules between cells are the container's
      background showing through. Two columns on a phone, four once there is

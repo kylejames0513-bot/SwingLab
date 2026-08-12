@@ -630,6 +630,123 @@
   .sidebar-card li { padding-left: 3px; line-height: 1.5; }
   .sidebar-card li + li { margin-top: var(--sl-space-3); }
   .sidebar-card strong { color: var(--sl-ink); }
+  {# ------------------------------------------------------------- framing
+     The capture guides from mockup 4a. A field tile, because it is a picture
+     of what the camera sees, and every guide on it is --sl-trace — the live
+     readout — rather than the signal, which is 3.00:1 on this ground anyway.
+
+     Drawn in CSS rather than shipped as an image so it re-inks with the
+     tokens and stays crisp at any width; there is no photograph here to
+     serve, only rules and brackets. #}
+  .framing {
+    margin: 0 0 var(--sl-space-4);
+  }
+  .framing__frame {
+    position: relative;
+    aspect-ratio: 3 / 4;
+    max-height: 260px;
+    margin-inline: auto;
+    background-color: var(--sl-field);
+    background-image: var(--sl-hatch);
+    border: 1px solid var(--sl-field-rule);
+  }
+  .framing__bracket {
+    position: absolute;
+    width: 14px;
+    height: 14px;
+    border: 0 solid var(--sl-trace);
+  }
+  .framing__bracket--tl { top: 8px; left: 8px; border-top-width: 2px; border-left-width: 2px; }
+  .framing__bracket--tr { top: 8px; right: 8px; border-top-width: 2px; border-right-width: 2px; }
+  .framing__bracket--bl { bottom: 8px; left: 8px; border-bottom-width: 2px; border-left-width: 2px; }
+  .framing__bracket--br { bottom: 8px; right: 8px; border-bottom-width: 2px; border-right-width: 2px; }
+  .framing__centre {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 50%;
+    width: 1px;
+    background: var(--sl-trace);
+    opacity: .45;
+  }
+  {# The hip-height rule is the single most useful thing on this diagram: it
+     is the instruction people get wrong, and a line at a height is clearer
+     than the sentence "phone at hip height" ever was. #}
+  .framing__hip {
+    position: absolute;
+    left: 8px;
+    right: 8px;
+    top: 54%;
+    height: 1px;
+    background: var(--sl-trace);
+    opacity: .55;
+  }
+  .framing__hip em {
+    position: absolute;
+    left: 0;
+    top: -16px;
+    color: var(--sl-trace);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-style: normal;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  {# Sits high in the frame, not centred: the hip rule is at 54% and a
+     vertically centred label lands straight on top of it. The mockup can
+     centre this because its frame is a full phone screen tall; at 260px the
+     two devices are within one line-height of each other. #}
+  .framing__fill {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: start center;
+    padding-top: 16%;
+    padding-inline: var(--sl-space-4);
+    color: var(--sl-field-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: .14em;
+    text-transform: uppercase;
+    text-align: center;
+  }
+  .framing__audio {
+    display: flex;
+    align-items: flex-end;
+    gap: var(--sl-space-3);
+    padding: var(--sl-space-3);
+    background: var(--sl-field);
+    border: 1px solid var(--sl-field-rule);
+    border-top: 0;
+  }
+  .framing__audio-label {
+    flex: none;
+    color: var(--sl-field-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .framing__bars {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    gap: 2px;
+    height: 26px;
+  }
+  .framing__bars i {
+    flex: 1;
+    background: var(--sl-field-control);
+  }
+  {# The two peaks ARE the swings the engine found, so they are the live read
+     and the rest of the trace is floor. #}
+  .framing__bars i.is-hit { background: var(--sl-trace); }
+  .framing figcaption {
+    margin-top: var(--sl-space-2);
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+  }
+
   {# Ruled rows, not a dashed list: the checklist is a procedure, and each
      step gets its own hairline-separated line. #}
   .sidebar-card .checklist {
@@ -1067,6 +1184,32 @@
         <section class="sidebar-card" id="filming-checklist">
           <p class="section-kicker">Before you upload</p>
           <h2>Filming checklist</h2>
+
+          {# Mockup 4a's capture guides, as a diagram rather than a camera
+             overlay. The browser cannot reliably drive the phone's camera, so
+             this teaches the SETUP instead of policing it — which is the part
+             a checklist was already trying and failing to do in words. Every
+             guide is --sl-trace, because a framing guide is a live readout. #}
+          <figure class="framing" role="img"
+                  aria-label="Filming setup: phone in portrait at hip height, whole body inside the frame, the golfer centred on the vertical line, with impact audible.">
+            <div class="framing__frame">
+              <span class="framing__bracket framing__bracket--tl"></span>
+              <span class="framing__bracket framing__bracket--tr"></span>
+              <span class="framing__bracket framing__bracket--bl"></span>
+              <span class="framing__bracket framing__bracket--br"></span>
+              <span class="framing__centre"></span>
+              <span class="framing__hip"><em>Hip height</em></span>
+              <span class="framing__fill">Full body in frame</span>
+            </div>
+            <div class="framing__audio">
+              <span class="framing__audio-label">Impact audible</span>
+              <span class="framing__bars" aria-hidden="true">
+                <i style="height:22%"></i><i style="height:38%"></i><i class="is-hit" style="height:100%"></i><i style="height:30%"></i><i style="height:18%"></i><i style="height:26%"></i><i style="height:44%"></i><i class="is-hit" style="height:96%"></i><i style="height:24%"></i><i style="height:16%"></i><i style="height:20%"></i><i style="height:14%"></i>
+              </span>
+            </div>
+            <figcaption>Two swings heard. Dead time between them is fine.</figcaption>
+          </figure>
+
           <ol class="checklist">
             <li><strong>Sound on.</strong> Swings are found by the crack of impact.</li>
             <li><strong>Whole body in frame</strong>, head to feet, through the finish.</li>

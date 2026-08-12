@@ -424,3 +424,55 @@ def test_manifest_uses_the_same_premium_page_chrome(tmp_path):
     manifest = client.get("/app.webmanifest").json()
     assert manifest["background_color"] == "#eef2ef"
     assert manifest["theme_color"] == "#06110c"
+
+
+def test_no_surface_uses_a_class_the_other_surface_defines():
+    """The two sheets are separate. A class from one renders as nothing on the
+    other, and nothing in the toolchain says so.
+
+    This bit three times in one overhaul:
+
+      - the blueprint frame's panel list was written into base.css with the
+        APP's class names, and matched nothing on either surface;
+      - a new app page reached for `.sl-btn .sl-btn--outline`, a storefront
+        class, and shipped a primary action that rendered as a bare underlined
+        link;
+      - `--sl-card-inset` and `--sl-dense-inset` are storefront-only tokens,
+        which is why two app templates carry a comment warning about exactly
+        this and compute their insets from --sl-space-* instead.
+
+    Each one looks fine in the diff and produces no error anywhere: unmatched
+    CSS is silent, and an unstyled element is still an element. The only
+    reliable signal is the join, so it gets asserted here.
+
+    Deliberately narrow — the `sl-btn` family and the two inset tokens, all
+    demonstrably load-bearing on the storefront and absent from the app.
+    Broadening it to every shared prefix would flag the ~40 names both
+    surfaces genuinely define side by side.
+    """
+    storefront_only = ("sl-btn", "--sl-card-inset", "--sl-dense-inset")
+    comment = re.compile(r"\{#.*?#\}", re.DOTALL)
+    with_fallback = re.compile(r"\s*,")
+
+    offenders = []
+    for path in sorted(TEMPLATES.glob("web_*.j2")):
+        source = path.read_text(encoding="utf-8")
+        # Prose explaining the trap is the right thing to find, so Jinja
+        # comments are stripped before looking rather than matched line by
+        # line — the warnings these files carry are multi-line.
+        live = comment.sub("", source)
+        for token in storefront_only:
+            for match in re.finditer(re.escape(token), live):
+                start = live.rfind("\n", 0, match.start()) + 1
+                end = live.find("\n", match.start())
+                line = live[start : end if end != -1 else len(live)]
+                # `var(--storefront-token, fallback)` is safe by construction:
+                # the token is absent here, so the fallback is what renders.
+                # web_offline.html.j2 does this deliberately.
+                if with_fallback.match(live[match.end() : match.end() + 4]):
+                    continue
+                offenders.append(f"{path.name}: {line.strip()[:80]}")
+    assert offenders == [], (
+        "storefront-only names used on the app surface — these resolve to "
+        "nothing and report nothing:\n  " + "\n  ".join(offenders)
+    )

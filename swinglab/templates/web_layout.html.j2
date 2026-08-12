@@ -253,6 +253,111 @@
     --sl-tabbar-h: 0px;
   }
   * { box-sizing: border-box; }
+  /* ============================================================
+     THE BLUEPRINT FRAME — the app's half of the list.
+     ------------------------------------------------------------
+     Same device and same reasoning as storefront-theme/assets/base.css: four
+     `+` registration marks straddling the corners of anything that is a
+     DRAWING — cards, figures, plates — and nothing that is merely a hairline
+     box, because a notice or a log with marks on it turns a grammar into a
+     texture.
+
+     It lives here rather than in base.css because THIS SURFACE DOES NOT LOAD
+     BASE.CSS. The two sheets keep byte-identical token spellings and are
+     otherwise separate, which is exactly the trap the first attempt fell
+     into: the app selectors were written into base.css, matched nothing, and
+     reported no error. Unmatched CSS never does.
+
+     The marks are drawn by ONE pseudo-element — eight thin bars — rather than
+     four child spans, so the device costs a selector to apply instead of
+     markup surgery across every Jinja loop that emits a card.
+
+     tests/test_blueprint_frame_is_used.py is the gate.
+     ============================================================ */
+  .dashboard-panel,
+  .next-move,
+  .metric-card,
+  .sidebar-card,
+  .upload-hero,
+  .upload-status,
+  .club-block,
+  .first-run,
+  .scope-panel,
+  .proof-verdict,
+  .hero-signal,
+  .flow-list,
+  .personal,
+  .hero-plan__buy,
+  .founders-cap,
+  .drill,
+  .history-header,
+  .failure-panel,
+  .account-header,
+  .store-status,
+  .hub-sync,
+  .today-intro,
+  .recent-list,
+  .sentence,
+  .club-filter,
+  .setup-security,
+  .scorecard,
+  .sl-stat-band {
+    position: relative;
+    border-radius: 0;
+  }
+  .dashboard-panel::after,
+  .next-move::after,
+  .metric-card::after,
+  .sidebar-card::after,
+  .upload-hero::after,
+  .upload-status::after,
+  .club-block::after,
+  .first-run::after,
+  .scope-panel::after,
+  .proof-verdict::after,
+  .hero-signal::after,
+  .flow-list::after,
+  .personal::after,
+  .hero-plan__buy::after,
+  .founders-cap::after,
+  .drill::after,
+  .history-header::after,
+  .failure-panel::after,
+  .account-header::after,
+  .store-status::after,
+  .hub-sync::after,
+  .today-intro::after,
+  .recent-list::after,
+  .sentence::after,
+  .club-filter::after,
+  .setup-security::after,
+  .scorecard::after,
+  .sl-stat-band::after {
+    content: "";
+    position: absolute;
+    inset: -6px;
+    pointer-events: none;
+    z-index: 1;
+    color: rgba(var(--sl-wash-rgb), 0.55);
+    background-image:
+      linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+      linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+      linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor),
+      linear-gradient(currentColor, currentColor), linear-gradient(currentColor, currentColor);
+    background-size:
+      1px 11px, 11px 1px, 1px 11px, 11px 1px,
+      1px 11px, 11px 1px, 1px 11px, 11px 1px;
+    background-position:
+      left 5px top 0, left 0 top 5px,
+      right 5px top 0, right 0 top 5px,
+      left 5px bottom 0, left 0 bottom 5px,
+      right 5px bottom 0, right 0 bottom 5px;
+    background-repeat: no-repeat;
+  }
+  /* On the field the marks reverse, like everything else on it. */
+  .hero-signal::after,
+  .sl-field .sl-stat-band::after { color: rgba(var(--sl-cream-rgb), 0.5); }
+
   html { -webkit-text-size-adjust: 100%; }
   body {
     margin: 0;
@@ -1164,6 +1269,7 @@
       </details>
       {% else %}
       <a class="sl-header__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
+      <a class="sl-header__link{% if current_path == '/scorecard' %} is-current{% endif %}" href="/scorecard" {% if current_path == '/scorecard' %}aria-current="page"{% endif %}>Scorecard</a>
       {% endif %}
       {% if shop_enabled %}<a class="sl-header__link{% if current_path == '/shop' %} is-current{% endif %}" href="/shop" {% if current_path == '/shop' %}aria-current="page"{% endif %}>Gear</a>{% endif %}
       {% if user and user.is_pro %}
@@ -1248,6 +1354,9 @@
           <span>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&var(--sl-trace-dim);</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
         </a>
         {% endif %}
+        <a class="sl-menu__link{% if current_path == '/scorecard' %} is-current{% endif %}" href="/scorecard" data-menu-link {% if current_path == '/scorecard' %}aria-current="page"{% endif %}>
+          Scorecard
+        </a>
         <a class="sl-menu__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" data-menu-link {% if current_path == '/drills' %}aria-current="page"{% endif %}>
           <span>Drills</span><span aria-hidden="true">&rarr;</span>
         </a>
@@ -1347,6 +1456,7 @@
       {% if user or not require_account %}<a href="/sessions">History</a>{% endif %}
       {% if require_account and user %}<a href="/progress">Progress</a>{% endif %}
       <a href="/drills">Drills</a>
+      <a href="/scorecard">Scorecard</a>
     </nav>
     <nav class="sl-app-footer__nav" aria-label="Account and shop links">
       <strong>{{ brand.name }}</strong>
