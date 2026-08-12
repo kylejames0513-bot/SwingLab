@@ -230,7 +230,7 @@
     align-self: stretch;
     border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-lg);
-    background: rgba(var(--sl-night-rgb), .72);
+    background: rgba(var(--sl-field-rgb), .82);
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
     box-shadow: var(--sl-shadow-lg);
@@ -249,8 +249,8 @@
     letter-spacing: .14em;
     text-transform: uppercase;
   }
-  /* Cyan is the live read and nothing else — this is the one place on the
-     page entitled to it besides the trace itself. */
+  /* The trace is the live read and nothing else — this is the one place on
+     the page entitled to it besides the canvas itself. */
   .hero-signal__ready {
     display: inline-flex;
     align-items: center;
@@ -272,11 +272,12 @@
     overflow: hidden;
     border: 1px solid var(--sl-field-rule);
     border-radius: var(--sl-radius-sm);
-    background:
-      linear-gradient(rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
-      var(--sl-night);
-    background-size: 16px 16px;
+    /* An evidence tile: the field under the 115deg hatch, the same object
+       the report's clip thumbnails are. It was a 16px grid over --sl-night,
+       which is the PAPER well now — so this rendered as a light grey slab in
+       the middle of the dark hero, the loudest wrong thing on the page. */
+    background-color: var(--sl-field);
+    background-image: var(--sl-hatch);
   }
   .hero-trace__line {
     position: absolute;
@@ -296,8 +297,9 @@
     background: rgba(var(--sl-cream-rgb), .5);
   }
   .hero-trace__dot--one { left: 22%; top: 57%; }
-  /* The middle mark is the one the engine called: amber. */
-  .hero-trace__dot--two { left: 52%; top: 30%; background: var(--sl-accent); }
+  /* The middle mark is the one the engine called — a MEASURED value, so on
+     the field it reads as paper. The signal is 3.00:1 on this ground. */
+  .hero-trace__dot--two { left: 52%; top: 30%; background: var(--sl-field-ink); }
   .hero-trace__dot--three { right: 14%; top: 50%; }
   /* 1px-gap bordered grid: the rules between cells are the panel background
      showing through, so the whole block is one ruled instrument face. */

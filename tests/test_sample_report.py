@@ -211,8 +211,11 @@ def test_focused_sample_art_is_square_solid_and_uses_only_approved_marks(
         colors = image.convert("RGB").getcolors(maxcolors=image.width * image.height)
     assert colors is not None
     counts = {color: count for count, color in colors}
-    assert counts.get((232, 114, 12), 0) > 100  # observed orange
-    assert counts.get((46, 204, 64), 0) > 100  # starting reference green
+    # Field-side marks: what the engine MEASURED reads as paper, the
+    # reference it is compared against as the lit steel trace. This art lands
+    # on a frame, so the field's rule applies rather than the paper page's.
+    assert counts.get((242, 242, 243), 0) > 100  # observed — paper
+    assert counts.get((148, 188, 227), 0) > 100  # starting reference — trace
 
     def component_sizes(color: tuple[int, int, int]) -> list[int]:
         mask = np.all(pixels == color, axis=2)
@@ -222,9 +225,9 @@ def test_focused_sample_art_is_square_solid_and_uses_only_approved_marks(
             reverse=True,
         )
 
-    silhouette = component_sizes((243, 238, 226))
-    boundary = component_sizes((246, 215, 168))
-    reference = component_sizes((46, 204, 64))
+    silhouette = component_sizes((93, 107, 98))
+    boundary = component_sizes((102, 117, 108))
+    reference = component_sizes((148, 188, 227))
     assert silhouette and silhouette[0] > 150_000
     assert len(boundary) >= 8 and all(size >= 100 for size in boundary[:8])
     assert reference and reference[0] < 10_000
@@ -243,8 +246,10 @@ def test_guided_sample_evidence_copy_is_explicit_and_not_an_ideal_pose(
     assert image is not None
     alt = image.group(1).lower()
     assert "sample illustration" in alt
-    assert "orange head marker" in alt
-    assert "green starting zone" in alt
+    # The alt text names the colours, so it is part of the palette: it has to
+    # describe the marks that are actually drawn.
+    assert "white head marker" in alt
+    assert "pale blue starting zone" in alt
     assert "dashed coaching boundary" in alt
     for banned in ("ideal", "perfect pose", "corrected body"):
         assert banned not in alt

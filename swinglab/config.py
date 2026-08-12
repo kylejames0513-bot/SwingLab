@@ -44,8 +44,10 @@ DEFAULTS: dict[str, Any] = {
             "Film one swing on your phone. Get one thing to fix, one drill "
             "that fixes it, and the pass mark your next re-film has to clear."
         ),
-        "primary_color": "#1a5c38",
-        "accent_color": "#e8720c",
+        # See config.yaml for why both are field-side values: they tint drawn
+        # imagery that lands on phone video, not on the page.
+        "primary_color": "#94bce3",
+        "accent_color": "#f2f2f3",
         "footer_text": "CaddieInsight — swing analysis from a single phone video.",
         "watermark": False,
         "disclaimer": (
