@@ -10,6 +10,53 @@
         content="{{ priority_rule_version }}">
   <title>{{ brand.name }} — Swing report</title>
   <style>
+    /* ROOT-RELATIVE font faces, not remote ones.
+
+       This document is self-contained and may be saved to disk, so it fetches
+       nothing from a third party — that rule is unchanged. But it is also
+       SERVED, at /sample-report/, where it is a public marketing page the
+       storefront links to, and it was rendering in a system grotesk while
+       every other surface rendered in Barlow.
+
+       A /static path costs nothing to the saved-file case: opened from disk
+       these 404 silently and the stacks below fall back exactly as they
+       already document. Served, they are the same byte-identical faces the
+       app shell loads. */
+    @font-face {
+      font-family: "Barlow";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/static/barlow-latin-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Barlow";
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+      src: url("/static/barlow-latin-500.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Barlow Condensed";
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url("/static/barlow-condensed-latin-600.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "DM Mono";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/static/dm-mono-latin-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "DM Mono";
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+      src: url("/static/dm-mono-latin-500.woff2") format("woff2");
+    }
     :root {
       /* INDUSTRY, on screen. This report keeps its own private token names
          rather than the --sl-* ones because it must survive being saved to
@@ -58,6 +105,17 @@
       --field-muted: #8f9a93;
       --field-rule: #243229;
       --trace: #94bce3;
+      /* RGB triplets for alpha-derivations. Both were raw literals of the
+         RETIRED palette — 22 uses of amber and 11 of bone, scattered through
+         the sheet where the token names could not see them. That is how a
+         palette forks: the named colours move and the hand-written washes
+         made from them do not.
+
+         Every bone wash in this file is on a PAPER surface, so it tints
+         downward. If a field panel ever needs one it takes --cream-rgb. */
+      --amber-rgb: 65, 97, 128;
+      --wash-rgb: 29, 31, 32;
+      --cream-rgb: 242, 242, 243;
       /* A panel is a line drawing on paper, so there is no lit top edge to
          gradient down from — the hairline does that work now. Kept as a token
          because ~40 rules gradient from it. */
@@ -95,7 +153,7 @@
     a {
       color: var(--ink);
       text-decoration: underline;
-      text-decoration-color: rgba(237, 239, 233, .32);
+      text-decoration-color: rgba(var(--wash-rgb), .32);
       text-underline-offset: .2em;
     }
     a:hover { text-decoration-color: currentColor; }
@@ -202,7 +260,7 @@
       gap: .4rem;
       padding: .35rem .7rem;
       color: var(--green);
-      background: rgba(237, 239, 233, .05);
+      background: rgba(var(--wash-rgb), .05);
       border: 1px solid transparent;
       border-radius: 999px;
       font-family: var(--font-mono);
@@ -267,7 +325,7 @@
       overflow: hidden;
       border-top: .3rem solid var(--brand-accent, var(--accent-bright));
       background:
-        linear-gradient(135deg, rgba(237, 239, 233, .05), transparent 44%),
+        linear-gradient(135deg, rgba(var(--wash-rgb), .05), transparent 44%),
         linear-gradient(180deg, var(--paper-lift), var(--paper));
       animation: report-rise .65s ease both;
     }
@@ -314,12 +372,12 @@
       margin: 0;
       padding: .85rem 1rem .85rem 1.05rem;
       background:
-        linear-gradient(90deg, rgba(240, 168, 24, .12), var(--soft));
-      border: 1px solid rgba(240, 168, 24, .26);
+        linear-gradient(90deg, rgba(var(--amber-rgb), .12), var(--soft));
+      border: 1px solid rgba(var(--amber-rgb), .26);
       border-left: .34rem solid var(--accent-bright);
       border-radius: .7rem;
       font-size: 1.02rem;
-      box-shadow: inset 0 1px 0 rgba(237, 239, 233, .06);
+      box-shadow: inset 0 1px 0 rgba(var(--wash-rgb), .06);
       animation: cue-soft .7s ease both .12s;
     }
     .coach-cue strong {
@@ -348,7 +406,7 @@
       color: var(--green);
       text-align: center;
       text-decoration: none;
-      background: rgba(237, 239, 233, .04);
+      background: rgba(var(--wash-rgb), .04);
       border: 1px solid var(--line);
       border-radius: .7rem;
       font-size: .92rem;
@@ -356,7 +414,7 @@
       transition: border-color .2s ease, background .2s ease, transform .2s ease;
     }
     .journey-preview a:hover {
-      background: rgba(237, 239, 233, .07);
+      background: rgba(var(--wash-rgb), .07);
       border-color: var(--green-btn);
       transform: translateY(-1px);
     }
@@ -493,7 +551,7 @@
       font-size: 1.7rem;
     }
     .media-theater__card--locked a {
-      color: #ffc48f;
+      color: var(--accent-text);
       font-weight: 500;
     }
     .replay-locked-note {
@@ -503,8 +561,8 @@
       margin-top: .35rem;
       padding: .95rem 1.05rem;
       background:
-        linear-gradient(90deg, rgba(240, 168, 24, .12), rgba(255, 255, 255, .6));
-      border: 1px solid rgba(240, 168, 24, .28);
+        linear-gradient(90deg, rgba(var(--amber-rgb), .12), var(--soft));
+      border: 1px solid rgba(var(--amber-rgb), .28);
       border-left: .34rem solid var(--accent-bright);
       border-radius: .8rem;
     }
@@ -552,7 +610,7 @@
     }
     .capture-correction {
       padding: .9rem 1.05rem;
-      background: linear-gradient(90deg, rgba(237, 239, 233, .06), var(--soft));
+      background: linear-gradient(90deg, rgba(var(--wash-rgb), .06), var(--soft));
       border-left: .28rem solid var(--green-btn);
       border-radius: .75rem;
     }
@@ -614,7 +672,7 @@
       gap: .55rem .9rem;
       margin: 0;
       padding: 1rem;
-      background: rgba(237, 239, 233, .035);
+      background: rgba(var(--wash-rgb), .035);
       border: 1px solid var(--line);
       border-radius: .85rem;
     }
@@ -648,14 +706,14 @@
       box-shadow: var(--shadow-sm);
     }
     .training-card--dosage {
-      border-color: rgba(240, 168, 24, .32);
+      border-color: rgba(var(--amber-rgb), .32);
       background:
-        linear-gradient(180deg, rgba(240, 168, 24, .08), var(--paper) 55%);
+        linear-gradient(180deg, rgba(var(--amber-rgb), .08), var(--paper) 55%);
     }
     .training-card--feel {
-      border-color: rgba(237, 239, 233, .18);
+      border-color: rgba(var(--wash-rgb), .18);
       background:
-        linear-gradient(180deg, rgba(237, 239, 233, .05), var(--paper) 55%);
+        linear-gradient(180deg, rgba(var(--wash-rgb), .05), var(--paper) 55%);
     }
     .training-card--pass {
       grid-column: 1 / -1;
@@ -682,7 +740,7 @@
       color: var(--green);
       font-weight: 500;
       text-decoration: none;
-      border-bottom: 1px solid rgba(237, 239, 233, .22);
+      border-bottom: 1px solid rgba(var(--wash-rgb), .22);
     }
     .practice-dosage-callout {
       grid-column: 1 / -1;
@@ -691,7 +749,7 @@
       margin-top: .15rem;
       padding: .75rem .85rem;
       background: var(--paper);
-      border: 1px solid rgba(240, 168, 24, .28);
+      border: 1px solid rgba(var(--amber-rgb), .28);
       border-radius: .65rem;
     }
     .practice-dosage-callout span {
@@ -707,8 +765,8 @@
       margin: 0;
       padding: 1rem 1.05rem;
       background:
-        linear-gradient(90deg, rgba(240, 168, 24, .12), var(--soft));
-      border: 1px solid rgba(240, 168, 24, .28);
+        linear-gradient(90deg, rgba(var(--amber-rgb), .12), var(--soft));
+      border: 1px solid rgba(var(--amber-rgb), .28);
       border-left: .34rem solid var(--accent-bright);
       border-radius: .8rem;
       font-size: 1.06rem;
@@ -897,26 +955,24 @@
     <div class="report-brand-row">
       <div class="report-brand">
         <span class="report-brand__mark" aria-hidden="true">
-          {# The Tour Caddie dial, emitted by store-assets/brand_mark.py at
-             ticks=12 and no cup — this renders at 20px, where the shipped
-             24-tick fan and the hole ellipse both turn to mud. Inlined
-             because the report is a self-contained offline document and may
-             not fetch an asset. #}
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <line x1="18.01" y1="12.00" x2="19.56" y2="12.00" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="17.20" y1="15.01" x2="18.55" y2="15.78" stroke="#ffad62" stroke-width="2" stroke-linecap="round"/>
-            <line x1="15.01" y1="17.20" x2="15.78" y2="18.55" stroke="#ffad62" stroke-width="2" stroke-linecap="round"/>
-            <line x1="12.00" y1="18.01" x2="12.00" y2="19.56" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="8.69" y1="17.73" x2="8.22" y2="18.55" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="6.27" y1="15.31" x2="5.45" y2="15.78" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="5.99" y1="12.00" x2="4.44" y2="12.00" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="6.27" y1="8.69" x2="5.45" y2="8.22" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="8.69" y1="6.27" x2="8.22" y2="5.45" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="12.00" y1="5.99" x2="12.00" y2="4.44" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="15.31" y1="6.27" x2="15.78" y2="5.45" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="17.73" y1="8.69" x2="18.55" y2="8.22" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="12.00" y1="7.46" x2="12.00" y2="15.18" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <polygon points="13.00,7.46 15.18,8.42 13.00,9.73" fill="#e6f2ea"/>
+          {# The drawn iron, emitted by store-assets/brand_mark.py's mark_svg()
+             at 24px with no tile. Inlined because the report is a
+             self-contained offline document and may not fetch an asset — but
+             GENERATED and pasted, never hand-drawn: the previous version was a
+             hand-inlined copy of the retired Tour Caddie dial, which is exactly
+             the drift one-geometry-two-renderers exists to prevent, and it
+             outlived the mark it copied by a whole brand.
+
+             It renders at 20px, below the size rule's groove threshold, so
+             groove_count() emits the silhouette alone. Fills are var() so the
+             @media print inversion carries it without a second copy. #}
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="CaddieInsight">
+          <polygon points="12.94,2.43 16.34,2.43 16.14,8.04 13.14,8.04" fill="var(--ink)"/>
+          <polygon points="13.54,7.71 15.74,7.71 15.54,17.94 13.74,17.94" fill="var(--ink)"/>
+          <polygon points="13.54,15.96 15.74,15.96 15.94,17.94 12.64,17.94" fill="var(--ink)"/>
+          <polygon points="15.63,17.94 15.63,22.56 14.91,22.66 14.19,22.73 13.48,22.78 12.76,22.81 12.04,22.82 11.32,22.81 10.61,22.78 9.89,22.73 9.17,22.66 8.45,22.56 7.76,21.90 7.61,21.81 7.48,21.69 7.41,21.53 7.38,21.36 7.41,21.18 7.48,21.02 7.61,20.90 7.76,20.81 9.20,18.63" fill="var(--ink)"/>
+          <rect x="13.57" y="2.43" width="2.14" height="0.99" rx="0.49" fill="var(--ink)"/>
+          <line x1="8.54" y1="21.24" x2="14.14" y2="21.24" stroke="var(--amber)" stroke-width="1.00"/>
           </svg>
         </span>
         <span class="report-brand__text">

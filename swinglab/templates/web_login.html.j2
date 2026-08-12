@@ -45,16 +45,18 @@
       linear-gradient(180deg, rgba(var(--sl-field-rgb), .58) 0%, rgba(var(--sl-field-rgb), .14) 42%, rgba(var(--sl-field-rgb), .82) 100%),
       linear-gradient(90deg, rgba(var(--sl-field-rgb), .93) 0%, rgba(var(--sl-field-rgb), .66) 30%, rgba(var(--sl-field-rgb), .08) 62%, rgba(var(--sl-field-rgb), .2) 100%);
   }
-  /* The 8px instrument grid the shell paints under the whole app, continued
-     across the photograph so the hero reads as one ruled surface rather than
-     as a picture with a panel dropped on it. Brightest at the readout edge. */
+  /* The field's vertical scan rules, continued across the photograph so the
+     hero reads as one ruled surface rather than as a picture with a panel
+     dropped on it. Brightest at the readout edge.
+
+     This was the 8px instrument grid the shell used to paint under the whole
+     app. The shell paints paper now and the grid is retired system-wide, so
+     continuing it here would have left one band ruled and nothing else —
+     the exact "picture with a panel dropped on it" the rule exists to avoid. */
   .landing-hero::after {
     z-index: 2;
-    opacity: .34;
-    background-image:
-      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px);
-    background-size: 8px 8px;
+    opacity: .5;
+    background-image: var(--sl-rules);
     {# A mask reads the alpha channel only, so the opaque stop just means
        "keep" — it is derived from a token rather than written as a literal
        black so this file holds no raw colour at all. #}

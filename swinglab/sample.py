@@ -206,7 +206,7 @@ def _draw_panel(
     draw_skeleton(draw, lm, color, shoulder_width_px=0.2 * w, line_w=4)
     font = load_font(22)
     draw.text((x0 + 12, 10), label, fill=_LABEL, font=font)
-    draw.line([(x0 + w, 0), (x0 + w, h)], fill="#111111", width=2)
+    draw.line([(x0 + w, 0), (x0 + w, h)], fill="#070f0b", width=2)
 
 
 def _footer(img: Image.Image, text: str) -> None:
@@ -220,9 +220,9 @@ def _footer(img: Image.Image, text: str) -> None:
     while size > 11 and draw.textlength(text, font=font) > max_w:
         size -= 1
         font = load_font(size)
-    draw.rectangle([0, img.height - 30, img.width, img.height], fill="#101512")
+    draw.rectangle([0, img.height - 30, img.width, img.height], fill="#0b1712")
     draw.text((12, img.height - 30 + (28 - size) // 2), text,
-              fill="#c9d4cc", font=font)
+              fill="#a8b3ac", font=font)
 
 
 def draw_sample_strip(out_path: Path, swing_no: int, cfg: Config) -> Path:
@@ -298,7 +298,7 @@ def draw_sample_focused_evidence(out_path: Path, cfg: Config) -> Path:
     draw.text(
         (52, 91),
         "Head position near the top",
-        fill="#c9d4cc",
+        fill="#a8b3ac",
         font=small_font,
     )
 
@@ -307,7 +307,7 @@ def draw_sample_focused_evidence(out_path: Path, cfg: Config) -> Path:
     draw.rounded_rectangle(
         (245, 165, 405, 325),
         radius=38,
-        fill="#214e31",
+        fill="#1c3347",
         outline=_SAMPLE_REFERENCE,
         width=10,
     )
