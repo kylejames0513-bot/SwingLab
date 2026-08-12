@@ -358,9 +358,18 @@
     var j = state.joints;
     ctx.clearRect(0, 0, this.w, this.h);
 
-    var ink = this.opts.ink || 'rgba(237,239,233,';
-    var trace = this.opts.trace || 'rgba(95,227,192,';
-    var signal = this.opts.signal || 'rgba(240,168,24,';
+    /* This canvas only ever runs on the FIELD — the hero's reversed ground —
+       so all three are field-side values.
+
+       `signal` is a misleading name kept for its call sites: what it draws is
+       the landmark crosshairs and the impact pulse, which are events in a LIVE
+       readout, not values the engine measured. It used to be amber, which
+       spent the measured-value colour on an animation. Both it and `trace` are
+       now steel, one lit and one dim, so they stay distinguishable from each
+       other without either pretending to be a measurement. */
+    var ink = this.opts.ink || 'rgba(242,242,243,';
+    var trace = this.opts.trace || 'rgba(148,188,227,';
+    var signal = this.opts.signal || 'rgba(89,128,166,';
 
     /* the clubhead trail — the arc, sampled from the motion itself */
     var head = this.pt(j.club, f);

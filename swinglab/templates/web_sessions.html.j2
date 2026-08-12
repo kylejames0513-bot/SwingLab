@@ -25,11 +25,7 @@
     /* The 8px technical grid the shell paints on <body> stops dead at any
        opaque surface, so a well that has to read as instrument repaints
        it. Same two gradients, same 8px step as the shell and the hero. */
-    background:
-      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
-      var(--sl-night);
-    background-size: 8px 8px, 8px 8px, auto;
+    background: var(--sl-night);
     color: var(--sl-ink);
     /* --sl-shadow-md already leads with the inset lit edge; adding
        --sl-shadow-sm on top of it just declares the same highlight twice. */
@@ -135,7 +131,7 @@
      through the whole card. */
   .history-table tbody tr:hover {
     background:
-      linear-gradient(rgba(var(--sl-cream-rgb), .04), rgba(var(--sl-cream-rgb), .04)),
+      linear-gradient(rgba(var(--sl-wash-rgb), .04), rgba(var(--sl-wash-rgb), .04)),
       var(--sl-bg-card);
   }
   .history-table th {

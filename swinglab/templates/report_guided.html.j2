@@ -11,55 +11,68 @@
   <title>{{ brand.name }} — Swing report</title>
   <style>
     :root {
-      /* INSTRUMENT, on screen. This report keeps its own private token names
+      /* INDUSTRY, on screen. This report keeps its own private token names
          rather than the --sl-* ones because it must survive being saved to
          disk and opened with no stylesheet beside it — but the VALUES are the
-         app's, so the deliverable and the product it came from finally look
-         like one company. That was the whole defect: the sample report was
-         the last surface still rendering the retired cream/green palette.
+         app's, so the deliverable and the product it came from look like one
+         company.
 
-         Every value here is the light-surface original inverted, and the
-         @media print block near the bottom of this sheet puts them all back
-         to paper. Redefining the custom properties there rather than
-         restating rules means print follows automatically — a new rule
-         written against these names is printable by construction. */
+         The ground is PAPER again, which is where this palette started before
+         the 2026-08-10 inversion. That is not a round trip to where it began:
+         the type is Barlow, the geometry is square, and the signal is steel
+         rather than amber. What it does mean is that the @media print block
+         below has almost nothing left to do — screen and print finally agree
+         on the ground, and print only has to reach pure white and drop the
+         casts.
+
+         THE NAMES DID NOT CHANGE. --amber is steel now, exactly as --sl-green
+         is ink on the other two surfaces, because renaming would touch every
+         call site in a 1,900-line file to buy nothing — and because
+         tests/test_signal_colour_discipline.py polices these names. The rule
+         they enforce is unchanged: the signal marks a value the ENGINE
+         MEASURED and the trace marks the LIVE READOUT. */
       --brand-primary: {{ brand.primary_color }};
       --brand-accent: {{ brand.accent_color }};
-      --ink: #edefe9;
-      --muted: #8b968e;
-      --paper: #0d1712;
-      --canvas: #070f0b;
-      --accent-text: #f5b833;
-      --accent-bright: #f0a818;
-      --control-border: #6b7a71;
-      --focus: #ffc04d;
-      --line: #1e2c25;
-      --soft: #14201a;
-      --green: #edefe9;
-      --green-btn: #edefe9;
-      --green-ink: #070f0b;
-      --amber: #f0a818;
-      --amber-soft: #14201a;
-      --night: #040907;
-      --surface-dark: #040907;
-      --trace: #5fe3c0;
-      /* The top edge of a raised block. Every panel is a gradient from
-         this down to --paper; hardcoding the light originals here is
-         what left the priority card painting bone text onto a white
-         gradient after the inversion — unreadable, and invisible in the
-         source because the literals lived below the fold of the scan. */
-      --paper-lift: #142019;
-      --shadow-sm: inset 0 1px 0 rgba(237, 239, 233, .04);
-      --shadow-md: inset 0 1px 0 rgba(237, 239, 233, .05), 0 18px 40px -28px rgba(0, 0, 0, .9);
-      --shadow-theater: inset 0 1px 0 rgba(237, 239, 233, .06), 0 40px 84px -44px rgba(0, 0, 0, 1);
+      --ink: #1d1f20;
+      --muted: #626265;
+      --paper: #f2f2f3;
+      --canvas: #f2f2f3;
+      --accent-text: #375169;
+      --accent-bright: #416180;
+      --control-border: #6e6e71;
+      --focus: #416180;
+      --line: #d0d1d1;
+      --soft: #e9e9ea;
+      --green: #1d1f20;
+      --green-btn: #2c455d;
+      --green-ink: #f2f2f3;
+      --amber: #416180;
+      --amber-soft: #eef6ff;
+      --night: #e9e9ea;
+      /* THE FIELD — the one reversed ground, carrying the swing clip, the
+         evidence tiles and the priority panel. It used to be the whole page,
+         which is why --surface-dark was the only name for it. */
+      --surface-dark: #070f0b;
+      --field-ink: #f2f2f3;
+      --field-soft: #a8b3ac;
+      --field-muted: #8f9a93;
+      --field-rule: #243229;
+      --trace: #94bce3;
+      /* A panel is a line drawing on paper, so there is no lit top edge to
+         gradient down from — the hairline does that work now. Kept as a token
+         because ~40 rules gradient from it. */
+      --paper-lift: #f2f2f3;
+      --shadow-sm: none;
+      --shadow-md: 0 1px 2px rgba(29, 31, 32, .14);
+      --shadow-theater: 0 12px 32px rgba(29, 31, 32, .22);
       /* Offline self-contained reports cannot fetch remote faces, so every
-         stack degrades to something installed. Archivo Expanded leads the
-         display stack and falls back to Archivo at normal width — the right
-         typeface at the wrong width beats a system grotesk. Sora is gone; it
-         was retired from the product in the 2026-08 rebuild and only survived
-         here because nothing rendered this file. */
-      --font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      --font-sans: "Archivo", "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+         stack degrades to something installed. Barlow Condensed leads the
+         display stack and falls back to Barlow at normal width — the right
+         typeface at the wrong width beats a system grotesk. That fallback
+         matters more than it did: Barlow ships no variable font, so a missed
+         load cannot be covered by a nearby weight of the same file. */
+      --font-display: "Barlow Condensed", "Barlow", "Segoe UI Condensed", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-sans: "Barlow", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
       --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     }
     * { box-sizing: border-box; }
@@ -67,16 +80,13 @@
     body {
       margin: 0;
       color: var(--ink);
-      /* The field plus the 8px technical grid the rest of the product paints,
-         so the report reads as a readout rather than as a dark document. */
-      background:
-        linear-gradient(rgba(237, 239, 233, .022) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(237, 239, 233, .022) 1px, transparent 1px),
-        radial-gradient(1100px 560px at 8% -12%, rgba(95, 227, 192, .05), transparent 58%),
-        radial-gradient(980px 440px at 98% 2%, rgba(240, 168, 24, .04), transparent 54%),
-        var(--canvas);
-      background-size: 8px 8px, 8px 8px, auto, auto, auto;
-      background-attachment: fixed;
+      /* Plain paper. The 8px grid and the two signal-tinted glows are gone
+         with the dark ground they were painted for — and a report is the one
+         surface where that matters twice, because this is also what gets
+         printed. A page-wide wash of the signal colour was teaching a reader
+         that amber meant "background", on the document where amber had to
+         mean "measured". */
+      background: var(--canvas);
       font-family: var(--font-sans);
       line-height: 1.55;
       overflow-wrap: anywhere;
@@ -795,27 +805,34 @@
          forgotten. Contrast on paper is the light system these values came
          from, unchanged.
 
-         Deliberately NOT reset: --accent-bright stays amber, because a
-         measured value should still be the thing your eye lands on in print. */
+         This block used to invert the WHOLE palette, because the screen was
+         near-black and paper is not. Industry's screen ground is already
+         paper, so almost all of that is gone and what is left is the handful
+         of things a printer genuinely needs:
+
+           - pure white, not #f2f2f3. Screen paper is a tone; printed paper is
+             the absence of ink, and tinting every sheet costs a cartridge.
+           - THE FIELD MUST NOT PRINT. The swing clip, evidence tiles and the
+             priority panel are a near-black ground on screen and would come
+             out as solid black rectangles — the single most expensive thing
+             this block prevents. Flipping --surface-dark also means
+             --field-ink has to flip with it, or the type inside those panels
+             prints white on white.
+           - the trace is a LIT steel, tuned for a dark ground; on white it is
+             1.78 and vanishes, so it deepens.
+
+         The signal needs no reset. It is steel now rather than amber, and
+         5.78 on white is the same reading it gives on screen. */
       :root {
-        --ink: #101a14;
-        --muted: #5a655e;
         --paper: #ffffff;
         --paper-lift: #ffffff;
         --canvas: #ffffff;
-        --accent-text: #944600;
-        --accent-bright: #944600;
-        --control-border: #6f7b72;
-        --line: #d4ddd6;
-        --soft: #f2efe6;
-        --green: #0f3d28;
-        --green-btn: #1a5c38;
-        --green-ink: #ffffff;
-        --amber: #944600;
-        --amber-soft: #f3ebe0;
-        --night: #101a14;
         --surface-dark: #ffffff;
-        --trace: #0f3d28;
+        --field-ink: #1d1f20;
+        --field-soft: #5d5d60;
+        --field-muted: #626265;
+        --field-rule: #d0d1d1;
+        --trace: #2c455d;
         --shadow-sm: none;
         --shadow-md: none;
         --shadow-theater: none;

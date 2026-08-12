@@ -285,7 +285,7 @@
   a {
     color: var(--sl-green-btn);
     text-decoration: underline;
-    text-decoration-color: rgba(var(--sl-cream-rgb), .32);
+    text-decoration-color: rgba(var(--sl-wash-rgb), .32);
     text-underline-offset: 0.2em;
     text-decoration-thickness: 1px;
   }
@@ -318,14 +318,14 @@
     padding: 8px var(--sl-pad-x);
     display: flex;
     align-items: center;
-    background: var(--sl-night);
-    border-bottom: 1px solid rgba(var(--sl-cream-rgb), .1);
-    color: rgba(var(--sl-cream-rgb), .7);
+    background: var(--sl-band);
+    border-bottom: 0;
+    color: rgba(var(--sl-cream-rgb), .78);
     font-size: 12.5px;
   }
   .sl-app-banner--pro {
-    background: linear-gradient(90deg, var(--sl-night) 0%, var(--sl-bg-card) 50%, var(--sl-night) 100%);
-    border-bottom-color: rgba(var(--sl-trace-rgb), .24);
+    background: var(--sl-band);
+    box-shadow: inset 0 -2px 0 rgba(var(--sl-trace-rgb), .5);
   }
   .sl-app-banner__inner {
     width: 100%;
@@ -895,7 +895,7 @@
     display: flex;
     justify-content: space-between;
     gap: 18px;
-    border-top: 1px solid rgba(var(--sl-cream-rgb), .12);
+    border-top: 1px solid rgba(var(--sl-wash-rgb), .12);
     color: var(--sl-ink-muted);
   }
   .sl-app-footer__bottom p { margin: 0; }
@@ -1045,7 +1045,7 @@
          above it instead of fighting the system gesture. */
       padding-bottom: var(--sl-safe-bottom);
       background: rgba(var(--sl-night-rgb), .97);
-      border-top: 1px solid rgba(var(--sl-cream-rgb), .13);
+      border-top: 1px solid rgba(var(--sl-wash-rgb), .13);
       -webkit-backdrop-filter: saturate(150%) blur(12px);
       backdrop-filter: saturate(150%) blur(12px);
     }

@@ -16,11 +16,7 @@
     padding: clamp(var(--sl-space-5), 4vw, var(--sl-space-7));
     border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-lg);
-    background:
-      linear-gradient(rgba(var(--sl-cream-rgb), .022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .022) 1px, transparent 1px),
-      var(--sl-night);
-    background-size: 8px 8px, 8px 8px, auto;
+    background: var(--sl-night);
     color: var(--sl-ink);
     box-shadow: var(--sl-shadow-lg);
   }
@@ -279,7 +275,7 @@
   }
   .account-shell a.button.secondary:hover {
     border-color: var(--sl-ink);
-    background: rgba(var(--sl-cream-rgb), .06);
+    background: rgba(var(--sl-wash-rgb), .06);
     color: var(--sl-ink);
   }
   .account-actions { display: flex; align-items: center; flex-wrap: wrap; gap: var(--sl-space-3); margin-top: var(--sl-space-4); }
@@ -290,7 +286,7 @@
     background: transparent;
     color: var(--sl-ink);
   }
-  .quiet button:hover { border-color: var(--sl-ink); background: rgba(var(--sl-cream-rgb), .06); color: var(--sl-ink); }
+  .quiet button:hover { border-color: var(--sl-ink); background: rgba(var(--sl-wash-rgb), .06); color: var(--sl-ink); }
   {# Leaving is not destructive, but it is the one control here that ends the
      session, so it keeps the warning ink it has always had — retoned to the
      token that is actually readable on the field (7.2:1; the old #8a2820 was a

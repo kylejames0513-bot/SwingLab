@@ -41,9 +41,12 @@
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
   }
-  body { font-family: Arial, Helvetica, sans-serif;
-         margin: 0; color: #101a14; background: #eef2ef; }
-  .sample-banner { background: #944600; color: white; padding: 10px 32px;
+  body { font-family: "Barlow", Arial, Helvetica, sans-serif;
+         margin: 0; color: #1d1f20; background: #f2f2f3; }
+  /* The sample banner is a BAND, the same navy strip the storefront and the
+     app shell run above their headers — not the signal. It was orange, which
+     spent the measured-value colour on a disclosure notice. */
+  .sample-banner { background: #1d2d3d; color: white; padding: 10px 32px;
                    display: flex; align-items: center; justify-content: center;
                    gap: 14px; flex-wrap: wrap; font-size: 0.95rem; }
   .sample-banner a { color: white; font-weight: 500; text-decoration: underline;
@@ -214,26 +217,35 @@
 
   /* Premium evidence-first presentation. This layer deliberately keeps the
      report self-contained: no remote fonts, assets, scripts, or runtime UI. */
+  /* INDUSTRY. This report never went through the 2026-08-10 dark inversion —
+     it was still the warm cream document the product left behind two brands
+     ago, which is exactly the drift the guided report's own comment warns
+     about. Same palette as everything else now, under this file's private
+     names, because it must survive being saved and opened with no stylesheet.
+
+     --accent-ink is THE SIGNAL: a value the engine measured, and nothing
+     else. It was an orange here long after the rest of the product stopped
+     spending orange on decoration. */
   :root {
-    --ink: #101a14;
-    --ink-soft: #4d5850;
-    --ink-muted: #5d685f;
-    --accent-ink: #944600;
-    --paper: #fffdf8;
-    --canvas: #f3f1eb;
-    --line: #ddd8cc;
-    --green-wash: #edf5ef;
-    --warm-wash: #e8f0ea;
-    --shadow: 0 22px 55px -40px rgba(15, 42, 27, .55);
+    --ink: #1d1f20;
+    --ink-soft: #5d5d60;
+    --ink-muted: #626265;
+    --accent-ink: #375169;
+    --paper: #ffffff;
+    --canvas: #f2f2f3;
+    --line: #d0d1d1;
+    --green-wash: #eef6ff;
+    --warm-wash: #e9e9ea;
+    --shadow: 0 1px 2px rgba(29, 31, 32, .14);
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     color: var(--ink);
-    background:
-      radial-gradient(circle at 88% 3%, rgba(232, 114, 12, .08), transparent 25rem),
-      var(--canvas);
-    font-family: Arial, Helvetica, sans-serif;
+    /* A page-wide wash of the signal colour taught a reader that it meant
+       "background", on the one document where it has to mean "measured". */
+    background: var(--canvas);
+    font-family: "Barlow", Arial, Helvetica, sans-serif;
     line-height: 1.55;
   }
   .report-skip {
@@ -689,9 +701,9 @@
     .sample-banner {
       display: flex !important;
       padding: 3mm 5mm;
-      border: 2px solid #944600;
+      border: 2px solid #1d2d3d;
       background: white !important;
-      color: #944600 !important;
+      color: #1d2d3d !important;
     }
     .sample-banner a { display: none !important; }
     .report-header { box-shadow: none; }
