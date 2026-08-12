@@ -3,12 +3,42 @@
     "founders": {
       "type": "founders",
       "blocks": {
-        "b1": { "type": "benefit", "settings": { "text": "Unlimited analyses and matched re-films" } },
-        "b2": { "type": "benefit", "settings": { "text": "Annotated coach replay of every swing" } },
-        "b3": { "type": "benefit", "settings": { "text": "Swing Pattern — how your swing is built, named" } },
-        "b4": { "type": "benefit", "settings": { "text": "Progress dashboard, session over session" } },
-        "b5": { "type": "benefit", "settings": { "text": "Matched re-film verdicts — proof a fix held" } },
-        "b6": { "type": "benefit", "settings": { "text": "Every Coach feature we ship after this one" } },
+        "b1": {
+          "type": "benefit",
+          "settings": {
+            "text": "Unlimited analyses and matched re-films"
+          }
+        },
+        "b2": {
+          "type": "benefit",
+          "settings": {
+            "text": "Annotated coach replay of every swing"
+          }
+        },
+        "b3": {
+          "type": "benefit",
+          "settings": {
+            "text": "Swing Pattern — how your swing is built, named"
+          }
+        },
+        "b4": {
+          "type": "benefit",
+          "settings": {
+            "text": "Progress dashboard, session over session"
+          }
+        },
+        "b5": {
+          "type": "benefit",
+          "settings": {
+            "text": "Matched re-film verdicts — proof a fix held"
+          }
+        },
+        "b6": {
+          "type": "benefit",
+          "settings": {
+            "text": "Every Coach feature we ship after this one"
+          }
+        },
         "r1": {
           "type": "reason",
           "settings": {
@@ -101,7 +131,24 @@
           }
         }
       },
-      "block_order": ["b1", "b2", "b3", "b4", "b5", "b6", "r1", "r2", "r3", "t1", "t2", "t3", "t4", "t5", "t6", "t7"],
+      "block_order": [
+        "b1",
+        "b2",
+        "b3",
+        "b4",
+        "b5",
+        "b6",
+        "r1",
+        "r2",
+        "r3",
+        "t1",
+        "t2",
+        "t3",
+        "t4",
+        "t5",
+        "t6",
+        "t7"
+      ],
       "settings": {
         "kicker": "Membership 03 · Founders",
         "heading": "Pay once. Coach forever.",
@@ -111,8 +158,8 @@
         "founders_remaining": 100,
         "claim_label": "Claim a Founders Pass",
         "terms": "One payment · never renews",
-        "pass_price": 249,
-        "coach_monthly": 19,
+        "pass_price": 24900,
+        "coach_monthly": 1999,
         "soldout_note": "All 100 Founders Passes have been claimed. Coach is still available monthly.",
         "soldout_label": "See the Coach plan",
         "buys_heading": "What $249 buys, permanently",
@@ -130,9 +177,13 @@
         "heading": "A hundred of these exist.",
         "sub": "Pay once. Get every Coach feature. Keep them for good.",
         "primary_label": "Claim a Founders Pass",
-        "fine_print": "One payment · never renews · 14-day refund on unused memberships"
+        "fine_print": "One payment · never renews · 14-day refund on unused memberships",
+        "secondary_label": ""
       }
     }
   },
-  "order": ["founders", "cta"]
+  "order": [
+    "founders",
+    "cta"
+  ]
 }

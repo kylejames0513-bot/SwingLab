@@ -24,14 +24,23 @@
     assign claim_url = founders_product.url
   endif
 
+  # BOTH PRICES ARE IN CENTS. Shopify's `number` setting is an integer, so a
+  # dollars-and-cents figure authored there rounds — 19.99 became 19 and the
+  # page told visitors Coach cost $19.00. Cents is also what `money` expects,
+  # so the same value now feeds the filter without a conversion step.
+  assign pass_cents = section.settings.pass_price | default: 24900 | at_least: 0
+  assign coach_cents = section.settings.coach_monthly | default: 1999 | at_least: 0
+
   # The payback line is arithmetic, not copy: at $19.99/mo a $249 pass pays for
-  # itself in 13 months. Authoring it as a sentence meant it silently lied the
-  # first time either number moved, so it is computed from the two settings and
-  # suppressed if they cannot produce a sensible figure.
-  assign monthly = section.settings.coach_monthly | default: 19.99
+  # itself in 13 months. Authored as a sentence it lied the first time either
+  # number moved, so it is computed and suppressed if it cannot be.
+  # `times: 1.0` first, or this is integer division and the ceil is a no-op:
+  # 24900 / 1999 floors to 12, ceil(12) is 12, and the page rounds the payback
+  # DOWN — understating what the pass costs to earn back, which is the one
+  # direction a number on a sales page must never be wrong in.
   assign payback_months = 0
-  if monthly > 0
-    assign payback_months = section.settings.pass_price | default: 249 | divided_by: monthly | ceil
+  if coach_cents > 0
+    assign payback_months = pass_cents | times: 1.0 | divided_by: coach_cents | ceil
   endif
 
   # The comparison table's four column labels, resolved once. The header cells
@@ -90,8 +99,8 @@
           {%- elsif claim_url != blank -%}
             <a class="sl-btn sl-btn--light sl-founders__claim" href="{{ claim_url }}">
               {{ section.settings.claim_label | default: 'Claim a Founders Pass' }}
-              {%- if section.settings.pass_price > 0 -%}
-                <span aria-hidden="true"> · {{ section.settings.pass_price | times: 100 | money }}</span>
+              {%- if pass_cents > 0 -%}
+                <span aria-hidden="true"> · {{ pass_cents | money }}</span>
               {%- endif -%}
             </a>
             <p class="sl-founders__terms">{{ section.settings.terms | default: 'One payment · never renews' }}</p>
@@ -165,7 +174,7 @@
 
         {%- if payback_months > 0 -%}
           <p class="sl-founders__payback">
-            Coach at {{ monthly | times: 100 | money }}/mo pays this back in
+            Coach at {{ coach_cents | money }}/mo pays this back in
             <b>{{ payback_months }} months</b>.
           </p>
         {%- endif -%}
@@ -527,13 +536,19 @@
     { "type": "url", "id": "claim_url", "label": "Button link", "info": "Defaults to the Founders Pass product." },
     { "type": "text", "id": "terms", "label": "Terms line", "default": "One payment · never renews" },
     { "type": "header", "content": "Pricing" },
-    { "type": "number", "id": "pass_price", "label": "Pass price", "default": 249 },
+    {
+      "type": "number",
+      "id": "pass_price",
+      "label": "Pass price, in cents",
+      "info": "24900 for $249. Cents because this setting is an integer — 249.00 would round.",
+      "default": 24900
+    },
     {
       "type": "number",
       "id": "coach_monthly",
-      "label": "Coach monthly price",
-      "info": "The payback figure is calculated from these two, never authored.",
-      "default": 19
+      "label": "Coach monthly price, in cents",
+      "info": "1999 for $19.99. The payback figure is calculated from these two, never authored.",
+      "default": 1999
     },
     { "type": "header", "content": "Sold out" },
     {
