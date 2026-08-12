@@ -168,9 +168,9 @@
   position: relative;
   isolation: isolate;
   overflow: hidden;
-  background: var(--sl-bg);
-  color: var(--sl-ink);
-  border-bottom: 1px solid var(--sl-border);
+  background: var(--sl-field);
+  color: var(--sl-field-ink);
+  border-bottom: 1px solid var(--sl-field-rule);
 }
 /* The photograph is atmosphere: desaturated hard, dropped to a whisper, and
    masked away from the readout side so the trace never fights a tree line. */
@@ -193,18 +193,18 @@
 .sl-hero::before {
   z-index: 1;
   background:
-    linear-gradient(180deg, rgba(7, 15, 11, 0.58) 0%, rgba(7, 15, 11, 0.14) 42%, rgba(7, 15, 11, 0.82) 100%),
-    linear-gradient(90deg, rgba(7, 15, 11, 0.93) 0%, rgba(7, 15, 11, 0.66) 30%, rgba(7, 15, 11, 0.08) 62%, rgba(7, 15, 11, 0.2) 100%);
+    linear-gradient(180deg, rgba(var(--sl-field-rgb), 0.58) 0%, rgba(var(--sl-field-rgb), 0.14) 42%, rgba(var(--sl-field-rgb), 0.82) 100%),
+    linear-gradient(90deg, rgba(var(--sl-field-rgb), 0.93) 0%, rgba(var(--sl-field-rgb), 0.66) 30%, rgba(var(--sl-field-rgb), 0.08) 62%, rgba(var(--sl-field-rgb), 0.2) 100%);
 }
-/* the 8px instrument grid, brightest at the readout edge. Lighter than it
-   was, because it now rules over a photograph rather than over black. */
+/* Mockup 2a's vertical scan rules, brightest at the readout edge. This was
+   the 8px instrument grid, which is retired system-wide: a grid under a light
+   page reads as graph paper the content is fighting, and even here it was
+   doing a different job from the one the field wants. The rules are steel on
+   green, so they read as printing on a plate. */
 .sl-hero::after {
   z-index: 2;
-  opacity: 0.34;
-  background-image:
-    linear-gradient(rgba(var(--sl-cream-rgb), 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.03) 1px, transparent 1px);
-  background-size: 8px 8px;
+  opacity: 0.5;
+  background-image: var(--sl-rules);
   -webkit-mask-image: linear-gradient(90deg, transparent, #000 62%);
   mask-image: linear-gradient(90deg, transparent, #000 62%);
 }
@@ -274,7 +274,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  color: var(--sl-ink-soft);
+  color: var(--sl-field-soft);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-eyebrow-size);
   font-weight: 500;
@@ -299,7 +299,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
 .sl-hero__title {
   max-width: 13ch;
   margin: 0;
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
   font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
   font-weight: 600;
@@ -312,7 +312,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
 .sl-hero__body {
   max-width: 42ch;
   margin: clamp(18px, 2vw, 24px) 0 0;
-  color: var(--sl-ink-soft);
+  color: var(--sl-field-soft);
   font-size: var(--sl-text-lg);
   line-height: 1.55;
   text-align: left;
@@ -339,26 +339,26 @@ video.sl-hero__video { position: absolute; inset: 0; }
 }
 /* Bone, not amber. Amber marks a measured value; a button is not one. */
 .sl-hero__primary {
-  border-color: var(--sl-ink);
-  background: var(--sl-ink);
-  color: var(--sl-bg);
+  border-color: var(--sl-field-ink);
+  background: var(--sl-field-ink);
+  color: var(--sl-field);
 }
 .sl-hero__primary:hover {
-  border-color: var(--sl-ink-hi);
-  background: var(--sl-ink-hi);
-  color: var(--sl-bg);
+  border-color: var(--sl-field-ink);
+  background: var(--sl-field-ink);
+  color: var(--sl-field);
 }
 .sl-hero__primary span:last-child { transition: transform 0.2s ease; }
 .sl-hero__primary:hover span:last-child { transform: translateX(4px); }
 .sl-hero__secondary {
-  border-color: var(--sl-control-border);
+  border-color: var(--sl-field-control);
   background: transparent;
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
 }
 .sl-hero__secondary:hover {
-  border-color: var(--sl-ink);
+  border-color: var(--sl-field-ink);
   background: rgba(var(--sl-cream-rgb), 0.06);
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
 }
 .sl-hero__proof {
   margin: clamp(22px, 2.5vw, 28px) 0 0;
@@ -372,7 +372,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
 .sl-hero__proof li {
   position: relative;
   padding-left: 14px;
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
@@ -391,7 +391,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
 .sl-hero__fine {
   margin: 14px 0 0;
   max-width: 46ch;
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
   font-size: var(--sl-text-xs);
 }
 
@@ -401,7 +401,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
   padding: clamp(16px, 1.6vw, 22px);
   border: 1px solid var(--sl-border-strong);
   border-radius: var(--sl-radius-lg);
-  background: rgba(4, 9, 7, 0.72);
+  background: rgba(var(--sl-field-rgb), 0.82);
   -webkit-backdrop-filter: blur(14px);
   backdrop-filter: blur(14px);
   box-shadow: var(--sl-shadow-deep);
@@ -412,8 +412,8 @@ video.sl-hero__video { position: absolute; inset: 0; }
   justify-content: space-between;
   gap: var(--sl-space-3);
   padding-bottom: var(--sl-space-3);
-  border-bottom: 1px solid var(--sl-border);
-  color: var(--sl-ink-muted);
+  border-bottom: 1px solid var(--sl-field-rule);
+  color: var(--sl-field-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
@@ -433,13 +433,10 @@ video.sl-hero__video { position: absolute; inset: 0; }
   margin-top: var(--sl-space-3);
   aspect-ratio: 5 / 4;
   overflow: hidden;
-  border: 1px solid var(--sl-border);
+  border: 1px solid var(--sl-field-rule);
   border-radius: var(--sl-radius-sm);
-  background:
-    linear-gradient(rgba(var(--sl-cream-rgb), 0.028) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.028) 1px, transparent 1px),
-    var(--sl-night);
-  background-size: 16px 16px;
+  background-color: var(--sl-field);
+  background-image: var(--sl-hatch);
 }
 @media (min-width: 1000px) { .sl-hero__trace { aspect-ratio: 16 / 11; } }
 .sl-hero__trace-canvas,
@@ -461,19 +458,19 @@ video.sl-hero__video { position: absolute; inset: 0; }
   opacity: 0.85;
 }
 .sl-hero__trace-figure { fill: none; stroke: rgba(var(--sl-cream-rgb), 0.5); stroke-width: 1.6; stroke-linecap: round; }
-.sl-hero__trace-tick { fill: none; stroke: var(--sl-accent); stroke-width: 1; }
+.sl-hero__trace-tick { fill: none; stroke: var(--sl-trace); stroke-width: 1; opacity: 0.6; }
 .sl-hero__readout-grid {
   margin: var(--sl-space-4) 0 0;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
-  background: var(--sl-border);
-  border: 1px solid var(--sl-border);
+  background: var(--sl-field-rule);
+  border: 1px solid var(--sl-field-rule);
 }
-.sl-hero__readout-grid > div { padding: var(--sl-space-3); background: var(--sl-bg-card); }
+.sl-hero__readout-grid > div { padding: var(--sl-space-3); background: var(--sl-field); }
 .sl-hero__readout-grid dt {
   margin: 0 0 6px;
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-xs);
   font-weight: 500;
@@ -481,9 +478,15 @@ video.sl-hero__video { position: absolute; inset: 0; }
   text-transform: uppercase;
 }
 /* The values ARE measurements, so they are the amber. */
+/* These three ARE measured values, so on paper they would take the signal.
+   They are on the FIELD, where the signal is 3.00:1 — so the field's rule
+   applies instead: a measured value is set in paper at mono weight, and
+   loudness comes from the ground rather than from a hue. The palette confines
+   each signal to the ground it is legible on; this is that rule being obeyed,
+   not an exception to it. */
 .sl-hero__readout-grid dd {
   margin: 0;
-  color: var(--sl-accent);
+  color: var(--sl-field-ink);
   font-family: var(--sl-font-mono);
   font-size: var(--sl-text-sm);
   font-weight: 500;
@@ -491,7 +494,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
 }
 .sl-hero__readout-note {
   margin: var(--sl-space-3) 0 0;
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
   font-size: var(--sl-text-xs);
   line-height: 1.5;
 }
@@ -520,8 +523,8 @@ video.sl-hero__video { position: absolute; inset: 0; }
   .sl-hero::before {
     background:
       linear-gradient(180deg,
-        rgba(7, 15, 11, 0.78) 0%,
-        rgba(7, 15, 11, 0.82) 22%,
+        rgba(var(--sl-field-rgb), 0.78) 0%,
+        rgba(var(--sl-field-rgb), 0.82) 22%,
         rgba(7, 15, 11, 0.72) 36%,
         rgba(7, 15, 11, 0.8) 48%,
         rgba(7, 15, 11, 0.76) 56%,
@@ -535,7 +538,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
      as it can be before the golfer turns back into a silhouette, so the rest
      of the fix is here — one rung up the ink ramp, phone only. */
   .sl-hero__proof li,
-  .sl-hero__fine { color: var(--sl-ink-soft); }
+  .sl-hero__fine { color: var(--sl-field-soft); }
   /* The grid is a desktop-edge device; on a phone it just adds noise over a
      photograph that is now doing the work. */
   .sl-hero::after { opacity: 0.2; }
@@ -571,7 +574,7 @@ video.sl-hero__video { position: absolute; inset: 0; }
     content: "\00B7";
     position: absolute;
     left: -8px;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
   }
   /* THE LIVE READ IS THE SUBJECT OF THIS SECTION. It shipped at height: 64px,
      which is a thumbnail: the still's 320x260 artwork is drawn with

@@ -177,14 +177,10 @@
    puts it — the hover state of a control. */
 .sl-footer {
   position: relative;
-  background:
-    linear-gradient(rgba(var(--sl-cream-rgb), 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.02) 1px, transparent 1px),
-    var(--sl-footer);
-  background-size: 8px 8px, 8px 8px, auto;
+  background-color: var(--sl-footer);
+  background-image: var(--sl-rules);
   color: var(--sl-footer-ink);
-  border-top: 1px solid var(--sl-border-strong);
-  box-shadow: var(--sl-shadow-card);
+  border-top: 1px solid var(--sl-field-rule);
   font-size: var(--sl-text-sm);
 }
 /* A graduated scale across the top edge — minor ticks every 24px, major every
@@ -210,7 +206,7 @@
   grid-template-columns: minmax(0, 1fr);
   gap: var(--sl-space-5);
   padding: clamp(28px, 3.4vw, 44px) 0;
-  border-top: 1px solid var(--sl-border);
+  border-top: 1px solid var(--sl-field-rule);
 }
 @media (min-width: 1000px) {
   .sl-footer__band {
@@ -236,7 +232,7 @@
   font-weight: 500;
   letter-spacing: var(--sl-eyebrow-track);
   text-transform: uppercase;
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
 }
 
 .sl-footer__brand { max-width: 34ch; }
@@ -253,11 +249,11 @@
   letter-spacing: 0.01em;
   line-height: 1;
   text-transform: uppercase;
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
 }
 .sl-footer__tagline {
   margin: var(--sl-space-4) 0 0;
-  color: var(--sl-ink-soft);
+  color: var(--sl-field-soft);
   line-height: 1.6;
   text-wrap: pretty;
 }
@@ -272,19 +268,19 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sl-space-2);
-  border: 1px solid var(--sl-control-border);
+  border: 1px solid var(--sl-field-control);
   border-radius: var(--sl-radius-control);
   background: transparent;
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
   font-size: var(--sl-text-sm);
   font-weight: 600;
   text-decoration: none;
   transition: border-color .18s ease, background-color .18s ease;
 }
 .sl-footer__applink:hover {
-  border-color: var(--sl-ink);
+  border-color: var(--sl-field-ink);
   background: rgba(var(--sl-cream-rgb), 0.06);
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
 }
 .sl-footer__applink span:last-child { transition: transform .18s ease; }
 .sl-footer__applink:hover span:last-child { transform: translateX(3px); }
@@ -296,8 +292,8 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
   gap: 1px;
-  background: var(--sl-border);
-  border: 1px solid var(--sl-border);
+  background: var(--sl-field-rule);
+  border: 1px solid var(--sl-field-rule);
   border-radius: var(--sl-radius-sm);
 }
 .sl-footer__col {
@@ -306,7 +302,7 @@
   align-items: flex-start;
   gap: var(--sl-space-2);
   padding: var(--sl-dense-inset);
-  background: var(--sl-bg-card);
+  background: var(--sl-field);
 }
 /* The flat-menu strip runs the full width of the same plate rather than
    becoming a fourth column, so it never competes with the built-in columns
@@ -317,7 +313,7 @@
   flex-wrap: wrap;
   gap: var(--sl-space-2) var(--sl-space-5);
   padding: var(--sl-dense-inset);
-  background: var(--sl-bg-card);
+  background: var(--sl-field);
 }
 .sl-footer__head {
   margin: 0 0 var(--sl-space-2);
@@ -329,16 +325,16 @@
   font-weight: 500;
   letter-spacing: var(--sl-eyebrow-track);
   text-transform: uppercase;
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
 }
 .sl-footer__ch {
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
   font-variant-numeric: tabular-nums;
 }
 /* Links rest one step down from bone and brighten on hover; the underline is
    the second signal, since colour alone is never the affordance. */
 .sl-footer__link {
-  color: var(--sl-ink-soft);
+  color: var(--sl-field-soft);
   text-decoration: none;
   font-size: var(--sl-text-sm);
   text-underline-offset: 4px;
@@ -346,7 +342,7 @@
 }
 .sl-footer__link:hover,
 .sl-footer__link:focus-visible {
-  color: var(--sl-ink-hi);
+  color: var(--sl-field-ink);
   text-decoration: underline;
 }
 /* sections/header.liquid sets .hidden on every [data-app-pro-sales-link] once
@@ -358,7 +354,7 @@
 
 .sl-footer__news-sub {
   margin: 0;
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
   font-size: var(--sl-text-base);
   line-height: 1.5;
   text-wrap: pretty;
@@ -378,12 +374,12 @@
   padding: 12px 16px;
   font: inherit;
   font-size: var(--sl-text-sm);
-  color: var(--sl-ink);
-  background: var(--sl-bg-card);
-  border: 1px solid var(--sl-control-border);
+  color: var(--sl-field-ink);
+  background: var(--sl-field);
+  border: 1px solid var(--sl-field-control);
   border-radius: var(--sl-radius-control);
 }
-.sl-footer__input::placeholder { color: var(--sl-ink-muted); }
+.sl-footer__input::placeholder { color: var(--sl-field-muted); }
 /* No focus override: base.css's :focus-visible ring is already the dark-field
    ring, and the old rule here also cleared the border colour, so a focused
    field lost its own edge at the moment it most needed one. */
@@ -392,18 +388,18 @@
    on this darker plate is a panel that happens to be clickable. */
 .sl-footer__form .sl-btn--light {
   min-height: 44px;
-  background: var(--sl-ink);
-  border-color: var(--sl-ink);
+  background: var(--sl-field-ink);
+  border-color: var(--sl-field-ink);
   color: var(--sl-bg);
 }
 .sl-footer__form .sl-btn--light:hover {
-  background: var(--sl-ink-hi);
-  border-color: var(--sl-ink-hi);
+  background: var(--sl-field-ink);
+  border-color: var(--sl-field-ink);
   color: var(--sl-bg);
 }
 .sl-footer__form-ok {
   margin: 0;
-  color: var(--sl-ink);
+  color: var(--sl-field-ink);
 }
 .sl-footer__form-err {
   margin: var(--sl-space-1) 0 0;
@@ -441,14 +437,14 @@
   font-size: var(--sl-text-xs);
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.06em;
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
 }
 .sl-footer__disclaimer {
   margin: 0;
   max-width: 68ch;
   font-size: var(--sl-text-xs);
   line-height: 1.6;
-  color: var(--sl-ink-muted);
+  color: var(--sl-field-muted);
   text-wrap: pretty;
 }
 

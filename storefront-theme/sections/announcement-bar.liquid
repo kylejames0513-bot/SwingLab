@@ -82,9 +82,9 @@
      var(--sl-pad-x) with a --sl-maxw inner), which is the whole point: the
      mono label lands on the same vertical as the wordmark below it. */
   padding: 0 var(--sl-pad-x);
-  background: var(--sl-night);
-  border-bottom: 1px solid var(--sl-border);
-  color: var(--sl-ink);
+  background: var(--sl-band);
+  border-bottom: 0;
+  color: var(--sl-band-ink);
 }
 .sl-announcement__inner {
   max-width: var(--sl-maxw);
@@ -110,7 +110,7 @@
   align-items: center;
   padding-right: var(--sl-space-3);
   border-right: 1px solid var(--sl-border-strong);
-  color: var(--sl-ink-muted);
+  color: rgba(var(--sl-cream-rgb), 0.62);
   letter-spacing: var(--sl-eyebrow-track);
   white-space: nowrap;
 }
@@ -137,8 +137,8 @@
   text-decoration-color: rgba(var(--sl-cream-rgb), 0.4);
 }
 .sl-announcement__link:hover {
-  color: var(--sl-ink);
-  text-decoration-color: var(--sl-ink);
+  color: var(--sl-band-ink);
+  text-decoration-color: var(--sl-band-ink);
 }
 /* The header is position:relative with z-index 40 and paints over anything
    that escapes this 36px strip, so the ring is inset rather than offset —
@@ -147,7 +147,7 @@
 
 .sl-announcement__item--secondary {
   flex: none;
-  color: var(--sl-ink-soft);
+  color: rgba(var(--sl-cream-rgb), 0.78);
 }
 
 .sl-announcement__dot {

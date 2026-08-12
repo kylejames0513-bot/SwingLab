@@ -416,14 +416,20 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     for slab in ("min-height: 720px", "min-height: 980px", "min-height: 1020px"):
         assert slab not in mobile_hero, slab
 
-    # The primary action is BONE, not amber. Amber marks a value the engine
-    # measured; a call to action is not one. The three readout values ARE
-    # measurements, so they are the amber on this section.
+    # The primary action is PAPER on the field, never a signal. The signal
+    # marks a value the engine measured; a call to action is not one.
     primary = hero_source.split(".sl-hero__primary {", 1)[1].split("}", 1)[0]
-    assert "background: var(--sl-ink);" in primary
+    assert "background: var(--sl-field-ink);" in primary
     assert "var(--sl-accent)" not in primary and "var(--sl-orange)" not in primary
+    # The three readout values ARE measurements, so on paper they would carry
+    # the signal. This section is the FIELD, where the signal is 3.00:1, so
+    # the field's rule applies: a measured value is set in paper at mono
+    # weight and takes its loudness from the ground. Asserting the field ink
+    # here — rather than the signal — is what stops a later pass "restoring
+    # the signal" onto a ground it cannot be read on.
     values = hero_source.split(".sl-hero__readout-grid dd {", 1)[1].split("}", 1)[0]
-    assert "color: var(--sl-accent);" in values
+    assert "color: var(--sl-field-ink);" in values
+    assert "var(--sl-accent)" not in values
 
 
 def test_homepage_bordered_surfaces_preserve_reading_hierarchy():

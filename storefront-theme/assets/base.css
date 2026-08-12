@@ -124,6 +124,12 @@
   --sl-field-muted: #8f9a93;    /* fine print on the field (6.66) */
   --sl-field-rule: #243229;     /* decorative hairline on the field (1.44) */
   --sl-field-control: #66756c;  /* interactive edges on the field (4.00) */
+  /* The announcement band — mockup 2a's one navy strip, above the header.
+     It is deliberately NOT --sl-field: the field is the product's reversed
+     ground and carries evidence, and a marketing bar borrowing it would
+     dilute what a dark surface means here. Paper on it is 12.56. */
+  --sl-band: #1d2d3d;
+  --sl-band-ink: #f2f2f3;
   /* The two textures, as tokens, because they are the ONLY two and they
      belong to objects rather than to the page. The hatch is the reversed
      field's screen-print grain (evidence tiles, clip frames, placeholders);

@@ -123,8 +123,13 @@ def test_pro_member_rail_and_primary_cta_use_distinct_actions():
 def test_authenticated_member_rail_stays_one_line_at_every_width():
     """The rail used to wrap to 72px on phones and chase its own height with
     patch media blocks (480/560/1100). Now the greeting is the only flexible
-    item and it truncates, so the rail is exactly 52px everywhere and the
-    overlay pull-up needs no per-width member variant."""
+    item and it truncates, so the rail is exactly 52px everywhere.
+
+    The pull-up assertions that used to close this test are gone with the
+    overlay itself — see
+    tests/test_storefront_header.py::test_the_header_sits_above_the_hero_rather_than_over_it.
+    The 52px invariant they depended on is what is still worth pinning, and it
+    is pinned directly below rather than through its old consumer."""
     member_inner_rules = declarations(HEADER, ".sl-member-rail__inner")
     member_greeting_rules = declarations(HEADER, ".sl-member-rail__greeting")
     assert member_inner_rules
@@ -138,10 +143,14 @@ def test_authenticated_member_rail_stays_one_line_at_every_width():
 
     rail_rules = declarations(HEADER, ".sl-member-rail")
     assert any("min-height: 52px" in rule for rule in rail_rules)
-    # One pull-up pair, matching the 52px rail — no third phone-only value.
-    assert "calc(-76px - 52px)" in HEADER
-    assert "calc(-64px - 52px)" in HEADER
-    assert "calc(-64px - 72px)" not in HEADER
+    # No phone-only height variant may reappear — that is the regression the
+    # 52px invariant exists to prevent, and it is now checked on the rail
+    # itself rather than through the pull-up that used to consume it.
+    assert "min-height: 72px" not in "\n".join(rail_rules)
+    # The rail is a FIELD band, the one reversed strip in the chrome. It was
+    # --sl-night, which is the paper WELL now, so it would have rendered bone
+    # type on a near-white recess.
+    assert any("background: var(--sl-field)" in rule for rule in rail_rules)
 
 
 def test_mobile_hero_is_fluid_through_modern_iphone_widths():

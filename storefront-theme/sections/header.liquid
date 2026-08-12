@@ -11,10 +11,8 @@
   assign gear_url = routes.collections_url | append: '/swinglab-gear'
   assign pro_product = all_products['swinglab-pro']
   assign premium_header = false
-  assign overlay_header = false
   if request.page_type == 'index'
     assign premium_header = true
-    assign overlay_header = true
   elsif request.page_type == 'product' and product.handle == 'swinglab-pro'
     assign premium_header = true
   endif
@@ -40,7 +38,7 @@
   endif
 -%}
 
-<header class="sl-header{% if premium_header %} sl-header--premium{% endif %}{% if overlay_header %} sl-header--overlay{% endif %}"
+<header class="sl-header{% if premium_header %} sl-header--premium{% endif %}"
         data-sl-header
         data-menu-id="{{ menu_id }}"
         {% if app_url != blank %}data-app-session-url="{{ app_session_url }}"
@@ -286,8 +284,7 @@
 
    The signed-in contracts are unchanged and pinned by
    tests/test_storefront_header.py: the announcement bar hides for members,
-   the account trigger truncates to the member's name, and the overlay
-   header pulls the hero up under itself.
+   the account trigger truncates to the member's name.
    ========================================================================== */
 
 /* -- signed-in page chrome (contract) ------------------------------------ */
@@ -298,13 +295,12 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   width: calc(100% + var(--sl-pad-x) + var(--sl-pad-x));
   min-height: 52px;
   margin: 0 calc(-1 * var(--sl-pad-x));
-  background: var(--sl-night);
+  background: var(--sl-field);
   color: rgba(var(--sl-cream-rgb), 0.86);
 }
 /* One line at every width: the greeting is the only flexible item and it
    truncates, so the rail is always exactly 52px (4px padding + the 44px
-   full-height action) and the overlay pull-up below never needs a
-   per-width variant. The old sheet let this wrap to 72px on phones and
+   full-height action). The old sheet let this wrap to 72px on phones and
    chased it with patch media blocks. */
 .sl-member-rail__inner {
   max-width: var(--sl-maxw);
@@ -357,14 +353,6 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
 }
 .sl-member-rail__action:hover { border-color: var(--sl-ink); color: var(--sl-ink-hi); }
 
-/* -- overlay pull-up (contract) ------------------------------------------- */
-.shopify-section:has(> .sl-header--overlay) { margin-bottom: -76px; }
-.shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"]) {
-  margin-bottom: calc(-76px - 52px);
-}
-body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
-  padding-top: clamp(148px, 15vw, 192px);
-}
 
 /* -- the header bar -------------------------------------------------------- */
 .sl-header {
@@ -373,7 +361,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   min-height: 64px;
   padding: 0 var(--sl-pad-x);
   background: var(--sl-bg-card);
-  border-bottom: 1px solid var(--sl-border);
+  border-bottom: 1px solid var(--sl-border-strong);
   color: var(--sl-ink);
 }
 .sl-header__inner {
@@ -443,9 +431,9 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
   display: grid;
   padding: var(--sl-space-2);
   background: var(--sl-bg-card);
-  border: 1px solid var(--sl-border);
+  border: 1px solid var(--sl-border-strong);
   border-radius: var(--sl-radius);
-  box-shadow: var(--sl-shadow-card-hover);
+  box-shadow: var(--sl-shadow-deep);
 }
 .sl-header__dropdown-menu--right { left: auto; right: 0; }
 .sl-header__dropdown-menu a,
@@ -584,29 +572,6 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
 }
 .sl-header__toggle:hover { color: var(--sl-orange); }
 
-/* -- premium + overlay states ---------------------------------------------- */
-.sl-header--premium {
-  background: var(--sl-night);
-  border-bottom-color: rgba(var(--sl-cream-rgb), 0.12);
-  color: var(--sl-cream);
-}
-.sl-header--premium .sl-header__logo-img { filter: invert(1) hue-rotate(180deg) saturate(0.9) brightness(1.6); }
-.sl-header--premium .sl-header__link:hover,
-.sl-header--premium .sl-header__dropdown-trigger:hover,
-.sl-header--premium .sl-header__cart:hover,
-.sl-header--premium .sl-header__search:hover { color: var(--sl-accent-hover); background: none; }
-.sl-header--premium .sl-header__link.is-current { color: var(--sl-ink); }
-.sl-header--premium .sl-header__dropdown-menu {
-  background: var(--sl-night);
-  border-color: rgba(var(--sl-cream-rgb), 0.16);
-}
-.sl-header--premium .sl-header__dropdown-menu a,
-.sl-header--premium .sl-app-auth__logout { color: var(--sl-cream); }
-.sl-header--premium .sl-header__dropdown-menu a:hover,
-.sl-header--premium .sl-app-auth__logout:hover {
-  background: rgba(var(--sl-cream-rgb), 0.08);
-  color: var(--sl-accent-hover);
-}
 /* Bone, not amber. Amber marks a value the engine measured, and the single
    most prominent amber object on the storefront was this button — which is
    how a reader learns amber means "important" instead. On a near-black field
@@ -616,31 +581,7 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner {
    a number the store is reporting, which is the closest thing the chrome has
    to a measured value. It is a border rather than a fill so it does not read
    as a second call to action beside the first. */
-.sl-header--premium .sl-header__cta {
-  background: var(--sl-ink);
-  color: var(--sl-green-ink);
-}
-.sl-header--premium .sl-header__cta:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
-.sl-header--premium .sl-header__cart-count {
-  background: transparent;
-  border: 1px solid var(--sl-accent);
-  color: var(--sl-accent);
-}
 
-.sl-header--overlay {
-  position: relative;
-  background: transparent;
-  border-bottom-color: transparent;
-}
-.sl-header--overlay.is-scrolled,
-.sl-header--overlay:has(.sl-header__dropdown[open]) {
-  position: sticky;
-  top: 0;
-  background: rgba(var(--sl-night-rgb), 0.92);
-  -webkit-backdrop-filter: blur(14px);
-  backdrop-filter: blur(14px);
-  border-bottom-color: rgba(var(--sl-cream-rgb), 0.1);
-}
 
 /* -- the drawer ------------------------------------------------------------- */
 html.sl-menu-open { overflow: hidden; }
@@ -655,7 +596,7 @@ html.sl-menu-open { overflow: hidden; }
   background: var(--sl-bg-card);
   color: var(--sl-ink);
 }
-.sl-menu::backdrop { background: rgba(var(--sl-night-rgb), 0.55); }
+.sl-menu::backdrop { background: rgba(var(--sl-wash-rgb), 0.55); }
 .sl-menu__panel {
   height: 100%;
   overflow-y: auto;
@@ -733,18 +674,6 @@ html.sl-menu-open { overflow: hidden; }
 .sl-menu__link.is-current { color: var(--sl-ink); }
 .sl-menu .sl-app-auth__welcome { padding-left: var(--sl-space-1); }
 
-/* Premium pages get the night drawer (contract: .sl-premium-chrome .sl-menu) */
-.sl-premium-chrome .sl-menu {
-  background: var(--sl-night);
-  color: var(--sl-cream);
-}
-.sl-premium-chrome .sl-menu .sl-menu__close { border-color: rgba(var(--sl-cream-rgb), 0.3); }
-.sl-premium-chrome .sl-menu .sl-menu__link { border-bottom-color: rgba(var(--sl-cream-rgb), 0.12); }
-.sl-premium-chrome .sl-menu .sl-menu__link:hover,
-.sl-premium-chrome .sl-menu .sl-menu__link.is-current { color: var(--sl-ink); }
-.sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: var(--sl-ink-muted); }
-.sl-premium-chrome .sl-menu .sl-menu__title { color: rgba(var(--sl-cream-rgb), 0.6); }
-.sl-premium-chrome .sl-menu .sl-app-auth__welcome { color: rgba(var(--sl-cream-rgb), 0.6); }
 
 /* -- the four system stops -------------------------------------------------- */
 @media (max-width: 559px) {
@@ -772,18 +701,11 @@ html.sl-menu-open { overflow: hidden; }
   .sl-header[data-app-authenticated="true"] .sl-header__search { display: none; }
 }
 @media (max-width: 999px) {
-  /* Below the desktop stop, header height is 64px — the overlay pull-up
-     matches so the hero sits flush underneath. */
-  .shopify-section:has(> .sl-header--overlay) { margin-bottom: -64px; }
-  .shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"]) {
-    margin-bottom: calc(-64px - 52px);
-  }
 }
 @media (min-width: 1280px) {
   .sl-header__desktop-nav { gap: var(--sl-space-6); }
 }
 @media (prefers-reduced-motion: no-preference) {
-  .sl-header--overlay { transition: background-color 0.25s ease, border-color 0.25s ease; }
   .sl-header__chevron { transition: transform 0.15s ease; }
 }
 {% endstylesheet %}
@@ -818,13 +740,7 @@ html.sl-menu-open { overflow: hidden; }
       var menuLinks = menu.querySelectorAll('[data-menu-link]');
       var desktopMenus = header.querySelectorAll('[data-header-dropdown]');
       var desktopQuery = window.matchMedia('(min-width: 1000px)');
-      var overlayHeader = header.classList.contains('sl-header--overlay');
       var restoreMenuFocus = false;
-
-      function updateHeaderSurface() {
-        if (!overlayHeader) return;
-        header.classList.toggle('is-scrolled', window.scrollY > 12);
-      }
 
       function finishMenuClose() {
         openButton.setAttribute('aria-expanded', 'false');
@@ -1029,11 +945,6 @@ html.sl-menu-open { overflow: hidden; }
         menuLinks[i].addEventListener('click', function () { closeMenu(false); }, listenerOptions);
       }
       desktopQuery.addEventListener('change', closeOnBreakpointChange, listenerOptions);
-      if (overlayHeader) {
-        updateHeaderSurface();
-        window.addEventListener('scroll', updateHeaderSurface, { signal: controller.signal, passive: true });
-      }
-
       for (var j = 0; j < desktopMenus.length; j++) {
         desktopMenus[j].addEventListener('toggle', function (event) {
           if (!event.currentTarget.open) return;
