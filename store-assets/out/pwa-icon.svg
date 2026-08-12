@@ -1,21 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="CaddieInsight">
-<rect width="512" height="512" rx="58.88" fill="#0f3d28"/>
-<line x1="384.22" y1="256.00" x2="417.28" y2="256.00" stroke="#e6f2ea" stroke-width="20.90" stroke-linecap="round"/>
-<line x1="386.38" y1="310.00" x2="405.00" y2="317.72" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="346.66" y1="346.66" x2="370.04" y2="370.04" stroke="#e8720c" stroke-width="20.90" stroke-linecap="round"/>
-<line x1="305.07" y1="374.46" x2="317.72" y2="405.00" stroke="#e8720c" stroke-width="20.90" stroke-linecap="round"/>
-<line x1="256.00" y1="397.12" x2="256.00" y2="417.28" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="202.00" y1="386.38" x2="194.28" y2="405.00" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="165.34" y1="346.66" x2="141.96" y2="370.04" stroke="#e6f2ea" stroke-width="20.90" stroke-linecap="round"/>
-<line x1="125.62" y1="310.00" x2="107.00" y2="317.72" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="114.88" y1="256.00" x2="94.72" y2="256.00" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="137.54" y1="206.93" x2="107.00" y2="194.28" stroke="#e6f2ea" stroke-width="20.90" stroke-linecap="round"/>
-<line x1="156.21" y1="156.21" x2="141.96" y2="141.96" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="202.00" y1="125.62" x2="194.28" y2="107.00" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="256.00" y1="127.78" x2="256.00" y2="94.72" stroke="#e6f2ea" stroke-width="20.90" stroke-linecap="round"/>
-<line x1="310.00" y1="125.62" x2="317.72" y2="107.00" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="355.79" y1="156.21" x2="370.04" y2="141.96" stroke="#e6f2ea" stroke-width="13.06" stroke-linecap="round"/>
-<line x1="374.46" y1="206.93" x2="405.00" y2="194.28" stroke="#e6f2ea" stroke-width="20.90" stroke-linecap="round"/>
-<line x1="256.00" y1="159.23" x2="256.00" y2="323.74" stroke="#e6f2ea" stroke-width="10.06" stroke-linecap="round"/>
-<polygon points="261.03,159.23 323.74,179.55 261.03,207.62" fill="#e6f2ea"/>
+<rect width="512" height="512" fill="#070f0b"/>
+<polygon points="279.56,112.16 311.80,112.16 309.32,196.48 282.04,196.48" fill="#f2f2f3"/>
+<polygon points="280.80,191.52 310.56,191.52 305.60,345.28 285.76,345.28" fill="#f2f2f3"/>
+<polygon points="283.28,315.52 308.08,315.52 310.56,345.28 269.64,345.28" fill="#f2f2f3"/>
+<polygon points="310.56,345.28 310.56,414.72 299.77,416.15 288.98,417.26 278.20,418.05 267.41,418.53 256.62,418.69 245.83,418.53 235.04,418.05 224.26,417.26 213.47,416.15 202.68,414.72 192.27,404.77 189.96,403.50 188.13,401.59 186.96,399.23 186.56,396.62 186.96,394.01 188.13,391.64 189.96,389.73 192.27,388.46 213.84,355.70" fill="#f2f2f3"/>
+<rect x="279.56" y="112.16" width="32.24" height="14.88" rx="7.44" fill="#f2f2f3"/>
+<line x1="218.80" y1="365.12" x2="288.24" y2="365.12" stroke="#5980a6" stroke-width="7.44"/>
+<line x1="211.36" y1="380.00" x2="288.24" y2="380.00" stroke="#5980a6" stroke-width="7.44"/>
+<line x1="203.92" y1="394.88" x2="288.24" y2="394.88" stroke="#5980a6" stroke-width="7.44"/>
 </svg>

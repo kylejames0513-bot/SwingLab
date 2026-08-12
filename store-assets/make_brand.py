@@ -26,21 +26,31 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).parent
 sys.path.insert(0, str(HERE))
 
-from brand_mark import GREEN, MINT, ORANGE, draw_mark, mark_svg  # noqa: E402
+from brand_mark import (  # noqa: E402
+    GREEN, INK, IRON_W, MINT, STEEL, draw_mark, mark_svg,
+)
 
 OUT = HERE / "out"
 STATIC = HERE.parent / "swinglab" / "web" / "static"
 THEME = HERE.parent / "storefront-theme" / "assets"
 MOBILE = HERE.parent / "mobile" / "assets"
 
-ARCHIVO = str(HERE / "Archivo-var.ttf")
+DISPLAY_TTF = str(HERE / "BarlowCondensed-SemiBold.ttf")
+BODY_TTF = str(HERE / "Barlow-Regular.ttf")
+MONO_TTF = str(HERE / "DMMono-Regular.ttf")
 SS = 4  # supersample factor; everything downscales with LANCZOS
 
 
-def archivo(px: int, weight: int = 600, width: int = 100):
-    font = ImageFont.truetype(ARCHIVO, px)
-    font.set_variation_by_axes([weight, width])
-    return font
+def display(px: int):
+    """Barlow Condensed SemiBold — the wordmark's own face.
+
+    Barlow ships no variable font, so there is no set_variation_by_axes() to
+    call here the way Archivo allowed: a weight is a file. That is the same
+    constraint the web faces run under, which is convenient — the raster
+    lockup and the CSS display voice are now the identical cut rather than
+    two points on an axis that happened to be nearby.
+    """
+    return ImageFont.truetype(DISPLAY_TTF, px)
 
 
 def tracked(draw, xy, text, font, fill, tracking=0):
@@ -66,52 +76,82 @@ def rounded_tile(size: int, radius_ratio: float, fill: str,
     return img
 
 
-def icon_png(path: Path, size: int, *, radius_ratio: float, ticks: int,
-             bold: float, scale: float = 0.315, opaque: bool = False,
-             padding: float = 0.0, cup: bool = True) -> None:
+def icon_png(path: Path, size: int, *, radius_ratio: float = 0.0,
+             bold: float = 1.0, scale: float = 0.74, opaque: bool = False,
+             padding: float = 0.0) -> None:
     """A tile with the mark centred on it.
 
     `padding` shrinks the mark inside the tile for maskable icons, whose
     outer 10% on every side can be cropped away by the launcher.
+
+    The mark is sized by HEIGHT (`scale` is a fraction of the tile) rather
+    than by a radius. The iron is a tall, narrow shape and a radius made every
+    call site carry its own fudge factor.
+
+    THE SIZE RULE IS APPLIED AT THE FINAL SIZE, NOT THE SUPERSAMPLED ONE. This
+    is the whole reason groove_count() takes pixels: drawing at 4x and asking
+    the geometry how many grooves fit would answer for a 2048px mark and then
+    shrink three hairlines into one grey smear. So the mark is drawn on a 1x
+    overlay, and only the tile is supersampled.
     """
     img = rounded_tile(size, radius_ratio, GREEN, alpha=not opaque)
+    img = img.resize((size, size), Image.LANCZOS)
     d = ImageDraw.Draw(img)
-    centre = size * SS / 2
-    radius = size * SS * scale * (1 - padding)
-    draw_mark(d, centre, centre, radius, ink=MINT, accent=ORANGE, bold=bold,
-              ticks=ticks, cup=cup)
-    img.resize((size, size), Image.LANCZOS).save(path, "PNG", optimize=True)
+    centre = size / 2
+    draw_mark(d, centre, centre, size * scale * (1 - padding),
+              ink=MINT, accent=STEEL, bold=bold)
+    img.save(path, "PNG", optimize=True)
     print("wrote", path)
 
 
-def lockup(inverse: bool = False) -> Path:
-    """Horizontal mark + wordmark, trimmed to its ink and scaled to fit the
-    header's 38px logo slot at 3x for retina.
+def wordmark(d, xy, height: int, ink: str, accent: str) -> float:
+    """Draw "Caddie" + the iron + "nsight", and return the drawn width.
 
-    The amber underscore under "Insight" is the same kinetic accent as the
-    dial's reading run — one orange gesture per composition.
+    The mark stands in for the "I": it is a letterform at reading size and a
+    club at display size, which is the entire idea of the lockup. Its height
+    is matched to the cap height rather than the em box, so it sits on the
+    baseline with the letters instead of floating above them.
     """
-    ink = MINT if inverse else GREEN
-    img = Image.new("RGBA", (2400 * SS, 420 * SS), (0, 0, 0, 0))
+    x, y = xy
+    font = display(height)
+    cap = font.getbbox("H")
+    cap_top, cap_h = cap[1], cap[3] - cap[1]
+    baseline = y + cap[3]
+
+    d.text((x, y), "Caddie", font=font, fill=ink)
+    x += d.textlength("Caddie", font=font)
+
+    # 1.42x the cap height, standing ON the baseline — the proportion mockup
+    # 6a/6b draws, where the club rises well above the cap line like an
+    # ascender and its sole sits with the feet of the letters. The sole
+    # cambers ~1.25% below the geometry box, so the box is lifted by that much
+    # or the blade dips through the baseline the other letters sit on.
+    mark_h = cap_h * 1.42
+    gap = height * 0.05
+    mark_w = mark_h * IRON_W
+    x += gap
+    draw_mark(d, x + mark_w / 2, baseline - mark_h / 2 - mark_h * 0.0125,
+              mark_h, ink=ink, accent=accent)
+    x += mark_w + gap
+
+    d.text((x, y), "nsight", font=font, fill=ink)
+    x += d.textlength("nsight", font=font)
+    return x - xy[0]
+
+
+def lockup(inverse: bool = False) -> Path:
+    """The wordmark with the iron set into it, trimmed to its ink.
+
+    There is no separate mark-then-words arrangement any more, and no amber
+    underscore: the club IS the "I", and the grooves are the one accent the
+    composition gets. That is a stronger lockup at header size because it
+    cannot be split — the previous one degraded into a dial sitting next to
+    some text whenever the two ended up on different lines.
+    """
+    ink = MINT if inverse else INK
+    img = Image.new("RGBA", (2400, 420), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-
-    # 24 ticks, not 36: the header renders this lockup at 38px tall, where a
-    # finer fan silts up into a grey ring.
-    cx, cy, r = 200 * SS, 210 * SS, 150 * SS
-    draw_mark(d, cx, cy, r, ink=ink, accent=ORANGE, bold=1.1, ticks=24)
-
-    font = archivo(int(168 * SS), 760, 100)
-    x0, y0 = 430 * SS, 108 * SS
-    tracking = int(-2.5 * SS)
-    w1 = tracked(d, (x0, y0), "Caddie", font, ink, tracking=tracking)
-    x1 = x0 + w1 + tracking
-    w2 = tracked(d, (x1, y0), "Insight", font, ink, tracking=tracking)
-    underline_y = y0 + 196 * SS
-    d.rounded_rectangle(
-        [x1, underline_y, x1 + w2, underline_y + 7 * SS],
-        radius=4 * SS,
-        fill=ORANGE,
-    )
+    wordmark(d, (40, 40), 300, ink, STEEL)
 
     img = img.crop(img.getbbox())
     k = min(1400 / img.width, 300 / img.height)
@@ -140,48 +180,29 @@ def og_card() -> Path:
     Slack, iMessage and X each crop this differently.
     """
     W, H = 1200, 630
-    img = Image.new("RGB", (W * SS, H * SS), GREEN)
+    img = Image.new("RGB", (W, H), GREEN)
     d = ImageDraw.Draw(img)
 
-    # A quiet forest wash so the flat tile does not read as a placeholder.
-    for step in range(H * SS):
-        ratio = step / (H * SS)
-        d.line(
-            [(0, step), (W * SS, step)],
-            fill=(
-                int(6 + 9 * (1 - ratio)),
-                int(17 + 44 * (1 - ratio)),
-                int(12 + 28 * (1 - ratio)),
-            ),
-        )
-
-    draw_mark(d, 218 * SS, 232 * SS, 104 * SS, ink=MINT, accent=ORANGE,
-              bold=1.05, ticks=24)
+    # The field's own hatch rather than a gradient wash: it is the texture the
+    # reversed ground carries everywhere else, so the share card is recognisably
+    # the same surface as the hero it links to.
+    for step in range(-H, W + H, 11):
+        d.line([(step, 0), (step + H, H)], fill="#0d1a13", width=2)
 
     # Sized so the wordmark terminates inside the centre 1000x500 safe box —
     # X and iMessage both crop tighter than the declared 1.91:1.
-    word = archivo(int(104 * SS), 780, 100)
-    x0, y0 = 356 * SS, 178 * SS
-    w1 = tracked(d, (x0, y0), "Caddie", word, MINT, tracking=int(-1.5 * SS))
-    x1 = x0 + w1 - int(1.5 * SS)
-    w2 = tracked(d, (x1, y0), "Insight", word, MINT, tracking=int(-1.5 * SS))
-    d.rounded_rectangle(
-        [x1, y0 + 132 * SS, x1 + w2, y0 + 138 * SS], radius=3 * SS, fill=ORANGE
-    )
+    wordmark(d, (100, 150), 120, MINT, STEEL)
 
-    line = archivo(int(46 * SS), 560, 100)
-    d.text((218 * SS, 372 * SS),
-           "One priority. One practice plan.", font=line, fill="#cfe0d5")
-    d.text((218 * SS, 432 * SS),
-           "Proof when you re-film.", font=line, fill="#cfe0d5")
+    line = ImageFont.truetype(BODY_TTF, 40)
+    d.text((100, 330), "One priority. One practice plan.", font=line, fill="#a8b3ac")
+    d.text((100, 384), "Proof when you re-film.", font=line, fill="#a8b3ac")
 
-    eyebrow = ImageFont.truetype(str(HERE / "DMMono-Regular.ttf"), int(26 * SS))
-    tracked(d, (218 * SS, 520 * SS), "SWING ANALYSIS FROM ONE PHONE VIDEO",
-            eyebrow, "#8fa89a", tracking=int(4 * SS))
+    eyebrow = ImageFont.truetype(MONO_TTF, 22)
+    tracked(d, (100, 476), "SWING ANALYSIS FROM ONE PHONE VIDEO",
+            eyebrow, "#8f9a93", tracking=4)
 
-    out = img.resize((W, H), Image.LANCZOS)
     path = OUT / "og-caddieinsight.png"
-    out.save(path, "PNG", optimize=True)
+    img.save(path, "PNG", optimize=True)
     print("wrote", path)
     return path
 
@@ -191,40 +212,42 @@ def main() -> None:
 
     # Vector marks. `caddie-mark.svg` is the transparent mark for in-page
     # chrome; `pwa-icon.svg` keeps its tile because it doubles as the tab
-    # favicon and the installed-app icon, and browsers render it as small as
-    # 16px — hence the coarse 16-tick fan and no cup.
+    # favicon and the installed-app icon.
+    #
+    # The tiles are SQUARE now. Industry's whole geometry is square, and a
+    # rounded app tile was the one place the old system still rounded — every
+    # platform that wants a rounded icon (iOS, and Android via the maskable
+    # variant) applies its own mask anyway, so the radius was being drawn
+    # underneath a mask that discarded it.
     (OUT / "caddie-mark.svg").write_text(
-        mark_svg(512, ink=GREEN, accent=ORANGE, tile=None, ticks=24, bold=1.1),
+        mark_svg(512, ink=INK, accent=STEEL, tile=None),
         encoding="utf-8",
     )
     print("wrote", OUT / "caddie-mark.svg")
     (OUT / "pwa-icon.svg").write_text(
-        mark_svg(512, ink=MINT, accent=ORANGE, tile=GREEN, ticks=16, bold=1.2,
-                 cup=False),
+        mark_svg(512, ink=MINT, accent=STEEL, tile=GREEN),
         encoding="utf-8",
     )
     print("wrote", OUT / "pwa-icon.svg")
 
-    # Raster icons. Tick counts drop as the render shrinks so the bezel never
-    # collapses into a solid ring.
-    icon_png(OUT / "caddieinsight-favicon.png", 512, radius_ratio=0.215,
-             ticks=24, bold=1.1)
-    icon_png(OUT / "pwa-icon-192.png", 192, radius_ratio=0.215, ticks=24,
-             bold=1.15)
-    icon_png(OUT / "pwa-icon-512.png", 512, radius_ratio=0.215, ticks=36,
-             bold=1.0)
+    # Raster icons. groove_count() drops detail as the render shrinks, so the
+    # blade never silts up — the size rule lives in the geometry, not here.
+    icon_png(OUT / "caddieinsight-favicon.png", 512)
+    icon_png(OUT / "pwa-icon-192.png", 192, bold=1.1)
+    icon_png(OUT / "pwa-icon-512.png", 512)
     # Maskable: full-bleed tile, mark pulled inside the 80% safe circle.
-    icon_png(OUT / "pwa-icon-maskable-512.png", 512, radius_ratio=0.0,
-             ticks=24, bold=1.15, padding=0.22)
-    # iOS rounds the corners itself and rejects alpha, so this one is opaque
-    # and square.
-    icon_png(OUT / "apple-touch-icon.png", 180, radius_ratio=0.0, ticks=24,
-             bold=1.2, opaque=True)
+    icon_png(OUT / "pwa-icon-maskable-512.png", 512, padding=0.22, bold=1.1)
+    # iOS rounds the corners itself and rejects alpha, so this one is opaque.
+    icon_png(OUT / "apple-touch-icon.png", 180, bold=1.15, opaque=True)
     # The native app icon. Same rule as the touch icon — the platforms mask it
     # themselves and an alpha channel is rejected outright by App Store
     # submission — at the 1024 the stores require.
-    icon_png(OUT / "app-icon-1024.png", 1024, radius_ratio=0.0, ticks=36,
-             bold=1.0, opaque=True)
+    icon_png(OUT / "app-icon-1024.png", 1024, opaque=True)
+    # The favicon sizes the mockups prove the mark at. 16 and 32 are where the
+    # grooves are gone and only the silhouette is left, so they are generated
+    # rather than left to the browser's downscale of the 512.
+    for px in (16, 32, 64):
+        icon_png(OUT / f"caddieinsight-favicon-{px}.png", px, bold=1.2)
 
     lockup(inverse=False)
     lockup(inverse=True)

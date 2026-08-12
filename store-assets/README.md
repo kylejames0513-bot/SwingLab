@@ -50,11 +50,15 @@ are recorded in `prompts/caddieinsight-premium-range-hero-v2.md`.
 
 ## Regenerating
 
-The two fonts are not committed; fetch them next to the scripts first:
+The fonts are not committed; fetch them next to the scripts first. Barlow has
+no variable font — Google serves it static — so a weight is a file here just
+as it is on the web side:
 
 ```bash
-curl -sSL -o Archivo-var.ttf \
-  "https://raw.githubusercontent.com/google/fonts/main/ofl/archivo/Archivo%5Bwdth%2Cwght%5D.ttf"
+curl -sSL -o BarlowCondensed-SemiBold.ttf \
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/barlowcondensed/BarlowCondensed-SemiBold.ttf"
+curl -sSL -o Barlow-Regular.ttf \
+  "https://raw.githubusercontent.com/google/fonts/main/ofl/barlow/Barlow-Regular.ttf"
 curl -sSL -o DMMono-Regular.ttf \
   "https://raw.githubusercontent.com/google/fonts/main/ofl/dmmono/DMMono-Regular.ttf"
 ```
@@ -71,10 +75,23 @@ python3 pro_home_assets.py   # Pro gallery + homepage hero and report band
 `make_brand.py` is the only script that writes outside `out/`: it copies the
 shipped marks into `swinglab/web/static/` and `storefront-theme/assets/` under
 their historical filenames. Its geometry lives in `brand_mark.py`, which emits
-the same dial-and-flagstick from one definition as both Pillow draw calls and
-SVG, so the raster icons and the vector favicon cannot drift apart. Tick counts
-drop at small sizes (36 → 24 → 16) because a fine fan silts into a grey ring
-below about 64px.
+the same drawn iron from one definition as both Pillow draw calls and SVG, so
+the raster icons and the vector favicon cannot drift apart. Arcs — the toe
+radius and the cambered sole — are *sampled into the shared point list* rather
+than handed to each renderer's own arc call, because Pillow and SVG have
+incompatible arc APIs and a mark defined partly by "whatever the renderer
+draws" is a mark that can quietly differ between them.
+
+Two rules live in the geometry rather than in the callers:
+
+- **`groove_count()`** drops the grooves from three to one to none as the
+  render shrinks, because a 3u line is sub-pixel below ~19px and smears the
+  blade. It takes the FINAL pixel height, so `icon_png` draws the mark at 1x
+  over a supersampled tile — supersampling the mark would ask the size rule
+  about a 2048px club and then shrink three hairlines into one grey smudge.
+- **Minimum stroke widths** hold the grip, shaft and hosel open at favicon
+  size. Without them the shaft is 0.6px at 16px and the mark renders as a
+  blade with nothing holding it.
 
 Everything renders supersampled and lands in `out/`. Palette, chrome, and
 shared drawing/drafting helpers (dimension lines, callouts, insets, arrows)

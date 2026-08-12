@@ -124,6 +124,16 @@
   --sl-field-muted: #8f9a93;    /* fine print on the field (6.66) */
   --sl-field-rule: #243229;     /* decorative hairline on the field (1.44) */
   --sl-field-control: #66756c;  /* interactive edges on the field (4.00) */
+  /* The two textures, as tokens, because they are the ONLY two and they
+     belong to objects rather than to the page. The hatch is the reversed
+     field's screen-print grain (evidence tiles, clip frames, placeholders);
+     the rules are the wider vertical scan a hero band sits under. Both are
+     steel at low alpha on green, so they read as ink on a plate rather than
+     as a pattern laid over a photograph. */
+  --sl-hatch: repeating-linear-gradient(
+    115deg, rgba(var(--sl-steel-rgb), 0.16) 0 2px, transparent 2px 11px);
+  --sl-rules: repeating-linear-gradient(
+    90deg, rgba(var(--sl-steel-rgb), 0.075) 0 44px, transparent 44px 88px);
   /* The --sl-paper role COLLAPSES into the ground. These four named the only
      light panels left on a dark page; the page is that colour now, so they
      resolve to it and every existing .sl-paper call site keeps working. */
@@ -296,14 +306,15 @@ h1, h2, h3, .sl-h2, .sl-page-hero__title {
   color: var(--sl-green);
 }
 
-/* Links are bone like body text, so they need a second signal to stay
-   distinguishable — the underline is that signal and it is not optional.
-   Hover moves to the trace colour rather than the amber signal: amber means
-   a measured value, and a link is not one. */
+/* Links carry the deep steel of the primary action, so they need a second
+   signal to stay distinguishable from ink body copy — the underline is that
+   signal and it is not optional. Hover deepens to ink rather than reaching
+   for either signal: steel-deep means a measured value and steel-lit means a
+   live readout, and a link is neither. */
 a {
   color: var(--sl-green-btn);
   text-decoration: underline;
-  text-decoration-color: rgba(var(--sl-cream-rgb), 0.32);
+  text-decoration-color: rgba(var(--sl-wash-rgb), 0.32);
   text-underline-offset: 0.2em;
   text-decoration-thickness: 1px;
 }
@@ -311,27 +322,41 @@ a:hover {
   color: var(--sl-ink-hi);
   text-decoration-color: currentColor;
 }
+/* On the field the same link has to reverse, or it lands at 1.2:1. */
+.sl-field a,
+.sl-footer a {
+  color: var(--sl-field-ink);
+  text-decoration-color: rgba(var(--sl-cream-rgb), 0.4);
+}
+.sl-field a:hover,
+.sl-footer a:hover { color: var(--sl-field-ink); text-decoration-color: currentColor; }
 
 img { max-width: 100%; display: block; }
 
 ::selection {
-  background: rgba(var(--sl-trace-rgb), 0.26);
+  background: rgba(var(--sl-steel-rgb), 0.3);
   color: var(--sl-ink);
 }
 
-/* Refined focus rings: visible for keyboards, quiet for pointers.
-   The old sheet had to re-colour the ring inside six dark sections because
-   the page was light and those bands were not. Every surface is dark now, so
-   one rule covers the whole document and the six-selector override is gone —
-   the exception list existed only to paper over the light/dark split. */
+/* Focus rings: visible for keyboards, quiet for pointers.
+
+   THE EXCEPTION LIST IS BACK, AND IT INVERTED. When the whole page was dark
+   one ring covered the document. Paper plus a reversed field means two
+   grounds again — but this time the ground is a CLASS (.sl-field), not a
+   list of six section names, so the exception is one selector that any new
+   reversed panel inherits by using the primitive. --sl-focus-dark is 1.78 on
+   paper and --sl-focus is 3.0 on the field; each is unusable on the other's
+   ground, so getting this pair backwards is visible immediately rather than
+   subtly. */
 :focus-visible {
-  outline: 2px solid var(--sl-focus-dark);
+  outline: 2px solid var(--sl-focus);
   outline-offset: 3px;
-  border-radius: 2px;
+  border-radius: 0;
 }
-/* ...except on the paper panels, which are the one light surface left. */
-.sl-paper :focus-visible {
-  outline-color: var(--sl-brand-green);
+.sl-field :focus-visible,
+.sl-footer :focus-visible,
+.sl-premium-chrome :focus-visible {
+  outline-color: var(--sl-focus-dark);
 }
 
 .sl-wrap {
@@ -388,23 +413,28 @@ img { max-width: 100%; display: block; }
 }
 .sl-skip:focus-visible { left: 0; outline-offset: -3px; outline-color: var(--sl-orange); }
 
-/* ---- striped media placeholder (shown until a real image is set) ---- */
-.sl-media { position: relative; width: 100%; display: block; border-radius: 16px; overflow: hidden; }
+/* ---- media placeholder (shown until a real image is set) ---- */
+.sl-media { position: relative; width: 100%; display: block; border-radius: 0; overflow: hidden; }
 .sl-media img { width: 100%; height: 100%; object-fit: cover; display: block; }
 
+/* An empty media slot is a FIELD tile, the same object the report's clip
+   thumbnails are: green ground under the 115deg steel hatch. It used to be a
+   45deg stripe of two near-blacks, which on paper would be two off-whites and
+   read as nothing at all. Matching the tile means the placeholder and the
+   real evidence occupy the same visual slot. */
 .sl-placeholder {
   width: 100%;
   display: block;
-  /* the empty state reads as unexposed film now, not as a light swatch */
-  background: repeating-linear-gradient(45deg, var(--sl-bg-card), var(--sl-bg-card) 14px, var(--sl-night) 14px, var(--sl-night) 28px);
+  background-color: var(--sl-field);
+  background-image: var(--sl-hatch);
   border: 1px solid var(--sl-border);
-  border-radius: var(--sl-radius-lg);
+  border-radius: 0;
 }
 .sl-placeholder--warm {
-  background: repeating-linear-gradient(45deg, var(--sl-orange-soft), var(--sl-orange-soft) 12px, var(--sl-night) 12px, var(--sl-night) 24px);
+  background-color: var(--sl-field-lift);
 }
 .sl-placeholder--flush { border-radius: 0; border: 0; }
-.sl-placeholder text { font-family: ui-monospace, monospace; }
+.sl-placeholder text { font-family: var(--sl-font-mono); fill: var(--sl-field-muted); }
 
 /* ---- shared buttons ---- */
 .sl-btn {
@@ -424,26 +454,30 @@ img { max-width: 100%; display: block; }
   cursor: pointer;
   transition: background .18s ease, color .18s ease, border-color .18s ease, transform .18s ease, box-shadow .18s ease;
 }
-/* Bone fill, field text. On a near-black page the brightest thing wins,
-   so the primary action does not need — and must not take — the signal
-   colour: amber means a value the engine measured. */
-.sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-green-ink); }
-.sl-btn--primary:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); }
+/* THE ONE SOLID OBJECT ON THE BOARD. Industry draws everything else as a
+   hairline line drawing, so the primary action is the single filled element
+   and needs no other emphasis — it certainly must not take a signal, because
+   steel-deep means a value the engine measured. The fill is one ramp step
+   below the mockup's #5980a6 so a 500-weight label clears AA at 8.87; see the
+   token sheet. */
+.sl-btn--primary { background: var(--sl-green-btn); color: var(--sl-green-ink); border-color: var(--sl-green-btn); }
+.sl-btn--primary:hover { background: var(--sl-ink); border-color: var(--sl-ink); color: var(--sl-green-ink); }
 /* --sl-control-border, not --sl-border: an outline button's edge IS the
-   control, and --sl-border is 1.33:1 (WCAG 1.4.11 wants 3:1). */
+   control, and --sl-border is 1.37:1 (WCAG 1.4.11 wants 3:1). */
 .sl-btn--outline { background: transparent; color: var(--sl-ink); border-color: var(--sl-control-border); }
-.sl-btn--outline:hover { background: rgba(var(--sl-cream-rgb), 0.08); color: var(--sl-ink); border-color: var(--sl-ink); }
-/* --light meant "readable on the dark green bands" when the page was
-   light. Every surface is dark now, so the inversion left it at #0d1712
-   on #070f0b with a transparent border — 1.06:1, an invisible button.
-   It is the bone treatment, which is what the name was always after. */
-.sl-btn--light { background: var(--sl-ink); color: var(--sl-green-ink); border-color: var(--sl-ink); }
-.sl-btn--light:hover { background: var(--sl-ink-hi); color: var(--sl-green-ink); border-color: var(--sl-ink-hi); }
+.sl-btn--outline:hover { background: rgba(var(--sl-wash-rgb), 0.07); color: var(--sl-ink); border-color: var(--sl-ink); }
+/* --light is the button that has to work ON THE FIELD, which is what the
+   name meant originally and means again: paper-edged, transparent, reversing
+   to a paper fill on hover. Under INSTRUMENT every surface was dark and this
+   collapsed into the bone treatment; now there are two grounds again and the
+   distinction is load-bearing. */
+.sl-btn--light { background: transparent; color: var(--sl-field-ink); border-color: rgba(var(--sl-cream-rgb), 0.35); }
+.sl-btn--light:hover { background: var(--sl-field-ink); color: var(--sl-field); border-color: var(--sl-field-ink); }
 .sl-btn--sm {
   min-height: 38px;
   padding: 9px 18px;
   font-size: var(--sl-text-sm);
-  font-weight: 600;
+  font-weight: 500;
   border-radius: var(--sl-radius-control);
 }
 .sl-btn[disabled] { opacity: .5; cursor: not-allowed; }
@@ -457,17 +491,174 @@ img { max-width: 100%; display: block; }
   margin: 0;
   font-size: var(--sl-heading-support);
   font-weight: 600;
-  letter-spacing: -0.035em;
+  /* -0.035em was set for Archivo Expanded, whose letterforms carry their own
+     width. Barlow Condensed is already tight and closing it that far welds
+     the verticals together at display size. */
+  letter-spacing: -0.02em;
   color: var(--sl-green);
 }
 
 /* One job per section: eyebrow → title → one supporting line */
 
 /* ============================================================
+   BLUEPRINT PRIMITIVES — the objects Industry is built from
+
+   The system's whole grammar is that content sits inside drawn
+   objects: square, hairline, transparent, with `+` registration
+   marks at the corners. These six classes are that grammar, and
+   sections compose them rather than re-drawing a frame each time
+   (which is how 21 different gap values accumulated last era).
+
+   theme-check's ValidScopedCSSClass flags a class used outside the
+   file that defines it, and that warning fails the theme zip — so
+   anything two sections share has to live HERE, not in whichever
+   section happened to need it first.
+   ============================================================ */
+
+/* The frame. Wrap anything; add four .sl-corner children for the marks.
+   The marks sit OUTSIDE the box, so a wrapper that also clips (the duotone
+   treatment) has to keep overflow visible or they are cut off — that pairing
+   is the one collision in this system and it is handled below. */
+.sl-blueprint {
+  position: relative;
+  border: 1px solid var(--sl-border);
+  border-radius: 0;
+}
+.sl-blueprint > .sl-corner {
+  position: absolute;
+  width: 11px;
+  height: 11px;
+  color: rgba(var(--sl-wash-rgb), 0.55);
+  pointer-events: none;
+}
+.sl-blueprint > .sl-corner::before,
+.sl-blueprint > .sl-corner::after {
+  content: "";
+  position: absolute;
+  background: currentColor;
+}
+.sl-blueprint > .sl-corner::before { left: 5px; top: 0; width: 1px; height: 100%; }
+.sl-blueprint > .sl-corner::after { top: 5px; left: 0; width: 100%; height: 1px; }
+.sl-blueprint > .sl-corner--tl { top: -6px; left: -6px; }
+.sl-blueprint > .sl-corner--tr { top: -6px; right: -6px; }
+.sl-blueprint > .sl-corner--bl { bottom: -6px; left: -6px; }
+.sl-blueprint > .sl-corner--br { bottom: -6px; right: -6px; }
+/* On the field the marks reverse with everything else. */
+.sl-field .sl-blueprint,
+.sl-blueprint--field { border-color: rgba(var(--sl-cream-rgb), 0.2); }
+.sl-field .sl-blueprint > .sl-corner,
+.sl-blueprint--field > .sl-corner { color: rgba(var(--sl-cream-rgb), 0.5); }
+
+/* THE FIELD — the one reversed ground. Opting a panel into this class is how
+   a surface becomes dark; there is no other way, which is what keeps the
+   count of dark surfaces knowable. */
+.sl-field {
+  background-color: var(--sl-field);
+  background-image: var(--sl-hatch);
+  color: var(--sl-field-ink);
+}
+.sl-field--rules { background-image: var(--sl-rules); }
+.sl-field--plain { background-image: none; }
+.sl-field h1, .sl-field h2, .sl-field h3,
+.sl-field .sl-h2, .sl-field .sl-page-hero__title { color: var(--sl-field-ink); }
+.sl-field p { color: var(--sl-field-soft); }
+.sl-field .sl-eyebrow { color: var(--sl-trace); }
+.sl-field hr, .sl-field .sl-rule { border-color: var(--sl-field-rule); }
+
+/* The spec-sheet plate: a drawn panel whose cells are separated by the
+   ground showing through a 1px grid gap rather than by borders. This is the
+   home page's method band, the report's measured band and the progress
+   page's stat row — one object, three uses. */
+.sl-stat-band {
+  display: grid;
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
+  border-radius: 0;
+}
+.sl-stat-band > * {
+  background: var(--sl-bg);
+  padding: var(--sl-space-4) var(--sl-space-5);
+  margin: 0;
+}
+.sl-field .sl-stat-band { background: var(--sl-field-rule); border-color: var(--sl-field-rule); }
+.sl-field .sl-stat-band > * { background: var(--sl-field); }
+@media (min-width: 750px) {
+  .sl-stat-band--2 { grid-template-columns: repeat(2, 1fr); }
+  .sl-stat-band--3 { grid-template-columns: repeat(3, 1fr); }
+  .sl-stat-band--4 { grid-template-columns: repeat(4, 1fr); }
+}
+
+/* A measured value. Mono is the voice for anything the engine produced, and
+   the signal colour is reserved for it — see the two colour rules. */
+.sl-plate {
+  font-family: var(--sl-font-display);
+  font-weight: 600;
+  font-size: var(--sl-text-3xl);
+  line-height: 1;
+  letter-spacing: -0.01em;
+  color: var(--sl-green);
+  font-variant-numeric: tabular-nums;
+}
+.sl-plate__unit {
+  font-size: var(--sl-text-base);
+  color: var(--sl-ink-muted);
+  font-weight: 400;
+}
+.sl-plate__delta {
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  color: var(--sl-accent);
+  font-variant-numeric: tabular-nums;
+}
+.sl-field .sl-plate { color: var(--sl-field-ink); }
+.sl-field .sl-plate__unit { color: var(--sl-field-muted); }
+/* On the field a measured value is set in paper at display size rather than
+   in the signal: steel-deep is 3.0 there and stops being readable. The
+   palette confines each signal to its own ground — see the token sheet. */
+.sl-field .sl-plate__delta { color: var(--sl-field-ink); }
+
+/* Segmented control, on native radios — no script. */
+.sl-seg {
+  display: inline-flex;
+  border: 1px solid var(--sl-control-border);
+  border-radius: 0;
+  overflow: hidden;
+}
+.sl-seg__opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 38px;
+  padding: 7px 14px;
+  font-size: var(--sl-text-sm);
+  cursor: pointer;
+  margin: 0;
+}
+.sl-seg__opt + .sl-seg__opt { border-left: 1px solid var(--sl-control-border); }
+.sl-seg__opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+.sl-seg__opt:has(input:checked) { background: var(--sl-steel); color: var(--sl-bg); }
+.sl-seg__opt:not(:has(input:checked)):hover { background: rgba(var(--sl-wash-rgb), 0.07); }
+.sl-seg__opt:has(input:focus-visible) { outline: 2px solid var(--sl-focus); outline-offset: -2px; }
+
+/* Photographs take the accent, like a screen print that re-colours with the
+   theme. This clips, so it cannot carry registration marks on the same
+   element — .sl-blueprint goes on a parent when both are wanted. */
+.sl-duotone { position: relative; overflow: hidden; }
+.sl-duotone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: var(--sl-steel);
+  mix-blend-mode: color;
+}
+
+/* ============================================================
    Shared patterns (contract classes)
    ============================================================ */
 
-/* mono chip — letterspaced, soft-rectilinear */
+/* mono chip — letterspaced, square */
 .sl-chip {
   display: inline-block;
   font-family: var(--sl-font-mono);
@@ -476,12 +667,14 @@ img { max-width: 100%; display: block; }
   letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--sl-green);
-  background: var(--sl-bg-card);
-  border: 1px solid rgba(var(--sl-cream-rgb), 0.18);
+  background: transparent;
+  border: 1px solid var(--sl-border-strong);
   border-radius: var(--sl-radius-sm);
   padding: 5px 12px;
   white-space: nowrap;
 }
+/* The accent chip labels a MEASURED value, which is the only thing that
+   earns the signal. A chip that merely wants attention takes the plain one. */
 .sl-chip--accent {
   color: var(--sl-orange);
   border-color: rgba(var(--sl-accent-rgb), 0.38);
@@ -492,6 +685,11 @@ img { max-width: 100%; display: block; }
   background: var(--sl-green);
   border-color: var(--sl-green);
 }
+.sl-field .sl-chip {
+  color: var(--sl-field-ink);
+  border-color: rgba(var(--sl-cream-rgb), 0.3);
+}
+.sl-field .sl-chip--accent { color: var(--sl-trace); border-color: rgba(var(--sl-trace-rgb), 0.4); background: transparent; }
 
 /* small mono specimen label, like the notations on a pin card */
 .sl-mono-label {
@@ -527,15 +725,19 @@ img { max-width: 100%; display: block; }
      <p class="sl-drill-card__dosage">3 × 10 swings, before each session</p>
      <p class="sl-drill-card__metric">Re-film: tempo within 2.8–3.2</p>
    </article> */
+/* A line drawing, not a filled card: no surface, no shadow, one hairline.
+   Industry's only filled object is the primary button. Dropping the fill and
+   the cast is most of what separates this system from the last one — a
+   shadowed panel on paper reads as a consumer app card whatever else is
+   true of it. */
 .sl-drill-card {
   display: flex;
   flex-direction: column;
   gap: 14px;
-  background: var(--sl-bg-card);
+  background: transparent;
   border: 1px solid var(--sl-border);
   border-radius: var(--sl-radius-lg);
   padding: 24px 24px 22px;
-  box-shadow: var(--sl-shadow-card);
 }
 .sl-drill-card__head {
   display: flex;
@@ -699,11 +901,13 @@ img { max-width: 100%; display: block; }
   .sl-spec-table { display: block; overflow-x: auto; }
 }
 
-/* callout note on the cool amber wash */
+/* Callout. The rule down its left edge is STEEL, not the signal: a callout
+   is emphasis, and emphasis is exactly what the signal must never become —
+   this is one of the three places the old amber leaked into decoration. */
 .sl-note {
-  background: var(--sl-orange-soft);
-  border-left: 3px solid var(--sl-orange);
-  border-radius: 4px 12px 12px 4px;
+  background: var(--sl-night);
+  border-left: 3px solid var(--sl-steel);
+  border-radius: 0;
   padding: 16px 20px 16px 18px;
   font-size: var(--sl-text-base);
   line-height: 1.6;
@@ -723,7 +927,9 @@ img { max-width: 100%; display: block; }
   .sl-two-col { grid-template-columns: 1fr 1fr; gap: clamp(32px, 5vw, 64px); }
 }
 
-/* orange-dot list (generalized from the report feature list) */
+/* Marked list. The mark is a square steel tick, not a round signal dot —
+   nothing here is a measured value, and the shape follows the system's
+   square geometry besides. */
 .sl-check-list {
   margin: 0;
   padding: 0;
@@ -745,9 +951,11 @@ img { max-width: 100%; display: block; }
   top: 0.5em;
   width: 8px;
   height: 8px;
-  border-radius: 50%;
-  background: var(--sl-orange);
+  border-radius: 0;
+  background: var(--sl-steel);
 }
+.sl-field .sl-check-list li { color: var(--sl-field-ink); }
+.sl-field .sl-check-list li::before { background: var(--sl-trace); }
 
 /* scroll reveal — layout/theme.liquid adds .is-in via IntersectionObserver.
    The hidden state is gated on html.sl-js (set by that same script), so if
@@ -861,12 +1069,14 @@ img { max-width: 100%; display: block; }
   border-radius: var(--sl-radius-sm);
   padding: 1px 6px;
 }
+/* Steel, not the signal — a pull quote is emphasis, and emphasis is the one
+   thing the signal may never be. Same reasoning as .sl-note. */
 .sl-rte blockquote {
   margin: 22px 0;
   padding: 14px 22px 14px 20px;
-  border-left: 3px solid var(--sl-orange);
-  border-radius: 4px 14px 14px 4px;
-  background: var(--sl-orange-soft);
+  border-left: 3px solid var(--sl-steel);
+  border-radius: 0;
+  background: var(--sl-night);
   color: var(--sl-ink);
   font-size: var(--sl-text-base);
 }
@@ -921,12 +1131,16 @@ img { max-width: 100%; display: block; }
   margin: 0 0 8px;
 }
 
+/* --sl-night is the sunk well, which is what an input is: a tinted recess in
+   the paper. --sl-bg-card would be the ground itself now that cards are line
+   drawings, leaving the field with no fill at all. The edge is
+   --sl-control-border because an input's border IS the control (1.4.11). */
 .sl-select, .sl-input, .sl-qty {
   font: inherit;
   color: var(--sl-ink);
-  background: var(--sl-bg-card);
-  border: 1.5px solid var(--sl-border);
-  border-radius: 8px;
+  background: var(--sl-night);
+  border: 1.5px solid var(--sl-control-border);
+  border-radius: 0;
   padding: 13px 16px;
 }
 .sl-select:focus, .sl-input:focus, .sl-qty:focus {
@@ -950,16 +1164,16 @@ img { max-width: 100%; display: block; }
   height: auto; /* img width/height attributes must not defeat the crop */
   aspect-ratio: 1;
   object-fit: cover;
-  border-radius: 16px;
+  border-radius: 0;
   border: 1px solid var(--sl-border);
-  background: var(--sl-bg-card);
+  background: var(--sl-night);
 }
 .sl-product-thumbs { display: flex; gap: 10px; margin-top: 12px; flex-wrap: wrap; }
 .sl-thumb {
-  padding: 0; border: 2px solid transparent; border-radius: 10px;
+  padding: 0; border: 2px solid transparent; border-radius: 0;
   background: none; cursor: pointer; overflow: hidden; width: 72px; height: 72px;
 }
-.sl-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 8px; }
+.sl-thumb img { width: 100%; height: 100%; object-fit: cover; border-radius: 0; }
 .sl-thumb.is-active { border-color: var(--sl-green-btn); }
 .sl-product-title {
   margin: 0 0 10px;
@@ -982,9 +1196,8 @@ img { max-width: 100%; display: block; }
   overflow: hidden;
   border: 1px solid var(--sl-border);
   border-radius: var(--sl-radius-lg);
-  background: var(--sl-bg-card);
+  background: var(--sl-night);
   line-height: 0;
-  box-shadow: var(--sl-shadow-card);
 }
 .sl-main-product__frame .sl-product-img {
   border: 0;
@@ -1048,7 +1261,6 @@ img { max-width: 100%; display: block; }
   background: var(--sl-bg-card);
   border: 1px solid var(--sl-border);
   border-radius: var(--sl-radius-lg);
-  box-shadow: var(--sl-shadow-card);
 }
 .sl-auth__form {
   display: flex;
@@ -1100,7 +1312,6 @@ img { max-width: 100%; display: block; }
   background: var(--sl-bg-card);
   border: 1px solid var(--sl-border);
   border-radius: var(--sl-radius-lg);
-  box-shadow: var(--sl-shadow-card);
 }
 .sl-account__panel h2 { margin: 0 0 var(--sl-space-3); font-size: var(--sl-text-xl); }
 .sl-account .sl-spec-table { width: 100%; }
@@ -1168,7 +1379,7 @@ img { max-width: 100%; display: block; }
 .sl-pcard-media { position: relative; }
 .sl-pcard-img {
   width: 100%; height: auto; aspect-ratio: 1; object-fit: cover;
-  border-radius: 14px; border: 1px solid var(--sl-border); background: var(--sl-bg-card);
+  border-radius: 0; border: 1px solid var(--sl-border); background: var(--sl-night);
 }
 .sl-pcard-badge {
   position: absolute; top: 10px; right: 10px;
@@ -1191,25 +1402,25 @@ img { max-width: 100%; display: block; }
 .sl-pcard-price { margin: auto 0 0; padding-top: 6px; font-size: var(--sl-text-base); font-weight: 600; color: var(--sl-ink-soft); }
 .sl-result-card {
   display: block; text-decoration: none; padding: 18px;
-  border: 1px solid var(--sl-border); border-radius: 14px; background: var(--sl-bg-card);
+  border: 1px solid var(--sl-border); border-radius: 0; background: var(--sl-night);
 }
 .sl-result-card:hover { border-color: rgba(var(--sl-green-rgb), 0.35); }
 
-/* subtle card hover lift */
+/* Card hover: the EDGE responds, not the elevation. These objects are line
+   drawings, so lifting one on a cast shadow turns it back into a consumer
+   app card for the duration of the hover — the one moment a visitor is
+   looking hardest at it. Darkening the hairline and washing the ground reads
+   as the drawing being selected, which is what it is. */
+.sl-pcard:hover .sl-pcard-img,
+.sl-result-card:hover,
+.sl-drill-card:hover { border-color: var(--sl-ink); }
+.sl-result-card:hover,
+.sl-drill-card:hover { background: rgba(var(--sl-wash-rgb), 0.04); }
 @media (prefers-reduced-motion: no-preference) {
   .sl-pcard-img,
   .sl-result-card,
   .sl-drill-card {
-    transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease;
-  }
-  .sl-pcard:hover .sl-pcard-img {
-    transform: translateY(-4px);
-    box-shadow: var(--sl-shadow-card);
-  }
-  .sl-result-card:hover,
-  .sl-drill-card:hover {
-    transform: translateY(-3px);
-    box-shadow: var(--sl-shadow-card-hover);
+    transition: background .22s ease, border-color .22s ease;
   }
 }
 
@@ -1226,7 +1437,7 @@ img { max-width: 100%; display: block; }
   align-items: center;
   justify-content: center;
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: 0;
   text-decoration: none;
 }
 .sl-pagination a { transition: background .15s ease, color .15s ease; }
@@ -1246,7 +1457,7 @@ img { max-width: 100%; display: block; }
   border-bottom: 1px solid var(--sl-border);
 }
 .sl-cart-media img, .sl-cart-media .sl-placeholder {
-  width: 84px; height: 84px; object-fit: cover; border-radius: 10px;
+  width: 84px; height: 84px; object-fit: cover; border-radius: 0;
   border: 1px solid var(--sl-border);
 }
 .sl-cart-title { font-weight: 600; color: var(--sl-ink); text-decoration: none; }
