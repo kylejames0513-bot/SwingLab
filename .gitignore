@@ -40,3 +40,7 @@ dist/
 
 # local settings backups the CLI writes beside settings.local.json
 .claude/settings.local.json.bak-*
+
+# Read-only reference copy of the live theme, pulled for the revamp audit.
+# Regenerate with: shopify theme pull --store e0hbgh-ip.myshopify.com --theme <id> --path theme-current
+theme-current/

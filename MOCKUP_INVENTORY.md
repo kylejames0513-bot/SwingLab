@@ -239,8 +239,11 @@ behaviour and both desktop end-points are extrapolations either way.
 
 Flagging these now so they do not get built in by accident.
 
-1. **`2b` breadcrumb reads `HOME / SWINGLAB GEAR /`.** The old brand, left in
-   the mockup. Everything else in the document says CaddieInsight.
+1. ~~**`2b` breadcrumb reads `HOME / SWINGLAB GEAR /`.** The old brand, left in
+   the mockup.~~ **Wrong — corrected in Phase 1.** The live collection handle
+   really is `swinglab-gear` (titled "CaddieInsight Gear"), so the mockup is
+   rendering production accurately. The rebrand changed titles but not handles.
+   This is a URL decision, not a copy fix — see `SITE_AUDIT.md` §6 risk 3.
 2. **`6a` closes with:** *"Still drafts for judging the idea — a designer should
    redraw the winner as true vector artwork."* The mark we would ship is a
    CSS-drawn draft.
@@ -253,7 +256,29 @@ Flagging these now so they do not get built in by accident.
 
 ---
 
-## 7. Questions
+## 7. Decisions (answered 2026-08-12)
+
+Kyle's ruling: **build the whole thing, not just styling and shell**; the
+favicon is **turn 7's club**, not `6b`'s small-size lockup; the rest on my
+defaults. Resolved as follows — the original questions are kept below for the
+reasoning behind each.
+
+| # | Decision |
+| --- | --- |
+| 1 | **`favicon-512/64/32/16`** (club on green) → Shopify favicon slot + PWA manifest. `ci-mark-*` monogram → OG images and light grounds. `ci-favicon-16` not shipped, per `7b`. |
+| 2 | **Mark B** is the logo. The CSS-drawn lockup ships as-is; no designer gate. |
+| 3 | `#070f0b` becomes a named token. *(Phase 1 found it is already the app's `theme-color` — this is bookkeeping, not a change.)* |
+| 4 | **Full build.** App screens `1a`–`1f` are built properly, not restyled. |
+| 5 | Missing pages designed by extending the Industry grammar. *(Phase 1 found templates already exist for all of them — see `SITE_AUDIT.md` §4.)* |
+| 6 | Mobile extended from `2c`'s idiom for the five desktop-only storefront pages. |
+| 7 | Prices ship as drawn. Surfaced again in `COPY_DECK.md` for a last look before anything is published. |
+| 8 | The three `@caddieinsight.com` addresses ship as drawn; verification moves to `LAUNCH_CHECKLIST.md`. |
+| 9 | `3d` is reference only. *(Confirmed: the store is on **Basic**, so checkout is not themeable regardless.)* |
+| 10 | Device frame recreated for the capture screen only. |
+| 11 | `2a`'s hero is primary; `4b`'s golf-feel treatment becomes section settings. |
+| 12 | Mockup labels kept — `Sign in` and `Analyze free`, both to `app.caddieinsight.com`. |
+
+## 8. Questions (as originally asked)
 
 Ordered by how much they block. The first four change what gets built.
 
