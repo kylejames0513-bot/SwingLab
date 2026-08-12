@@ -138,6 +138,15 @@ def test_print_keeps_sample_disclosure_and_uses_contrast_safe_tokens(tmp_path):
     assert "This is a sample session" in html
     assert ".sample-banner, .report-actions" not in source
     assert ".sample-banner a { display: none !important; }" in source
-    assert "--ink-muted: #5d685f" in source
-    assert "--accent-ink: #944600" in source
+    # Industry values. This report never went through the 2026-08-10 dark
+    # inversion and was still the warm cream document the product left two
+    # brands ago — these pins are what kept re-asserting it.
+    #
+    # --accent-ink is THE SIGNAL: a value the engine measured, and nothing
+    # else. It carried an orange here long after the rest of the product had
+    # stopped spending orange on anything, which is exactly how a palette
+    # forks. 7.38:1 on the paper ground.
+    assert "--ink-muted: #626265" in source
+    assert "--accent-ink: #375169" in source
+    assert "#944600" not in source
     assert ".card.sev-major .sev { color: var(--accent-ink); }" in source

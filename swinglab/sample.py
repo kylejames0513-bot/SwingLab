@@ -169,7 +169,7 @@ _POSES: dict[str, dict[int, tuple[float, float]]] = {
 }
 
 _PANEL_W, _PANEL_H = 320, 460
-_BG = "#25302a"          # muted range-at-dusk green, clearly not a photo
+_BG = "#0b1712"          # the FIELD, lifted — clearly a frame, not a photo
 _GROUND = "#1c241f"
 _LABEL = "#ffffff"
 
@@ -206,7 +206,7 @@ def _draw_panel(
     draw_skeleton(draw, lm, color, shoulder_width_px=0.2 * w, line_w=4)
     font = load_font(22)
     draw.text((x0 + 12, 10), label, fill=_LABEL, font=font)
-    draw.line([(x0 + w, 0), (x0 + w, h)], fill="#111111", width=2)
+    draw.line([(x0 + w, 0), (x0 + w, h)], fill="#070f0b", width=2)
 
 
 def _footer(img: Image.Image, text: str) -> None:
@@ -220,16 +220,16 @@ def _footer(img: Image.Image, text: str) -> None:
     while size > 11 and draw.textlength(text, font=font) > max_w:
         size -= 1
         font = load_font(size)
-    draw.rectangle([0, img.height - 30, img.width, img.height], fill="#101512")
+    draw.rectangle([0, img.height - 30, img.width, img.height], fill="#0b1712")
     draw.text((12, img.height - 30 + (28 - size) // 2), text,
-              fill="#c9d4cc", font=font)
+              fill="#a8b3ac", font=font)
 
 
 def draw_sample_strip(out_path: Path, swing_no: int, cfg: Config) -> Path:
     """Key-position stand-in: four labeled skeleton panels."""
     img = Image.new("RGB", (4 * _PANEL_W, _PANEL_H + 30), _BG)
     draw = ImageDraw.Draw(img)
-    color = cfg.brand.get("accent_color") or "#e8720c"
+    color = cfg.brand.get("accent_color") or "#f2f2f3"
     for i, key in enumerate(("address", "top", "impact", "finish")):
         _draw_panel(draw, i * _PANEL_W, key, key.capitalize(), color)
     _footer(
@@ -263,10 +263,14 @@ def draw_sample_overlay(out_path: Path, swing_no: int, cfg: Config) -> Path:
     return out_path
 
 
-_SAMPLE_OBSERVED = "#e8720c"
-_SAMPLE_REFERENCE = "#2ecc40"
-_SAMPLE_SILHOUETTE = "#f3eee2"
-_SAMPLE_BOUNDARY = "#f6d7a8"
+# These four land on a FIELD frame, so they follow the field's rule: what was
+# MEASURED reads as paper, the live/reference read as the lit steel trace.
+# Neither is the steel signal — it is 3.00:1 on this ground and would sink
+# into the frame. The old set was an orange/green pair from two brands ago.
+_SAMPLE_OBSERVED = "#f2f2f3"     # what the engine measured
+_SAMPLE_REFERENCE = "#94bce3"    # the corrected position it is compared to
+_SAMPLE_SILHOUETTE = "#5d6b62"
+_SAMPLE_BOUNDARY = "#66756c"
 
 
 def draw_sample_focused_evidence(out_path: Path, cfg: Config) -> Path:
@@ -294,7 +298,7 @@ def draw_sample_focused_evidence(out_path: Path, cfg: Config) -> Path:
     draw.text(
         (52, 91),
         "Head position near the top",
-        fill="#c9d4cc",
+        fill="#a8b3ac",
         font=small_font,
     )
 
@@ -303,7 +307,7 @@ def draw_sample_focused_evidence(out_path: Path, cfg: Config) -> Path:
     draw.rounded_rectangle(
         (245, 165, 405, 325),
         radius=38,
-        fill="#214e31",
+        fill="#1c3347",
         outline=_SAMPLE_REFERENCE,
         width=10,
     )
@@ -680,10 +684,15 @@ def _sample_focused_evidence(media_key: str) -> RenderedEvidence:
             "The head moved beyond its starting reference zone on two of "
             "three readable swings."
         ),
+        # The alt text NAMES THE COLOURS, so it is part of the palette and
+        # moves with it. Leaving it saying "orange" and "green" after the marks
+        # became paper and steel would describe a picture that is not there —
+        # for the readers who depend on it most, and silently, because the
+        # rendered page still looks right to everyone else.
         alt_text=(
-            "Sample illustration of swing 1 near the top. An orange head "
-            "marker sits outside the green starting zone and beyond a dashed "
-            "coaching boundary."
+            "Sample illustration of swing 1 near the top. A white head "
+            "marker sits outside the pale blue starting zone and beyond a "
+            "dashed coaching boundary."
         ),
     )
 

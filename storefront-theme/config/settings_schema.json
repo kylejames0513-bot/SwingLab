@@ -13,25 +13,25 @@
       {
         "type": "header",
         "content": "Brand palette",
-        "info": "These colors control the page background, primary green, and accessible accent text across the storefront."
+        "info": "These colors control the paper ground, heading ink, and the signal that marks a measured value. The reversed green field, the steel chrome accent and the live-readout trace are structural and are not merchant-editable."
       },
       {
         "type": "color",
         "id": "color_page_bg",
-        "label": "Page field",
-        "default": "#070f0b"
+        "label": "Page ground (paper)",
+        "default": "#f2f2f3"
       },
       {
         "type": "color",
         "id": "color_green",
         "label": "Heading ink",
-        "default": "#edefe9"
+        "default": "#1d1f20"
       },
       {
         "type": "color",
         "id": "color_accent",
         "label": "Signal (measured values)",
-        "default": "#f0a818"
+        "default": "#416180"
       }
     ]
   },
@@ -42,12 +42,12 @@
         "type": "font_picker",
         "id": "type_body_font",
         "label": "Legacy font picker (unused)",
-        "default": "archivo_n4",
-        "info": "CaddieInsight loads Archivo, Archivo Expanded and DM Mono in theme.liquid to match the app. This picker is retained for theme editor compatibility only."
+        "default": "barlow_n4",
+        "info": "CaddieInsight loads Barlow, Barlow Condensed and DM Mono in theme.liquid to match the app. This picker is retained for theme editor compatibility only."
       },
       {
         "type": "paragraph",
-        "content": "Archivo Expanded carries display type and Archivo the interface — the wordmark's own superfamily. DM Mono marks measured evidence (chips, dosages, specimen labels). The same three faces ship on app.caddieinsight.com, byte for byte."
+        "content": "Barlow Condensed carries display type and Barlow the interface. Because Barlow ships no variable font, the interface uses only regular and medium — a rule that wants more weight reaches for the condensed face instead. DM Mono marks measured evidence (chips, dosages, specimen labels). The same three faces ship on app.caddieinsight.com, byte for byte."
       }
     ]
   }

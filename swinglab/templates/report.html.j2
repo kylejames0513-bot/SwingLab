@@ -41,19 +41,22 @@
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
   }
-  body { font-family: Arial, Helvetica, sans-serif;
-         margin: 0; color: #101a14; background: #eef2ef; }
-  .sample-banner { background: #944600; color: white; padding: 10px 32px;
+  body { font-family: "Barlow", Arial, Helvetica, sans-serif;
+         margin: 0; color: #1d1f20; background: #f2f2f3; }
+  /* The sample banner is a BAND, the same navy strip the storefront and the
+     app shell run above their headers — not the signal. It was orange, which
+     spent the measured-value colour on a disclosure notice. */
+  .sample-banner { background: #1d2d3d; color: white; padding: 10px 32px;
                    display: flex; align-items: center; justify-content: center;
                    gap: 14px; flex-wrap: wrap; font-size: 0.95rem; }
-  .sample-banner a { color: white; font-weight: 700; text-decoration: underline;
+  .sample-banner a { color: white; font-weight: 500; text-decoration: underline;
                      white-space: nowrap; }
   .report-header { background: rgba(238,242,239,.94); color: #101a14;
            min-height: 72px; padding: 0 clamp(20px,5vw,56px);
            display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
            border-bottom: 1px solid #e3ded3; }
   .report-header img.logo { height: 36px; }
-  .report-brand { color: var(--primary); font-size: 21px; font-weight: 800;
+  .report-brand { color: var(--primary); font-size: 21px; font-weight: 600;
                   letter-spacing: -.025em; text-decoration: none; }
   .report-label { color: #7a8279; font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
                   font-size: 11px; letter-spacing: .14em; text-transform: uppercase; }
@@ -65,7 +68,7 @@
   .report-nav a:hover { color: var(--primary); }
   .print-report { appearance: none; background: var(--primary); border: 1px solid var(--primary);
                   border-radius: var(--sl-radius-control); color: white; cursor: pointer; font: inherit;
-                  font-size: 0.85rem; font-weight: 700; padding: 8px 13px;
+                  font-size: 0.85rem; font-weight: 500; padding: 8px 13px;
                   white-space: nowrap; }
   .print-report:hover, .print-report:focus-visible { background: white; color: var(--primary); }
   .print-report:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
@@ -112,7 +115,7 @@
   .replay-locked-note a { color: var(--primary); font-weight: 600; }
   .replay-locked-note .lock-badge { display: inline-block;
     background: var(--primary); color: white; border-radius: var(--sl-radius-control);
-    padding: 3px 12px; font-size: 0.75rem; font-weight: 700;
+    padding: 3px 12px; font-size: 0.75rem; font-weight: 500;
     letter-spacing: 0.02em; margin-bottom: 10px; }
 {%- endif %}
   .tips { background: #eef6f0; border-left: 4px solid var(--primary);
@@ -133,7 +136,7 @@
                    border-radius: 6px; padding: 10px 14px; color: #54440b; }
   details.measurements { margin: 18px 0 26px; }
   details.measurements > summary { cursor: pointer; color: var(--primary);
-                                   font-weight: 700; padding: 10px 0; }
+                                   font-weight: 500; padding: 10px 0; }
   .praise { background: #e5f3ea; border-left: 4px solid var(--primary);
             border-radius: 4px; padding: 12px 16px; }
   .praise ul { margin: 6px 0 0; padding-left: 20px; }
@@ -151,7 +154,7 @@
   .card-head { display: flex; justify-content: space-between; align-items: baseline; }
   .card-head h3 { margin: 0; color: var(--primary); font-size: 1.05rem; }
   .card .sev { font-size: 0.75rem; text-transform: uppercase; color: #777; }
-  .card.sev-major .sev { color: var(--accent); font-weight: 700; }
+  .card.sev-major .sev { color: var(--accent); font-weight: 500; }
   .card .bench { color: #777; font-size: 0.85rem; }
   .card .fixline .meta a { color: var(--primary); }
   .plan { background: white; border: 1px solid #e0e0e0; border-radius: 8px;
@@ -214,26 +217,35 @@
 
   /* Premium evidence-first presentation. This layer deliberately keeps the
      report self-contained: no remote fonts, assets, scripts, or runtime UI. */
+  /* INDUSTRY. This report never went through the 2026-08-10 dark inversion —
+     it was still the warm cream document the product left behind two brands
+     ago, which is exactly the drift the guided report's own comment warns
+     about. Same palette as everything else now, under this file's private
+     names, because it must survive being saved and opened with no stylesheet.
+
+     --accent-ink is THE SIGNAL: a value the engine measured, and nothing
+     else. It was an orange here long after the rest of the product stopped
+     spending orange on decoration. */
   :root {
-    --ink: #101a14;
-    --ink-soft: #4d5850;
-    --ink-muted: #5d685f;
-    --accent-ink: #944600;
-    --paper: #fffdf8;
-    --canvas: #f3f1eb;
-    --line: #ddd8cc;
-    --green-wash: #edf5ef;
-    --warm-wash: #e8f0ea;
-    --shadow: 0 22px 55px -40px rgba(15, 42, 27, .55);
+    --ink: #1d1f20;
+    --ink-soft: #5d5d60;
+    --ink-muted: #626265;
+    --accent-ink: #375169;
+    --paper: #ffffff;
+    --canvas: #f2f2f3;
+    --line: #d0d1d1;
+    --green-wash: #eef6ff;
+    --warm-wash: #e9e9ea;
+    --shadow: 0 1px 2px rgba(29, 31, 32, .14);
   }
   * { box-sizing: border-box; }
   html { scroll-behavior: smooth; }
   body {
     color: var(--ink);
-    background:
-      radial-gradient(circle at 88% 3%, rgba(232, 114, 12, .08), transparent 25rem),
-      var(--canvas);
-    font-family: Arial, Helvetica, sans-serif;
+    /* A page-wide wash of the signal colour taught a reader that it meant
+       "background", on the one document where it has to mean "measured". */
+    background: var(--canvas);
+    font-family: "Barlow", Arial, Helvetica, sans-serif;
     line-height: 1.55;
   }
   .report-skip {
@@ -245,7 +257,7 @@
     border-radius: 8px;
     background: var(--primary);
     color: white;
-    font-weight: 700;
+    font-weight: 500;
     transform: translateY(-150%);
   }
   .report-skip:focus { transform: translateY(0); }
@@ -262,7 +274,7 @@
     padding: 5px 10px;
     border-color: rgba(20, 71, 44, .22);
     background: var(--green-wash);
-    font-weight: 700;
+    font-weight: 500;
   }
   main {
     max-width: 1160px;
@@ -300,7 +312,7 @@
     color: var(--accent-ink);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-size: .7rem;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: .13em;
     text-transform: uppercase;
   }
@@ -345,7 +357,7 @@
     letter-spacing: .08em;
     text-transform: uppercase;
   }
-  .report-context dd { margin: 2px 0 0; color: white; font-size: .86rem; font-weight: 700; }
+  .report-context dd { margin: 2px 0 0; color: white; font-size: .86rem; font-weight: 500; }
   h2 {
     margin: 0 0 13px;
     padding: 0;
@@ -431,7 +443,7 @@
     color: var(--ink-muted);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-size: .64rem;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: .09em;
     text-transform: uppercase;
   }
@@ -469,7 +481,7 @@
     color: var(--ink-muted);
     font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
     font-size: .62rem;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: .08em;
     text-transform: uppercase;
   }
@@ -481,7 +493,7 @@
     background: var(--green-wash);
     color: var(--primary);
     font-size: .7rem;
-    font-weight: 800;
+    font-weight: 500;
   }
   .breakdown-card--warning .breakdown-card__status {
     background: var(--warm-wash);
@@ -524,7 +536,7 @@
     border-bottom: 0;
     background: #f8f6f1;
     color: var(--primary);
-    font-weight: 800;
+    font-weight: 500;
   }
   details.measurements[open] > summary { border-bottom: 1px solid var(--line); }
   details.measurements > h2,
@@ -537,11 +549,11 @@
   details.measurements > h3 { margin-top: 22px; color: var(--primary); }
   details.measurements > :last-child { margin-bottom: 24px; }
   table { border: 1px solid var(--line); border-radius: 8px; background: white; }
-  caption { padding: 0 0 8px; color: var(--ink-soft); font-weight: 700; text-align: left; }
+  caption { padding: 0 0 8px; color: var(--ink-soft); font-weight: 500; text-align: left; }
   th, td { border-color: #e0ddd5; padding: 9px 10px; }
   th { background: var(--primary); }
   table.meta { border: 0; }
-  table.meta th { width: 145px; color: var(--ink-muted); font-weight: 700; }
+  table.meta th { width: 145px; color: var(--ink-muted); font-weight: 500; }
   tr.mean-row td { background: var(--green-wash); }
   tr.spread-row td { background: #f6f4ee; color: var(--ink-soft); }
   tr.bench-row td { background: #faf8f3; }
@@ -689,9 +701,9 @@
     .sample-banner {
       display: flex !important;
       padding: 3mm 5mm;
-      border: 2px solid #944600;
+      border: 2px solid #1d2d3d;
       background: white !important;
-      color: #944600 !important;
+      color: #1d2d3d !important;
     }
     .sample-banner a { display: none !important; }
     .report-header { box-shadow: none; }

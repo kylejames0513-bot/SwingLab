@@ -121,14 +121,18 @@ def test_premium_header_is_scoped_to_home_and_the_pro_product():
     )
 
     assert "assign premium_header = false" in HEADER
-    assert "assign overlay_header = false" in HEADER
     assert "if request.page_type == 'index'" in HEADER
-    assert "assign overlay_header = true" in HEADER
     assert "elsif request.page_type == 'product' and product.handle == 'swinglab-pro'" in HEADER
     assert (
-        'class="sl-header{% if premium_header %} sl-header--premium{% endif %}{% if overlay_header %} sl-header--overlay{% endif %}"'
+        'class="sl-header{% if premium_header %} sl-header--premium{% endif %}"'
         in HEADER
     )
+    # premium_header now selects NAVIGATION and nothing else. Its dark visual
+    # treatment — 12 override rules plus a night drawer — is gone with the
+    # rest of the field chrome, so the flag no longer carries a colour it was
+    # never really about.
+    assert ".sl-header--premium {" not in HEADER
+    assert ".sl-premium-chrome .sl-menu" not in HEADER
     assert "assign premium_chrome = false" in LAYOUT
     assert chrome_scope in LAYOUT
     assert "{% if premium_chrome %} sl-premium-chrome{% endif %}" in LAYOUT
@@ -154,7 +158,6 @@ def test_premium_header_is_scoped_to_home_and_the_pro_product():
         assert f"'layout.navigation.{label}' | t" in mobile_nav
     assert "data-app-primary-cta" in mobile_nav
     assert "{{ app_action_label }}" in mobile_nav
-    assert ".sl-premium-chrome .sl-menu" in HEADER
 
 
 def test_mobile_header_uses_one_cart_link_and_an_accessible_dialog():
@@ -169,29 +172,33 @@ def test_mobile_header_uses_one_cart_link_and_an_accessible_dialog():
     assert "window.matchMedia('(min-width: 1000px)')" in HEADER
 
 
-def test_home_header_overlays_the_hero_then_gains_a_scroll_surface():
-    assert "assign overlay_header = true" in HEADER
-    assert ".shopify-section:has(> .sl-header--overlay) { margin-bottom: -76px; }" in HEADER
-    assert (
-        '.shopify-section:has(> .sl-header--overlay[data-app-authenticated="true"])'
-        in HEADER
-    )
-    assert "margin-bottom: calc(-76px - 52px);" in HEADER
-    # Below the 1000px stop the bar is 64px tall; the pull-up (and its
-    # signed-in variant, +52px of member rail) matches inside that media
-    # block so the hero sits flush at every width.
-    below_desktop = HEADER.split("@media (max-width: 999px)", 1)[1].split("@media", 1)[0]
-    assert ".shopify-section:has(> .sl-header--overlay) { margin-bottom: -64px; }" in below_desktop
-    assert "margin-bottom: calc(-64px - 52px);" in below_desktop
-    assert (
-        'body:has(.sl-header[data-app-authenticated="true"]) .sl-hero__inner'
-        in HEADER
-    )
-    overlay_css = HEADER.split(".sl-header--overlay {", 1)[1].split("}", 1)[0]
-    assert "background: transparent" in overlay_css
-    assert ".sl-header--overlay.is-scrolled" in HEADER
-    assert "window.scrollY > 12" in HEADER
-    assert "window.addEventListener('scroll', updateHeaderSurface" in HEADER
+def test_the_header_sits_above_the_hero_rather_than_over_it():
+    """The overlay is gone, and its whole apparatus with it.
+
+    The home header used to be transparent and pulled the hero up underneath
+    itself with a negative margin, then swapped to a solid surface on scroll.
+    That needed a matched set of four things — a Liquid flag, a pull-up margin
+    per breakpoint, a signed-in variant adding the member rail's 52px, and a
+    scroll listener — and the pull-up had to be re-derived every time the bar's
+    height changed.
+
+    Mockup 2a stacks them instead: announcement bar, then a paper header, then
+    the hero field starting below it. Nothing to keep in sync. This test pins
+    the ABSENCE, because the failure mode of a half-removed overlay is a hero
+    with a 76px hole above it that only appears on one page.
+    """
+    assert "overlay_header" not in HEADER
+    assert "sl-header--overlay" not in HEADER
+    assert "margin-bottom: -76px" not in HEADER
+    assert "margin-bottom: -64px" not in HEADER
+    assert "updateHeaderSurface" not in HEADER
+    assert "window.scrollY > 12" not in HEADER
+    # The bar carries its own opaque ground and a structural rule under it, at
+    # every page type — there is no longer a page where it is transparent.
+    header_css = HEADER.split("\n.sl-header {", 1)[1].split("}", 1)[0]
+    assert "background: var(--sl-bg-card);" in header_css
+    assert "border-bottom: 1px solid var(--sl-border-strong);" in header_css
+    assert "position: relative" in header_css
 
 
 def test_storefront_and_app_share_the_responsive_header_contract():

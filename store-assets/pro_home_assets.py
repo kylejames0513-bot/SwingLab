@@ -16,7 +16,7 @@ from make_assets import (
 )
 
 MINT = GREEN_INK
-DARK = "#0f1712"
+DARK = "#070f0b"   # the FIELD, matching base.css
 
 
 # ------------------------------------------------------------- skeleton ----

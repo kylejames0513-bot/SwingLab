@@ -6,25 +6,34 @@ silently, so a page that depends on it renders in a system fallback without
 telling anyone. The faces are therefore fetched once, here, and committed as
 assets.
 
-Two faces, three voices:
+Three faces, three voices:
 
-    Archivo  wght@400..800           interface, variable      34,928 B
-    Archivo  wdth 125 / wght 800     display, static          14,536 B
-    DM Mono  400, 500                every measured value     29,808 B
+    Barlow            400, 500       interface, static        44,204 B
+    Barlow Condensed  600            display, static          22,308 B
+    DM Mono           400, 500       every measured value     29,808 B
 
-Archivo's variable font carries a width axis the previous build discarded, and
-the obvious move — ship the dual-axis file and drive width from CSS — is the
-wrong one. `wdth,wght@100..125,400..800` costs **90,104** bytes for the latin
-subset, against 34,928 for the weight-only file. A separate static instance
-costs 14,536, because `wdth 125` is a *named* instance in Archivo's STAT table
-and Google therefore serves a pre-built static for it. Points that are not
-named instances do not get that treatment: `wdth 118` falls back to a dynamic
-build at 37,420, and `wdth 118 / wght 600..800` at 90,104 — the whole variable
-font again.
+**Barlow has no variable font.** Google serves it at v13 as a static family, and
+the css2 endpoint rejects a range outright — `Barlow:wght@400..700` returns an
+HTML error page, not a stylesheet. So every weight is a separate 22 KB file and
+the weight palette is a budget rather than a free axis.
 
-So: two files, 49,464 bytes total, against 90,104 for the single dual-axis
-file. The display voice is also *better* at 125 than at the 118 first
-proposed, because 125 is where the designer drew Expanded.
+That is why the interface collapsed from seven weights to two. Archivo's
+variable file made 400/500/600/650/700/750/800 cost the same as one, and 157
+declarations duly accumulated across the two surfaces. Under Industry the
+display voice is a different *family* (Barlow Condensed), not a heavier grade of
+the body face, so the interface only ever needs regular and medium:
+
+    600 · Barlow Condensed   every heading and display number
+    500 · Barlow             interface emphasis, buttons, labels
+    400 · Barlow             body copy
+
+Weights this build does not ship are synthesised by the browser, which is what
+`tests/test_storefront_design_system.py` polices.
+
+The cost is 66,512 bytes against Archivo's 49,464 — 17 KB more for two extra
+files, paid because Condensed is a real family rather than an instance of the
+body face. Three weights of one static family (66 KB) would have been the
+alternative and buys nothing the condensed face does not do better.
 
 Google's CDN is the source rather than the raw `ofl/` TTF because its
 production build is dramatically better optimised — a locally subset TTF of
@@ -74,14 +83,19 @@ LATIN = (
 
 FACES = [
     (
-        "archivo-latin-var.woff2",
-        "https://fonts.googleapis.com/css2?family=Archivo:wght@400..800&display=swap",
-        None,
+        "barlow-latin-400.woff2",
+        "https://fonts.googleapis.com/css2?family=Barlow:wght@400&display=swap",
+        "400",
     ),
     (
-        "archivo-expanded-latin-800.woff2",
-        "https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@125,800&display=swap",
-        None,
+        "barlow-latin-500.woff2",
+        "https://fonts.googleapis.com/css2?family=Barlow:wght@500&display=swap",
+        "500",
+    ),
+    (
+        "barlow-condensed-latin-600.woff2",
+        "https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600&display=swap",
+        "600",
     ),
     (
         "dm-mono-latin-400.woff2",
@@ -127,19 +141,45 @@ def _latin_url(css: str, weight: str | None) -> str:
     raise SystemExit(f"no latin woff2 block found (weight={weight})")
 
 
+# Faces this build replaced. A theme zip ships every file in assets/, so a
+# leftover font is dead weight in every release and an invitation for a later
+# @font-face to resurrect it. Deleting them here rather than by hand keeps one
+# source of truth for what the surfaces are allowed to serve.
+RETIRED = (
+    "archivo-latin-var.woff2",
+    "archivo-expanded-latin-800.woff2",
+    "plex-mono-latin-400.woff2",
+    "plex-mono-latin-500.woff2",
+)
+
+
 def main() -> int:
     for destination in DESTS:
         destination.mkdir(parents=True, exist_ok=True)
 
+    total = 0
     for name, css_url, weight in FACES:
         css = _get(css_url).decode("utf-8")
         payload = _get(_latin_url(css, weight))
         digest = hashlib.sha256(payload).hexdigest()[:12]
         for destination in DESTS:
             (destination / name).write_bytes(payload)
+        total += len(payload)
         print(f"{name:32s} {len(payload):7,d} B  sha256:{digest}")
 
-    print(f"\nwrote {len(FACES)} faces into {len(DESTS)} surfaces")
+    dropped = 0
+    for name in RETIRED:
+        for destination in DESTS:
+            stale = destination / name
+            if stale.exists():
+                stale.unlink()
+                dropped += 1
+                print(f"{name:32s} retired")
+
+    print(
+        f"\nwrote {len(FACES)} faces ({total:,d} B) into {len(DESTS)} surfaces"
+        f"; removed {dropped} retired file(s)"
+    )
     return 0
 
 

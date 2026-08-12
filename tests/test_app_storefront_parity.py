@@ -49,28 +49,46 @@ def test_shared_brand_tokens_match_the_storefront_source_of_truth():
     # These app values deliberately carry MORE headroom than the storefront's
     # display colors so small text and control edges retain AA contrast.
     #
-    # They used to be darker, for exactly the same reason: the field was light
-    # then. The rationale survived the inversion to a dark field and the
-    # direction flipped with it, which is the useful thing for this test to
-    # record — a future pass that re-derives these from a light-surface
-    # assumption will fail here rather than silently halve the contrast.
-    assert _token(LAYOUT, "sl-ink-muted") == "#8b968e"
-    assert _token(LAYOUT, "sl-orange-text") == "#f5b833"
-    assert _token(LAYOUT, "sl-control-border") == "#6b7a71"
+    # The DIRECTION of "more headroom" has now flipped twice — darker on the
+    # original paper ground, lighter on the 2026-08-10 dark field, darker again
+    # on Industry's paper — while the reason never changed: the app sets small
+    # interface text where the storefront sets display prose. That invariance
+    # is the useful thing for this test to record. A future pass that
+    # re-derives these from the wrong ground fails here rather than silently
+    # halving the contrast.
+    assert _token(LAYOUT, "sl-ink-muted") == "#626265"
+    assert _token(LAYOUT, "sl-orange-text") == "#375169"
+    assert _token(LAYOUT, "sl-control-border") == "#6e6e71"
 
     # ...and the storefront's own value is the display-copy counterpart, not a
-    # drifted duplicate. Both clear AA on both surface backgrounds (6.33:1 and
-    # 5.04:1 on --sl-bg); the app's is lighter because it sets small interface
-    # text where the storefront sets prose. Pinning both ends stops a future
+    # drifted duplicate. Both clear AA on the paper ground (5.43:1 and 4.82:1
+    # on --sl-bg); the app's is darker because it sets small interface text
+    # where the storefront sets prose. Pinning both ends stops a future
     # "unify the tokens" pass from quietly trading contrast for symmetry.
-    assert _token(STOREFRONT, "sl-ink-muted") == "#78857d"
+    assert _token(STOREFRONT, "sl-ink-muted") == "#6a6a6d"
 
-    # --sl-border is 1.33:1 on the field and is DECORATIVE ONLY. The control
+    # --sl-border is 1.37:1 on paper and is DECORATIVE ONLY. The control
     # border is the one that has to clear WCAG 1.4.11's 3:1 for non-text
     # contrast, on both surfaces. Two tokens, two jobs: collapsing them into
     # one is how interactive edges quietly stop being visible, so both ends
     # are pinned against a well-meaning simplification.
-    assert _token(STOREFRONT, "sl-control-border") == "#5c6b62"
+    assert _token(STOREFRONT, "sl-control-border") == "#7a7a7d"
+
+    # THE TWO SIGNALS, pinned at both ends. Steel-deep marks a value the engine
+    # measured; steel-lit marks the live readout. Each is legible on exactly
+    # one ground — the signal is 5.78 on paper and 3.00 on the field, the trace
+    # 9.76 on the field and 1.78 on paper — so the palette confines each to its
+    # own surface by contrast alone. A pass that "harmonises" them onto a
+    # single mid-steel would break that property silently.
+    for source in (LAYOUT, STOREFRONT):
+        assert _token(source, "sl-accent") == "#416180"
+        assert _token(source, "sl-trace") == "#94bce3"
+        assert _token(source, "sl-steel") == "#5980a6"
+        # The structural accent is a THIRD colour on purpose: chrome, kickers
+        # and active nav have somewhere to go that is not a signal. Collapsing
+        # it into --sl-accent is precisely how amber stopped meaning "measured"
+        # three times before.
+        assert _token(source, "sl-steel") != _token(source, "sl-accent")
     assert _token(STOREFRONT, "sl-border") == _token(LAYOUT, "sl-border")
     assert _token(STOREFRONT, "sl-control-border") != _token(STOREFRONT, "sl-border")
 
@@ -112,30 +130,55 @@ def test_tokens_that_differ_only_in_name_still_carry_the_same_value():
 
 
 def test_no_surface_asks_for_a_weight_the_brand_face_does_not_load():
-    """Archivo ships 400-800. Asking for 900 gets a synthetic bold.
+    """Barlow ships 400 and 500 here. Anything else gets a synthetic bold.
 
-    Eight declarations across both surfaces asked for 900 — the header
-    lockups, the footer wordmark, the shop and comparison headings, the 404
-    and the report brand. A weight that is not loaded is either clamped or
-    faux-bolded by the browser, and faux-bold on a wordmark is the difference
-    between a designed mark and a smeared one.
+    Under Archivo this test policed a single value, 900, because the variable
+    file covered 400-800 and only 900 fell off the end. Barlow has NO variable
+    font — Google serves it static at v13 — so each weight is its own 22 KB
+    file and the covered set is a deliberate budget rather than a range. That
+    makes 600/700/800 exactly as synthetic as 900 was, and there were 152 of
+    them across the two surfaces when the palette was free.
+
+    A weight that is not loaded is faux-bolded by the browser, and faux-bold on
+    a wordmark is the difference between a designed mark and a smeared one. The
+    fix is never a heavier number: display type is a separate FAMILY here, so a
+    rule that wants more weight reaches for --sl-font-display.
     """
-    # Both surfaces self-host the same variable face (one file, 400-800).
-    theme_layout = (ROOT / "storefront-theme" / "layout" / "theme.liquid").read_text(
-        encoding="utf-8"
-    )
-    for source in (theme_layout, LAYOUT):
-        assert "font-weight: 400 800" in source
-        assert "archivo-latin-var.woff2" in source
+    # password.liquid declares its own faces — it is a separate layout that
+    # never loads theme.liquid — so it is checked here too. It was missed by
+    # the previous rewrite and would have served two 404s behind the password
+    # wall, which is the one page a merchant previews before launch.
+    layouts = ROOT / "storefront-theme" / "layout"
+    theme_layout = (layouts / "theme.liquid").read_text(encoding="utf-8")
+    password_layout = (layouts / "password.liquid").read_text(encoding="utf-8")
+    for source in (theme_layout, password_layout, LAYOUT):
+        # Three faces, declared at the weights that actually ship.
+        assert "barlow-latin-400.woff2" in source
+        assert "barlow-latin-500.woff2" in source
+        assert "barlow-condensed-latin-600.woff2" in source
+        # No REFERENCE to a retired face survives. Prose that explains why the
+        # type stack changed may still name Archivo — the failure mode this
+        # guards is a src/preload pointing at a file make_fonts.py deletes.
+        assert not re.search(r"archivo[a-z0-9-]*\.woff2", source, re.I), source[:40]
+        assert not re.search(r'font-family:\s*"Archivo', source)
         assert "fonts.googleapis.com" not in source
         assert "fonts.gstatic.com" not in source
 
+    loadable = {"400", "500", "600"}
     styled = list((ROOT / "storefront-theme" / "sections").glob("*.liquid"))
+    styled += list((ROOT / "storefront-theme" / "snippets").glob("*.liquid"))
     styled += [ROOT / "storefront-theme" / "assets" / "base.css"]
     styled += sorted(TEMPLATES.glob("*.html.j2"))
+    offenders = []
     for path in styled:
         source = path.read_text(encoding="utf-8")
-        assert not re.search(r"font-weight:\s*900\b", source), path.name
+        for match in re.finditer(r"font-weight:\s*(\d{3})\b", source):
+            if match.group(1) not in loadable:
+                offenders.append(f"{path.name}: {match.group(0)}")
+    assert offenders == [], (
+        "weights no shipped face carries — 600 is the display FACE, not a "
+        "heavier body weight:\n" + "\n".join(offenders)
+    )
 
 
 def test_shared_photography_ships_the_same_bytes_to_both_surfaces():
@@ -170,34 +213,31 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
         encoding="utf-8"
     )
 
-    # Archivo is the wordmark's own typeface, so headings and the shipped
-    # lockup are cut from one shape. The guided report already lists it
-    # first and depends on the shell having loaded it.
+    # Barlow Condensed over Barlow is Industry's pairing, and both surfaces
+    # declare it identically. The guided report asks for Barlow by name and
+    # depends on the shell having loaded it.
     #
-    # Display is a SEPARATE family name rather than a font-stretch on the
-    # interface face, because it is a separate file: wdth 125 is a named
-    # instance in Archivo's STAT table and ships pre-built at 14,536 bytes,
-    # where the dual-axis variable font is 90,104. Asserting the family name
-    # is what stops a later "simplify the stack" pass from collapsing the two
-    # back into one declaration and quietly pulling in the larger file.
-    assert 'font-family: "Archivo";' in theme  # self-hosted @font-face
-    assert 'font-family: "Archivo Expanded";' in theme
+    # Display is a SEPARATE family, not a font-stretch or a heavier weight on
+    # the interface face. That is not a stylistic preference: Barlow ships no
+    # variable font, so a condensed display voice can ONLY come from the
+    # condensed family. Asserting the family name stops a later "simplify the
+    # stack" pass from collapsing the two into one declaration and silently
+    # replacing the display voice with a synthetic bold.
+    assert 'font-family: "Barlow";' in theme  # self-hosted @font-face
+    assert 'font-family: "Barlow Condensed";' in theme
     assert 'font-family: "DM Mono";' in theme
-    assert 'font-family: "Archivo";' in LAYOUT  # the app ships the same files
-    assert 'font-family: "Archivo Expanded";' in LAYOUT
+    assert 'font-family: "Barlow";' in LAYOUT  # the app ships the same files
+    assert 'font-family: "Barlow Condensed";' in LAYOUT
     assert 'font-family: "DM Mono";' in LAYOUT
-    assert '"Archivo"' in _token(STOREFRONT, "sl-font-sans")
-    assert '"Archivo Expanded"' in _token(STOREFRONT, "sl-font-display")
-    assert '"DM Mono"' in _token(STOREFRONT, "sl-font-mono")
-    assert '"Archivo"' in _token(LAYOUT, "sl-font-sans")
-    assert '"Archivo Expanded"' in _token(LAYOUT, "sl-font-display")
-    assert '"DM Mono"' in _token(LAYOUT, "sl-font-mono")
+    for source in (STOREFRONT, LAYOUT):
+        assert '"Barlow"' in _token(source, "sl-font-sans")
+        assert '"Barlow Condensed"' in _token(source, "sl-font-display")
+        assert '"DM Mono"' in _token(source, "sl-font-mono")
+        # The display stack falls back to plain Barlow before any system face,
+        # so a failed load of the condensed static degrades to the right
+        # typeface at the wrong width rather than to Helvetica.
+        assert '"Barlow Condensed", "Barlow"' in _token(source, "sl-font-display")
     assert "Sora" not in _token(LAYOUT, "sl-font-display")
-    # The display stack falls back to plain Archivo before any system face, so
-    # a failed load of the 14 KB static degrades to the right typeface at the
-    # wrong width rather than to Helvetica.
-    assert '"Archivo Expanded", "Archivo"' in _token(LAYOUT, "sl-font-display")
-    assert '"Archivo Expanded", "Archivo"' in _token(STOREFRONT, "sl-font-display")
     assert "--sl-font-display" in STOREFRONT
     # .sl-section-head is gone, and its absence is the point. It was ONE
     # centred eyebrow/h2/lede stack that all ten homepage bands rendered,
@@ -209,12 +249,13 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
 
     # store-assets/make_fonts.py writes every face into both surfaces in one
     # pass, so drift between them means somebody hand-placed a file. The
-    # guided report asks for Archivo and relies on the app shell having loaded
+    # guided report asks for Barlow and relies on the app shell having loaded
     # the same face the storefront did; two builds of "the same" font are two
     # different faces as far as a swap is concerned.
     faces = (
-        "archivo-latin-var.woff2",
-        "archivo-expanded-latin-800.woff2",
+        "barlow-latin-400.woff2",
+        "barlow-latin-500.woff2",
+        "barlow-condensed-latin-600.woff2",
         "dm-mono-latin-400.woff2",
         "dm-mono-latin-500.woff2",
     )
@@ -223,30 +264,57 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
         app_bytes = (ROOT / "swinglab" / "web" / "static" / face).read_bytes()
         assert theme_bytes == app_bytes, face
 
-    # The whole type system is a third of the 150 KB single-asset ceiling.
-    # Pinning the total is what keeps a future "just add a display weight"
-    # from tripling the preload without anyone noticing: the dual-axis variable
-    # file alone would be 90,104 bytes.
+    # The retired variable face is deleted, not orphaned in assets/. A theme
+    # zip ships every file in the directory, so a leftover font is dead weight
+    # in every release. store-assets/make_fonts.py removes them on each run.
+    for retired in ("archivo-latin-var.woff2", "archivo-expanded-latin-800.woff2"):
+        assert not (ROOT / "storefront-theme" / "assets" / retired).exists(), retired
+        assert not (ROOT / "swinglab" / "web" / "static" / retired).exists(), retired
+
+    # 96,320 bytes against a 100 KB ceiling, and that 3.7 KB of headroom is the
+    # point rather than an accident. Barlow ships no variable font, so a fourth
+    # weight is a whole extra 22 KB file — this gate is what makes "just add a
+    # semibold" a decision somebody has to argue for instead of a diff nobody
+    # notices. The answer is nearly always the display FACE, which is already
+    # loaded.
     total = sum(
         (ROOT / "storefront-theme" / "assets" / face).stat().st_size for face in faces
     )
     assert total < 100_000, total
 
 
-def test_app_shell_uses_homepage_premium_chrome_and_footer():
-    assert '<body class="sl-premium-chrome' in LAYOUT
-    assert '<header class="sl-header sl-header--premium"' in LAYOUT
+def test_app_shell_uses_one_paper_header_and_the_shared_footer():
+    """Industry has ONE header, on paper.
+
+    This used to assert the app adopted the storefront's dark "premium"
+    chrome, which the app applied unconditionally — so the premium variant
+    *was* the app header, and the base .sl-header rule underneath it was
+    unreachable, still carrying a pre-inversion light background nothing
+    rendered. 31 override rules and both dead class hooks are gone.
+
+    The premium_chrome flag itself survives on the STOREFRONT, where it
+    selects which navigation a page shows. That is product logic and is
+    covered by tests/test_storefront_header.py; it has nothing to do with the
+    colour it used to also carry.
+    """
+    assert '<header class="sl-header"' in LAYOUT
+    # Search the TEMPLATE, not its commentary. The surviving .sl-header rule
+    # carries a comment naming both retired hooks and explaining what was
+    # removed and why; a substring check over the raw file would forbid the
+    # template from recording its own history, which is the opposite of what
+    # this codebase wants from a comment.
+    code = re.sub(r"\{#.*?#\}", "", LAYOUT, flags=re.S)
+    assert "sl-header--premium" not in code
+    assert "sl-premium-chrome" not in code
     assert 'class="sl-app-banner' in LAYOUT
     assert 'class="sl-app-footer"' in LAYOUT
     assert 'class="sl-app-footer__inner"' in LAYOUT
-    assert ".sl-premium-chrome .sl-menu .sl-menu__panel" in LAYOUT
-    # These two used to be pinned as the literals `rgba(6, 17, 12, .96)` and
-    # `#f07a18`. Pinning a literal pins the wrong thing: it survives a palette
-    # change by forcing the OLD colour to stay somewhere in the file, which is
-    # precisely the fork the token sheet exists to prevent. 92 literals in this
-    # template were mapped onto tokens; these are two of them, and the
-    # assertion now checks that the menu panel and the signal are DERIVED.
-    assert "background: rgba(var(--sl-night-rgb), .96);" in LAYOUT
+    # The header is a translucent paper bar over the ground it sticks to, and
+    # it is DERIVED rather than pinned as a literal: pinning a literal pins
+    # the wrong thing, because it survives a palette change by forcing the old
+    # colour to stay somewhere in the file — precisely the fork the token
+    # sheet exists to prevent.
+    assert "background: rgba(var(--sl-cream-rgb), 0.94);" in LAYOUT
     # The signal colour must NOT be a background anywhere in the shell. This
     # assertion originally pinned `background: #f07a18` on the header CTA, so
     # re-pointing it at the token preserved the very thing the palette forbids:
@@ -263,7 +331,10 @@ def test_app_shell_uses_homepage_premium_chrome_and_footer():
     assert not re.search(r"#[0-9a-fA-F]{6}\b", below), re.findall(
         r"#[0-9a-fA-F]{6}\b", below
     )
-    assert ".sl-header--premium .sl-header__inner { min-height: 64px;" in LAYOUT
+    # The compact phone header, kept when the dark chrome it used to hang off
+    # was removed. The treatment was cosmetic; the 8px it takes off a 72px bar
+    # at the top of every phone screen is not.
+    assert ".sl-header, .sl-header__inner { min-height: 64px; }" in LAYOUT
     assert "@media (max-width: 560px)" in LAYOUT
     assert ".sl-app-banner__detail { display: none; }" in LAYOUT
 

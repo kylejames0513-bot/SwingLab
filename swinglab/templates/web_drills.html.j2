@@ -37,7 +37,7 @@
     color: var(--sl-green);
     font-family: var(--sl-font-display);
     font-size: var(--sl-heading-display);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 0.98;
     text-transform: uppercase;
@@ -71,7 +71,7 @@
     color: var(--sl-green);
     font-family: var(--sl-font-display);
     font-size: var(--sl-text-2xl);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 1.06;
     text-transform: uppercase;
@@ -123,7 +123,7 @@
     padding-top: var(--sl-space-4);
     color: var(--sl-ink);
     font-size: var(--sl-text-base);
-    font-weight: 700;
+    font-weight: 500;
   }
   .path__weeks > li strong::before {
     content: "";
@@ -157,7 +157,7 @@
     color: var(--sl-green);
     font-family: var(--sl-font-display);
     font-size: var(--sl-text-xl);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 1.1;
     text-transform: uppercase;
@@ -189,7 +189,7 @@
     color: var(--sl-green);
     font-family: var(--sl-font-sans);
     font-size: var(--sl-text-lg);
-    font-weight: 700;
+    font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 1.2;
   }
@@ -232,23 +232,33 @@
     margin: 0;
   }
   .drill-media figure { margin: 0; }
-  {# The diagram's strokes are the brand green the SERVER bakes into the SVG
-     (swinglab/diagrams.py reads brand.primary_color), so no token on this page
-     can re-tint them: #1a5c38 on the field is 1.3:1 and the stick figure
-     simply disappears. It gets the one light surface the system allows — a
-     paper plate, which is the same answer report.html.j2 reached for with its
-     white backing, and which reads as a spec drawing besides. #}
+  {# THE PLATE IS A FIELD TILE, and this is the one place brand.primary_color
+     forces the ground rather than the other way round.
+
+     The server bakes that colour into the SVG (swinglab/diagrams.py), so no
+     token on this page can re-tint the strokes — the plate has to suit the
+     colour. Under INSTRUMENT the colour was a dark green, 1.3:1 on a dark
+     field, so the plate was made paper. Industry inverts both: the tint is
+     field-side (it also draws overlays onto phone video, which is dark), and
+     on paper it would be 1.78:1 — the same disappearance, mirrored.
+
+     A field tile is also the right answer on its own terms. A drawn figure is
+     evidence, and every other piece of evidence in this system — clip
+     thumbnails, the hero trace, the report's theater — is the green ground
+     under the hatch. The drill library now matches them. #}
   .drill-media .drill-svg {
     display: block;
     width: 168px;
     height: auto;
-    background: var(--sl-paper);
+    background-color: var(--sl-field);
+    background-image: var(--sl-hatch);
     border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-sm);
   }
   {# Prop and count labels ship at the generator's grey, which is 2.2:1 on the
-     plate. Same defect report.html.j2 fixes by hand, in a token here. #}
-  .drill-svg text { fill: var(--sl-paper-soft); }
+     plate. Overridden here, and the value follows the plate: it is a field
+     tile now, so the label reverses with it. #}
+  .drill-svg text { fill: var(--sl-field-soft); }
   {# The plate caption is a LABEL, so it is mono and tracks with the plate. #}
   .drill-media figcaption {
     max-width: 168px;
@@ -299,7 +309,7 @@
   .drill-media details > summary::-webkit-details-marker { display: none; }
   .drill-media details > summary:hover {
     border-color: var(--sl-green-btn);
-    background: rgba(var(--sl-cream-rgb), .06);
+    background: rgba(var(--sl-wash-rgb), .06);
   }
   .drill-media details > summary::after {
     content: "";

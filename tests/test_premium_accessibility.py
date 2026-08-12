@@ -70,16 +70,23 @@ def _resolve(value: str) -> str:
     return value
 
 
-def test_mobile_menu_cta_ink_sits_on_the_background_it_was_written_for():
+def test_menu_cta_ink_sits_on_the_background_it_was_written_for():
     """This rule once set only the ink, leaving the base green background
     underneath: #06110c on #0f3d28 is 1.57:1, effectively unreadable. The
-    bottom tab bar's More button routes into this menu, so it is a primary
+    bottom tab bar's More button routes into this CTA, so it is a primary
     surface, not a corner.
 
     Both declarations still have to be PRESENT — that is the actual defect
     this guards, and it is unchanged by resolving tokens.
+
+    It used to be checked at `.sl-premium-chrome .sl-menu .sl-menu__cta`,
+    the dark-chrome override. Industry has one paper header and that whole
+    parallel treatment is gone, so the check moved to `.sl-header__cta` —
+    the rule that actually carries the pair now, and the one the mobile menu
+    shares (the element takes both classes). Deleting the test instead would
+    have retired a live guarantee along with a dead selector.
     """
-    selector = ".sl-premium-chrome .sl-menu .sl-menu__cta"
+    selector = ".sl-header__cta"
     ink = _resolve(_declaration(selector, "color"))
     background = _resolve(_declaration(selector, "background"))
 

@@ -21,31 +21,55 @@ HERE = Path(__file__).parent
 OUT = HERE / "out"
 OUT.mkdir(exist_ok=True)
 
-# palette (from the storefront theme's base.css — Turf Instrument)
-BG = "#eef2ef"
-CARD = "#f8fbf9"
-INK = "#101a14"
-INK_SOFT = "#445049"
-INK_MUTED = "#626a63"
-GREEN = "#0f3d28"
-GREEN_BTN = "#1a5c38"
-GREEN_INK = "#e6f2ea"
-ORANGE = "#e8720c"
-BORDER = "#d4ddd6"
-ARC_FAINT = "#d9e3dc"
+# Palette, by ROLE, from storefront-theme/assets/base.css — INDUSTRY.
+#
+# The names are the old ones and two of them now lie a little: GREEN is the
+# reversed FIELD rather than a forest, and ORANGE is the steel SIGNAL. They
+# survive because they are used for the role their name described — GREEN is
+# the dark ground under reversed art 40 times, ORANGE marks a measured value —
+# and renaming would touch every drawing in three scripts to buy nothing. This
+# is the same redefine-in-place move base.css makes, and for the same reason.
+BG = "#f2f2f3"        # paper
+CARD = "#ffffff"      # a raised plate on paper
+INK = "#1d1f20"
+INK_SOFT = "#5d5d60"
+INK_MUTED = "#626265"
+GREEN = "#070f0b"     # THE FIELD — the one reversed ground
+GREEN_BTN = "#2c455d" # the solid action
+GREEN_INK = "#f2f2f3" # type on the field
+ORANGE = "#416180"    # THE SIGNAL — a value the engine measured
+BORDER = "#d0d1d1"
+ARC_FAINT = "#d5d5d7"
 
 S = 2          # supersample factor for 1600px product cards
 SIZE = 1600
 
-# Fonts are not committed — see README.md for the two download commands.
+# Fonts are not committed — see README.md for the download commands.
 MONO = str(HERE / "DMMono-Regular.ttf")
-ARCHIVO = str(HERE / "Archivo-var.ttf")
+DISPLAY = str(HERE / "BarlowCondensed-SemiBold.ttf")
+BODY = str(HERE / "Barlow-Regular.ttf")
 
 
 def archivo(px: int, weight: int = 600, width: int = 100) -> ImageFont.FreeTypeFont:
-    f = ImageFont.truetype(ARCHIVO, px)
-    f.set_variation_by_axes([weight, width])
-    return f
+    """Display type. The name is kept for its 44 call sites; the face is not.
+
+    `weight` and `width` are accepted and IGNORED. They were axes of Archivo's
+    variable font, which Industry retired — Barlow ships no variable font, so a
+    weight is a file, and the display voice is a single cut of Barlow
+    Condensed. That is the same constraint the web faces run under, so the
+    generated art and the CSS display voice are now the identical cut rather
+    than two nearby points on an axis.
+
+    Dropping the arguments instead would mean editing every call site to say
+    the same thing it says now, and would lose the record of which sizes were
+    once drawn heavier.
+    """
+    return ImageFont.truetype(DISPLAY, px)
+
+
+def body(px: int) -> ImageFont.FreeTypeFont:
+    """Interface/body type — Barlow regular."""
+    return ImageFont.truetype(BODY, px)
 
 
 def mono(px: int) -> ImageFont.FreeTypeFont:

@@ -10,56 +10,127 @@
         content="{{ priority_rule_version }}">
   <title>{{ brand.name }} — Swing report</title>
   <style>
+    /* ROOT-RELATIVE font faces, not remote ones.
+
+       This document is self-contained and may be saved to disk, so it fetches
+       nothing from a third party — that rule is unchanged. But it is also
+       SERVED, at /sample-report/, where it is a public marketing page the
+       storefront links to, and it was rendering in a system grotesk while
+       every other surface rendered in Barlow.
+
+       A /static path costs nothing to the saved-file case: opened from disk
+       these 404 silently and the stacks below fall back exactly as they
+       already document. Served, they are the same byte-identical faces the
+       app shell loads. */
+    @font-face {
+      font-family: "Barlow";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/static/barlow-latin-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Barlow";
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+      src: url("/static/barlow-latin-500.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "Barlow Condensed";
+      font-style: normal;
+      font-weight: 600;
+      font-display: swap;
+      src: url("/static/barlow-condensed-latin-600.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "DM Mono";
+      font-style: normal;
+      font-weight: 400;
+      font-display: swap;
+      src: url("/static/dm-mono-latin-400.woff2") format("woff2");
+    }
+    @font-face {
+      font-family: "DM Mono";
+      font-style: normal;
+      font-weight: 500;
+      font-display: swap;
+      src: url("/static/dm-mono-latin-500.woff2") format("woff2");
+    }
     :root {
-      /* INSTRUMENT, on screen. This report keeps its own private token names
+      /* INDUSTRY, on screen. This report keeps its own private token names
          rather than the --sl-* ones because it must survive being saved to
          disk and opened with no stylesheet beside it — but the VALUES are the
-         app's, so the deliverable and the product it came from finally look
-         like one company. That was the whole defect: the sample report was
-         the last surface still rendering the retired cream/green palette.
+         app's, so the deliverable and the product it came from look like one
+         company.
 
-         Every value here is the light-surface original inverted, and the
-         @media print block near the bottom of this sheet puts them all back
-         to paper. Redefining the custom properties there rather than
-         restating rules means print follows automatically — a new rule
-         written against these names is printable by construction. */
+         The ground is PAPER again, which is where this palette started before
+         the 2026-08-10 inversion. That is not a round trip to where it began:
+         the type is Barlow, the geometry is square, and the signal is steel
+         rather than amber. What it does mean is that the @media print block
+         below has almost nothing left to do — screen and print finally agree
+         on the ground, and print only has to reach pure white and drop the
+         casts.
+
+         THE NAMES DID NOT CHANGE. --amber is steel now, exactly as --sl-green
+         is ink on the other two surfaces, because renaming would touch every
+         call site in a 1,900-line file to buy nothing — and because
+         tests/test_signal_colour_discipline.py polices these names. The rule
+         they enforce is unchanged: the signal marks a value the ENGINE
+         MEASURED and the trace marks the LIVE READOUT. */
       --brand-primary: {{ brand.primary_color }};
       --brand-accent: {{ brand.accent_color }};
-      --ink: #edefe9;
-      --muted: #8b968e;
-      --paper: #0d1712;
-      --canvas: #070f0b;
-      --accent-text: #f5b833;
-      --accent-bright: #f0a818;
-      --control-border: #6b7a71;
-      --focus: #ffc04d;
-      --line: #1e2c25;
-      --soft: #14201a;
-      --green: #edefe9;
-      --green-btn: #edefe9;
-      --green-ink: #070f0b;
-      --amber: #f0a818;
-      --amber-soft: #14201a;
-      --night: #040907;
-      --surface-dark: #040907;
-      --trace: #5fe3c0;
-      /* The top edge of a raised block. Every panel is a gradient from
-         this down to --paper; hardcoding the light originals here is
-         what left the priority card painting bone text onto a white
-         gradient after the inversion — unreadable, and invisible in the
-         source because the literals lived below the fold of the scan. */
-      --paper-lift: #142019;
-      --shadow-sm: inset 0 1px 0 rgba(237, 239, 233, .04);
-      --shadow-md: inset 0 1px 0 rgba(237, 239, 233, .05), 0 18px 40px -28px rgba(0, 0, 0, .9);
-      --shadow-theater: inset 0 1px 0 rgba(237, 239, 233, .06), 0 40px 84px -44px rgba(0, 0, 0, 1);
+      --ink: #1d1f20;
+      --muted: #626265;
+      --paper: #f2f2f3;
+      --canvas: #f2f2f3;
+      --accent-text: #375169;
+      --accent-bright: #416180;
+      --control-border: #6e6e71;
+      --focus: #416180;
+      --line: #d0d1d1;
+      --soft: #e9e9ea;
+      --green: #1d1f20;
+      --green-btn: #2c455d;
+      --green-ink: #f2f2f3;
+      --amber: #416180;
+      --amber-soft: #eef6ff;
+      --night: #e9e9ea;
+      /* THE FIELD — the one reversed ground, carrying the swing clip, the
+         evidence tiles and the priority panel. It used to be the whole page,
+         which is why --surface-dark was the only name for it. */
+      --surface-dark: #070f0b;
+      --field-ink: #f2f2f3;
+      --field-soft: #a8b3ac;
+      --field-muted: #8f9a93;
+      --field-rule: #243229;
+      --trace: #94bce3;
+      /* RGB triplets for alpha-derivations. Both were raw literals of the
+         RETIRED palette — 22 uses of amber and 11 of bone, scattered through
+         the sheet where the token names could not see them. That is how a
+         palette forks: the named colours move and the hand-written washes
+         made from them do not.
+
+         Every bone wash in this file is on a PAPER surface, so it tints
+         downward. If a field panel ever needs one it takes --cream-rgb. */
+      --amber-rgb: 65, 97, 128;
+      --wash-rgb: 29, 31, 32;
+      --cream-rgb: 242, 242, 243;
+      /* A panel is a line drawing on paper, so there is no lit top edge to
+         gradient down from — the hairline does that work now. Kept as a token
+         because ~40 rules gradient from it. */
+      --paper-lift: #f2f2f3;
+      --shadow-sm: none;
+      --shadow-md: 0 1px 2px rgba(29, 31, 32, .14);
+      --shadow-theater: 0 12px 32px rgba(29, 31, 32, .22);
       /* Offline self-contained reports cannot fetch remote faces, so every
-         stack degrades to something installed. Archivo Expanded leads the
-         display stack and falls back to Archivo at normal width — the right
-         typeface at the wrong width beats a system grotesk. Sora is gone; it
-         was retired from the product in the 2026-08 rebuild and only survived
-         here because nothing rendered this file. */
-      --font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
-      --font-sans: "Archivo", "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+         stack degrades to something installed. Barlow Condensed leads the
+         display stack and falls back to Barlow at normal width — the right
+         typeface at the wrong width beats a system grotesk. That fallback
+         matters more than it did: Barlow ships no variable font, so a missed
+         load cannot be covered by a nearby weight of the same file. */
+      --font-display: "Barlow Condensed", "Barlow", "Segoe UI Condensed", "Helvetica Neue", Helvetica, Arial, sans-serif;
+      --font-sans: "Barlow", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
       --font-mono: "DM Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
     }
     * { box-sizing: border-box; }
@@ -67,16 +138,13 @@
     body {
       margin: 0;
       color: var(--ink);
-      /* The field plus the 8px technical grid the rest of the product paints,
-         so the report reads as a readout rather than as a dark document. */
-      background:
-        linear-gradient(rgba(237, 239, 233, .022) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(237, 239, 233, .022) 1px, transparent 1px),
-        radial-gradient(1100px 560px at 8% -12%, rgba(95, 227, 192, .05), transparent 58%),
-        radial-gradient(980px 440px at 98% 2%, rgba(240, 168, 24, .04), transparent 54%),
-        var(--canvas);
-      background-size: 8px 8px, 8px 8px, auto, auto, auto;
-      background-attachment: fixed;
+      /* Plain paper. The 8px grid and the two signal-tinted glows are gone
+         with the dark ground they were painted for — and a report is the one
+         surface where that matters twice, because this is also what gets
+         printed. A page-wide wash of the signal colour was teaching a reader
+         that amber meant "background", on the document where amber had to
+         mean "measured". */
+      background: var(--canvas);
       font-family: var(--font-sans);
       line-height: 1.55;
       overflow-wrap: anywhere;
@@ -85,7 +153,7 @@
     a {
       color: var(--ink);
       text-decoration: underline;
-      text-decoration-color: rgba(237, 239, 233, .32);
+      text-decoration-color: rgba(var(--wash-rgb), .32);
       text-underline-offset: .2em;
     }
     a:hover { text-decoration-color: currentColor; }
@@ -110,7 +178,7 @@
       padding: .65rem 1rem;
       color: var(--paper);
       background: var(--ink);
-      font-weight: 700;
+      font-weight: 500;
       text-decoration: none;
       border-radius: .4rem;
     }
@@ -168,7 +236,7 @@
     .report-brand__name {
       font-family: var(--font-display);
       font-size: .82rem;
-      font-weight: 800;
+      font-weight: 600;
       letter-spacing: .18em;
       text-transform: uppercase;
     }
@@ -192,7 +260,7 @@
       gap: .4rem;
       padding: .35rem .7rem;
       color: var(--green);
-      background: rgba(237, 239, 233, .05);
+      background: rgba(var(--wash-rgb), .05);
       border: 1px solid transparent;
       border-radius: 999px;
       font-family: var(--font-mono);
@@ -236,7 +304,7 @@
     .context-list dd {
       margin: 0;
       font-size: .92rem;
-      font-weight: 650;
+      font-weight: 500;
     }
     .context-list dt::after { content: ""; }
     main { padding-bottom: 4.5rem; }
@@ -257,7 +325,7 @@
       overflow: hidden;
       border-top: .3rem solid var(--brand-accent, var(--accent-bright));
       background:
-        linear-gradient(135deg, rgba(237, 239, 233, .05), transparent 44%),
+        linear-gradient(135deg, rgba(var(--wash-rgb), .05), transparent 44%),
         linear-gradient(180deg, var(--paper-lift), var(--paper));
       animation: report-rise .65s ease both;
     }
@@ -304,12 +372,12 @@
       margin: 0;
       padding: .85rem 1rem .85rem 1.05rem;
       background:
-        linear-gradient(90deg, rgba(240, 168, 24, .12), var(--soft));
-      border: 1px solid rgba(240, 168, 24, .26);
+        linear-gradient(90deg, rgba(var(--amber-rgb), .12), var(--soft));
+      border: 1px solid rgba(var(--amber-rgb), .26);
       border-left: .34rem solid var(--accent-bright);
       border-radius: .7rem;
       font-size: 1.02rem;
-      box-shadow: inset 0 1px 0 rgba(237, 239, 233, .06);
+      box-shadow: inset 0 1px 0 rgba(var(--wash-rgb), .06);
       animation: cue-soft .7s ease both .12s;
     }
     .coach-cue strong {
@@ -338,15 +406,15 @@
       color: var(--green);
       text-align: center;
       text-decoration: none;
-      background: rgba(237, 239, 233, .04);
+      background: rgba(var(--wash-rgb), .04);
       border: 1px solid var(--line);
       border-radius: .7rem;
       font-size: .92rem;
-      font-weight: 700;
+      font-weight: 500;
       transition: border-color .2s ease, background .2s ease, transform .2s ease;
     }
     .journey-preview a:hover {
-      background: rgba(237, 239, 233, .07);
+      background: rgba(var(--wash-rgb), .07);
       border-color: var(--green-btn);
       transform: translateY(-1px);
     }
@@ -483,8 +551,8 @@
       font-size: 1.7rem;
     }
     .media-theater__card--locked a {
-      color: #ffc48f;
-      font-weight: 700;
+      color: var(--accent-text);
+      font-weight: 500;
     }
     .replay-locked-note {
       display: grid;
@@ -493,8 +561,8 @@
       margin-top: .35rem;
       padding: .95rem 1.05rem;
       background:
-        linear-gradient(90deg, rgba(240, 168, 24, .12), rgba(255, 255, 255, .6));
-      border: 1px solid rgba(240, 168, 24, .28);
+        linear-gradient(90deg, rgba(var(--amber-rgb), .12), var(--soft));
+      border: 1px solid rgba(var(--amber-rgb), .28);
       border-left: .34rem solid var(--accent-bright);
       border-radius: .8rem;
     }
@@ -510,7 +578,7 @@
       letter-spacing: .1em;
       text-transform: uppercase;
     }
-    .replay-locked-note a { font-weight: 700; }
+    .replay-locked-note a { font-weight: 500; }
     .phase-list { display: grid; gap: .65rem; margin-top: 1.2rem; }
     .phase-card {
       padding: .1rem 1rem;
@@ -526,9 +594,9 @@
       gap: 1rem;
       padding: .85rem 0;
       cursor: pointer;
-      font-weight: 750;
+      font-weight: 500;
     }
-    .status { white-space: nowrap; color: var(--muted); font-weight: 700; }
+    .status { white-space: nowrap; color: var(--muted); font-weight: 500; }
     details > summary { cursor: pointer; }
     .measurement-detail,
     .video-limitations,
@@ -542,7 +610,7 @@
     }
     .capture-correction {
       padding: .9rem 1.05rem;
-      background: linear-gradient(90deg, rgba(237, 239, 233, .06), var(--soft));
+      background: linear-gradient(90deg, rgba(var(--wash-rgb), .06), var(--soft));
       border-left: .28rem solid var(--green-btn);
       border-radius: .75rem;
     }
@@ -552,7 +620,7 @@
     .optional-card video,
     .media-theater__card video { width: min(100%, 42rem); }
     .optional-depth { margin-top: 1rem; }
-    .optional-card > summary { font-weight: 750; }
+    .optional-card > summary { font-weight: 500; }
     .table-scroll {
       max-width: 100%;
       overflow-x: auto;
@@ -604,7 +672,7 @@
       gap: .55rem .9rem;
       margin: 0;
       padding: 1rem;
-      background: rgba(237, 239, 233, .035);
+      background: rgba(var(--wash-rgb), .035);
       border: 1px solid var(--line);
       border-radius: .85rem;
     }
@@ -618,7 +686,7 @@
       text-transform: uppercase;
     }
     .practice-facts dd,
-    .refilm-confirmations dd { margin: 0; font-weight: 650; }
+    .refilm-confirmations dd { margin: 0; font-weight: 500; }
     .practice-facts dt:nth-of-type(3),
     .practice-facts dd:nth-of-type(3) {
       color: inherit;
@@ -638,14 +706,14 @@
       box-shadow: var(--shadow-sm);
     }
     .training-card--dosage {
-      border-color: rgba(240, 168, 24, .32);
+      border-color: rgba(var(--amber-rgb), .32);
       background:
-        linear-gradient(180deg, rgba(240, 168, 24, .08), var(--paper) 55%);
+        linear-gradient(180deg, rgba(var(--amber-rgb), .08), var(--paper) 55%);
     }
     .training-card--feel {
-      border-color: rgba(237, 239, 233, .18);
+      border-color: rgba(var(--wash-rgb), .18);
       background:
-        linear-gradient(180deg, rgba(237, 239, 233, .05), var(--paper) 55%);
+        linear-gradient(180deg, rgba(var(--wash-rgb), .05), var(--paper) 55%);
     }
     .training-card--pass {
       grid-column: 1 / -1;
@@ -665,14 +733,14 @@
     .training-card p {
       margin: 0;
       font-size: .98rem;
-      font-weight: 650;
+      font-weight: 500;
       line-height: 1.4;
     }
     .training-card a {
       color: var(--green);
-      font-weight: 700;
+      font-weight: 500;
       text-decoration: none;
-      border-bottom: 1px solid rgba(237, 239, 233, .22);
+      border-bottom: 1px solid rgba(var(--wash-rgb), .22);
     }
     .practice-dosage-callout {
       grid-column: 1 / -1;
@@ -681,7 +749,7 @@
       margin-top: .15rem;
       padding: .75rem .85rem;
       background: var(--paper);
-      border: 1px solid rgba(240, 168, 24, .28);
+      border: 1px solid rgba(var(--amber-rgb), .28);
       border-radius: .65rem;
     }
     .practice-dosage-callout span {
@@ -697,12 +765,12 @@
       margin: 0;
       padding: 1rem 1.05rem;
       background:
-        linear-gradient(90deg, rgba(240, 168, 24, .12), var(--soft));
-      border: 1px solid rgba(240, 168, 24, .28);
+        linear-gradient(90deg, rgba(var(--amber-rgb), .12), var(--soft));
+      border: 1px solid rgba(var(--amber-rgb), .28);
       border-left: .34rem solid var(--accent-bright);
       border-radius: .8rem;
       font-size: 1.06rem;
-      font-weight: 700;
+      font-weight: 600;
       animation: cue-soft .65s ease both;
     }
     .primary-action {
@@ -712,7 +780,7 @@
       color: var(--paper);
       background: var(--ink);
       border-radius: .65rem;
-      font-weight: 750;
+      font-weight: 500;
       text-decoration: none;
       transition: transform .2s ease, background .2s ease;
     }
@@ -795,27 +863,34 @@
          forgotten. Contrast on paper is the light system these values came
          from, unchanged.
 
-         Deliberately NOT reset: --accent-bright stays amber, because a
-         measured value should still be the thing your eye lands on in print. */
+         This block used to invert the WHOLE palette, because the screen was
+         near-black and paper is not. Industry's screen ground is already
+         paper, so almost all of that is gone and what is left is the handful
+         of things a printer genuinely needs:
+
+           - pure white, not #f2f2f3. Screen paper is a tone; printed paper is
+             the absence of ink, and tinting every sheet costs a cartridge.
+           - THE FIELD MUST NOT PRINT. The swing clip, evidence tiles and the
+             priority panel are a near-black ground on screen and would come
+             out as solid black rectangles — the single most expensive thing
+             this block prevents. Flipping --surface-dark also means
+             --field-ink has to flip with it, or the type inside those panels
+             prints white on white.
+           - the trace is a LIT steel, tuned for a dark ground; on white it is
+             1.78 and vanishes, so it deepens.
+
+         The signal needs no reset. It is steel now rather than amber, and
+         5.78 on white is the same reading it gives on screen. */
       :root {
-        --ink: #101a14;
-        --muted: #5a655e;
         --paper: #ffffff;
         --paper-lift: #ffffff;
         --canvas: #ffffff;
-        --accent-text: #944600;
-        --accent-bright: #944600;
-        --control-border: #6f7b72;
-        --line: #d4ddd6;
-        --soft: #f2efe6;
-        --green: #0f3d28;
-        --green-btn: #1a5c38;
-        --green-ink: #ffffff;
-        --amber: #944600;
-        --amber-soft: #f3ebe0;
-        --night: #101a14;
         --surface-dark: #ffffff;
-        --trace: #0f3d28;
+        --field-ink: #1d1f20;
+        --field-soft: #5d5d60;
+        --field-muted: #626265;
+        --field-rule: #d0d1d1;
+        --trace: #2c455d;
         --shadow-sm: none;
         --shadow-md: none;
         --shadow-theater: none;
@@ -880,26 +955,24 @@
     <div class="report-brand-row">
       <div class="report-brand">
         <span class="report-brand__mark" aria-hidden="true">
-          {# The Tour Caddie dial, emitted by store-assets/brand_mark.py at
-             ticks=12 and no cup — this renders at 20px, where the shipped
-             24-tick fan and the hole ellipse both turn to mud. Inlined
-             because the report is a self-contained offline document and may
-             not fetch an asset. #}
-          <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <line x1="18.01" y1="12.00" x2="19.56" y2="12.00" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="17.20" y1="15.01" x2="18.55" y2="15.78" stroke="#ffad62" stroke-width="2" stroke-linecap="round"/>
-            <line x1="15.01" y1="17.20" x2="15.78" y2="18.55" stroke="#ffad62" stroke-width="2" stroke-linecap="round"/>
-            <line x1="12.00" y1="18.01" x2="12.00" y2="19.56" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="8.69" y1="17.73" x2="8.22" y2="18.55" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="6.27" y1="15.31" x2="5.45" y2="15.78" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="5.99" y1="12.00" x2="4.44" y2="12.00" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="6.27" y1="8.69" x2="5.45" y2="8.22" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="8.69" y1="6.27" x2="8.22" y2="5.45" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="12.00" y1="5.99" x2="12.00" y2="4.44" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="15.31" y1="6.27" x2="15.78" y2="5.45" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="17.73" y1="8.69" x2="18.55" y2="8.22" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <line x1="12.00" y1="7.46" x2="12.00" y2="15.18" stroke="#e6f2ea" stroke-width="2" stroke-linecap="round"/>
-            <polygon points="13.00,7.46 15.18,8.42 13.00,9.73" fill="#e6f2ea"/>
+          {# The drawn iron, emitted by store-assets/brand_mark.py's mark_svg()
+             at 24px with no tile. Inlined because the report is a
+             self-contained offline document and may not fetch an asset — but
+             GENERATED and pasted, never hand-drawn: the previous version was a
+             hand-inlined copy of the retired Tour Caddie dial, which is exactly
+             the drift one-geometry-two-renderers exists to prevent, and it
+             outlived the mark it copied by a whole brand.
+
+             It renders at 20px, below the size rule's groove threshold, so
+             groove_count() emits the silhouette alone. Fills are var() so the
+             @media print inversion carries it without a second copy. #}
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="CaddieInsight">
+          <polygon points="12.94,2.43 16.34,2.43 16.14,8.04 13.14,8.04" fill="var(--ink)"/>
+          <polygon points="13.54,7.71 15.74,7.71 15.54,17.94 13.74,17.94" fill="var(--ink)"/>
+          <polygon points="13.54,15.96 15.74,15.96 15.94,17.94 12.64,17.94" fill="var(--ink)"/>
+          <polygon points="15.63,17.94 15.63,22.56 14.91,22.66 14.19,22.73 13.48,22.78 12.76,22.81 12.04,22.82 11.32,22.81 10.61,22.78 9.89,22.73 9.17,22.66 8.45,22.56 7.76,21.90 7.61,21.81 7.48,21.69 7.41,21.53 7.38,21.36 7.41,21.18 7.48,21.02 7.61,20.90 7.76,20.81 9.20,18.63" fill="var(--ink)"/>
+          <rect x="13.57" y="2.43" width="2.14" height="0.99" rx="0.49" fill="var(--ink)"/>
+          <line x1="8.54" y1="21.24" x2="14.14" y2="21.24" stroke="var(--amber)" stroke-width="1.00"/>
           </svg>
         </span>
         <span class="report-brand__text">

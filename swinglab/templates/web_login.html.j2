@@ -45,16 +45,18 @@
       linear-gradient(180deg, rgba(var(--sl-field-rgb), .58) 0%, rgba(var(--sl-field-rgb), .14) 42%, rgba(var(--sl-field-rgb), .82) 100%),
       linear-gradient(90deg, rgba(var(--sl-field-rgb), .93) 0%, rgba(var(--sl-field-rgb), .66) 30%, rgba(var(--sl-field-rgb), .08) 62%, rgba(var(--sl-field-rgb), .2) 100%);
   }
-  /* The 8px instrument grid the shell paints under the whole app, continued
-     across the photograph so the hero reads as one ruled surface rather than
-     as a picture with a panel dropped on it. Brightest at the readout edge. */
+  /* The field's vertical scan rules, continued across the photograph so the
+     hero reads as one ruled surface rather than as a picture with a panel
+     dropped on it. Brightest at the readout edge.
+
+     This was the 8px instrument grid the shell used to paint under the whole
+     app. The shell paints paper now and the grid is retired system-wide, so
+     continuing it here would have left one band ruled and nothing else —
+     the exact "picture with a panel dropped on it" the rule exists to avoid. */
   .landing-hero::after {
     z-index: 2;
-    opacity: .34;
-    background-image:
-      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px);
-    background-size: 8px 8px;
+    opacity: .5;
+    background-image: var(--sl-rules);
     {# A mask reads the alpha channel only, so the opaque stop just means
        "keep" — it is derived from a token rather than written as a literal
        black so this file holds no raw colour at all. #}
@@ -96,7 +98,7 @@
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    color: var(--sl-ink-soft);
+    color: var(--sl-field-soft);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -117,10 +119,10 @@
   .hero-copy h1 {
     max-width: 13ch;
     margin: 0;
-    color: var(--sl-ink);
+    color: var(--sl-field-ink);
     font-family: var(--sl-font-display);
     font-size: var(--sl-heading-display);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -.02em;
     line-height: .98;
     text-transform: uppercase;
@@ -129,7 +131,7 @@
   .hero-lead {
     max-width: 42ch;
     margin: clamp(18px, 2vw, 24px) 0 0;
-    color: var(--sl-ink-soft);
+    color: var(--sl-field-soft);
     font-size: var(--sl-text-lg);
     line-height: 1.55;
     text-wrap: pretty;
@@ -153,38 +155,38 @@
      on what is now a bone fill, so every button on this page restates its ink
      rather than inheriting an invisible one. */
   .hero-ctas a.button.landing-primary {
-    border: 1.5px solid var(--sl-green-btn);
-    background: var(--sl-green-btn);
-    color: var(--sl-green-ink);
+    border: 1.5px solid var(--sl-field-ink);
+    background: var(--sl-field-ink);
+    color: var(--sl-field);
     box-shadow: none;
   }
   /* Hover inverts the fill instead of reaching for a signal colour — both
      signal colours already mean something specific on this page. */
   .hero-ctas a.button.landing-primary:hover {
-    border-color: var(--sl-green-btn);
+    border-color: var(--sl-field-ink);
     background: transparent;
-    color: var(--sl-green-btn);
+    color: var(--sl-field-ink);
     box-shadow: none;
   }
   .landing-primary span { margin-left: 0; transition: transform .2s ease; }
   .hero-ctas a.button.landing-primary:hover span { transform: translateX(4px); }
   .hero-ctas .hero-secondary {
-    border: 1.5px solid var(--sl-control-border);
+    border: 1.5px solid var(--sl-field-control);
     background: transparent;
-    color: var(--sl-ink);
+    color: var(--sl-field-ink);
     box-shadow: none;
   }
   .hero-ctas .hero-secondary:hover {
-    border-color: var(--sl-green-btn);
+    border-color: var(--sl-field-ink);
     background: rgba(var(--sl-cream-rgb), .06);
-    color: var(--sl-ink);
+    color: var(--sl-field-ink);
   }
   .hero-signin-note {
     margin: var(--sl-space-4) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-sm);
   }
-  .hero-signin-note a { color: var(--sl-ink); font-weight: 700; }
+  .hero-signin-note a { color: var(--sl-field-ink); font-weight: 500; }
   .hero-proof-points {
     margin: clamp(22px, 2.5vw, 28px) 0 0;
     padding: 0;
@@ -196,7 +198,7 @@
   .hero-proof-points li {
     position: relative;
     padding-left: 14px;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -216,7 +218,7 @@
   .hero-fine {
     max-width: 46ch;
     margin: var(--sl-space-4) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-xs);
   }
 
@@ -230,7 +232,7 @@
     align-self: stretch;
     border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-lg);
-    background: rgba(var(--sl-night-rgb), .72);
+    background: rgba(var(--sl-field-rgb), .82);
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
     box-shadow: var(--sl-shadow-lg);
@@ -241,16 +243,16 @@
     justify-content: space-between;
     gap: var(--sl-space-3);
     padding-bottom: var(--sl-space-3);
-    border-bottom: 1px solid var(--sl-border);
-    color: var(--sl-ink-muted);
+    border-bottom: 1px solid var(--sl-field-rule);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
     letter-spacing: .14em;
     text-transform: uppercase;
   }
-  /* Cyan is the live read and nothing else — this is the one place on the
-     page entitled to it besides the trace itself. */
+  /* The trace is the live read and nothing else — this is the one place on
+     the page entitled to it besides the canvas itself. */
   .hero-signal__ready {
     display: inline-flex;
     align-items: center;
@@ -270,13 +272,14 @@
     margin-top: var(--sl-space-3);
     aspect-ratio: 5 / 4;
     overflow: hidden;
-    border: 1px solid var(--sl-border);
+    border: 1px solid var(--sl-field-rule);
     border-radius: var(--sl-radius-sm);
-    background:
-      linear-gradient(rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
-      var(--sl-night);
-    background-size: 16px 16px;
+    /* An evidence tile: the field under the 115deg hatch, the same object
+       the report's clip thumbnails are. It was a 16px grid over --sl-night,
+       which is the PAPER well now — so this rendered as a light grey slab in
+       the middle of the dark hero, the loudest wrong thing on the page. */
+    background-color: var(--sl-field);
+    background-image: var(--sl-hatch);
   }
   .hero-trace__line {
     position: absolute;
@@ -296,8 +299,9 @@
     background: rgba(var(--sl-cream-rgb), .5);
   }
   .hero-trace__dot--one { left: 22%; top: 57%; }
-  /* The middle mark is the one the engine called: amber. */
-  .hero-trace__dot--two { left: 52%; top: 30%; background: var(--sl-accent); }
+  /* The middle mark is the one the engine called — a MEASURED value, so on
+     the field it reads as paper. The signal is 3.00:1 on this ground. */
+  .hero-trace__dot--two { left: 52%; top: 30%; background: var(--sl-field-ink); }
   .hero-trace__dot--three { right: 14%; top: 50%; }
   /* 1px-gap bordered grid: the rules between cells are the panel background
      showing through, so the whole block is one ruled instrument face. */
@@ -306,17 +310,17 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1px;
-    background: var(--sl-border);
-    border: 1px solid var(--sl-border);
+    background: var(--sl-field-rule);
+    border: 1px solid var(--sl-field-rule);
   }
   .hero-signal dl > div {
     min-width: 0;
     padding: var(--sl-space-3);
-    background: var(--sl-bg-card);
+    background: var(--sl-field-lift);
   }
   .hero-signal dt {
     margin: 0 0 6px;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -334,11 +338,11 @@
   }
   .hero-signal__note {
     margin: var(--sl-space-3) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-xs);
     line-height: 1.5;
   }
-  .hero-signal__link { color: var(--sl-ink); font-weight: 700; }
+  .hero-signal__link { color: var(--sl-field-ink); font-weight: 500; }
 
   /* ------------------------------------------------------------ the body */
   .landing-body {
@@ -389,7 +393,7 @@
   .preview-figure { margin: 0; }
   .preview-shell {
     overflow: hidden;
-    background: var(--sl-bg-card);
+    background: var(--sl-field-lift);
     border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-lg);
     box-shadow: var(--sl-shadow-lg);
@@ -402,8 +406,8 @@
     justify-content: space-between;
     gap: var(--sl-space-4);
     background: var(--sl-night);
-    border-bottom: 1px solid var(--sl-border);
-    color: var(--sl-ink-muted);
+    border-bottom: 1px solid var(--sl-field-rule);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     letter-spacing: .12em;
@@ -431,7 +435,7 @@
     display: block;
     object-fit: contain;
     background: var(--sl-night);
-    border: 1px solid var(--sl-border);
+    border: 1px solid var(--sl-field-rule);
     border-radius: var(--sl-radius-sm);
   }
   .preview-read {
@@ -439,18 +443,18 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1px;
-    background: var(--sl-border);
-    border-top: 1px solid var(--sl-border);
+    background: var(--sl-field-rule);
+    border-top: 1px solid var(--sl-field-rule);
   }
   .preview-read div {
     min-width: 0;
     padding: var(--sl-space-4);
-    background: var(--sl-bg-card);
+    background: var(--sl-field-lift);
   }
   .preview-read span {
     display: block;
     margin-bottom: 6px;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -459,14 +463,14 @@
   }
   /* Bone, not amber: these name the report's structure. Nothing here was
      measured. */
-  .preview-read strong { color: var(--sl-ink); font-size: var(--sl-text-sm); }
+  .preview-read strong { color: var(--sl-field-ink); font-size: var(--sl-text-sm); }
   .preview-caption {
     margin: var(--sl-space-3) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-xs);
     line-height: 1.5;
   }
-  .preview-caption a { font-weight: 700; }
+  .preview-caption a { font-weight: 500; }
   .landing-section-head { max-width: 690px; }
   .flow-club-note {
     max-width: 690px;
@@ -487,10 +491,10 @@
   }
   .flow-library-link {
     margin: var(--sl-space-5) 0 0;
-    color: var(--sl-ink-soft);
+    color: var(--sl-field-soft);
     font-size: var(--sl-text-sm);
   }
-  .flow-library-link a { font-weight: 700; }
+  .flow-library-link a { font-weight: 500; }
   .proof-cycle-strip {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
@@ -887,7 +891,7 @@
        this breakpoint the background is a lit dusk sky rather than the flat
        field. One rung up the ink ramp, phone only. */
     .hero-proof-points li,
-    .hero-fine { color: var(--sl-ink-soft); }
+    .hero-fine { color: var(--sl-field-soft); }
     {# 32% cropped the golfer clean out of frame: he stands right of centre in
        the portrait companion, and the phone box is narrow enough that cover
        shows only about a third of the image width. On the -v2 crop 80% lands

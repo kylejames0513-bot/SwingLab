@@ -283,13 +283,16 @@ def test_storefront_cards_stay_balanced_across_responsive_layouts():
 
 def test_shared_store_cards_buttons_and_purchase_rail_use_one_geometry():
     base = source("assets/base.css")
-    # 2/4/8, down from 6/12/16/22. Instruments have tight corners, and a
-    # 22px radius reads as a consumer app card whatever colour it is —
-    # this single change does more perceptual work than the palette.
-    assert "--sl-radius-sm: 2px" in base
-    assert "--sl-radius-lg: 8px" in base
-    assert "--sl-radius-xl: 8px" in base
-    assert "--sl-radius-control: 4px" in base
+    # Square, down from 2/4/8 and 6/12/16/22 before that. Industry's objects
+    # are hairline-framed line drawings with registration marks; the last 2px
+    # of radius is the difference between a drawing and a UI card. Every one
+    # of these tokens still EXISTS, at 0 — that is what let ~90 call sites
+    # invert without an edit, and pinning them at 0 stops a later pass
+    # "restoring a little softness" to one of them in isolation.
+    assert "--sl-radius-sm: 0" in base
+    assert "--sl-radius-lg: 0" in base
+    assert "--sl-radius-xl: 0" in base
+    assert "--sl-radius-control: 0" in base
     assert ".sl-btn {\n  min-height: 46px" in base
     assert "border-radius: var(--sl-radius-control)" in base.split(".sl-btn {", 1)[1].split("}", 1)[0]
     assert "@media (min-width: 560px)" in base
@@ -413,14 +416,20 @@ def test_caddie_window_hero_is_responsive_fast_and_mobile_focused():
     for slab in ("min-height: 720px", "min-height: 980px", "min-height: 1020px"):
         assert slab not in mobile_hero, slab
 
-    # The primary action is BONE, not amber. Amber marks a value the engine
-    # measured; a call to action is not one. The three readout values ARE
-    # measurements, so they are the amber on this section.
+    # The primary action is PAPER on the field, never a signal. The signal
+    # marks a value the engine measured; a call to action is not one.
     primary = hero_source.split(".sl-hero__primary {", 1)[1].split("}", 1)[0]
-    assert "background: var(--sl-ink);" in primary
+    assert "background: var(--sl-field-ink);" in primary
     assert "var(--sl-accent)" not in primary and "var(--sl-orange)" not in primary
+    # The three readout values ARE measurements, so on paper they would carry
+    # the signal. This section is the FIELD, where the signal is 3.00:1, so
+    # the field's rule applies: a measured value is set in paper at mono
+    # weight and takes its loudness from the ground. Asserting the field ink
+    # here — rather than the signal — is what stops a later pass "restoring
+    # the signal" onto a ground it cannot be read on.
     values = hero_source.split(".sl-hero__readout-grid dd {", 1)[1].split("}", 1)[0]
-    assert "color: var(--sl-accent);" in values
+    assert "color: var(--sl-field-ink);" in values
+    assert "var(--sl-accent)" not in values
 
 
 def test_homepage_bordered_surfaces_preserve_reading_hierarchy():
@@ -517,18 +526,18 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     # loads. It went on naming IBM Plex Mono after the theme stopped
     # shipping it, which is the kind of stale copy only a merchant in the
     # editor ever sees.
-    assert "Archivo Expanded carries display" in typography["settings"][-1]["content"]
+    assert "Barlow Condensed carries display" in typography["settings"][-1]["content"]
     assert "DM Mono" in typography["settings"][-1]["content"]
     # The faces are self-hosted theme assets now — no third-party sheet.
     # tests/test_storefront_design_system.py holds the files + preloads;
     # these pins hold the declarations.
-    assert 'font-family: "Archivo";' in layout
-    assert 'font-family: "Archivo Expanded";' in layout
+    assert 'font-family: "Barlow";' in layout
+    assert 'font-family: "Barlow Condensed";' in layout
     assert 'font-family: "DM Mono";' in layout
     assert "fonts.googleapis.com" not in layout
     assert "fonts.gstatic.com" not in layout
-    assert '"Archivo"' in base_css
-    assert '"Archivo Expanded"' in base_css
+    assert '"Barlow"' in base_css
+    assert '"Barlow Condensed"' in base_css
     assert '"DM Mono"' in base_css
     assert "--sl-font-display" in base_css
     assert "font_face" not in layout

@@ -59,9 +59,7 @@
     z-index: 0;
     opacity: .55;
     background-image:
-      linear-gradient(rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .03) 1px, transparent 1px);
-    background-size: 8px 8px;
+
     -webkit-mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-night-rgb), 1) 62%);
     mask-image: linear-gradient(90deg, transparent, rgba(var(--sl-night-rgb), 1) 62%);
     pointer-events: none;
@@ -87,7 +85,7 @@
     color: var(--sl-ink);
     font-family: var(--sl-font-display);
     font-size: var(--sl-heading-display);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -.02em;
     line-height: .98;
     text-transform: uppercase;
@@ -166,7 +164,7 @@
     display: block;
     color: var(--sl-ink);
     font-size: var(--sl-text-lg);
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.25;
   }
   .upload-status p {
@@ -176,7 +174,7 @@
   }
   {# The shell already gives links bone plus an underline; overriding the
      colour here (it used to be a hard `white`) would only weaken it. #}
-  .upload-status a { font-weight: 700; }
+  .upload-status a { font-weight: 500; }
 
   .upload-layout {
     display: grid;
@@ -243,7 +241,7 @@
     font-family: var(--sl-font-mono);
     font-weight: 500;
   }
-  .usage-panel .error { font-weight: 700; }
+  .usage-panel .error { font-weight: 500; }
   {# The amber rule flags engine-derived content: trend_line is computed from
      the golfer's own sessions, not written by us. #}
   .trend-note {
@@ -304,7 +302,7 @@
     gap: var(--sl-space-3);
     color: var(--sl-ink);
     font-size: var(--sl-text-base);
-    font-weight: 700;
+    font-weight: 500;
   }
   {# A mono index in a tight box rather than a filled circle: these are
      positions in a sequence, so they should read like channel labels. #}
@@ -398,7 +396,7 @@
     cursor: pointer;
     transition: background-color .15s ease, box-shadow .15s ease;
   }
-  .radio-row label strong { color: var(--sl-ink); font-weight: 700; }
+  .radio-row label strong { color: var(--sl-ink); font-weight: 500; }
   .radio-row label:hover { background: var(--sl-orange-soft); }
   .radio-row input {
     width: 20px;
@@ -430,10 +428,7 @@
     box-sizing: border-box;
     border: 1.5px dashed var(--sl-control-border);
     border-radius: var(--sl-radius-md);
-    background:
-      linear-gradient(rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
-      var(--sl-night);
+    background: var(--sl-night);
     background-size: 16px 16px, 16px 16px, auto;
     color: var(--sl-ink-soft);
     font-size: var(--sl-text-sm);
@@ -527,7 +522,7 @@
     display: block;
     margin: var(--sl-space-5) 0 var(--sl-space-2);
     color: var(--sl-ink);
-    font-weight: 700;
+    font-weight: 500;
   }
 
   {# ------------------------------------------------------------- the action #}

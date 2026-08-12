@@ -61,25 +61,32 @@
 
    The guided report asks for Archivo first and relies on the shell having
    loaded it. Only the two faces above the fold are preloaded. #}
-<link rel="preload" href="/static/archivo-latin-var.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/static/archivo-expanded-latin-800.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/barlow-latin-400.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/static/barlow-condensed-latin-600.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/static/dm-mono-latin-500.woff2" as="font" type="font/woff2" crossorigin>
 <style>
   @font-face {
-    font-family: "Archivo";
+    font-family: "Barlow";
     font-style: normal;
-    font-weight: 400 800;
+    font-weight: 400;
     font-display: swap;
-    src: url("/static/archivo-latin-var.woff2") format("woff2");
+    src: url("/static/barlow-latin-400.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
   @font-face {
-    font-family: "Archivo Expanded";
+    font-family: "Barlow";
     font-style: normal;
-    font-weight: 800;
-    font-stretch: 125%;
+    font-weight: 500;
     font-display: swap;
-    src: url("/static/archivo-expanded-latin-800.woff2") format("woff2");
+    src: url("/static/barlow-latin-500.woff2") format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: "Barlow Condensed";
+    font-style: normal;
+    font-weight: 600;
+    font-display: swap;
+    src: url("/static/barlow-condensed-latin-600.woff2") format("woff2");
     unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
   }
   @font-face {
@@ -103,79 +110,96 @@
   :root {
     --primary: {{ brand.primary_color }};
     --accent: {{ brand.accent_color }};
-    {# The field is dark on both surfaces now. Every token below whose name is
-       shared with storefront-theme/assets/base.css is spelled EXACTLY as that
-       file spells it — the parity contract compares text, not numbers.
+    {# INDUSTRY, 2026-08-11: the ground is PAPER on both surfaces and the deep
+       green survives as the one reversed FIELD. Every token below whose name
+       is shared with storefront-theme/assets/base.css is spelled EXACTLY as
+       that file spells it — the parity contract compares text, not numbers.
 
-       The names did not change even though every value did: --sl-green is
-       referenced 131 times across the two surfaces and --sl-border 90, and
-       renaming would have touched ~1,400 call sites to buy nothing. The
-       tokens were already used for the role their name describes, so
-       redefining in place inverts the system at once. #}
-    --sl-bg: #070f0b;
-    --sl-bg-card: #0d1712;
-    --sl-surface-soft: #14201a;
-    --sl-surface-dark: #040907;
-    --sl-night: #040907;
-    --sl-ink: #edefe9;
-    {# Deliberately lighter than the storefront's #78857d, for the same reason
-       it used to be DARKER: this surface sets small interface text where the
+       The names still did not change, for the reason they did not change in
+       the 2026-08-10 inversion: --sl-green is referenced 131 times across the
+       two surfaces and --sl-border 90, and renaming would have touched ~1,400
+       call sites to buy nothing. The tokens were already used for the role
+       their name describes, so redefining in place inverts the system at
+       once. #}
+    --sl-bg: #f2f2f3;
+    --sl-bg-card: #f2f2f3;
+    --sl-surface-soft: #eef6ff;
+    --sl-surface-dark: #e9e9ea;
+    --sl-night: #e9e9ea;
+    --sl-ink: #1d1f20;
+    {# Deliberately DARKER than the storefront's #6a6a6d, for the same reason
+       it used to be lighter: this surface sets small interface text where the
        storefront sets display prose, so it needs the extra headroom. The
-       rationale survived the inversion; the direction flipped. 6.33 on the
-       field against the storefront's 5.04. #}
-    --sl-ink-soft: #a8b3ac;
-    --sl-ink-muted: #8b968e;
-    --sl-green: #edefe9;
-    --sl-green-btn: #edefe9;
-    --sl-green-ink: #070f0b;
-    --sl-orange: #f0a818;
-    --sl-orange-text: #f5b833;
-    --sl-orange-soft: #14201a;
-    --sl-cream: #edefe9;
-    --sl-accent: #f0a818;
-    --sl-accent-hover: #ffc04d;
-    --sl-focus-dark: #ffc04d;
-    --sl-arc: rgba(95, 227, 192, 0.28);
-    --sl-trace: #5fe3c0;
-    --sl-trace-dim: #3f9c86;
-    --sl-paper: #f2efe6;
-    --sl-paper-ink: #10160f;
-    --sl-paper-soft: #454f48;
-    --sl-paper-line: #d8d3c4;
+       rationale has now survived two inversions; only the direction flips.
+       5.43 on paper against the storefront's 4.82. #}
+    --sl-ink-soft: #5d5d60;
+    --sl-ink-muted: #626265;
+    --sl-green: #1d1f20;
+    --sl-green-btn: #2c455d;
+    --sl-green-ink: #f2f2f3;
+    --sl-orange: #416180;
+    {# The signal at app-text headroom: 7.38 against the storefront's 5.78. #}
+    --sl-orange-text: #375169;
+    --sl-orange-soft: #eef6ff;
+    --sl-cream: #f2f2f3;
+    --sl-accent: #416180;
+    --sl-accent-hover: #2c455d;
+    --sl-steel: #5980a6;
+    --sl-focus: #416180;
+    --sl-focus-dark: #94bce3;
+    --sl-arc: rgba(89, 128, 166, 0.28);
+    --sl-trace: #94bce3;
+    --sl-trace-dim: #5980a6;
+    --sl-field: #070f0b;
+    --sl-field-lift: #0b1712;
+    --sl-field-ink: #f2f2f3;
+    --sl-field-soft: #a8b3ac;
+    --sl-field-muted: #8f9a93;
+    --sl-field-rule: #243229;
+    --sl-field-control: #66756c;
+    --sl-band: #1d2d3d;
+    --sl-band-ink: #f2f2f3;
+    --sl-paper: #f2f2f3;
+    --sl-paper-ink: #1d1f20;
+    --sl-paper-soft: #5d5d60;
+    --sl-paper-line: #d0d1d1;
     --sl-brand-green: #0f3d28;
-    {# Error text. #b3261e was a light-surface red and lands at 2.97:1 on the
-     field — the inversion would have shipped unreadable error messages,
-     which is the one string a reader most needs to be able to read.
-     7.62:1. #}
-    --sl-danger: #ff7a6b;
-    {# Hover for a bone control — see base.css. Cyan is the live
-       readout and never interaction feedback. #}
-    --sl-ink-hi: #fbfcf9;
-    --sl-cream-rgb: 237, 239, 233;
-    --sl-night-rgb: 4, 9, 7;
-    --sl-accent-rgb: 240, 168, 24;
-    --sl-green-rgb: 237, 239, 233;
-    --sl-trace-rgb: 95, 227, 192;
+    {# Error text returns to the light-surface red it originally was. The
+       2026-08-10 comment here recorded that #b3261e lands at 2.97 on a dark
+       field and had to be replaced; on paper it is 5.84 and correct again. #}
+    --sl-danger: #b3261e;
+    {# Hover for an ink control — see base.css. It deepens on paper where it
+       lifted on the field. Neither signal is ever interaction feedback. #}
+    --sl-ink-hi: #0b0c0c;
+    {# Wash on paper, cream on field — pick by ground. See base.css. #}
+    --sl-wash-rgb: 29, 31, 32;
+    --sl-cream-rgb: 242, 242, 243;
+    --sl-night-rgb: 233, 233, 234;
+    --sl-accent-rgb: 65, 97, 128;
+    --sl-steel-rgb: 89, 128, 166;
+    --sl-green-rgb: 29, 31, 32;
+    --sl-trace-rgb: 148, 188, 227;
     --sl-field-rgb: 7, 15, 11;
-    --sl-premium-accent: var(--sl-focus-dark);
-    --sl-premium-gradient: linear-gradient(135deg, #040907 0%, #0d1712 62%, #14201a 100%);
-    --sl-border: #1e2c25;
-    --sl-border-strong: #2e4238;
-    {# 4.29 on the field. Brighter than the storefront's #5c6b62 (3.45) for
-       the same headroom reason — an app control edge is smaller than a
-       storefront one. Both clear WCAG 1.4.11's 3:1 for non-text contrast;
-       --sl-border at 1.33 does not, and is decorative only. #}
-    --sl-control-border: #6b7a71;
-    --sl-radius-sm: 2px;
-    --sl-radius-md: 4px;
-    --sl-radius-lg: 8px;
-    --sl-radius-xl: 8px;
-    --sl-radius-control: 4px;
-    {# Drop shadows are invisible on a near-black field. An instrument
-       separates surfaces with a lit top edge and a deeper well instead. #}
-    --sl-shadow-sm: inset 0 1px 0 rgba(237, 239, 233, .04);
-    --sl-shadow-md: inset 0 1px 0 rgba(237, 239, 233, .05), 0 18px 40px -28px rgba(0, 0, 0, .9);
-    --sl-shadow-lg: inset 0 1px 0 rgba(237, 239, 233, .06), 0 40px 84px -44px rgba(0, 0, 0, 1);
+    --sl-border: #d0d1d1;
+    --sl-border-strong: #b7b7ba;
+    {# 4.54 on paper. Darker than the storefront's #7a7a7d (3.82) for the same
+       headroom reason — an app control edge is smaller than a storefront one.
+       Both clear WCAG 1.4.11's 3:1 for non-text contrast; --sl-border at 1.37
+       does not, and is decorative only. #}
+    --sl-control-border: #6e6e71;
+    {# Blueprint objects are square — see base.css. #}
+    --sl-radius-sm: 0;
+    --sl-radius-md: 0;
+    --sl-radius-lg: 0;
+    --sl-radius-xl: 0;
+    --sl-radius-control: 0;
+    {# Elevation inverts with the ground: a soft ink cast is legible on paper
+       where the lit top edge did the work on the field. Shallow on purpose —
+       Industry's objects are line drawings, and a card that floats stops
+       reading as a drawing. #}
+    --sl-shadow-sm: 0 1px 2px rgba(29, 31, 32, .14);
+    --sl-shadow-md: 0 3px 10px rgba(29, 31, 32, .16);
+    --sl-shadow-lg: 0 12px 32px rgba(29, 31, 32, .22);
     --sl-content: 1280px;
     --sl-maxw: var(--sl-content);
     --sl-pad-x: clamp(24px, 5vw, 64px);
@@ -192,15 +216,21 @@
     {# The display rungs the storefront defines, spelled the same. The app
        used to stop before these and every big app heading was a hand-rolled
        clamp() — which is how two surfaces that share a typeface end up not
-       sharing a scale. Both came down when display moved to the EXPANDED
-       face: the same point size occupies far more line. #}
-    --sl-heading-display: clamp(34px, 4.1vw, 54px);
-    --sl-heading-support: clamp(27px, 3.2vw, 38px);
+       sharing a scale. They came DOWN when display moved to the expanded
+       face and go back UP now that it is condensed: the same point size
+       occupies far less line. #}
+    --sl-heading-display: clamp(40px, 5vw, 64px);
+    --sl-heading-support: clamp(30px, 3.8vw, 44px);
     --sl-eyebrow-size: 12px;
     --sl-eyebrow-track: 0.16em;
-    --sl-font-sans: "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
-    --sl-font-display: "Archivo Expanded", "Archivo", "Avenir Next", "Helvetica Neue", Helvetica, sans-serif;
+    --sl-font-sans: "Barlow", "Helvetica Neue", Helvetica, Arial, sans-serif;
+    --sl-font-display: "Barlow Condensed", "Barlow", "Helvetica Neue", Helvetica, sans-serif;
     --sl-font-mono: "DM Mono", ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+    {# The three weights that ship. Barlow has no variable font, so anything
+       else is synthesised — a rule that wants bolder takes the display FACE. #}
+    --sl-weight-body: 400;
+    --sl-weight-medium: 500;
+    --sl-weight-display: 600;
     {# Spelled exactly as storefront-theme/assets/base.css spells them —
        leading zeros included. The values were already numerically identical,
        but `.15vw` versus `0.15vw` is a textual difference, and a parity test
@@ -227,29 +257,23 @@
   body {
     margin: 0;
     min-height: 100vh;
-    {# The field, plus the 8px technical grid that runs under everything —
-       the same background the storefront paints. The grid is what makes the
-       surface read as a measuring instrument rather than as a dark theme. #}
-    background:
-      linear-gradient(rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
-      linear-gradient(90deg, rgba(var(--sl-cream-rgb), 0.022) 1px, transparent 1px),
-      radial-gradient(1100px 560px at 14% -10%, rgba(var(--sl-trace-rgb), 0.05), transparent 60%),
-      radial-gradient(900px 480px at 92% 2%, rgba(var(--sl-accent-rgb), 0.04), transparent 55%),
-      var(--sl-bg);
-    background-size: 8px 8px, 8px 8px, auto, auto, auto;
-    background-attachment: fixed;
+    {# Plain paper — the same ground the storefront paints. The 8px technical
+       grid is GONE: it existed to stop a near-black page reading as a dark
+       theme, and under Industry the texture belongs to the objects instead
+       (the 115deg hatch on .sl-field, the vertical rules on a hero). #}
+    background: var(--sl-bg);
     color: var(--sl-ink);
     font-family: var(--sl-font-sans);
     font-size: var(--sl-text-base);
-    font-weight: 400;
-    line-height: 1.6;
-    letter-spacing: -0.011em;
+    font-weight: var(--sl-weight-body);
+    line-height: 1.55;
+    letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
   h1, h2, h3 {
     font-family: var(--sl-font-display);
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 1.04;
     text-wrap: balance;
@@ -261,7 +285,7 @@
   a {
     color: var(--sl-green-btn);
     text-decoration: underline;
-    text-decoration-color: rgba(var(--sl-cream-rgb), .32);
+    text-decoration-color: rgba(var(--sl-wash-rgb), .32);
     text-underline-offset: 0.2em;
     text-decoration-thickness: 1px;
   }
@@ -294,14 +318,14 @@
     padding: 8px var(--sl-pad-x);
     display: flex;
     align-items: center;
-    background: var(--sl-night);
-    border-bottom: 1px solid rgba(var(--sl-cream-rgb), .1);
-    color: rgba(var(--sl-cream-rgb), .7);
+    background: var(--sl-band);
+    border-bottom: 0;
+    color: rgba(var(--sl-cream-rgb), .78);
     font-size: 12.5px;
   }
   .sl-app-banner--pro {
-    background: linear-gradient(90deg, var(--sl-night) 0%, var(--sl-bg-card) 50%, var(--sl-night) 100%);
-    border-bottom-color: rgba(var(--sl-trace-rgb), .24);
+    background: var(--sl-band);
+    box-shadow: inset 0 -2px 0 rgba(var(--sl-trace-rgb), .5);
   }
   .sl-app-banner__inner {
     width: 100%;
@@ -345,27 +369,30 @@
   .sl-app-banner a {
     flex: 0 0 auto;
     color: var(--sl-cream);
-    font-weight: 700;
+    font-weight: 500;
     text-underline-offset: 3px;
     white-space: nowrap;
   }
   .sl-app-banner a:hover { color: var(--sl-focus-dark); }
+  {# ONE HEADER, ON PAPER. There used to be a whole parallel dark treatment
+     under .sl-header--premium, and the app applied it unconditionally — so
+     the "premium" variant WAS the app header and this base rule was
+     unreachable, still carrying rgba(238,242,239,.92) from before the field
+     inversion. Mockups 1a and 1c draw one paper header with a hairline rule
+     under it, so the 31 override rules are gone and this is the only one
+     left. The premium_chrome flag survives on the storefront, where it still
+     selects which navigation a page shows — that is product logic and has
+     nothing to do with the colour it used to also carry. #}
   .sl-header {
     position: sticky;
     top: 0;
     z-index: 40;
     min-height: 72px;
     padding: 0 var(--sl-pad-x);
-    background: rgba(238, 242, 239, 0.92);
+    background: rgba(var(--sl-cream-rgb), 0.94);
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--sl-border);
-  }
-  .sl-header--premium {
-    min-height: 76px;
-    background: rgba(var(--sl-night-rgb), .96);
-    border-bottom-color: rgba(239, 241, 232, .12);
-    box-shadow: 0 18px 48px -32px rgba(0, 0, 0, .85);
+    border-bottom: 1px solid var(--sl-border-strong);
   }
   .sl-header__inner {
     width: 100%;
@@ -377,20 +404,17 @@
     align-items: center;
     gap: clamp(16px, 2.5vw, 28px);
   }
-  .sl-header--premium .sl-header__inner { min-height: 76px; }
   .sl-header__logo {
     display: flex;
     align-items: center;
     flex-shrink: 0;
     color: var(--sl-green);
     font-size: 22px;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
     text-decoration: none;
   }
   .sl-header__logo-img { display: block; width: auto; height: 38px; }
-  .sl-header--premium .sl-header__logo { color: var(--sl-cream); }
-  .sl-header--premium .sl-header__logo-img { filter: brightness(0) invert(1); opacity: .96; }
   .sl-header__desktop-nav {
     display: flex;
     align-items: center;
@@ -416,7 +440,7 @@
   .sl-header__link:hover,
   .sl-header__dropdown-trigger:hover,
   .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
-    background: var(--sl-bg-card);
+    background: var(--sl-night);
     color: var(--sl-green-btn);
   }
   {# The current page is marked with bone and an underline, not amber. "You
@@ -427,21 +451,9 @@
      separate the two hues. #}
   .sl-header__link.is-current,
   .sl-header__dropdown-trigger.is-current {
-    background: rgba(var(--sl-cream-rgb), .10);
+    background: var(--sl-night);
     color: var(--sl-ink);
-  }
-  .sl-header--premium .sl-header__link,
-  .sl-header--premium .sl-header__dropdown-trigger { color: rgba(var(--sl-cream-rgb), .78); }
-  .sl-header--premium .sl-header__link:hover,
-  .sl-header--premium .sl-header__dropdown-trigger:hover,
-  .sl-header--premium .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
-    background: rgba(var(--sl-cream-rgb), .08);
-    color: var(--sl-ink-hi);
-  }
-  .sl-header--premium .sl-header__link.is-current,
-  .sl-header--premium .sl-header__dropdown-trigger.is-current {
-    background: rgba(var(--sl-cream-rgb), .12);
-    color: var(--sl-ink);
+    box-shadow: inset 0 -2px 0 var(--sl-steel);
   }
   .sl-header__member {
     min-height: 40px;
@@ -452,27 +464,17 @@
     align-items: center;
     gap: 8px;
     flex: 0 1 auto;
-    border: 1px solid var(--sl-ink-soft);
+    border: 1px solid var(--sl-control-border);
     border-radius: var(--sl-radius-control);
-    background: var(--sl-ink);
+    background: transparent;
     color: var(--sl-green);
     font-size: 13px;
-    font-weight: 700;
+    font-weight: 500;
     text-decoration: none;
     white-space: nowrap;
     overflow: hidden;
   }
-  .sl-header__member:hover { border-color: var(--sl-green-btn); background: var(--sl-ink-soft); color: var(--sl-green); }
-  .sl-header--premium .sl-header__member {
-    border-color: rgba(var(--sl-trace-rgb), .42);
-    background: rgba(var(--sl-trace-rgb), .1);
-    color: var(--sl-trace);
-  }
-  .sl-header--premium .sl-header__member:hover {
-    border-color: var(--sl-ink-hi);
-    background: rgba(var(--sl-trace-rgb), .17);
-    color: #fff;
-  }
+  .sl-header__member:hover { border-color: var(--sl-ink); background: var(--sl-night); color: var(--sl-green); }
   .sl-header__member > span:last-child {
     min-width: 0;
     max-width: clamp(56px, 9vw, 104px);
@@ -485,12 +487,11 @@
     padding: 4px 7px;
     border-radius: var(--sl-radius-control);
     background: var(--sl-green);
-    color: #fff;
+    color: var(--sl-bg);
     font-family: var(--sl-font-mono);
     font-size: 10px;
     letter-spacing: .08em;
   }
-  .sl-header--premium .sl-header__member-badge { background: var(--sl-trace); color: var(--sl-night); }
   .sl-header__account > summary,
   .sl-header__account .sl-header__dropdown-trigger {
     max-width: 136px;
@@ -547,18 +548,6 @@
     background: var(--sl-orange-soft);
     color: var(--sl-green);
   }
-  .sl-header--premium .sl-header__dropdown-menu {
-    background: rgba(10, 28, 19, .99);
-    border-color: rgba(239, 241, 232, .14);
-    box-shadow: 0 24px 54px -22px rgba(0, 0, 0, .78);
-  }
-  .sl-header--premium .sl-header__dropdown-menu a,
-  .sl-header--premium .sl-header__logout { color: rgba(var(--sl-cream-rgb), .86); }
-  .sl-header--premium .sl-header__dropdown-menu a:hover,
-  .sl-header--premium .sl-header__logout:hover {
-    background: rgba(var(--sl-cream-rgb), .08);
-    color: var(--sl-ink-hi);
-  }
   .sl-header__actions {
     display: flex;
     align-items: center;
@@ -575,7 +564,7 @@
     border: 1.5px solid var(--sl-green);
     border-radius: var(--sl-radius-control);
     font-size: 14px;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1;
     text-decoration: none;
     white-space: nowrap;
@@ -588,23 +577,6 @@
      rule left on either surface: amber marks a value the ENGINE MEASURED,
      and the single most prominent amber object in the product was a button.
      Bone on a near-black field is also simply louder than amber was. #}
-  .sl-header--premium .sl-header__cta {
-    min-height: 44px;
-    border-color: var(--sl-ink);
-    background: var(--sl-ink);
-    color: var(--sl-green-ink);
-    box-shadow: none;
-  }
-  .sl-header--premium .sl-header__cta:hover {
-    border-color: var(--sl-accent-hover);
-    background: var(--sl-accent-hover);
-    color: var(--sl-night);
-  }
-  .sl-header--premium .sl-header__cart {
-    border-color: rgba(var(--sl-cream-rgb), .48);
-    color: var(--sl-cream);
-  }
-  .sl-header--premium .sl-header__cart:hover { border-color: var(--sl-accent-hover); color: var(--sl-focus-dark); }
   .sl-header__toggle {
     display: none;
     width: 44px;
@@ -622,11 +594,6 @@
     cursor: pointer;
   }
   .sl-header__toggle:hover { background: var(--sl-bg-card); color: var(--sl-green-btn); }
-  .sl-header--premium .sl-header__toggle {
-    border-color: rgba(var(--sl-cream-rgb), .5);
-    color: var(--sl-cream);
-  }
-  .sl-header--premium .sl-header__toggle:hover { background: rgba(var(--sl-cream-rgb), .08); color: #fff; }
   .sl-header__toggle span {
     display: block;
     width: 100%;
@@ -675,7 +642,7 @@
     margin: 0;
     color: var(--sl-green);
     font-size: 20px;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -0.02em;
   }
   .sl-menu__close {
@@ -737,7 +704,7 @@
     border-radius: 8px;
     color: var(--sl-ink);
     font-size: 17px;
-    font-weight: 650;
+    font-weight: 500;
     text-decoration: none;
   }
   .sl-menu__link:hover { color: var(--sl-green-btn); }
@@ -775,35 +742,10 @@
     margin-bottom: -2px;
     vertical-align: baseline;
   }
-  .sl-premium-chrome .sl-menu .sl-menu__ios-hint {
-    border-color: rgba(var(--sl-cream-rgb), .18);
-    background: rgba(var(--sl-cream-rgb), .06);
-    color: rgba(var(--sl-cream-rgb), .78);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__ios-hint strong { color: var(--sl-cream); }
   .sl-menu__link.is-current {
     padding-inline: 10px;
     background: var(--sl-orange-soft);
     color: var(--sl-green);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__panel {
-    background: var(--sl-bg-card);
-    border-left-color: rgba(var(--sl-cream-rgb), .14);
-    box-shadow: -28px 0 70px -32px rgba(0, 0, 0, .86);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__title,
-  .sl-premium-chrome .sl-menu .sl-menu__link { color: var(--sl-cream); }
-  .sl-premium-chrome .sl-menu .sl-menu__close {
-    background: rgba(var(--sl-cream-rgb), .06);
-    border-color: rgba(var(--sl-cream-rgb), .24);
-    color: var(--sl-cream);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__group { border-top-color: rgba(var(--sl-cream-rgb), .14); }
-  .sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: rgba(var(--sl-cream-rgb), .55); }
-  .sl-premium-chrome .sl-menu .sl-menu__link:hover { color: var(--sl-ink-hi); }
-  .sl-premium-chrome .sl-menu .sl-menu__link.is-current {
-    background: rgba(var(--sl-cream-rgb), .12);
-    color: var(--sl-ink);
   }
   /* The mobile menu CTA is field ink on bone — the same treatment as the
      header action, for the same reason: a call to action is not a measured
@@ -814,16 +756,6 @@
      effectively unreadable. It carries its own background now (16.75:1), and
      tests/test_premium_accessibility.py computes that ratio rather than
      trusting the declaration. */
-  .sl-premium-chrome .sl-menu .sl-menu__cta {
-    border-color: var(--sl-ink);
-    background: var(--sl-ink);
-    color: var(--sl-green-ink);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__cta:hover {
-    border-color: var(--sl-ink-hi);
-    background: var(--sl-ink-hi);
-    color: var(--sl-green-ink);
-  }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {
     background: var(--sl-bg-card);
@@ -861,7 +793,7 @@
     border: 1.5px solid var(--sl-green-btn);
     padding: 11px 22px;
     font: inherit;
-    font-weight: 700;
+    font-weight: 500;
     line-height: 1.2;
     border-radius: var(--sl-radius-control);
     cursor: pointer;
@@ -917,7 +849,7 @@
     color: var(--sl-ink-soft);
     font-size: .9rem;
   }
-  .sl-profile-reminder a { font-weight: 750; white-space: nowrap; }
+  .sl-profile-reminder a { font-weight: 500; white-space: nowrap; }
   .disclaimer { color: var(--sl-ink-muted); font-style: italic; font-size: 0.85rem; margin-top: 24px; }
   .sl-app-footer {
     margin-top: clamp(48px, 8vw, 96px);
@@ -938,7 +870,7 @@
     display: inline-flex;
     color: var(--sl-cream);
     font-size: 22px;
-    font-weight: 800;
+    font-weight: 600;
     letter-spacing: -.02em;
     text-decoration: none;
   }
@@ -963,7 +895,7 @@
     display: flex;
     justify-content: space-between;
     gap: 18px;
-    border-top: 1px solid rgba(var(--sl-cream-rgb), .12);
+    border-top: 1px solid rgba(var(--sl-wash-rgb), .12);
     color: var(--sl-ink-muted);
   }
   .sl-app-footer__bottom p { margin: 0; }
@@ -1018,7 +950,7 @@
     width: 26px;
     height: 3px;
     border-radius: 0 0 3px 3px;
-    background: var(--sl-premium-accent);
+    background: var(--sl-steel);
   }
   .sl-tabbar__item { position: relative; }
   .sl-tabbar__item:focus-visible { outline-offset: -4px; border-radius: 10px; }
@@ -1029,7 +961,7 @@
     min-width: 7px;
     height: 7px;
     border-radius: 999px;
-    background: var(--sl-premium-accent);
+    background: var(--sl-steel);
   }
 
   /* Install affordance. Chromium fires beforeinstallprompt and the script
@@ -1086,7 +1018,6 @@
   @media (max-width: 999px) {
     .sl-header { min-height: 64px; }
     .sl-header__inner,
-    .sl-header--premium .sl-header__inner { min-height: 64px; gap: 10px; }
     .sl-header__desktop-nav,
     .sl-header__account,
     .sl-header__app { display: none; }
@@ -1114,7 +1045,7 @@
          above it instead of fighting the system gesture. */
       padding-bottom: var(--sl-safe-bottom);
       background: rgba(var(--sl-night-rgb), .97);
-      border-top: 1px solid rgba(var(--sl-cream-rgb), .13);
+      border-top: 1px solid rgba(var(--sl-wash-rgb), .13);
       -webkit-backdrop-filter: saturate(150%) blur(12px);
       backdrop-filter: saturate(150%) blur(12px);
     }
@@ -1134,6 +1065,10 @@
     .sl-install { display: none !important; }
   }
   @media (max-width: 560px) {
+    {# The compact phone header. This lived on the dark-chrome selector and
+       was nearly lost with it — the treatment was cosmetic, the 8px it takes
+       back off a 72px bar at the top of every phone screen is not. #}
+    .sl-header, .sl-header__inner { min-height: 64px; }
     .sl-app-banner { padding-inline: 14px; }
     .sl-app-banner__inner {
       min-width: 0;
@@ -1175,7 +1110,7 @@
   {% block style %}{% endblock %}
 </style>
 </head>
-<body class="sl-premium-chrome{% if header_profile and header_profile.reduced_motion %} sl-reduced-motion{% endif %}">
+<body{% if header_profile and header_profile.reduced_motion %} class="sl-reduced-motion"{% endif %}>
 {% set member_name = header_profile.display_name if header_profile and header_profile.display_name else '' %}
 {% set member_chip_label = 'Game plan' %}
 {% if member_name %}
@@ -1201,7 +1136,7 @@
     {% endif %}
   </div>
 </aside>
-<header class="sl-header sl-header--premium" data-sl-header data-menu-id="sl-mobile-menu">
+<header class="sl-header" data-sl-header data-menu-id="sl-mobile-menu">
   <div class="sl-header__inner">
     <a class="sl-header__logo" href="{{ storefront_url or '/' }}" aria-label="{{ brand.name }} home">
       {% if brand.logo_url %}
