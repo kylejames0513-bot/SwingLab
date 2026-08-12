@@ -4,16 +4,24 @@ Final copy for every page on both surfaces. Where the mockups carry real copy
 it is kept verbatim and marked **[mockup]**. Where they hold nothing, copy is
 written new and marked **[new]**.
 
-> ### Before this ships, check these numbers
+> ### Corrections applied 2026-08-12
 >
-> They come straight from the mockups and would go live exactly as written:
-> **Pro $9.99/mo · Coach $19.99/mo · annual $69.99 (save 42%) · Founders Pass
-> $249, capped at 100 · `RANGE15` for 15% off gear · "37 of 100 remaining"**,
-> and three addresses — `support@`, `billing@`, `press@caddieinsight.com` with
-> hours `Mon–Fri, 09:00–17:00 ET`.
+> **The Founders count is 100 of 100, nothing claimed.** The mockups draw a
+> sold-through story — "37 OF 100 REMAINING", "63 CLAIMED" — which is fiction.
+> Every occurrence now reads **100 remaining / 0 claimed**, and the count is
+> built to stay accurate rather than be typed in. See §4.
 >
-> You asked me to carry on, so I have used them as drawn. This is the last
-> place they are easy to change.
+> **One address: `inquiry@caddieinsight.com`.** The mockups invent `support@`,
+> `billing@` and `press@`. The codebase has only ever used `inquiry@` — 33
+> uses, and it is what `scripts/refresh_store_readiness.py` checks for. All
+> returns and help go there.
+>
+> ### Still to check before publishing
+>
+> Prices go live exactly as drawn: **Pro $9.99/mo · Coach $19.99/mo · annual
+> $69.99 (save 42%) · Founders Pass $249 · `RANGE15` for 15% off gear**, and
+> support hours `Mon–Fri, 09:00–17:00 ET`. This is the last place they are
+> cheap to change.
 
 ---
 
@@ -85,7 +93,7 @@ capture / upload                    [4a]       /sample-report
 report" goes to `app.caddieinsight.com/sample-report`.
 
 **Announcement bar** — `OFFER · 15% OFF GEAR · CODE RANGE15`, and on the
-Founders variant `FOUNDERS PASS · 37 OF 100 REMAINING · NEVER RENEWS`.
+Founders variant `FOUNDERS PASS · 100 OF 100 REMAINING · NEVER RENEWS`.
 
 **Footer** — three numbered columns:
 
@@ -173,7 +181,7 @@ Figure: `SAMPLE REPORT` / `DEMONSTRATION DATA`, spec strip
 
 **Founders band** (drops above the plans grid)
 
-> **37 Founders Passes left**
+> **100 Founders Passes left**
 > One payment of $249, every Coach feature for good, never renews. When the
 > hundredth is claimed the band is removed.
 > `See the Founders Pass →`
@@ -193,7 +201,23 @@ good, first 100 members only. 14-day refund on unused memberships.*
 > `Claim a Founders Pass · $249`
 > `ONE PAYMENT · NEVER RENEWS`
 
-Scarcity grid: `63 CLAIMED` / `100 TOTAL` / `EACH CELL = 10 PASSES`.
+Scarcity grid: `0 CLAIMED` / `100 TOTAL` / `EACH CELL = 10 PASSES` — ten empty
+rows of ten.
+
+> **The count must stay true on its own.** A number typed into a theme setting
+> is wrong the moment the first pass sells, and a scarcity claim that is wrong
+> is worse than no claim. The section reads the remaining count from the
+> Founders Pass product's tracked inventory, so Shopify is the single source of
+> truth and also enforces the cap at checkout — it cannot oversell past 100.
+>
+> That needs a Founders Pass product with inventory tracking on and quantity
+> **100**. It does not exist yet, and creating it changes the live store, so I
+> have not. Say the word and I will add it; until then the section falls back
+> to a theme setting defaulting to 100 and the page renders correctly either
+> way.
+>
+> When the count reaches zero the band and the announcement variant remove
+> themselves rather than reading "0 remaining".
 
 **WHAT $249 BUYS, PERMANENTLY**
 
@@ -280,8 +304,13 @@ because the collection handle is being renamed to `/collections/gear`.*
 
 > `SUPPORT · TYPICAL FIRST REPLY UNDER 24 HOURS`
 > # Contact us
-> One inbox, three routes. Tell us which it is and the message lands with the
-> person who can answer it.
+> One inbox. Tell us what it is about and the message gets to the right place
+> faster.
+
+*The mockup reads "One inbox, three routes … lands with the person who can
+answer it." With a single address that overpromises, so the line is trimmed.
+The subject router stays — it tags the message, which is the part that
+actually helps.*
 
 **Send a message** — What is it about? *An order · My membership · A swing
 report · Something else*. Fields: Name, Email, Order number (*— on your
@@ -294,10 +323,8 @@ report.*). `Send message`
 **BEFORE YOU WRITE** — Most first messages are about filming setup, why a swing
 was not detected, or how Pro unlocks after checkout. `Read the FAQ`
 
-| Orders & gear | support@caddieinsight.com |
+| Everything — orders, gear, memberships, returns, press | **inquiry@caddieinsight.com** |
 | --- | --- |
-| Memberships | billing@caddieinsight.com |
-| Press | press@caddieinsight.com |
 | Hours | Mon–Fri, 09:00–17:00 ET |
 
 **Returns address** — Do not ship gear back without a return authorisation —
@@ -332,7 +359,7 @@ contact support within 14 days of delivery. Replacements ship at no cost.
 **04 · What is not refundable** — Used or damaged training aids, gift cards,
 and membership periods on which analyses have already been run.
 
-*Refund requests: support@caddieinsight.com — include the order number from
+*Refund requests: inquiry@caddieinsight.com — include the order number from
 your confirmation email. Related: cancellation policy, shipping & returns.*
 
 > **Legal copy, not placeholder.** This is the one section where "keep the

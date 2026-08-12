@@ -247,9 +247,12 @@ Flagging these now so they do not get built in by accident.
 2. **`6a` closes with:** *"Still drafts for judging the idea — a designer should
    redraw the winner as true vector artwork."* The mark we would ship is a
    CSS-drawn draft.
-3. **All data is demonstration data**, and the mockups say so repeatedly. But
-   prices, the `RANGE15` code, `37 OF 100 REMAINING`, and the three
-   `@caddieinsight.com` addresses would go live as written.
+3. **All data is demonstration data**, and the mockups say so repeatedly — but
+   some of it reads as fact. Two pieces were caught and corrected at the
+   Phase 3 checkpoint: `37 OF 100 REMAINING` / `63 CLAIMED` is a sold-through
+   story that never happened (**it is 100 of 100**), and the three
+   `@caddieinsight.com` addresses do not exist (**it is `inquiry@`**). Prices
+   and the `RANGE15` code ship as drawn.
 4. **`3b` is stamped `LAST UPDATED 04 AUG 2026`** and contains complete,
    specific policy text (14-day membership refunds, 30-day gear returns).
    That is legal copy, not placeholder copy.
@@ -271,8 +274,8 @@ reasoning behind each.
 | 4 | **Full build.** App screens `1a`–`1f` are built properly, not restyled. |
 | 5 | Missing pages designed by extending the Industry grammar. *(Phase 1 found templates already exist for all of them — see `SITE_AUDIT.md` §4.)* |
 | 6 | Mobile extended from `2c`'s idiom for the five desktop-only storefront pages. |
-| 7 | Prices ship as drawn. Surfaced again in `COPY_DECK.md` for a last look before anything is published. |
-| 8 | The three `@caddieinsight.com` addresses ship as drawn; verification moves to `LAUNCH_CHECKLIST.md`. |
+| 7 | Prices ship as drawn. **The Founders count does not** — corrected to **100 of 100, 0 claimed**, and built to read from tracked inventory rather than a typed-in number. |
+| 8 | **One address: `inquiry@caddieinsight.com`.** The mockups' `support@` / `billing@` / `press@` are inventions; `inquiry@` is what the codebase has always used (33 uses). All returns and help go there. |
 | 9 | `3d` is reference only. *(Confirmed: the store is on **Basic**, so checkout is not themeable regardless.)* |
 | 10 | Device frame recreated for the capture screen only. |
 | 11 | `2a`'s hero is primary; `4b`'s golf-feel treatment becomes section settings. |
