@@ -1,0 +1,138 @@
+{
+  "sections": {
+    "founders": {
+      "type": "founders",
+      "blocks": {
+        "b1": { "type": "benefit", "settings": { "text": "Unlimited analyses and matched re-films" } },
+        "b2": { "type": "benefit", "settings": { "text": "Annotated coach replay of every swing" } },
+        "b3": { "type": "benefit", "settings": { "text": "Swing Pattern — how your swing is built, named" } },
+        "b4": { "type": "benefit", "settings": { "text": "Progress dashboard, session over session" } },
+        "b5": { "type": "benefit", "settings": { "text": "Matched re-film verdicts — proof a fix held" } },
+        "b6": { "type": "benefit", "settings": { "text": "Every Coach feature we ship after this one" } },
+        "r1": {
+          "type": "reason",
+          "settings": {
+            "title": "Why it is capped",
+            "body": "A hundred lifetime members is a cost we can carry indefinitely. A thousand is not. The cap is the reason the promise is keepable."
+          }
+        },
+        "r2": {
+          "type": "reason",
+          "settings": {
+            "title": "What founders get first",
+            "body": "New coaching features land on founder accounts before general release, and the founders channel is where the roadmap gets argued about."
+          }
+        },
+        "r3": {
+          "type": "reason",
+          "settings": {
+            "title": "What it is not",
+            "body": "Not a hardware bundle and not a coaching subscription with a human. It is the software, in full, without a renewal date."
+          }
+        },
+        "t1": {
+          "type": "row",
+          "settings": {
+            "feature": "Swing analyses",
+            "free_value": "1 / month",
+            "pro_value": "Unlimited",
+            "coach_value": "Unlimited",
+            "founders_value": "Unlimited"
+          }
+        },
+        "t2": {
+          "type": "row",
+          "settings": {
+            "feature": "Matched re-films",
+            "free_value": "1 / month",
+            "pro_value": "Unlimited",
+            "coach_value": "Unlimited",
+            "founders_value": "Unlimited"
+          }
+        },
+        "t3": {
+          "type": "row",
+          "settings": {
+            "feature": "Annotated coach replay",
+            "free_value": "",
+            "pro_value": "",
+            "coach_value": "Included",
+            "founders_value": "Included"
+          }
+        },
+        "t4": {
+          "type": "row",
+          "settings": {
+            "feature": "Progress dashboard",
+            "free_value": "",
+            "pro_value": "",
+            "coach_value": "Included",
+            "founders_value": "Included"
+          }
+        },
+        "t5": {
+          "type": "row",
+          "settings": {
+            "feature": "Matched re-film verdict",
+            "free_value": "",
+            "pro_value": "",
+            "coach_value": "Included",
+            "founders_value": "Included"
+          }
+        },
+        "t6": {
+          "type": "row",
+          "settings": {
+            "feature": "Future Coach features",
+            "free_value": "",
+            "pro_value": "",
+            "coach_value": "While subscribed",
+            "founders_value": "For good"
+          }
+        },
+        "t7": {
+          "type": "row",
+          "settings": {
+            "feature": "Renews",
+            "free_value": "",
+            "pro_value": "Monthly",
+            "coach_value": "Monthly",
+            "founders_value": "Never"
+          }
+        }
+      },
+      "block_order": ["b1", "b2", "b3", "b4", "b5", "b6", "r1", "r2", "r3", "t1", "t2", "t3", "t4", "t5", "t6", "t7"],
+      "settings": {
+        "kicker": "Membership 03 · Founders",
+        "heading": "Pay once. Coach forever.",
+        "body": "One payment of $249 for every Coach feature, for good. Capped at the first hundred members — a lifetime promise we can only keep if we stop selling it.",
+        "founders_handle": "founders-pass",
+        "founders_total": 100,
+        "founders_remaining": 100,
+        "claim_label": "Claim a Founders Pass",
+        "terms": "One payment · never renews",
+        "pass_price": 249,
+        "coach_monthly": 19,
+        "soldout_note": "All 100 Founders Passes have been claimed. Coach is still available monthly.",
+        "soldout_label": "See the Coach plan",
+        "buys_heading": "What $249 buys, permanently",
+        "table_heading": "Founders against the rest",
+        "col_free": "Free",
+        "col_pro": "Pro $9.99/mo",
+        "col_coach": "Coach $19.99/mo",
+        "col_founders": "Founders $249 once"
+      }
+    },
+    "cta": {
+      "type": "cta-banner",
+      "settings": {
+        "stamp": "Founders",
+        "heading": "A hundred of these exist.",
+        "sub": "Pay once. Get every Coach feature. Keep them for good.",
+        "primary_label": "Claim a Founders Pass",
+        "fine_print": "One payment · never renews · 14-day refund on unused memberships"
+      }
+    }
+  },
+  "order": ["founders", "cta"]
+}
