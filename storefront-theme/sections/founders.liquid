@@ -303,9 +303,20 @@
   line-height: 1;
   text-transform: uppercase;
 }
+/* THE COLOUR IS NOT OPTIONAL AND NOT INHERITED. base.css gives h1/h2/h3 an ink
+   colour, and a global element rule beats inheriting --sl-field-ink from the
+   section — so a heading dropped on the field renders #1d1f20 on #070f0b at
+   about 1.2:1 and is, in practice, invisible. It shipped that way here and
+   read as a layout fault rather than a colour one, because the eye sees a void
+   between the kicker and the body and assumes the block is misaligned.
+
+   This is the failure CLAUDE.md records from the 2026-08-11 overhaul, where
+   every design-gate test passed while the hero rendered ink-on-near-black.
+   hero.liquid sets this explicitly for the same reason; so does this. */
 .sl-founders__title {
   margin: 0;
   max-width: 14ch;
+  color: var(--sl-field-ink);
   font-family: var(--sl-font-display);
   font-size: var(--sl-heading-display);
   font-weight: var(--sl-weight-display);
