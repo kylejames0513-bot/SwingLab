@@ -240,10 +240,19 @@ Rebuild it rather than editing it.
          `asset_url` instead, so the theme carries its own marks.
    - [ ] Paste the preview URL into iMessage or Slack — an image card
          appears rather than a bare grey link.
-   - [ ] `/products/swinglab-pro` still has its premium dark header. This is
-         keyed off the product handle in `layout/theme.liquid` and
-         `sections/header.liquid`; if the Pro page looks like an ordinary
-         product page, stop and say so.
+   - [ ] **The whole store is on PAPER.** This build is the INDUSTRY
+         overhaul: a light ground with ink type, Barlow Condensed headings,
+         square corners, and the deep green kept only for the announcement
+         band, the hero, evidence tiles and the footer. If anything still
+         looks like the near-black theme, the upload did not take.
+   - [ ] `/products/swinglab-pro` shows the MARKETING nav — Method, Sample
+         report, Plans, Gear — rather than the standard one. That is what
+         `premium_header` selects now; it no longer carries a dark colour
+         with it, so a Pro page that looks like an ordinary product page is
+         only wrong if the nav is also wrong.
+   - [ ] The header sits ABOVE the hero, not over it. The overlay and its
+         negative-margin pull-up are gone; a gap or an overlap above the
+         hero means a stale section is still in play.
    - [ ] `/products/swinglab-pro?view=membership` (the `?view=` parameter
          forces the new membership template without assigning it) shows the
          membership buy box: plan radios, benefits list, the Founders note
