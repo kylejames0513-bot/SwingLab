@@ -283,20 +283,38 @@ def test_app_and_storefront_share_tour_caddie_type_stack():
     assert total < 100_000, total
 
 
-def test_app_shell_uses_homepage_premium_chrome_and_footer():
-    assert '<body class="sl-premium-chrome' in LAYOUT
-    assert '<header class="sl-header sl-header--premium"' in LAYOUT
+def test_app_shell_uses_one_paper_header_and_the_shared_footer():
+    """Industry has ONE header, on paper.
+
+    This used to assert the app adopted the storefront's dark "premium"
+    chrome, which the app applied unconditionally — so the premium variant
+    *was* the app header, and the base .sl-header rule underneath it was
+    unreachable, still carrying a pre-inversion light background nothing
+    rendered. 31 override rules and both dead class hooks are gone.
+
+    The premium_chrome flag itself survives on the STOREFRONT, where it
+    selects which navigation a page shows. That is product logic and is
+    covered by tests/test_storefront_header.py; it has nothing to do with the
+    colour it used to also carry.
+    """
+    assert '<header class="sl-header"' in LAYOUT
+    # Search the TEMPLATE, not its commentary. The surviving .sl-header rule
+    # carries a comment naming both retired hooks and explaining what was
+    # removed and why; a substring check over the raw file would forbid the
+    # template from recording its own history, which is the opposite of what
+    # this codebase wants from a comment.
+    code = re.sub(r"\{#.*?#\}", "", LAYOUT, flags=re.S)
+    assert "sl-header--premium" not in code
+    assert "sl-premium-chrome" not in code
     assert 'class="sl-app-banner' in LAYOUT
     assert 'class="sl-app-footer"' in LAYOUT
     assert 'class="sl-app-footer__inner"' in LAYOUT
-    assert ".sl-premium-chrome .sl-menu .sl-menu__panel" in LAYOUT
-    # These two used to be pinned as the literals `rgba(6, 17, 12, .96)` and
-    # `#f07a18`. Pinning a literal pins the wrong thing: it survives a palette
-    # change by forcing the OLD colour to stay somewhere in the file, which is
-    # precisely the fork the token sheet exists to prevent. 92 literals in this
-    # template were mapped onto tokens; these are two of them, and the
-    # assertion now checks that the menu panel and the signal are DERIVED.
-    assert "background: rgba(var(--sl-night-rgb), .96);" in LAYOUT
+    # The header is a translucent paper bar over the ground it sticks to, and
+    # it is DERIVED rather than pinned as a literal: pinning a literal pins
+    # the wrong thing, because it survives a palette change by forcing the old
+    # colour to stay somewhere in the file — precisely the fork the token
+    # sheet exists to prevent.
+    assert "background: rgba(var(--sl-cream-rgb), 0.94);" in LAYOUT
     # The signal colour must NOT be a background anywhere in the shell. This
     # assertion originally pinned `background: #f07a18` on the header CTA, so
     # re-pointing it at the token preserved the very thing the palette forbids:
@@ -313,7 +331,10 @@ def test_app_shell_uses_homepage_premium_chrome_and_footer():
     assert not re.search(r"#[0-9a-fA-F]{6}\b", below), re.findall(
         r"#[0-9a-fA-F]{6}\b", below
     )
-    assert ".sl-header--premium .sl-header__inner { min-height: 64px;" in LAYOUT
+    # The compact phone header, kept when the dark chrome it used to hang off
+    # was removed. The treatment was cosmetic; the 8px it takes off a 72px bar
+    # at the top of every phone screen is not.
+    assert ".sl-header, .sl-header__inner { min-height: 64px; }" in LAYOUT
     assert "@media (max-width: 560px)" in LAYOUT
     assert ".sl-app-banner__detail { display: none; }" in LAYOUT
 

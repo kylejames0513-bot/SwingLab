@@ -96,7 +96,7 @@
     display: inline-flex;
     align-items: center;
     gap: 10px;
-    color: var(--sl-ink-soft);
+    color: var(--sl-field-soft);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -117,7 +117,7 @@
   .hero-copy h1 {
     max-width: 13ch;
     margin: 0;
-    color: var(--sl-ink);
+    color: var(--sl-field-ink);
     font-family: var(--sl-font-display);
     font-size: var(--sl-heading-display);
     font-weight: 600;
@@ -129,7 +129,7 @@
   .hero-lead {
     max-width: 42ch;
     margin: clamp(18px, 2vw, 24px) 0 0;
-    color: var(--sl-ink-soft);
+    color: var(--sl-field-soft);
     font-size: var(--sl-text-lg);
     line-height: 1.55;
     text-wrap: pretty;
@@ -153,38 +153,38 @@
      on what is now a bone fill, so every button on this page restates its ink
      rather than inheriting an invisible one. */
   .hero-ctas a.button.landing-primary {
-    border: 1.5px solid var(--sl-green-btn);
-    background: var(--sl-green-btn);
-    color: var(--sl-green-ink);
+    border: 1.5px solid var(--sl-field-ink);
+    background: var(--sl-field-ink);
+    color: var(--sl-field);
     box-shadow: none;
   }
   /* Hover inverts the fill instead of reaching for a signal colour — both
      signal colours already mean something specific on this page. */
   .hero-ctas a.button.landing-primary:hover {
-    border-color: var(--sl-green-btn);
+    border-color: var(--sl-field-ink);
     background: transparent;
-    color: var(--sl-green-btn);
+    color: var(--sl-field-ink);
     box-shadow: none;
   }
   .landing-primary span { margin-left: 0; transition: transform .2s ease; }
   .hero-ctas a.button.landing-primary:hover span { transform: translateX(4px); }
   .hero-ctas .hero-secondary {
-    border: 1.5px solid var(--sl-control-border);
+    border: 1.5px solid var(--sl-field-control);
     background: transparent;
-    color: var(--sl-ink);
+    color: var(--sl-field-ink);
     box-shadow: none;
   }
   .hero-ctas .hero-secondary:hover {
-    border-color: var(--sl-green-btn);
+    border-color: var(--sl-field-ink);
     background: rgba(var(--sl-cream-rgb), .06);
-    color: var(--sl-ink);
+    color: var(--sl-field-ink);
   }
   .hero-signin-note {
     margin: var(--sl-space-4) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-sm);
   }
-  .hero-signin-note a { color: var(--sl-ink); font-weight: 500; }
+  .hero-signin-note a { color: var(--sl-field-ink); font-weight: 500; }
   .hero-proof-points {
     margin: clamp(22px, 2.5vw, 28px) 0 0;
     padding: 0;
@@ -196,7 +196,7 @@
   .hero-proof-points li {
     position: relative;
     padding-left: 14px;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -216,7 +216,7 @@
   .hero-fine {
     max-width: 46ch;
     margin: var(--sl-space-4) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-xs);
   }
 
@@ -241,8 +241,8 @@
     justify-content: space-between;
     gap: var(--sl-space-3);
     padding-bottom: var(--sl-space-3);
-    border-bottom: 1px solid var(--sl-border);
-    color: var(--sl-ink-muted);
+    border-bottom: 1px solid var(--sl-field-rule);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -270,7 +270,7 @@
     margin-top: var(--sl-space-3);
     aspect-ratio: 5 / 4;
     overflow: hidden;
-    border: 1px solid var(--sl-border);
+    border: 1px solid var(--sl-field-rule);
     border-radius: var(--sl-radius-sm);
     background:
       linear-gradient(rgba(var(--sl-cream-rgb), .028) 1px, transparent 1px),
@@ -306,17 +306,17 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1px;
-    background: var(--sl-border);
-    border: 1px solid var(--sl-border);
+    background: var(--sl-field-rule);
+    border: 1px solid var(--sl-field-rule);
   }
   .hero-signal dl > div {
     min-width: 0;
     padding: var(--sl-space-3);
-    background: var(--sl-bg-card);
+    background: var(--sl-field-lift);
   }
   .hero-signal dt {
     margin: 0 0 6px;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -334,11 +334,11 @@
   }
   .hero-signal__note {
     margin: var(--sl-space-3) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-xs);
     line-height: 1.5;
   }
-  .hero-signal__link { color: var(--sl-ink); font-weight: 500; }
+  .hero-signal__link { color: var(--sl-field-ink); font-weight: 500; }
 
   /* ------------------------------------------------------------ the body */
   .landing-body {
@@ -389,7 +389,7 @@
   .preview-figure { margin: 0; }
   .preview-shell {
     overflow: hidden;
-    background: var(--sl-bg-card);
+    background: var(--sl-field-lift);
     border: 1px solid var(--sl-border-strong);
     border-radius: var(--sl-radius-lg);
     box-shadow: var(--sl-shadow-lg);
@@ -402,8 +402,8 @@
     justify-content: space-between;
     gap: var(--sl-space-4);
     background: var(--sl-night);
-    border-bottom: 1px solid var(--sl-border);
-    color: var(--sl-ink-muted);
+    border-bottom: 1px solid var(--sl-field-rule);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     letter-spacing: .12em;
@@ -431,7 +431,7 @@
     display: block;
     object-fit: contain;
     background: var(--sl-night);
-    border: 1px solid var(--sl-border);
+    border: 1px solid var(--sl-field-rule);
     border-radius: var(--sl-radius-sm);
   }
   .preview-read {
@@ -439,18 +439,18 @@
     display: grid;
     grid-template-columns: minmax(0, 1fr);
     gap: 1px;
-    background: var(--sl-border);
-    border-top: 1px solid var(--sl-border);
+    background: var(--sl-field-rule);
+    border-top: 1px solid var(--sl-field-rule);
   }
   .preview-read div {
     min-width: 0;
     padding: var(--sl-space-4);
-    background: var(--sl-bg-card);
+    background: var(--sl-field-lift);
   }
   .preview-read span {
     display: block;
     margin-bottom: 6px;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-family: var(--sl-font-mono);
     font-size: var(--sl-text-xs);
     font-weight: 500;
@@ -459,10 +459,10 @@
   }
   /* Bone, not amber: these name the report's structure. Nothing here was
      measured. */
-  .preview-read strong { color: var(--sl-ink); font-size: var(--sl-text-sm); }
+  .preview-read strong { color: var(--sl-field-ink); font-size: var(--sl-text-sm); }
   .preview-caption {
     margin: var(--sl-space-3) 0 0;
-    color: var(--sl-ink-muted);
+    color: var(--sl-field-muted);
     font-size: var(--sl-text-xs);
     line-height: 1.5;
   }
@@ -487,7 +487,7 @@
   }
   .flow-library-link {
     margin: var(--sl-space-5) 0 0;
-    color: var(--sl-ink-soft);
+    color: var(--sl-field-soft);
     font-size: var(--sl-text-sm);
   }
   .flow-library-link a { font-weight: 500; }
@@ -887,7 +887,7 @@
        this breakpoint the background is a lit dusk sky rather than the flat
        field. One rung up the ink ramp, phone only. */
     .hero-proof-points li,
-    .hero-fine { color: var(--sl-ink-soft); }
+    .hero-fine { color: var(--sl-field-soft); }
     {# 32% cropped the golfer clean out of frame: he stands right of centre in
        the portrait companion, and the phone box is narrow enough that cover
        shows only about a third of the image width. On the -v2 crop 80% lands

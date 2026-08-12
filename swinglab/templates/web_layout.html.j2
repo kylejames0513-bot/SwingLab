@@ -178,10 +178,6 @@
     --sl-green-rgb: 29, 31, 32;
     --sl-trace-rgb: 148, 188, 227;
     --sl-field-rgb: 7, 15, 11;
-    {# The premium chrome stays a FIELD — it is the one dark band in the app
-       shell, exactly as the announcement bar and hero are on the storefront. #}
-    --sl-premium-accent: var(--sl-focus-dark);
-    --sl-premium-gradient: linear-gradient(135deg, #070f0b 0%, #0b1712 62%, #0d1a13 100%);
     --sl-border: #d0d1d1;
     --sl-border-strong: #b7b7ba;
     {# 4.54 on paper. Darker than the storefront's #7a7a7d (3.82) for the same
@@ -376,22 +372,25 @@
     white-space: nowrap;
   }
   .sl-app-banner a:hover { color: var(--sl-focus-dark); }
+  {# ONE HEADER, ON PAPER. There used to be a whole parallel dark treatment
+     under .sl-header--premium, and the app applied it unconditionally — so
+     the "premium" variant WAS the app header and this base rule was
+     unreachable, still carrying rgba(238,242,239,.92) from before the field
+     inversion. Mockups 1a and 1c draw one paper header with a hairline rule
+     under it, so the 31 override rules are gone and this is the only one
+     left. The premium_chrome flag survives on the storefront, where it still
+     selects which navigation a page shows — that is product logic and has
+     nothing to do with the colour it used to also carry. #}
   .sl-header {
     position: sticky;
     top: 0;
     z-index: 40;
     min-height: 72px;
     padding: 0 var(--sl-pad-x);
-    background: rgba(238, 242, 239, 0.92);
+    background: rgba(var(--sl-cream-rgb), 0.94);
     -webkit-backdrop-filter: blur(14px);
     backdrop-filter: blur(14px);
-    border-bottom: 1px solid var(--sl-border);
-  }
-  .sl-header--premium {
-    min-height: 76px;
-    background: rgba(var(--sl-night-rgb), .96);
-    border-bottom-color: rgba(239, 241, 232, .12);
-    box-shadow: 0 18px 48px -32px rgba(0, 0, 0, .85);
+    border-bottom: 1px solid var(--sl-border-strong);
   }
   .sl-header__inner {
     width: 100%;
@@ -403,7 +402,6 @@
     align-items: center;
     gap: clamp(16px, 2.5vw, 28px);
   }
-  .sl-header--premium .sl-header__inner { min-height: 76px; }
   .sl-header__logo {
     display: flex;
     align-items: center;
@@ -415,8 +413,6 @@
     text-decoration: none;
   }
   .sl-header__logo-img { display: block; width: auto; height: 38px; }
-  .sl-header--premium .sl-header__logo { color: var(--sl-cream); }
-  .sl-header--premium .sl-header__logo-img { filter: brightness(0) invert(1); opacity: .96; }
   .sl-header__desktop-nav {
     display: flex;
     align-items: center;
@@ -442,7 +438,7 @@
   .sl-header__link:hover,
   .sl-header__dropdown-trigger:hover,
   .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
-    background: var(--sl-bg-card);
+    background: var(--sl-night);
     color: var(--sl-green-btn);
   }
   {# The current page is marked with bone and an underline, not amber. "You
@@ -453,21 +449,9 @@
      separate the two hues. #}
   .sl-header__link.is-current,
   .sl-header__dropdown-trigger.is-current {
-    background: rgba(var(--sl-cream-rgb), .10);
+    background: var(--sl-night);
     color: var(--sl-ink);
-  }
-  .sl-header--premium .sl-header__link,
-  .sl-header--premium .sl-header__dropdown-trigger { color: rgba(var(--sl-cream-rgb), .78); }
-  .sl-header--premium .sl-header__link:hover,
-  .sl-header--premium .sl-header__dropdown-trigger:hover,
-  .sl-header--premium .sl-header__dropdown[open] > .sl-header__dropdown-trigger {
-    background: rgba(var(--sl-cream-rgb), .08);
-    color: var(--sl-ink-hi);
-  }
-  .sl-header--premium .sl-header__link.is-current,
-  .sl-header--premium .sl-header__dropdown-trigger.is-current {
-    background: rgba(var(--sl-cream-rgb), .12);
-    color: var(--sl-ink);
+    box-shadow: inset 0 -2px 0 var(--sl-steel);
   }
   .sl-header__member {
     min-height: 40px;
@@ -478,9 +462,9 @@
     align-items: center;
     gap: 8px;
     flex: 0 1 auto;
-    border: 1px solid var(--sl-ink-soft);
+    border: 1px solid var(--sl-control-border);
     border-radius: var(--sl-radius-control);
-    background: var(--sl-ink);
+    background: transparent;
     color: var(--sl-green);
     font-size: 13px;
     font-weight: 500;
@@ -488,17 +472,7 @@
     white-space: nowrap;
     overflow: hidden;
   }
-  .sl-header__member:hover { border-color: var(--sl-green-btn); background: var(--sl-ink-soft); color: var(--sl-green); }
-  .sl-header--premium .sl-header__member {
-    border-color: rgba(var(--sl-trace-rgb), .42);
-    background: rgba(var(--sl-trace-rgb), .1);
-    color: var(--sl-trace);
-  }
-  .sl-header--premium .sl-header__member:hover {
-    border-color: var(--sl-ink-hi);
-    background: rgba(var(--sl-trace-rgb), .17);
-    color: #fff;
-  }
+  .sl-header__member:hover { border-color: var(--sl-ink); background: var(--sl-night); color: var(--sl-green); }
   .sl-header__member > span:last-child {
     min-width: 0;
     max-width: clamp(56px, 9vw, 104px);
@@ -511,12 +485,11 @@
     padding: 4px 7px;
     border-radius: var(--sl-radius-control);
     background: var(--sl-green);
-    color: #fff;
+    color: var(--sl-bg);
     font-family: var(--sl-font-mono);
     font-size: 10px;
     letter-spacing: .08em;
   }
-  .sl-header--premium .sl-header__member-badge { background: var(--sl-trace); color: var(--sl-night); }
   .sl-header__account > summary,
   .sl-header__account .sl-header__dropdown-trigger {
     max-width: 136px;
@@ -573,18 +546,6 @@
     background: var(--sl-orange-soft);
     color: var(--sl-green);
   }
-  .sl-header--premium .sl-header__dropdown-menu {
-    background: rgba(10, 28, 19, .99);
-    border-color: rgba(239, 241, 232, .14);
-    box-shadow: 0 24px 54px -22px rgba(0, 0, 0, .78);
-  }
-  .sl-header--premium .sl-header__dropdown-menu a,
-  .sl-header--premium .sl-header__logout { color: rgba(var(--sl-cream-rgb), .86); }
-  .sl-header--premium .sl-header__dropdown-menu a:hover,
-  .sl-header--premium .sl-header__logout:hover {
-    background: rgba(var(--sl-cream-rgb), .08);
-    color: var(--sl-ink-hi);
-  }
   .sl-header__actions {
     display: flex;
     align-items: center;
@@ -614,23 +575,6 @@
      rule left on either surface: amber marks a value the ENGINE MEASURED,
      and the single most prominent amber object in the product was a button.
      Bone on a near-black field is also simply louder than amber was. #}
-  .sl-header--premium .sl-header__cta {
-    min-height: 44px;
-    border-color: var(--sl-ink);
-    background: var(--sl-ink);
-    color: var(--sl-green-ink);
-    box-shadow: none;
-  }
-  .sl-header--premium .sl-header__cta:hover {
-    border-color: var(--sl-accent-hover);
-    background: var(--sl-accent-hover);
-    color: var(--sl-night);
-  }
-  .sl-header--premium .sl-header__cart {
-    border-color: rgba(var(--sl-cream-rgb), .48);
-    color: var(--sl-cream);
-  }
-  .sl-header--premium .sl-header__cart:hover { border-color: var(--sl-accent-hover); color: var(--sl-focus-dark); }
   .sl-header__toggle {
     display: none;
     width: 44px;
@@ -648,11 +592,6 @@
     cursor: pointer;
   }
   .sl-header__toggle:hover { background: var(--sl-bg-card); color: var(--sl-green-btn); }
-  .sl-header--premium .sl-header__toggle {
-    border-color: rgba(var(--sl-cream-rgb), .5);
-    color: var(--sl-cream);
-  }
-  .sl-header--premium .sl-header__toggle:hover { background: rgba(var(--sl-cream-rgb), .08); color: #fff; }
   .sl-header__toggle span {
     display: block;
     width: 100%;
@@ -801,35 +740,10 @@
     margin-bottom: -2px;
     vertical-align: baseline;
   }
-  .sl-premium-chrome .sl-menu .sl-menu__ios-hint {
-    border-color: rgba(var(--sl-cream-rgb), .18);
-    background: rgba(var(--sl-cream-rgb), .06);
-    color: rgba(var(--sl-cream-rgb), .78);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__ios-hint strong { color: var(--sl-cream); }
   .sl-menu__link.is-current {
     padding-inline: 10px;
     background: var(--sl-orange-soft);
     color: var(--sl-green);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__panel {
-    background: var(--sl-bg-card);
-    border-left-color: rgba(var(--sl-cream-rgb), .14);
-    box-shadow: -28px 0 70px -32px rgba(0, 0, 0, .86);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__title,
-  .sl-premium-chrome .sl-menu .sl-menu__link { color: var(--sl-cream); }
-  .sl-premium-chrome .sl-menu .sl-menu__close {
-    background: rgba(var(--sl-cream-rgb), .06);
-    border-color: rgba(var(--sl-cream-rgb), .24);
-    color: var(--sl-cream);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__group { border-top-color: rgba(var(--sl-cream-rgb), .14); }
-  .sl-premium-chrome .sl-menu .sl-menu__eyebrow { color: rgba(var(--sl-cream-rgb), .55); }
-  .sl-premium-chrome .sl-menu .sl-menu__link:hover { color: var(--sl-ink-hi); }
-  .sl-premium-chrome .sl-menu .sl-menu__link.is-current {
-    background: rgba(var(--sl-cream-rgb), .12);
-    color: var(--sl-ink);
   }
   /* The mobile menu CTA is field ink on bone — the same treatment as the
      header action, for the same reason: a call to action is not a measured
@@ -840,16 +754,6 @@
      effectively unreadable. It carries its own background now (16.75:1), and
      tests/test_premium_accessibility.py computes that ratio rather than
      trusting the declaration. */
-  .sl-premium-chrome .sl-menu .sl-menu__cta {
-    border-color: var(--sl-ink);
-    background: var(--sl-ink);
-    color: var(--sl-green-ink);
-  }
-  .sl-premium-chrome .sl-menu .sl-menu__cta:hover {
-    border-color: var(--sl-ink-hi);
-    background: var(--sl-ink-hi);
-    color: var(--sl-green-ink);
-  }
   main { width: 100%; max-width: 720px; margin: 52px auto; padding: 0 24px; }
   .card {
     background: var(--sl-bg-card);
@@ -1044,7 +948,7 @@
     width: 26px;
     height: 3px;
     border-radius: 0 0 3px 3px;
-    background: var(--sl-premium-accent);
+    background: var(--sl-steel);
   }
   .sl-tabbar__item { position: relative; }
   .sl-tabbar__item:focus-visible { outline-offset: -4px; border-radius: 10px; }
@@ -1055,7 +959,7 @@
     min-width: 7px;
     height: 7px;
     border-radius: 999px;
-    background: var(--sl-premium-accent);
+    background: var(--sl-steel);
   }
 
   /* Install affordance. Chromium fires beforeinstallprompt and the script
@@ -1112,7 +1016,6 @@
   @media (max-width: 999px) {
     .sl-header { min-height: 64px; }
     .sl-header__inner,
-    .sl-header--premium .sl-header__inner { min-height: 64px; gap: 10px; }
     .sl-header__desktop-nav,
     .sl-header__account,
     .sl-header__app { display: none; }
@@ -1160,6 +1063,10 @@
     .sl-install { display: none !important; }
   }
   @media (max-width: 560px) {
+    {# The compact phone header. This lived on the dark-chrome selector and
+       was nearly lost with it — the treatment was cosmetic, the 8px it takes
+       back off a 72px bar at the top of every phone screen is not. #}
+    .sl-header, .sl-header__inner { min-height: 64px; }
     .sl-app-banner { padding-inline: 14px; }
     .sl-app-banner__inner {
       min-width: 0;
@@ -1201,7 +1108,7 @@
   {% block style %}{% endblock %}
 </style>
 </head>
-<body class="sl-premium-chrome{% if header_profile and header_profile.reduced_motion %} sl-reduced-motion{% endif %}">
+<body{% if header_profile and header_profile.reduced_motion %} class="sl-reduced-motion"{% endif %}>
 {% set member_name = header_profile.display_name if header_profile and header_profile.display_name else '' %}
 {% set member_chip_label = 'Game plan' %}
 {% if member_name %}
@@ -1227,7 +1134,7 @@
     {% endif %}
   </div>
 </aside>
-<header class="sl-header sl-header--premium" data-sl-header data-menu-id="sl-mobile-menu">
+<header class="sl-header" data-sl-header data-menu-id="sl-mobile-menu">
   <div class="sl-header__inner">
     <a class="sl-header__logo" href="{{ storefront_url or '/' }}" aria-label="{{ brand.name }} home">
       {% if brand.logo_url %}

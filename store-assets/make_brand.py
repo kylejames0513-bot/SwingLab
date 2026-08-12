@@ -269,7 +269,12 @@ def main() -> None:
         "pwa-icon-maskable-512.png": (STATIC,),
         "app-icon-1024.png": (MOBILE,),
         "caddieinsight-favicon.png": (STATIC, THEME),
-        "og-caddieinsight.png": (THEME,),
+        # Both surfaces, not just the theme. The share card is one of the
+        # three images tests/test_app_storefront_parity.py holds to identical
+        # bytes across the two surfaces, and shipping it to the theme alone
+        # left the app serving the previous brand's card — invisible until
+        # somebody shared an app link.
+        "og-caddieinsight.png": (STATIC, THEME),
     }
     for name, targets in ship.items():
         for target in targets:
