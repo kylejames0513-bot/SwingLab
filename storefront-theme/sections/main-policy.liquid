@@ -1,0 +1,296 @@
+{%- liquid
+  # THE SHELL WRAPS WHAT IT CAN REACH. Four of the six documents the sidebar
+  # lists — privacy, refund, cancellations, contact information — are Shopify
+  # SHOP POLICIES, served from checkout.shopify.com in Shopify's own bare
+  # template. No theme can style them. So this shell dresses the pages the
+  # theme does own (shipping & returns, privacy choices) and links out to the
+  # rest, which at least makes the set navigable as one thing.
+  #
+  # Moving the hosted policies into ordinary pages would bring them inside the
+  # shell, but it duplicates legal text into a second place that can drift from
+  # the one checkout links to. Not doing that silently — see LAUNCH_CHECKLIST.
+  assign policy_stamp = page.metafields.caddieinsight.last_updated.value | default: page.published_at
+
+  assign summary = section.blocks | where: 'type', 'summary'
+  assign links = section.blocks | where: 'type', 'link'
+-%}
+
+<div class="sl-wrap sl-policy">
+  <nav class="sl-policy__crumb" aria-label="Breadcrumb">
+    <a href="{{ routes.root_url }}">Home</a>
+    <span aria-hidden="true">/</span>
+    <span>{{ section.settings.crumb | default: 'Policies' }}</span>
+  </nav>
+
+  <div class="sl-policy__grid">
+    {%- comment -%}
+      The index is a <nav> and comes FIRST in the DOM, before the document it
+      indexes, so a screen reader meets the set before the page. It is ordered
+      visually second on desktop by grid placement rather than by source order.
+    {%- endcomment -%}
+    <nav class="sl-policy__aside" aria-label="{{ section.settings.crumb | default: 'Policies' | escape }}">
+      {%- if links.size > 0 -%}
+        <p class="sl-mono-label">{{ section.settings.aside_label | default: 'Policies' }}</p>
+        <ul class="sl-policy__index" role="list">
+          {%- for block in links -%}
+            {%- liquid
+              assign url = block.settings.url
+              if url == blank and block.settings.page != blank
+                assign url = block.settings.page.url
+              endif
+            -%}
+            {%- if url != blank -%}
+              {%- assign is_here = false -%}
+              {%- if block.settings.page != blank and block.settings.page.handle == page.handle -%}
+                {%- assign is_here = true -%}
+              {%- endif -%}
+              <li {{ block.shopify_attributes }}>
+                <a href="{{ url }}"
+                   class="sl-policy__index-link{% if is_here %} is-current{% endif %}"
+                   {% if is_here %}aria-current="page"{% endif %}>{{ block.settings.label }}</a>
+              </li>
+            {%- endif -%}
+          {%- endfor -%}
+
+          {%- comment -%}
+            The Shopify-hosted ones, resolved through the shop object rather
+            than pasted in as checkout.shopify.com URLs — those carry the shop
+            id and the policy id, and a merchant copying one by hand is how a
+            policy link ends up pointing at another store's document. Each
+            renders only if that policy has actually been written.
+          {%- endcomment -%}
+          {%- if section.settings.show_shop_policies -%}
+            {%- comment -%}
+              shop.policies, not a concat chain of shop.privacy_policy and
+              friends: `concat` takes arrays, each of those is a single object,
+              and the chain silently yields nothing — the index rendered with
+              no hosted policies at all and looked merely short rather than
+              broken. shop.policies is already the array, and it only contains
+              the policies that have been written.
+            {%- endcomment -%}
+            {%- for policy in shop.policies -%}
+              {%- if policy.url != blank -%}
+                <li>
+                  <a href="{{ policy.url }}" class="sl-policy__index-link">{{ policy.title }}</a>
+                </li>
+              {%- endif -%}
+            {%- endfor -%}
+          {%- endif -%}
+        </ul>
+      {%- endif -%}
+
+      {%- if section.settings.help_body != blank -%}
+        <div class="sl-policy__help sl-blueprint">
+          <i class="sl-corner sl-corner--tl" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--tr" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--bl" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--br" aria-hidden="true"></i>
+          <p class="sl-policy__help-title">{{ section.settings.help_title | default: 'Question about an order?' }}</p>
+          <p class="sl-policy__help-body">{{ section.settings.help_body }}</p>
+          {%- assign contact_page = pages['contact'] -%}
+          {%- if contact_page.url != blank -%}
+            <a class="sl-btn sl-btn--outline sl-btn--sm" href="{{ contact_page.url }}">Contact support</a>
+          {%- endif -%}
+        </div>
+      {%- endif -%}
+    </nav>
+
+    <div class="sl-policy__main">
+      {%- if policy_stamp != blank -%}
+        {%- comment -%}
+          A dateline, not decoration. On a refund policy the date IS part of
+          the terms — it is how a customer knows which version they agreed to
+          — so it is a <time> with a machine-readable datetime rather than a
+          formatted string.
+        {%- endcomment -%}
+        <p class="sl-policy__stamp">
+          Last updated
+          <time datetime="{{ policy_stamp | date: '%Y-%m-%d' }}">{{ policy_stamp | date: '%d %b %Y' | upcase }}</time>
+        </p>
+      {%- endif -%}
+
+      <h1 class="sl-policy__title">{{ section.settings.heading | default: page.title }}</h1>
+
+      {%- if section.settings.intro != blank -%}
+        <p class="sl-policy__intro">{{ section.settings.intro }}</p>
+      {%- endif -%}
+
+      {%- if summary.size > 0 -%}
+        {%- comment -%}
+          The terms at a glance, above the prose. Somebody arriving here wants
+          one number — how long have I got — and making them read four numbered
+          clauses to find it is how a policy page becomes a support ticket.
+        {%- endcomment -%}
+        <dl class="sl-policy__summary">
+          {%- for block in summary -%}
+            <div class="sl-policy__summary-cell" {{ block.shopify_attributes }}>
+              <dt>{{ block.settings.label }}</dt>
+              <dd>
+                <b>{{ block.settings.value }}</b>
+                {%- if block.settings.note != blank -%}
+                  <span>{{ block.settings.note }}</span>
+                {%- endif -%}
+              </dd>
+            </div>
+          {%- endfor -%}
+        </dl>
+      {%- endif -%}
+
+      <div class="sl-policy__body sl-rte">{{ page.content }}</div>
+
+      {%- if section.settings.footer_note != blank -%}
+        <p class="sl-policy__foot">{{ section.settings.footer_note }}</p>
+      {%- endif -%}
+    </div>
+  </div>
+</div>
+
+{% stylesheet %}
+.sl-policy { padding-top: 40px; padding-bottom: 72px; }
+.sl-policy__crumb {
+  display: flex;
+  gap: var(--sl-space-2);
+  margin-bottom: var(--sl-space-6);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-policy__crumb a { color: inherit; }
+
+.sl-policy__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-7);
+  align-items: start;
+}
+/* The index is first in the DOM so it is met before the document; on desktop
+   it is placed into the second column instead, which keeps the reading order
+   for assistive tech and the visual order for everyone else. */
+@media (min-width: 1000px) {
+  .sl-policy__grid { grid-template-columns: minmax(0, 1fr) minmax(0, 260px); gap: var(--sl-space-8); }
+  .sl-policy__aside { grid-column: 2; grid-row: 1; position: sticky; top: var(--sl-space-6); }
+  .sl-policy__main { grid-column: 1; grid-row: 1; }
+}
+
+.sl-policy__index { margin: var(--sl-space-3) 0 var(--sl-space-6); padding: 0; list-style: none; }
+.sl-policy__index li { border-bottom: 1px solid var(--sl-border); }
+.sl-policy__index-link {
+  display: block;
+  padding: var(--sl-space-3) 0;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  text-decoration: none;
+}
+.sl-policy__index-link:hover { color: var(--sl-ink); }
+.sl-policy__index-link.is-current { color: var(--sl-ink); font-weight: var(--sl-weight-medium); }
+
+.sl-policy__help { padding: var(--sl-card-inset); background: var(--sl-orange-soft); }
+.sl-policy__help-title { margin: 0 0 var(--sl-space-2); font-weight: var(--sl-weight-medium); font-size: var(--sl-text-sm); }
+.sl-policy__help-body { margin: 0 0 var(--sl-space-4); color: var(--sl-ink-soft); font-size: var(--sl-text-sm); line-height: 1.5; }
+
+.sl-policy__stamp {
+  margin: 0 0 var(--sl-space-3);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-policy__title { margin: 0 0 var(--sl-space-4); color: var(--sl-ink); }
+.sl-policy__intro {
+  margin: 0 0 var(--sl-space-6);
+  max-width: 62ch;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-lg);
+  line-height: 1.6;
+}
+
+.sl-policy__summary {
+  margin: 0 0 var(--sl-space-7);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
+}
+@media (min-width: 560px) { .sl-policy__summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sl-policy__summary-cell { padding: var(--sl-dense-inset); background: var(--sl-bg-card); }
+.sl-policy__summary-cell dt {
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-policy__summary-cell dd { margin: var(--sl-space-2) 0 0; display: grid; gap: 2px; }
+.sl-policy__summary-cell dd b { color: var(--sl-ink); font-family: var(--sl-font-display); font-size: var(--sl-text-2xl); font-weight: var(--sl-weight-display); line-height: 1; }
+.sl-policy__summary-cell dd span { color: var(--sl-ink-soft); font-size: var(--sl-text-sm); }
+
+.sl-policy__body { max-width: 68ch; }
+.sl-policy__foot {
+  margin: var(--sl-space-7) 0 0;
+  padding-top: var(--sl-space-4);
+  border-top: 1px solid var(--sl-border);
+  max-width: 68ch;
+  color: var(--sl-ink-muted);
+  font-size: var(--sl-text-sm);
+  line-height: 1.55;
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Policy page",
+  "settings": [
+    { "type": "text", "id": "crumb", "label": "Breadcrumb label", "default": "Policies" },
+    { "type": "text", "id": "heading", "label": "Heading", "info": "Leave blank to use the page title." },
+    { "type": "textarea", "id": "intro", "label": "Intro" },
+    {
+      "type": "paragraph",
+      "content": "The date comes from the page's caddieinsight.last_updated metafield, falling back to its publish date. On a policy the date is part of the terms — it is how a customer knows which version they agreed to."
+    },
+    { "type": "header", "content": "Index" },
+    { "type": "text", "id": "aside_label", "label": "Index label", "default": "Policies" },
+    {
+      "type": "checkbox",
+      "id": "show_shop_policies",
+      "label": "List Shopify's own policies too",
+      "info": "Privacy, refund, shipping, cancellations and terms, resolved automatically. They are served by Shopify and cannot be styled by the theme.",
+      "default": true
+    },
+    { "type": "header", "content": "Help card" },
+    { "type": "text", "id": "help_title", "label": "Title", "default": "Question about an order?" },
+    {
+      "type": "textarea",
+      "id": "help_body",
+      "label": "Body",
+      "default": "Include the order number from your confirmation email and we can answer in one reply."
+    },
+    { "type": "header", "content": "Footer" },
+    { "type": "textarea", "id": "footer_note", "label": "Footer note" }
+  ],
+  "blocks": [
+    {
+      "type": "summary",
+      "name": "Summary cell",
+      "settings": [
+        { "type": "text", "id": "label", "label": "Label", "default": "Memberships" },
+        { "type": "text", "id": "value", "label": "Value", "default": "14 days" },
+        { "type": "text", "id": "note", "label": "Note", "default": "If unused" }
+      ]
+    },
+    {
+      "type": "link",
+      "name": "Index link",
+      "settings": [
+        { "type": "text", "id": "label", "label": "Label" },
+        { "type": "page", "id": "page", "label": "Page", "info": "Used for the link and to mark the current item." },
+        { "type": "url", "id": "url", "label": "URL", "info": "For Shopify-hosted policies, which have no page object." }
+      ]
+    }
+  ],
+  "presets": [{ "name": "Policy page" }]
+}
+{% endschema %}

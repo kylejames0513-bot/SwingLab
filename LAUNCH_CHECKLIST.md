@@ -27,6 +27,7 @@ is exactly how I first "verified" a page that had not rendered at all.
 | Founders Pass page | Built, inventory-driven count, verified in browser |
 | Product specification | Metafield-driven, all six products populated |
 | Contact page | Subject router, conditional order field, support aside |
+| Policy shell | `page.policy` template, applied to the two theme-owned pages |
 | Redirects | 8 created — 2 dormant, 6 fixing live 404s |
 | Handle-rename groundwork | Theme accepts old and new page handles |
 
@@ -39,18 +40,16 @@ mockup was already in the theme.
 
 Roughly in value order.
 
-1. **Policy shell** (`3b`) — sidebar, `LAST UPDATED` stamp, summary spec row,
-   numbered clauses. One shell for six documents.
-2. **Sticky mobile buy bar** (`2c`) — the one part of the product mockups not
+1. **Sticky mobile buy bar** (`2c`) — the one part of the product mockups not
    yet built.
-3. **Collection / cart / search / 404** — templates exist and are styled;
+2. **Collection / cart / search / 404** — templates exist and are styled;
    they need the mockups' copy from `COPY_DECK.md` §8.
-4. **Nav and menus** — the live `swinglab-main` menu is `Home · Gear · The
+3. **Nav and menus** — the live `swinglab-main` menu is `Home · Gear · The
    Method · Pro Membership · FAQ`; the mockups want `Method · Sample report ·
    Plans · Gear`. Add the Founders Pass link.
-5. **`/collections/swinglab-gear` rename** — see §6.
-6. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
-7. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
+4. **`/collections/swinglab-gear` rename** — see §6.
+5. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
+6. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
    Lighthouse, contrast, keyboard nav, broken-link crawl.
 
 ---
@@ -68,6 +67,10 @@ publish, which is why it goes last.
 - [ ] Confirm prices: Pro $9.99/mo · Coach $19.99/mo · $69.99/yr · Founders
       $249 · `RANGE15` 15% off gear.
 - [ ] Confirm `inquiry@caddieinsight.com` is monitored.
+- [ ] **Write a Terms of Service.** The store has privacy, refund,
+      cancellation and contact-information policies but no terms — so the
+      policy index renders five entries where the mockup shows six. The
+      shell picks it up automatically the moment it exists.
 - [ ] `python -m pytest -q` green.
 - [ ] `shopify theme check --path storefront-theme --fail-level warning` clean.
 
@@ -170,6 +173,14 @@ surface to revert if you want literal parity.
 
 **Railway does not wait for CI.** `checkSuites: false`. Cheap to change and
 worth doing before this work starts landing on `main`.
+
+**Four of the six policies cannot be styled.** Privacy, refund,
+cancellations and contact information are Shopify shop policies, served
+from `checkout.shopify.com` in Shopify's own bare template. The shell
+dresses the two pages the theme owns and links out to the rest. Moving
+them into ordinary pages would bring them inside the shell but duplicates
+legal text into a second place that can drift from the one checkout links
+to — not doing that without a decision.
 
 **`--sl-brand-green: #0f3d28`** is documented as "for the mark and only the
 mark" and appears nowhere in the design source. Retire it once its call sites

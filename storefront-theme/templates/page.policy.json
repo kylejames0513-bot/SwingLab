@@ -1,0 +1,29 @@
+{
+  "sections": {
+    "main": {
+      "type": "main-policy",
+      "blocks": {
+        "s1": {
+          "type": "summary",
+          "settings": { "label": "Memberships", "value": "14 days", "note": "If unused" }
+        },
+        "s2": {
+          "type": "summary",
+          "settings": { "label": "Training aids", "value": "30 days", "note": "Unused, original packaging" }
+        },
+        "l1": { "type": "link", "settings": { "label": "Shipping & returns", "page": "shipping-returns" } },
+        "l2": { "type": "link", "settings": { "label": "Your privacy choices", "page": "data-sharing-opt-out" } }
+      },
+      "block_order": ["s1", "s2", "l1", "l2"],
+      "settings": {
+        "crumb": "Policies",
+        "aside_label": "Policies",
+        "show_shop_policies": true,
+        "help_title": "Question about an order?",
+        "help_body": "Include the order number from your confirmation email and we can answer in one reply.",
+        "footer_note": "Questions about any of this: inquiry@caddieinsight.com — include the order number from your confirmation email."
+      }
+    }
+  },
+  "order": ["main"]
+}
