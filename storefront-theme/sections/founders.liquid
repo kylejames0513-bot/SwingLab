@@ -17,11 +17,22 @@
   # Resolve through the product so the localised route survives and an
   # unpublished product yields blank rather than a 404 — the pattern
   # cta-banner.liquid uses for the Pro link.
-  assign founders_handle = section.settings.founders_handle | default: 'founders-pass'
+  assign founders_handle = section.settings.founders_handle | default: 'swinglab-pro'
   assign founders_product = all_products[founders_handle]
+  # Link straight to the Founders VARIANT, not to the product. The product is
+  # the membership, whose default variant is a $9.99 month; landing a
+  # "Claim a Founders Pass · $249" button on it and letting the shopper hunt
+  # for the right option is how somebody buys the wrong thing.
+  assign founders_sku = section.settings.founders_sku | default: 'SL-PRO-LIFE'
+  assign founders_variant = blank
+  for candidate in founders_product.variants
+    if candidate.sku == founders_sku
+      assign founders_variant = candidate
+    endif
+  endfor
   assign claim_url = section.settings.claim_url
-  if claim_url == blank and founders_product.handle != blank
-    assign claim_url = founders_product.url
+  if claim_url == blank and founders_variant != blank
+    assign claim_url = founders_variant.url
   endif
 
   # BOTH PRICES ARE IN CENTS. Shopify's `number` setting is an integer, so a
@@ -530,9 +541,16 @@
     {
       "type": "text",
       "id": "founders_handle",
-      "label": "Founders Pass product handle",
-      "info": "The count is read from this product's tracked inventory, so it stays true and Shopify enforces the cap at checkout.",
-      "default": "founders-pass"
+      "label": "Membership product handle",
+      "info": "The Founders Pass is a variant of the membership product, not a product of its own.",
+      "default": "swinglab-pro"
+    },
+    {
+      "type": "text",
+      "id": "founders_sku",
+      "label": "Founders variant SKU",
+      "info": "The durable key. config.yaml maps SL-PRO-LIFE to a lifetime Coach grant; a line item without it takes the money and grants nothing.",
+      "default": "SL-PRO-LIFE"
     },
     { "type": "number", "id": "founders_total", "label": "Total passes", "default": 100 },
     {

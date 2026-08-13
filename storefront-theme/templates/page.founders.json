@@ -153,7 +153,7 @@
         "kicker": "Membership 03 · Founders",
         "heading": "Pay once. Coach forever.",
         "body": "One payment of $249 for every Coach feature, for good. Capped at the first hundred members — a lifetime promise we can only keep if we stop selling it.",
-        "founders_handle": "founders-pass",
+        "founders_handle": "swinglab-pro",
         "founders_total": 100,
         "founders_remaining": 100,
         "claim_label": "Claim a Founders Pass",
@@ -167,7 +167,8 @@
         "col_free": "Free",
         "col_pro": "Pro $9.99/mo",
         "col_coach": "Coach $19.99/mo",
-        "col_founders": "Founders $249 once"
+        "col_founders": "Founders $249 once",
+        "founders_sku": "SL-PRO-LIFE"
       }
     },
     "cta": {

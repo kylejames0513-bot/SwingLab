@@ -27,16 +27,34 @@
   assign cap = settings.founders_total | default: 100 | at_least: 1
 
   assign product_handle = handle | default: settings.founders_handle
-  assign product_handle = product_handle | default: 'founders-pass'
+  assign product_handle = product_handle | default: 'swinglab-pro'
   assign founders_product = all_products[product_handle]
-  assign variant = founders_product.variants.first
+
+  # THE SKU IS THE KEY, NOT THE HANDLE AND NOT THE POSITION. The Founders Pass
+  # is a VARIANT of the membership product, not a product of its own, and
+  # config.yaml is explicit about why the SKU is what matters: SL-PRO-LIFE is
+  # "the durable key the order webhook matches on", mapping to 36500 days at
+  # the coach tier. A line item without it takes the money and grants nothing.
+  #
+  # So this finds the variant by SKU rather than taking variants.first. An
+  # earlier version of this snippet pointed at a standalone `founders-pass`
+  # product created for the counter — which duplicated this variant and, having
+  # no SKU, would have sold a lifetime membership that entitled the buyer to
+  # nothing at all.
+  assign founders_sku = settings.founders_sku | default: 'SL-PRO-LIFE'
+  assign variant = blank
+  for candidate in founders_product.variants
+    if candidate.sku == founders_sku
+      assign variant = candidate
+    endif
+  endfor
 
   # `all_products[...]` returns a truthy drop for a handle that does not exist
   # — the same trap tests/test_theme_brand_filenames.py documents for images[]
   # — so presence is tested on a field that is genuinely blank when absent,
   # never on the drop itself.
   assign resolved = blank
-  if founders_product.handle != blank and variant.inventory_management != blank
+  if variant != blank and variant.inventory_management != blank
     assign resolved = variant.inventory_quantity | at_least: 0 | at_most: cap
   endif
 

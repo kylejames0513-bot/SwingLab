@@ -94,13 +94,26 @@ publish, which is why it goes last.
 - [ ] Review the preview at 375 / 768 / 1440.
 - [ ] **Publish the theme.** Yours to do, not mine.
 
+**Memberships — read this before publishing**
+
+- [ ] **Set `templateSuffix` on CaddieInsight Pro to `membership`.** It is
+      currently null, so the product renders through `main-product.liquid`,
+      which has ZERO selling-plan handling. All four subscription variants have
+      plans attached, but no shopper can ever choose one: every membership sale
+      today is a **one-time charge**, on a product advertised at $9.99/mo.
+      Proved by rendering the same product with `?view=membership`, which
+      offers "Auto-renew monthly" where the live template offers nothing.
+      This is a one-field change in admin and it is the difference between
+      recurring revenue and none.
+- [ ] After that, decide whether "One-time purchase" should stay the DEFAULT
+      selected option on a product sold as a subscription.
+
 **The Founders Pass**
 
-- [ ] Set the `founders-pass` product to **Active**. It is a draft with
-      inventory tracked at 100. The moment it is active the claim button
-      appears and the counter goes live; until then the button correctly hides
-      rather than pointing somewhere broken.
-- [ ] Confirm it is on the Online Store sales channel.
+Nothing to activate — it is variant `SL-PRO-LIFE` of CaddieInsight Pro, already
+live at $249 with inventory tracked at 100 and policy DENY, so the cap is
+already enforced by Shopify.
+
 - [ ] Buy one yourself and refund it. The count should drop to 99 and come
       back to 100 — this tests the counter, the cap and the refund path in one
       go.
