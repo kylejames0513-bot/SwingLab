@@ -41,16 +41,16 @@ Roughly in value order.
 
 1. **Policy shell** (`3b`) — sidebar, `LAST UPDATED` stamp, summary spec row,
    numbered clauses. One shell for six documents.
-3. **Sticky mobile buy bar** (`2c`) — the one part of the product mockups not
+2. **Sticky mobile buy bar** (`2c`) — the one part of the product mockups not
    yet built.
-4. **Collection / cart / search / 404** — templates exist and are styled;
+3. **Collection / cart / search / 404** — templates exist and are styled;
    they need the mockups' copy from `COPY_DECK.md` §8.
-5. **Nav and menus** — the live `swinglab-main` menu is `Home · Gear · The
+4. **Nav and menus** — the live `swinglab-main` menu is `Home · Gear · The
    Method · Pro Membership · FAQ`; the mockups want `Method · Sample report ·
    Plans · Gear`. Add the Founders Pass link.
-6. **`/collections/swinglab-gear` rename** — see §6.
-7. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
-8. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
+5. **`/collections/swinglab-gear` rename** — see §6.
+6. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
+7. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
    Lighthouse, contrast, keyboard nav, broken-link crawl.
 
 ---
