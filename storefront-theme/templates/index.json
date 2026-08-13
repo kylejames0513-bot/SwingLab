@@ -113,8 +113,8 @@
         "anchor": "gear",
         "heading": "Train the priority your report surfaces",
         "sub": "The app maps supported coaching priorities to a drill first. When a relevant training aid exists, the recommendation stays tied to that practice job.",
-        "collection": "gear",
-        "max_products": 6,
+        "collection": "",
+        "max_products": 3,
         "link_label": "View all training gear"
       }
     },
@@ -450,12 +450,12 @@
     "hero",
     "how_it_works",
     "report",
-    "gear",
     "proof",
     "plans",
     "comparison",
     "coach_notes",
     "faq",
+    "gear",
     "cta"
   ]
 }

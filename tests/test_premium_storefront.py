@@ -61,20 +61,33 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "CLUB SAVED",
     ]
 
-    # The 2026-08 restructure: gear moved up (it is what the store ships),
-    # the stats band died (it restated the hero chips), the standalone
-    # email-capture died (the footer newsletter is the one form), and a
-    # proof slot waits empty for real social proof.
+    # The 2026-08 restructure: the stats band died (it restated the hero
+    # chips), the standalone email-capture died (the footer newsletter is the
+    # one form), and a proof slot waits empty for real social proof.
+    #
+    # 2026-08-12, owner decision: GEAR MOVED BACK DOWN, from 4th to 9th. The
+    # earlier pass raised it on the reasoning that gear "is what the store
+    # ships". Measured, that put the largest section on the page — 1703px of a
+    # 10,489px page, more than any other — above every piece of evidence that
+    # the product works. A visitor met the rack before the plans, the
+    # comparison, or a single reason to believe the analysis is worth having.
+    # The membership is the product; the aids are an accessory to a drill a
+    # report has already prioritised, which is what the page itself says three
+    # separate times. It now sells that first and offers the rack last.
+    #
+    # proof stays between the product and the price. It renders nothing today
+    # (see sections/proof.liquid — inventing social proof is off the table),
+    # but that is where evidence belongs the day it exists.
     assert INDEX["order"] == [
         "hero",
         "how_it_works",
         "report",
-        "gear",
         "proof",
         "plans",
         "comparison",
         "coach_notes",
         "faq",
+        "gear",
         "cta",
     ]
     assert "stats" not in INDEX["sections"]
