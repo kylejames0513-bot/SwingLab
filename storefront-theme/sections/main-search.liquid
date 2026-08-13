@@ -1,3 +1,16 @@
+{%- liquid
+  # pages['faq'] is truthy even when the page is missing, so the presence test
+  # has to be on .url. The homepage carries the same FAQ section, so a store
+  # without the page still has somewhere honest to send people.
+  assign faq_url = pages['faq'].url
+  if faq_url == blank
+    assign faq_url = routes.root_url | append: '#faq'
+  endif
+  capture gear_url
+    render 'gear-url'
+  endcapture
+  assign gear_url = gear_url | strip
+-%}
 {% paginate search.results by 12 %}
 <div class="sl-wrap sl-searchpage sl-main-search">
   <header class="sl-main-search__head">
@@ -8,11 +21,12 @@
   <form action="{{ routes.search_url }}" method="get" role="search" class="sl-search-form">
     <label class="visually-hidden" for="sl-search-input">Search</label>
     <input id="sl-search-input" class="sl-input" type="search" name="q"
-           value="{{ search.terms | escape }}" placeholder="Try tempo, sway, or mirror">
+           value="{{ search.terms | escape }}"
+           placeholder="{{ section.settings.placeholder | default: 'Try tempo, sway, or mirror' | escape }}">
     <button class="sl-btn sl-btn--primary" type="submit">Search</button>
   </form>
 
-  {%- if search.performed -%}
+  {%- if search.performed and search.results_count > 0 -%}
     <p class="sl-search-count sl-main-search__count">
       {{ search.results_count }}
       {% if search.results_count == 1 %}result{% else %}results{% endif %}
@@ -30,10 +44,6 @@
         endif
       endfor
     -%}
-
-    {%- if search.results_count == 0 -%}
-      <p class="sl-empty">Nothing matched. Try a shorter term, or browse the <a href="{{ routes.collections_url }}/swinglab-gear">gear collection</a>.</p>
-    {%- endif -%}
 
     {%- if product_count > 0 -%}
       {%- comment -%} The cards are h3s; this keeps the outline h1 → h2 → h3. {%- endcomment -%}
@@ -66,6 +76,26 @@
     {%- if paginate.pages > 1 -%}
       <nav class="sl-pagination" aria-label="Pagination">{{ paginate | default_pagination }}</nav>
     {%- endif -%}
+  {%- else -%}
+    {%- comment -%}
+      Two states land here and want the same way out: a query that matched
+      nothing, and a bare /search with nothing typed yet. Only the first can
+      name what was searched, so the lede is the only part that branches.
+    {%- endcomment -%}
+    <div class="sl-main-search__empty">
+      {%- if search.performed -%}
+        <p class="sl-mono-label sl-main-search__empty-kicker">No results</p>
+        {%- comment -%} search.terms is raw visitor input on its way back out. {%- endcomment -%}
+        <p class="sl-main-search__empty-lede">Nothing matched &ldquo;{{ search.terms | escape }}&rdquo;.</p>
+      {%- endif -%}
+      <p class="sl-empty sl-main-search__empty-body">
+        {{ section.settings.empty_body | default: 'Try a drill name, a training aid, or a part of the swing.' }}
+      </p>
+      <div class="sl-main-search__empty-actions">
+        <a class="sl-btn sl-btn--outline" href="{{ gear_url }}">Browse the rack</a>
+        <a class="sl-btn sl-btn--outline" href="{{ faq_url }}">Read the FAQ</a>
+      </div>
+    </div>
   {%- endif -%}
 </div>
 {% endpaginate %}
@@ -130,6 +160,42 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* when this fires it IS the page, so it reads label → statement → way out,
+   the same order the empty cart uses */
+.sl-main-search__empty {
+  max-width: 46ch;
+  margin-top: var(--sl-space-6);
+}
+
+/* no colour of its own: "no results" is a state, not a measured value, so it
+   keeps .sl-mono-label's muted ink rather than spending a signal */
+.sl-main-search__empty-kicker {
+  margin: 0;
+}
+
+.sl-main-search__empty-lede {
+  margin: var(--sl-space-2) 0 0;
+  font-size: var(--sl-text-xl);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--sl-green);
+  /* the echoed term is visitor input and may be one unbroken string */
+  overflow-wrap: anywhere;
+}
+
+.sl-main-search__empty-body {
+  margin: var(--sl-space-2) 0 0;
+  line-height: 1.6;
+}
+
+.sl-main-search__empty-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-3);
+  margin-top: var(--sl-space-5);
+}
+
 .sl-main-search__other {
   display: grid;
   gap: 14px;
@@ -173,12 +239,36 @@
     left: 50%;
     transform: translateX(-50%);
   }
+  /* base.css centres the whole search page here; the empty block follows it */
+  .sl-main-search__empty {
+    margin-inline: auto;
+  }
+  .sl-main-search__empty-actions {
+    justify-content: center;
+  }
+  .sl-main-search__empty-actions .sl-btn {
+    width: min(100%, 320px);
+  }
 }
 {% endstylesheet %}
 
 {% schema %}
 {
   "name": "Search page",
-  "settings": []
+  "settings": [
+    {
+      "type": "text",
+      "id": "placeholder",
+      "label": "Search field placeholder",
+      "default": "Try tempo, sway, or mirror"
+    },
+    {
+      "type": "text",
+      "id": "empty_body",
+      "label": "Empty-state guidance",
+      "info": "Shown when a search returns nothing, and before anything is typed.",
+      "default": "Try a drill name, a training aid, or a part of the swing."
+    }
+  ]
 }
 {% endschema %}

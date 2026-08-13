@@ -1,7 +1,10 @@
 {%- liquid
   assign menu = section.settings.menu
   assign app_url = section.settings.app_url
-  assign gear_url = routes.collections_url | append: '/swinglab-gear'
+  capture gear_url
+    render 'gear-url'
+  endcapture
+  assign gear_url = gear_url | strip
   assign pro_product = all_products['swinglab-pro']
   assign cap_product = all_products['swinglab-performance-cap']
   # The rebrand renamed these pages' titles but not their handles, so both are

@@ -38,8 +38,23 @@ from .config import DEFAULTS, Config
 # Drill-set key for a session that raised no flags.
 CLEAN = "clean"
 
-# The store path the report's "Matched training aids" link points at,
-# appended to shop.store_url.
+# The store path the report's "Matched training aids" link points at, appended
+# to shop.store_url. Every report ever rendered BAKES THIS URL IN — a report is
+# a static artifact the customer keeps — so this may only ever name an address
+# the store answers at the moment of rendering.
+#
+# That rules out the new handle until the collection is actually renamed. This
+# module deploys with the app, automatically from main, while the rename is a
+# manual Shopify action nobody has scheduled; pointing it at /collections/gear
+# ahead of that put a hard 404 inside every newly rendered report. A previous
+# version of this comment claimed a 301 covered the gap. It did not: none
+# existed, and the redirect Shopify creates at rename time runs old -> new, so
+# it can rescue reports written BEFORE the rename and never ones written after.
+#
+# The old handle is correct in both states, which is the whole point of leaving
+# it: it resolves today, and after the rename Shopify's automatic redirect
+# carries it. Move it to "/collections/gear" only once that collection exists —
+# LAUNCH_CHECKLIST.md carries the step.
 GEAR_COLLECTION_PATH = "/collections/swinglab-gear"
 
 PLAN_TITLES = {

@@ -419,7 +419,7 @@ shop:
   enabled: true              # gear shop pages + per-analysis recommendations.
                              # Also needs SHOPIFY_STORE_DOMAIN in the
                              # environment — inert until set. The app reads
-                             # the public swinglab-gear collection without a
+                             # the public gear collection without a
                              # token. Products and prices live in Shopify.
   cache_minutes: 10          # in-memory product list cache (per-process)
   tag_prefix: "swinglab:"    # products tagged swinglab:tempo / swinglab:sway /
@@ -443,7 +443,7 @@ shop:
                              # products to nothing. /shop was empty and every
                              # analysis recommended no gear, for any flag.
                              #
-                             # Off, the whole live swinglab-gear collection is
+                             # Off, the whole live gear collection is
                              # recommendable on the measured swinglab:<flag>
                              # tag alone. The honest cost: nothing in-app now
                              # asserts fulfillment evidence, so no surface may
@@ -462,7 +462,7 @@ shop:
                              # public storefront for the quiet "Matched
                              # training aids" link at the end of the report's
                              # practice plan — the link points at
-                             # <store_url>/collections/swinglab-gear.
+                             # <store_url>/collections/gear.
                              # Empty ("") = the report renders no link.
 
 output_dir: results

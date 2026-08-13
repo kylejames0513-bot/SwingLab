@@ -1,7 +1,15 @@
 {%- liquid
   assign gear_collection = section.settings.collection
   if gear_collection == blank
-    assign gear_collection = collections['swinglab-gear']
+    # The collection is renamed at cutover, not now, so resolve the new handle
+    # and fall back to the old one — the section then works whichever side of
+    # the rename this theme is published on. Presence is tested on .handle
+    # because collections[...] returns a truthy drop when the handle is
+    # absent. The fallback is deletable once the redirect has been live a while.
+    assign gear_collection = collections['gear']
+    if gear_collection.handle == blank
+      assign gear_collection = collections['swinglab-gear']
+    endif
   endif
   assign max_products = section.settings.max_products | default: 6
 
@@ -491,7 +499,7 @@
     { "type": "text", "id": "eyebrow", "label": "Eyebrow", "default": "Training aids" },
     { "type": "text", "id": "heading", "label": "Heading", "default": "Train the priority your report surfaces" },
     { "type": "textarea", "id": "sub", "label": "Subheading", "default": "The app maps supported coaching priorities to a drill first. When a relevant training aid exists, the recommendation stays tied to that practice job." },
-    { "type": "collection", "id": "collection", "label": "Collection", "info": "Defaults to the swinglab-gear collection when left blank." },
+    { "type": "collection", "id": "collection", "label": "Collection", "info": "Defaults to the gear collection when left blank." },
     { "type": "range", "id": "max_products", "label": "Maximum products", "min": 3, "max": 12, "step": 1, "default": 6 },
     { "type": "text", "id": "link_label", "label": "Link label", "default": "View all training gear" },
     { "type": "text", "id": "footnote", "label": "Footnote", "default": "Gear supports the drill a report prioritizes. None of it is required to use CaddieInsight." }

@@ -10,7 +10,15 @@
 
   assign rel_collection = section.settings.collection
   if rel_collection == blank
-    assign rel_collection = collections['swinglab-gear']
+    # The collection is renamed at cutover, not now, so resolve the new handle
+    # and fall back to the old one — the rail then works whichever side of the
+    # rename this theme is published on. Presence is tested on .handle because
+    # collections[...] returns a truthy drop when the handle is absent. The
+    # fallback is deletable once the redirect has been live a while.
+    assign rel_collection = collections['gear']
+    if rel_collection.handle == blank
+      assign rel_collection = collections['swinglab-gear']
+    endif
   endif
 
   assign max_products = section.settings.max_products | default: 4

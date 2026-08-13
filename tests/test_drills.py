@@ -177,6 +177,17 @@ def test_gear_link_present_when_store_url_set(tmp_path):
     html = render_report(tmp_path, [fake_swing(1, tempo=2.0)], cfg)
     assert "Browse optional training aids" in html
     assert "No purchase is required" in html
+    # The PRE-CUTOVER handle, deliberately. A report is a static artifact the
+    # customer keeps, so this URL is baked in at render time and can only ever
+    # name an address the store answers right now — and the store answers
+    # /collections/swinglab-gear today, not /collections/gear. Pointing it
+    # forward put a hard 404 inside every newly rendered report, because the
+    # app deploys from main automatically while the collection rename is a
+    # manual Shopify action nobody has scheduled.
+    #
+    # Update this to /collections/gear in the same change that renames the
+    # collection, not before. Shopify's automatic old -> new redirect then
+    # carries every report written before that point.
     assert "https://example.myshopify.com/collections/swinglab-gear" in html
 
 

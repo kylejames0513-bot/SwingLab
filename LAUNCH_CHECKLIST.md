@@ -75,6 +75,16 @@ publish, which is why it goes last.
 
 **Storefront**
 
+- [ ] **Rename the collection `swinglab-gear` → `gear`.** The code side is
+      done and every lookup resolves either handle, but nothing else in this
+      list creates the new handle — and `swinglab/drills.py` may only move to
+      it once it exists. Shopify writes the old→new 301 automatically.
+- [ ] After that rename: set `GEAR_COLLECTION_PATH` in `swinglab/drills.py`
+      to `/collections/gear`, update `tests/test_drills.py` to match, and
+      retarget the six archived-product redirects, which still point at
+      `/collections/swinglab-gear`.
+- [ ] Point `header-group.json`'s announcement link at
+      `shopify://collections/gear`.
 - [ ] Rename pages: `the-swinglab-method` → `method`,
       `how-swinglab-works` → `how-it-works`. Redirects already exist and
       activate on rename. The theme handles either handle, so order does not
@@ -144,13 +154,20 @@ and why activating it is a deliberate, separate step.
 
 ## 6. Open decisions
 
-**The `swinglab-gear` collection rename.** 61 references across 24 files,
-including `swinglab/drills.py`'s `GEAR_COLLECTION_PATH` — the URL live swing
-reports point at for "Matched training aids". Renaming it finishes the rebrand;
-leaving it means `caddieinsight.com/collections/swinglab-gear` stays the
-canonical gear URL. It is mechanical but cross-surface, and it wants its own
-pass with a full test run. My recommendation is to do it, in one commit, before
-the app work.
+**The `swinglab-gear` collection rename is code-complete, store-pending.**
+Every lookup resolves the new handle first and falls back to the old, and
+every constructed URL goes through `snippets/gear-url.liquid`, which resolves
+against what the store actually has. So the theme is correct on both sides of
+the rename. What is NOT done is the rename itself, and `drills.py` still
+names the old handle deliberately — a report bakes its URL in permanently, so
+it may only ever name an address the store answers at render time.
+
+**`docs/runbooks/rebrand-cutover.md` contradicts this.** It tells the operator
+to rename the collection to `caddieinsight-gear`. That handle satisfies
+neither arm of the fallbacks, so following the runbook empties `/shop` and
+breaks every gear link. Reconcile the runbook to `gear` before cutover.
+`README.md:229`, `README.md:741`, `deploy/README.md:261` and
+`docs/runbooks/gear-coverage.md:12` also still name the old handle.
 
 **`swinglab-pro` keeps its handle.** `shopify.app.toml` is explicit that the
 `orders/paid` webhook is the only thing that grants Pro, and `config.yaml`'s

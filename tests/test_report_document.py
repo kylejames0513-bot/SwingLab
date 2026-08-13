@@ -106,7 +106,7 @@ def test_document_boundary_owns_complete_prescription_navigation_and_paths():
     assert document.view.next_move.title == "Keep your head steadier"
     assert document.view.practice.full_steps == ("Set up by a wall.", "Make three slow turns.")
     assert document.view.refilm.target.text == "Keep head rise at or below 0.5 shoulder widths."
-    assert document.depth.navigation == ReportNavigation("/", "/shop", "/collections/swinglab-gear")
+    assert document.depth.navigation == ReportNavigation("/", "/shop", "/collections/gear")
     assert document.view.next_move.title != document.depth.secondary_findings[0].title
     assert len(document.view.practice.full_steps) == 2
     assert document.view.refilm.target.text not in document.depth.limitations

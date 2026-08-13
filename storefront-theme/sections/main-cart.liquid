@@ -1,5 +1,18 @@
 {%- liquid
+  # Resolved once, stripped once. render returns the snippet trailing
+  # newline along with the path, and interpolating that straight into an
+  # attribute emits a leading newline inside the href — which browsers
+  # forgive and exact-match assertions do not.
+  capture gear_url
+    render 'gear-url'
+  endcapture
+  assign gear_url = gear_url | strip
   assign returns_url = pages['shipping-returns'].url | default: '/pages/shipping-returns'
+  # The empty cart's first action is the app, not a product — gear is the
+  # optional half of this store. Same origin setting the header and footer
+  # carry, so one edit moves every app link on the storefront.
+  assign app_url = section.settings.app_url
+  assign app_signup_url = app_url | append: '/signup'
   assign has_membership_line = false
   for item in cart.items
     if item.product.type == 'Membership'
@@ -8,27 +21,57 @@
   endfor
 -%}
 <div class="sl-wrap sl-cartpage sl-main-cart">
-  <h1 class="sl-h2">{{ 'layout.cart.title' | t }}</h1>
+  <h1 class="sl-h2">Your cart</h1>
 
   {%- if cart.item_count == 0 -%}
     <div class="sl-main-cart__empty">
       <p class="sl-mono-label sl-main-cart__empty-kicker">Cart · 0 items</p>
-      <p class="sl-main-cart__empty-lede">Your cart is empty.</p>
-      <p class="sl-main-cart__empty-body">Add a training aid or a Pro plan and it will be waiting here.</p>
+      <p class="sl-main-cart__empty-lede">Nothing in the cart yet.</p>
+      <p class="sl-main-cart__empty-body">Gear is optional — the report is not.</p>
       <div class="sl-main-cart__empty-actions">
-        <a class="sl-btn sl-btn--primary" href="{{ routes.collections_url }}/swinglab-gear">Browse the gear</a>
-        <a class="sl-btn sl-btn--outline" href="{{ routes.root_url }}#plans">See membership plans</a>
+        {%- if app_url != blank -%}
+          {%- comment -%} .sl-btn is a flex row with its own gap, so the arrow needs no spacing of its own. {%- endcomment -%}
+          <a class="sl-btn sl-btn--primary" href="{{ app_signup_url }}">Analyze a swing free<span aria-hidden="true">→</span></a>
+        {%- endif -%}
+        <a class="sl-btn sl-btn--outline" href="{{ gear_url }}">Browse the rack</a>
       </div>
     </div>
   {%- else -%}
     <p class="sl-mono-label sl-main-cart__count">
       {{ cart.item_count }}
-      {%- if cart.item_count == 1 %} item{% else %} items{% endif %} in the bag
+      {%- if cart.item_count == 1 %} item{% else %} items{% endif %} in the cart
     </p>
     <form action="{{ routes.cart_url }}" method="post" id="cart">
       <div class="sl-cart-lines" role="list">
         {%- for item in cart.items -%}
-          {%- assign line_alt = item.image.alt | default: item.product.title -%}
+          {%- liquid
+            assign line_alt = item.image.alt | default: item.product.title
+
+            # Whether a membership renews is the one fact the price cannot
+            # show and the one a customer is angriest to discover later, so
+            # every membership line states it before checkout. No selling
+            # plan means a single charge — that is the Founders Pass, and Pro
+            # bought as a fixed access window. The store's plans are named
+            # "Deliver every month" and "Deliver every year", which is the
+            # only cadence Liquid exposes here; anything else stays honest by
+            # saying it renews without naming an interval it cannot read.
+            assign renewal_note = ''
+            assign line_renews = 'false'
+            if item.product.type == 'Membership'
+              assign renewal_note = 'One payment · never renews'
+              assign line_plan_name = item.selling_plan_allocation.selling_plan.name | downcase
+              if line_plan_name != blank
+                assign line_renews = 'true'
+                if line_plan_name contains 'year' or line_plan_name contains 'annual'
+                  assign renewal_note = 'Renews yearly'
+                elsif line_plan_name contains 'month'
+                  assign renewal_note = 'Renews monthly'
+                else
+                  assign renewal_note = 'Renews automatically'
+                endif
+              endif
+            endif
+          -%}
           <div class="sl-cart-line" role="listitem">
             <a class="sl-cart-media" href="{{ item.url }}" tabindex="-1" aria-hidden="true">
               {%- if item.image -%}
@@ -43,7 +86,9 @@
               {%- unless item.variant.title == 'Default Title' -%}
                 <p class="sl-cart-variant">{{ item.variant.title }}</p>
               {%- endunless -%}
-              {%- if item.selling_plan_allocation -%}
+              {%- if renewal_note != blank -%}
+                <p class="sl-cart-renewal" data-sl-renews="{{ line_renews }}">{{ renewal_note }}</p>
+              {%- elsif item.selling_plan_allocation -%}
                 <p class="sl-cart-variant">{{ item.selling_plan_allocation.selling_plan.name }}</p>
               {%- endif -%}
               <a class="sl-cart-remove" href="{{ item.url_to_remove }}">Remove</a>
@@ -71,10 +116,14 @@
       {%- endif -%}
 
       {%- if has_membership_line -%}
+        {%- comment -%}
+          Deliberately not a link: the customer is one button from checkout
+          and the app is where they go afterwards, not instead.
+        {%- endcomment -%}
         <aside class="sl-note sl-main-cart__unlock">
           <p class="sl-main-cart__unlock-label">Membership</p>
-          <strong>{{ 'products.product.unlock_heading' | t }}</strong>
-          <p>{{ 'products.product.unlock_body' | t }}</p>
+          <strong>How it activates</strong>
+          <p>Your membership activates on the CaddieInsight account matching your checkout email — open the app afterwards to claim it.</p>
         </aside>
       {%- endif -%}
 
@@ -82,7 +131,7 @@
         <p class="sl-cart-subtotal"><span class="sl-mono-label">Subtotal</span> <strong>{{ cart.total_price | money }}</strong></p>
         <p class="sl-cart-hint">Taxes and shipping calculated at checkout.</p>
         <div class="sl-cart-actions">
-          <a class="sl-btn sl-btn--outline" href="{{ routes.collections_url }}/swinglab-gear">Continue shopping</a>
+          <a class="sl-btn sl-btn--outline" href="{{ gear_url }}">Continue shopping</a>
           <button class="sl-btn sl-btn--outline" type="submit" name="update">Update cart</button>
           <button class="sl-btn sl-btn--primary" type="submit" name="checkout">Check out</button>
         </div>
@@ -171,6 +220,40 @@
   letter-spacing: 0.1em;
   text-transform: uppercase;
   color: var(--sl-ink-muted);
+}
+
+/* the renewal terms, marked with a registration square: filled when the
+   charge is settled and single, open when it is still coming round */
+.sl-cart-renewal {
+  /* flex + fit-content rather than inline-flex: "One payment · never renews"
+     is wider than the 1fr info column of the mobile line grid, and an
+     inline-flex box would widen the track instead of wrapping inside it. */
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  max-width: 100%;
+  margin: 7px 0 0;
+  padding: 3px 9px;
+  border: 1px solid var(--sl-border-strong);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sl-ink-soft);
+}
+
+.sl-cart-renewal::before {
+  content: "";
+  flex: none;
+  width: 7px;
+  height: 7px;
+  border: 1px solid var(--sl-steel);
+}
+
+.sl-cart-renewal[data-sl-renews="false"]::before {
+  background: var(--sl-steel);
 }
 
 .sl-main-cart .sl-cart-title {
@@ -265,6 +348,13 @@
       "label": "Promo note",
       "default": "Launch code RANGE15 takes 15% off training aids at checkout.",
       "info": "Quiet reminder above the subtotal. Clear the text to remove it."
+    },
+    {
+      "type": "text",
+      "id": "app_url",
+      "label": "App URL",
+      "default": "https://app.caddieinsight.com",
+      "info": "The empty cart's \"Analyze a swing free\" button points at /signup on this origin. Leave empty to hide it."
     }
   ]
 }

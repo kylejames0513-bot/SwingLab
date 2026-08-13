@@ -30,7 +30,14 @@ SECTIONS = Path(__file__).resolve().parent.parent / "storefront-theme" / "sectio
 
 # The grounds that reverse the page. A heading over any of these inherits the
 # wrong colour from base.css unless it says otherwise.
-FIELD_GROUNDS = ("var(--sl-field)", "var(--sl-field-lift)")
+#
+# --sl-field-rgb is in the list because leaving it out made this gate miss the
+# exact file it was written for. main-collection.liquid paints its banner with
+# `rgba(var(--sl-field-rgb), 0.9)` and puts an <h1> on it; matching only the
+# two literal var() spellings meant the detector inspected four sections and
+# silently skipped that one. A gate that quietly narrows its own scope is worse
+# than no gate, because the green run is read as proof.
+FIELD_GROUNDS = ("var(--sl-field)", "var(--sl-field-lift)", "var(--sl-field-rgb)")
 
 # Rules whose selector names a heading. Kickers, captions and body copy are
 # excluded deliberately: they are not element-level headings, so they inherit
@@ -57,8 +64,17 @@ def _stylesheet(path: Path) -> str:
 
 
 def _paints_the_field(css: str) -> bool:
+    """True if any background declaration resolves to the reversed ground.
+
+    The declaration is read to its semicolon rather than to the end of the
+    line: main-collection.liquid paints its banner with a `background:` whose
+    linear-gradient wraps onto the NEXT line, so a line-anchored match missed
+    it — and missed the one <h1> the gate most needed to see. Shorthands count
+    too (`background-image`, `background:`), since which longhand carries the
+    colour is not the point.
+    """
     return any(
-        re.search(r"background(?:-color)?\s*:[^;}]*" + re.escape(ground), css)
+        re.search(r"background[\w-]*\s*:[^;}]*" + re.escape(ground), css, re.S)
         for ground in FIELD_GROUNDS
     )
 

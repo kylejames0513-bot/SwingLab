@@ -1,0 +1,40 @@
+{% doc %}
+  The gear collection's URL, resolved rather than constructed. Outputs a bare
+  path and nothing else, so callers can capture it:
+
+      {%- capture gear_url -%}{%- render 'gear-url' -%}{%- endcapture -%}
+
+  WHY THIS IS NOT JUST A STRING. The collection is being renamed from
+  swinglab-gear to gear, and the rename is a manual Shopify action that happens
+  at cutover — after this theme is written and possibly after it is published.
+  So there is a window in which the theme exists and the new handle does not.
+
+  Hardcoding either handle is wrong in one half of that window, and the 301
+  does not save it: Shopify creates the redirect at rename time running
+  old -> new, which rescues links to the OLD handle and can never rescue a link
+  to the new one written before the rename. Six unguarded
+  `routes.collections_url | append: '/gear'` sites shipped that way and every
+  one of them was a live 404 — including the 404 page's own "Training gear"
+  escape hatch, which sent a lost visitor to another 404.
+
+  So the handle is resolved against what the store actually has, newest first,
+  and only falls back to constructing a path if neither collection is found.
+  Presence is tested on `.handle`, never on the drop itself: `collections[...]`
+  returns a TRUTHY drop for a handle that does not exist.
+
+  Delete the legacy arm once the rename has been live long enough that no
+  cached page still points at the old handle.
+{% enddoc %}
+{%- liquid
+  assign gear_collection = collections['gear']
+  if gear_collection.handle == blank
+    assign gear_collection = collections['swinglab-gear']
+  endif
+
+  if gear_collection.handle != blank
+    assign resolved = gear_collection.url
+  else
+    assign resolved = routes.collections_url | append: '/gear'
+  endif
+-%}
+{{- resolved -}}

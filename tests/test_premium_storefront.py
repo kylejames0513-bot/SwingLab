@@ -556,7 +556,24 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     }
     assert used_weights <= loaded_weights
     assert 'href="/collections' not in route_sources
-    assert route_sources.count("routes.collections_url") == 4
+    # These three sections used to build the gear path themselves, four times
+    # between them. They now delegate to snippets/gear-url.liquid, which
+    # RESOLVES the collection instead of naming a handle — the rename from
+    # swinglab-gear to gear is a manual cutover step, so a hardcoded path is a
+    # live 404 on one side of it or the other. The 404 page's own "Training
+    # gear" escape hatch was one of them, sending a lost visitor to a second
+    # 404.
+    #
+    # The store-awareness this line has always guarded still has to hold, so it
+    # is asserted where it now lives rather than dropped.
+    assert route_sources.count("routes.collections_url") == 0
+    # Once per section: each resolves the path a single time into a local and
+    # reuses it, rather than rendering the snippet at every link site.
+    assert route_sources.count("render 'gear-url'") == 3
+    gear_url_snippet = source("snippets/gear-url.liquid")
+    assert "routes.collections_url" in gear_url_snippet
+    assert "collections['gear']" in gear_url_snippet
+    assert "collections['swinglab-gear']" in gear_url_snippet
 
     how_source = source("sections/how-it-works.liquid")
     assert "section.settings.cta_label" not in how_source

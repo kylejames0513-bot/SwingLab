@@ -1,14 +1,84 @@
-{%- assign per_page = section.settings.per_page | default: 12 -%}
-{%- assign banner_alt = collection.image.alt | default: collection.title -%}
+{%- liquid
+  assign per_page = section.settings.per_page | default: 12
+
+  # ONE TEMPLATE SERVES EVERY COLLECTION, SO THE RACK'S COPY IS CONDITIONAL.
+  # /collections/gear is "the rack" and has authored copy; /all and /frontpage
+  # run through this same template and must keep their own title and
+  # description rather than inheriting a headline about training aids. The
+  # match is on handle through a collection setting, so pointing the rack at a
+  # different collection is an editor change rather than a Liquid edit.
+  assign rack = section.settings.rack_collection
+  if rack.handle == blank
+    # The collection is renamed at cutover, not now, so resolve the new handle
+    # and fall back to the old one — the rack copy then lands whichever side of
+    # the rename this theme is published on. Presence is tested on .handle
+    # because collections[...] returns a truthy drop when the handle is absent.
+    # The fallback is deletable once the redirect has been live a while.
+    assign rack = collections['gear']
+    if rack.handle == blank
+      assign rack = collections['swinglab-gear']
+    endif
+  endif
+  assign is_rack = false
+  if rack.handle != blank and collection.handle == rack.handle
+    assign is_rack = true
+  endif
+
+  assign kicker = section.settings.kicker | default: 'Collection'
+  assign heading = collection.title
+  assign lede = ''
+  if is_rack
+    assign kicker = section.settings.rack_kicker | default: kicker
+    assign heading = section.settings.rack_heading | default: heading
+    assign lede = section.settings.rack_lede
+  endif
+
+  assign banner_alt = collection.image.alt | default: collection.title
+
+  # THE FILTER RAIL IS THE swinglab: TAG NAMESPACE, NOT A SECOND TAXONOMY.
+  # Those tags already decide which aid the app recommends against a surfaced
+  # priority, and already print on the cards, so filtering on them means the
+  # rack answers the same question the report asked. Tag paths are Shopify's
+  # own routing: no app, no JS, and a filtered rack is a real address.
+  assign filter_str = ''
+  if section.settings.show_filters
+    for tag in collection.all_tags
+      assign t = tag | downcase | strip
+      assign t_prefix = t | slice: 0, 9
+      # swinglab:general means "suits every swing", so as a chip it asks
+      # nothing the All chip has not already answered.
+      if t_prefix == 'swinglab:' and t != 'swinglab:general'
+        assign filter_str = filter_str | append: tag | append: '||'
+      endif
+    endfor
+  endif
+  assign filter_tags = filter_str | split: '||'
+-%}
 {% paginate collection.products by per_page %}
+{%- liquid
+  # THE PAIRED DRILL RENDERS FOR EVERY CARD OR FOR NONE. product-card.liquid
+  # takes only a product and has no slot for a spec line, and it is shared with
+  # search — so the row is a sibling of the card, owned by this section, rather
+  # than a change to the snippet every grid in the theme renders. Deciding once
+  # per page is what keeps it a specification: a line that appears on three
+  # cards out of eight reads as missing data instead. Collections with no
+  # paired drills at all — /collections/all carries the membership — get none.
+  assign show_drill = false
+  for product in collection.products
+    if product.metafields.caddieinsight.paired_drill.value != blank
+      assign show_drill = true
+      break
+    endif
+  endfor
+-%}
 
 {%- if collection.image -%}
   <div class="sl-main-collection__banner">
     {{ collection.image | image_url: width: 2600 | image_tag: class: 'sl-main-collection__banner-img', alt: banner_alt, loading: 'eager', widths: '750, 1100, 1600, 2200, 2600', sizes: '100vw' }}
     <div class="sl-main-collection__banner-inner">
       <div class="sl-wrap">
-        <p class="sl-mono-label sl-main-collection__kicker">Collection</p>
-        <h1 class="sl-main-collection__title">{{ collection.title }}</h1>
+        <p class="sl-mono-label sl-main-collection__kicker">{{ kicker }}</p>
+        <h1 class="sl-main-collection__title">{{ heading }}</h1>
       </div>
     </div>
   </div>
@@ -17,18 +87,54 @@
 <div class="sl-wrap sl-collection{% if collection.image %} sl-main-collection--bannered{% endif %}">
   {%- unless collection.image -%}
     <header class="sl-collection-head">
-      <p class="sl-mono-label sl-main-collection__kicker sl-main-collection__kicker--light">Collection</p>
-      <h1 class="sl-h2">{{ collection.title }}</h1>
+      <p class="sl-mono-label sl-main-collection__kicker sl-main-collection__kicker--light">{{ kicker }}</p>
+      <h1 class="sl-main-collection__title">{{ heading }}</h1>
     </header>
   {%- endunless -%}
 
-  {%- if collection.description != blank -%}
+  {%- comment -%}
+    The authored lede REPLACES the collection description on the rack rather
+    than stacking above it — the store copy says the same thing at three times
+    the length, and two ledes is how a page stops having one. Blank the
+    setting and the merchant's description comes back.
+  {%- endcomment -%}
+  {%- if lede != blank -%}
+    <p class="sl-main-collection__lede">{{ lede }}</p>
+  {%- elsif collection.description != blank -%}
     <div class="sl-collection-desc sl-rte sl-main-collection__desc">{{ collection.description }}</div>
+  {%- endif -%}
+
+  {%- if filter_tags.size > 0 -%}
+    {%- assign filter_id = 'CollectionFilters-' | append: section.id -%}
+    <nav class="sl-main-collection__filters" aria-labelledby="{{ filter_id }}">
+      <p id="{{ filter_id }}" class="sl-mono-label sl-main-collection__filter-label">
+        {{- section.settings.filter_label | default: 'Trains' -}}
+      </p>
+      <a href="{{ collection.url }}"
+         class="sl-chip sl-main-collection__chip{% if current_tags.size == 0 %} sl-chip--solid{% endif %}"
+         {% if current_tags.size == 0 %}aria-current="page"{% endif %}>All</a>
+      {%- for tag in filter_tags -%}
+        {%- capture filter_name -%}
+          {%- render 'swinglab-tag-label', tag: tag -%}
+        {%- endcapture -%}
+        {%- assign filter_name = filter_name | strip -%}
+        {%- if filter_name != blank -%}
+          {%- assign is_on = false -%}
+          {%- if current_tags contains tag -%}
+            {%- assign is_on = true -%}
+          {%- endif -%}
+          <a href="{{ collection.url }}/{{ tag | handleize }}"
+             class="sl-chip sl-main-collection__chip{% if is_on %} sl-chip--solid{% endif %}"
+             {% if is_on %}aria-current="page"{% endif %}>{{ filter_name | escape }}</a>
+        {%- endif -%}
+      {%- endfor -%}
+    </nav>
   {%- endif -%}
 
   <p class="sl-mono-label sl-main-collection__count">
     {{ collection.products_count }}
     {%- if collection.products_count == 1 %} {{ section.settings.count_noun_singular | default: 'product' }}{% else %} {{ section.settings.count_noun_plural | default: 'products' }}{% endif %}
+    {%- if current_tags.size > 0 %} of {{ collection.all_products_count }}{% endif -%}
   </p>
 
   {%- if collection.products.size > 0 -%}
@@ -36,9 +142,34 @@
     <h2 class="visually-hidden">{{ 'collections.general.products_heading' | t }}</h2>
     <div class="sl-grid sl-main-collection__grid">
       {%- for product in collection.products -%}
-        {% render 'product-card', product: product %}
+        {%- if show_drill -%}
+          <div class="sl-main-collection__cell">
+            {% render 'product-card', product: product %}
+            {%- assign paired_drill = product.metafields.caddieinsight.paired_drill.value -%}
+            <p class="sl-main-collection__drill">
+              <span class="sl-main-collection__drill-key">Paired drill</span>
+              {%- if paired_drill != blank -%}
+                <span class="sl-main-collection__drill-value">{{ paired_drill }}</span>
+              {%- else -%}
+                {%- comment -%}
+                  Printed, not hidden: the row's whole job is that every card
+                  in a row answers the same question, and a cell that vanishes
+                  breaks the alignment that makes it a specification. Muted,
+                  because an absent value must not read like a stated one.
+                {%- endcomment -%}
+                <span class="sl-main-collection__drill-value sl-main-collection__drill-value--none">&mdash;</span>
+              {%- endif -%}
+            </p>
+          </div>
+        {%- else -%}
+          {% render 'product-card', product: product %}
+        {%- endif -%}
       {%- endfor -%}
     </div>
+  {%- elsif current_tags.size > 0 -%}
+    <p class="sl-empty">
+      Nothing here trains that yet. <a href="{{ collection.url }}">Show everything</a>.
+    </p>
   {%- else -%}
     <p class="sl-empty">Nothing here yet — check back soon.</p>
   {%- endif -%}
@@ -83,13 +214,19 @@
   display: block;
 }
 
-/* green scrim, heaviest where the title sits */
+/* THE BANNER IS A FIELD, NOT A TINTED PHOTO. The scrim was written against
+   --sl-night, which under Industry inverted from a darker well to a lighter
+   one — so it painted paper over the image and left near-white type on it.
+   The field is the one reversed ground the system has, and the hatch is what
+   marks a photograph as evidence on it rather than as scenery. */
 .sl-main-collection__banner::after {
   content: "";
   position: absolute;
   inset: 0;
   z-index: 1;
-  background: linear-gradient(to top, rgba(var(--sl-night-rgb), 0.82), rgba(var(--sl-night-rgb), 0.32) 55%, rgba(var(--sl-night-rgb), 0.08));
+  background-image:
+    var(--sl-hatch),
+    linear-gradient(to top, rgba(var(--sl-field-rgb), 0.9), rgba(var(--sl-field-rgb), 0.55) 55%, rgba(var(--sl-field-rgb), 0.28));
 }
 
 .sl-main-collection__banner-inner {
@@ -102,43 +239,95 @@
 }
 
 .sl-main-collection__kicker {
-  color: rgba(233, 242, 236, 0.78);
-  margin: 0 0 8px;
+  color: var(--sl-field-soft);
+  margin: 0 0 var(--sl-space-2);
 }
 
 .sl-main-collection__title {
   margin: 0;
-  font-size: var(--sl-text-4xl);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-heading-support);
   font-weight: 600;
   letter-spacing: -0.02em;
-  line-height: 1.05;
-  color: #fdfcf9;
+  line-height: 1.02;
+  text-transform: uppercase;
+  color: var(--sl-ink);
   text-wrap: balance;
 }
 
+/* base.css styles h1 as an ELEMENT selector, so a heading over the field
+   inherits paper ink and disappears. Both grounds state their own colour. */
+.sl-main-collection__banner .sl-main-collection__title {
+  color: var(--sl-field-ink);
+}
+
 .sl-main-collection--bannered {
-  padding-top: 34px;
+  padding-top: var(--sl-space-6);
 }
 
 /* bannerless heading wrapper (header element carries no default margin) */
 .sl-collection-head { margin: 0; }
 
+/* Muted, not the signal: steel-deep means a value the engine measured, and a
+   section label on a shop page is not one. */
 .sl-main-collection__kicker--light {
   display: block;
-  margin: 0 0 10px;
-  color: var(--sl-orange);
+  margin: 0 0 var(--sl-space-3);
+  color: var(--sl-ink-soft);
+}
+
+.sl-main-collection__lede {
+  margin: var(--sl-space-4) 0 0;
+  max-width: 56ch;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-lg);
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 
 .sl-main-collection__desc {
   max-width: 62ch;
 }
 
+/* ---- filter rail ---- */
+.sl-main-collection__filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sl-space-3);
+  margin: var(--sl-space-6) 0 0;
+  padding-top: var(--sl-space-5);
+  border-top: 1px solid var(--sl-border-strong);
+}
+
+.sl-main-collection__filter-label {
+  margin: 0;
+}
+
+/* base.css underlines every link, which is right for inline prose and wrong
+   for a bordered control. The chip carries its own edge and its own selected
+   state, so the underline would only add a second, weaker one. */
+.sl-main-collection__chip {
+  text-decoration: none;
+}
+
+.sl-main-collection__chip:hover {
+  color: var(--sl-ink);
+  border-color: var(--sl-ink);
+}
+
+.sl-main-collection__chip.sl-chip--solid:hover {
+  color: var(--sl-green-ink);
+  border-color: var(--sl-ink-hi);
+  background: var(--sl-ink-hi);
+}
+
 /* product count as a measured evidence label with a leading tick */
 .sl-main-collection__count {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin: 22px 0 0;
+  gap: var(--sl-space-3);
+  margin: var(--sl-space-5) 0 0;
 }
 
 .sl-main-collection__count::before {
@@ -148,10 +337,54 @@
   background: var(--sl-border);
 }
 
+/* ---- the cell: card, then the drill it is paired to ---- */
+.sl-main-collection__cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+/* .sl-pcard is height: 100% so its price seats at the foot of the grid cell.
+   Inside a wrapper that also holds the drill row, 100% overflows — the card
+   takes the leftover height instead, which keeps the same result. */
+.sl-main-collection__cell > .sl-pcard {
+  height: auto;
+  flex: 1 1 auto;
+}
+
+.sl-main-collection__drill {
+  margin: var(--sl-space-3) 0 0;
+  padding-top: var(--sl-space-3);
+  border-top: 1px solid var(--sl-border);
+}
+
+.sl-main-collection__drill-key {
+  display: block;
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--sl-ink-muted);
+}
+
+.sl-main-collection__drill-value {
+  display: block;
+  margin-top: var(--sl-space-1);
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+
+.sl-main-collection__drill-value--none {
+  color: var(--sl-ink-muted);
+}
+
 /* card accent: quiet arc under each title, kinetic on hover */
 .sl-main-collection__grid .sl-pcard-title {
   position: relative;
-  padding-bottom: 13px;
+  padding-bottom: var(--sl-space-3);
 }
 
 .sl-main-collection__grid .sl-pcard-title::after {
@@ -181,6 +414,16 @@
 }
 
 @media (max-width: 749px) {
+  .sl-main-collection__filters {
+    justify-content: center;
+  }
+  /* A 26px chip is not a touch target. Only the phone rule pays the height,
+     so the desktop rail keeps its printed-label proportions. */
+  .sl-main-collection__chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
   .sl-main-collection__count {
     justify-content: center;
   }
@@ -204,6 +447,43 @@
       "step": 4,
       "default": 12
     },
+    {
+      "type": "text",
+      "id": "kicker",
+      "label": "Kicker",
+      "default": "Collection",
+      "info": "Mono label above the title on every collection except the rack."
+    },
+    { "type": "header", "content": "The rack" },
+    {
+      "type": "paragraph",
+      "content": "Copy for the training-aid collection only. Every other collection keeps its own title and description."
+    },
+    {
+      "type": "collection",
+      "id": "rack_collection",
+      "label": "Collection",
+      "info": "Defaults to the gear collection when left blank."
+    },
+    { "type": "text", "id": "rack_kicker", "label": "Kicker", "default": "Training aids · The rack" },
+    { "type": "text", "id": "rack_heading", "label": "Heading", "default": "Gear that matches a priority." },
+    {
+      "type": "textarea",
+      "id": "rack_lede",
+      "label": "Lede",
+      "info": "Replaces the collection description on the rack. Leave blank to use the description instead.",
+      "default": "Every aid here is paired to a drill, and every drill works without it. We recommend gear only when a report has already put the matching priority first."
+    },
+    { "type": "header", "content": "Filters" },
+    {
+      "type": "checkbox",
+      "id": "show_filters",
+      "label": "Show filter chips",
+      "default": true,
+      "info": "Built from the swinglab: product tags — the same tags the report matches gear against. A collection with none shows no rail."
+    },
+    { "type": "text", "id": "filter_label", "label": "Filter label", "default": "Trains" },
+    { "type": "header", "content": "Product count" },
     {
       "type": "text",
       "id": "count_noun_singular",

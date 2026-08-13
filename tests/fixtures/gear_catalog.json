@@ -1,6 +1,6 @@
 {
   "source": "https://caddieinsight.com/api/2026-07/graphql.json",
-  "collection": "swinglab-gear",
+  "collection": "gear",
   "note": "Regenerate with scripts/refresh_gear_catalog.py \u2014 do not hand-edit. Only fields the recommendation path reads are stored.",
   "products": [
     {
