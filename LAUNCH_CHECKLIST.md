@@ -26,6 +26,7 @@ is exactly how I first "verified" a page that had not rendered at all.
 | Favicon set | 16/32/64/512 now ship to both surfaces; apple-touch fixed |
 | Founders Pass page | Built, inventory-driven count, verified in browser |
 | Product specification | Metafield-driven, all six products populated |
+| Contact page | Subject router, conditional order field, support aside |
 | Redirects | 8 created — 2 dormant, 6 fixing live 404s |
 | Handle-rename groundwork | Theme accepts old and new page handles |
 
@@ -40,8 +41,6 @@ Roughly in value order.
 
 1. **Policy shell** (`3b`) — sidebar, `LAST UPDATED` stamp, summary spec row,
    numbered clauses. One shell for six documents.
-2. **Contact page** (`3c`) — subject router, conditional order-number field,
-   direct table, FAQ deflection. **Use `inquiry@caddieinsight.com` only.**
 3. **Sticky mobile buy bar** (`2c`) — the one part of the product mockups not
    yet built.
 4. **Collection / cart / search / 404** — templates exist and are styled;
