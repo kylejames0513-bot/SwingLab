@@ -28,6 +28,7 @@ is exactly how I first "verified" a page that had not rendered at all.
 | Product specification | Metafield-driven, all six products populated |
 | Contact page | Subject router, conditional order field, support aside |
 | Policy shell | `page.policy` template, applied to the two theme-owned pages |
+| Sticky mobile buy bar | Submits the real form; no duplicated state |
 | Redirects | 8 created — 2 dormant, 6 fixing live 404s |
 | Handle-rename groundwork | Theme accepts old and new page handles |
 
@@ -40,16 +41,14 @@ mockup was already in the theme.
 
 Roughly in value order.
 
-1. **Sticky mobile buy bar** (`2c`) — the one part of the product mockups not
-   yet built.
-2. **Collection / cart / search / 404** — templates exist and are styled;
+1. **Collection / cart / search / 404** — templates exist and are styled;
    they need the mockups' copy from `COPY_DECK.md` §8.
-3. **Nav and menus** — the live `swinglab-main` menu is `Home · Gear · The
+2. **Nav and menus** — the live `swinglab-main` menu is `Home · Gear · The
    Method · Pro Membership · FAQ`; the mockups want `Method · Sample report ·
    Plans · Gear`. Add the Founders Pass link.
-4. **`/collections/swinglab-gear` rename** — see §6.
-5. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
-6. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
+3. **`/collections/swinglab-gear` rename** — see §6.
+4. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
+5. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
    Lighthouse, contrast, keyboard nav, broken-link crawl.
 
 ---
