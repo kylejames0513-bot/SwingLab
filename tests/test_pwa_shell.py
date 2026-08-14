@@ -183,6 +183,36 @@ def test_tab_bar_more_button_shares_the_header_menu_dialog(client):
     assert html.count('<dialog class="sl-menu" id="sl-mobile-menu"') == 1
 
 
+def test_the_pro_lock_is_an_entity_not_a_token_reference():
+    """The Progress badge glyph is &#128274; — a lock whose six DECIMAL
+    digits also parse as six HEX digits, so a colour-migration
+    find-and-replace once rewrote the entity's body to var(--sl-trace-dim)
+    and phones rendered the literal text "&var(--sl-trace-dim);" as a menu
+    label. Pin the clobber signature out of every template, and the lock
+    into both nav spots (desktop dropdown and mobile drawer).
+    """
+    for template in sorted(TEMPLATES.glob("*.j2")):
+        assert "&var(" not in template.read_text(encoding="utf-8"), template.name
+    assert LAYOUT.count("&#128274;") == 2
+
+
+def test_every_drawer_row_signals_where_it_goes():
+    """Each drawer row ends in an arrow, except the PRO member row, which
+    ends in its badge instead. Scorecard shipped bare — a dead label
+    between five live rows — and stayed that way because nothing counted
+    the arrows.
+    """
+    drawer = LAYOUT.split('<dialog class="sl-menu"', 1)[1].split("</dialog>", 1)[0]
+    rows = re.findall(
+        r'class="sl-menu__link[^"]*"[^>]*>(.*?)</(?:a|button)>', drawer, flags=re.S
+    )
+    # The exact count keeps the regex honest: zero matches would pass the
+    # loop below without checking anything.
+    assert len(rows) == 13
+    for row in rows:
+        assert "&rarr;" in row or "sl-header__member-badge" in row, row
+
+
 # -- service worker ------------------------------------------------------
 
 # -- iOS install hint ----------------------------------------------------
