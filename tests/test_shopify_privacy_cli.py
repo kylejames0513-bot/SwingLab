@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import stat
 import time
 
@@ -34,6 +35,20 @@ def _captured_request(sessions, *, event_id: str = "privacy-event-1"):
     )
     assert request is not None
     return users, request
+
+
+def _identifier_scannable(rendered: str) -> str:
+    """`rendered` with float timestamps blanked, so a leak scan reads identity.
+
+    The customer id is a short run of digits and the payload carries epoch
+    floats, so a raw substring scan asks the clock rather than the code:
+    `7001` is not in this output, but it IS inside `1786714501.4067001`, and
+    the test failed on the second rather than on a leak. Timestamps are the
+    only numbers here that are not identity, so removing them restores the
+    guarantee — the id must appear nowhere a value is printed — and makes it
+    deterministic.
+    """
+    return re.sub(r"\d+\.\d+", "<timestamp>", rendered)
 
 
 def _command(sessions, *action: str) -> int:
@@ -81,7 +96,7 @@ def test_privacy_list_outputs_only_pii_free_metadata(tmp_path, capsys):
     ]
     rendered = captured.out + captured.err
     assert PRIVATE_EMAIL not in rendered
-    assert CUSTOMER_ID not in rendered
+    assert CUSTOMER_ID not in _identifier_scannable(rendered)
     assert STORE_DOMAIN not in rendered
 
 
@@ -121,7 +136,7 @@ def test_privacy_export_creates_private_file_without_marking_delivered(
     }
     rendered = captured.out + captured.err
     assert PRIVATE_EMAIL not in rendered
-    assert CUSTOMER_ID not in rendered
+    assert CUSTOMER_ID not in _identifier_scannable(rendered)
     assert STORE_DOMAIN not in rendered
 
 
@@ -211,7 +226,7 @@ def test_mark_delivered_requires_confirmation_after_external_handoff(
     captured = capsys.readouterr()
     rendered = captured.out + captured.err
     assert PRIVATE_EMAIL not in rendered
-    assert CUSTOMER_ID not in rendered
+    assert CUSTOMER_ID not in _identifier_scannable(rendered)
     assert STORE_DOMAIN not in rendered
 
 
