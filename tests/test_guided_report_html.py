@@ -837,6 +837,208 @@ def test_locked_replay_section_makes_one_offer_instead_of_reading_as_a_bug(
     assert "$" not in replay
 
 
+def test_spec_sheet_renders_measured_table_meter_and_frozen_session_context(
+    tmp_path: Path,
+):
+    """The 1a spec-sheet elements, through the production bundle path.
+
+    Every number asserted here is a value the presenter computed from the
+    session's real stats, the matched prior session's published stats, or
+    cfg.proof_cycle noise floors — nothing is template fixture data.
+    """
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    attempt = begin_report_bundle(session_dir)
+    inputs = guided_bundle_inputs(tmp_path)
+    inputs["html_writer"] = write_report_document_html
+    this_stats = inputs["stats"]
+    tempo_mean = this_stats["tempo_ratio"]["mean"]
+    sway_mean = this_stats["head_sway_backswing_sw"]["mean"]
+    inputs["session_label"] = "Session 004 · 11 Aug 2026 · 18:42 UTC"
+    inputs["prior_session_stats"] = {
+        # Outside the ±0.10 tempo noise floor -> a real delta.
+        "tempo_ratio": {"mean": tempo_mean + 0.5},
+        # Inside the ±0.03 sway noise floor -> shown but "in noise".
+        "head_sway_backswing_sw": {"mean": sway_mean + 0.01},
+    }
+    inputs["prior_session_label"] = "3 Aug 2026"
+
+    staged = build_report_bundle(attempt, **inputs)
+    html = staged.report_path.read_text(encoding="utf-8")
+
+    # Session line freezes the ordinal and capture time into the document.
+    assert 'data-field="session-label"' in html
+    assert "Session 004 · 11 Aug 2026 · 18:42 UTC" in html
+
+    # The measured table sits between understand and practice.
+    order = positions(
+        html,
+        'data-report-block="understand"',
+        'data-report-block="measured"',
+        'data-report-block="practice"',
+    )
+    assert order == tuple(sorted(order))
+    measured = report_block(html, "measured", "practice")
+    assert "Measured this session" in measured
+    assert "This clip" in measured
+    assert "Last matched · 3 Aug 2026" in measured
+    assert "Noise floor" in measured
+    # Tempo: prior differs by 0.5, well outside its ±0.1 floor.
+    tempo_row = re.search(
+        r'<tr data-measured-metric="tempo_ratio">.*?</tr>', measured, re.DOTALL
+    )
+    assert tempo_row is not None
+    assert "-0.5" in tempo_row.group(0)
+    assert "in noise" not in tempo_row.group(0)
+    assert "±0.1" in tempo_row.group(0)
+    # Sway: prior differs by 0.01, inside its ±0.03 floor.
+    sway_row = re.search(
+        r'<tr data-measured-metric="head_sway_backswing_sw">.*?</tr>',
+        measured,
+        re.DOTALL,
+    )
+    assert sway_row is not None
+    assert "in noise" in sway_row.group(0)
+    assert "±0.03" in sway_row.group(0)
+    # Backswing time has no configured floor: an em dash, never an invented ±.
+    backswing_row = re.search(
+        r'<tr data-measured-metric="backswing_s">.*?</tr>', measured, re.DOTALL
+    )
+    assert backswing_row is not None
+    assert "±" not in backswing_row.group(0)
+    assert "—" in backswing_row.group(0)
+    assert (
+        "Changes inside the noise floor are shown but not called improved."
+        in measured
+    )
+    # The same rows collapse for mobile.
+    assert measured.count('<details class="measured-row"') == measured.count(
+        "<tr data-measured-metric="
+    )
+
+    # Priority-panel framing counts the real findings.
+    next_move = report_block(html, "next-move", "understand")
+    finding_count = 1 + len(staged.document.depth.secondary_findings)
+    assert f"Priority 01 · of {finding_count:02d} findings" in next_move
+
+    # The NOW/MARK meter restates the priority measurement against the
+    # configured pass mark, in both the priority panel and the refilm section.
+    meter = staged.document.depth.pass_meter
+    assert meter is not None
+    assert html.count('data-field="pass-meter"') == 2
+    assert f"Now {meter.now_text}" in next_move
+    assert f"Mark {meter.mark_text}" in next_move
+
+    # Capture-context spec block regroups real context in the rail.
+    assert "Capture context" in html
+    assert "Swings found" in html
+    context = staged.view.context
+    assert (
+        f"{context.priority_readable_swings} of {context.detected_swings}"
+        in html
+    )
+
+    # Playback chip: 1/slowmo.factor and the probed source rate.
+    assert "Source frame rate" in html
+
+
+def test_spec_sheet_elements_degrade_to_omission_without_session_context(
+    tmp_path: Path,
+):
+    """No job history, no prior session, hand-built depth: every new element
+    must vanish rather than fabricate."""
+    html = render_guided(tmp_path, report_document_fixture("coaching-improve-clear"))
+
+    assert 'data-field="session-label"' not in html
+    assert 'data-report-block="measured"' not in html
+    assert 'data-field="pass-meter"' not in html
+    assert "Last matched" not in html
+    assert "Priority 01 · of" in html  # counted from real secondary findings
+
+
+def test_p_system_labels_only_the_four_measured_events(tmp_path: Path):
+    document = report_document_fixture("coaching-dtl-clear")
+    html = render_guided(tmp_path, document)
+    understand = report_block(html, "understand", "practice")
+
+    for p_label in ("P1", "P4", "P7", "P10"):
+        assert f'<span class="event-p">{p_label}</span>' in understand
+    # Unmeasured positions are never fabricated.
+    for missing in ("P2", "P6", "P9"):
+        assert f">{missing}<" not in html
+    # The evidence figure names the position it shows: the fixture's evidence
+    # timestamp matches the measured impact event.
+    assert 'data-field="position-chip"' in understand
+    assert "P7 · Impact" in understand
+
+
+def test_drill_tags_and_inline_gear_carry_only_real_context(tmp_path: Path):
+    document = report_document_fixture("pro-unlocked")
+    html = render_guided(tmp_path, document)
+    practice = report_block(html, "practice", "refilm")
+
+    # The priority tag is the selected priority's display name — never an
+    # invented difficulty.
+    assert document.view.next_move.title in practice
+    # No experience level in this fixture's session details -> exactly one tag.
+    assert practice.count('<span class="drill-tag') == 1
+    # The gear line names the matched collection link and no price.
+    assert "Optional aid for this drill:" in practice
+    assert document.depth.gear[0].url in practice
+    assert "$" not in practice
+
+
+def test_second_matched_session_freezes_last_matched_column(tmp_path: Path):
+    """Two real jobs through the manager: the second report carries its
+    ordinal and the first session's published stats as Last matched."""
+    from tests.guided_report_gate_helper import (
+        _deterministic_media_io,
+        _fast_cfg,
+        close_job_manager,
+    )
+    from swinglab.report_artifacts import ReportEntitlementSnapshot  # noqa: F401
+    from swinglab.report_view import GUIDED_REPORT_PRESENTATION_VERSION
+    from swinglab.web.jobs import JobManager
+
+    cfg = _fast_cfg()
+    # The Proof Cycle minimum is product policy; the synthetic gate clip has
+    # one readable swing, so the test dials the policy to fit the fixture.
+    cfg.proof_cycle["minimum_readable_swings"] = 1
+    manager = JobManager(
+        tmp_path / "sessions", cfg, guided_html_writer=write_report_document_html
+    )
+    try:
+        reports = []
+        for index in (1, 2):
+            job = manager.create_session(
+                user_id="matched-user",
+                angle="face-on",
+                strikes=[2.0],
+                fast=True,
+                report_presentation_version=GUIDED_REPORT_PRESENTATION_VERSION,
+            )
+            video = job.session_dir / f"clip-{index}.bin"
+            video.write_bytes(b"deterministic media fixture\n")
+            with _deterministic_media_io():
+                manager._run(job, video)
+            stored = manager.get(job.id)
+            assert stored is not None and stored.status == "done"
+            assert stored.report_rel
+            reports.append(
+                (stored.session_dir / stored.report_rel).read_text(
+                    encoding="utf-8"
+                )
+            )
+        first, second = reports
+        assert "Session 001" in first
+        assert "Last matched" not in first
+        assert "Session 002" in second
+        assert "Last matched" in second
+        assert 'data-report-block="measured"' in second
+    finally:
+        close_job_manager(manager)
+
+
 def test_capture_only_suppresses_malicious_depth_gear(tmp_path: Path):
     document = report_document_fixture("capture-only-angle")
     malicious = replace(

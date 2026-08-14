@@ -320,14 +320,57 @@
     .report-block--enter {
       animation: report-rise .55s ease both;
     }
+    /* THE PRIORITY PANEL SITS ON THE FIELD. It is one of the four sanctioned
+       reversed surfaces (video, evidence, capture, priority), and the 1a
+       spec-sheet puts it on the right rail as the report's one dark plate.
+       GROUNDS TRAP: every heading and label inside declares its own colour
+       below — element rules in shared CSS beat inheritance, and this exact
+       bug has shipped twice. @media print flips --surface-dark to white and
+       --field-ink to ink, so the panel prints as a bordered white plate. */
     .next-move {
       position: relative;
       overflow: hidden;
+      color: var(--field-ink);
+      border-color: var(--field-rule);
       border-top: .3rem solid var(--brand-accent, var(--accent-bright));
       background:
-        linear-gradient(135deg, rgba(var(--wash-rgb), .05), transparent 44%),
-        linear-gradient(180deg, var(--paper-lift), var(--paper));
+        linear-gradient(135deg, rgba(var(--cream-rgb), .05), transparent 44%),
+        var(--surface-dark);
       animation: report-rise .65s ease both;
+    }
+    .next-move .eyebrow,
+    .next-move .priority-count,
+    .next-move .strength-label { color: var(--field-soft); }
+    .next-move h1 { color: var(--field-ink); }
+    .next-move .observation { color: var(--field-ink); }
+    .next-move .coach-cue {
+      color: var(--field-ink);
+      background: rgba(var(--cream-rgb), .07);
+      border: 1px solid var(--field-rule);
+      border-left: .34rem solid var(--accent-bright);
+      box-shadow: none;
+    }
+    .next-move .coach-cue strong { color: var(--field-soft); }
+    .next-move a {
+      color: var(--field-ink);
+      text-decoration-color: rgba(var(--cream-rgb), .4);
+    }
+    .next-move .journey-preview a {
+      color: var(--field-ink);
+      background: rgba(var(--cream-rgb), .05);
+      border-color: var(--field-rule);
+    }
+    .next-move .journey-preview a:hover {
+      background: rgba(var(--cream-rgb), .1);
+      border-color: var(--field-soft);
+    }
+    .priority-count {
+      margin: 0 0 .5rem;
+      font-family: var(--font-mono);
+      font-size: .7rem;
+      font-weight: 500;
+      letter-spacing: .14em;
+      text-transform: uppercase;
     }
     .next-move::before {
       content: "";
@@ -464,8 +507,11 @@
       margin-top: 1.45rem;
       padding: 1.15rem 1.15rem 1.3rem;
       color: var(--green-ink);
+      /* The washes were raw literals of the RETIRED amber palette; they now
+         derive from the live signal triplet so the next palette move carries
+         them automatically. */
       background:
-        radial-gradient(720px 240px at 10% -8%, rgba(255, 173, 98, .2), transparent 58%),
+        radial-gradient(720px 240px at 10% -8%, rgba(var(--amber-rgb), .2), transparent 58%),
         radial-gradient(520px 180px at 92% 110%, rgba(26, 92, 56, .35), transparent 55%),
         linear-gradient(148deg, var(--night) 0%, var(--surface-dark) 52%, var(--green) 100%);
       border-radius: 1.05rem;
@@ -532,8 +578,8 @@
     }
     .media-theater__card--locked {
       border-style: dashed;
-      border-color: rgba(255, 173, 98, .5);
-      background: rgba(255, 173, 98, .07);
+      border-color: rgba(var(--amber-rgb), .5);
+      background: rgba(var(--amber-rgb), .07);
     }
     .media-theater__poster { position: relative; }
     .media-theater__poster img {
@@ -773,6 +819,262 @@
       font-weight: 600;
       animation: cue-soft .65s ease both;
     }
+    /* SESSION LINE — the frozen "Session NNN · date · time" spec line. */
+    .session-line {
+      margin: 0;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: .72rem;
+      font-weight: 500;
+      letter-spacing: .14em;
+      text-transform: uppercase;
+    }
+    .header-action {
+      display: inline-flex;
+      align-items: center;
+      padding: .55rem .95rem;
+      color: var(--paper);
+      background: var(--ink);
+      border-radius: .55rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: background .2s ease;
+    }
+    .header-action:hover { background: var(--green-btn); }
+    /* THE SPEC-SHEET COLUMNS — evidence left, priority + capture context
+       right, from 64rem up. Below that the DOM order stands: one job first,
+       evidence on demand. */
+    @media (min-width: 64rem) {
+      .report-columns {
+        display: grid;
+        grid-template-columns: minmax(0, 1.45fr) minmax(20rem, .85fr);
+        gap: 0 1rem;
+        align-items: start;
+      }
+      .report-evidence { order: 1; min-width: 0; }
+      .report-rail { order: 2; min-width: 0; }
+    }
+    /* CAPTURE CONTEXT — the bordered spec block beside the priority panel. */
+    .capture-context {
+      margin-top: 1rem;
+      padding: 1rem 1.15rem;
+      background: linear-gradient(180deg, var(--paper-lift), var(--paper));
+      border: 1px solid var(--line);
+      border-radius: 1.1rem;
+      box-shadow: var(--shadow-md);
+    }
+    .capture-context__title {
+      margin: 0 0 .6rem;
+      font-size: 1.02rem;
+      letter-spacing: .02em;
+    }
+    .capture-context__list { display: grid; gap: .1rem; margin: 0; }
+    .capture-context__list div {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: baseline;
+      padding: .35rem 0;
+      border-bottom: 1px solid var(--soft);
+    }
+    .capture-context__list div:last-child { border-bottom: 0; }
+    .capture-context__list dt {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: .66rem;
+      font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .capture-context__list dd {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: .92rem;
+      font-weight: 500;
+    }
+    /* PASS-MARK METER — NOW against MARK. The fill restates the measured
+       session mean against the configured threshold: on the field panel it
+       takes the trace (the lit readout tuned for the dark ground), on paper
+       it takes the signal steel. DM Mono throughout: every number here is a
+       measured value or a configured spec. */
+    .pass-meter {
+      display: grid;
+      gap: .45rem;
+      margin: 1rem 0 0;
+      padding: .9rem 1rem;
+      background: rgba(var(--cream-rgb), .05);
+      border: 1px solid var(--field-rule);
+      border-radius: .8rem;
+    }
+    .pass-meter__label {
+      margin: 0;
+      color: var(--field-soft);
+      font-family: var(--font-mono);
+      font-size: .66rem;
+      font-weight: 500;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .pass-meter__target {
+      margin: 0;
+      color: var(--field-ink);
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 500;
+    }
+    .pass-meter__unit { font-size: .82rem; }
+    .pass-meter__track {
+      height: .45rem;
+      background: rgba(var(--cream-rgb), .14);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+    .pass-meter__fill {
+      height: 100%;
+      background: var(--trace);
+      border-radius: inherit;
+    }
+    .pass-meter__readout {
+      display: flex;
+      justify-content: space-between;
+      gap: .75rem;
+      margin: 0;
+      color: var(--field-ink);
+      font-family: var(--font-mono);
+      font-size: .78rem;
+      font-weight: 500;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .pass-meter--paper {
+      background: var(--soft);
+      border-color: var(--line);
+    }
+    .pass-meter--paper .pass-meter__label { color: var(--muted); }
+    .pass-meter--paper .pass-meter__target { color: var(--accent-text); }
+    .pass-meter--paper .pass-meter__track { background: rgba(var(--wash-rgb), .12); }
+    .pass-meter--paper .pass-meter__fill { background: var(--amber); }
+    .pass-meter--paper .pass-meter__readout { color: var(--ink); }
+    /* MEASURED THIS SESSION — the spec table. Values are DM Mono; the
+       This-clip column takes the text-safe signal because every cell in it
+       is a value the engine measured. Cells with nothing measured or no
+       configured floor render an em dash, never an invented number. */
+    .measured-table table { font-variant-numeric: tabular-nums; }
+    .measured-table th[scope="row"] {
+      min-width: 9rem;
+      font-weight: 500;
+      /* The global overflow-wrap: anywhere shatters metric names one letter
+         per line when the value columns refuse to wrap; break at spaces. */
+      overflow-wrap: break-word;
+    }
+    .measured-value,
+    .measured-prior,
+    .measured-delta,
+    .measured-floor {
+      font-family: var(--font-mono);
+      font-size: .92rem;
+      white-space: nowrap;
+    }
+    td.measured-value { color: var(--accent-text); }
+    .measured-floor,
+    .measured-delta--noise { color: var(--muted); }
+    .measured-footnote {
+      margin: .7rem 0 0;
+      color: var(--muted);
+      font-size: .88rem;
+    }
+    .measured-rows { display: none; }
+    .measured-row {
+      padding: .1rem .85rem;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: .75rem;
+    }
+    .measured-row summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: .75rem;
+      padding: .6rem 0;
+      font-weight: 500;
+    }
+    .measured-row__label { overflow-wrap: break-word; }
+    .measured-row__reading {
+      display: inline-flex;
+      align-items: baseline;
+      gap: .6rem;
+    }
+    .measured-row__detail { display: grid; gap: .3rem; margin: 0 0 .7rem; }
+    .measured-row__detail div {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: .75rem;
+    }
+    .measured-row__detail dt {
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: .66rem;
+      font-weight: 500;
+      letter-spacing: .1em;
+      text-transform: uppercase;
+    }
+    .measured-row__detail dd {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: .88rem;
+    }
+    /* P-SYSTEM LABELS — only the four measured events carry one. Labels take
+       muted ink (a label announces a measured value; it is not itself one). */
+    .position-chip {
+      position: absolute;
+      top: 1.45rem;
+      left: 1.45rem;
+      z-index: 1;
+      padding: .3rem .6rem;
+      color: var(--field-ink);
+      background: var(--surface-dark);
+      border: 1px solid var(--field-rule);
+      border-radius: .45rem;
+      font-family: var(--font-mono);
+      font-size: .68rem;
+      font-weight: 500;
+      letter-spacing: .12em;
+      text-transform: uppercase;
+    }
+    .focused-evidence { position: relative; }
+    .event-p {
+      display: inline-block;
+      margin-right: .4rem;
+      padding: .05rem .4rem;
+      color: var(--muted);
+      border: 1px solid var(--line);
+      border-radius: .4rem;
+      font-family: var(--font-mono);
+      font-size: .7rem;
+      font-weight: 500;
+      letter-spacing: .08em;
+    }
+    /* DRILL TAGS + inline gear line. */
+    .drill-tags { display: flex; flex-wrap: wrap; gap: .45rem; margin: 0 0 .9rem; }
+    .drill-tag {
+      padding: .3rem .65rem;
+      color: var(--green);
+      background: rgba(var(--wash-rgb), .05);
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      font-family: var(--font-mono);
+      font-size: .68rem;
+      font-weight: 500;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+    }
+    .drill-tag--priority {
+      color: var(--accent-text);
+      border-color: rgba(var(--amber-rgb), .4);
+    }
+    .drill-gear { margin: 1rem 0 0; font-size: .95rem; }
+    /* MOBILE ACTION BAR — hidden except on small screens. */
+    .action-bar { display: none; }
     .primary-action {
       display: inline-flex;
       margin-top: 1rem;
@@ -842,6 +1144,36 @@
       .observation { margin: 0 0 .5rem; font-size: .98rem; }
       .coach-cue { padding: .6rem .75rem .6rem .85rem; font-size: .95rem; }
       .focused-evidence { margin-inline: 0; }
+    }
+    /* 1b — one job first, evidence collapsed, the re-film action pinned.
+       Screen-scoped so print always keeps the desktop table and no bar. */
+    @media screen and (max-width: 40rem) {
+      .header-action { display: none; }
+      .measured-table { display: none; }
+      .measured-rows { display: grid; gap: .55rem; }
+      .position-chip { top: 1.2rem; left: 1.2rem; }
+      .action-bar {
+        position: fixed;
+        inset: auto 0 0 0;
+        z-index: 6;
+        display: flex;
+        padding: .6rem 10px calc(.6rem + env(safe-area-inset-bottom, 0px));
+        background: var(--paper);
+        border-top: 1px solid var(--line);
+        box-shadow: 0 -1px 2px rgba(var(--wash-rgb), .14);
+      }
+      .action-bar__link {
+        display: inline-flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        padding: .75rem 1rem;
+        color: var(--paper);
+        background: var(--ink);
+        border-radius: .65rem;
+        font-weight: 500;
+        text-decoration: none;
+      }
     }
     @media (prefers-reduced-motion: reduce) {
       html { scroll-behavior: auto; }
@@ -981,7 +1313,14 @@
         </span>
       </div>
       <span class="trust-chip">{{ view.trust.label }}</span>
+      {% if view.outcome == "coaching_ready" and navigation.app_url %}
+      <a class="header-action report-control screen-only"
+         href="{{ navigation.app_url }}">{{ view.refilm.primary_action_label }}</a>
+      {% endif %}
     </div>
+    {% if depth.session_label %}
+    <p class="session-line" data-field="session-label">{{ depth.session_label }}</p>
+    {% endif %}
     <p class="session-framing">
       One priority. Matched evidence. A training block you can repeat under the same setup.
     </p>
@@ -1003,9 +1342,43 @@
     {% if view.outcome == "coaching_ready" %}
     {% set evidence = view.visual_evidence %}
     {% set measurement = evidence.supporting_measurement %}
+    {# The P-system labels only the four events the engine measured
+       (address, top, impact, finish). P2/P6/P9 are not measured and are
+       never rendered — fabricating them would break the product's claim. #}
+    {% set p_positions = {
+      "address": "P1", "top": "P4", "impact": "P7", "finish": "P10",
+    } %}
+    {% set source_fps_rows = depth.session_details
+       | selectattr("key", "equalto", "source_fps") | list %}
+    {% set source_fps_value = source_fps_rows[0].value if source_fps_rows else none %}
+    {% macro pass_meter_block(meter, extra_class="") %}
+    <div class="pass-meter{{ extra_class }}" data-field="pass-meter">
+      <p class="pass-meter__label">Pass mark · next matched re-film</p>
+      <p class="pass-meter__target">
+        <span aria-hidden="true">{{ meter.comparator }}</span>
+        <span class="pass-meter__mark">{{ meter.mark_text }}</span>
+        {% if meter.unit_label %}<span class="pass-meter__unit">{{ meter.unit_label }}</span>{% endif %}
+      </p>
+      <div class="pass-meter__track" role="img"
+           aria-label="Measured now {{ meter.now_text }} against the pass mark {{ meter.mark_text }}">
+        <div class="pass-meter__fill" style="width: {{ meter.fill_percent }}%"></div>
+      </div>
+      <p class="pass-meter__readout">
+        <span>Now {{ meter.now_text }}</span>
+        <span>Mark {{ meter.mark_text }}</span>
+      </p>
+    </div>
+    {% endmacro %}
+    <div class="report-columns">
+    <div class="report-rail">
     <section class="next-move report-block--enter" data-report-block="next-move"
              data-canonical="priority" aria-labelledby="report-title">
       <p class="eyebrow">{{ view.next_move.eyebrow }}</p>
+      {% if view.next_move.mode == "improve" %}
+      <p class="priority-count" data-field="priority-count">
+        Priority 01 · of {{ "%02d" | format(1 + depth.secondary_findings | length) }} findings
+      </p>
+      {% endif %}
       {% if view.next_move.mode == "protect" %}
       <p class="strength-label">Strength to protect</p>
       {% endif %}
@@ -1014,6 +1387,7 @@
       <p class="coach-cue" data-field="cue">
         <strong>Caddie cue:</strong> {{ view.next_move.cue }}
       </p>
+      {% if depth.pass_meter %}{{ pass_meter_block(depth.pass_meter) }}{% endif %}
       {% if measurement and view.next_move.measurement_detail_id == measurement.id %}
       <p><a class="report-control" href="#{{ measurement.id }}">See measurement</a></p>
       {% endif %}
@@ -1024,12 +1398,39 @@
       </ol>
     </section>
 
+    <aside class="capture-context" aria-label="Capture context">
+      <h2 class="capture-context__title">Capture context</h2>
+      <dl class="capture-context__list">
+        {% if view.context.club_label %}
+        <div><dt>Club</dt><dd>{{ view.context.club_label }}</dd></div>
+        {% endif %}
+        <div><dt>View</dt><dd>{{ view.context.angle_label }}</dd></div>
+        <div><dt>Handedness</dt><dd>{{ view.context.hand | title }}</dd></div>
+        <div>
+          <dt>Swings found</dt>
+          <dd>{{ view.context.priority_readable_swings }} of {{ view.context.detected_swings }}</dd>
+        </div>
+      </dl>
+    </aside>
+    </div>
+
+    <div class="report-evidence">
     <section id="understand" data-report-block="understand"
              aria-labelledby="understand-heading">
       <p class="step-label">1 · Evidence theater</p>
       <h2 id="understand-heading">See it in your swing</h2>
       {% if evidence.state == "rendered" %}
+      {% set position_chip = namespace(text=none) %}
+      {% for event in evidence.events %}
+        {% if event.event in p_positions and evidence.timestamp_ms is not none
+              and event.timestamp_ms == evidence.timestamp_ms %}
+          {% set position_chip.text = p_positions[event.event] ~ " · " ~ event.label %}
+        {% endif %}
+      {% endfor %}
       <figure class="focused-evidence">
+        {% if position_chip.text %}
+        <span class="position-chip" data-field="position-chip">{{ position_chip.text }}</span>
+        {% endif %}
         <img src="{{ media_path(evidence.media_key) }}" alt="{{ evidence.alt_text }}">
         <figcaption>
           <p class="evidence-meta">
@@ -1094,7 +1495,7 @@
       <ol class="event-timeline" aria-label="Detected swing events">
         {% for event in evidence.events %}
         <li data-event="{{ event.event }}">
-          <strong>{{ event.label }}</strong>
+          <strong>{% if event.event in p_positions %}<span class="event-p">{{ p_positions[event.event] }}</span>{% endif %}{{ event.label }}</strong>
           <time data-event-timestamp="{{ event.timestamp_ms }}">{{ event.timestamp_ms }} ms</time>
           <span>{{ phase_method_labels[event.method] }}</span>
         </li>
@@ -1129,7 +1530,7 @@
                gated, so the lock is checked per figure, never per swing. #}
             {% if swing.slow_motion_media_key %}
             <figure class="media-theater__card screen-only">
-              <span class="media-theater__badge">Slow motion</span>
+              <span class="media-theater__badge">Slow motion{% if playback_speed_label %} · {{ playback_speed_label }}{% endif %}{% if source_fps_value %} · {{ source_fps_value }} source{% endif %}</span>
               <video controls preload="metadata"
                      src="{{ media_path(swing.slow_motion_media_key) }}"
                      {% if swing.video_poster_media_key %}poster="{{ media_path(swing.video_poster_media_key) }}"{% endif %}
@@ -1239,10 +1640,97 @@
       </details>
     </section>
 
+    {% if depth.measured_rows %}
+    {% set has_prior = depth.measured_rows | selectattr("prior_value") | list | length > 0 %}
+    <section id="measured" data-report-block="measured"
+             aria-labelledby="measured-heading">
+      <h2 id="measured-heading">Measured this session</h2>
+      <div class="table-scroll measured-table" role="region"
+           aria-label="Measured this session" tabindex="0">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Metric</th>
+              <th scope="col">This clip</th>
+              {% if has_prior %}
+              <th scope="col">Last matched{% if depth.measured_prior_label %} · {{ depth.measured_prior_label }}{% endif %}</th>
+              <th scope="col" aria-label="Change"><span aria-hidden="true">Δ</span></th>
+              {% endif %}
+              <th scope="col">Noise floor</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for row in depth.measured_rows %}
+            <tr data-measured-metric="{{ row.metric_id }}">
+              <th scope="row">{{ row.label }}</th>
+              <td class="measured-value">{{ row.value }}</td>
+              {% if has_prior %}
+              <td class="measured-prior">{{ row.prior_value if row.prior_value is not none else "—" }}</td>
+              <td class="measured-delta{% if row.in_noise %} measured-delta--noise{% endif %}">
+                {%- if row.delta is not none %}{{ row.delta }}{% if row.in_noise %} · in noise{% endif %}{% else %}—{% endif -%}
+              </td>
+              {% endif %}
+              <td class="measured-floor">{{ row.noise_floor if row.noise_floor is not none else "—" }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+      {# The same measured rows, collapsed for one-hand phone reading.
+         Exactly one of the two renderings is displayed at any width; print
+         always keeps the table. #}
+      <div class="measured-rows">
+        {% for row in depth.measured_rows %}
+        <details class="measured-row" data-measured-metric="{{ row.metric_id }}">
+          <summary>
+            <span class="measured-row__label">{{ row.label }}</span>
+            <span class="measured-row__reading">
+              <span class="measured-value">{{ row.value }}</span>
+              {% if row.delta is not none %}
+              <span class="measured-delta{% if row.in_noise %} measured-delta--noise{% endif %}">{{ "in noise" if row.in_noise else row.delta }}</span>
+              {% endif %}
+            </span>
+          </summary>
+          <dl class="measured-row__detail">
+            {% if row.prior_value is not none %}
+            <div>
+              <dt>Last matched{% if depth.measured_prior_label %} · {{ depth.measured_prior_label }}{% endif %}</dt>
+              <dd>{{ row.prior_value }}</dd>
+            </div>
+            {% endif %}
+            {% if row.delta is not none %}
+            <div><dt>Change</dt><dd>{{ row.delta }}{% if row.in_noise %} · in noise{% endif %}</dd></div>
+            {% endif %}
+            <div><dt>Noise floor</dt><dd>{{ row.noise_floor if row.noise_floor is not none else "—" }}</dd></div>
+          </dl>
+        </details>
+        {% endfor %}
+      </div>
+      {% set uses_sw = namespace(found=false) %}
+      {% for row in depth.measured_rows %}
+        {% if " sw" in row.value %}{% set uses_sw.found = true %}{% endif %}
+      {% endfor %}
+      <p class="measured-footnote">
+        {% if uses_sw.found %}sw = shoulder widths. {% endif %}Changes inside the noise floor are shown but not called improved.
+      </p>
+    </section>
+    {% endif %}
+    </div>
+    </div>
+
     <section id="practice" data-report-block="practice"
              data-canonical="practice" aria-labelledby="practice-heading">
       <p class="step-label">2 · Today's training</p>
       <h2 id="practice-heading" data-field="drill-name">{{ view.practice.name }}</h2>
+      {# Tags restate context the report already owns: the selected priority's
+         display name, and the golfer-supplied experience level when present.
+         The drill itself has no difficulty field, so none is invented. #}
+      {% set level_rows = depth.session_details
+         | selectattr("key", "equalto", "level") | list %}
+      <div class="drill-tags" aria-label="Drill context">
+        <span class="drill-tag drill-tag--priority">{{ view.next_move.title }}</span>
+        {% if level_rows %}<span class="drill-tag">{{ level_rows[0].value }}</span>{% endif %}
+      </div>
       <p class="practice-lead">{{ view.practice.aim }}</p>
       <ol class="practice-summary" aria-label="Drill steps">
         {% for step in view.practice.summary_steps %}<li>{{ step }}</li>{% endfor %}
@@ -1273,6 +1761,17 @@
         </dd>
         {% if view.practice.equipment %}<dt>Equipment</dt><dd>{{ view.practice.equipment }}</dd>{% endif %}
       </dl>
+      {# The report bundle carries no product name and no price — only the
+         matched gear collection link — and it must not fetch at render time,
+         so this line names the link and nothing more. The priced product
+         line belongs to the live status page. #}
+      {% set inline_gear = optional_by_id.get("gear") %}
+      {% if inline_gear and inline_gear.available and not inline_gear.locked and depth.gear %}
+      <p class="drill-gear" data-field="drill-gear">
+        Optional aid for this drill:
+        <a class="report-control" href="{{ depth.gear[0].url }}">{{ depth.gear[0].label }}</a>
+      </p>
+      {% endif %}
       {% if view.practice.illustration_media_key %}
       <figure class="drill-illustration">
         <img src="{{ media_path(view.practice.illustration_media_key) }}"
@@ -1318,6 +1817,7 @@
       </ol>
       <h3>Pass mark</h3>
       <p class="pass-mark" data-field="pass-mark">{{ view.refilm.target.text }}</p>
+      {% if depth.pass_meter %}{{ pass_meter_block(depth.pass_meter, " pass-meter--paper") }}{% endif %}
       <dl class="refilm-confirmations" aria-label="Re-film controls">
         <dt>Same club</dt><dd>{{ "Confirmed" if view.refilm.preserves_club else "Use the club named above" }}</dd>
         <dt>Same hand</dt><dd>{{ "Confirmed" if view.refilm.preserves_hand else "Match the original hand" }}</dd>
@@ -1538,6 +2038,15 @@
       </details>
       {% endif %}
     </section>
+
+    {% if navigation.app_url %}
+    {# 1b's sticky footer: the same server-owned re-film action, pinned on
+       small screens only. Carries no state of its own. #}
+    <div class="action-bar screen-only">
+      <a class="action-bar__link report-control"
+         href="{{ navigation.app_url }}">{{ view.refilm.primary_action_label }}</a>
+    </div>
+    {% endif %}
     {% else %}
     <section class="capture-recovery" data-report-block="capture-recovery" aria-labelledby="report-title">
       <p class="eyebrow">{{ view.trust.label }}</p>

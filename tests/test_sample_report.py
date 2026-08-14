@@ -67,6 +67,32 @@ def test_shipped_config_generates_the_guided_public_sample(tmp_path):
     assert "Re-film" in html
 
 
+def test_served_guided_sample_keeps_spec_sheet_honest_without_history(tmp_path):
+    """The public sample through the real route: it carries the spec-sheet
+    elements its data supports and omits every element whose data source is
+    a job history it does not have."""
+    cfg = Config.load(Path(__file__).resolve().parents[1] / "config.yaml")
+    client = TestClient(create_app(cfg, sessions_dir=tmp_path / "s"))
+
+    resp = client.get("/sample-report", follow_redirects=True)
+    assert resp.status_code == 200
+    html = resp.text
+    assert 'content="guided-report-v1"' in html
+
+    # Measured this session: real synthetic-session means and config floors.
+    assert 'data-report-block="measured"' in html
+    assert "Measured this session" in html
+    assert "This clip" in html
+    assert "Noise floor" in html
+    # No prior session exists, so the comparison columns must be absent.
+    assert "Last matched" not in html
+    # No job, no ordinal: the session line is omitted, never invented.
+    assert 'data-field="session-label"' not in html
+    # The capture-context spec block regroups the sample's real context.
+    assert "Capture context" in html
+    assert "Swings found" in html
+
+
 def test_ensure_sample_report_is_idempotent(tmp_path):
     first = sample.ensure_sample_report(tmp_path / "sr", Config())
     marker = "<!-- untouched -->"

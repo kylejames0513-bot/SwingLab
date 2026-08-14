@@ -63,7 +63,7 @@ import secrets
 import shutil
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from html import escape
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -100,14 +100,22 @@ from ..levels import LEVEL_LABELS
 from ..config import Config
 from . import api_models
 from ..diagrams import drill_animation, drill_diagram, trend_chart
-from ..drills import PLAN_TITLES, build_drills, gear_shop_url
+from ..drills import (
+    PLAN_TITLES,
+    build_drill_presentations,
+    build_drills,
+    family_for,
+    gear_shop_url,
+)
 from ..explainers import build_explainers
 from ..metrics import ANGLES
 from ..proof_cycle_artifact import (
     ARTIFACT_FILENAME,
     active_proof_cycle_target_for_context,
+    load_proof_cycle_artifact,
     proof_cycle_enabled,
     proof_cycle_history_scan_limit,
+    proof_cycle_target_fingerprint,
     proof_cycle_view,
     verified_proof_cycle_artifact,
 )
@@ -127,6 +135,7 @@ from ..trends import (
     build_trends,
     format_delta,
     format_value,
+    headline_metric,
     session_sample,
     trend_sentence,
 )
@@ -481,6 +490,155 @@ def context_label(context: tuple[str, str, str] | None) -> str | None:
             "Face-on" if angle == "face-on" else "Down-the-line",
         )
     )
+
+
+def practice_streak_weeks(finished_ats) -> int:
+    """Consecutive ISO calendar weeks with at least one finished session,
+    counted back from the most recent sample's week.
+
+    Derivation (no stored streak exists): each sample's ``finished_at`` —
+    which is its metrics.json mtime, so re-processing a session can bump it;
+    acceptable for a practice-cadence readout, never for a measured claim —
+    is bucketed into its ISO (year, week); the streak is how many of those
+    weeks run unbroken ending at the latest one."""
+    weeks: set[tuple[int, int]] = set()
+    for finished_at in finished_ats:
+        try:
+            day = date.fromtimestamp(float(finished_at))
+        except (OSError, OverflowError, TypeError, ValueError):
+            continue
+        iso = day.isocalendar()
+        weeks.add((iso[0], iso[1]))
+    if not weeks:
+        return 0
+    cursor = max(
+        date.fromisocalendar(year, week, 1) for year, week in weeks
+    )
+    streak = 0
+    while True:
+        iso = cursor.isocalendar()
+        if (iso[0], iso[1]) not in weeks:
+            return streak
+        streak += 1
+        cursor -= timedelta(days=7)
+
+
+def last_filmed_text(finished_at: float, *, now: float | None = None) -> str:
+    """"today" / "1 day ago" / "N days ago" from the latest sample's
+    finished_at (metrics.json mtime — same honest-enough caveat as the
+    streak)."""
+    reference = time.time() if now is None else now
+    days = max(0, int((reference - float(finished_at)) // 86400))
+    if days == 0:
+        return "today"
+    if days == 1:
+        return "1 day ago"
+    return f"{days} days ago"
+
+
+def _proof_history_verdict(artifact) -> tuple[bool, str]:
+    """(held, sub-line) for the LATEST artifact of one target's chain.
+
+    Every branch below is distinguishable from stored sidecar fields alone —
+    no state here is guessed. "Held" is reserved for a chain whose latest
+    matched comparison verdict is improved/holding: matched re-films cleared
+    the pass mark outside the noise floor. Everything else is honestly
+    unproven, including a target that was worked but never re-filmed."""
+    comparison = artifact.comparison
+    if comparison is None:
+        # Baseline stage: the priority was set but never re-filmed.
+        return False, "Never re-filmed \N{EM DASH} no verdict claimed"
+    count = comparison.accepted_refilm_count
+    if comparison.verdict in ("improved", "holding"):
+        plural = "" if count == 1 else "s"
+        return True, f"Held across {count} matched re-film{plural}"
+    if comparison.verdict == "early_signal":
+        return False, "Early signal \N{EM DASH} not yet held"
+    if comparison.verdict == "needs_attention":
+        return False, "Latest matched re-film moved away \N{EM DASH} never held"
+    if comparison.verdict == "inconclusive":
+        if "change_is_below_minimum_detectable_effect" in comparison.notes:
+            return False, "Change stayed inside the noise floor"
+        return False, "Matched re-films inconclusive \N{EM DASH} never held"
+    # no_baseline / not_comparable as the last word on a chain.
+    return False, "Comparison paused \N{EM DASH} never held"
+
+
+def proof_history_rows(
+    jobs,
+    cfg: Config,
+    *,
+    active_fingerprint: str | None,
+    sample_job_ids,
+) -> list[dict]:
+    """One row per past proof-cycle target in this exact context, newest
+    first: ordinal (position of the target's baseline session in the trend
+    samples), real target name, honest sub-line, and an Active / Held /
+    Unproven state.
+
+    TRUST TIERING — deliberate, do not "fix" in either direction: rows come
+    from load_proof_cycle_artifact, which validates the sidecar's digest,
+    owner, and target fingerprint but does NOT replay the evidence
+    calculation. The headline verdict card is the only element built from
+    verified_proof_cycle_artifact (full replay); replaying every history row
+    would be O(n^2) bounded file reads per request. Upgrading these rows
+    turns /progress into a request-time DoS; downgrading the headline lets a
+    structurally-valid edited sidecar claim an improvement.
+
+    Sessions from before the proof-cycle release have no sidecars (never
+    retrofitted) and simply contribute no rows — callers hide the whole
+    section when this returns []."""
+    ordered = sorted(
+        jobs, key=lambda job: float(getattr(job, "created_at", 0.0) or 0.0)
+    )
+    groups: dict[str, dict] = {}
+    for job in ordered:
+        artifact = load_proof_cycle_artifact(job)
+        if artifact is None or artifact.target is None:
+            continue
+        fingerprint = proof_cycle_target_fingerprint(artifact.target)
+        created_at = float(getattr(job, "created_at", 0.0) or 0.0)
+        entry = groups.get(fingerprint)
+        if entry is None or created_at >= entry["latest_at"]:
+            groups[fingerprint] = {
+                "target": artifact.target,
+                "latest": artifact,
+                "latest_at": created_at,
+            }
+    ordinals = {job_id: i + 1 for i, job_id in enumerate(sample_job_ids)}
+    rows: list[dict] = []
+    for fingerprint, entry in sorted(
+        groups.items(), key=lambda kv: -kv[1]["latest_at"]
+    ):
+        target = entry["target"]
+        held, subline = _proof_history_verdict(entry["latest"])
+        if fingerprint == active_fingerprint:
+            state = "Active"
+            if entry["latest"].comparison is None:
+                # The pass mark quoted verbatim from the persisted target —
+                # the exact benchmark_text the report set the priority with.
+                subline = (
+                    f"Priority set \N{MIDDLE DOT} {target.benchmark_text}"
+                )
+        elif held:
+            state = "Held"
+        else:
+            state = "Unproven"
+        # Ordinal: the baseline session's position in the trend samples.
+        # Not stored anywhere; a baseline job absent from the samples
+        # (coaching-eligibility differences) gets no ordinal rather than a
+        # guessed one.
+        ordinal_index = ordinals.get(target.baseline_context.session_id)
+        rows.append({
+            "ordinal": (
+                f"S{ordinal_index:02d}" if ordinal_index is not None else None
+            ),
+            "name": target.display_name,
+            "subline": subline,
+            "state": state,
+            "verdict_held": held,
+        })
+    return rows
 
 
 def matched_refilm_enabled(cfg: Config) -> bool:
@@ -1748,12 +1906,56 @@ def create_app(
             for fam in families
             for d in fam["drills"]
         }
+        # The count is derived from the registry the page itself renders, so
+        # the eyebrow can never disagree with the cards below it.
+        drill_count = sum(len(fam["drills"]) for fam in families)
+        # Authored player-facing presentations cover only some drill ids —
+        # the template must .get() this dict, never assume coverage.
+        presentations = build_drill_presentations(cfg.coaching)
+
+        # Personal priority context: the same CaddieBrief /scorecard reads.
+        # Anonymous visitors (and users without a readable brief) get the
+        # identical public library with no banner and no gear line.
+        priority_name = None
+        priority_family = None
+        priority_drill_id = None
+        refilm_context_label = None
+        priority_gear: list[dict] = []
+        user = current_user(request)
+        if user is not None:
+            recent_jobs = manager.list_recent(limit=1, user_id=user.id)
+            latest = recent_jobs[0] if recent_jobs else None
+            brief = caddie_brief_for(latest) if latest is not None else None
+            if (
+                brief is not None
+                and brief.focus_flag
+                and not brief.refilm_required
+            ):
+                priority_name = brief.focus_name
+                priority_family = family_for(brief.focus_flag)
+                if brief.drill is not None:
+                    priority_drill_id = brief.drill.id
+                    # Club context is job-authoritative; None simply omits
+                    # the matched re-film line.
+                    refilm_context_label = context_label(
+                        exact_job_context(latest)
+                    )
+                    # gear_for gates on shop_active() and coaching
+                    # eligibility internally; fetch_products is cached.
+                    priority_gear = gear_for(latest, brief)
         return render(
             "web_drills.html.j2",
             request,
             families=families,
             drill_media=drill_media,
             gear_url=gear_shop_url(cfg),
+            drill_count=drill_count,
+            presentations=presentations,
+            priority_name=priority_name,
+            priority_family=priority_family,
+            priority_drill_id=priority_drill_id,
+            refilm_context_label=refilm_context_label,
+            priority_gear=priority_gear,
         )
 
     @app.get("/scorecard", response_class=HTMLResponse)
@@ -3603,12 +3805,33 @@ def create_app(
             done_jobs = [j for j in listed if j.status == DONE]
             if done_jobs:
                 proof_source_job = max(done_jobs, key=lambda j: j.created_at)
+        proof_artifact = None
         if proof_source_job is not None:
-            progress_proof = proof_cycle_view(
-                proof_cycle_artifact_for(proof_source_job)
-            )
+            # Keep the verified artifact itself, not just its copy view:
+            # the verdict card's measured pair, the noise band, and the
+            # active-target fingerprint all come from its fields.
+            proof_artifact = proof_cycle_artifact_for(proof_source_job)
+            progress_proof = proof_cycle_view(proof_artifact)
         trends = build_trends(listed, cfg)
         explainers = build_explainers(cfg.coaching)
+        # Matched-context gate for every NEW dashboard element: the stat
+        # strip, priority history, noise band, and "matched" chart legend
+        # only exist where club, hand, and camera angle are pinned to one
+        # exact context. Legacy club-only mode can mix hands/angles (and
+        # offers an "All clubs" aggregate), where "matched sessions" would
+        # be a false claim — those elements are omitted there, not faked.
+        context_is_exact = (
+            club_aware_enabled() and selected_context is not None
+        )
+        # The metric the dashboard leads with: the active proof target's
+        # metric when a verified artifact names one, else the same
+        # benchmarked metric the trend sentence leads with.
+        headline_name = None
+        if proof_artifact is not None and proof_artifact.target is not None:
+            if proof_artifact.target.metric in trends.metrics:
+                headline_name = proof_artifact.target.metric
+        if headline_name is None:
+            headline_name = headline_metric(trends)
         cards = []
         if trends.session_count >= 2:
             for name, mt in trends.metrics.items():
@@ -3619,13 +3842,72 @@ def create_app(
                         mt.delta > 0 if mt.worse == "higher" else mt.delta < 0
                     )
                     improved = not moved_worse
+                is_headline = context_is_exact and name == headline_name
+                band_center = band_half = None
+                axis_labels = None
+                if is_headline:
+                    if (
+                        proof_artifact is not None
+                        and proof_artifact.target is not None
+                        and proof_artifact.target.metric == name
+                    ):
+                        # The noise band is drawn ONLY for the active proof
+                        # target's metric, with the exact MDE the engine
+                        # used: the persisted comparison's MDE, or at the
+                        # baseline stage the same max(noise_floor, baseline
+                        # std) compare_refilm will apply. Other metrics never
+                        # had an MDE computed, so they never get a band.
+                        target = proof_artifact.target
+                        if (
+                            proof_artifact.stage == "comparison"
+                            and proof_artifact.comparison is not None
+                            and proof_artifact.comparison.minimum_detectable_effect
+                            is not None
+                            and target.baseline.value is not None
+                        ):
+                            band_center = target.baseline.value
+                            band_half = (
+                                proof_artifact.comparison.minimum_detectable_effect
+                            )
+                        elif (
+                            proof_artifact.stage == "baseline"
+                            and proof_artifact.policy is not None
+                            and target.baseline.value is not None
+                            and target.baseline.std is not None
+                        ):
+                            band_center = target.baseline.value
+                            band_half = max(
+                                proof_artifact.policy.noise_floor,
+                                target.baseline.std,
+                            )
+                    # Session ordinals for the axis: the position, in the
+                    # trend samples, of each session that measured this
+                    # metric — thinned to ~8 ticks like the chart can carry.
+                    ordinals = [
+                        i + 1
+                        for i, s in enumerate(trends.samples)
+                        if name in s.means
+                    ]
+                    step = max(1, -(-(len(ordinals) - 1) // 7))
+                    shown = ordinals[::step]
+                    if shown and shown[-1] != ordinals[-1]:
+                        shown.append(ordinals[-1])
+                    axis_labels = [f"S{o:02d}" for o in shown]
+                chart = trend_chart(
+                    values, mt.benchmark, cfg.brand,
+                    worse=mt.worse or "higher",
+                    band_center=band_center,
+                    band_half_width=band_half,
+                )
                 cards.append({
                     "label": mt.label,
                     "sessions": len(values),
-                    "chart": trend_chart(
-                        values, mt.benchmark, cfg.brand,
-                        worse=mt.worse or "higher",
-                    ),
+                    "chart": chart,
+                    "is_headline": is_headline,
+                    "axis_labels": axis_labels,
+                    # True only when the band actually rendered, so the
+                    # legend can never advertise a mark the SVG lacks.
+                    "has_band": 'data-band="noise"' in chart,
                     "latest": format_value(name, mt.latest),
                     "best": (
                         format_value(name, mt.best)
@@ -3642,6 +3924,9 @@ def create_app(
                     # Same plain-English strings the report's expanders use.
                     "explainer": explainers.get(name),
                 })
+            # The headline metric's panel leads the page; order is stable
+            # for everything else (NUMERIC_FIELDS order, as before).
+            cards.sort(key=lambda c: not c["is_headline"])
         span = None
         if trends.session_count >= 2:
             span = " \N{EN DASH} ".join(
@@ -3650,6 +3935,115 @@ def create_app(
                     trends.samples[0].finished_at, trends.samples[-1].finished_at
                 )
             )
+        # -- proof-cycle history + the four stat tiles (1c/1d) -----------
+        proof_history: list[dict] = []
+        stat_strip: list[dict] = []
+        if context_is_exact and trends.session_count >= 2:
+            if proof_cycle_enabled(cfg):
+                active_fingerprint = None
+                if (
+                    proof_artifact is not None
+                    and proof_artifact.target is not None
+                ):
+                    active_fingerprint = proof_cycle_target_fingerprint(
+                        proof_artifact.target
+                    )
+                proof_history = proof_history_rows(
+                    [j for j in listed if j.status == DONE],
+                    cfg,
+                    active_fingerprint=active_fingerprint,
+                    sample_job_ids=[s.job_id for s in trends.samples],
+                )
+            stat_strip.append({
+                "k": "Matched sessions",
+                "v": str(trends.session_count),
+                "sub": span,
+            })
+            if proof_history:
+                held_count = sum(
+                    1 for row in proof_history if row["verdict_held"]
+                )
+                stat_strip.append({
+                    "k": "Verdicts held",
+                    "v": f"{held_count} of {len(proof_history)}",
+                    # Scoped claim: only priorities with sidecars in THIS
+                    # exact context count — older pre-sidecar history is
+                    # honestly absent, never guessed at.
+                    "sub": "priorities worked in this context",
+                })
+            if headline_name is not None and headline_name in trends.metrics:
+                mt = trends.metrics[headline_name]
+                pct_sub = None
+                if len(mt.points) >= 2 and mt.points[0][1] != 0:
+                    first_value = mt.points[0][1]
+                    pct = round(
+                        (mt.latest - first_value) / abs(first_value) * 100
+                    )
+                    first_ordinal = next(
+                        (
+                            i + 1
+                            for i, s in enumerate(trends.samples)
+                            if headline_name in s.means
+                        ),
+                        1,
+                    )
+                    sign = "+" if pct >= 0 else "\N{MINUS SIGN}"
+                    pct_sub = (
+                        f"{sign}{abs(pct)}% since session {first_ordinal:02d}"
+                    )
+                stat_strip.append({
+                    "k": mt.label,
+                    "v": format_value(headline_name, mt.latest),
+                    "sub": pct_sub,
+                })
+            streak = practice_streak_weeks(
+                s.finished_at for s in trends.samples
+            )
+            stat_strip.append({
+                "k": "Practice streak",
+                "v": f"{streak} wk" if streak == 1 else f"{streak} wks",
+                "sub": (
+                    "last filmed "
+                    f"{last_filmed_text(trends.samples[-1].finished_at)}"
+                ),
+            })
+        # -- the verdict card's measured pair (1c panel / 1d hero) --------
+        # Numbers render ONLY from a comparison-stage artifact with an
+        # accepted matched re-film; a baseline-stage artifact keeps the
+        # words-only card. Every value below is a persisted measurement
+        # (baseline, re-film, accepted count) or persisted policy (required
+        # confirmations) — nothing is computed fresh here.
+        proof_numbers = None
+        if (
+            proof_artifact is not None
+            and proof_artifact.stage == "comparison"
+            and proof_artifact.target is not None
+            and proof_artifact.refilm is not None
+            and proof_artifact.comparison is not None
+            and proof_artifact.policy is not None
+        ):
+            baseline_value = proof_artifact.target.baseline.value
+            refilm_value = proof_artifact.refilm.measurement.value
+            if baseline_value is not None and refilm_value is not None:
+                verdict_words = {
+                    "improved": "Improved",
+                    "holding": "Holding",
+                    "early_signal": "Early signal",
+                    "inconclusive": "Inconclusive",
+                    "needs_attention": "Needs attention",
+                }
+                metric = proof_artifact.target.metric
+                proof_numbers = {
+                    "baseline": format_value(metric, baseline_value),
+                    "latest": format_value(metric, refilm_value),
+                    "count": proof_artifact.comparison.accepted_refilm_count,
+                    "required": (
+                        proof_artifact.policy.minimum_refilms_for_improved
+                    ),
+                    "verdict_word": verdict_words.get(
+                        proof_artifact.comparison.verdict, ""
+                    ),
+                }
         return render(
             "web_progress.html.j2",
             request,
@@ -3665,6 +4059,9 @@ def create_app(
                 trends.samples[-1].job_id if trends.samples else None
             ),
             progress_proof=progress_proof,
+            proof_numbers=proof_numbers,
+            proof_history=proof_history,
+            stat_strip=stat_strip,
             clubs_present=clubs_present,
             club_selected=club_selected,
             context_label=context_label(selected_context),

@@ -370,6 +370,112 @@
     line-height: 1.5;
   }
 
+  {# ---- priority chrome and filters ----
+     Every element in this group is a LABEL or a CONTROL, never a measured
+     value, so it is all chrome ink on paper: the only amber on this page
+     stays the pass mark. The control recipe (mono caps, --sl-control-border,
+     44px target) matches the motion disclosure above. #}
+  .lead__match { margin: var(--sl-space-4) 0 0; }
+  .lead__match > a,
+  .lead__match > span {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sl-space-2);
+    min-height: 44px;
+    padding: 11px var(--sl-space-4);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1.4;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: border-color .18s ease, background-color .18s ease;
+  }
+  .lead__match > a:hover {
+    border-color: var(--sl-green-btn);
+    background: rgba(var(--sl-wash-rgb), .06);
+  }
+  .filters {
+    margin: 0 0 var(--sl-space-6);
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sl-space-2);
+  }
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 11px var(--sl-space-4);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
+    text-transform: uppercase;
+    text-decoration: none;
+    transition: border-color .18s ease, background-color .18s ease;
+  }
+  .chip:hover {
+    border-color: var(--sl-green-btn);
+    background: rgba(var(--sl-wash-rgb), .06);
+  }
+  .chip.is-active {
+    border-color: var(--sl-green-btn);
+    background: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+  }
+  .prio-tag {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    align-self: flex-start;
+    padding: var(--sl-space-1) var(--sl-space-2);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-control);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    line-height: 1;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+  {# The card is a gap-spaced flex column; pull the tag's follower back the
+     same way .aim does, so tag and title read as one unit. #}
+  .drill > .prio-tag + h3 { margin-top: calc(var(--sl-space-2) - var(--sl-space-4)); }
+  {# Setup is authored prose (a sentence), not a measured value — sans and
+     regular weight, while the dt keeps the mono spec-label rule. #}
+  .drill__spec dd.is-setup {
+    font-family: var(--sl-font-sans);
+    font-weight: 400;
+  }
+  {# One quiet optional-gear line: same register as .gear-note, with the
+     product name carrying the only link ink. Never amber — a price is
+     commerce, not a measurement. #}
+  .drill__gear {
+    margin: 0;
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+    line-height: 1.5;
+  }
+  .drill__gear a { color: var(--sl-ink); }
+  .free-note {
+    max-width: none;
+    margin: var(--sl-space-4) 0 0;
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-sm);
+    line-height: 1.55;
+    text-align: center;
+  }
+
   {# ---- closing ---- #}
   .gear-link {
     margin: var(--sl-space-6) 0 0;
@@ -443,6 +549,7 @@
       align-items: end;
     }
     .lead .sl-eyebrow { grid-column: 1 / -1; }
+    .lead .lead__match { grid-column: 1 / -1; }
     .lead__lede { margin-top: 0; }
     .path__weeks { grid-template-columns: repeat(4, minmax(0, 1fr)); }
     .drill-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -457,18 +564,36 @@
   @media (prefers-reduced-motion: reduce) {
     .drill-media details > summary,
     .drill-media details > summary::after,
+    .chip,
+    .lead__match > a,
     .cta a.button { transition: none; }
   }
 {% endblock %}
 {% block main %}
   <header class="lead">
-    <p class="sl-eyebrow">Practice with a pass mark</p>
+    <p class="sl-eyebrow">{{ drill_count }} drills · Free to read before you film</p>
     <h1>The drill library</h1>
     <p class="lead__lede">Every drill our practice plans prescribe, free to read — each with a
       setup diagram, a step-by-step protocol, a dosage, and a measurable
       pass mark in the same numbers your report prints. Film a swing and
       your report picks the drills your numbers actually call for.</p>
+    {% if priority_name %}
+    <p class="lead__match">
+      {% if priority_drill_id %}<a href="#drill-{{ priority_drill_id }}">Matched to your priority: {{ priority_name }}</a>
+      {% else %}<span>Matched to your priority: {{ priority_name }}</span>{% endif %}
+    </p>
+    {% endif %}
   </header>
+
+  {# Family filter chips. Plain #family anchors without JavaScript; the page
+     script upgrades them to a client-side filter. Labels are the real
+     PLAN_TITLES vocabulary, clipped at the em dash for chip length. #}
+  <nav class="filters" aria-label="Filter drills by family">
+    <a class="chip is-active" href="#" data-filter-family="all" aria-current="true">All</a>
+    {% for fam in families %}
+    <a class="chip" href="#family-{{ fam.key }}" data-filter-family="{{ fam.key }}">{{ fam.title.split(" — ")[0] }}</a>
+    {% endfor %}
+  </nav>
 
   <section class="path" id="beginner-path">
     <div class="path__head">
@@ -503,11 +628,13 @@
   <section class="family" id="family-{{ fam.key }}">
     <div class="family__head">
       <h2>{{ fam.title }}</h2>
+      {% if fam.key == priority_family %}<span class="prio-tag">Your priority</span>{% endif %}
       <span class="family__rule" aria-hidden="true"></span>
     </div>
     <div class="drill-grid">
     {% for d in fam.drills %}
       <article class="drill" id="drill-{{ d.id }}">
+        {% if d.id == priority_drill_id %}<p class="prio-tag">Your priority</p>{% endif %}
         <h3>{{ d.name }}</h3>
         <p class="aim">{{ d.aim }}</p>
         <ol class="drill__steps">
@@ -527,17 +654,32 @@
         {# Mono label over mono value, the pass mark in amber: the same readout
            shape the report prints, so the library and the report read as one
            instrument. #}
+        {% set pres = presentations.get(d.id) %}
         <dl class="drill__spec">
           <div>
             <dt>Dosage</dt>
             <dd>{{ d.dosage }}</dd>
           </div>
+          {% if pres and pres.setup %}
+          <div>
+            <dt>Setup</dt>
+            <dd class="is-setup">{{ pres.setup }}</dd>
+          </div>
+          {% endif %}
           <div>
             <dt>Pass mark</dt>
             <dd class="is-pass">{{ d.success_metric }}</dd>
           </div>
+          {% if d.id == priority_drill_id and refilm_context_label %}
+          <div>
+            <dt>Next matched re-film</dt>
+            <dd>{{ refilm_context_label }}</dd>
+          </div>
+          {% endif %}
         </dl>
-        {% if d.gear_note %}<p class="gear-note">{{ d.gear_note }}</p>{% endif %}
+        {% if d.id == priority_drill_id and priority_gear %}
+        <p class="drill__gear"><a href="{{ priority_gear[0].url }}" target="_blank" rel="noopener">{{ priority_gear[0].title }}</a> · {{ priority_gear[0].price_display }} — Optional. This drill works without it.</p>
+        {% elif d.gear_note %}<p class="gear-note">{{ d.gear_note }}</p>{% endif %}
       </article>
     {% endfor %}
     </div>
@@ -555,5 +697,49 @@
       for you, with a re-film target per drill.</p>
   </div>
 
+  <p class="free-note">Drills are free to read on every plan, including Free.</p>
+
   <p class="disclaimer">{{ brand.disclaimer }}</p>
+{% endblock %}
+{% block script %}
+<script>
+(function () {
+  "use strict";
+  var chips = Array.prototype.slice.call(
+    document.querySelectorAll("[data-filter-family]")
+  );
+  if (!chips.length) return;
+  var sections = Array.prototype.slice.call(
+    document.querySelectorAll("section.family")
+  );
+  function apply(key) {
+    sections.forEach(function (section) {
+      if (key !== "all" && section.id !== "family-" + key) {
+        section.setAttribute("hidden", "");
+      } else {
+        section.removeAttribute("hidden");
+      }
+    });
+    chips.forEach(function (chip) {
+      var active = chip.getAttribute("data-filter-family") === key;
+      chip.classList.toggle("is-active", active);
+      if (active) chip.setAttribute("aria-current", "true");
+      else chip.removeAttribute("aria-current");
+    });
+  }
+  chips.forEach(function (chip) {
+    chip.addEventListener("click", function (event) {
+      event.preventDefault();
+      apply(chip.getAttribute("data-filter-family"));
+    });
+  });
+  // Deep links — the Beginner Path's #family-… anchors and the report's
+  // #drill-… anchors — must always land on a visible card: clear the
+  // filter before the browser jumps.
+  window.addEventListener("hashchange", function () {
+    var target = document.getElementById(location.hash.slice(1));
+    if (target && target.closest("section.family[hidden]")) apply("all");
+  });
+})();
+</script>
 {% endblock %}

@@ -49,6 +49,7 @@ from ..events import EventError
 from ..ffmpeg import FFmpegError
 from ..pipeline import SessionResult, VideoTooLongError, ZeroStrikesError, analyze_video
 from ..proof_cycle_artifact import (
+    _metrics_payload_for_job,
     build_proof_cycle_artifact,
     proof_cycle_enabled,
     proof_cycle_history_scan_limit,
@@ -1334,6 +1335,9 @@ class JobManager:
                 )
             self._cleanup_retry_report_bundles(job)
             if presentation is ReportPresentationVersion.GUIDED:
+                session_label, prior_session_stats, prior_session_label = (
+                    self._report_session_context(job)
+                )
                 result = analyze_video(
                     video_path,
                     out_dir=job.session_dir / "out",
@@ -1350,6 +1354,9 @@ class JobManager:
                     report_presentation_version=job.report_presentation_version,
                     report_entitlements=job.report_entitlements,
                     guided_html_writer=self._guided_html_writer,
+                    session_label=session_label,
+                    prior_session_stats=prior_session_stats,
+                    prior_session_label=prior_session_label,
                 )
             elif presentation is ReportPresentationVersion.LEGACY:
                 result = analyze_video(
@@ -1516,6 +1523,82 @@ class JobManager:
             f"Your {brand} analysis needs another clip",
             "\n".join(lines) + "\n",
         )
+
+    def _report_session_context(
+        self, job: Job
+    ) -> tuple[str | None, dict | None, str | None]:
+        """(session_label, prior_session_stats, prior_session_label) for the
+        guided report's spec-sheet framing, computed at analysis time.
+
+        The label freezes the session ordinal and capture time into the
+        written report — acceptable because the document is immutable anyway.
+        "Matched" reuses the Proof Cycle definition: same club, hand and
+        camera angle, coaching-eligible, and at least
+        proof_cycle.minimum_readable_swings readable swings, so this table
+        and the Proof Cycle sidecar never disagree about what a comparable
+        session is. Every failure degrades to omission — this helper must
+        never fail the analysis.
+        """
+        session_label: str | None = None
+        prior_stats: dict | None = None
+        prior_label: str | None = None
+        if job.user_id is None or not job.created_at:
+            return None, None, None
+        try:
+            with self._lock:
+                row = self._conn.execute(
+                    "SELECT COUNT(*) FROM jobs WHERE user_id = ? AND status = ?"
+                    " AND created_at < ?",
+                    (job.user_id, DONE, job.created_at),
+                ).fetchone()
+            ordinal = int(row[0]) + 1
+            moment = datetime.fromtimestamp(job.created_at, timezone.utc)
+            session_label = (
+                f"Session {ordinal:03d} · {moment:%d %b %Y} · {moment:%H:%M} UTC"
+            )
+        except Exception:
+            logger.exception("Session label was unavailable for job %s", job.id)
+            session_label = None
+        try:
+            minimum = self.cfg.proof_cycle.get("minimum_readable_swings", 3)
+            if (
+                not isinstance(minimum, int)
+                or isinstance(minimum, bool)
+                or minimum < 1
+            ):
+                minimum = 3
+            for candidate in self.list_comparable(
+                user_id=job.user_id,
+                club=job.club,
+                through=job.created_at,
+                hand=job.hand,
+                angle=job.angle,
+                limit=proof_cycle_history_scan_limit(self.cfg),
+            ):
+                if candidate.id == job.id:
+                    continue
+                payload, _digest, state = _metrics_payload_for_job(candidate)
+                if state != "ready" or payload is None:
+                    continue
+                swings = payload.get("swings")
+                if not isinstance(swings, list) or len(swings) < minimum:
+                    continue
+                stats = payload.get("session_stats")
+                if not isinstance(stats, dict) or not stats:
+                    continue
+                prior_stats = stats
+                prior_moment = datetime.fromtimestamp(
+                    candidate.created_at, timezone.utc
+                )
+                prior_label = f"{prior_moment:%d %b %Y}"
+                break
+        except Exception:
+            logger.exception(
+                "Matched prior session was unavailable for job %s", job.id
+            )
+            prior_stats = None
+            prior_label = None
+        return session_label, prior_stats, prior_label
 
     def _write_proof_cycle_artifact(self, job: Job) -> None:
         """Persist an additive Proof Cycle sidecar without risking the report.

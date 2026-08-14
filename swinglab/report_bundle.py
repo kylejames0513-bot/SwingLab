@@ -13,7 +13,7 @@ import uuid
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
-from typing import Iterator, Protocol, Sequence
+from typing import Iterator, Mapping, Protocol, Sequence
 
 from .config import Config
 from .evidence import EvidenceSnapshot
@@ -1282,6 +1282,9 @@ def build_report_bundle(
     evidence_snapshots: Sequence[EvidenceSnapshot],
     reason_codes: Sequence[ReasonCode],
     swing_pattern_locked: bool = False,
+    session_label: str | None = None,
+    prior_session_stats: Mapping[str, Mapping[str, float]] | None = None,
+    prior_session_label: str | None = None,
 ) -> StagedReportBundle:
     """Build and strictly validate one complete unpublished directory."""
     _validate_attempt_descriptor(attempt)
@@ -1311,6 +1314,9 @@ def build_report_bundle(
             swing_pattern_locked=swing_pattern_locked,
             media=initial_media,
             reason_codes=tuple(reason_codes),
+            session_label=session_label,
+            prior_session_stats=prior_session_stats,
+            prior_session_label=prior_session_label,
         )
         reasons = tuple(reason_codes)
         visual = None

@@ -35,6 +35,19 @@ PHASE_METHOD_LABELS = MappingProxyType({
 })
 
 
+def _playback_speed_label(cfg: Config) -> str | None:
+    """Human label for the slow-motion rate, from the same config that
+    rendered the clips (slowmo.factor: 4 -> "0.25×"). None when the factor is
+    missing or unusable — the chip is omitted rather than guessed."""
+    try:
+        factor = float(cfg.slowmo.get("factor"))
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if not (factor > 0):
+        return None
+    return f"{1 / factor:g}×"
+
+
 def _media_path(document: ReportDocument, key: str) -> str:
     entry = document.media_by_key.get(key)
     if entry is None:
@@ -72,6 +85,7 @@ def write_report_document_html(
         report_format_version=REPORT_FORMAT_VERSION,
         priority_rule_version=priority_rule_version(cfg),
         sample_banner=sample_banner,
+        playback_speed_label=_playback_speed_label(cfg),
     )
     out_path.write_text(html, encoding="utf-8")
     return out_path

@@ -613,6 +613,9 @@ def test_guided_runner_passes_persisted_policy_and_injected_writer(
         report_presentation_version=None,
         report_entitlements=None,
         guided_html_writer=None,
+        session_label=None,
+        prior_session_stats=None,
+        prior_session_label=None,
     ):
         seen.update(
             presentation=report_presentation_version,
