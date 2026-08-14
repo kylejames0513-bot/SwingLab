@@ -7,6 +7,7 @@ it deliberately does not inspect swing pixels or landmarks.
 from __future__ import annotations
 
 import math
+import re
 import statistics
 from dataclasses import dataclass, replace
 from pathlib import PurePosixPath, PureWindowsPath
@@ -323,6 +324,17 @@ class ReportPresentationInput:
     navigation: ReportNavigation | None
     practice_blocks: Sequence[Mapping[str, object]] = ()
     session_details: Sequence[LabelValue] = ()
+    # Session framing computed by the caller that owns the job history (the
+    # web job runner). All three default to absence — sample reports and CLI
+    # runs have no session ordinal and no prior matched session, and every
+    # consumer must degrade to omission.
+    session_label: str | None = None
+    # Published session_stats of the most recent prior DONE session with the
+    # same club + hand + angle ("matched", the Proof Cycle's definition), and
+    # a short date label naming when that session was recorded. The rendered
+    # report freezes these values, so the label keeps an old report honest.
+    prior_session_stats: Mapping[str, Mapping[str, float]] | None = None
+    prior_session_label: str | None = None
     # The Swing Pattern shares the replay's entitlement: both are the Coach
     # tier's report-level features, gated on the same creation-time snapshot.
     # When locked the pattern is never computed — the teaser card describes
@@ -379,6 +391,42 @@ class StrengthDetail:
 
 
 @dataclass(frozen=True)
+class MeasuredRow:
+    """One row of the "Measured this session" table.
+
+    Every cell restates a value the engine measured (or a configured noise
+    floor); nothing here is invented. ``prior_value``/``delta`` exist only
+    when a matched prior session's published stats were supplied, and
+    ``noise_floor`` only for metrics with a configured floor — the template
+    renders an em dash for the rest rather than fabricating a ±.
+    """
+
+    metric_id: str
+    label: str
+    value: str
+    prior_value: str | None
+    delta: str | None
+    in_noise: bool | None
+    noise_floor: str | None
+
+
+@dataclass(frozen=True)
+class PassMarkMeter:
+    """The NOW/MARK reading for the priority metric against its pass mark.
+
+    Built only when the re-film target's metric is the same metric the
+    priority evidence measured — protect-mode targets (e.g. tempo_ratio_std)
+    may not match, and then the text plate stands alone.
+    """
+
+    now_text: str
+    mark_text: str
+    unit_label: str
+    comparator: str
+    fill_percent: float
+
+
+@dataclass(frozen=True)
 class SwingDetail:
     swing: int
     summary: str
@@ -411,6 +459,13 @@ class ReportDepthContent:
     # Lock state deliberately has no copy here: the view's optional section
     # is the single authority the template and validators read.
     swing_pattern: SwingPattern | None = None
+    # Spec-sheet framing. All default to absence: the frozen ReportViewV1
+    # contract must not carry these, and the sample report / CLI runs omit
+    # them entirely.
+    session_label: str | None = None
+    measured_rows: tuple[MeasuredRow, ...] = ()
+    measured_prior_label: str | None = None
+    pass_meter: PassMarkMeter | None = None
 
 
 @dataclass(frozen=True)
@@ -861,6 +916,9 @@ def prepare_report_input(
     reason_codes: Sequence[ReasonCode] = (),
     safe_media_keys: Sequence[str] = (),
     navigation: ReportNavigation | None = None,
+    session_label: str | None = None,
+    prior_session_stats: Mapping[str, Mapping[str, float]] | None = None,
+    prior_session_label: str | None = None,
 ) -> ReportPresentationInput:
     """Assemble report facts once, before either typed or legacy rendering."""
     fatal_capture = _has_fatal_capture_reason(reason_codes)
@@ -980,10 +1038,158 @@ def prepare_report_input(
             LabelValue("duration", "Duration", f"{video.duration_s:.2f} seconds"),
             LabelValue("dimensions", "Display size", f"{video.display_width} x {video.display_height}"),
             LabelValue("rotation", "Rotation metadata", f"{video.rotation} degrees"),
+            # Omitted when the probe could not measure it: ffmpeg reports
+            # avg_frame_rate "0/1" as 0.0, and "0 fps source" on the badge is
+            # a false measured claim, not a degraded one.
+            *(
+                (LabelValue("source_fps", "Source frame rate", f"{video.fps:g} fps"),)
+                if video.fps > 0
+                else ()
+            ),
             *((LabelValue("level", "Experience level", level),) if level else ()),
         ),
         swing_pattern=swing_pattern,
         swing_pattern_locked=swing_pattern_locked,
+        session_label=session_label,
+        prior_session_stats=prior_session_stats,
+        prior_session_label=prior_session_label,
+    )
+
+
+_FORMATTER_DECIMALS = re.compile(r"\{:[+]?\.(\d)f\}")
+
+
+def _formatter_decimals(formatter: str) -> int:
+    match = _FORMATTER_DECIMALS.search(formatter)
+    return int(match.group(1)) if match else 2
+
+
+# The spec table's compact spellings of the same measured values — the
+# mockup's own convention, glossed by the table footnote ("sw = shoulder
+# widths"). A formatting transform only; the numbers are untouched.
+_COMPACT_UNITS = (
+    (" shoulder widths per second", " sw/s"),
+    (" shoulder widths", " sw"),
+    (" seconds", " s"),
+    (" degrees", "°"),
+)
+
+
+def _compact_measured(value: str) -> str:
+    for full, short in _COMPACT_UNITS:
+        if value.endswith(full):
+            return value[: -len(full)] + short
+    return value
+
+
+def _measured_rows(
+    source: ReportPresentationInput, cfg: Config
+) -> tuple[MeasuredRow, ...]:
+    """Restate the session's measured means beside the matched prior session.
+
+    Noise floors come from cfg.proof_cycle — product policy shared with the
+    Proof Cycle, read here and never restated. Metrics without a configured
+    floor carry ``noise_floor=None`` (rendered as an em dash), never an
+    invented ±. Deltas inside the floor are marked ``in_noise`` so the table
+    can show them without calling them improved.
+    """
+    floors = cfg.proof_cycle.get("metric_noise_floors") or {}
+    prior_stats = source.prior_session_stats
+    rows: list[MeasuredRow] = []
+    for phase in build_phase_summaries(source, cfg):
+        for detail in phase.measurements:
+            if detail.numeric_value is None:
+                continue
+            metric_id = detail.id.removeprefix("measurement-")
+            meta = _METRICS.get(metric_id)
+            if meta is None:
+                continue
+            floor = finite_float(floors.get(metric_id)) if isinstance(floors, Mapping) else None
+            prior_value = None
+            delta_text = None
+            in_noise = None
+            if prior_stats:
+                prior = _mean_metric(metric_id, (), prior_stats)
+                if prior is not None:
+                    decimals = _formatter_decimals(meta.formatter)
+                    prior_value = _compact_measured(meta.formatter.format(prior))
+                    delta = detail.numeric_value - prior
+                    delta_text = f"{delta:+.{decimals}f}"
+                    if floor is not None:
+                        in_noise = abs(delta) < floor
+            rows.append(
+                MeasuredRow(
+                    metric_id,
+                    detail.label,
+                    _compact_measured(detail.plain_value),
+                    prior_value,
+                    delta_text,
+                    in_noise,
+                    None if floor is None else f"±{floor:g}",
+                )
+            )
+    return tuple(rows)
+
+
+def _pass_meter(view: ReportViewV1) -> PassMarkMeter | None:
+    """NOW/MARK meter for the priority metric — only when the numbers match.
+
+    NOW is the session mean the validator already ties to the next move
+    (visual_evidence.supporting_measurement); MARK is the configured re-film
+    threshold. When the target tracks a different metric than the evidence
+    (protect-mode consistency targets), or the threshold is zero, there is no
+    honest ratio to draw and the meter is omitted.
+    """
+    if view.outcome is not ReportOutcome.COACHING_READY:
+        return None
+    refilm = view.refilm
+    evidence = view.visual_evidence
+    if refilm is None or evidence is None:
+        return None
+    target = refilm.target
+    measurement = evidence.supporting_measurement
+    if measurement is None or measurement.id != f"measurement-{target.metric_id}":
+        return None
+    now = finite_float(measurement.numeric_value)
+    threshold = finite_float(target.threshold)
+    if now is None or threshold is None or threshold <= 0:
+        return None
+    meta = _METRICS.get(target.metric_id)
+    decimals = _formatter_decimals(meta.formatter) if meta is not None else 2
+    comparator = (
+        "≥"
+        if target.comparator
+        in (TargetComparator.GTE, TargetComparator.ALL_GTE, TargetComparator.COUNT_GTE)
+        else "≤"
+    )
+    if target.unit is MeasurementUnit.RATIO:
+        mark_text = f"{threshold:g}:1"
+        unit_label = ""
+    else:
+        mark_text = f"{threshold:g}"
+        unit_label = {
+            MeasurementUnit.DEGREES: "degrees",
+            MeasurementUnit.SHOULDER_WIDTHS: "shoulder widths",
+            MeasurementUnit.SECONDS: "seconds",
+        }.get(target.unit, "")
+    # Fill means "how close to clearing the mark", in the direction the
+    # comparator actually points. now/threshold is right for >=-targets; for
+    # <=-targets it is inverted — a failing 0.64 sway against a 0.32 mark
+    # pinned the bar at 100% for the whole approach and it only started moving
+    # after the golfer already passed. threshold/now flips it: full exactly at
+    # the mark, emptier the further above it, with now == 0 a trivial pass.
+    if comparator == "≥":
+        fill = max(0.0, min(now / threshold, 1.0)) * 100
+    elif now <= 0:
+        fill = 100.0
+    else:
+        fill = max(0.0, min(threshold / now, 1.0)) * 100
+    return PassMarkMeter(
+        f"{now:.{decimals}f}",
+        mark_text,
+        unit_label,
+        comparator,
+        round(fill, 1),
     )
 
 
@@ -1069,6 +1275,8 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
         source.primary_drill.gear_note or "Optional aid for this practice step.",
         gear_url,
     ),))
+    measured_rows = () if capture_only else _measured_rows(source, cfg)
+    has_prior_column = any(row.prior_value is not None for row in measured_rows)
     depth = ReportDepthContent(
         swings, findings, strengths, measurements,
         (LabelValue("hand", "Hand", source.context.hand),
@@ -1077,6 +1285,12 @@ def build_report_document(source: ReportPresentationInput, cfg: Config) -> Repor
          *source.session_details),
         glossary, limitations, gear, navigation,
         swing_pattern=None if capture_only else source.swing_pattern,
+        session_label=source.session_label,
+        measured_rows=measured_rows,
+        measured_prior_label=(
+            source.prior_session_label if has_prior_column else None
+        ),
+        pass_meter=None if capture_only else _pass_meter(view),
     )
     if capture_only:
         return ReportDocument(

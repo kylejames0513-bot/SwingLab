@@ -8,7 +8,22 @@
   assign app_login_url = app_url | append: '/login'
   assign app_signup_url = app_url | append: '/signup'
   assign app_session_url = app_url | append: '/auth/storefront/session'
-  assign gear_url = routes.collections_url | append: '/swinglab-gear'
+  capture gear_url
+    render 'gear-url'
+  endcapture
+  assign gear_url = gear_url | strip
+  # The nav's active state is the one place the OLD handle still has to be
+  # matched: the URL above is covered by the redirect, but a shopper standing
+  # on the collection before the cutover rename is standing on
+  # swinglab-gear, and hardcoding only the new handle would silently drop
+  # is-current there. Resolved once rather than four times inline. The old
+  # arm is deletable once the redirect has been live a while.
+  assign gear_is_current = false
+  if request.page_type == 'collection'
+    if collection.handle == 'gear' or collection.handle == 'swinglab-gear'
+      assign gear_is_current = true
+    endif
+  endif
   assign pro_product = all_products['swinglab-pro']
   assign premium_header = false
   if request.page_type == 'index'
@@ -103,7 +118,7 @@
             </div>
           </details>
         {%- endif -%}
-        <a href="{{ gear_url }}" class="sl-header__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}"{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
+        <a href="{{ gear_url }}" class="sl-header__link{% if gear_is_current %} is-current{% endif %}"{% if gear_is_current %} aria-current="page"{% endif %}>{{ 'layout.navigation.gear' | t }}</a>
         {%- if pro_product != blank -%}
           <a href="{{ pro_product.url }}" class="sl-header__link{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} is-current{% endif %}" data-app-plans-link data-member-url="{{ pro_product.url }}"{% if request.page_type == 'product' and product.handle == 'swinglab-pro' %} aria-current="page"{% endif %}>{{ 'layout.navigation.pro' | t }}</a>
         {%- endif -%}
@@ -224,7 +239,7 @@
       {%- unless premium_header -%}
         <div class="sl-menu__group">
           <p class="sl-menu__eyebrow">{{ 'layout.navigation.shop' | t }}</p>
-          <a href="{{ gear_url }}" class="sl-menu__link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} is-current{% endif %}" data-menu-link{% if request.page_type == 'collection' and collection.handle == 'swinglab-gear' %} aria-current="page"{% endif %}>
+          <a href="{{ gear_url }}" class="sl-menu__link{% if gear_is_current %} is-current{% endif %}" data-menu-link{% if gear_is_current %} aria-current="page"{% endif %}>
             <span>{{ 'layout.navigation.gear' | t }}</span><span aria-hidden="true">&rarr;</span>
           </a>
           {%- if pro_product != blank -%}
@@ -328,7 +343,10 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   flex: none;
   text-transform: uppercase;
   white-space: nowrap;
-  color: var(--sl-accent-hover);
+  /* The rail sits on the field. --sl-accent-hover is the PAPER-side signal's
+     hover step and lands at 1.96 here — the tier label was invisible. A
+     plan name is not a measurement, so it takes the field's type colour. */
+  color: var(--sl-field-ink);
 }
 .sl-member-rail__greeting {
   flex: 1 1 auto;

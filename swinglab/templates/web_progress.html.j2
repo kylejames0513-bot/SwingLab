@@ -147,6 +147,59 @@
     letter-spacing: var(--sl-eyebrow-track);
     text-transform: uppercase;
   }
+  /* The measured pair (baseline -> latest accepted re-film) is the loudest
+     number on the page and both halves are engine measurements, so amber
+     mono. Scoped like .proof-kicker: bare .proof-pair at (0,1,0) would lose
+     to `.proof-note p` at (0,1,1). */
+  .proof-note .proof-pair {
+    margin: var(--sl-space-2) 0 0;
+    color: var(--sl-orange-text);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xl);
+    font-weight: 500;
+    line-height: 1.2;
+  }
+  .proof-note .proof-pair .arrow { color: var(--sl-ink-muted); }
+  /* N of M confirmations: N is measured, M is persisted policy — the
+     numbers carry the amber; the connective copy stays chrome. */
+  .proof-note .proof-count {
+    margin: var(--sl-space-1) 0 0;
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+  }
+  .proof-note .proof-count b {
+    color: var(--sl-orange-text);
+    font-weight: 500;
+  }
+
+  /* ------------------------------------------------------ the stat strip
+     1c's four instrument tiles and 1d's four-cell grid are the same DOM:
+     the same 1px-gap bordered grid the per-metric stats use, standalone.
+     Rendered only for an exact matched context (club + hand + angle
+     pinned), because "matched sessions" is a claim, not a caption. */
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1px;
+    margin: 0 0 var(--sl-space-6);
+    background: var(--sl-border);
+    border: 1px solid var(--sl-border);
+    border-radius: var(--sl-radius-sm);
+    overflow: hidden;
+  }
+  @media (min-width: 750px) {
+    .stat-strip { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  }
+  /* The tile sub-line is context, not a measurement — never amber. */
+  .stat .s {
+    display: block;
+    margin-top: var(--sl-space-1);
+    color: var(--sl-ink-muted);
+    font-size: var(--sl-text-xs);
+  }
 
   /* ----------------------------------------------------------- the panels */
   .metric-card {
@@ -229,6 +282,83 @@
      generator wrote, interpolated from the same brand dict it reads, so the
      selector cannot drift from the markup the way a copied literal would. */
   .trend-svg circle[fill="{{ brand.accent_color }}"] { fill: var(--sl-trace); }
+  /* The noise-floor band: baseline ± the exact MDE the proof engine used,
+     drawn only on the active target's chart. It is a measured bound on the
+     FIELD, so it follows the field's rule — field ink, not the trace the
+     benchmark band already means. Attribute-matched at (0,1,1) so the bare
+     `rect` re-ink above cannot claim it. */
+  .trend-svg rect[data-band="noise"] {
+    fill: var(--sl-field-ink);
+    opacity: .12;
+  }
+
+  /* Session ordinals under the headline chart — spec labels, mono chrome,
+     capped to the same width as the chart they index. */
+  .chart-axis--positioned { position: relative; height: 1.1rem; display: block; }
+    .chart-axis--positioned span { position: absolute; top: 0; }
+    .chart-axis {
+    display: flex;
+    justify-content: space-between;
+    margin: calc(-1 * var(--sl-space-3)) 0 var(--sl-space-2);
+    padding: 0 4px;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+  }
+  @media (min-width: 560px) {
+    .chart-axis { max-width: 620px; }
+  }
+  /* Legend: each swatch is a chip of the field carrying the mark exactly as
+     the chart draws it, because the marks are field-side colours a paper
+     swatch could not show. A row renders only when its mark actually
+     exists in the SVG. */
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--sl-space-2) var(--sl-space-4);
+    margin: 0 0 var(--sl-space-2);
+  }
+  .chart-legend .lg {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--sl-space-2);
+    color: var(--sl-ink-soft);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+  }
+  .chart-legend .sw {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 12px;
+    background: var(--sl-field);
+    border: 1px solid var(--sl-border-strong);
+  }
+  .chart-legend .sw > span { display: block; }
+  /* Mirrors the SVG's session dot, band rect, and dashed pass-mark line. */
+  .chart-legend .sw-measure > span {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--sl-field-ink);
+  }
+  .chart-legend .sw-band > span {
+    width: 12px;
+    height: 6px;
+    background: rgba(var(--sl-cream-rgb), .25);
+  }
+  .chart-legend .sw-pass > span {
+    width: 12px;
+    border-top: 1px dashed var(--sl-trace);
+  }
+  /* Non-headline panels compact their charts so the page reads as one full
+     instrument plus supporting meters — same data, tighter drawing. */
+  @media (min-width: 560px) {
+    .metric-card--compact .trend-svg { max-width: 460px; }
+  }
 
   /* A 1px-gap bordered grid: the rules between cells are the container's
      background showing through. Two columns on a phone, four once there is
@@ -326,6 +456,75 @@
     padding-top: var(--sl-space-5);
     border-top: 1px solid var(--sl-border);
     text-align: left;
+  }
+  /* 1d's block film button: the same CTA, full-width where a thumb is the
+     pointer. Not a duplicate control — CSS only. */
+  @media (max-width: 559px) {
+    .cta a.button {
+      display: flex;
+      width: 100%;
+      min-height: 44px;
+      align-items: center;
+      justify-content: center;
+    }
+  }
+
+  /* ------------------------------------------------- priority history
+     One ruled row per past proof target. The state tags are entitlement-
+     style markers, NOT measurements — no amber anywhere in them. Active is
+     the one filled chip (same solid-object rule as the primary button);
+     Held sits in a well; Unproven is dashed, the frame itself saying "no
+     verdict". */
+  .prio-list { list-style: none; margin: var(--sl-space-4) 0 0; padding: 0; }
+  .prio-row {
+    display: flex;
+    align-items: baseline;
+    gap: var(--sl-space-3);
+    padding: var(--sl-space-3) 0;
+    border-top: 1px solid var(--sl-border);
+  }
+  .prio-ord {
+    flex: 0 0 auto;
+    min-width: 3ch;
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+  }
+  .prio-main { flex: 1 1 auto; min-width: 0; }
+  .prio-name {
+    display: block;
+    color: var(--sl-ink);
+    font-size: var(--sl-text-sm);
+    font-weight: 500;
+  }
+  .prio-sub {
+    display: block;
+    margin-top: var(--sl-space-1);
+    color: var(--sl-ink-soft);
+    font-size: var(--sl-text-xs);
+  }
+  .prio-tag {
+    flex: 0 0 auto;
+    padding: var(--sl-space-1) var(--sl-space-3);
+    border: 1px solid var(--sl-control-border);
+    border-radius: var(--sl-radius-sm);
+    color: var(--sl-ink);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    font-weight: 500;
+    letter-spacing: var(--sl-eyebrow-track);
+    text-transform: uppercase;
+  }
+  .prio-tag--active {
+    background: var(--sl-green-btn);
+    border-color: var(--sl-green-btn);
+    color: var(--sl-green-ink);
+  }
+  .prio-tag--held { background: var(--sl-night); }
+  .prio-tag--unproven {
+    border-style: dashed;
+    color: var(--sl-ink-soft);
   }
 
   /* --------------------------------------------------------- the Pro gate */
@@ -440,10 +639,36 @@
   <aside class="proof-note" data-proof-state="{{ progress_proof.tone }}" aria-labelledby="progress-proof-title">
     <p class="proof-kicker">Proof cycle · {{ progress_proof.target_name }}</p>
     <h2 id="progress-proof-title">{{ progress_proof.heading }}</h2>
+    {% if proof_numbers %}
+    {# Only a comparison-stage artifact with an accepted matched re-film
+       reaches here: baseline value, latest re-film value, and accepted
+       count are persisted measurements; the required count is persisted
+       policy. A baseline-stage cycle keeps the words-only card. #}
+    <p class="proof-pair">{{ proof_numbers.baseline }}
+      <span class="arrow">&#8594;</span> {{ proof_numbers.latest }}</p>
+    <p class="proof-count"><b>{{ proof_numbers.count }}</b> of
+      <b>{{ proof_numbers.required }}</b> matched re-film
+      confirmations{% if proof_numbers.verdict_word %} &middot;
+      {{ proof_numbers.verdict_word }}{% endif %}</p>
+    {% endif %}
     <p><strong>{{ progress_proof.summary }}</strong></p>
     <p>{{ progress_proof.detail }}</p>
     <p><strong>Next:</strong> {{ progress_proof.next_step }}</p>
   </aside>
+  {% endif %}
+
+  {% if stat_strip %}
+  {# 1c's tile row / 1d's four-cell grid. Only rendered for an exact matched
+     context — the view passes an empty list otherwise. #}
+  <div class="stat-strip">
+    {% for tile in stat_strip %}
+    <div class="stat">
+      <span class="k">{{ tile.k }}</span>
+      <span class="v">{{ tile.v }}</span>
+      {% if tile.sub %}<span class="s">{{ tile.sub }}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
   {% endif %}
 
   {% if session_count == 0 %}
@@ -466,12 +691,28 @@
   </div>
   {% else %}
     {% for c in cards %}
-    <div class="metric-card">
+    <div class="metric-card{% if not c.is_headline %} metric-card--compact{% endif %}">
       <div class="metric-head">
         <h2>{{ c.label }}</h2>
         {% if c.benchmark_text %}<span class="bench">{{ c.benchmark_text }}</span>{% endif %}
       </div>
       {{ c.chart | safe }}
+      {% if c.axis_labels %}
+      {# Which sessions the dots are: the ordinal of each contributing
+         session among the trend samples, thinned like the mockup thins
+         S01…S14. Decorative index for sighted scanning; the chart's own
+         aria-label stays the accessible description. #}
+      <div class="chart-axis chart-axis--positioned" aria-hidden="true">
+        {% for l in c.axis_labels %}<span style="left: {{ l.pct }}%; transform: translateX({{ '0' if l.pct == 0 else ('-100%' if l.pct == 100 else '-50%') }});">{{ l.text }}</span>{% endfor %}
+      </div>
+      {% endif %}
+      {% if c.is_headline %}
+      <div class="chart-legend">
+        <span class="lg"><span class="sw sw-measure"><span></span></span>Matched measurement</span>
+        {% if c.has_band %}<span class="lg"><span class="sw sw-band"><span></span></span>Noise floor band</span>{% endif %}
+        {% if c.benchmark_text %}<span class="lg"><span class="sw sw-pass"><span></span></span>Pass mark</span>{% endif %}
+      </div>
+      {% endif %}
       <div class="stats">
         <div class="stat"><span class="k">Latest</span><span class="v">{{ c.latest }}</span></div>
         <div class="stat"><span class="k">Best</span><span class="v">{{ c.best }}</span></div>
@@ -490,6 +731,32 @@
     </div>
     {% endfor %}
 
+    {% if proof_history %}
+    {# One row per past proof target in this exact context, newest first,
+       from stored sidecars only — pre-sidecar sessions contribute nothing,
+       so the section hides itself rather than backfilling. Held means
+       matched re-films cleared the pass mark outside the noise floor;
+       worked-but-never-re-filmed stays Unproven. #}
+    <div class="card history-card">
+      <h2>Priority history</h2>
+      <ol class="prio-list">
+        {% for row in proof_history %}
+        <li class="prio-row">
+          <span class="prio-ord">{{ row.ordinal or "" }}</span>
+          <span class="prio-main">
+            <span class="prio-name">{{ row.name }}</span>
+            <span class="prio-sub">{{ row.subline }}</span>
+          </span>
+          <span class="prio-tag prio-tag--{{ row.state | lower }}">{{ row.state }}</span>
+        </li>
+        {% endfor %}
+      </ol>
+      <p class="hint">A priority only earns Held after matched re-films clear
+        its pass mark outside the noise floor. No verdict is invented for
+        anything else.</p>
+    </div>
+    {% endif %}
+
     <div class="card">
       <h2>What keeps getting flagged</h2>
       {% if flags_strip %}
@@ -506,7 +773,9 @@
         current so drift shows up early.</p>
       {% endif %}
       <div class="cta">
-        <a class="button" href="/">Re-film this week</a>
+        {# The number is derived, not decorative: this context holds
+           session_count measured sessions, so the next film is N+1. #}
+        <a class="button" href="/">Film session {{ session_count + 1 }}</a>
         <p class="hint">The chart only moves when you film — same club, same
           camera height, same angle.</p>
       </div>

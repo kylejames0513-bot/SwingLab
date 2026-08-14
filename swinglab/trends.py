@@ -341,11 +341,12 @@ def build_trends(jobs: Iterable, cfg: Config) -> Trends:
     return Trends(samples=tuple(samples), metrics=metrics, flag_counts=counts)
 
 
-def trend_sentence(trends: Trends) -> str | None:
-    """One honest line, e.g. "Tempo has moved 2.41:1 \N{RIGHTWARDS ARROW}
-    2.79:1 across 5 sessions". None until two sessions have measured the
-    same benchmarked metric — this never fabricates a number, so callers
-    must hide the line entirely when it is None."""
+def headline_metric(trends: Trends) -> str | None:
+    """The benchmarked metric this history leads with: the first
+    _SENTENCE_PRIORITY entry measured in the latest session with at least
+    two points. Public so the progress dashboard's headline tile and the
+    trend sentence can never lead with different metrics. None when no
+    metric qualifies — callers must render nothing rather than pick one."""
     if not trends.samples:
         return None
     latest_means = trends.samples[-1].means
@@ -355,13 +356,25 @@ def trend_sentence(trends: Trends) -> str | None:
         trend = trends.metrics.get(name)
         if trend is None or len(trend.points) < 2:
             continue
-        first = format_value(name, trend.points[0][1])
-        last = format_value(name, trend.points[-1][1])
-        count = len(trend.points)
-        if first == last:
-            return f"{trend.label} has held at {last} across {count} sessions"
-        return (
-            f"{trend.label} has moved {first} \N{RIGHTWARDS ARROW} {last} "
-            f"across {count} sessions"
-        )
+        return name
     return None
+
+
+def trend_sentence(trends: Trends) -> str | None:
+    """One honest line, e.g. "Tempo has moved 2.41:1 \N{RIGHTWARDS ARROW}
+    2.79:1 across 5 sessions". None until two sessions have measured the
+    same benchmarked metric — this never fabricates a number, so callers
+    must hide the line entirely when it is None."""
+    name = headline_metric(trends)
+    if name is None:
+        return None
+    trend = trends.metrics[name]
+    first = format_value(name, trend.points[0][1])
+    last = format_value(name, trend.points[-1][1])
+    count = len(trend.points)
+    if first == last:
+        return f"{trend.label} has held at {last} across {count} sessions"
+    return (
+        f"{trend.label} has moved {first} \N{RIGHTWARDS ARROW} {last} "
+        f"across {count} sessions"
+    )

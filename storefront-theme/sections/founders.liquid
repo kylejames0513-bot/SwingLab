@@ -1,0 +1,628 @@
+{%- liquid
+  # One resolution rule, three surfaces — this page, the home band and the
+  # announcement bar. See snippets/founders-remaining.liquid for why the count
+  # comes from inventory rather than from a setting.
+  capture founders_left
+    render 'founders-remaining', settings: section.settings
+  endcapture
+  assign founders_left = founders_left | strip | times: 1
+
+  assign founders_total = section.settings.founders_total | default: 100 | at_least: 1
+  assign founders_claimed = founders_total | minus: founders_left | at_least: 0
+  assign sold_out = false
+  if founders_left <= 0
+    assign sold_out = true
+  endif
+
+  # Resolve through the product so the localised route survives and an
+  # unpublished product yields blank rather than a 404 — the pattern
+  # cta-banner.liquid uses for the Pro link.
+  assign founders_handle = section.settings.founders_handle | default: 'swinglab-pro'
+  assign founders_product = all_products[founders_handle]
+  # Link straight to the Founders VARIANT, not to the product. The product is
+  # the membership, whose default variant is a $9.99 month; landing a
+  # "Claim a Founders Pass · $249" button on it and letting the shopper hunt
+  # for the right option is how somebody buys the wrong thing.
+  assign founders_sku = section.settings.founders_sku | default: 'SL-PRO-LIFE'
+  assign founders_variant = blank
+  for candidate in founders_product.variants
+    if candidate.sku == founders_sku
+      assign founders_variant = candidate
+    endif
+  endfor
+  assign claim_url = section.settings.claim_url
+  if claim_url == blank and founders_variant != blank
+    assign claim_url = founders_variant.url
+  endif
+
+  # BOTH PRICES ARE IN CENTS. Shopify's `number` setting is an integer, so a
+  # dollars-and-cents figure authored there rounds — 19.99 became 19 and the
+  # page told visitors Coach cost $19.00. Cents is also what `money` expects,
+  # so the same value now feeds the filter without a conversion step.
+  assign pass_cents = section.settings.pass_price | default: 24900 | at_least: 0
+  assign coach_cents = section.settings.coach_monthly | default: 1999 | at_least: 0
+
+  # The payback line is arithmetic, not copy: at $19.99/mo a $249 pass pays for
+  # itself in 13 months. Authored as a sentence it lied the first time either
+  # number moved, so it is computed and suppressed if it cannot be.
+  # `times: 1.0` first, or this is integer division and the ceil is a no-op:
+  # 24900 / 1999 floors to 12, ceil(12) is 12, and the page rounds the payback
+  # DOWN — understating what the pass costs to earn back, which is the one
+  # direction a number on a sales page must never be wrong in.
+  assign payback_months = 0
+  if coach_cents > 0
+    assign payback_months = pass_cents | times: 1.0 | divided_by: coach_cents | ceil
+  endif
+
+  # The comparison table's four column labels, resolved once. The header cells
+  # and the phone layout's per-cell labels both read this list, which is how
+  # they are kept from drifting apart.
+  assign col_free = section.settings.col_free | default: 'Free'
+  assign col_pro = section.settings.col_pro | default: 'Pro'
+  assign col_coach = section.settings.col_coach | default: 'Coach'
+  assign col_founders = section.settings.col_founders | default: 'Founders'
+  assign col_labels = col_free | append: '||' | append: col_pro | append: '||' | append: col_coach | append: '||' | append: col_founders | split: '||'
+
+  assign founders_title_id = 'FoundersTitle-' | append: section.id
+-%}
+
+{%- comment -%}
+  THE FOUNDERS PASS. The one page on the store that sells scarcity, which is
+  why every number on it is derived rather than authored: the count comes from
+  inventory, the claimed figure from the count, the payback from the two
+  prices. A scarcity page is the worst possible place for a stale number,
+  because it is the one claim a visitor can check.
+
+  The hero takes the field. base.css reserves the deep green for video,
+  evidence, the hero and the priority panel — a headline moment qualifies, and
+  it is what 2a's hero already does, so the two pages open the same way.
+{%- endcomment -%}
+<section class="sl-founders" aria-labelledby="{{ founders_title_id }}">
+  <div class="sl-founders__hero">
+    <div class="sl-wrap">
+      <div class="sl-founders__hero-grid">
+        <div class="sl-founders__hero-copy sl-reveal">
+          {%- if section.settings.kicker != blank -%}
+            <p class="sl-founders__kicker">{{ section.settings.kicker }}</p>
+          {%- endif -%}
+          <h1 id="{{ founders_title_id }}" class="sl-founders__title">
+            {{- section.settings.heading | default: 'Pay once. Coach forever.' -}}
+          </h1>
+          {%- if section.settings.body != blank -%}
+            <p class="sl-founders__body">{{ section.settings.body }}</p>
+          {%- endif -%}
+
+          {%- if sold_out -%}
+            {%- comment -%}
+              Sold out is a real state, not an error. The page keeps working
+              and says so plainly rather than offering a button that cannot
+              complete — and rather than advertising "0 remaining", which
+              reads as a broken counter.
+            {%- endcomment -%}
+            <p class="sl-founders__soldout">
+              {{ section.settings.soldout_note | default: 'All 100 Founders Passes have been claimed. Coach is still available monthly.' }}
+            </p>
+            {%- if section.settings.soldout_url != blank -%}
+              <a class="sl-btn sl-btn--light" href="{{ section.settings.soldout_url }}">
+                {{ section.settings.soldout_label | default: 'See the Coach plan' }}
+              </a>
+            {%- endif -%}
+          {%- elsif claim_url != blank -%}
+            <a class="sl-btn sl-btn--light sl-founders__claim" href="{{ claim_url }}">
+              {{ section.settings.claim_label | default: 'Claim a Founders Pass' }}
+              {%- if pass_cents > 0 -%}
+                <span aria-hidden="true"> · {{ pass_cents | money }}</span>
+              {%- endif -%}
+            </a>
+            <p class="sl-founders__terms">{{ section.settings.terms | default: 'One payment · never renews' }}</p>
+          {%- endif -%}
+        </div>
+
+        {%- comment -%}
+          The tally. One hundred cells, one per pass, ten to a row — not the
+          ten-cell bar the mockup captions as "each cell = 10 passes". At zero
+          claimed a ten-cell bar is ten empty boxes and says nothing; a hundred
+          cells reads as a real edition being counted out, and it can show a
+          part-filled row honestly once selling starts.
+
+          It is decoration in the accessibility tree — the same figures are in
+          the caption beneath it as text — so the grid is aria-hidden and the
+          caption does the announcing.
+        {%- endcomment -%}
+        <figure class="sl-founders__tally sl-blueprint sl-reveal">
+          <i class="sl-corner sl-corner--tl" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--tr" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--bl" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--br" aria-hidden="true"></i>
+
+          <div class="sl-founders__grid" aria-hidden="true">
+            {%- for i in (1..founders_total) -%}
+              {%- if i <= founders_claimed -%}
+                <span class="sl-founders__cell sl-founders__cell--taken"></span>
+              {%- else -%}
+                <span class="sl-founders__cell"></span>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+
+          <figcaption class="sl-founders__tally-caption">
+            <span class="sl-founders__stat">
+              <b>{{ founders_claimed }}</b> claimed
+            </span>
+            <span class="sl-founders__stat">
+              <b>{{ founders_total }}</b> total
+            </span>
+            <span class="sl-founders__stat sl-founders__stat--note">
+              Each cell is one pass
+            </span>
+          </figcaption>
+        </figure>
+      </div>
+    </div>
+  </div>
+
+  {%- comment -%}
+    What the money buys, as a checklist rather than prose. Authored as blocks
+    so the list can grow with the product without a copy change here — the
+    last line ("every Coach feature we ship after this one") is the promise
+    the cap exists to make keepable, so it is worth keeping editable.
+  {%- endcomment -%}
+  {%- if section.blocks.size > 0 -%}
+    <div class="sl-wrap">
+      <div class="sl-founders__buys sl-reveal">
+        <h2 class="sl-founders__sub">{{ section.settings.buys_heading | default: 'What $249 buys, permanently' }}</h2>
+
+        <ul class="sl-founders__list" role="list">
+          {%- for block in section.blocks -%}
+            {%- if block.type == 'benefit' -%}
+              <li class="sl-founders__item" {{ block.shopify_attributes }}>
+                <span class="sl-founders__tick" aria-hidden="true">&#10003;</span>
+                <span>{{ block.settings.text }}</span>
+              </li>
+            {%- endif -%}
+          {%- endfor -%}
+        </ul>
+
+        {%- if payback_months > 0 -%}
+          <p class="sl-founders__payback">
+            Coach at {{ coach_cents | money }}/mo pays this back in
+            <b>{{ payback_months }} months</b>.
+          </p>
+        {%- endif -%}
+      </div>
+    </div>
+  {%- endif -%}
+
+  {%- comment -%}
+    Three numbered blocks answering the three objections a lifetime deal
+    raises, in the order people raise them: why is it capped, what do I get
+    that others do not, and what am I not buying. The third is the one that
+    keeps the promise honest.
+  {%- endcomment -%}
+  {%- assign reasons = section.blocks | where: 'type', 'reason' -%}
+  {%- if reasons.size > 0 -%}
+    <div class="sl-wrap">
+      <div class="sl-founders__reasons sl-reveal">
+        {%- for block in reasons -%}
+          {%- liquid
+            assign ordinal = forloop.index
+            if ordinal < 10
+              assign ordinal = ordinal | prepend: '0'
+            endif
+          -%}
+          <div class="sl-founders__reason" {{ block.shopify_attributes }}>
+            <span class="sl-founders__reason-num" aria-hidden="true">{{ ordinal }}</span>
+            <h3 class="sl-founders__reason-title">{{ block.settings.title }}</h3>
+            <p class="sl-founders__reason-body">{{ block.settings.body }}</p>
+          </div>
+        {%- endfor -%}
+      </div>
+    </div>
+  {%- endif -%}
+
+  {%- comment -%}
+    Founders against the rest. This is a fourth column rather than a note on
+    the Coach one, because the two rows that matter are the two where Founders
+    and Coach differ — future features "while subscribed" against "for good",
+    and renewal "monthly" against "never". Fold those into Coach and the page
+    has no argument left.
+
+    It is deliberately NOT sections/comparison.liquid. That section already has
+    a considered treatment of Founders (it appends the price to the Coach
+    column) and its own comment records that the mobile stack "was built for
+    two value columns"; a fourth would break the surface the home page depends
+    on to fix a table only this page shows.
+  {%- endcomment -%}
+  {%- assign rows = section.blocks | where: 'type', 'row' -%}
+  {%- if rows.size > 0 -%}
+    <div class="sl-wrap">
+      <div class="sl-founders__table-wrap sl-reveal">
+        <h2 class="sl-founders__sub">{{ section.settings.table_heading | default: 'Founders against the rest' }}</h2>
+        <table class="sl-founders__table">
+          <thead>
+            <tr>
+              <th scope="col"><span class="visually-hidden">Feature</span></th>
+              <th scope="col">{{ col_free }}</th>
+              <th scope="col">{{ col_pro }}</th>
+              <th scope="col">{{ col_coach }}</th>
+              <th scope="col" class="sl-founders__col--own">{{ col_founders }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {%- for block in rows -%}
+              <tr {{ block.shopify_attributes }}>
+                <th scope="row">{{ block.settings.feature }}</th>
+                {%- comment -%}
+                  An empty cell renders an explicit em dash, never a blank —
+                  a blank in a comparison table reads as an oversight rather
+                  than as "not included", which is the opposite of the meaning.
+                  The dash is aria-hidden and paired with real text so a
+                  screen reader says "not included" instead of "dash".
+                {%- endcomment -%}
+                {%- comment -%}
+                  Values and labels are walked as parallel lists so the phone
+                  layout's per-cell label and the desktop header cannot drift
+                  apart — the failure comparison.liquid records having had.
+                  '||' is the delimiter because prose never contains it.
+                {%- endcomment -%}
+                {%- assign cells = block.settings.free_value | append: '||' | append: block.settings.pro_value | append: '||' | append: block.settings.coach_value | append: '||' | append: block.settings.founders_value | split: '||' -%}
+                {%- for cell in cells -%}
+                  {%- liquid
+                    assign value = cell | strip
+                    assign label = col_labels[forloop.index0]
+                  -%}
+                  <td data-label="{{ label | escape }}"{% if forloop.index == 4 %} class="sl-founders__col--own"{% endif %}>
+                    {%- if value == blank or value == '—' -%}
+                      <span aria-hidden="true">&mdash;</span><span class="visually-hidden">Not included</span>
+                    {%- else -%}
+                      {{ value }}
+                    {%- endif -%}
+                  </td>
+                {%- endfor -%}
+              </tr>
+            {%- endfor -%}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {%- endif -%}
+</section>
+
+{% stylesheet %}
+.sl-founders__hero {
+  background: var(--sl-field);
+  color: var(--sl-field-ink);
+  padding: var(--sl-section-space) 0;
+}
+.sl-founders__hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-7);
+  align-items: center;
+}
+@media (min-width: 1000px) {
+  .sl-founders__hero-grid { grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: var(--sl-space-8); }
+}
+
+.sl-founders__kicker {
+  margin: 0 0 var(--sl-space-4);
+  color: var(--sl-trace);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  line-height: 1;
+  text-transform: uppercase;
+}
+/* THE COLOUR IS NOT OPTIONAL AND NOT INHERITED. base.css gives h1/h2/h3 an ink
+   colour, and a global element rule beats inheriting --sl-field-ink from the
+   section — so a heading dropped on the field renders #1d1f20 on #070f0b at
+   about 1.2:1 and is, in practice, invisible. It shipped that way here and
+   read as a layout fault rather than a colour one, because the eye sees a void
+   between the kicker and the body and assumes the block is misaligned.
+
+   This is the failure CLAUDE.md records from the 2026-08-11 overhaul, where
+   every design-gate test passed while the hero rendered ink-on-near-black.
+   hero.liquid sets this explicitly for the same reason; so does this. */
+.sl-founders__title {
+  margin: 0;
+  max-width: 14ch;
+  color: var(--sl-field-ink);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-heading-display);
+  font-weight: var(--sl-weight-display);
+  letter-spacing: -0.025em;
+  line-height: 1.02;
+  text-wrap: balance;
+}
+.sl-founders__body {
+  margin: var(--sl-space-5) 0 0;
+  max-width: 46ch;
+  color: rgba(var(--sl-cream-rgb), 0.72);
+  font-size: var(--sl-text-lg);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.sl-founders__claim { margin-top: var(--sl-space-6); min-height: 52px; padding: 14px 24px; }
+.sl-founders__terms,
+.sl-founders__soldout {
+  margin: var(--sl-space-4) 0 0;
+  color: rgba(var(--sl-cream-rgb), 0.6);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-founders__soldout { max-width: 44ch; text-transform: none; letter-spacing: 0; font-family: var(--sl-font-sans); font-size: var(--sl-text-sm); }
+
+/* The tally sits ON the field, so its frame and cells are drawn in the paper
+   ink at low alpha rather than in --sl-border, which is a paper-side colour
+   and disappears here. */
+.sl-founders__tally {
+  margin: 0;
+  padding: var(--sl-card-inset);
+  border-color: rgba(var(--sl-cream-rgb), 0.22);
+  background: var(--sl-field-lift);
+}
+.sl-founders__tally > .sl-corner { color: rgba(var(--sl-cream-rgb), 0.45); }
+.sl-founders__grid {
+  display: grid;
+  grid-template-columns: repeat(10, minmax(0, 1fr));
+  gap: 4px;
+}
+.sl-founders__cell {
+  aspect-ratio: 1;
+  border: 1px solid rgba(var(--sl-cream-rgb), 0.28);
+}
+/* Claimed cells take the trace, which is the field-side colour by contrast —
+   9.76 here against the accent's 3.00. */
+.sl-founders__cell--taken {
+  background: var(--sl-trace);
+  border-color: var(--sl-trace);
+}
+.sl-founders__tally-caption {
+  margin: var(--sl-space-4) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sl-space-4);
+  color: rgba(var(--sl-cream-rgb), 0.62);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-founders__stat b { color: var(--sl-field-ink); font-weight: 500; }
+.sl-founders__stat--note { margin-left: auto; }
+
+.sl-founders__buys,
+.sl-founders__reasons { padding: var(--sl-section-space) 0 0; }
+.sl-founders__sub {
+  margin: 0 0 var(--sl-space-6);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
+}
+.sl-founders__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
+}
+@media (min-width: 750px) { .sl-founders__list { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.sl-founders__item {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sl-space-3);
+  padding: var(--sl-dense-inset);
+  background: var(--sl-bg-card);
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  line-height: 1.45;
+}
+.sl-founders__tick { color: var(--sl-accent); font-weight: 600; }
+.sl-founders__payback {
+  margin: var(--sl-space-5) 0 0;
+  color: var(--sl-ink-muted);
+  font-size: var(--sl-text-sm);
+}
+.sl-founders__payback b { color: var(--sl-ink); font-weight: 600; }
+
+.sl-founders__reasons {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-6);
+}
+@media (min-width: 1000px) { .sl-founders__reasons { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sl-founders__reason { border-top: 1px solid var(--sl-border-strong); padding-top: var(--sl-space-4); }
+.sl-founders__reason-num {
+  display: block;
+  margin-bottom: var(--sl-space-3);
+  color: var(--sl-accent);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.16em;
+}
+.sl-founders__reason-title {
+  margin: 0 0 var(--sl-space-2);
+  font-family: var(--sl-font-display);
+  font-size: var(--sl-text-xl);
+  font-weight: var(--sl-weight-display);
+  line-height: 1.15;
+}
+.sl-founders__reason-body {
+  margin: 0;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-sm);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.sl-founders__table-wrap { padding: var(--sl-section-space) 0 0; }
+.sl-founders__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--sl-text-sm);
+}
+.sl-founders__table th,
+.sl-founders__table td {
+  padding: var(--sl-space-3);
+  text-align: left;
+  border-bottom: 1px solid var(--sl-border);
+  vertical-align: top;
+}
+.sl-founders__table thead th {
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  border-bottom-color: var(--sl-border-strong);
+  white-space: nowrap;
+}
+.sl-founders__table tbody th { color: var(--sl-ink); font-weight: var(--sl-weight-medium); }
+.sl-founders__table td { color: var(--sl-ink-soft); }
+/* The column the page is selling. A tinted wash rather than a colour on the
+   type, so the emphasis survives being read as a whole column instead of
+   competing cell by cell. */
+.sl-founders__table .sl-founders__col--own {
+  background: var(--sl-orange-soft);
+  color: var(--sl-ink);
+}
+.sl-founders__table thead th.sl-founders__col--own { color: var(--sl-ink); }
+
+/* Below the table's natural width the header row stops doing its job, so each
+   cell carries its own label instead. data-col holds the column index and the
+   label comes from CSS, which keeps the four strings in one place rather than
+   repeated into every row's markup. */
+@media (max-width: 749px) {
+  .sl-founders__table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .sl-founders__table tr { display: block; border-bottom: 1px solid var(--sl-border-strong); padding: var(--sl-space-3) 0; }
+  .sl-founders__table tbody th { display: block; padding: 0 0 var(--sl-space-2); border: 0; }
+  .sl-founders__table td { display: flex; justify-content: space-between; gap: var(--sl-space-4); padding: 2px 0; border: 0; }
+  .sl-founders__table td::before {
+    content: attr(data-label);
+    color: var(--sl-ink-muted);
+    font-family: var(--sl-font-mono);
+    font-size: var(--sl-text-xs);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .sl-founders__table .sl-founders__col--own { padding-inline: var(--sl-space-2); }
+}
+
+@media (max-width: 749px) {
+  .sl-founders__title { max-width: 100%; }
+  .sl-founders__stat--note { margin-left: 0; }
+  .sl-founders__claim { width: 100%; }
+}
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Founders Pass",
+  "settings": [
+    { "type": "text", "id": "kicker", "label": "Kicker", "default": "Membership 03 · Founders" },
+    { "type": "text", "id": "heading", "label": "Heading", "default": "Pay once. Coach forever." },
+    {
+      "type": "textarea",
+      "id": "body",
+      "label": "Body",
+      "default": "One payment of $249 for every Coach feature, for good. Capped at the first hundred members — a lifetime promise we can only keep if we stop selling it."
+    },
+    { "type": "header", "content": "The count" },
+    {
+      "type": "text",
+      "id": "founders_handle",
+      "label": "Membership product handle",
+      "info": "The Founders Pass is a variant of the membership product, not a product of its own.",
+      "default": "swinglab-pro"
+    },
+    {
+      "type": "text",
+      "id": "founders_sku",
+      "label": "Founders variant SKU",
+      "info": "The durable key. config.yaml maps SL-PRO-LIFE to a lifetime Coach grant; a line item without it takes the money and grants nothing.",
+      "default": "SL-PRO-LIFE"
+    },
+    { "type": "number", "id": "founders_total", "label": "Total passes", "default": 100 },
+    {
+      "type": "number",
+      "id": "founders_remaining",
+      "label": "Remaining (fallback only)",
+      "info": "Used only until the product above exists, or if its inventory tracking is off. Inventory always wins.",
+      "default": 100
+    },
+    { "type": "header", "content": "Action" },
+    { "type": "text", "id": "claim_label", "label": "Button label", "default": "Claim a Founders Pass" },
+    { "type": "url", "id": "claim_url", "label": "Button link", "info": "Defaults to the Founders Pass product." },
+    { "type": "text", "id": "terms", "label": "Terms line", "default": "One payment · never renews" },
+    { "type": "header", "content": "Pricing" },
+    {
+      "type": "number",
+      "id": "pass_price",
+      "label": "Pass price, in cents",
+      "info": "24900 for $249. Cents because this setting is an integer — 249.00 would round.",
+      "default": 24900
+    },
+    {
+      "type": "number",
+      "id": "coach_monthly",
+      "label": "Coach monthly price, in cents",
+      "info": "1999 for $19.99. The payback figure is calculated from these two, never authored.",
+      "default": 1999
+    },
+    { "type": "header", "content": "Sold out" },
+    {
+      "type": "textarea",
+      "id": "soldout_note",
+      "label": "Sold-out note",
+      "default": "All 100 Founders Passes have been claimed. Coach is still available monthly."
+    },
+    { "type": "text", "id": "soldout_label", "label": "Sold-out button label", "default": "See the Coach plan" },
+    { "type": "url", "id": "soldout_url", "label": "Sold-out button link" },
+    { "type": "header", "content": "Benefits" },
+    { "type": "text", "id": "buys_heading", "label": "Benefits heading", "default": "What $249 buys, permanently" },
+    { "type": "header", "content": "Comparison table" },
+    { "type": "text", "id": "table_heading", "label": "Table heading", "default": "Founders against the rest" },
+    { "type": "text", "id": "col_free", "label": "Column 1 label", "default": "Free" },
+    { "type": "text", "id": "col_pro", "label": "Column 2 label", "default": "Pro $9.99/mo" },
+    { "type": "text", "id": "col_coach", "label": "Column 3 label", "default": "Coach $19.99/mo" },
+    { "type": "text", "id": "col_founders", "label": "Column 4 label", "default": "Founders $249 once" }
+  ],
+  "blocks": [
+    {
+      "type": "benefit",
+      "name": "Benefit",
+      "settings": [{ "type": "text", "id": "text", "label": "Benefit", "default": "Unlimited analyses and matched re-films" }]
+    },
+    {
+      "type": "reason",
+      "name": "Reason",
+      "settings": [
+        { "type": "text", "id": "title", "label": "Title", "default": "Why it is capped" },
+        { "type": "textarea", "id": "body", "label": "Body", "default": "A hundred lifetime members is a cost we can carry indefinitely. A thousand is not. The cap is the reason the promise is keepable." }
+      ]
+    },
+    {
+      "type": "row",
+      "name": "Comparison row",
+      "settings": [
+        { "type": "text", "id": "feature", "label": "Feature", "default": "Swing analyses" },
+        { "type": "text", "id": "free_value", "label": "Free", "info": "Leave empty for an em dash meaning 'not included'." },
+        { "type": "text", "id": "pro_value", "label": "Pro" },
+        { "type": "text", "id": "coach_value", "label": "Coach" },
+        { "type": "text", "id": "founders_value", "label": "Founders" }
+      ]
+    }
+  ],
+  "presets": [{ "name": "Founders Pass" }]
+}
+{% endschema %}

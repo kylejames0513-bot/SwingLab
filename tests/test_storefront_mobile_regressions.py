@@ -265,6 +265,9 @@ def test_mobile_method_section_stays_a_compact_left_flowing_spec_sheet():
     assert ".sl-step__caption { max-width: 100%; }" in mobile_css
 
 def test_method_page_removes_double_top_spacing_and_centers_phone_actions():
+    # Either handle: the rename to 'method' is a cutover step, and the theme
+    # has to keep the method page's styling across it in both directions.
+    assert "page.handle == 'method'" in MAIN_PAGE
     assert "page.handle == 'the-swinglab-method'" in MAIN_PAGE
     assert "sl-page--method" in MAIN_PAGE
     assert "sl-method-page" in MAIN_PAGE

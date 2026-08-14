@@ -401,7 +401,7 @@ def test_storefront_collection_fetch_is_tokenless(monkeypatch):
         captured["body"] = json.loads(request.data)
         import io
         return io.BytesIO(
-            b'{"data": {"collection": {"products": {"edges": []}}}}'
+            b'{"data": {"gear": {"products": {"edges": []}}, "legacy": null}}'
         )
 
     monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "example.myshopify.com")
@@ -413,7 +413,71 @@ def test_storefront_collection_fetch_is_tokenless(monkeypatch):
     headers = {k.lower(): v for k, v in captured["headers"].items()}
     assert "shopify-storefront-private-token" not in headers
     assert "x-shopify-storefront-access-token" not in headers
+    assert 'collection(handle: "gear")' in captured["body"]["query"]
+
+
+def test_storefront_falls_back_to_the_pre_cutover_handle(monkeypatch):
+    """The app deploys from main; the collection is renamed by hand at cutover.
+
+    Nothing sequences the two, and a storefront 301 does not redirect an API
+    lookup, so asking for the new handle alone would empty /shop — and silence
+    every gear recommendation — for however long the rename lagged the deploy.
+    The query asks for both handles and takes whichever the store answers with.
+    """
+    from swinglab.web import shop as shop_module
+    import io
+
+    captured = {}
+
+    def fake_urlopen(request, timeout=0):
+        captured["body"] = json.loads(request.data)
+        return io.BytesIO(
+            b'{"data": {"gear": null, "legacy": {"products": {"edges": [{"node": '
+            b'{"title": "Tempo Trainer", "handle": "tempo-trainer", '
+            b'"description": "", "tags": ["swinglab:tempo"], '
+            b'"availableForSale": true, "onlineStoreUrl": null, '
+            b'"featuredImage": null, "priceRange": {"minVariantPrice": '
+            b'{"amount": "29.00", "currencyCode": "USD"}}}}]}}}}'
+        )
+
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "example.myshopify.com")
+    monkeypatch.setattr(shop_module.urllib.request, "urlopen", fake_urlopen)
+
+    products = shop_module._fetch()
+    assert [product["title"] for product in products] == ["Tempo Trainer"]
     assert 'collection(handle: "swinglab-gear")' in captured["body"]["query"]
+
+
+def test_an_empty_new_collection_does_not_shadow_the_populated_old_one(monkeypatch):
+    """Creating `gear` before moving products into it must not empty /shop.
+
+    That is the natural first step of the cutover, and it used to break this:
+    the arm-picking was `data.get("gear") or data.get("legacy")`, and a
+    collection that EXISTS but is empty is still truthy, so it short-circuited
+    and the twelve products under the legacy arm were never read. /shop went
+    blank and every in-report gear recommendation vanished, with no error —
+    the Python form of the truthy-drop trap gear-showcase.liquid warns about.
+
+    Presence is therefore tested on the products, not on the collection.
+    """
+    from swinglab.web import shop as shop_module
+    import io
+
+    def fake_urlopen(request, timeout=0):
+        return io.BytesIO(
+            b'{"data": {"gear": {"products": {"edges": []}}, '
+            b'"legacy": {"products": {"edges": [{"node": '
+            b'{"title": "Tempo Trainer", "handle": "tempo-trainer", '
+            b'"description": "", "tags": ["swinglab:tempo"], '
+            b'"availableForSale": true, "onlineStoreUrl": null, '
+            b'"featuredImage": null, "priceRange": {"minVariantPrice": '
+            b'{"amount": "29.00", "currencyCode": "USD"}}}}]}}}}'
+        )
+
+    monkeypatch.setenv("SHOPIFY_STORE_DOMAIN", "example.myshopify.com")
+    monkeypatch.setattr(shop_module.urllib.request, "urlopen", fake_urlopen)
+
+    assert [p["title"] for p in shop_module._fetch()] == ["Tempo Trainer"]
 
 
 def test_storefront_missing_gear_collection_is_empty(monkeypatch):
@@ -424,6 +488,8 @@ def test_storefront_missing_gear_collection_is_empty(monkeypatch):
     monkeypatch.setattr(
         shop_module.urllib.request,
         "urlopen",
-        lambda request, timeout=0: io.BytesIO(b'{"data": {"collection": null}}'),
+        lambda request, timeout=0: io.BytesIO(
+            b'{"data": {"gear": null, "legacy": null}}'
+        ),
     )
     assert shop_module._fetch() == []

@@ -2,7 +2,10 @@
   "sections": {
     "main": {
       "type": "main-search",
-      "settings": {}
+      "settings": {
+        "placeholder": "Try tempo, sway, or mirror",
+        "empty_body": "Try a drill name, a training aid, or a part of the swing."
+      }
     }
   },
   "order": [

@@ -14,14 +14,28 @@
       "settings": {
         "eyebrow": "Related gear",
         "heading": "Pairs with your practice plan",
-        "collection": "swinglab-gear",
+        "collection": "",
         "max_products": 4,
         "hide_for_membership": true
+      }
+    },
+    "spec": {
+      "type": "product-spec",
+      "settings": {
+        "heading": "Specification",
+        "ships": "Processed 1–2 business days · US 6–12 days",
+        "returns": "Unused gear within 30 days",
+        "band_kicker": "Gear is optional — the report is not",
+        "band_body": "Every drill works without an aid. CaddieInsight recommends gear only when a report has already put the matching priority first.",
+        "band_label": "Analyze a swing free",
+        "band_url": "https://app.caddieinsight.com/signup",
+        "how_heading": "How to use it"
       }
     }
   },
   "order": [
     "main",
+    "spec",
     "related"
   ]
 }

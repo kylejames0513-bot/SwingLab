@@ -3,11 +3,34 @@
     "main": {
       "type": "main-collection",
       "settings": {
-        "per_page": 12
+        "per_page": 12,
+        "kicker": "Collection",
+        "rack_collection": "gear",
+        "rack_kicker": "Training aids · The rack",
+        "rack_heading": "Gear that matches a priority.",
+        "rack_lede": "Every aid here is paired to a drill, and every drill works without it. We recommend gear only when a report has already put the matching priority first.",
+        "show_filters": true,
+        "filter_label": "Trains",
+        "count_noun_singular": "product",
+        "count_noun_plural": "products"
+      }
+    },
+    "cta": {
+      "type": "cta-banner",
+      "settings": {
+        "stamp": "End of rack",
+        "heading": "Every drill works without the aid.",
+        "sub": "Film the swing. Read the priority. Work the drill. Add an aid only when a report puts that priority first.",
+        "primary_label": "Analyze a swing free",
+        "primary_url": "https://app.caddieinsight.com/signup",
+        "secondary_label": "Get Pro",
+        "secondary_url": "shopify://products/swinglab-pro",
+        "fine_print": "Gear ships separately · Unused gear returns within 30 days"
       }
     }
   },
   "order": [
-    "main"
+    "main",
+    "cta"
   ]
 }

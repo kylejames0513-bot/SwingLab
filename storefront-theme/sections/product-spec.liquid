@@ -1,0 +1,226 @@
+{%- liquid
+  # PER-PRODUCT DATA LIVES ON THE PRODUCT, NOT IN THE SECTION. One
+  # templates/product.json serves all six training aids, so anything authored
+  # in section settings here would be the same sentence on every page — which
+  # is how a spec table becomes decoration. These read from metafields and each
+  # row hides itself when its field is empty, so a half-filled product degrades
+  # to a shorter table rather than to a row of blanks.
+  #
+  # Ships and returns are the exception: they are fulfilment policy, identical
+  # across the catalogue, and belong in one editable place rather than copied
+  # onto six products where they would drift.
+  assign mf = product.metafields.caddieinsight
+
+  assign spec_rows = ''
+  if mf.trains.value != blank
+    assign spec_rows = spec_rows | append: 'Trains|' | append: mf.trains.value | append: '||'
+  endif
+  if mf.paired_drill.value != blank
+    assign spec_rows = spec_rows | append: 'Paired drill|' | append: mf.paired_drill.value | append: '||'
+  endif
+  if mf.use.value != blank
+    assign spec_rows = spec_rows | append: 'Use|' | append: mf.use.value | append: '||'
+  endif
+  if mf.fits.value != blank
+    assign spec_rows = spec_rows | append: 'Fits|' | append: mf.fits.value | append: '||'
+  endif
+  if section.settings.ships != blank
+    assign spec_rows = spec_rows | append: 'Ships|' | append: section.settings.ships | append: '||'
+  endif
+  if section.settings.returns != blank
+    assign spec_rows = spec_rows | append: 'Returns|' | append: section.settings.returns | append: '||'
+  endif
+  assign spec_rows = spec_rows | split: '||'
+
+  # Steps are per-product for the same reason the spec rows are, so they come
+  # from a list metafield rather than from section blocks — blocks would put
+  # the Rotation Trainer's instructions on the Connection Ball.
+  assign steps = mf.how_to_use.value
+-%}
+
+{%- if spec_rows.size > 0 -%}
+  <section class="sl-spec" aria-labelledby="SpecTitle-{{ section.id }}">
+    <div class="sl-wrap">
+      <h2 id="SpecTitle-{{ section.id }}" class="sl-spec__heading">{{ section.settings.heading | default: 'Specification' }}</h2>
+      <dl class="sl-spec__list">
+        {%- for row in spec_rows -%}
+          {%- assign pair = row | split: '|' -%}
+          <div class="sl-spec__row">
+            <dt>{{ pair[0] }}</dt>
+            <dd>{{ pair[1] }}</dd>
+          </div>
+        {%- endfor -%}
+      </dl>
+    </div>
+  </section>
+{%- endif -%}
+
+{%- comment -%}
+  THE BAND THAT COSTS A SALE AND EARNS THE NEXT ONE. Every drill in the library
+  works without an aid, and saying so on the page that sells the aid is the
+  whole reason a recommendation from this product is worth anything. It is
+  static copy on purpose — a claim this load-bearing should not be per-product
+  editable, because the version that gets softened is the one on the product
+  somebody is trying hardest to sell.
+{%- endcomment -%}
+{%- if section.settings.band_body != blank -%}
+  <section class="sl-optional">
+    <div class="sl-wrap">
+      <div class="sl-optional__inner sl-blueprint">
+        <i class="sl-corner sl-corner--tl" aria-hidden="true"></i>
+        <i class="sl-corner sl-corner--tr" aria-hidden="true"></i>
+        <i class="sl-corner sl-corner--bl" aria-hidden="true"></i>
+        <i class="sl-corner sl-corner--br" aria-hidden="true"></i>
+        <p class="sl-optional__kicker">{{ section.settings.band_kicker | default: 'Gear is optional — the report is not' }}</p>
+        <p class="sl-optional__body">{{ section.settings.band_body }}</p>
+        {%- if section.settings.band_url != blank and section.settings.band_label != blank -%}
+          <a class="sl-btn sl-btn--outline sl-btn--sm"
+             href="{{ section.settings.band_url }}"
+             data-app-primary-cta
+             data-app-signed-out-label="{{ section.settings.band_label | escape }}"
+             data-app-signed-out-url="{{ section.settings.band_url }}">
+            <span data-app-cta-label>{{ section.settings.band_label }}</span>
+            <span aria-hidden="true">&rarr;</span>
+          </a>
+        {%- endif -%}
+      </div>
+    </div>
+  </section>
+{%- endif -%}
+
+{%- if steps.size > 0 -%}
+  <section class="sl-howto" aria-labelledby="HowTitle-{{ section.id }}">
+    <div class="sl-wrap">
+      <h2 id="HowTitle-{{ section.id }}" class="sl-spec__heading">{{ section.settings.how_heading | default: 'How to use it' }}</h2>
+      <ol class="sl-howto__list" role="list">
+        {%- for step in steps -%}
+          {%- liquid
+            assign ordinal = forloop.index
+            if ordinal < 10
+              assign ordinal = ordinal | prepend: '0'
+            endif
+          -%}
+          <li class="sl-howto__step">
+            <span class="sl-howto__num" aria-hidden="true">{{ ordinal }}</span>
+            <span class="sl-howto__text">{{ step }}</span>
+          </li>
+        {%- endfor -%}
+      </ol>
+    </div>
+  </section>
+{%- endif -%}
+
+{% stylesheet %}
+.sl-spec,
+.sl-howto { padding: var(--sl-section-space-compact) 0 0; }
+.sl-spec__heading {
+  margin: 0 0 var(--sl-space-5);
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-eyebrow-size);
+  font-weight: 500;
+  letter-spacing: var(--sl-eyebrow-track);
+  text-transform: uppercase;
+}
+/* A spec sheet, so the rule runs the full width and the label column is fixed
+   — ragged label widths are what make a table of two-word keys read as a form
+   rather than as a specification. */
+.sl-spec__list { margin: 0; border-top: 1px solid var(--sl-border-strong); }
+.sl-spec__row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 2px;
+  padding: var(--sl-space-3) 0;
+  border-bottom: 1px solid var(--sl-border);
+}
+@media (min-width: 560px) {
+  .sl-spec__row { grid-template-columns: minmax(0, 160px) minmax(0, 1fr); gap: var(--sl-space-4); }
+}
+.sl-spec__row dt {
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-spec__row dd { margin: 0; color: var(--sl-ink); font-size: var(--sl-text-sm); line-height: 1.5; }
+
+.sl-optional { padding: var(--sl-section-space-compact) 0 0; }
+.sl-optional__inner { padding: var(--sl-card-inset); background: var(--sl-orange-soft); }
+.sl-optional__kicker {
+  margin: 0 0 var(--sl-space-2);
+  color: var(--sl-accent);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-optional__body {
+  margin: 0 0 var(--sl-space-4);
+  max-width: 62ch;
+  color: var(--sl-ink);
+  font-size: var(--sl-text-sm);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+
+.sl-howto__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1px;
+  background: var(--sl-border);
+  border: 1px solid var(--sl-border);
+}
+@media (min-width: 750px) { .sl-howto__list { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.sl-howto__step {
+  display: grid;
+  align-content: start;
+  gap: var(--sl-space-2);
+  padding: var(--sl-dense-inset);
+  background: var(--sl-bg-card);
+}
+.sl-howto__num {
+  color: var(--sl-accent);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.16em;
+}
+.sl-howto__text { color: var(--sl-ink-soft); font-size: var(--sl-text-sm); line-height: 1.5; }
+{% endstylesheet %}
+
+{% schema %}
+{
+  "name": "Product specification",
+  "settings": [
+    { "type": "text", "id": "heading", "label": "Specification heading", "default": "Specification" },
+    {
+      "type": "paragraph",
+      "content": "Trains, paired drill, use and fits are read from each product's caddieinsight metafields. A row with no value hides itself."
+    },
+    { "type": "header", "content": "Fulfilment — the same on every product" },
+    { "type": "text", "id": "ships", "label": "Ships", "default": "Processed 1–2 business days · US 6–12 days" },
+    { "type": "text", "id": "returns", "label": "Returns", "default": "Unused gear within 30 days" },
+    { "type": "header", "content": "Gear is optional band" },
+    { "type": "text", "id": "band_kicker", "label": "Kicker", "default": "Gear is optional — the report is not" },
+    {
+      "type": "textarea",
+      "id": "band_body",
+      "label": "Body",
+      "default": "Every drill works without an aid. CaddieInsight recommends gear only when a report has already put the matching priority first."
+    },
+    { "type": "text", "id": "band_label", "label": "Button label", "default": "Analyze a swing free" },
+    { "type": "url", "id": "band_url", "label": "Button link" },
+    { "type": "header", "content": "How to use it" },
+    { "type": "text", "id": "how_heading", "label": "Heading", "default": "How to use it" },
+    {
+      "type": "paragraph",
+      "content": "The steps themselves come from each product's caddieinsight.how_to_use metafield, so they stay with the product they describe."
+    }
+  ],
+  "presets": [{ "name": "Product specification" }]
+}
+{% endschema %}

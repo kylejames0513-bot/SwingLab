@@ -232,6 +232,9 @@ def analyze_video(
     report_presentation_version: str = REPORT_PRESENTATION_VERSION,
     report_entitlements: ReportEntitlementSnapshot | None = None,
     guided_html_writer: ReportHtmlWriter | None = None,
+    session_label: str | None = None,
+    prior_session_stats: dict | None = None,
+    prior_session_label: str | None = None,
 ) -> SessionResult:
     """Run the full pipeline for one video.
 
@@ -258,6 +261,13 @@ def analyze_video(
     no thresholds and no numbers. ``level`` (experience level, see
     swinglab.levels) is the same kind of context: a chip and one framing
     line on the report, never an analysis input.
+
+    ``session_label``, ``prior_session_stats`` and ``prior_session_label``
+    are guided-report framing supplied by the caller that owns the job
+    history (the web job runner): the frozen "Session NNN · date" line and
+    the matched prior session's published stats for the "Measured this
+    session" table. All default to absence — CLI runs and the sample have no
+    history, and the report omits the elements rather than inventing them.
     """
     presentation = parse_report_presentation_version(report_presentation_version)
     if presentation is ReportPresentationVersion.GUIDED:
@@ -500,6 +510,9 @@ def analyze_video(
             swing_pattern_locked=guided_pattern_locked,
             evidence_snapshots=evidence_snapshots,
             reason_codes=tuple(dict.fromkeys(reason_codes)),
+            session_label=session_label,
+            prior_session_stats=prior_session_stats,
+            prior_session_label=prior_session_label,
         )
         published = publish_report_bundle(staged)
         result_swings = _published_guided_swings(swings, published)

@@ -3,6 +3,14 @@
   assign name_id = contact_form_id | append: '-name'
   assign email_id = contact_form_id | append: '-email'
   assign body_id = contact_form_id | append: '-body'
+  assign order_id = contact_form_id | append: '-order'
+  assign subject_name = 'contact[About]'
+
+  # The routes are authored as one line so the set can change without a schema
+  # migration. The FIRST route is the one that reveals the order-number field —
+  # positional rather than matched on the word "order", because matching on
+  # copy breaks the moment somebody rewords the label.
+  assign routes = section.settings.routes | default: 'An order, My membership, A swing report, Something else' | split: ','
 -%}
 
 <div class="sl-wrap sl-main-contact">
@@ -18,17 +26,46 @@
     <div class="sl-main-contact__content sl-rte">{{ page.content }}</div>
   {%- endif -%}
 
+  <div class="sl-main-contact__grid">
+    <div class="sl-main-contact__col">
   {% form 'contact', class: 'sl-main-contact__form', id: contact_form_id %}
     {%- if form.posted_successfully? -%}
       <p class="sl-main-contact__success" role="status">
         {{ section.settings.success_text | default: 'Message received. A real person replies, usually within one business day.' }}
       </p>
     {%- else -%}
-      <p class="sl-mono-label sl-main-contact__form-label">Send a note</p>
+      <p class="sl-mono-label sl-main-contact__form-label">Send a message</p>
       {%- if form.errors -%}
         <p class="sl-main-contact__errors" role="alert">
           {{ section.settings.error_text | default: 'Your message could not be sent. Please fix the highlighted field and try again.' }}
         </p>
+      {%- endif -%}
+
+      {%- comment -%}
+        The router. It is a real radio group in a fieldset rather than a
+        <select>, because its second job is to reveal the order-number field
+        and a native select cannot be styled or matched on without script.
+        The value rides along in the notification email under "About", which
+        is what makes one inbox behave like several.
+      {%- endcomment -%}
+      {%- if routes.size > 0 -%}
+        <fieldset class="sl-main-contact__routes">
+          <legend class="sl-label">{{ section.settings.routes_label | default: 'What is it about?' }}</legend>
+          <div class="sl-main-contact__route-row">
+            {%- for route in routes -%}
+              {%- assign route_label = route | strip -%}
+              {%- if route_label != blank -%}
+                <label class="sl-main-contact__route"{% if forloop.first %} data-reveals-order{% endif %}>
+                  <input type="radio"
+                         name="{{ subject_name }}"
+                         value="{{ route_label | escape }}"
+                         {% if forloop.first %}checked{% endif %}>
+                  <span>{{ route_label }}</span>
+                </label>
+              {%- endif -%}
+            {%- endfor -%}
+          </div>
+        </fieldset>
       {%- endif -%}
 
       <div class="sl-main-contact__field">
@@ -62,6 +99,30 @@
         {%- endif -%}
       </div>
 
+      {%- comment -%}
+        Shown only for the order route, and hidden with display:none rather
+        than opacity or visibility so it leaves the tab order too — a field
+        nobody can see but keyboard users still land in is worse than no
+        conditional at all. It is never required, so hiding it can never block
+        a submit.
+
+        :has() rather than script: the reveal is presentation, and a JS reveal
+        would leave the field hidden for the seconds before hydration on the
+        page most likely to be opened by somebody already annoyed.
+      {%- endcomment -%}
+      <div class="sl-main-contact__field sl-main-contact__order">
+        <label class="sl-label" for="{{ order_id }}">Order number</label>
+        <input
+          id="{{ order_id }}"
+          class="sl-input"
+          type="text"
+          name="contact[Order number]"
+          placeholder="#CI-10482"
+          autocomplete="off"
+          aria-describedby="{{ order_id }}-hint">
+        <p id="{{ order_id }}-hint" class="sl-main-contact__hint">On your confirmation email.</p>
+      </div>
+
       <div class="sl-main-contact__field">
         <label class="sl-label" for="{{ body_id }}">Message</label>
         <textarea
@@ -79,15 +140,156 @@
       </div>
 
       <button type="submit" class="sl-btn sl-btn--primary sl-main-contact__submit">Send message</button>
+      {%- if section.settings.privacy_note != blank -%}
+        <p class="sl-main-contact__privacy">{{ section.settings.privacy_note }}</p>
+      {%- endif -%}
     {%- endif -%}
   {% endform %}
+    </div>
+
+    {%- comment -%}
+      The aside answers the message before it is written. Most first contacts
+      are about filming setup, a swing that was not detected, or how Pro
+      unlocks after checkout — all three are already answered in the FAQ, so
+      the deflection card sits above the address rather than below it.
+    {%- endcomment -%}
+    <aside class="sl-main-contact__aside">
+      {%- if section.settings.deflect_body != blank -%}
+        <div class="sl-main-contact__card sl-blueprint">
+          <i class="sl-corner sl-corner--tl" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--tr" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--bl" aria-hidden="true"></i>
+          <i class="sl-corner sl-corner--br" aria-hidden="true"></i>
+          <p class="sl-mono-label">{{ section.settings.deflect_label | default: 'Before you write' }}</p>
+          <p class="sl-main-contact__card-body">{{ section.settings.deflect_body }}</p>
+          {%- assign faq_page = pages['faq'] -%}
+          {%- if faq_page.url != blank -%}
+            <a class="sl-btn sl-btn--outline sl-btn--sm" href="{{ faq_page.url }}">Read the FAQ</a>
+          {%- endif -%}
+        </div>
+      {%- endif -%}
+
+      {%- if section.settings.support_email != blank -%}
+        <dl class="sl-main-contact__direct">
+          <div>
+            <dt>Everything</dt>
+            <dd><a href="mailto:{{ section.settings.support_email }}">{{ section.settings.support_email }}</a></dd>
+          </div>
+          {%- if section.settings.hours != blank -%}
+            <div>
+              <dt>Hours</dt>
+              <dd>{{ section.settings.hours }}</dd>
+            </div>
+          {%- endif -%}
+        </dl>
+      {%- endif -%}
+
+      {%- if section.settings.returns_note != blank -%}
+        <p class="sl-main-contact__warn">{{ section.settings.returns_note }}</p>
+      {%- endif -%}
+    </aside>
+  </div>
 </div>
 
 {% stylesheet %}
 .sl-main-contact {
-  max-width: 760px;
   padding-top: 48px;
   padding-bottom: 72px;
+}
+/* The form column keeps the old 760px measure — a message box wider than that
+   invites a wall of text nobody wants to read or write. The aside is what the
+   extra width buys. */
+.sl-main-contact__grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--sl-space-7);
+  align-items: start;
+}
+@media (min-width: 1000px) {
+  .sl-main-contact__grid { grid-template-columns: minmax(0, 760px) minmax(0, 1fr); gap: var(--sl-space-8); }
+}
+.sl-main-contact__col { min-width: 0; }
+
+.sl-main-contact__routes { margin: 0 0 var(--sl-space-5); padding: 0; border: 0; }
+.sl-main-contact__route-row { display: flex; flex-wrap: wrap; gap: var(--sl-space-2); margin-top: var(--sl-space-2); }
+.sl-main-contact__route { position: relative; }
+.sl-main-contact__route input {
+  position: absolute;
+  opacity: 0;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+.sl-main-contact__route span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 40px;
+  padding: 0 var(--sl-space-4);
+  border: 1px solid var(--sl-control-border);
+  color: var(--sl-ink);
+  font-size: var(--sl-text-sm);
+  cursor: pointer;
+}
+.sl-main-contact__route:hover span { background: rgba(var(--sl-wash-rgb), 0.06); }
+.sl-main-contact__route input:checked + span {
+  background: var(--sl-green-btn);
+  border-color: var(--sl-green-btn);
+  color: var(--sl-green-ink);
+}
+/* The radio is visually hidden, so the ring has to be put back on something
+   the eye can find — without this the group is unusable by keyboard. */
+.sl-main-contact__route input:focus-visible + span {
+  outline: 2px solid var(--sl-focus);
+  outline-offset: 2px;
+}
+
+/* Hidden until the order route is chosen. display:none, so it leaves the tab
+   order with it.
+
+   BOTH CLASSES IN THE SELECTOR, deliberately. The element is
+   `.sl-main-contact__field .sl-main-contact__order`, and __field sets
+   `display: grid` further down this same stylesheet — equal specificity, later
+   rule wins, so a single-class hide lost and the field stayed visible on every
+   route. It looked like the :has() had failed; it had not. */
+.sl-main-contact__field.sl-main-contact__order { display: none; }
+.sl-main-contact__form:has([data-reveals-order] input:checked) .sl-main-contact__field.sl-main-contact__order { display: grid; }
+.sl-main-contact__hint,
+.sl-main-contact__privacy {
+  margin: var(--sl-space-2) 0 0;
+  color: var(--sl-ink-muted);
+  font-size: var(--sl-text-xs);
+}
+.sl-main-contact__privacy { margin-top: var(--sl-space-4); }
+
+.sl-main-contact__aside { display: grid; gap: var(--sl-space-5); }
+.sl-main-contact__card { padding: var(--sl-card-inset); background: var(--sl-orange-soft); }
+.sl-main-contact__card-body {
+  margin: var(--sl-space-2) 0 var(--sl-space-4);
+  color: var(--sl-ink);
+  font-size: var(--sl-text-sm);
+  line-height: 1.55;
+}
+.sl-main-contact__direct { margin: 0; border-top: 1px solid var(--sl-border-strong); }
+.sl-main-contact__direct > div {
+  display: grid;
+  grid-template-columns: minmax(0, 110px) minmax(0, 1fr);
+  gap: var(--sl-space-3);
+  padding: var(--sl-space-3) 0;
+  border-bottom: 1px solid var(--sl-border);
+}
+.sl-main-contact__direct dt {
+  color: var(--sl-ink-muted);
+  font-family: var(--sl-font-mono);
+  font-size: var(--sl-text-xs);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.sl-main-contact__direct dd { margin: 0; font-size: var(--sl-text-sm); word-break: break-word; }
+.sl-main-contact__warn {
+  margin: 0;
+  color: var(--sl-ink-soft);
+  font-size: var(--sl-text-xs);
+  line-height: 1.55;
 }
 
 .sl-main-contact__head { margin: 0 0 8px; }
@@ -223,6 +425,44 @@
       "id": "intro",
       "label": "Intro",
       "info": "Short line under the heading. Page content, if any, renders above the form."
+    },
+    { "type": "header", "content": "Routing" },
+    { "type": "text", "id": "routes_label", "label": "Router label", "default": "What is it about?" },
+    {
+      "type": "text",
+      "id": "routes",
+      "label": "Routes",
+      "info": "Comma separated. The value rides along in the notification email under \"About\". The FIRST route reveals the order-number field.",
+      "default": "An order, My membership, A swing report, Something else"
+    },
+    { "type": "header", "content": "Aside" },
+    { "type": "text", "id": "deflect_label", "label": "Deflection label", "default": "Before you write" },
+    {
+      "type": "textarea",
+      "id": "deflect_body",
+      "label": "Deflection body",
+      "default": "Most first messages are about filming setup, why a swing was not detected, or how Pro unlocks after checkout. All three are answered in the FAQ."
+    },
+    {
+      "type": "text",
+      "id": "support_email",
+      "label": "Support address",
+      "info": "One inbox for orders, gear, memberships, returns and press.",
+      "default": "inquiry@caddieinsight.com"
+    },
+    { "type": "text", "id": "hours", "label": "Hours", "default": "Mon–Fri, 09:00–17:00 ET" },
+    {
+      "type": "textarea",
+      "id": "returns_note",
+      "label": "Returns note",
+      "default": "Do not ship gear back without a return authorisation — partner warehouses reject unlabelled parcels. Start a return from your order email."
+    },
+    { "type": "header", "content": "Messages" },
+    {
+      "type": "text",
+      "id": "privacy_note",
+      "label": "Privacy note",
+      "default": "We never share your email."
     },
     {
       "type": "text",

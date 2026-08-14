@@ -1,4 +1,4 @@
-<div class="sl-wrap sl-page{% if page.handle == 'the-swinglab-method' %} sl-page--method{% endif %}">
+<div class="sl-wrap sl-page{% if page.handle == 'method' or page.handle == 'the-swinglab-method' %} sl-page--method{% endif %}">
   {%- if section.settings.show_title -%}
     <header class="sl-main-page__head">
       <h1 class="sl-main-page__title">{{ page.title }}</h1>
@@ -6,7 +6,7 @@
   {%- else -%}
     <h1 class="visually-hidden">{{ page.title }}</h1>
   {%- endif -%}
-  <div class="sl-page-content sl-rte{% if page.handle == 'the-swinglab-method' %} sl-method-page{% endif %}">{{ page.content }}</div>
+  <div class="sl-page-content sl-rte{% if page.handle == 'method' or page.handle == 'the-swinglab-method' %} sl-method-page{% endif %}">{{ page.content }}</div>
 </div>
 
 {% stylesheet %}

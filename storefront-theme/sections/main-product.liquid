@@ -84,7 +84,14 @@
         <span class="sl-badge-save" id="sl-badge-save"{% unless has_compare %} hidden{% endunless %}>{%- if has_compare -%}Save {{ save_pct }}%{%- endif -%}</span>
       </p>
 
-      {% form 'product', product, class: 'sl-product-form sl-main-product__gear-form' %}
+      {%- comment -%}
+        The id exists so the sticky mobile bar's button can submit THIS form
+        through a `form=` attribute instead of carrying a second copy of the
+        variant select and quantity. Two forms would mean two sources of truth
+        for what is being added, and they drift the moment someone changes the
+        variant after scrolling.
+      {%- endcomment -%}
+      {% form 'product', product, class: 'sl-product-form sl-main-product__gear-form', id: 'sl-product-form' %}
         {%- if product.variants.size > 1 -%}
           <label class="sl-label" for="sl-variant">{{ 'products.product.options_label' | t }}</label>
           <select name="id" id="sl-variant" class="sl-select">
@@ -122,6 +129,32 @@
         </div>
         {{ form | payment_button }}
       {% endform %}
+
+      {%- comment -%}
+        THE STICKY BUY BAR (mockup 2c), phones only.
+
+        It carries a button and nothing else. No price, no quantity, no variant
+        picker — those all live in the form above and a second copy of any of
+        them is a second thing to keep in sync. The button reaches the real
+        form through form="sl-product-form", so whatever is selected up the
+        page is what gets added.
+
+        It starts hidden and is revealed by an observer watching the real buy
+        zone. If that script never runs the bar simply never appears and the
+        page is exactly as it was — the sticky bar is an accelerator, never the
+        only way to buy.
+      {%- endcomment -%}
+      <div class="sl-buybar" data-buybar hidden>
+        <div class="sl-buybar__inner">
+          <span class="sl-buybar__title">{{ product.title }}</span>
+          <button type="submit"
+                  form="sl-product-form"
+                  class="sl-btn sl-btn--primary sl-buybar__add"
+                  {% unless current.available %}disabled{% endunless %}>
+            {% if current.available %}{{ 'products.product.add_to_cart' | t }}{% else %}{{ 'products.product.sold_out' | t }}{% endif %}
+          </button>
+        </div>
+      </div>
 
       {%- assign product_trust_label = 'products.product.ordering_details' | t -%}
       {% render 'trust-rail',
@@ -321,6 +354,61 @@
 /* the author display on .sl-badge-save would defeat [hidden]; restore it */
 .sl-main-product__price [hidden] { display: none !important; }
 
+/* The sticky buy bar, phones only. Hidden at every other width by the media
+   query rather than by script, so a desktop visitor never has it flash in
+   before JS decides. */
+.sl-buybar { display: none; }
+@media (max-width: 749px) {
+  .sl-buybar {
+    display: block;
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    background: var(--sl-bg);
+    border-top: 1px solid var(--sl-border-strong);
+    /* Above the home indicator on a notched phone, which is exactly where a
+       fixed bottom bar otherwise puts its tap target. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  .sl-buybar[hidden] { display: none; }
+  .sl-buybar__inner {
+    display: flex;
+    align-items: center;
+    gap: var(--sl-space-4);
+    padding: var(--sl-space-3) var(--sl-pad-x);
+  }
+  .sl-buybar__title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: var(--sl-ink);
+    font-family: var(--sl-font-display);
+    font-size: var(--sl-text-base);
+    font-weight: var(--sl-weight-display);
+  }
+  .sl-buybar__add { flex: 0 0 auto; min-height: 46px; }
+
+  /* WCAG 2.2 SC 2.4.11, Focus Not Obscured. Once the bar is revealed it is
+     fixed to the bottom for the rest of the page, so the last focusable things
+     on it — the footer links, the final trust line — sat permanently behind it
+     with no scroll left to clear them. Tabbing to them moved focus somewhere
+     the visitor could not see.
+
+     :has() so the reservation exists only while the bar does; reserving the
+     space unconditionally would leave a dead strip under every product page on
+     a desktop, where the bar never renders at all. */
+  html:has(.sl-buybar:not([hidden])) {
+    scroll-padding-bottom: 84px;
+  }
+  html:has(.sl-buybar:not([hidden])) body {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
 /* buy zone: quantity, add-to-cart, and the payment button share one column */
 .sl-main-product__buy {
   display: flex;
@@ -380,6 +468,57 @@
   .sl-main-product__desc-label { text-align: center; }
 }
 {% endstylesheet %}
+
+{% javascript %}
+// The sticky buy bar's reveal, and the one piece of state it has to borrow.
+//
+// The bar appears once the real buy zone has scrolled out of view and hides
+// again when it comes back — otherwise it sits on top of the button it
+// duplicates, which is how a sticky bar ends up covering the thing you already
+// tapped.
+//
+// It also mirrors the main button's disabled state and label. The variant
+// picker rewrites those when a sold-out option is chosen, and a sticky button
+// still reading "Add to cart" for a variant that cannot be added is worse than
+// no sticky button: it takes the tap and fails silently.
+(function () {
+  var bar = document.querySelector('[data-buybar]');
+  var zone = document.querySelector('.sl-main-product__buy');
+  if (!bar || !zone || !('IntersectionObserver' in window)) return;
+
+  var source = zone.querySelector('.sl-add');
+  var mirror = bar.querySelector('.sl-buybar__add');
+
+  function sync() {
+    if (!source || !mirror) return;
+    mirror.disabled = source.disabled;
+    mirror.textContent = source.textContent.trim();
+  }
+
+  new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      // Only reveal once the zone has gone past the TOP of the viewport. A
+      // plain !isIntersecting also fires before the buy zone has been scrolled
+      // to at all, which shows the bar on load.
+      var scrolledPast = !entry.isIntersecting && entry.boundingClientRect.top < 0;
+      bar.hidden = !scrolledPast;
+      if (scrolledPast) sync();
+    });
+  }, { rootMargin: '0px' }).observe(zone);
+
+  // The variant picker mutates the button rather than replacing it, so watch
+  // the attributes and text rather than listening for a change event whose
+  // ordering relative to the picker's own handler is not guaranteed.
+  if (source && 'MutationObserver' in window) {
+    new MutationObserver(sync).observe(source, {
+      attributes: true,
+      childList: true,
+      characterData: true,
+      subtree: true,
+    });
+  }
+})();
+{% endjavascript %}
 
 {% schema %}
 {

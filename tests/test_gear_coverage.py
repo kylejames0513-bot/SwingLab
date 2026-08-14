@@ -10,8 +10,8 @@ got specific. That failure is silent by construction: no error, no empty
 state, just a missing recommendation nobody counted.
 
 This module counts. It checks the drill library against
-``fixtures/gear_catalog.json`` — a committed snapshot of the live
-``swinglab-gear`` collection, refreshed by ``scripts/refresh_gear_catalog.py``.
+``fixtures/gear_catalog.json`` — a committed snapshot of the live ``gear``
+collection, refreshed by ``scripts/refresh_gear_catalog.py``.
 
 Coverage is checked at two layers, because a tag can fail at either and the
 fixes are completely different:
@@ -187,7 +187,7 @@ def test_every_drill_gear_tag_is_stocked(tag):
         )
         return
     assert titles, (
-        f"No available product in the swinglab-gear collection carries {tag}, "
+        f"No available product in the gear collection carries {tag}, "
         f"so the {len(drills)} drill(s) that prescribe it "
         f"({', '.join(drills)}) recommend nothing. Either tag/stock a "
         f"product and re-run scripts/refresh_gear_catalog.py, or add {tag!r} "

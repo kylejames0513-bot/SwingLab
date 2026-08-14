@@ -104,8 +104,20 @@
           <legend class="sl-label">{{ 'products.product.purchase_options' | t }}</legend>
 
           {%- unless current.requires_selling_plan -%}
+          {%- comment -%}
+            THE SUBSCRIPTION IS THE DEFAULT, not the one-time term. This
+            product is advertised at $9.99/mo and $19.99/mo; opening its buy
+            box on "One-time purchase" sells a single month to anyone who does
+            not notice the radio, which is both the wrong revenue and the wrong
+            expectation — they believe they subscribed.
+
+            One-time stays available and stays first in the list, because it is
+            the cheaper commitment and hiding it would be the opposite problem.
+            It is simply no longer pre-selected. A plan named in the URL still
+            wins over both.
+          {%- endcomment -%}
             <label class="sl-plan-option">
-              <input type="radio" name="selling_plan" value="" {% unless selected_plan_available %}checked{% endunless %}>
+              <input type="radio" name="selling_plan" value="">
               <span>
                 <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
                 <small>{{ 'products.product.one_time_help' | t }}</small>
@@ -126,7 +138,7 @@
             {%- assign is_checked = false -%}
             {%- if selected_plan_available and selected_selling_plan.id == selling_plan.id -%}
               {%- assign is_checked = true -%}
-            {%- elsif current.requires_selling_plan and selected_plan_available == false and plan_checked == false -%}
+            {%- elsif selected_plan_available == false and plan_checked == false -%}
               {%- assign is_checked = true -%}
             {%- endif -%}
 
@@ -165,7 +177,7 @@
 
               {%- unless variant.requires_selling_plan -%}
                 <label class="sl-plan-option">
-                  <input type="radio" name="selling_plan" value="" checked>
+                  <input type="radio" name="selling_plan" value="">
                   <span>
                     <strong>{{ 'products.product.one_time_purchase' | t }}</strong>
                     <small>{{ 'products.product.one_time_help' | t }}</small>
@@ -183,7 +195,7 @@
                   {%- assign selling_plan_display_name = 'Auto-renew yearly' -%}
                 {%- endif -%}
                 <label class="sl-plan-option">
-                  <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if variant.requires_selling_plan and forloop.first %}checked{% endif %}>
+                  <input type="radio" name="selling_plan" value="{{ selling_plan.id }}" {% if forloop.first %}checked{% endif %}>
                   <span>
                     <strong>{{ selling_plan_display_name }}</strong>
                     {%- if selling_plan.description != blank -%}

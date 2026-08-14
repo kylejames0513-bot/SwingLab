@@ -3,9 +3,17 @@
     "main": {
       "type": "main-contact",
       "settings": {
-        "eyebrow": "Support",
-        "heading": "Contact CaddieInsight",
-        "intro": "Questions about a report, an order, or Pro access? Send a note and a real person replies, usually within one business day."
+        "eyebrow": "Support · typical first reply under 24 hours",
+        "heading": "Contact us",
+        "intro": "One inbox. Tell us what it is about and the message gets to the right place faster.",
+        "routes_label": "What is it about?",
+        "routes": "An order, My membership, A swing report, Something else",
+        "deflect_label": "Before you write",
+        "deflect_body": "Most first messages are about filming setup, why a swing was not detected, or how Pro unlocks after checkout. All three are answered in the FAQ.",
+        "support_email": "inquiry@caddieinsight.com",
+        "hours": "Mon–Fri, 09:00–17:00 ET",
+        "returns_note": "Do not ship gear back without a return authorisation — partner warehouses reject unlabelled parcels. Start a return from your order email.",
+        "privacy_note": "We never share your email."
       }
     }
   },

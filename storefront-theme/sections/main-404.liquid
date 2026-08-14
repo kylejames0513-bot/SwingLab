@@ -1,39 +1,49 @@
-{%- assign contact_url = pages['contact'].url | default: '/pages/contact' -%}
+{%- liquid
+  # pages['contact'] is a TRUTHY drop even when the page does not exist, so the
+  # fallback hangs off .url — a field that is genuinely blank — not off the drop.
+  assign contact_url = pages['contact'].url | default: '/pages/contact'
+  capture gear_url
+    render 'gear-url'
+  endcapture
+  assign gear_url = gear_url | strip
+-%}
 <div class="sl-wrap sl-404 sl-main-404">
-  <span class="sl-main-404__arc" aria-hidden="true"></span>
-  <p class="sl-eyebrow">Error 404</p>
-  <h1 class="sl-main-404__title">{{ section.settings.heading | default: 'Out of bounds.' }}</h1>
-  <p class="sl-404-body sl-main-404__body">{{ section.settings.body | default: "This page isn't here. Take a drop and play on." }}</p>
-  <div class="sl-404-actions">
-    <a class="sl-btn sl-btn--primary" href="{{ routes.root_url }}">Back to the home page</a>
-    <a class="sl-btn sl-btn--outline" href="{{ routes.collections_url }}/swinglab-gear">Browse the gear</a>
-    <a class="sl-btn sl-btn--outline" href="{{ routes.search_url }}">Search the store</a>
+  {%- comment -%}
+    Three ways out and no more. Search is one keystroke away in the header on
+    every page including this one, so putting a fourth button here spends the
+    reader's attention on the route they already have.
+  {%- endcomment -%}
+  <div class="sl-main-404__plate sl-blueprint">
+    <p class="sl-eyebrow">Error 404</p>
+    <h1 class="sl-main-404__title">{{ section.settings.heading | default: 'That page is not in the rack.' }}</h1>
+    <p class="sl-404-body sl-main-404__body">{{ section.settings.body | default: 'The link may be old, or the page may have moved. Nothing here is lost — start from the home page or the gear rack.' }}</p>
+    <div class="sl-404-actions">
+      <a class="sl-btn sl-btn--primary" href="{{ routes.root_url }}">Home</a>
+      <a class="sl-btn sl-btn--outline" href="{{ gear_url }}">Training gear</a>
+      <a class="sl-btn sl-btn--outline" href="{{ contact_url }}">Contact support</a>
+    </div>
   </div>
-  <p class="sl-main-404__support">Still stuck? <a href="{{ contact_url }}">Contact support</a></p>
 </div>
 
 {% stylesheet %}
-/* one dashed ball-flight arc, the only ornament on the page */
-.sl-main-404__arc {
-  display: block;
-  width: 88px;
-  height: 44px;
-  margin: 0 auto 26px;
-  border: 1.5px dashed rgba(var(--sl-green-rgb), 0.4);
-  border-bottom: 0;
-  border-radius: 88px 88px 0 0;
+/* Industry sets content inside a drawn object, so the error is a plate on
+   paper rather than loose copy centred in the viewport. The dashed
+   ball-flight arc that used to be the only ornament here went with the golf
+   metaphor the copy dropped — a curve is not a shape this grammar draws. */
+.sl-main-404__plate {
+  max-width: 620px;
+  margin-inline: auto;
+  padding: var(--sl-space-7) var(--sl-card-inset) var(--sl-space-8);
 }
 
-
+/* base.css's h1 rule already carries the display face, weight, tracking and
+   colour; this sets the rung and closes the leading at display size. */
 .sl-main-404__title {
-  max-width: 14ch;
+  max-width: 20ch;
   margin: 0 auto;
   font-size: var(--sl-heading-display);
-  font-weight: 600;
-  letter-spacing: -0.05em;
-  line-height: 0.98;
+  line-height: 1;
   color: var(--sl-green);
-  text-wrap: balance;
 }
 
 .sl-main-404__body {
@@ -42,17 +52,6 @@
   font-size: var(--sl-text-lg);
   line-height: 1.6;
   text-wrap: pretty;
-}
-
-.sl-main-404__support {
-  margin: 26px 0 0;
-  font-size: var(--sl-text-sm);
-  color: var(--sl-ink-soft);
-}
-
-.sl-main-404__support a {
-  color: var(--sl-green-btn);
-  font-weight: 500;
 }
 
 @media (max-width: 749px) {
@@ -70,13 +69,13 @@
       "type": "text",
       "id": "heading",
       "label": "Heading",
-      "default": "Out of bounds."
+      "default": "That page is not in the rack."
     },
     {
-      "type": "text",
+      "type": "textarea",
       "id": "body",
       "label": "Body",
-      "default": "This page isn't here. Take a drop and play on."
+      "default": "The link may be old, or the page may have moved. Nothing here is lost — start from the home page or the gear rack."
     }
   ]
 }

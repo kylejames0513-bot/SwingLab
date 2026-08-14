@@ -7,10 +7,62 @@
   endif
   assign resolved_page_title = page_title
   assign resolved_page_description = page_description
-  if request.page_type == 'index'
-    assign resolved_page_title = 'seo.homepage_title' | t
-    assign resolved_page_description = 'seo.homepage_description' | t
-  endif
+
+  # EVERY page ships a description, not just the home page. The description
+  # was emitted only when the resource carried one, and outside the home page
+  # none did — no page, blog or collection on the store has an SEO description
+  # set — so every template but index rendered with no meta description at
+  # all, and a search result showed a bare label with nothing under it.
+  #
+  # Resolution order per page type: the resource's own authored description
+  # always wins (a merchant who writes one is right); the locale string is the
+  # floor under it, not a lid over it.
+  #
+  # The home page strings deliberately override the admin's homepage SEO
+  # fields — the title ships with the theme, so editing Online Store ->
+  # Preferences changes nothing here. That is a trap for whoever tries; hence
+  # this sentence.
+  case request.page_type
+    when 'index'
+      assign resolved_page_title = 'seo.homepage_title' | t
+      assign resolved_page_description = 'seo.homepage_description' | t
+    when 'collection'
+      if resolved_page_description == blank
+        assign resolved_page_description = 'seo.collection_description' | t
+      endif
+    when 'list-collections'
+      assign resolved_page_title = 'seo.list_collections_title' | t
+      if resolved_page_description == blank
+        assign resolved_page_description = 'seo.list_collections_description' | t
+      endif
+    when 'blog', 'article'
+      if resolved_page_description == blank
+        assign resolved_page_description = 'seo.blog_description' | t
+      endif
+    when 'search'
+      if resolved_page_description == blank
+        assign resolved_page_description = 'seo.search_description' | t
+      endif
+    when 'cart'
+      if resolved_page_description == blank
+        assign resolved_page_description = 'seo.cart_description' | t
+      endif
+    when 'product'
+      if resolved_page_description == blank
+        assign resolved_page_description = 'seo.product_description' | t
+      endif
+    when 'page'
+      if resolved_page_description == blank
+        assign resolved_page_description = 'seo.page_description' | t
+      endif
+  endcase
+
+  # Clamp what Shopify auto-derives. For a page with no authored SEO
+  # description, page_description is the body text itself — the FAQ's ran to
+  # 320 characters of raw prose. Search engines truncate around 155-160, so
+  # past that the tail is dead weight and the cut lands mid-sentence wherever
+  # Google chooses instead of at a word here.
+  assign resolved_page_description = resolved_page_description | strip_newlines | truncate: 158
 -%}
 <!doctype html>
 <html lang="{{ request.locale.iso_code }}">
@@ -84,8 +136,27 @@
     <meta name="twitter:image" content="{{ 'og-caddieinsight.png' | asset_url | prepend: 'https:' | split: '?' | first }}">
   {%- endif -%}
 
-  <link rel="icon" type="image/png" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
-  <link rel="apple-touch-icon" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
+  {%- comment -%}
+    The sized set from mockup 7a, largest first so a browser that takes the
+    first acceptable match still gets a real export rather than a downscale.
+    brand_mark.groove_count() drops the grooves below 19px and thins them on
+    the way down, so the 16 and the 32 are genuinely different drawings — not
+    the 512 resampled, which is what a single-icon tag gets you and what this
+    store shipped until now.
+
+    asset_url unconditionally, never an images[] lookup: see the module
+    docstring on tests/test_theme_brand_filenames.py.
+  {%- endcomment -%}
+  <link rel="icon" type="image/png" sizes="512x512" href="{{ 'caddieinsight-favicon.png' | asset_url }}">
+  <link rel="icon" type="image/png" sizes="64x64" href="{{ 'caddieinsight-favicon-64.png' | asset_url }}">
+  <link rel="icon" type="image/png" sizes="32x32" href="{{ 'caddieinsight-favicon-32.png' | asset_url }}">
+  <link rel="icon" type="image/png" sizes="16x16" href="{{ 'caddieinsight-favicon-16.png' | asset_url }}">
+  {%- comment -%}
+    180 and opaque. iOS rejects an alpha channel on a home-screen tile and
+    fills it with black or white depending on the OS version, so this may not
+    be pointed at the 512 favicon master however convenient that is.
+  {%- endcomment -%}
+  <link rel="apple-touch-icon" sizes="180x180" href="{{ 'apple-touch-icon.png' | asset_url }}">
 
   {%- comment -%}
     Self-hosted type. Google Fonts was a render-blocking THIRD-PARTY

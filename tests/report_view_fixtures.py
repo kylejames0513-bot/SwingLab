@@ -665,7 +665,7 @@ def report_document_fixture(name: str = "coaching-improve-clear"):
                 "/gear/tempo",
             ),
         ),
-        navigation=ReportNavigation("/", "/shop", "/collections/swinglab-gear"),
+        navigation=ReportNavigation("/", "/shop", "/collections/gear"),
     )
     if capture_variant:
         depth = replace(

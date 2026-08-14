@@ -518,6 +518,14 @@
       /* only animate while on screen — a hero loop running behind three
          screens of scroll is pure battery */
       if ('IntersectionObserver' in global) {
+        /* Paint one frame NOW, before the observer has said anything. The
+           caller hides the SVG still the moment init() succeeds, and a canvas
+           that has only been sized draws nothing — so a trace initialised
+           while below the fold left a blank box where the still used to be,
+           until the visitor happened to scroll it into view. One static frame
+           costs nothing and means the canvas is never emptier than the thing
+           it replaced. */
+        this.still();
         new global.IntersectionObserver(function (entries) {
           for (var i = 0; i < entries.length; i++) {
             if (entries[i].isIntersecting) { self.play(); } else { self.pause(); }
@@ -559,11 +567,38 @@
             if (label) { label.textContent = phase.toUpperCase(); }
           }
         });
-        if (inst.init()) {
+        /* INIT RACES LAYOUT, AND USED TO LOSE SILENTLY.
+           init() calls resize(), which returns false for a zero-sized box, and
+           the box IS zero at DOMContentLoaded — the hero's trace is sized by an
+           aspect-ratio on a grid child, which has no height until layout runs.
+           So init() returned false, nothing retried, and every visitor got the
+           static SVG still forever. The animation was never broken; it was
+           never started.
+
+           Hence: try, and if the box is not there yet, watch for it. A
+           ResizeObserver fires the moment the element gains a size; 'load' is
+           the fallback for browsers without one. Both are torn down on the
+           first success so this can never run twice for one canvas. */
+        var start = function () {
+          if (canvas.hasAttribute('data-swing-trace-ready')) { return true; }
+          if (!inst.init()) { return false; }
           canvas.setAttribute('data-swing-trace-ready', '');
           /* only now is the SVG still redundant */
           var fallback = host.querySelector('[data-swing-still]');
           if (fallback) { fallback.setAttribute('hidden', ''); }
+          return true;
+        };
+
+        if (!start()) {
+          var ro = null;
+          var onLoad = function () { if (start() && ro) { ro.disconnect(); } };
+          if ('ResizeObserver' in global) {
+            ro = new global.ResizeObserver(function () {
+              if (start()) { ro.disconnect(); }
+            });
+            ro.observe(canvas);
+          }
+          global.addEventListener('load', onLoad, { once: true });
         }
       }(nodes[i]));
     }

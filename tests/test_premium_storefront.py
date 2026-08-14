@@ -61,20 +61,33 @@ def test_storefront_leads_with_the_evidence_loop_and_real_sample():
         "CLUB SAVED",
     ]
 
-    # The 2026-08 restructure: gear moved up (it is what the store ships),
-    # the stats band died (it restated the hero chips), the standalone
-    # email-capture died (the footer newsletter is the one form), and a
-    # proof slot waits empty for real social proof.
+    # The 2026-08 restructure: the stats band died (it restated the hero
+    # chips), the standalone email-capture died (the footer newsletter is the
+    # one form), and a proof slot waits empty for real social proof.
+    #
+    # 2026-08-12, owner decision: GEAR MOVED BACK DOWN, from 4th to 9th. The
+    # earlier pass raised it on the reasoning that gear "is what the store
+    # ships". Measured, that put the largest section on the page — 1703px of a
+    # 10,489px page, more than any other — above every piece of evidence that
+    # the product works. A visitor met the rack before the plans, the
+    # comparison, or a single reason to believe the analysis is worth having.
+    # The membership is the product; the aids are an accessory to a drill a
+    # report has already prioritised, which is what the page itself says three
+    # separate times. It now sells that first and offers the rack last.
+    #
+    # proof stays between the product and the price. It renders nothing today
+    # (see sections/proof.liquid — inventing social proof is off the table),
+    # but that is where evidence belongs the day it exists.
     assert INDEX["order"] == [
         "hero",
         "how_it_works",
         "report",
-        "gear",
         "proof",
         "plans",
         "comparison",
         "coach_notes",
         "faq",
+        "gear",
         "cta",
     ]
     assert "stats" not in INDEX["sections"]
@@ -556,7 +569,24 @@ def test_theme_uses_tour_caddie_type_and_store_aware_routes():
     }
     assert used_weights <= loaded_weights
     assert 'href="/collections' not in route_sources
-    assert route_sources.count("routes.collections_url") == 4
+    # These three sections used to build the gear path themselves, four times
+    # between them. They now delegate to snippets/gear-url.liquid, which
+    # RESOLVES the collection instead of naming a handle — the rename from
+    # swinglab-gear to gear is a manual cutover step, so a hardcoded path is a
+    # live 404 on one side of it or the other. The 404 page's own "Training
+    # gear" escape hatch was one of them, sending a lost visitor to a second
+    # 404.
+    #
+    # The store-awareness this line has always guarded still has to hold, so it
+    # is asserted where it now lives rather than dropped.
+    assert route_sources.count("routes.collections_url") == 0
+    # Once per section: each resolves the path a single time into a local and
+    # reuses it, rather than rendering the snippet at every link site.
+    assert route_sources.count("render 'gear-url'") == 3
+    gear_url_snippet = source("snippets/gear-url.liquid")
+    assert "routes.collections_url" in gear_url_snippet
+    assert "collections['gear']" in gear_url_snippet
+    assert "collections['swinglab-gear']" in gear_url_snippet
 
     how_source = source("sections/how-it-works.liquid")
     assert "section.settings.cta_label" not in how_source
@@ -697,9 +727,14 @@ def test_theme_check_is_pinned_and_release_docs_have_no_stale_theme_ids():
     )
     readme = source("README.md")
 
-    assert "Shopify/theme-check-action@58fd69afdfc30110f997ba9e212b302671e00d3b" in workflow
+    # The gate runs the pinned CLI directly. Its predecessor,
+    # Shopify/theme-check-action@58fd69a + CLI 3.58.2, targeted Node 20;
+    # GitHub's runners now force Node 24 and that CLI crashes rendering its
+    # own result banner there — a red job with zero theme offenses, and the
+    # crash ate the output that would have said so. The pin is still the
+    # point: the version must move deliberately, in this file and here.
+    assert "npx -y @shopify/cli@4.6.1 theme check" in workflow
     assert "--fail-level warning" in workflow
-    assert "version: 3.58.2" in workflow
     assert "source PR is not a Shopify preview" in readme
     assert "duplicate\nunpublished theme" in readme
     assert not re.search(r"OnlineStoreTheme/\d+", readme)

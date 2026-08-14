@@ -652,6 +652,8 @@ def trend_chart(
     benchmark: float | None,
     brand: dict,
     worse: str = "higher",      # which side of the benchmark is bad
+    band_center: float | None = None,
+    band_half_width: float | None = None,
 ) -> str:
     """Session-over-session line chart for the progress dashboard.
 
@@ -662,6 +664,15 @@ def trend_chart(
     line with a faint accent band over its bad side; dots sit on every
     session, accent-filled when that session is on the bad side. Returns ""
     when there is nothing to plot.
+
+    ``band_center``/``band_half_width`` optionally draw a noise-floor band
+    (``center ± half_width``) as a ``<rect data-band="noise">``. Both default
+    to None so the digest and report callers are untouched; only the progress
+    page passes them, and only with the exact minimum detectable effect the
+    proof-cycle engine computed for the one active target metric — this
+    function never invents a floor of its own. The ``data-band`` attribute
+    exists because the page CSS re-inks bare ``rect`` elements for the
+    benchmark band and must be able to tell the two apart.
     """
     vals: list[float] = []
     for value in points:
@@ -683,12 +694,21 @@ def trend_chart(
             candidate = float("nan")
         if isfinite(candidate):
             benchmark_value = candidate
+    band_lo = band_hi = None
+    if band_center is not None and band_half_width is not None:
+        try:
+            center = float(band_center)
+            half = float(band_half_width)
+        except (OverflowError, TypeError, ValueError):
+            center, half = float("nan"), float("nan")
+        if isfinite(center) and isfinite(half) and half > 0:
+            band_lo, band_hi = center - half, center + half
     primary, accent = _colors(brand)
     x0, x1 = 12.0, 308.0
     y0, y1 = 14.0, 102.0
     domain = vals + (
         [benchmark_value] if benchmark_value is not None else []
-    )
+    ) + ([band_lo, band_hi] if band_lo is not None else [])
     lo, hi = min(domain), max(domain)
     span = hi - lo
     if not isfinite(span):
@@ -707,6 +727,15 @@ def trend_chart(
         return plot_bottom - fraction * (plot_bottom - plot_top)
 
     parts: list[str] = []
+    if band_lo is not None and band_hi is not None:
+        band_top, band_bottom = y_of(band_hi), y_of(band_lo)
+        if band_bottom > band_top:
+            parts.append(
+                f'<rect data-band="noise" x="{_n(x0 - 6)}" y="{_n(band_top)}" '
+                f'width="{_n(x1 - x0 + 12)}" '
+                f'height="{_n(band_bottom - band_top)}" '
+                f'fill="{GRAY}" opacity="0.14"/>'
+            )
     if benchmark_value is not None:
         by = y_of(benchmark_value)
         band_top, band_bottom = (y0 - 4.0, by) if worse == "higher" else (by, y1 + 4.0)

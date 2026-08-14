@@ -9,8 +9,8 @@ With that unset, ``enabled()`` is False: no Shop link in the navigation, no
 and images live in Shopify — manage them in the Shopify admin, never in code
 (the same rule as membership prices in shopify_billing.py).
 
-The catalog reads Shopify's public ``swinglab-gear`` collection without an
-access token. This keeps an unrelated, stale Admin API token from poisoning a
+The catalog reads Shopify's public ``gear`` collection without an access
+token. This keeps an unrelated, stale Admin API token from poisoning a
 query that Shopify already exposes to the public storefront, and it keeps the
 Pro membership product out of the Gear page.
 
@@ -50,21 +50,30 @@ logger = logging.getLogger("swinglab.web.shop")
 # forward to a different contract.
 API_VERSION = "2026-07"
 
+# Both handles are asked for in one request because the collection is renamed
+# at cutover and this module deploys with the app, not with the store — the
+# two cannot be sequenced, and a storefront 301 does not cover an API lookup
+# the way it covers a URL. A `collection(handle:)` for a handle that does not
+# exist resolves to null rather than erroring, so whichever one is live wins
+# and the other costs nothing. Drop the `legacy` alias once the rename lands.
 _QUERY = """
 query CaddieInsightGear {
-  collection(handle: "swinglab-gear") {
-    products(first: 50, sortKey: BEST_SELLING) {
-      edges {
-        node {
-          title
-          handle
-          description
-          tags
-          availableForSale
-          onlineStoreUrl
-          featuredImage { url altText }
-          priceRange { minVariantPrice { amount currencyCode } }
-        }
+  gear: collection(handle: "gear") { ...GearProducts }
+  legacy: collection(handle: "swinglab-gear") { ...GearProducts }
+}
+
+fragment GearProducts on Collection {
+  products(first: 50, sortKey: BEST_SELLING) {
+    edges {
+      node {
+        title
+        handle
+        description
+        tags
+        availableForSale
+        onlineStoreUrl
+        featuredImage { url altText }
+        priceRange { minVariantPrice { amount currencyCode } }
       }
     }
   }
@@ -204,7 +213,7 @@ def fetch_products(cfg: Config) -> list[dict]:
         # exception — separate them so the operator knows which to fix.
         logger.warning(
             "Shopify Storefront returned 0 products — check the products are "
-            "published in the public swinglab-gear collection."
+            "published in the public gear collection."
         )
     with _cache_lock:
         _cache.update(at=time.monotonic(), products=products)
@@ -269,7 +278,19 @@ def _fetch() -> list[dict]:
         body = json.load(resp)
     if body.get("errors"):
         raise RuntimeError(f"Shopify Storefront API error: {body['errors']}")
-    collection = (body.get("data") or {}).get("collection")
+    data = body.get("data") or {}
+    # PRESENCE IS TESTED ON THE PRODUCTS, NOT ON THE COLLECTION. `or` here is
+    # the Python form of the truthy-drop trap gear-showcase.liquid warns about:
+    # a collection that EXISTS but is empty is still truthy, so it
+    # short-circuits and the populated legacy arm is never read. That is not
+    # hypothetical — creating the `gear` collection before moving products into
+    # it is the natural first step of the cutover, and it would have emptied
+    # /shop and silenced every in-report gear recommendation with no error.
+    candidates = (data.get("gear"), data.get("legacy"))
+    collection = next(
+        (c for c in candidates if c and c.get("products", {}).get("edges")),
+        None,
+    )
     if collection is None:
         return []
     return [

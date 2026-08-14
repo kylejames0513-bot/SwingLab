@@ -1,11 +1,30 @@
 {%- liquid
   assign menu = section.settings.menu
   assign app_url = section.settings.app_url
-  assign gear_url = routes.collections_url | append: '/swinglab-gear'
+  capture gear_url
+    render 'gear-url'
+  endcapture
+  assign gear_url = gear_url | strip
   assign pro_product = all_products['swinglab-pro']
   assign cap_product = all_products['swinglab-performance-cap']
-  assign method_page = pages['the-swinglab-method']
-  assign how_page = pages['how-swinglab-works']
+  # The rebrand renamed these pages' titles but not their handles, so both are
+  # still addressed as swinglab. The rename is a cutover step, and it has to be
+  # safe in either order: rename first and the live theme loses its footer
+  # links, publish first and the new theme loses them. Looking up the new
+  # handle and falling back to the old means neither happens, and the fallback
+  # can be deleted once the redirects have been live long enough.
+  #
+  # `pages[...]` returns a truthy drop for a handle that does not exist, so
+  # presence is tested on .url — genuinely blank when absent — never on the
+  # drop itself.
+  assign method_page = pages['method']
+  if method_page.url == blank
+    assign method_page = pages['the-swinglab-method']
+  endif
+  assign how_page = pages['how-it-works']
+  if how_page.url == blank
+    assign how_page = pages['how-swinglab-works']
+  endif
   assign faq_page = pages['faq']
   assign shipping_page = pages['shipping-returns']
   assign about_page = pages['about']
@@ -408,7 +427,7 @@
   /* --sl-danger, not a hand-mixed red: the literal this replaces was a warm
      orange close enough to the amber signal to read as one, and an error
      message is not a measurement. */
-  color: var(--sl-danger);
+  color: var(--sl-danger-field);
 }
 
 /* the policy row is a deliberate specimen strip, not an afterthought */

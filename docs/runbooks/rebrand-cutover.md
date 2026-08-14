@@ -1,66 +1,92 @@
 # SwingLab → CaddieInsight handle cutover runbook
 
-Goal: remove every customer-visible "swinglab" string. Today they appear in
-all shareable URLs and metadata:
+> **Revised 2026-08-12, during the site-revamp.** The original version of this
+> runbook prescribed target handles the project has since decided differently
+> (`caddieinsight-gear`, `caddieinsight-pro`), and following it after the
+> revamp landed would have broken both arms of the theme's handle fallbacks —
+> `shop.py` queries `gear` and `swinglab-gear`, so a rename to
+> `caddieinsight-gear` satisfies neither, empties `/shop`, and silences every
+> in-report gear recommendation. The targets below are the ones the shipped
+> code actually resolves. `LAUNCH_CHECKLIST.md` sequences this into the wider
+> go-live; this file carries the detail.
 
-- `/products/swinglab-pro` (the flagship product URL)
-- `/collections/swinglab-gear`
-- `/pages/the-swinglab-method`, `/pages/how-swinglab-works`
-- `og-swinglab.png` (every social link preview), `swinglab-favicon.png`,
-  `swinglab-logo.png`
-- Menu handles `swinglab-main`, `swinglab-footer` (admin-only, low priority)
+Goal: remove the customer-visible "swinglab" strings that remain. The agreed
+targets:
 
-This is a coordinated change: the theme (19 files, 53 occurrences), the app
-(`config.yaml`, `swinglab/web/shop.py` collection handle, billing product
-references), and Shopify admin must move together. Shopify creates automatic
-URL redirects when a handle changes, so old links keep working — the risk is
-internal references, not inbound links.
+| Today | Target | Status |
+| --- | --- | --- |
+| `/collections/swinglab-gear` | `/collections/gear` | Code-complete; rename pending |
+| `/pages/the-swinglab-method` | `/pages/method` | Theme + redirect ready; rename pending |
+| `/pages/how-swinglab-works` | `/pages/how-it-works` | Theme + redirect ready; rename pending |
+| `/products/swinglab-pro` | **stays** | Deliberate — see landmine 2 |
+| Menu handles `swinglab-main`, `swinglab-footer` | optional | Admin-only, low priority |
+
+Already done during the revamp (no cutover step needed): the `og-swinglab.png`
+/ `swinglab-favicon.png` / `swinglab-logo.png` asset migration — the theme
+resolves every brand mark through `asset_url` on `caddieinsight-*` names, and
+`tests/test_theme_brand_filenames.py` holds the retired list.
 
 ## Landmines (why this is not a find-and-replace)
 
-1. **Premium chrome trigger**: `layout/theme.liquid:5` and
+1. **Premium chrome trigger**: `layout/theme.liquid` and
    `sections/header.liquid` key the Pro page's premium styling off
-   `product.handle == 'swinglab-pro'`. Renaming the handle without updating
-   these silently kills the premium Pro-page presentation.
-2. **App billing/config**: `config.yaml` references the Pro product handle and
-   the `swinglab-gear` collection handle (`shop.py`). The app deploys from
-   main on Railway; the theme deploys manually. Sequence so neither window
-   breaks (redirects cover storefront URLs; config lookups by handle do NOT
-   follow redirects — Storefront API queries by handle return null for the
-   old handle once renamed).
-3. **Asset filenames are immutable by convention** (storefront README):
-   upload new `caddieinsight-*` named files, then update references — never
-   overwrite a filename referenced by the live theme.
-4. **Report-matcher tags**: product tags `swinglab:*` (tempo, sway, etc.) are
-   an internal vocabulary shared by the app's gear matcher and the theme's
-   flag chips. Renaming the tag prefix is a separate, optional migration —
-   tags are not customer-visible URLs; defer.
+   `product.handle == 'swinglab-pro'`. This is one of the reasons the handle
+   stays.
+2. **`swinglab-pro` keeps its handle, permanently.** `shopify.app.toml`
+   records that the `orders/paid` webhook is the only thing that grants Pro,
+   and `config.yaml`'s catalog allowlist matches on product handles. The SKUs
+   (`SL-PRO-LIFE` etc.) are "the durable key the order webhook matches on"
+   (config.yaml). Renaming any of it risks the money path to fix a URL nobody
+   reads. Renaming the SKUs is explicitly deferred for the same reason.
+3. **Handle lookups do not follow redirects.** Shopify's automatic 301 covers
+   storefront *URLs* only. A Storefront API `collection(handle:)` query
+   returns null for the old handle the moment it is renamed — which is why
+   `swinglab/web/shop.py` queries both handles in one request and takes
+   whichever answers with products, and why the theme resolves the collection
+   through `snippets/gear-url.liquid` and per-section fallbacks rather than
+   naming a handle. **Both fallbacks assume the new handle is exactly
+   `gear`.**
+4. **Reports bake their URL in at render time.** `swinglab/drills.py`'s
+   `GEAR_COLLECTION_PATH` still points at `/collections/swinglab-gear` on
+   purpose: it resolves today, and after the rename the automatic 301 carries
+   it. Move it to `/collections/gear` (and update `tests/test_drills.py`)
+   only AFTER the collection is renamed — the app deploys from `main`
+   automatically, so pointing it forward early puts a 404 inside every newly
+   rendered report for as long as the rename lags the deploy.
+5. **Report-matcher tags**: product tags `swinglab:*` (tempo, sway, etc.) are
+   an internal vocabulary shared by the app's gear matcher, `drills.py`'s
+   `gear_tag` fields, and the theme's flag chips. Not customer-visible;
+   renaming them is a separate, optional migration — defer.
 
-## Cutover sequence (one sitting, ~1 hour)
+## Cutover sequence
 
-1. **Prepare the PR** (no handle changes yet): a branch that updates every
-   handle reference in `storefront-theme/**` and `config.yaml`/`shop.py` to
-   the new handles (`caddieinsight-pro`, `caddieinsight-gear`,
-   `the-caddieinsight-method`, `how-caddieinsight-works`), updates the
-   premium-chrome conditionals, and references new asset names
-   (`og-caddieinsight.png`, `caddieinsight-favicon.png`,
-   `caddieinsight-logo.png`).
-2. **Upload new-name assets** to Shopify Files (og image, favicon, logo) —
-   same artwork, new names.
-3. **Rename handles in admin** (Products, Collection, Pages). Confirm Shopify
-   created the URL redirects (Online Store → Navigation → URL redirects).
-4. **Merge the PR** → Railway deploys the app with new config handles.
-5. **Upload the theme** from the merged source to a duplicate unpublished
-   theme, preview (Pro page premium chrome, gear collection, method pages,
-   footer links), then publish per the release boundary in
-   `storefront-theme/README.md`.
-6. **Verify**: old URLs 301 to new; Pro page premium header intact; gear
-   showcase populates; app /shop renders gear; a test checkout email still
-   grants Pro (billing matches by product/variant IDs, not handles — confirm
-   in `swinglab/web/shopify_billing.py` before assuming).
-7. Optional cleanup later: menu handles, archived SwingLab-vendor products,
-   `SL-*` SKUs on the Pro variants (`CI-PRO-1MO` etc.), internal tag
-   vocabulary.
+1. **Rename the collection** in admin: `swinglab-gear` → `gear`. Confirm
+   Shopify created the URL redirect (Online Store → Navigation → URL
+   redirects). The theme and `/shop` keep working through both sides of this
+   — the fallbacks exist so the order cannot break them.
+2. **Rename the pages**: `the-swinglab-method` → `method`,
+   `how-swinglab-works` → `how-it-works`. The explicit redirects for both
+   were created 2026-08-12 and sit dormant until the rename activates them;
+   the theme resolves either handle.
+3. **Follow-up PR** (after step 1 is confirmed): move
+   `drills.py:GEAR_COLLECTION_PATH` to `/collections/gear`, update
+   `tests/test_drills.py`, point `header-group.json`'s announcement link at
+   `shopify://collections/gear`, and retarget the six archived-product
+   redirects that currently point at `/collections/swinglab-gear`. Merge →
+   Railway deploys.
+4. **Regenerate the readiness fixture**:
+   `python scripts/refresh_store_readiness.py` — the stored snapshot still
+   records the old handles, truthfully, until the live store changes.
+5. **Verify**: old URLs 301; `/shop` renders gear; the gear showcase and
+   footer links resolve; a report rendered before step 1 still reaches the
+   collection through the 301; one rendered after step 3 links `/collections/
+   gear` directly.
+6. **Later, optional cleanup**: delete the legacy arms — the `legacy:` alias
+   in `shop.py`, the old-handle fallbacks in `gear-url.liquid`,
+   `gear-showcase`, `related-products`, `main-collection`, `footer`, and
+   `main-page` — once the redirects have been live long enough that no cached
+   page still points at the old handle. Each carries a comment saying it is
+   deletable.
 
 ## Explicitly out of scope
 

@@ -605,7 +605,9 @@ def test_progress_renders_cards_flags_and_cta(accounts_app):
     assert "flagged below 2.4:1" in html          # the benchmark line
     assert "has moved 2.20:1" in html             # the trend sentence
     assert "What keeps getting flagged" in html   # flags-frequency strip
-    assert "Re-film this week" in html            # the CTA back to upload
+    # The CTA back to upload now carries the derived next-session number
+    # (session_count + 1) — screens 1c/1d's "Film session N".
+    assert "Film session 3" in html
     assert 'href="/progress"' in html             # nav link present when logged in
 
     sessions_html = client.get("/sessions").text

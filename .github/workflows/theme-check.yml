@@ -23,9 +23,18 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate Shopify theme
-        uses: Shopify/theme-check-action@58fd69afdfc30110f997ba9e212b302671e00d3b
+      # The CLI directly, not Shopify/theme-check-action. The pinned action
+      # targets Node 20, which GitHub's runners now force up to Node 24, and
+      # the 3.58.x CLI it installs crashes rendering its own result banner
+      # there — the job went red with zero theme offenses, and the crash ate
+      # the output that would have said so. Running the same pinned CLI the
+      # developers run locally removes the wrapper that was the only broken
+      # part. 4.6.1 is the version this repo's theme work is validated
+      # against; bump it deliberately, not transitively.
+      - name: Use Node 24
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          theme_root: storefront-theme
-          flags: --fail-level warning
-          version: 3.58.2
+          node-version: 24
+
+      - name: Validate Shopify theme
+        run: npx -y @shopify/cli@4.6.1 theme check --path storefront-theme --fail-level warning

@@ -7,8 +7,8 @@ reaches a product the app is allowed to recommend. Tests cannot call Shopify,
 so the catalogue has to be committed — and a committed catalogue goes stale
 unless refreshing it is one command.
 
-Run it after any change to product tags, availability, or the
-``swinglab-gear`` collection::
+Run it after any change to product tags, availability, or the ``gear``
+collection::
 
     SHOPIFY_STORE_DOMAIN=caddieinsight.com python scripts/refresh_gear_catalog.py
 
@@ -54,7 +54,7 @@ def main() -> int:
         # blank the catalogue the coverage test checks against, turning a
         # Shopify outage into a green build with no gear in it.
         print(
-            "The swinglab-gear collection returned 0 products. Refusing to "
+            "The gear collection returned 0 products. Refusing to "
             "write an empty snapshot — check the collection is published to "
             "the Online Store channel.",
             file=sys.stderr,
@@ -63,7 +63,7 @@ def main() -> int:
 
     payload = {
         "source": f"https://{domain}/api/{shop.API_VERSION}/graphql.json",
-        "collection": "swinglab-gear",
+        "collection": "gear",
         "note": (
             "Regenerate with scripts/refresh_gear_catalog.py — do not hand-edit. "
             "Only fields the recommendation path reads are stored."

@@ -226,7 +226,9 @@ the setup pose for viewers who ask their device for reduced motion.
 
 Set `shop.store_url` in `config.yaml` (the shipped config points at the
 CaddieInsight store; empty = no link) and the plan ends with a quiet "Matched
-training aids" link to that store's `/collections/swinglab-gear` collection —
+training aids" link to that store's gear collection — `swinglab-gear` today,
+`gear` after the cutover in `docs/runbooks/rebrand-cutover.md`; the link
+follows `drills.GEAR_COLLECTION_PATH`, which moves only after the rename —
 the same tag-matched gear the web app recommends on finished analyses.
 
 ## Web app
@@ -738,7 +740,9 @@ through the store domain:
 | `SHOPIFY_STORE_DOMAIN` | `yourstore.myshopify.com` (or the custom domain) |
 
 Products, prices, and images live in Shopify — manage them in the Shopify
-admin, add the Gear products to the public `swinglab-gear` collection, and
+admin, add the Gear products to the public gear collection (`swinglab-gear`
+until the rename in `docs/runbooks/rebrand-cutover.md`; `shop.py` queries
+both handles through the cutover), and
 never duplicate them in code. The product list is cached in memory
 (`shop.cache_minutes`), and a Shopify outage degrades to the last cached
 list instead of an error. "Buy" links go to the Shopify storefront;
