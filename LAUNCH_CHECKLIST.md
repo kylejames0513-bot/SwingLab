@@ -179,12 +179,12 @@ the rename. What is NOT done is the rename itself, and `drills.py` still
 names the old handle deliberately — a report bakes its URL in permanently, so
 it may only ever name an address the store answers at render time.
 
-**`docs/runbooks/rebrand-cutover.md` contradicts this.** It tells the operator
-to rename the collection to `caddieinsight-gear`. That handle satisfies
-neither arm of the fallbacks, so following the runbook empties `/shop` and
-breaks every gear link. Reconcile the runbook to `gear` before cutover.
-`README.md:229`, `README.md:741`, `deploy/README.md:261` and
-`docs/runbooks/gear-coverage.md:12` also still name the old handle.
+**The docs now agree with the code** (reconciled 2026-08-12). The cutover
+runbook was rewritten around the real targets — it had prescribed
+`caddieinsight-gear`, which satisfies neither fallback arm — and the README,
+deploy/README and gear-coverage runbook now describe the two-handle window
+instead of naming the old handle as if permanent. The runbook carries the
+step-by-step; this checklist stays the top-level sequence.
 
 **`swinglab-pro` keeps its handle.** `shopify.app.toml` is explicit that the
 `orders/paid` webhook is the only thing that grants Pro, and `config.yaml`'s

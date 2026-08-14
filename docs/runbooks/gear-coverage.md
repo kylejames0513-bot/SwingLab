@@ -8,8 +8,9 @@ Shopify product tags. Nothing checked that the two ends met, so the loop could
 break without producing an error — the report just went quiet at the exact
 moment the coaching got specific.
 
-`tests/test_gear_coverage.py` now checks it, against a committed snapshot of the
-live `swinglab-gear` collection.
+`tests/test_gear_coverage.py` now checks it, against a committed snapshot of
+the live gear collection (handle `swinglab-gear` until the cutover in
+`docs/runbooks/rebrand-cutover.md` renames it to `gear`).
 
 ## Refreshing the snapshot
 
