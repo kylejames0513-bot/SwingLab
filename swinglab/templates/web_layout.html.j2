@@ -978,20 +978,24 @@
     grid-template-columns: minmax(240px, 1.5fr) repeat(2, minmax(150px, .7fr));
     gap: clamp(28px, 6vw, 72px);
   }
+  {# The footer is PAPER (--sl-bg-card), not the field. These two rules kept
+     the bone they were written in when it was a dark bar, so the wordmark
+     and both nav headings painted paper on paper — 1.00:1, simply not there.
+     Ink by ground, per the wash rule. #}
   .sl-app-footer__logo {
     display: inline-flex;
-    color: var(--sl-cream);
+    color: var(--sl-ink);
     font-size: 22px;
     font-weight: 600;
     letter-spacing: -.02em;
     text-decoration: none;
   }
-  .sl-app-footer__logo:hover { color: #fff; }
+  .sl-app-footer__logo:hover { color: var(--sl-green-btn); }
   .sl-app-footer__brand p { max-width: 38ch; margin: 14px 0 0; line-height: 1.65; }
   .sl-app-footer__nav { display: grid; align-content: start; gap: 9px; }
   .sl-app-footer__nav strong {
     margin-bottom: 4px;
-    color: var(--sl-cream);
+    color: var(--sl-ink);
     font-family: var(--sl-font-mono);
     font-size: 10px;
     font-weight: 500;
@@ -999,7 +1003,10 @@
     text-transform: uppercase;
   }
   .sl-app-footer__nav a { color: var(--sl-ink-soft); text-decoration: none; }
-  .sl-app-footer__nav a:hover { color: var(--sl-focus-dark); }
+  {# --sl-focus-dark is the TRACE: 9.76 on the field, 1.78 on paper. Hovering
+     a footer link all but erased it. Paper link hover is --sl-green-btn
+     here, the same pair .sl-header__link:hover and .sl-menu__link:hover use. #}
+  .sl-app-footer__nav a:hover { color: var(--sl-green-btn); }
   .sl-app-footer__bottom {
     max-width: var(--sl-content);
     margin: 34px auto 0;
@@ -1017,6 +1024,10 @@
      golfer actually moves between, plus the existing menu dialog behind
      More. Hidden entirely at desktop widths, where the header nav leads. */
   .sl-tabbar { display: none; }
+  {# The bar is a light recess (--sl-night is a TINT now, not a dark), so the
+     wash that contrasts with it is ink. In bone this row read 1.05:1 — and
+     the icons are stroke="currentColor", so they vanished with the labels,
+     leaving the PWA's primary navigation blank. #}
   .sl-tabbar__item {
     flex: 1 1 0;
     display: flex;
@@ -1030,7 +1041,7 @@
     padding: 6px 2px 4px;
     border: 0;
     background: none;
-    color: rgba(var(--sl-cream-rgb), .62);
+    color: rgba(var(--sl-wash-rgb), .70);
     font: inherit;
     font-size: 10.5px;
     font-weight: 600;
@@ -1051,8 +1062,8 @@
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .sl-tabbar__item:hover { color: rgba(var(--sl-cream-rgb), .86); }
-  .sl-tabbar__item.is-current { color: var(--sl-cream); }
+  .sl-tabbar__item:hover { color: rgba(var(--sl-wash-rgb), .86); }
+  .sl-tabbar__item.is-current { color: var(--sl-ink); }
   /* The active tab is marked by a short rule above the icon, not by color
      alone — color is not a sufficient state signal on its own. */
   .sl-tabbar__item.is-current::before {

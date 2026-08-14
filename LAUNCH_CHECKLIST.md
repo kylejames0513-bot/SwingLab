@@ -43,13 +43,13 @@ Roughly in value order.
 
 1. **Collection / cart / search / 404** — templates exist and are styled;
    they need the mockups' copy from `COPY_DECK.md` §8.
-2. **Nav and menus** — the live `swinglab-main` menu is `Home · Gear · The
-   Method · Pro Membership · FAQ`; the mockups want `Method · Sample report ·
-   Plans · Gear`. Add the Founders Pass link.
-3. **`/collections/swinglab-gear` rename** — see §6.
-4. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
-5. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
-   Lighthouse, contrast, keyboard nav, broken-link crawl.
+2. **`/collections/swinglab-gear` rename** — see §6.
+3. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions and the
+   contrast fix landed (`5d11e5b`, `24dc23e`); Lighthouse, keyboard nav and the
+   broken-link crawl are still unrun.
+
+**App (Phase 5)** is no longer on this list — the `1a`–`1f` build shipped; see
+the App entry in §3.
 
 ---
 
@@ -122,11 +122,12 @@ already enforced by Shopify.
       back to 100 — this tests the counter, the cap and the refund path in one
       go.
 
-**App**
+**App — done 2026-08-13**
 
-- [ ] Merge `site-revamp` after CI is green. Railway deploys from `main`
-      automatically and **does not wait for checks** (`checkSuites: false`), so
-      a merge is a deploy whatever the tests say.
+- [x] PR #120 merged after all seven checks passed (two CI failures were
+      fixed first: browser-test regressions from the report build, and the
+      theme-check action rotted by GitHub's forced Node 24). Railway deployed
+      the merge commit; the app screens 1a–1f are live.
 
 ---
 
