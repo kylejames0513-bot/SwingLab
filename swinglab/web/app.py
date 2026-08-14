@@ -3888,11 +3888,25 @@ def create_app(
                         for i, s in enumerate(trends.samples)
                         if name in s.means
                     ]
+                    # Each label carries the x-position of ITS dot, because
+                    # the two are not evenly spaced together: dots sit at
+                    # k/(n-1) of the plot width while a flexed label row
+                    # spreads space-between — and the appended last ordinal
+                    # made the spacings differ, so labels drifted onto the
+                    # wrong dots and silently attributed a measured value to
+                    # the wrong session. Positioning beats spacing.
                     step = max(1, -(-(len(ordinals) - 1) // 7))
-                    shown = ordinals[::step]
-                    if shown and shown[-1] != ordinals[-1]:
-                        shown.append(ordinals[-1])
-                    axis_labels = [f"S{o:02d}" for o in shown]
+                    picks = list(range(0, len(ordinals), step))
+                    if picks and picks[-1] != len(ordinals) - 1:
+                        picks.append(len(ordinals) - 1)
+                    span = max(1, len(ordinals) - 1)
+                    axis_labels = [
+                        {
+                            "text": f"S{ordinals[k]:02d}",
+                            "pct": round(k / span * 100, 2),
+                        }
+                        for k in picks
+                    ]
                 chart = trend_chart(
                     values, mt.benchmark, cfg.brand,
                     worse=mt.worse or "higher",

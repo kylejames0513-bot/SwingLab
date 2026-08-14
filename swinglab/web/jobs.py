@@ -1545,11 +1545,19 @@ class JobManager:
         if job.user_id is None or not job.created_at:
             return None, None, None
         try:
+            # Position among ALL of the user's jobs by (created_at, id), not
+            # a count of DONE ones. Completion order is not creation order:
+            # counting DONE jobs created earlier let two concurrently
+            # processed uploads freeze the same "Session NNN" into two
+            # immutable reports, and same-second uploads collided outright.
+            # The id tiebreak makes the ordinal unique and stable; a job that
+            # later fails leaves a gap in the numbering, which is honest —
+            # the session happened — and gaps cannot collide.
             with self._lock:
                 row = self._conn.execute(
-                    "SELECT COUNT(*) FROM jobs WHERE user_id = ? AND status = ?"
-                    " AND created_at < ?",
-                    (job.user_id, DONE, job.created_at),
+                    "SELECT COUNT(*) FROM jobs WHERE user_id = ?"
+                    " AND (created_at < ? OR (created_at = ? AND id < ?))",
+                    (job.user_id, job.created_at, job.created_at, job.id),
                 ).fetchone()
             ordinal = int(row[0]) + 1
             moment = datetime.fromtimestamp(job.created_at, timezone.utc)

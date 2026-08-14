@@ -294,7 +294,9 @@
 
   /* Session ordinals under the headline chart — spec labels, mono chrome,
      capped to the same width as the chart they index. */
-  .chart-axis {
+  .chart-axis--positioned { position: relative; height: 1.1rem; display: block; }
+    .chart-axis--positioned span { position: absolute; top: 0; }
+    .chart-axis {
     display: flex;
     justify-content: space-between;
     margin: calc(-1 * var(--sl-space-3)) 0 var(--sl-space-2);
@@ -700,8 +702,8 @@
          session among the trend samples, thinned like the mockup thins
          S01…S14. Decorative index for sighted scanning; the chart's own
          aria-label stays the accessible description. #}
-      <div class="chart-axis" aria-hidden="true">
-        {% for l in c.axis_labels %}<span>{{ l }}</span>{% endfor %}
+      <div class="chart-axis chart-axis--positioned" aria-hidden="true">
+        {% for l in c.axis_labels %}<span style="left: {{ l.pct }}%; transform: translateX({{ '0' if l.pct == 0 else ('-100%' if l.pct == 100 else '-50%') }});">{{ l.text }}</span>{% endfor %}
       </div>
       {% endif %}
       {% if c.is_headline %}

@@ -919,7 +919,9 @@ def test_spec_sheet_renders_measured_table_meter_and_frozen_session_context(
     # Priority-panel framing counts the real findings.
     next_move = report_block(html, "next-move", "understand")
     finding_count = 1 + len(staged.document.depth.secondary_findings)
-    assert f"Priority 01 · of {finding_count:02d} findings" in next_move
+    suffix = "finding" if finding_count == 1 else "findings"
+    # Singular for one: the sparse state rendered "of 01 findings".
+    assert f"Priority 01 · of {finding_count:02d} {suffix}" in next_move
 
     # The NOW/MARK meter restates the priority measurement against the
     # configured pass mark, in both the priority panel and the refilm section.

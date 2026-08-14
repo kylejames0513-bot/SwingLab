@@ -974,7 +974,10 @@
       font-size: .92rem;
       white-space: nowrap;
     }
-    td.measured-value { color: var(--accent-text); }
+    {# Element-agnostic: the desktop table cell and the mobile collapsed
+       row render the SAME session mean, so they take the signal together —
+       scoping this to td silently dropped it below 40rem. #}
+    .measured-value { color: var(--accent-text); }
     .measured-floor,
     .measured-delta--noise { color: var(--muted); }
     .measured-footnote {
@@ -1068,9 +1071,15 @@
       letter-spacing: .08em;
       text-transform: uppercase;
     }
+    {# Chrome, not the signal. This tag renders the priority's NAME — a label,
+       not a value the engine measured — and the signal marks measurements
+       only. The drills page renders the identical "your priority" concept as
+       chrome for the same reason; the two surfaces now apply the law the same
+       way. Emphasis comes from the solid control edge instead. #}
     .drill-tag--priority {
-      color: var(--accent-text);
-      border-color: rgba(var(--amber-rgb), .4);
+      color: var(--ink);
+      border-color: var(--control-border);
+      font-weight: 600;
     }
     .drill-gear { margin: 1rem 0 0; font-size: .95rem; }
     /* MOBILE ACTION BAR — hidden except on small screens. */
@@ -1152,6 +1161,11 @@
       .measured-table { display: none; }
       .measured-rows { display: grid; gap: .55rem; }
       .position-chip { top: 1.2rem; left: 1.2rem; }
+      {# Reserve the bar's height on the document, or it permanently covers
+         the report's final section on exactly the screens where it renders —
+         the same occlusion the storefront's sticky buy bar shipped with
+         (WCAG 2.4.11). #}
+      body { padding-bottom: calc(3.8rem + env(safe-area-inset-bottom, 0px)); }
       .action-bar {
         position: fixed;
         inset: auto 0 0 0;
@@ -1254,6 +1268,10 @@
       .screen-only,
       .report-actions,
       .report-control,
+      /* The whole gear line, not just its report-control anchor — hiding the
+         link alone printed the dangling label "Optional aid for this drill:"
+         over nothing. */
+      .drill-gear,
       video { display: none !important; }
       .print-only { display: block !important; }
       details > summary { display: none !important; }
@@ -1376,7 +1394,8 @@
       <p class="eyebrow">{{ view.next_move.eyebrow }}</p>
       {% if view.next_move.mode == "improve" %}
       <p class="priority-count" data-field="priority-count">
-        Priority 01 · of {{ "%02d" | format(1 + depth.secondary_findings | length) }} findings
+        {%- set finding_count = 1 + depth.secondary_findings | length -%}
+        Priority 01 · of {{ "%02d" | format(finding_count) }} finding{{ '' if finding_count == 1 else 's' }}
       </p>
       {% endif %}
       {% if view.next_move.mode == "protect" %}

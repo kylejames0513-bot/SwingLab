@@ -1038,7 +1038,14 @@ def prepare_report_input(
             LabelValue("duration", "Duration", f"{video.duration_s:.2f} seconds"),
             LabelValue("dimensions", "Display size", f"{video.display_width} x {video.display_height}"),
             LabelValue("rotation", "Rotation metadata", f"{video.rotation} degrees"),
-            LabelValue("source_fps", "Source frame rate", f"{video.fps:g} fps"),
+            # Omitted when the probe could not measure it: ffmpeg reports
+            # avg_frame_rate "0/1" as 0.0, and "0 fps source" on the badge is
+            # a false measured claim, not a degraded one.
+            *(
+                (LabelValue("source_fps", "Source frame rate", f"{video.fps:g} fps"),)
+                if video.fps > 0
+                else ()
+            ),
             *((LabelValue("level", "Experience level", level),) if level else ()),
         ),
         swing_pattern=swing_pattern,
@@ -1165,7 +1172,18 @@ def _pass_meter(view: ReportViewV1) -> PassMarkMeter | None:
             MeasurementUnit.SHOULDER_WIDTHS: "shoulder widths",
             MeasurementUnit.SECONDS: "seconds",
         }.get(target.unit, "")
-    fill = max(0.0, min(now / threshold, 1.0)) * 100
+    # Fill means "how close to clearing the mark", in the direction the
+    # comparator actually points. now/threshold is right for >=-targets; for
+    # <=-targets it is inverted — a failing 0.64 sway against a 0.32 mark
+    # pinned the bar at 100% for the whole approach and it only started moving
+    # after the golfer already passed. threshold/now flips it: full exactly at
+    # the mark, emptier the further above it, with now == 0 a trivial pass.
+    if comparator == "≥":
+        fill = max(0.0, min(now / threshold, 1.0)) * 100
+    elif now <= 0:
+        fill = 100.0
+    else:
+        fill = max(0.0, min(threshold / now, 1.0)) * 100
     return PassMarkMeter(
         f"{now:.{decimals}f}",
         mark_text,
