@@ -9,7 +9,15 @@
   },
   "seo": {
     "homepage_title": "CaddieInsight | Phone-video swing coaching",
-    "homepage_description": "Turn one golf swing video into one prioritized coaching plan, a measurable practice target, and a clearer next range session."
+    "homepage_description": "Turn one golf swing video into one prioritized coaching plan, a measurable practice target, and a clearer next range session.",
+    "collection_description": "Training aids matched to a coaching priority. Every aid is paired to a drill, and every drill works without it.",
+    "list_collections_title": "Training gear | CaddieInsight",
+    "list_collections_description": "The CaddieInsight rack: training aids matched to the priority a swing report surfaces.",
+    "blog_description": "Range notes, product changes and what we are working on at CaddieInsight.",
+    "search_description": "Search CaddieInsight for drills, training aids, and how the swing report works.",
+    "cart_description": "Your CaddieInsight cart. Gear is optional — the report is not.",
+    "product_description": "Phone-video swing coaching: one prioritized fix, a drill, and a pass mark for the next clip.",
+    "page_description": "CaddieInsight: film one swing on your phone, get one prioritized coaching plan with a measurable pass mark."
   },
   "layout": {
     "announcement": {
