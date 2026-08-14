@@ -43,10 +43,13 @@ Roughly in value order.
 
 1. **Collection / cart / search / 404** — templates exist and are styled;
    they need the mockups' copy from `COPY_DECK.md` §8.
-3. **`/collections/swinglab-gear` rename** — see §6.
-4. **App (Phase 5)** — the full `1a`–`1f` build you asked for.
-5. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions,
-   Lighthouse, contrast, keyboard nav, broken-link crawl.
+2. **`/collections/swinglab-gear` rename** — see §6.
+3. **SEO and a11y pass (Phase 6)** — per-page titles and descriptions and the
+   contrast fix landed (`5d11e5b`, `24dc23e`); Lighthouse, keyboard nav and the
+   broken-link crawl are still unrun.
+
+**App (Phase 5)** is no longer on this list — the `1a`–`1f` build shipped; see
+the App entry in §3.
 
 ---
 
