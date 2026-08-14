@@ -61,11 +61,18 @@ def test_shared_brand_tokens_match_the_storefront_source_of_truth():
     assert _token(LAYOUT, "sl-control-border") == "#6e6e71"
 
     # ...and the storefront's own value is the display-copy counterpart, not a
-    # drifted duplicate. Both clear AA on the paper ground (5.43:1 and 4.82:1
-    # on --sl-bg); the app's is darker because it sets small interface text
-    # where the storefront sets prose. Pinning both ends stops a future
+    # drifted duplicate. The app's is darker because it sets small interface
+    # text where the storefront sets prose. Pinning both ends stops a future
     # "unify the tokens" pass from quietly trading contrast for symmetry.
-    assert _token(STOREFRONT, "sl-ink-muted") == "#6a6a6d"
+    #
+    # 2026-08-12: the storefront's moved from #6a6a6d to #666669, and NOT
+    # toward the app — it is still the lighter of the two. #6a6a6d was verified
+    # against the paper ground only, and seven sections then painted it
+    # straight onto the --sl-night well, where it computes to 4.44 and fails AA
+    # at the 12px this token is always set at. #666669 clears both grounds
+    # (5.12 on --sl-bg, 4.72 on --sl-night), which is what a token used on two
+    # grounds has to do.
+    assert _token(STOREFRONT, "sl-ink-muted") == "#666669"
 
     # --sl-border is 1.37:1 on paper and is DECORATIVE ONLY. The control
     # border is the one that has to clear WCAG 1.4.11's 3:1 for non-text

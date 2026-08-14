@@ -309,6 +309,10 @@
    state, so the underline would only add a second, weaker one. */
 .sl-main-collection__chip {
   text-decoration: none;
+  /* --sl-control-border, not the inherited --sl-border-strong: a chip is an
+     interactive control whose resting edge is its only boundary, and that
+     one is 1.79 against paper. 3.82 here (WCAG 1.4.11). */
+  border-color: var(--sl-control-border);
 }
 
 .sl-main-collection__chip:hover {

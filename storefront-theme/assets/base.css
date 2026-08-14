@@ -66,7 +66,16 @@
                                    does the work the fill used to. */
   --sl-ink: #1d1f20;            /* primary type (14.79 on --sl-bg) */
   --sl-ink-soft: #5d5d60;       /* secondary text (5.87) */
-  --sl-ink-muted: #6a6a6d;      /* fine print (AA on --sl-bg: 4.82) */
+  /* Fine print, and it has TWO grounds. Verified at 4.82 on --sl-bg, this
+     was then painted directly onto the --sl-night well by proof,
+     cta-banner, comparison and report-feature — seven sites where it is
+     4.44 and fails AA at the 12px it is always set at. Darkened until it
+     clears both rather than patched at each call site, so the next
+     section to reach for the well inherits a colour that already works.
+     (The app runs its own darker #626265 for a different reason, already
+     documented in web_layout.html.j2 — the names match, the values need
+     not.) */
+  --sl-ink-muted: #666669;      /* 5.12 on --sl-bg, 4.72 on --sl-night */
   /* Headings are ink on paper. The forest green stays --sl-brand-green, for
      the mark and only the mark. */
   --sl-green: #1d1f20;          /* headings */
@@ -83,7 +92,7 @@
      on the field, so it is structurally a PAPER-side colour: put it on the
      green and it stops being legible, which is the rule enforcing itself. */
   --sl-orange: #416180;         /* the signal (5.78 on --sl-bg) */
-  --sl-orange-soft: #eef6ff;    /* tinted wash for callouts (ink on it: 14.3) */
+  --sl-orange-soft: #eef6ff;    /* tinted wash for callouts (ink on it: 15.18) */
   --sl-accent: #416180;         /* same signal; the old split had no meaning */
   --sl-accent-hover: #2c455d;   /* signal hover */
   --sl-focus: #416180;          /* focus ring on paper */
@@ -152,6 +161,11 @@
      2026-08-10 comment here recorded that #b3261e lands at 2.97 on a dark
      field and had to be replaced; on paper it is 5.84 and correct again. */
   --sl-danger: #b3261e;
+  /* The same message on the reversed ground. --sl-danger is a PAPER-side
+     colour: 5.84 there and 2.97 on the field, which the comment above
+     already recorded — and the footer then painted its newsletter error
+     with it anyway, on the one dark surface in the theme. 9.57 here. */
+  --sl-danger-field: #f0a29c;
   /* The hover state for an ink control. On bone-on-black this lifted; on
      paper it deepens. Same idea — a perceptible change that spends neither
      signal, because a pointer resting on a button is not a reading. */
@@ -477,7 +491,11 @@ img { max-width: 100%; display: block; }
    to a paper fill on hover. Under INSTRUMENT every surface was dark and this
    collapsed into the bone treatment; now there are two grounds again and the
    distinction is load-bearing. */
-.sl-btn--light { background: transparent; color: var(--sl-field-ink); border-color: rgba(var(--sl-cream-rgb), 0.35); }
+/* --sl-field-control, not a cream alpha: composited, that alpha lands at
+   2.94 against the field and this border is the button's only boundary.
+   The paper-side twin one line up uses --sl-control-border for exactly
+   this reason; the field-side button is the case that rule missed. */
+.sl-btn--light { background: transparent; color: var(--sl-field-ink); border-color: var(--sl-field-control); }
 .sl-btn--light:hover { background: var(--sl-field-ink); color: var(--sl-field); border-color: var(--sl-field-ink); }
 .sl-btn--sm {
   min-height: 38px;
@@ -772,7 +790,9 @@ img { max-width: 100%; display: block; }
 }
 .sl-seg__opt + .sl-seg__opt { border-left: 1px solid var(--sl-control-border); }
 .sl-seg__opt input { position: absolute; opacity: 0; width: 0; height: 0; }
-.sl-seg__opt:has(input:checked) { background: var(--sl-steel); color: var(--sl-bg); }
+/* --sl-green-btn, not --sl-steel: paper on steel is 3.71, so the CHECKED
+   option was the least readable state of the control. 8.87 now. */
+.sl-seg__opt:has(input:checked) { background: var(--sl-green-btn); color: var(--sl-bg); }
 .sl-seg__opt:not(:has(input:checked)):hover { background: rgba(var(--sl-wash-rgb), 0.07); }
 .sl-seg__opt:has(input:focus-visible) { outline: 2px solid var(--sl-focus); outline-offset: -2px; }
 

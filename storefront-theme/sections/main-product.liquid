@@ -391,6 +391,22 @@
     font-weight: var(--sl-weight-display);
   }
   .sl-buybar__add { flex: 0 0 auto; min-height: 46px; }
+
+  /* WCAG 2.2 SC 2.4.11, Focus Not Obscured. Once the bar is revealed it is
+     fixed to the bottom for the rest of the page, so the last focusable things
+     on it — the footer links, the final trust line — sat permanently behind it
+     with no scroll left to clear them. Tabbing to them moved focus somewhere
+     the visitor could not see.
+
+     :has() so the reservation exists only while the bar does; reserving the
+     space unconditionally would leave a dead strip under every product page on
+     a desktop, where the bar never renders at all. */
+  html:has(.sl-buybar:not([hidden])) {
+    scroll-padding-bottom: 84px;
+  }
+  html:has(.sl-buybar:not([hidden])) body {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 /* buy zone: quantity, add-to-cart, and the payment button share one column */

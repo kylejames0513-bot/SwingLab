@@ -343,7 +343,10 @@ body:has(.sl-header[data-app-authenticated="true"]) .sl-announcement { display: 
   flex: none;
   text-transform: uppercase;
   white-space: nowrap;
-  color: var(--sl-accent-hover);
+  /* The rail sits on the field. --sl-accent-hover is the PAPER-side signal's
+     hover step and lands at 1.96 here — the tier label was invisible. A
+     plan name is not a measurement, so it takes the field's type colour. */
+  color: var(--sl-field-ink);
 }
 .sl-member-rail__greeting {
   flex: 1 1 auto;
