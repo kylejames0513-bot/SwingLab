@@ -94,19 +94,23 @@ publish, which is why it goes last.
 - [ ] Review the preview at 375 / 768 / 1440.
 - [ ] **Publish the theme.** Yours to do, not mine.
 
-**Memberships — read this before publishing**
+**Memberships**
 
-- [ ] **Set `templateSuffix` on CaddieInsight Pro to `membership`.** It is
-      currently null, so the product renders through `main-product.liquid`,
-      which has ZERO selling-plan handling. All four subscription variants have
-      plans attached, but no shopper can ever choose one: every membership sale
-      today is a **one-time charge**, on a product advertised at $9.99/mo.
-      Proved by rendering the same product with `?view=membership`, which
-      offers "Auto-renew monthly" where the live template offers nothing.
-      This is a one-field change in admin and it is the difference between
-      recurring revenue and none.
-- [ ] After that, decide whether "One-time purchase" should stay the DEFAULT
-      selected option on a product sold as a subscription.
+- [x] **`templateSuffix` on CaddieInsight Pro set to `membership`** (done
+      2026-08-12). It was null, so the product rendered through
+      `main-product.liquid`, which has ZERO selling-plan handling — all four
+      subscription variants had plans attached and no shopper could reach them.
+      Every membership sale was a **one-time charge** on a product advertised
+      at $9.99/mo. The live page now offers "One-time purchase" and
+      "Auto-renew monthly".
+- [x] Subscription is now the DEFAULT selected option rather than one-time.
+      **This half only reaches customers when the theme is published** — the
+      live theme still opens on "One-time purchase". Until then the options
+      exist but the default is the cheaper one.
+- [ ] Watch the first subscription order end to end. `shopify_billing.py`
+      grants on SKU, and a recurring charge arrives as a NEW order against the
+      same SKU, so renewals should extend the term automatically — but nothing
+      here has ever processed one.
 
 **The Founders Pass**
 
