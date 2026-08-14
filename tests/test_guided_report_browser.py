@@ -136,11 +136,28 @@ def test_controls_have_44px_targets_and_visible_keyboard_focus(
 
         controls = page.locator(".report-control, details > summary")
         assert controls.count() > 0
+        visible_controls = 0
         for index in range(controls.count()):
-            box = controls.nth(index).bounding_box()
-            assert box is not None
+            control = controls.nth(index)
+            box = control.bounding_box()
+            if box is None:
+                # The spec sheet made some controls width-dependent (the
+                # desktop table's See-measurement anchors have collapsed-row
+                # counterparts below 40rem). A control hidden at this width
+                # must be GENUINELY gone — display:none, out of the tab order
+                # — not visually hidden while still focusable, which would be
+                # a keyboard trap worse than a small target.
+                display = control.evaluate(
+                    "element => getComputedStyle(element).display"
+                )
+                assert display == "none", (
+                    f"control {index} has no box but display={display!r}"
+                )
+                continue
+            visible_controls += 1
             assert box["width"] >= 44
             assert box["height"] >= 44
+        assert visible_controls > 0
 
         page.keyboard.press("Tab")
         skip_link = page.locator(".skip-link")

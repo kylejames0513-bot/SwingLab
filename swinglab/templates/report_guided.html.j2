@@ -1166,6 +1166,11 @@
          the same occlusion the storefront's sticky buy bar shipped with
          (WCAG 2.4.11). #}
       body { padding-bottom: calc(3.8rem + env(safe-area-inset-bottom, 0px)); }
+      {# scroll-padding too: padding only rescues the page's END. A
+         disclosure scrolled into view mid-page can still land under the
+         fixed bar, which then intercepts the tap meant for it — the
+         no-JS browser test caught exactly that click being swallowed. #}
+      html { scroll-padding-bottom: calc(4.2rem + env(safe-area-inset-bottom, 0px)); }
       .action-bar {
         position: fixed;
         inset: auto 0 0 0;
