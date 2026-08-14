@@ -727,9 +727,14 @@ def test_theme_check_is_pinned_and_release_docs_have_no_stale_theme_ids():
     )
     readme = source("README.md")
 
-    assert "Shopify/theme-check-action@58fd69afdfc30110f997ba9e212b302671e00d3b" in workflow
+    # The gate runs the pinned CLI directly. Its predecessor,
+    # Shopify/theme-check-action@58fd69a + CLI 3.58.2, targeted Node 20;
+    # GitHub's runners now force Node 24 and that CLI crashes rendering its
+    # own result banner there — a red job with zero theme offenses, and the
+    # crash ate the output that would have said so. The pin is still the
+    # point: the version must move deliberately, in this file and here.
+    assert "npx -y @shopify/cli@4.6.1 theme check" in workflow
     assert "--fail-level warning" in workflow
-    assert "version: 3.58.2" in workflow
     assert "source PR is not a Shopify preview" in readme
     assert "duplicate\nunpublished theme" in readme
     assert not re.search(r"OnlineStoreTheme/\d+", readme)
