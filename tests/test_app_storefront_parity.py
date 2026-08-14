@@ -335,9 +335,14 @@ def test_app_shell_uses_one_paper_header_and_the_shared_footer():
     # the last holdout was an error red at 2.97:1 on the dark field, which
     # became --sl-danger rather than staying an unreadable literal.
     below = LAYOUT[LAYOUT.index("--sl-tabbar-h") :]
-    assert not re.search(r"#[0-9a-fA-F]{6}\b", below), re.findall(
-        r"#[0-9a-fA-F]{6}\b", below
-    )
+    # A hex colour is never written `&#…`, but an HTML character reference
+    # always is — and the Pro lock, &#128274;, is six decimal digits that
+    # also read as hex. Without the lookbehind this gate flagged the lock,
+    # and the rewrite that satisfied it turned the entity's body into a
+    # token reference, which phones rendered as literal menu text
+    # ("&var(--sl-trace-dim);"). tests/test_pwa_shell.py pins the entity.
+    hex_literal = r"(?<!&)#[0-9a-fA-F]{6}\b"
+    assert not re.search(hex_literal, below), re.findall(hex_literal, below)
     # The compact phone header, kept when the dark chrome it used to hang off
     # was removed. The treatment was cosmetic; the 8px it takes off a 72px bar
     # at the top of every phone screen is not.

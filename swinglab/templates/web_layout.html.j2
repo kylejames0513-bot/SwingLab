@@ -1280,7 +1280,7 @@
           {% if require_account %}<a href="/today" {% if current_path == '/today' %}aria-current="page"{% endif %}>Today</a>{% endif %}
           <a href="/sessions" {% if current_path == '/sessions' %}aria-current="page"{% endif %}>History</a>
           {% if require_account %}
-            <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&var(--sl-trace-dim);</span>{% endif %}</a>
+            <a href="/progress" {% if current_path == '/progress' %}aria-current="page"{% endif %}>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</a>
           {% endif %}
           <a href="/drills" {% if current_path == '/drills' %}aria-current="page"{% endif %}>Drills</a>
         </div>
@@ -1369,11 +1369,11 @@
         {% endif %}
         {% if require_account and user %}
         <a class="sl-menu__link{% if current_path == '/progress' %} is-current{% endif %}" href="/progress" data-menu-link {% if current_path == '/progress' %}aria-current="page"{% endif %}>
-          <span>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&var(--sl-trace-dim);</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
+          <span>Progress{% if user and progress_pro_only and not user_has_coach_features %} <span aria-label="Included with Pro" title="Included with Pro">&#128274;</span>{% endif %}</span><span aria-hidden="true">&rarr;</span>
         </a>
         {% endif %}
         <a class="sl-menu__link{% if current_path == '/scorecard' %} is-current{% endif %}" href="/scorecard" data-menu-link {% if current_path == '/scorecard' %}aria-current="page"{% endif %}>
-          Scorecard
+          <span>Scorecard</span><span aria-hidden="true">&rarr;</span>
         </a>
         <a class="sl-menu__link{% if current_path == '/drills' %} is-current{% endif %}" href="/drills" data-menu-link {% if current_path == '/drills' %}aria-current="page"{% endif %}>
           <span>Drills</span><span aria-hidden="true">&rarr;</span>
